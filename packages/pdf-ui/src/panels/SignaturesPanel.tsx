@@ -78,7 +78,7 @@ export function SignaturesPanel({ document, t, onGoToPage, onNotice }: Signature
             onClick={() => {
               if (field.pageIndex !== null) onGoToPage(field.pageIndex);
             }}
-            className="w-full rounded-sm px-1.5 py-1 text-left hover:bg-kumo-tint disabled:hover:bg-transparent"
+            className="w-full rounded-sm px-1.5 py-1 text-start hover:bg-kumo-tint disabled:hover:bg-transparent"
           >
             <span className="block truncate text-xs text-kumo-default">{field.name}</span>
             <span className="block text-[11px] text-kumo-subtle">

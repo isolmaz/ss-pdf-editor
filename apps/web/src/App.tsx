@@ -14,12 +14,6 @@ import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
 // and the engine chunk it pulls in is what the ≤250 KiB budget is there to keep
 // out.
-import {
-  parseAnnotationData,
-  serializeAnnotationsFdf,
-  serializeAnnotationsJson,
-  toAppSpace,
-} from 'pdf-core/ops/annotation-data';
 import type { ReviewRecordRequest } from 'pdf-core/ops/annotation-review';
 import type { MarkTransform } from 'pdf-core/ops/annotation-transform';
 import { transformPdfAnnotations } from 'pdf-core/ops/annotation-transform';
@@ -34,11 +28,10 @@ import {
   unsupportedDocumentKind,
 } from 'pdf-core/ops/convert-formats';
 import type { FormDetection } from 'pdf-core/ops/form-detect';
-import { fieldValueText, fillFormFields, readFormFields } from 'pdf-core/ops/forms';
+import { fieldValueText } from 'pdf-core/ops/form-value';
 import { type MeasureMark, type MeasureMode, type MeasureScale, scaleForRatio } from 'pdf-core/ops/measure';
 import type { RedactRect } from 'pdf-core/ops/redact';
-import { inspectProtection, type ProtectionState } from 'pdf-core/ops/security';
-import { verifySignatures } from 'pdf-core/ops/signature-status';
+import type { ProtectionState } from 'pdf-core/ops/security';
 import type { OperationContext, OperationNote, OperationProgress } from 'pdf-core/ops/types';
 import type { XfaInfo } from 'pdf-core/ops/xfa';
 import {
@@ -113,7 +106,6 @@ const ShortcutsDialog = lazy(async () => {
 import { CaretLeft, CaretRight, Command, FilePdf, FolderOpen, GearSix } from '@phosphor-icons/react';
 import type { OperationOutcome } from 'pdf-core';
 import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
-import { listPdfImages } from 'pdf-core/ops/image-edit';
 import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
@@ -196,11 +188,16 @@ import {
   applyLayerWrite,
   auditRedactedDocument,
   convertToPdf,
+  fillFormFields,
   imagesToPdf,
+  inspectProtection,
   inspectXfa,
   listPdfFonts,
+  listPdfImages,
+  readFormFields,
   removeAttachments,
   resizeImageStamp,
+  verifySignatures,
 } from './lazy-ops';
 import { auditNotice, engineValuesNotices, failureNotices, noticeLine, verificationNotices } from './notices';
 import {
@@ -2316,10 +2313,11 @@ export function App({ store }: AppProps) {
           return;
         }
         const pageCount = tabPageCount(tab);
+        const data = await import('pdf-core/ops/annotation-data');
         bytes =
           format === 'json'
-            ? serializeAnnotationsJson(marks, pageCount)
-            : serializeAnnotationsFdf(marks, pageCount);
+            ? data.serializeAnnotationsJson(marks, pageCount)
+            : data.serializeAnnotationsFdf(marks, pageCount);
         message = t('ann.data.exported', {
           count: marks.length,
           name: `${tab.name.replace(/\.pdf$/i, '')}-comments.${format}`,
@@ -2353,9 +2351,11 @@ export function App({ store }: AppProps) {
         // XFDF is XML; everything else this reads is JSON or FDF. The XML reader is
         // loaded only for a file that starts like one.
         const head = new TextDecoder('utf-8').decode(bytes.slice(0, 64)).trimStart();
+        // Both readers are their own chunks: an import is a user action, not first paint.
+        const data = await import('pdf-core/ops/annotation-data');
         const parsed: AnnotationDataResult = head.startsWith('<')
           ? await (await import('pdf-core/ops/annotation-xfdf')).parseXfdf(bytes)
-          : parseAnnotationData(bytes);
+          : data.parseAnnotationData(bytes);
         // Acrobat's comments are in PDF user space; the page's own top edge turns them
         // into the app's space. A page the viewer cannot measure is not guessed at: its
         // comments are counted as skipped instead of landing mirrored.
@@ -2369,7 +2369,7 @@ export function App({ store }: AppProps) {
                   unplaced += 1;
                   return [];
                 }
-                return [toAppSpace(mark, geometry.y + geometry.height)];
+                return [data.toAppSpace(mark, geometry.y + geometry.height)];
               });
         const result = { ...parsed, marks: placed, skipped: parsed.skipped + unplaced };
         if (result.marks.length > 0) {
@@ -5218,7 +5218,7 @@ export function App({ store }: AppProps) {
         ) : (
           <div className="flex h-full">
             {leftDock ? (
-              <div className={compactViewport ? 'absolute inset-y-0 left-0 z-40 max-w-full' : 'contents'}>
+              <div className={compactViewport ? 'absolute inset-y-0 start-0 z-40 max-w-full' : 'contents'}>
                 <DocumentPanel
                   onToggle={() => setLeftDock(false)}
                   document={activeHandle}
@@ -5259,9 +5259,9 @@ export function App({ store }: AppProps) {
                   title={t('nav.togglePages')}
                   aria-label={t('nav.togglePages')}
                   onClick={() => setLeftDock(true)}
-                  className="absolute left-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-r-md border border-l-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
+                  className="absolute start-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-e-md border border-s-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
                 >
-                  <CaretRight size={12} weight="bold" />
+                  <CaretRight size={12} weight="bold" className="rtl:-scale-x-100" />
                 </button>
               ) : null}
 
@@ -5272,9 +5272,9 @@ export function App({ store }: AppProps) {
                   title={t('tools.all')}
                   aria-label={t('tools.all')}
                   onClick={() => setRightDock(true)}
-                  className="absolute right-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-l-md border border-r-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
+                  className="absolute end-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-s-md border border-e-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
                 >
-                  <CaretLeft size={12} weight="bold" />
+                  <CaretLeft size={12} weight="bold" className="rtl:-scale-x-100" />
                 </button>
               ) : null}
 
@@ -5465,7 +5465,7 @@ export function App({ store }: AppProps) {
               />
             </div>
             {rightDock ? (
-              <div className={compactViewport ? 'absolute inset-y-0 right-0 z-40 max-w-full' : 'contents'}>
+              <div className={compactViewport ? 'absolute inset-y-0 end-0 z-40 max-w-full' : 'contents'}>
                 <Dock
                   t={t}
                   side="right"

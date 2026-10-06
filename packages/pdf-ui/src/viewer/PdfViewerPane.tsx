@@ -1086,7 +1086,7 @@ export function PdfViewerPane({
   return (
     <div className="relative h-full w-full">
       {find.open ? (
-        <search className="pdf-floating-shadow absolute right-3 top-3 z-40 flex items-center gap-1 rounded-md border border-kumo-line bg-kumo-base px-2 py-1">
+        <search className="pdf-floating-shadow absolute end-3 top-3 z-40 flex items-center gap-1 rounded-md border border-kumo-line bg-kumo-base px-2 py-1">
           <input
             ref={inputRef}
             type="text"

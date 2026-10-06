@@ -228,7 +228,7 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
           data-text-layer-error={failure}
           data-text-layer-reason={failureDetail ?? ''}
           title={failureDetail ?? undefined}
-          className="pointer-events-auto absolute bottom-2 left-2 max-w-[60ch] rounded-sm border border-kumo-line bg-kumo-base px-2 py-1 text-xs text-kumo-default"
+          className="pointer-events-auto absolute bottom-2 start-2 max-w-[60ch] rounded-sm border border-kumo-line bg-kumo-base px-2 py-1 text-xs text-kumo-default"
         >
           {t('textedit.readFailed')}
         </p>

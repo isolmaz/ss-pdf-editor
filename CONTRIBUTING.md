@@ -55,6 +55,14 @@ The interface ships in Turkish and English. To add a language:
 The language picker lists it, the browser's language selects it on a first visit, and
 dates and numbers are formatted with its `id`.
 
+A right-to-left language mirrors the interface through `<html dir>`, so interface code
+uses logical classes (`ms-`/`me-`, `ps-`/`pe-`, `start-`/`end-`, `border-s`/`border-e`,
+`rounded-s`/`rounded-e`, `text-start`/`text-end`) and `inset-inline-*` /
+`margin-inline-*` in CSS. A previous/next or collapse arrow takes `rtl:-scale-x-100`, and
+a measurement (`82.4 MB / 512.0 MB`) sits in `dir="ltr"`. Physical `left`/`right` stay
+only where a position comes from the page or the pointer: the layers drawn over a PDF
+page, the camera picture and the magnifier lens.
+
 ## Repository hygiene
 
 The pre-commit hook (`tools/hooks/guard.mjs`) refuses engine builds, traineddata, wasm and

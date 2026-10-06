@@ -93,7 +93,7 @@ function InlineToolRunner({
           onClick={onBack}
           className="flex items-center gap-1 text-xs font-semibold text-pdf-accent hover:underline"
         >
-          <CaretLeft size={14} weight="bold" aria-hidden="true" />
+          <CaretLeft size={14} weight="bold" className="rtl:-scale-x-100" aria-hidden="true" />
           {t('tools.backToAll')}
         </button>
       </div>
@@ -357,13 +357,13 @@ export function ToolsRailPanel({
               <button
                 type="button"
                 onClick={() => toggleGroup(group.id)}
-                className="flex w-full items-center justify-between px-2.5 py-2 text-left hover:bg-kumo-recessed/40 transition-colors"
+                className="flex w-full items-center justify-between px-2.5 py-2 text-start hover:bg-kumo-recessed/40 transition-colors"
               >
                 <span className="text-xs font-semibold text-kumo-strong">{group.title}</span>
                 {isExpanded ? (
                   <CaretDown size={13} className="text-kumo-subtle" />
                 ) : (
-                  <CaretRight size={13} className="text-kumo-subtle" />
+                  <CaretRight size={13} className="text-kumo-subtle rtl:-scale-x-100" />
                 )}
               </button>
 
@@ -376,7 +376,7 @@ export function ToolsRailPanel({
                         key={item.id}
                         type="button"
                         onClick={item.onClick}
-                        className="flex items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-kumo-recessed text-kumo-default hover:text-kumo-strong transition-colors group"
+                        className="flex items-center gap-2 rounded px-2 py-1.5 text-start hover:bg-kumo-recessed text-kumo-default hover:text-kumo-strong transition-colors group"
                       >
                         <Icon size={15} className="shrink-0 text-kumo-subtle group-hover:text-pdf-accent" />
                         <span className="flex-1 truncate text-xs font-medium">{item.title}</span>

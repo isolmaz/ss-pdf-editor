@@ -535,7 +535,7 @@ export function SignatureDialog({
         </p>
 
         <div className="flex items-center justify-end gap-2 border-t border-kumo-line/60 pt-3">
-          {ready ? null : <span className="mr-auto text-[11px] text-kumo-subtle">{t('sig.empty')}</span>}
+          {ready ? null : <span className="me-auto text-[11px] text-kumo-subtle">{t('sig.empty')}</span>}
           <Button size="sm" variant="outline" onClick={onClose}>
             {t('sig.cancel')}
           </Button>

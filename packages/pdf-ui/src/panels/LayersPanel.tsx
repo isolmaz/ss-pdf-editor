@@ -198,7 +198,7 @@ function LayerLevel({
   onToggle: (id: string, visible: boolean) => void;
 }) {
   return (
-    <ul className={depth === 0 ? '' : 'ml-3 border-l border-kumo-line pl-2'}>
+    <ul className={depth === 0 ? '' : 'ms-3 border-s border-kumo-line ps-2'}>
       {nodes.map((node) =>
         node.kind === 'group' ? (
           <li key={node.id}>

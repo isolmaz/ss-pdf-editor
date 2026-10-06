@@ -264,7 +264,7 @@ function OutlineLevel({
   onGoToPage: (pageIndex: number) => void;
 }) {
   return (
-    <ul className={depth === 0 ? '' : 'ml-3 border-l border-kumo-line pl-2'}>
+    <ul className={depth === 0 ? '' : 'ms-3 border-s border-kumo-line ps-2'}>
       {entries.map((entry) => (
         <li key={`${entry.title}-${entry.pageIndex ?? -1}`} className="my-0.5">
           <button
@@ -274,7 +274,7 @@ function OutlineLevel({
               if (entry.pageIndex !== null) onGoToPage(entry.pageIndex);
             }}
             aria-current={entry.pageIndex === currentPage ? 'page' : undefined}
-            className={`w-full truncate rounded-sm px-1.5 py-1 text-left text-xs ${
+            className={`w-full truncate rounded-sm px-1.5 py-1 text-start text-xs ${
               entry.pageIndex === currentPage
                 ? 'bg-kumo-tint text-kumo-strong'
                 : 'text-kumo-default hover:bg-kumo-tint'

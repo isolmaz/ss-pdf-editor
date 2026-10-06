@@ -172,7 +172,7 @@ export function CameraView({ t, onPhotos, pageCount, onShowPages, disabled }: Ca
         {live ? (
           <p
             role="status"
-            className="pointer-events-none absolute top-2 left-2 rounded bg-black/55 px-2 py-0.5 text-[11px] text-white"
+            className="pointer-events-none absolute top-2 start-2 rounded bg-black/55 px-2 py-0.5 text-[11px] text-white"
           >
             {outline === null ? t('scan.live.searching') : t('scan.live.found')}
           </p>

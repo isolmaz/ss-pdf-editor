@@ -243,7 +243,7 @@ export function MenuBar({ t, commands }: MenuBarProps) {
                     current === undefined ? undefined : `${menuId}-${items.indexOf(current)}`
                   }
                   onKeyDown={handlePanelKeyDown}
-                  className="absolute top-full left-0 z-50 mt-0.5 flex max-h-[min(70vh,32rem)] min-w-48 flex-col gap-0.5 overflow-y-auto rounded-md border border-kumo-line bg-kumo-base p-1 outline-none"
+                  className="absolute top-full start-0 z-50 mt-0.5 flex max-h-[min(70vh,32rem)] min-w-48 flex-col gap-0.5 overflow-y-auto rounded-md border border-kumo-line bg-kumo-base p-1 outline-none"
                 >
                   {items.map((command, index) => (
                     <button
@@ -266,7 +266,7 @@ export function MenuBar({ t, commands }: MenuBarProps) {
                       // declare, so a disabled row rendered exactly like an
                       // enabled one. `subtle` is Kumo's own disabled text and
                       // stays legible.
-                      className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-kumo-tint disabled:text-kumo-subtle disabled:hover:bg-transparent ${
+                      className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-start text-xs hover:bg-kumo-tint disabled:text-kumo-subtle disabled:hover:bg-transparent ${
                         command.danger === true ? 'text-kumo-danger' : 'text-kumo-default'
                       }`}
                     >
@@ -280,7 +280,7 @@ export function MenuBar({ t, commands }: MenuBarProps) {
                         <Check aria-hidden="true" className="size-3 shrink-0" />
                       ) : null}
                       {command.shortcut === undefined ? null : (
-                        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-kumo-subtle">
+                        <span className="ms-auto shrink-0 text-[11px] tabular-nums text-kumo-subtle">
                           {command.shortcut}
                         </span>
                       )}

@@ -162,9 +162,9 @@ export function SearchResultsPanel({
                     onGoToPage(match.pageIndex);
                     onHighlightQuery?.(submitted);
                   }}
-                  className="w-full rounded-sm px-1.5 py-1 text-left text-xs hover:bg-kumo-tint"
+                  className="w-full rounded-sm px-1.5 py-1 text-start text-xs hover:bg-kumo-tint"
                 >
-                  <span className="mr-1 tabular-nums text-kumo-subtle">{match.pageIndex + 1}</span>
+                  <span className="me-1 tabular-nums text-kumo-subtle">{match.pageIndex + 1}</span>
                   <span className="break-words text-kumo-default">
                     {before}
                     <span className="bg-kumo-tint text-kumo-strong">{hit}</span>

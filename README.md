@@ -421,7 +421,9 @@ The limits are defined once, in
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
 - **Build budgets.**
-  - ≤ 250 KiB gzip for the first-paint JavaScript.
+  - ≤ 250 KiB gzip for the first-paint JavaScript. Not met yet: measured 2026-10-06 the
+    entry chunk is 219 KiB, but with the UI chunks it preloads the first paint is 313 KiB,
+    because the editor shell still loads with the home screen (`architecture.md` §2).
   - ≤ 60 KiB for the landing page.
   - ≤ 25 MiB per asset.
 

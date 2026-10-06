@@ -187,14 +187,14 @@ export function ModernEditorHeader({
           <House size={16} className="hidden text-kumo-subtle sm:block" aria-hidden="true" />
         </button>
         {menu ? (
-          <div className="hidden items-center border-l border-kumo-line pl-1 md:flex">{menu}</div>
+          <div className="hidden items-center border-s border-kumo-line ps-1 md:flex">{menu}</div>
         ) : null}
       </div>
 
       {/* Task shortcuts: icons below 1536 px, icon and label above. */}
       <nav
         aria-label={t('shell.tasks')}
-        className="hidden shrink-0 items-center gap-0.5 border-l border-kumo-line pl-2 lg:flex"
+        className="hidden shrink-0 items-center gap-0.5 border-s border-kumo-line ps-2 lg:flex"
       >
         <TaskButton label={task('mode.tools')} icon={SquaresFour} pressed={toolsOpen} onClick={onTools} />
         <TaskButton label={task('mode.read')} icon={BookOpen} pressed={reading} onClick={onRead} />
@@ -278,7 +278,7 @@ export function ModernEditorHeader({
                 >
                   <button
                     type="button"
-                    className="flex-1 truncate text-left"
+                    className="flex-1 truncate text-start"
                     title={tab.name}
                     onClick={() => {
                       onSelectTab(tab.id);
@@ -288,7 +288,7 @@ export function ModernEditorHeader({
                     {tab.name}
                   </button>
                   {tab.dirty ? (
-                    <span className="mr-1.5 size-1.5 shrink-0 rounded-full bg-pdf-accent" />
+                    <span className="me-1.5 size-1.5 shrink-0 rounded-full bg-pdf-accent" />
                   ) : null}
                   <button
                     type="button"
@@ -357,7 +357,7 @@ export function ModernEditorHeader({
             disabled={!canExport}
             title={t('shell.export.hint')}
             aria-label={t('shell.export')}
-            className={onExportOptions ? 'rounded-r-none border-r-0' : ''}
+            className={onExportOptions ? 'rounded-e-none border-e-0' : ''}
           >
             <span className="hidden md:inline">{t('shell.export')}</span>
           </Button>
@@ -367,7 +367,7 @@ export function ModernEditorHeader({
               onClick={onExportOptions}
               title={t('tools.exportOptions')}
               aria-label={t('tools.exportOptions')}
-              className="flex h-8 items-center justify-center rounded-r-md border border-kumo-line bg-kumo-base px-1.5 text-kumo-subtle transition-colors hover:bg-kumo-recessed hover:text-kumo-strong"
+              className="flex h-8 items-center justify-center rounded-e-md border border-kumo-line bg-kumo-base px-1.5 text-kumo-subtle transition-colors hover:bg-kumo-recessed hover:text-kumo-strong"
             >
               <CaretDown size={12} aria-hidden="true" />
             </button>
