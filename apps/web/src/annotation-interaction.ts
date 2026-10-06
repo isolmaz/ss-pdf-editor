@@ -22,8 +22,8 @@
  * `transformPoint`, for exactly the same reason the flip is not re-implemented here.
  *
  * **The identity is not the same identity.** A mark the session holds and the file's
- * copy of that same mark are one thing to the user: our own writer stamps
- * `pdf-editor-ann:<id>` into `/Contents` (`ops/annotations.ts`), so a file annotation
+ * copy of that same mark are one thing to the user: our own writer names the annotation
+ * `pdf-editor-ann:<id>` (`/NM`, read back as `ExistingAnnotation.marker`), so a file annotation
  * whose marker names a pending mark is that mark — it is listed once, and the
  * persisted half wins, because deleting it is what actually removes the bytes. The same
  * reading is `normalizePendingMarks`' work on the session's own lists, so that one mark
@@ -154,7 +154,7 @@ export interface PendingMarks {
  * identity in the session and a mark's identity in the file cannot drift apart.
  *
  * Measurements are included because they are the same convention, not a special case:
- * `writeMeasureAnnotations` stamps the same marker into `/Contents`, which is how a
+ * `writeMeasureAnnotations` names its annotations with the same marker (`/NM`), which is how a
  * written ruler is recognized without guessing at its geometry.
  *
  * Redaction intents are **not** annotation writes: a redaction's effect is the content

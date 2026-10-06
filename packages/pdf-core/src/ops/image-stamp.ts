@@ -59,7 +59,7 @@ const STAMP_NAMES: Readonly<Record<ImageStampRole, string>> = {
 export const MIN_STAMP_SIDE = 4;
 
 export interface ImageStampRequest {
-  /** Session-unique id; it is the marker in `/Contents`, so the stamp can be found again. */
+  /** Session-unique id; it is the marker in `/NM`, so the stamp can be found again. */
   readonly id: string;
   readonly pageIndex: number;
   /** Centre of the stamp in app space: unrotated page points, origin top-left, y down. */
