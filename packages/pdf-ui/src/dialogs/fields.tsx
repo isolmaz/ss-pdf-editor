@@ -224,6 +224,65 @@ export function fieldErrors(
   return errors;
 }
 
+/**
+ * A number input that keeps what the reader is typing.
+ *
+ * A `type="number"` input reports `''` for every half-typed number (`0.`, `-`, `1e`), so a
+ * field controlled by the parsed value rewrote `0.` to the minimum and the next digit was
+ * appended to *that*: typing `0.5` into a 0.3–0.95 field produced 0.35. The text is kept
+ * here as a draft; only a finite parse reaches the dialog, and an empty or unparsable draft
+ * reports `NaN`, which `fieldErrors` refuses, so the run waits for a real number.
+ */
+function NumberField({
+  label,
+  hint,
+  error,
+  min,
+  max,
+  step,
+  value,
+  onValue,
+}: {
+  label: string;
+  hint: string | undefined;
+  error: string | undefined;
+  min: number;
+  max: number;
+  step: number | undefined;
+  value: FieldValue;
+  onValue: (next: number) => void;
+}) {
+  const external = typeof value === 'number' ? value : Number.NaN;
+  const [draft, setDraft] = useState(() => (Number.isFinite(external) ? String(external) : ''));
+  // A value set from outside (a preset, a reset) replaces the draft; the reader's own
+  // keystrokes arrive here as the same number and leave the draft alone.
+  useEffect(() => {
+    if (!Number.isFinite(external)) return;
+    setDraft((current) =>
+      Number(current) === external && current.trim() !== '' ? current : String(external),
+    );
+  }, [external]);
+  return (
+    <Input
+      type="number"
+      size="sm"
+      label={label}
+      description={hint}
+      error={error}
+      min={min}
+      max={max}
+      step={step}
+      value={draft}
+      onChange={(event) => {
+        const text = event.target.value;
+        setDraft(text);
+        const parsed = text.trim() === '' ? Number.NaN : Number(text);
+        onValue(Number.isFinite(parsed) ? parsed : Number.NaN);
+      }}
+    />
+  );
+}
+
 export function FieldList({
   t,
   fields,
@@ -404,23 +463,16 @@ export function FieldList({
 
       case 'number':
         return (
-          <Input
+          <NumberField
             key={field.id}
-            type="number"
-            size="sm"
             label={label}
-            description={hint}
+            hint={hint}
             error={error}
             min={field.min}
             max={field.max}
             step={field.step}
-            value={String(values[field.id] ?? field.defaultValue)}
-            onChange={(event) => {
-              // A cleared number field falls back to its minimum: `FieldValue`
-              // has no "unset" member, and `min` is the range's own answer.
-              const next = event.target.value === '' ? field.min : Number(event.target.value);
-              set(field.id, next);
-            }}
+            value={values[field.id] ?? field.defaultValue}
+            onValue={(next) => set(field.id, next)}
           />
         );
 
