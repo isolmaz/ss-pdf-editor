@@ -43,7 +43,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark |
 | 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
-| 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
+| 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification |
 | 🧰 **Tools** | OCR in 27 languages · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
@@ -170,6 +170,18 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   original glyphs and draws the new text in the same box.
   - Editability is measured per block first.
   - A block that cannot be reproduced faithfully is marked **not editable**.
+- **Find and replace.** **Edit → Find and replace** (`Ctrl+H`), or **Replace…** in the find
+  bar, replaces a text everywhere it occurs, with match case, whole words and a page range.
+  The old glyphs are really removed, and the result is checked with a second PDF engine.
+  - The new text is drawn where the old one was, at its size and in its colour. When it is
+    wider or narrower, the rest of the line moves along; text after a tab stop keeps its
+    place. A match across a line break, or one that does not fit its line, lays the
+    paragraph out again, and every other word keeps its own font, size and colour.
+  - It uses the document's own font whenever the page already draws every character the
+    new text needs with it. Otherwise it uses a close standard font (Helvetica, Times,
+    Courier) or Noto Sans, sized to match, and the report names the font.
+  - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
+    readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`.
 - **Export and import.** Export text as plain text or Markdown. Export pages as images, or
   build a PDF from images.
 - **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are
@@ -360,6 +372,17 @@ The limits are defined once, in
 - **Text editing.** Only horizontal text is editable. Vertical text, skewed baselines and
   Type3 text are not. Unknown fonts are re-rendered in a substitute font, and the UI says
   so.
+- **Find and replace.**
+  - Matches in scanned, rotated, skewed or Type3 text are left alone and counted in the
+    report; run OCR first to make a scan searchable.
+  - An embedded font holds only the glyphs its producer used, so a replacement that needs
+    a character the page never draws in that font uses a substitute font.
+  - A table cell is never laid out as a paragraph. A replacement too long for its cell is
+    drawn smaller, down to 60 %, or left unchanged and reported.
+  - A hyphen at a line end before a lower-case letter is read as hyphenation and dropped
+    when a paragraph is laid out again. A compound broken at its own hyphen loses that
+    hyphen too.
+  - A standard font is not embedded; the reader supplies it.
 - **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
   malformed journal makes the whole draft unreadable on purpose.
 - **Early engine spikes.** Some code comments mention a measurement from an *early engine

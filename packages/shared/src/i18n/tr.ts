@@ -19,6 +19,7 @@ import { docopsPart } from './parts/docops';
 import { enginesPart } from './parts/engines';
 import { errorsPart } from './parts/errors';
 import { filePart } from './parts/file';
+import { findReplacePart } from './parts/findreplace';
 import { formsPart } from './parts/forms';
 import { homePart } from './parts/home';
 import { imposePart } from './parts/impose';
@@ -72,6 +73,7 @@ export const tr = {
   ...signaturePart,
   ...convertPart,
   ...officePart,
+  ...findReplacePart,
   ...stampPart,
   ...verifyPart,
 

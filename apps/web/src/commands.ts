@@ -209,6 +209,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'tools.underline',
   'tools.strikeout',
   'tools.text-edit',
+  'edit.find-replace',
   'tools.note',
   'tools.shapes',
   'tools.ink',
@@ -432,6 +433,15 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabled: noDocument || host.activeTool !== 'select',
       keywords: ['select all', 'marks', 'tumunu sec', 'isaret'],
       run: host.selectAllMarks,
+    },
+    {
+      id: 'edit.find-replace',
+      labelKey: 'cmd.findReplace.label',
+      group: 'edit',
+      shortcut: shortcutHint('edit.find-replace'),
+      disabled: noEdit,
+      keywords: ['find', 'replace', 'search', 'bul', 'degistir', 'ara'],
+      run: dialog('find-replace'),
     },
     {
       id: 'edit.rename',

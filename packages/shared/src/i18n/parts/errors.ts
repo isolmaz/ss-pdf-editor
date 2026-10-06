@@ -17,6 +17,9 @@ export const errorsPart = {
   'error.selection-empty.hint': 'Sayfalar panelinden bir veya daha fazla sayfa seçin.',
   'error.no-text.message': 'Seçilen sayfalarda okunabilir metin yok.',
   'error.no-text.hint': 'Sayfalar taranmış görünüyor; önce OCR uygulayıp yeniden deneyin.',
+  'error.no-match.message': 'Aranan metin seçilen sayfalarda bulunamadı.',
+  'error.no-match.hint':
+    'Yazımı kontrol edin; büyük/küçük harf ve tam sözcük seçeneklerini kapatıp yeniden deneyin. Taranmış sayfalarda önce OCR gerekir.',
   'error.password-policy.message': 'Parola politikası gereği işlem durduruldu.',
   'error.password-policy.hint': 'Açma parolası olmadan şifreleme yapılamaz.',
 } as const;

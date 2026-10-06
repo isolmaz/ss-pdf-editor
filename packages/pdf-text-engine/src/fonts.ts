@@ -118,6 +118,9 @@ const SERIF_KEYWORDS = [
   'merriweather',
   'lora',
   'playfair',
+  // `NimbusRoman`, `LMRoman10`, `Times-Roman`: sans faces named "roman" are caught first.
+  'roman',
+  'charis',
 ];
 
 /** Weights ≥ 600 collapse to `bold` (the model is a boolean, `4e` needs a face

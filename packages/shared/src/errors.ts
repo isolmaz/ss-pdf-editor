@@ -23,6 +23,7 @@ export const TOOL_ERROR_CODES = [
   'value-out-of-range',
   'selection-empty',
   'no-text',
+  'no-match',
   'password-policy',
   'encrypted-unsupported',
   'corrupt-document',

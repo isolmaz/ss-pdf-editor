@@ -279,7 +279,7 @@ the same certificate twice is one entry.
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
 | `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
-| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
+| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 
@@ -419,7 +419,8 @@ had to stay green. The moves, and the defects they fixed on the way:
 - the text-edit insert half (`ops/text-edit.ts`), steps `load` / `text.font` / `text.draw` /
   `save` after MuPDF's erase: a file font or Noto is embedded whole (`embedFontFile`), a
   standard-14 face is drawn through WinAnsiEncoding (`standardFace`) only when WinAnsi can
-  spell the line; and the page geometry of the text source (`text-source.ts`);
+  spell the line, and a `doc:<name>` face is the page's own font (`engines/doc-fonts.ts`,
+  §5.8); and the page geometry of the text source (`text-source.ts`);
 - the batch runner's page count (`ops/batch.ts`), measured through `openForWrite`, so a
   password-locked item fails on its own with `encrypted-unsupported`;
 - signing and signature verification (`ops/sign.ts`, `ops/signature-status.ts`); the Node
@@ -741,6 +742,81 @@ touched page is still there under the same id, no page gained an annotation, and
 `verification-failed` and the caller keeps the original file. An empty request returns the
 input bytes untouched with a report, so "nothing selected" is not a rewrite.
 
+### 5.8 Find and replace
+
+`ops/find-replace.ts` replaces a text across the pages in scope. It reads every page once
+through the text model (`readDocumentText`, one MuPDF document for all pages, then
+`buildTextPage`), plans every match (`planFindReplace`, pure: every font question goes
+through a `FaceSource`), and hands one `TextEditRequest` to the text editor's writer
+(`applyTextEdit`), so the erase, the draw and the pdf.js verification are the text tool's
+own. Steps: `text.find` (declared read-only in `OPERATION_TABLE`) and the writer's.
+
+**Matching.** A block is a list of units — glyphs, word gaps and line breaks — and the search
+compares NFKC-normalised code points, so `ﬁ` matches `fi`; a match that would begin or end
+inside one glyph is skipped and counted. A line-end hyphen before a lower-case letter is read
+as hyphenation and joins the word. Without match case, `I` matches both `i` and `ı`, `İ`
+matches `i`, and `ı` matches only `ı` — folding `ı` to `i` would make Turkish `sık` and `sik`
+one word. Whole-word mode refuses a letter, digit or mark on either side.
+
+**Placement**, per line of matches:
+
+1. **Line** — a match that changes width with more text after it (within the column: a gap
+   wider than 1 em is a tab stop) erases from the match to the end of that stretch and draws
+   the replacement plus the rest again, moved by the difference, each run in the face that
+   draws it exactly (`sameFace`: the page's own font, or the standard face it already was).
+   Text after a tab stop stays while the moved text still ends a word gap before it. A
+   deletion takes the following word gap along.
+2. **In place** — the replacement at the first glyph's origin, size and colour, in the room
+   up to the next word, or at a line end up to the nearest thing to its right: another
+   block, or another line of the same block on the same band (MuPDF reports a table row as
+   one block whose cells are lines sharing a baseline). Up to 20 % smaller to fit. A whole
+   centred or right-aligned line stays centred or right-aligned.
+3. **Paragraph** — a match across lines, or a line that cannot take the change, lays the
+   block out again word by word (`placeParagraph`): every original run keeps its font, size
+   and colour, the alignment is read from the lines (justified when every line that does not
+   end a paragraph reaches the block's right edge), paragraphs and first-line indents are
+   kept, and the paragraph grows into the free space below it before it shrinks (down to
+   85 %). A block whose text cannot be drawn again run by run falls back to the text tool's
+   one-face reflow (`planTextEdit`). A table-like block is never re-laid: a match that fits
+   nowhere is drawn down to 60 % or left alone (`noRoom`).
+
+**Faces.** A replacement uses the page's own font when it has a code for every character
+**and** the document already draws each of them with that font — a subset holds only the
+glyphs its producer used, and a glyph on the page is proof the file has it. Otherwise Noto
+Sans when the old text was Noto Sans, a standard face of the same family, weight and slant
+when WinAnsi can spell it, and Noto Sans after that. A substitute is sized so that it would
+draw the old text as wide as the old font did, within ±15 %.
+
+**The document's own fonts** (`engines/doc-fonts.ts`). A font is usable when new codes can
+be found for it: a `/ToUnicode` CMap inverted (single-code-point entries), or a simple font's
+base encoding (`WinAnsiEncoding`, `MacRomanEncoding` through the platform's own decoder,
+`StandardEncoding`) with `/Differences` read for `uniXXXX`, single letters and the common
+glyph names. Composite fonts must use `Identity-H`; Type3 fonts are not used. Widths come
+from `/Widths` or `/W`/`/DW`, and a word gap the font has no space glyph for is drawn as a
+`TJ` adjustment. MuPDF reports a font under its own spelling (`NimbusSans-Bold` for
+`/BaseFont /Nimbus#20Sans#20Bold`), so names are compared without case, spaces or
+punctuation, and the subset tags must agree. The writer finds the font again by name in the
+page it draws on; the erase stage re-attaches a used font to the page's `/Resources` after
+the redaction (`TEKeep`), because the redaction drops resources nothing draws with any more
+and the compacting save would then drop the font itself.
+
+**A MuPDF hazard this works around.** Resolving an image XObject of a page and then applying
+redactions to that page made MuPDF 1.28.1 save the image as a dictionary without its stream:
+every later render logged `format error: object is not a stream` and the picture was gone.
+Reading the font dictionaries does not do this, so the erase stage reads page-level fonts
+only (`pageFonts(page, { forms: false })`).
+
+**Colours** come from the glyphs themselves: `readPageText` and `readDocumentText` take each
+character's fill colour from MuPDF's text walk, and a block's colour is the one most of its
+glyphs use. pdf.js's page-dominant colour is the fallback for a block MuPDF reported none
+for; reading that one colour for every block turned a red heading black when it was edited.
+
+**Verification.** The writer's checks apply, with two corrections this operation needed: a
+replacement that contains the old text (`2024` → `2024–2025`) is not "erased text still
+present" — the lines the operation drew are subtracted before the count — and text drawn word
+by word is recognised as the operation's own at each word's position, not only at the line's
+start.
+
 ---
 
 ## 6. `pdf-text-engine` — the text model
@@ -932,7 +1008,7 @@ and the panel used to do exactly that right after handing over its result, so ev
 applied from the panel was aborted before it reached the document
 (`e2e/editor-stability.spec.ts` fails with that call reinstated).
 
-`ops/index.ts` registers **31** dialog ids against lazy `import()` loaders, so a
+`ops/index.ts` registers **32** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
@@ -1402,6 +1478,9 @@ shows.
 - **The redaction audit** cannot see inside deflated or object streams and says so.
 - **Text editing** handles horizontal text in a shipped face only; everything else is
   marked not editable or substituted, in the UI, before the user types.
+- **Find and replace** skips matches in text that is not editable and table cells with no
+  room, and reports both. A paragraph laid out again has no hyphenation of its own, and a
+  line-end hyphen before a lower-case letter is always read as hyphenation.
 - **`adbe.pkcs7.sha1` and `ETSI.RFC3161`** signatures are reported `unchecked`, because
   their digest relation differs from the detached-CMS one this build verifies.
 
