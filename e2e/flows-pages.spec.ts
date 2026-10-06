@@ -126,6 +126,23 @@ test('extract: the selected page opens as its own document and the source keeps 
   expect(source.map((text) => text.trim())).toEqual(['Page 1', 'Page 2', 'Page 3']);
 });
 
+test('extract: a custom range typed key by key is the range extracted', async ({ page }) => {
+  await open(page, 'ranged.pdf', labelledPdf('Page', 4));
+  await thumbs(page).nth(1).click();
+  const form = await openForm(page, 'Extract Pages', 'Extract Pages');
+  await form.getByRole('radio', { name: 'Custom range' }).check();
+  const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
+  // Switching from the selection does not put the word "selection" in the box.
+  await expect(range).toHaveValue('');
+  await range.pressSequentially('2-3', { delay: 60 });
+  await expect(range).toHaveValue('2-3');
+  await previewForm(form, 'Open in new tab');
+  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await expect(thumbs(page)).toHaveCount(2, { timeout: 30_000 });
+  const extracted = await readProducedPageTexts(await exported(page, 'ranged-out.pdf'));
+  expect(extracted.map((text) => text.trim())).toEqual(['Page 2', 'Page 3']);
+});
+
 /** Collect every download the page starts, saved and read back, until `count` have arrived. */
 async function collectDownloads(
   page: Page,
