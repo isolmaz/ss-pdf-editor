@@ -219,6 +219,8 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'tools.link',
   'tools.numbering',
   'tools.watermark',
+  // PDF to Word and Excel is the conversion every reader advertises on its first screen.
+  'tools.export-office',
   // Help: the palette and the shortcut list are how the rest is discovered.
   'help.palette',
   'help.shortcuts',
@@ -697,6 +699,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       disabled: noEdit,
       run: dialog('export-text'),
+    },
+    {
+      id: 'tools.export-office',
+      labelKey: 'export.office.title',
+      group: 'tools',
+      disabled: noEdit,
+      keywords: ['word', 'excel', 'docx', 'xlsx', 'csv', 'office', 'tablo', 'table'],
+      run: dialog('export-office'),
     },
     {
       id: 'tools.outline-edit',

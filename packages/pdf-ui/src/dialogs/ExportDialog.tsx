@@ -5,9 +5,10 @@ import { useId, useState } from 'react';
 import { Button } from '../components/Button';
 
 export interface ExportOptions {
-  readonly kind: 'pdf' | 'compressed' | 'images' | 'text';
+  readonly kind: 'pdf' | 'compressed' | 'images' | 'text' | 'office';
   readonly compressionLevel?: 'high' | 'medium' | 'low';
   readonly imageFormat?: 'png' | 'jpg';
+  readonly officeFormat?: 'docx' | 'xlsx' | 'csv';
 }
 
 export interface ExportDialogProps {
@@ -27,9 +28,10 @@ export function ExportDialog({
   onClose,
   onExport,
 }: ExportDialogProps) {
-  const [selectedKind, setSelectedKind] = useState<'pdf' | 'compressed' | 'images' | 'text'>('pdf');
+  const [selectedKind, setSelectedKind] = useState<ExportOptions['kind']>('pdf');
   const [compressionLevel, setCompressionLevel] = useState<'high' | 'medium' | 'low'>('medium');
   const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png');
+  const [officeFormat, setOfficeFormat] = useState<'docx' | 'xlsx' | 'csv'>('docx');
   const formId = useId();
 
   const handleDownload = () => {
@@ -37,6 +39,7 @@ export function ExportDialog({
       kind: selectedKind,
       compressionLevel,
       imageFormat,
+      officeFormat,
     });
     onClose();
   };
@@ -189,6 +192,38 @@ export function ExportDialog({
               TXT
             </span>
           </label>
+
+          {/* Option 5: Word, Excel or CSV */}
+          <label
+            className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-all ${
+              selectedKind === 'office'
+                ? 'border-pdf-accent bg-pdf-accent/10 shadow-xs'
+                : 'border-kumo-line/80 bg-kumo-recessed/30 hover:bg-kumo-recessed/70'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type="radio"
+                name={`${formId}-export-kind`}
+                checked={selectedKind === 'office'}
+                onChange={() => setSelectedKind('office')}
+                className="size-4 text-pdf-accent accent-pdf-accent"
+              />
+              <span className="text-xs font-semibold text-kumo-strong">{text_('export.office.option')}</span>
+            </div>
+            <select
+              value={officeFormat}
+              disabled={selectedKind !== 'office'}
+              onChange={(e) => setOfficeFormat(e.target.value as 'docx' | 'xlsx' | 'csv')}
+              aria-label={text_('export.office.format')}
+              className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <option value="docx">DOCX</option>
+              <option value="xlsx">XLSX</option>
+              <option value="csv">CSV</option>
+            </select>
+          </label>
         </div>
 
         {/* Primary Download Button matching Image #3 */}
@@ -205,7 +240,9 @@ export function ExportDialog({
                 ? text_('export.downloadCompressed')
                 : selectedKind === 'images'
                   ? text_('export.downloadImages')
-                  : text_('export.downloadText')}
+                  : selectedKind === 'office'
+                    ? text_('export.office.download')
+                    : text_('export.downloadText')}
           </Button>
         </div>
       </Dialog>

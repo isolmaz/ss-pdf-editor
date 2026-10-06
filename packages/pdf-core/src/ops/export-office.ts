@@ -1,0 +1,1371 @@
+/**
+ * PDF → Word (DOCX), Excel (XLSX) and CSV.
+ *
+ * The ideas are pdf2docx's (MIT-licensed Python; nothing of its code is used): read the
+ * page as layout — text blocks with their fonts, pictures, ruling lines
+ * (`ops/page-layout.ts`) — and rebuild it in the target format's own flow model instead of
+ * pinning every line to a coordinate, so the result is editable text that reflows.
+ *
+ *  - **DOCX**: one section per page (its size, orientation and margins come from the page),
+ *    one paragraph per run of lines MuPDF grouped as a block, split where a line ends short
+ *    or a gap opens. Runs keep the font family, size, bold, italic and colour; a paragraph
+ *    whose type is clearly larger than the body text becomes a heading (`Heading1`–`3`, so
+ *    Word's navigation pane and table of contents see it). Alignment, indents, the gap
+ *    before a paragraph and the line pitch are measured from the page, in the paragraph's
+ *    own column on a two-column page. Ruled tables become Word tables with their merged
+ *    cells, tables read from the spacing of the text borderless ones; pictures are placed
+ *    inline at their size, and a vector drawing (a chart, a diagram) as one picture of its
+ *    region. The package is written by hand (WordprocessingML is plain XML in a ZIP) and
+ *    read back with mammoth, an independent reader, whose words have to match the words
+ *    written.
+ *  - **XLSX**: one sheet per table (ruled or read from spacing), with merged cells and
+ *    column widths. A page without any table becomes one sheet of its text rows, split at
+ *    wide gaps and aligned on shared column starts. A value becomes a number only when it
+ *    reads one way: `1.234,5` and `1,234.5` do, `1.234` (a thousand, or one point two three
+ *    four) stays text.
+ *  - **CSV**: the same tables as the spreadsheet, separated by an empty line, UTF-8 with a
+ *    BOM so Excel reads Turkish letters.
+ *
+ * What is not carried over is said in the report: exact positions, a paragraph's
+ * continuation in the next column, form fields, annotations; text on scanned pages (OCR
+ * first).
+ */
+
+import JSZip from 'jszip';
+import type { PDFDocument } from 'mupdf';
+import { ToolError } from 'pdf-shared';
+import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
+import { readText } from '../engines/mupdf-write';
+import { parseCsv } from './convert-text';
+import {
+  type Box,
+  findFigures,
+  findTables,
+  findTextTables,
+  inside,
+  type LayoutChar,
+  type LayoutLine,
+  type LayoutTable,
+  type PageLayout,
+  readPageLayout,
+  renderRegion,
+  textRows,
+} from './page-layout';
+import { note, type OperationContext, type OperationNote, type OutputFile, throwIfAborted } from './types';
+
+export type OfficeFormat = 'docx' | 'xlsx' | 'csv';
+export type CsvDelimiter = ',' | ';';
+
+export interface OfficeExportOptions {
+  /** 0-based page indices, ascending. */
+  readonly pages: readonly number[];
+  readonly format: OfficeFormat;
+  readonly baseName: string;
+  readonly csvDelimiter?: CsvDelimiter;
+  /** Sheet names in the reader's language: `table(1)` → `Table 1`, `page(3)` → `Page 3`. */
+  readonly sheetName?: { readonly table: (n: number) => string; readonly page: (n: number) => string };
+}
+
+export interface OfficeExportResult {
+  readonly file: OutputFile;
+  readonly steps: readonly string[];
+  readonly notes: readonly OperationNote[];
+}
+
+const MIME: Readonly<Record<OfficeFormat, string>> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  csv: 'text/csv;charset=utf-8',
+};
+
+/** A gap larger than this before a paragraph is drawn as this (points); see `docxPage`. */
+const MAX_GAP = 48;
+/** Twentieths of a point (twips) and English Metric Units per point. */
+const TWIPS = 20;
+const EMU = 12700;
+
+/* ------------------------------------------------------------------ *
+ * shared
+ * ------------------------------------------------------------------ */
+
+/** XML text: the five entities, and the control characters XML 1.0 cannot carry dropped. */
+function xml(value: string): string {
+  return (
+    value
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the characters being removed
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  );
+}
+
+const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+
+function words(text: string): number {
+  const trimmed = text.trim();
+  return trimmed === '' ? 0 : trimmed.split(/\s+/).length;
+}
+
+/** Families MuPDF substitutes or PDFs name in their PostScript form, as Word knows them. */
+const FAMILY_NAMES: Readonly<Record<string, string>> = {
+  NimbusSans: 'Arial',
+  NimbusSanL: 'Arial',
+  Helvetica: 'Arial',
+  ArialMT: 'Arial',
+  NimbusRoman: 'Times New Roman',
+  NimbusRomNo9L: 'Times New Roman',
+  Times: 'Times New Roman',
+  TimesNewRoman: 'Times New Roman',
+  TimesNewRomanPS: 'Times New Roman',
+  NimbusMono: 'Courier New',
+  NimbusMonoPS: 'Courier New',
+  Courier: 'Courier New',
+  CourierNew: 'Courier New',
+  CourierNewPS: 'Courier New',
+  // MuPDF hands these glyphs over as Unicode (Greek letters, ✓, ➔); Word's own Symbol and
+  // Wingdings fonts are symbol-encoded and would show other glyphs for the same text.
+  Symbol: 'Segoe UI Symbol',
+  Dingbats: 'Segoe UI Symbol',
+  ZapfDingbats: 'Segoe UI Symbol',
+  DejaVuSans: 'DejaVu Sans',
+  DejaVuSerif: 'DejaVu Serif',
+  DejaVuSansMono: 'DejaVu Sans Mono',
+};
+
+/** `TimesNewRomanPS` → `Times New Roman`; `SegoeUI` → `Segoe UI`; `Calibri` stays. */
+export function wordFontName(family: string): string {
+  const known = FAMILY_NAMES[family];
+  if (known !== undefined) return known;
+  return family
+    .replace(/PS$/, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .trim();
+}
+
+/* ------------------------------------------------------------------ *
+ * reading
+ * ------------------------------------------------------------------ */
+
+interface ReadPage {
+  readonly index: number;
+  readonly layout: PageLayout;
+  /** Ruled tables. */
+  readonly tables: readonly LayoutTable[];
+  /** Tables read from the spacing of the text, outside the ruled ones and the drawings. */
+  readonly streams: readonly LayoutTable[];
+  /** Vector drawings, rendered as pictures (Word only). */
+  readonly figures: readonly { readonly box: Box; readonly png: Uint8Array }[];
+}
+
+async function readPages(
+  doc: PDFDocument,
+  pages: readonly number[],
+  images: boolean,
+  context: OperationContext,
+): Promise<ReadPage[]> {
+  const mupdf = await loadMupdf();
+  const out: ReadPage[] = [];
+  for (const [done, index] of pages.entries()) {
+    throwIfAborted(context.signal);
+    context.onProgress?.({
+      phase: 'read',
+      labelKey: 'op.progress.exportOffice.read',
+      done,
+      total: pages.length,
+    });
+    const page = doc.loadPage(index);
+    try {
+      const layout = readPageLayout(mupdf, page, { images });
+      const tables = findTables(layout);
+      const ruled = tables.map((table) => table.box);
+      // A chart's labels line up like a table's cells, so drawings are found first.
+      const drawn = findFigures(layout, ruled);
+      // Only a Word document carries the drawings, as pictures.
+      const figures = images ? drawn.map((box) => ({ box, png: renderRegion(mupdf, page, box) })) : [];
+      const streams = findTextTables(layout, [...ruled, ...drawn]);
+      out.push({ index, layout, tables, streams, figures });
+    } finally {
+      page.destroy();
+    }
+    // Give the event loop a turn so the progress bar and Cancel stay live.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return out;
+}
+
+/** The characters of a line that lie outside every box (tables, figures) on the page. */
+function outside(line: LayoutLine, boxes: readonly Box[]): LayoutChar[] {
+  if (boxes.length === 0) return [...line.chars];
+  return line.chars.filter((char) => !boxes.some((box) => inside(char, box)));
+}
+
+/* ------------------------------------------------------------------ *
+ * DOCX
+ * ------------------------------------------------------------------ */
+
+interface Run {
+  readonly text: string;
+  readonly font: string;
+  /** Half-points, as `w:sz` wants them. */
+  readonly half: number;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly color: number;
+}
+
+interface Paragraph {
+  readonly kind: 'paragraph';
+  readonly runs: readonly Run[];
+  readonly box: Box;
+  readonly lines: readonly Box[];
+  /** Points; `0` for one line. */
+  readonly pitch: number;
+  /** The size most of the paragraph's characters have. */
+  readonly size: number;
+  readonly bold: boolean;
+}
+
+interface Picture {
+  readonly kind: 'picture';
+  readonly box: Box;
+  readonly png: Uint8Array;
+}
+
+interface Grid {
+  readonly kind: 'table';
+  readonly box: Box;
+  readonly table: LayoutTable;
+  /** Each cell's paragraphs, by `row:column`. */
+  readonly cells: ReadonlyMap<string, readonly Paragraph[]>;
+}
+
+type Item = Paragraph | Picture | Grid;
+
+function textOf(paragraph: Paragraph): string {
+  return paragraph.runs.map((run) => run.text).join('');
+}
+
+/** The size, rounded to a half point, that most characters in a list have. */
+function commonSize(chars: readonly LayoutChar[]): number {
+  const counts = new Map<number, number>();
+  for (const char of chars) {
+    if (char.c.trim() === '') continue;
+    const half = Math.round(char.size * 2);
+    counts.set(half, (counts.get(half) ?? 0) + 1);
+  }
+  let best = 0;
+  let bestCount = -1;
+  for (const [half, count] of counts) {
+    if (count > bestCount) {
+      best = half;
+      bestCount = count;
+    }
+  }
+  return best / 2;
+}
+
+function lineBox(chars: readonly LayoutChar[]): Box {
+  let x0 = Number.POSITIVE_INFINITY;
+  let y0 = Number.POSITIVE_INFINITY;
+  let x1 = Number.NEGATIVE_INFINITY;
+  let y1 = Number.NEGATIVE_INFINITY;
+  for (const char of chars) {
+    x0 = Math.min(x0, char.box[0]);
+    y0 = Math.min(y0, char.box[1]);
+    x1 = Math.max(x1, char.box[2]);
+    y1 = Math.max(y1, char.box[3]);
+  }
+  return [x0, y0, x1, y1];
+}
+
+const HYPHENS = new Set(['-', '\u00AD', '\u2010']);
+
+/**
+ * Lines of one block, cut into paragraphs. A new paragraph starts after a line that ends
+ * well short of the block's right edge (the last line of a paragraph), where the gap to the
+ * next line is wider than the line pitch so far, or at a bullet.
+ */
+function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
+  const kept = lines.filter((chars) => chars.some((char) => char.c.trim() !== ''));
+  if (kept.length === 0) return [];
+  const boxes = kept.map(lineBox);
+  const right = Math.max(...boxes.map((box) => box[2]));
+  const groups: number[][] = [];
+  for (let index = 0; index < kept.length; index += 1) {
+    const box = boxes[index] as Box;
+    const group = groups[groups.length - 1];
+    if (group === undefined) {
+      groups.push([index]);
+      continue;
+    }
+    const previousIndex = group[group.length - 1] as number;
+    const previous = boxes[previousIndex] as Box;
+    const previousChars = kept[previousIndex] as LayoutChar[];
+    const size = commonSize(previousChars) || 10;
+    const height = previous[3] - previous[1];
+    const gap = box[1] - previous[3];
+    const pitch =
+      group.length > 1
+        ? (previous[1] - (boxes[group[0] as number] as Box)[1]) / (group.length - 1)
+        : height * 1.25;
+    const firstChar = (kept[index] as LayoutChar[]).find((char) => char.c.trim() !== '')?.c ?? '';
+    const shortLine = previous[2] < right - Math.max(size * 3, (right - previous[0]) * 0.12);
+    const wideGap = gap > Math.max(height * 0.6, pitch - height + size * 0.5);
+    const bullet = /^[•▪◦‣●○■□–—*·]$/.test(firstChar) || /^\d{1,2}[.)]$/.test(firstChar);
+    // A different size starts a new paragraph too: a heading run into its body text.
+    const resized = Math.abs(commonSize(kept[index] as LayoutChar[]) - size) >= 1;
+    if (shortLine || wideGap || bullet || resized) groups.push([index]);
+    else group.push(index);
+  }
+
+  return groups.map((group) => {
+    const chars: LayoutChar[] = [];
+    const runs: Run[] = [];
+    let text = '';
+    let style: Omit<Run, 'text'> | null = null;
+    const flush = () => {
+      if (style !== null && text !== '') runs.push({ ...style, text });
+      text = '';
+    };
+    const push = (char: LayoutChar, c: string) => {
+      const next = {
+        font: wordFontName(char.font),
+        half: Math.max(2, Math.round(char.size * 2)),
+        bold: char.bold,
+        italic: char.italic,
+        color: char.color,
+      };
+      // A space takes the style of the run it sits in, so runs are not split around it.
+      const same =
+        style !== null &&
+        (c === ' ' ||
+          (style.font === next.font &&
+            style.half === next.half &&
+            style.bold === next.bold &&
+            style.italic === next.italic &&
+            style.color === next.color));
+      if (!same) {
+        flush();
+        style = next;
+      }
+      text += c;
+    };
+    for (const [position, lineIndex] of group.entries()) {
+      const line = kept[lineIndex] as LayoutChar[];
+      chars.push(...line);
+      if (position > 0) {
+        // Join the line to the previous one: drop a hyphen that breaks a word, else a space.
+        const nextChar = line.find((char) => char.c.trim() !== '');
+        const last = text.at(-1) ?? '';
+        const beforeLast = text.at(-2) ?? '';
+        if (
+          HYPHENS.has(last) &&
+          /\p{L}/u.test(beforeLast) &&
+          nextChar !== undefined &&
+          /\p{Ll}/u.test(nextChar.c)
+        ) {
+          text = text.slice(0, -1);
+          if (text === '' && runs.length > 0) {
+            // The hyphen began a run of its own; take it off the previous one instead.
+            const previous = runs[runs.length - 1] as Run;
+            runs[runs.length - 1] = { ...previous, text: previous.text.slice(0, -1) };
+          }
+        } else if (last !== ' ' && line[0]?.c !== ' ') {
+          push(line[0] as LayoutChar, ' ');
+        }
+      }
+      for (const char of line) push(char, char.c === '\t' ? '\t' : char.c);
+    }
+    flush();
+    // Leading and trailing spaces are layout, not content.
+    const firstRun = runs[0];
+    if (firstRun !== undefined) runs[0] = { ...firstRun, text: firstRun.text.replace(/^\s+/, '') };
+    const lastRun = runs[runs.length - 1];
+    if (lastRun !== undefined) runs[runs.length - 1] = { ...lastRun, text: lastRun.text.replace(/\s+$/, '') };
+    const lineBoxes = group.map((index) => boxes[index] as Box);
+    const first = lineBoxes[0] as Box;
+    const last = lineBoxes[lineBoxes.length - 1] as Box;
+    const visible = chars.filter((char) => char.c.trim() !== '');
+    return {
+      kind: 'paragraph',
+      runs: runs.filter((run) => run.text !== ''),
+      box: [
+        Math.min(...lineBoxes.map((box) => box[0])),
+        first[1],
+        Math.max(...lineBoxes.map((box) => box[2])),
+        last[3],
+      ],
+      lines: lineBoxes,
+      pitch: lineBoxes.length > 1 ? (last[1] - first[1]) / (lineBoxes.length - 1) : 0,
+      size: commonSize(chars),
+      bold: visible.length > 0 && visible.every((char) => char.bold),
+    } satisfies Paragraph;
+  });
+}
+
+/** One page as items in reading order: MuPDF's block order, each table where it starts. */
+function pageItems(page: ReadPage): Item[] {
+  const items: Item[] = [];
+  const tables = [...page.tables, ...page.streams];
+  const taken = [...tables.map((table) => table.box), ...page.figures.map((figure) => figure.box)];
+  const placed = new Set<number>();
+  for (const block of page.layout.blocks) {
+    if (block.kind === 'image') {
+      // A picture inside a drawing is part of the drawing's picture, which takes the place
+      // of the first picture it holds — the reading position MuPDF gave it.
+      const figure = page.figures.findIndex((candidate) => contains(candidate.box, block.box));
+      if (figure !== -1) {
+        if (!placed.has(figure)) {
+          placed.add(figure);
+          const { box, png } = page.figures[figure] as { box: Box; png: Uint8Array };
+          items.push({ kind: 'picture', box, png });
+        }
+        continue;
+      }
+      if (block.png !== null && !tables.some((table) => contains(table.box, block.box))) {
+        items.push({ kind: 'picture', box: block.box, png: block.png });
+      }
+      continue;
+    }
+    const lines = block.lines.map((line) => outside(line, taken)).filter((chars) => chars.length > 0);
+    items.push(...blockParagraphs(lines));
+  }
+  page.figures.forEach((figure, index) => {
+    if (placed.has(index)) return;
+    const picture: Picture = { kind: 'picture', box: figure.box, png: figure.png };
+    const at = items.findIndex((item) => item.box[1] >= figure.box[1] - 1);
+    if (at === -1) items.push(picture);
+    else items.splice(at, 0, picture);
+  });
+  for (const table of tables) {
+    const cells = new Map<string, readonly Paragraph[]>();
+    for (const cell of table.cells) {
+      const lines: LayoutChar[][] = [];
+      for (const block of page.layout.blocks) {
+        if (block.kind !== 'text') continue;
+        for (const line of block.lines) {
+          const chars = line.chars.filter((char) => inside(char, cell.box, 0.5));
+          if (chars.length > 0) lines.push(chars);
+        }
+      }
+      lines.sort((a, b) => lineBox(a)[1] - lineBox(b)[1]);
+      cells.set(`${cell.row}:${cell.column}`, blockParagraphs(lines));
+    }
+    const grid: Grid = { kind: 'table', box: table.box, table, cells };
+    const at = items.findIndex((item) => item.box[1] >= table.box[1] - 1);
+    if (at === -1) items.push(grid);
+    else items.splice(at, 0, grid);
+  }
+  return items;
+}
+
+function contains(outer: Box, inner: Box): boolean {
+  const cx = (inner[0] + inner[2]) / 2;
+  const cy = (inner[1] + inner[3]) / 2;
+  return cx >= outer[0] && cx <= outer[2] && cy >= outer[1] && cy <= outer[3];
+}
+
+interface DocxContext {
+  readonly bodySize: number;
+  /** Heading sizes (half-points) to their level, largest first. */
+  readonly headings: ReadonlyMap<number, number>;
+  readonly media: { name: string; png: Uint8Array }[];
+  pictureId: number;
+  /** Every word written, for the read-back check. */
+  writtenWords: number;
+}
+
+function headingLevel(paragraph: Paragraph, context: DocxContext): number | null {
+  const text = textOf(paragraph);
+  if (text.length === 0 || text.length > 200 || paragraph.lines.length > 3) return null;
+  return context.headings.get(Math.round(paragraph.size * 2)) ?? null;
+}
+
+function runXml(run: Run): string {
+  const props: string[] = [];
+  props.push(`<w:rFonts w:ascii="${xml(run.font)}" w:hAnsi="${xml(run.font)}" w:cs="${xml(run.font)}"/>`);
+  if (run.bold) props.push('<w:b/><w:bCs/>');
+  if (run.italic) props.push('<w:i/><w:iCs/>');
+  if (run.color !== 0)
+    props.push(`<w:color w:val="${run.color.toString(16).padStart(6, '0').toUpperCase()}"/>`);
+  props.push(`<w:sz w:val="${run.half}"/><w:szCs w:val="${run.half}"/>`);
+  const parts = run.text.split('\t').map((piece) => `<w:t xml:space="preserve">${xml(piece)}</w:t>`);
+  return `<w:r><w:rPr>${props.join('')}</w:rPr>${parts.join('<w:tab/>')}</w:r>`;
+}
+
+interface Column {
+  readonly left: number;
+  readonly right: number;
+}
+
+function paragraphXml(
+  paragraph: Paragraph,
+  column: Column,
+  before: number,
+  extra: string,
+  context: DocxContext,
+): string {
+  const props: string[] = [];
+  const level = headingLevel(paragraph, context);
+  if (level !== null) props.push(`<w:pStyle w:val="Heading${level}"/>`);
+  if (extra.includes('pageBreakBefore')) props.push('<w:pageBreakBefore/>');
+  const pitch =
+    paragraph.pitch > 0 ? `w:line="${Math.round(paragraph.pitch * TWIPS)}" w:lineRule="atLeast"` : '';
+  props.push(`<w:spacing w:before="${Math.round(before * TWIPS)}" w:after="0" ${pitch}/>`.replace(' /', '/'));
+
+  const width = column.right - column.left;
+  const centre = (column.left + column.right) / 2;
+  const [x0, , x1] = paragraph.box;
+  const lines = paragraph.lines;
+  const centred = lines.every(
+    (line) => Math.abs((line[0] + line[2]) / 2 - centre) <= Math.max(4, width * 0.03),
+  );
+  const ragged = lines.some((line) => Math.abs(line[0] - x0) > 3);
+  let align: 'left' | 'center' | 'right' | 'both' = 'left';
+  if (centred && (lines.length > 1 ? ragged : x0 - column.left > width * 0.08)) align = 'center';
+  else if (Math.abs(x1 - column.right) <= 3 && x0 - column.left > width * 0.3 && lines.length <= 2)
+    align = 'right';
+  else if (lines.length >= 3 && lines.slice(0, -1).every((line) => Math.abs(line[2] - x1) <= 1.5)) {
+    // Every line but the last ends at one edge: justified, in whichever column it stands.
+    align = 'both';
+  }
+  if (align !== 'left') props.push(`<w:jc w:val="${align}"/>`);
+  if (align === 'left' || align === 'both') {
+    const first = lines[0] as Box;
+    const rest = lines.length > 1 ? Math.min(...lines.slice(1).map((line) => line[0])) : first[0];
+    // Several lines that start a third of the way across are a second column of text,
+    // not an indent; Word gets them as the flowing text they are.
+    const columnText = lines.length > 1 && rest - column.left > width * 0.3;
+    const left = columnText ? 0 : Math.max(0, rest - column.left);
+    const firstLine = first[0] - rest;
+    const indent: string[] = [];
+    if (left >= 4) indent.push(`w:left="${Math.round(left * TWIPS)}"`);
+    if (firstLine >= 2) indent.push(`w:firstLine="${Math.round(firstLine * TWIPS)}"`);
+    else if (firstLine <= -2) indent.push(`w:hanging="${Math.round(-firstLine * TWIPS)}"`);
+    if (indent.length > 0) props.push(`<w:ind ${indent.join(' ')}/>`);
+  }
+  if (extra.includes('<w:sectPr')) props.push(extra.slice(extra.indexOf('<w:sectPr')));
+  // Counted per paragraph: a style change inside a word splits runs, not words.
+  context.writtenWords += words(textOf(paragraph));
+  return `<w:p><w:pPr>${props.join('')}</w:pPr>${paragraph.runs.map(runXml).join('')}</w:p>`;
+}
+
+function pictureXml(
+  picture: Picture,
+  column: Column,
+  before: number,
+  extra: string,
+  context: DocxContext,
+): string {
+  context.pictureId += 1;
+  const id = context.pictureId;
+  const name = `image${id}.png`;
+  context.media.push({ name, png: picture.png });
+  let width = picture.box[2] - picture.box[0];
+  let height = picture.box[3] - picture.box[1];
+  const room = column.right - column.left;
+  if (width > room) {
+    height *= room / width;
+    width = room;
+  }
+  const cx = Math.max(1, Math.round(width * EMU));
+  const cy = Math.max(1, Math.round(height * EMU));
+  const left = Math.max(0, picture.box[0] - column.left);
+  const props = [
+    extra.includes('pageBreakBefore') ? '<w:pageBreakBefore/>' : '',
+    `<w:spacing w:before="${Math.round(before * TWIPS)}" w:after="0"/>`,
+    left >= 2 ? `<w:ind w:left="${Math.round(left * TWIPS)}"/>` : '',
+    extra.includes('<w:sectPr') ? extra.slice(extra.indexOf('<w:sectPr')) : '',
+  ].join('');
+  return (
+    `<w:p><w:pPr>${props}</w:pPr><w:r><w:drawing>` +
+    `<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/>` +
+    `<wp:docPr id="${id}" name="Picture ${id}"/>` +
+    '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="rIdImage${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+  );
+}
+
+function tableXml(grid: Grid, column: Column, context: DocxContext): string {
+  const { table } = grid;
+  const room = column.right - column.left;
+  const total = (table.xs[table.xs.length - 1] as number) - (table.xs[0] as number);
+  const scale = total > room ? room / total : 1;
+  const widths = table.xs.slice(1).map((x, index) => (x - (table.xs[index] as number)) * scale);
+  const rows = table.ys.length - 1;
+  const columns = widths.length;
+  const byStart = new Map(table.cells.map((cell) => [`${cell.row}:${cell.column}`, cell]));
+  const span = (from: number, count: number) =>
+    Math.round(widths.slice(from, from + count).reduce((sum, width) => sum + width, 0) * TWIPS);
+  const indent = Math.max(0, (table.xs[0] as number) - column.left);
+  // A table read from the spacing of the text had no rules, and gets none.
+  const border = table.ruled
+    ? '<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+    : '<w:{side} w:val="nil"/>';
+  const borders = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
+    .map((side) => border.replace('{side}', side))
+    .join('');
+  const out: string[] = [
+    '<w:tbl><w:tblPr>',
+    `<w:tblW w:w="${span(0, columns)}" w:type="dxa"/>`,
+    indent >= 2 ? `<w:tblInd w:w="${Math.round(indent * TWIPS)}" w:type="dxa"/>` : '',
+    // A ruled table keeps its rules' widths; one read from spacing has only estimated
+    // columns, and Word sizes them to their text instead.
+    `<w:tblBorders>${borders}</w:tblBorders><w:tblLayout w:type="${table.ruled ? 'fixed' : 'autofit'}"/>`,
+    '<w:tblCellMar><w:left w:w="57" w:type="dxa"/><w:right w:w="57" w:type="dxa"/></w:tblCellMar>',
+    '</w:tblPr><w:tblGrid>',
+    ...widths.map((width) => `<w:gridCol w:w="${Math.round(width * TWIPS)}"/>`),
+    '</w:tblGrid>',
+  ];
+  for (let row = 0; row < rows; row += 1) {
+    const height = ((table.ys[row + 1] as number) - (table.ys[row] as number)) * TWIPS;
+    out.push(`<w:tr><w:trPr><w:trHeight w:val="${Math.round(height)}" w:hRule="atLeast"/></w:trPr>`);
+    let col = 0;
+    while (col < columns) {
+      const start = byStart.get(`${row}:${col}`);
+      // A cell that started in a row above and spans into this one continues its merge.
+      const above =
+        start === undefined
+          ? table.cells.find((cell) => cell.column === col && cell.row < row && cell.row + cell.rowSpan > row)
+          : undefined;
+      const cell = start ?? above;
+      const columnSpan = cell?.columnSpan ?? 1;
+      const props = [
+        `<w:tcW w:w="${span(col, columnSpan)}" w:type="dxa"/>`,
+        columnSpan > 1 ? `<w:gridSpan w:val="${columnSpan}"/>` : '',
+        start !== undefined && start.rowSpan > 1 ? '<w:vMerge w:val="restart"/>' : '',
+        above !== undefined ? '<w:vMerge/>' : '',
+      ].join('');
+      let body = '<w:p/>';
+      if (start !== undefined) {
+        const paragraphs = grid.cells.get(`${row}:${col}`) ?? [];
+        const cellColumn = { left: start.box[0] + 2.85, right: start.box[2] - 2.85 };
+        const written = paragraphs
+          .map((paragraph) => {
+            // Inside a cell only alignment and the runs matter; the cell gives the indent.
+            // A cell of a table without rules has estimated edges, so no alignment either.
+            const written = paragraphXml(paragraph, cellColumn, 0, '', context).replace(
+              /<w:ind [^>]*\/>/,
+              '',
+            );
+            return table.ruled ? written : written.replace(/<w:jc [^>]*\/>/, '');
+          })
+          .join('');
+        if (written !== '') body = written;
+      }
+      out.push(`<w:tc><w:tcPr>${props}</w:tcPr>${body}</w:tc>`);
+      col += columnSpan;
+    }
+    out.push('</w:tr>');
+  }
+  out.push('</w:tbl>');
+  return out.join('');
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * The text column a box stands in. A page set in two columns has paragraphs of several
+ * lines that all start a third of the way across or more; the leftmost such start is the
+ * second column, and the first column ends at the widest text left of it. Alignment and
+ * indents are then measured in the paragraph's own column — a heading centred over the
+ * first column is centred, not indented by half a page.
+ */
+function textColumns(items: readonly Item[], page: Column): (box: Box) => Column {
+  const width = page.right - page.left;
+  const starts = items
+    .filter((item): item is Paragraph => item.kind === 'paragraph' && item.lines.length > 1)
+    .map((paragraph) => Math.min(...paragraph.lines.slice(1).map((line) => line[0])))
+    .filter((start) => start - page.left > width * 0.3);
+  if (starts.length === 0) return () => page;
+  const second = Math.min(...starts);
+  const leftEdges = items.map((item) => item.box).filter((box) => box[2] < second);
+  const firstRight = leftEdges.length > 0 ? Math.max(...leftEdges.map((box) => box[2])) : second - 12;
+  const first: Column = { left: page.left, right: firstRight };
+  const other: Column = { left: second, right: page.right };
+  return (box) => {
+    if (box[0] >= second - 3) return other;
+    return box[2] <= firstRight + 1 ? first : page;
+  };
+}
+
+/** One page's body XML, its last paragraph carrying the page's section properties. */
+function docxPage(
+  page: ReadPage,
+  items: readonly Item[],
+  first: boolean,
+  last: boolean,
+  context: DocxContext,
+): string {
+  const { width, height } = page.layout;
+  const boxes = items.map((item) => item.box);
+  const left = boxes.length > 0 ? Math.min(...boxes.map((box) => box[0])) : 72;
+  const right = boxes.length > 0 ? Math.max(...boxes.map((box) => box[2])) : width - 72;
+  const top = boxes.length > 0 ? Math.min(...boxes.map((box) => box[1])) : 72;
+  const bottom = boxes.length > 0 ? Math.max(...boxes.map((box) => box[3])) : height - 72;
+  const margins = {
+    left: clamp(left, 18, width / 3),
+    right: clamp(width - right, 18, width / 3),
+    top: clamp(top, 18, 144),
+    // Word's fonts are seldom the PDF's own; a little room at the foot keeps a page's
+    // content from spilling onto a page of its own.
+    bottom: clamp(height - bottom, 18, 36),
+  };
+  const column: Column = { left: margins.left, right: width - margins.right };
+  const columnOf = textColumns(items, column);
+  const twips = (value: number) => Math.round(value * TWIPS);
+  const sectPr =
+    `<w:sectPr><w:pgSz w:w="${twips(width)}" w:h="${twips(height)}"${width > height ? ' w:orient="landscape"' : ''}/>` +
+    `<w:pgMar w:top="${twips(margins.top)}" w:right="${twips(margins.right)}" w:bottom="${twips(margins.bottom)}" ` +
+    `w:left="${twips(margins.left)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
+  const out: string[] = [];
+  let previousBottom = margins.top;
+  items.forEach((item, index) => {
+    const breakBefore = index === 0 && !first ? 'pageBreakBefore' : '';
+    const section = index === items.length - 1 && !last ? sectPr : '';
+    const before = clamp(item.box[1] - previousBottom, 0, MAX_GAP);
+    previousBottom = Math.max(previousBottom, item.box[3]);
+    if (item.kind === 'paragraph') {
+      out.push(paragraphXml(item, columnOf(item.box), before, breakBefore + section, context));
+    } else if (item.kind === 'picture') {
+      out.push(pictureXml(item, columnOf(item.box), before, breakBefore + section, context));
+    } else {
+      // A table cannot carry a page break or a section; a hairline paragraph does.
+      if (breakBefore !== '')
+        out.push(
+          '<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr></w:p>',
+        );
+      else if (before >= 2)
+        out.push(
+          `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="${twips(before)}" w:lineRule="exact"/></w:pPr></w:p>`,
+        );
+      out.push(tableXml(item, column, context));
+      if (section !== '') {
+        out.push(
+          `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>${section}</w:pPr></w:p>`,
+        );
+      }
+    }
+  });
+  if (items.length === 0) {
+    // A blank page stays a page.
+    const props = `${first ? '' : '<w:pageBreakBefore/>'}${last ? '' : sectPr}`;
+    out.push(`<w:p><w:pPr>${props}</w:pPr></w:p>`);
+  }
+  // The last page's section is the body's own `w:sectPr`.
+  if (last) out.push(sectPr);
+  return out.join('');
+}
+
+function stylesXml(bodySize: number, bodyFont: string, language: string): string {
+  const half = Math.round(bodySize * 2);
+  const heading = (level: number) =>
+    `<w:style w:type="paragraph" w:styleId="Heading${level}"><w:name w:val="heading ${level}"/>` +
+    '<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>' +
+    `<w:pPr><w:keepNext/><w:outlineLvl w:val="${level - 1}"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>`;
+  return (
+    `${XML_HEAD}<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${xml(bodyFont)}" w:hAnsi="${xml(bodyFont)}" w:cs="${xml(bodyFont)}"/>` +
+    `<w:sz w:val="${half}"/><w:szCs w:val="${half}"/>${language === '' ? '' : `<w:lang w:val="${xml(language)}"/>`}</w:rPr></w:rPrDefault>` +
+    '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>' +
+    heading(1) +
+    heading(2) +
+    heading(3) +
+    '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/>' +
+    '<w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/>' +
+    '<w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>' +
+    '</w:tblCellMar></w:tblPr></w:style></w:styles>'
+  );
+}
+
+function corePropertiesXml(title: string): string {
+  return (
+    `${XML_HEAD}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ` +
+    'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
+    'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+    `<dc:title>${xml(title)}</dc:title></cp:coreProperties>`
+  );
+}
+
+const PACKAGE_RELS = (officeDocument: string) =>
+  `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="${officeDocument}"/>` +
+  '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+  '</Relationships>';
+
+async function zipped(files: Readonly<Record<string, string | Uint8Array>>): Promise<Uint8Array> {
+  const zip = new JSZip();
+  // `[Content_Types].xml` first: some readers look for it at the start of the archive.
+  for (const [name, data] of Object.entries(files)) zip.file(name, data);
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+}
+
+/** The heading sizes of the whole document (half-points → level), largest first. */
+function headingSizes(paragraphs: readonly Paragraph[], bodySize: number): Map<number, number> {
+  const sizes = new Set<number>();
+  for (const paragraph of paragraphs) {
+    const text = textOf(paragraph);
+    if (text.length === 0 || text.length > 200 || paragraph.lines.length > 3) continue;
+    if (paragraph.size >= bodySize * 1.3 || (paragraph.bold && paragraph.size >= bodySize * 1.15)) {
+      sizes.add(Math.round(paragraph.size * 2));
+    }
+  }
+  const levels = new Map<number, number>();
+  [...sizes]
+    .sort((a, b) => b - a)
+    .forEach((half, index) => {
+      levels.set(half, Math.min(3, index + 1));
+    });
+  return levels;
+}
+
+async function writeDocx(
+  pages: readonly ReadPage[],
+  title: string,
+  language: string,
+  context: OperationContext,
+): Promise<{ bytes: Uint8Array; tables: number; streams: number; pictures: number; written: number }> {
+  const items = pages.map(pageItems);
+  const paragraphs = items.flat().flatMap((item) => (item.kind === 'paragraph' ? [item] : []));
+  const allChars = pages.flatMap((page) =>
+    page.layout.blocks.flatMap((block) =>
+      block.kind === 'text' ? block.lines.flatMap((line) => line.chars) : [],
+    ),
+  );
+  const bodySize = commonSize(allChars) || 11;
+  // The body font is the one most characters are set in.
+  const fontCounts = new Map<string, number>();
+  for (const char of allChars) fontCounts.set(char.font, (fontCounts.get(char.font) ?? 0) + 1);
+  const bodyFont = wordFontName([...fontCounts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Arial');
+  const docx: DocxContext = {
+    bodySize,
+    headings: headingSizes(paragraphs, bodySize),
+    media: [],
+    pictureId: 0,
+    writtenWords: 0,
+  };
+
+  context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
+  const body = pages
+    .map((page, index) => docxPage(page, items[index] ?? [], index === 0, index === pages.length - 1, docx))
+    .join('');
+  const document =
+    `${XML_HEAD}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
+    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+    `xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}</w:body></w:document>`;
+  const documentRels =
+    `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+    docx.media
+      .map(
+        (image, index) =>
+          `<Relationship Id="rIdImage${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${image.name}"/>`,
+      )
+      .join('') +
+    '</Relationships>';
+  const contentTypes =
+    `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>' +
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
+    '</Types>';
+  const files: Record<string, string | Uint8Array> = {
+    '[Content_Types].xml': contentTypes,
+    '_rels/.rels': PACKAGE_RELS('word/document.xml'),
+    'docProps/core.xml': corePropertiesXml(title),
+    'word/document.xml': document,
+    'word/styles.xml': stylesXml(bodySize, bodyFont, language),
+    'word/_rels/document.xml.rels': documentRels,
+  };
+  for (const image of docx.media) files[`word/media/${image.name}`] = image.png;
+  const bytes = await zipped(files);
+  return {
+    bytes,
+    tables: items.flat().filter((item) => item.kind === 'table' && item.table.ruled).length,
+    streams: items.flat().filter((item) => item.kind === 'table' && !item.table.ruled).length,
+    pictures: docx.media.length,
+    written: docx.writtenWords,
+  };
+}
+
+/** Reads the package back with mammoth: the words it finds must be the words written. */
+async function verifyDocx(bytes: Uint8Array, written: number): Promise<void> {
+  const mammoth = (await import('mammoth')).default;
+  const copy = bytes.slice();
+  const input = { buffer: copy, arrayBuffer: copy.buffer } as unknown as Parameters<
+    typeof mammoth.extractRawText
+  >[0];
+  let read: string;
+  try {
+    read = (await mammoth.extractRawText(input)).value;
+  } catch (error) {
+    throw new ToolError('verification-failed', {
+      engine: 'model',
+      engineMessage: `docx read-back failed: ${error instanceof Error ? error.message : String(error)}`,
+      cause: error,
+    });
+  }
+  const found = words(read);
+  if (found !== written) {
+    throw new ToolError('verification-failed', {
+      engine: 'model',
+      engineMessage: `docx read-back found ${found} words, ${written} were written`,
+    });
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * spreadsheet rows (XLSX and CSV)
+ * ------------------------------------------------------------------ */
+
+interface Sheet {
+  readonly name: string;
+  /** Rows of cells; `''` is an empty cell. */
+  readonly rows: readonly (readonly string[])[];
+  /** `[row0, column0, row1, column1]`, inclusive. */
+  readonly merges: readonly (readonly [number, number, number, number])[];
+  /** Column widths in points, when the rules give them. */
+  readonly widths: readonly number[] | null;
+}
+
+function tableSheet(table: LayoutTable, name: string): Sheet {
+  const rows = table.ys.length - 1;
+  const columns = table.xs.length - 1;
+  const grid = Array.from({ length: rows }, () => Array.from({ length: columns }, () => ''));
+  const merges: [number, number, number, number][] = [];
+  for (const cell of table.cells) {
+    (grid[cell.row] as string[])[cell.column] = cell.text;
+    if (cell.rowSpan > 1 || cell.columnSpan > 1) {
+      merges.push([cell.row, cell.column, cell.row + cell.rowSpan - 1, cell.column + cell.columnSpan - 1]);
+    }
+  }
+  return {
+    name,
+    rows: grid,
+    merges,
+    widths: table.xs.slice(1).map((x, index) => x - (table.xs[index] as number)),
+  };
+}
+
+function rowsSheet(page: ReadPage, name: string): Sheet | null {
+  const rows = textRows(page.layout, []);
+  if (rows.length === 0) return null;
+  const columns = Math.max(...rows.flatMap((row) => row.cells.map(([column]) => column + 1)));
+  const grid = rows.map((row) => {
+    const cells = Array.from({ length: columns }, () => '');
+    for (const [column, text] of row.cells) cells[column] = text;
+    return cells;
+  });
+  return { name, rows: grid, merges: [], widths: null };
+}
+
+/** Sheets for the pages: their ruled tables, or the text rows of a page without one. */
+function sheetsOf(
+  pages: readonly ReadPage[],
+  names: NonNullable<OfficeExportOptions['sheetName']>,
+): { sheets: Sheet[]; tables: number; streams: number; unruled: number[]; textOutside: boolean } {
+  const sheets: Sheet[] = [];
+  const unruled: number[] = [];
+  let tables = 0;
+  let streams = 0;
+  let textOutside = false;
+  for (const page of pages) {
+    if (page.tables.length > 0) {
+      textOutside ||= page.layout.blocks.some(
+        (block) =>
+          block.kind === 'text' &&
+          block.lines.some((line) =>
+            outside(
+              line,
+              [...page.tables, ...page.streams].map((table) => table.box),
+            ).some((char) => char.c.trim() !== ''),
+          ),
+      );
+      // The page's tables top to bottom, those without rules among them.
+      const all = [...page.tables, ...page.streams].sort(
+        (a, b) => a.box[1] - b.box[1] || a.box[0] - b.box[0],
+      );
+      for (const table of all) {
+        if (table.ruled) tables += 1;
+        else streams += 1;
+        sheets.push(tableSheet(table, names.table(tables + streams)));
+      }
+      continue;
+    }
+    const sheet = rowsSheet(page, names.page(page.index + 1));
+    if (sheet !== null) {
+      sheets.push(sheet);
+      unruled.push(page.index + 1);
+    }
+  }
+  return { sheets, tables, streams, unruled, textOutside };
+}
+
+/**
+ * A cell's value as a number, only when it reads one way. A single `.` or `,` followed by
+ * exactly three digits after one to three digits (`1.234`, `1,234`) is a thousand in one
+ * locale and a fraction in the other, so it stays text; so do leading zeros (`007`, an
+ * identifier), signs other than `-`, and anything longer than fifteen digits.
+ */
+export function cellNumber(text: string): number | null {
+  const value = text.trim();
+  if (!/^-?[\d.,]+$/.test(value) || !/\d/.test(value)) return null;
+  const negative = value.startsWith('-');
+  const body = negative ? value.slice(1) : value;
+  if (body.replace(/\D/g, '').length > 15) return null;
+  let digits: string;
+  const lastDot = body.lastIndexOf('.');
+  const lastComma = body.lastIndexOf(',');
+  if (lastDot === -1 && lastComma === -1) {
+    if (body.length > 1 && body.startsWith('0')) return null;
+    digits = body;
+  } else if (lastDot !== -1 && lastComma !== -1) {
+    // Both appear: the later one is the decimal mark, the other groups thousands.
+    const decimal = lastDot > lastComma ? '.' : ',';
+    const group = decimal === '.' ? ',' : '.';
+    const [whole, fraction, ...more] = body.split(decimal);
+    if (more.length > 0 || fraction === undefined || fraction === '' || fraction.includes(group)) return null;
+    if (!new RegExp(`^\\d{1,3}(\\${group}\\d{3})+$`).test(whole ?? '')) return null;
+    digits = `${(whole ?? '').split(group).join('')}.${fraction}`;
+  } else {
+    const mark = lastDot !== -1 ? '.' : ',';
+    const parts = body.split(mark);
+    if (parts.some((part) => part === '')) return null;
+    if (parts.length > 2) {
+      // Repeated, it can only group thousands.
+      if (!new RegExp(`^\\d{1,3}(\\${mark}\\d{3})+$`).test(body)) return null;
+      digits = parts.join('');
+    } else {
+      const [whole, fraction] = parts as [string, string];
+      if (fraction.length === 3 && whole.length <= 3) return null;
+      if (whole.length > 1 && whole.startsWith('0')) return null;
+      digits = `${whole}.${fraction}`;
+    }
+  }
+  const number = Number(digits);
+  if (!Number.isFinite(number)) return null;
+  return negative ? -number : number;
+}
+
+function columnName(index: number): string {
+  let name = '';
+  let rest = index + 1;
+  while (rest > 0) {
+    const digit = (rest - 1) % 26;
+    name = String.fromCharCode(65 + digit) + name;
+    rest = Math.floor((rest - 1) / 26);
+  }
+  return name;
+}
+
+/** Excel's rules for a sheet name: 31 characters, none of `[]:*?/\`, unique. */
+function sheetNames(sheets: readonly Sheet[]): string[] {
+  const used = new Set<string>();
+  return sheets.map((sheet, index) => {
+    const base =
+      sheet.name
+        .replace(/[[\]:*?/\\]/g, ' ')
+        .trim()
+        .slice(0, 31) || `Sheet${index + 1}`;
+    let name = base;
+    let n = 2;
+    while (used.has(name.toLowerCase())) {
+      const suffix = ` (${n})`;
+      name = base.slice(0, 31 - suffix.length) + suffix;
+      n += 1;
+    }
+    used.add(name.toLowerCase());
+    return name;
+  });
+}
+
+async function writeXlsx(
+  sheets: readonly Sheet[],
+  title: string,
+): Promise<{ bytes: Uint8Array; numbers: number; cells: number }> {
+  let numbers = 0;
+  let cells = 0;
+  const names = sheetNames(sheets);
+  const sheetXml = sheets.map((sheet) => {
+    const columns = Math.max(1, ...sheet.rows.map((row) => row.length));
+    const widths = Array.from({ length: columns }, (_value, index) => {
+      if (sheet.widths !== null) return clamp((sheet.widths[index] ?? 40) / 5.25, 4, 80);
+      const longest = Math.max(
+        0,
+        ...sheet.rows.map((row) => Math.max(...(row[index] ?? '').split('\n').map((line) => line.length))),
+      );
+      return clamp(longest + 2, 6, 60);
+    });
+    const cols = widths
+      .map(
+        (width, index) =>
+          `<col min="${index + 1}" max="${index + 1}" width="${width.toFixed(2)}" customWidth="1"/>`,
+      )
+      .join('');
+    const rows = sheet.rows
+      .map((row, rowIndex) => {
+        const content = row
+          .map((text, columnIndex) => {
+            if (text === '') return '';
+            cells += 1;
+            const ref = `${columnName(columnIndex)}${rowIndex + 1}`;
+            const number = cellNumber(text);
+            if (number !== null) {
+              numbers += 1;
+              return `<c r="${ref}"><v>${number}</v></c>`;
+            }
+            const style = text.includes('\n') ? ' s="1"' : '';
+            return `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${xml(text)}</t></is></c>`;
+          })
+          .join('');
+        return `<row r="${rowIndex + 1}">${content}</row>`;
+      })
+      .join('');
+    const merges =
+      sheet.merges.length === 0
+        ? ''
+        : `<mergeCells count="${sheet.merges.length}">${sheet.merges
+            .map(
+              ([r0, c0, r1, c1]) =>
+                `<mergeCell ref="${columnName(c0)}${r0 + 1}:${columnName(c1)}${r1 + 1}"/>`,
+            )
+            .join('')}</mergeCells>`;
+    return (
+      `${XML_HEAD}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      `<cols>${cols}</cols><sheetData>${rows}</sheetData>${merges}</worksheet>`
+    );
+  });
+  const workbook =
+    `${XML_HEAD}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+    names
+      .map((name, index) => `<sheet name="${xml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+      .join('') +
+    '</sheets></workbook>';
+  const workbookRels =
+    `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    names
+      .map(
+        (_name, index) =>
+          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`,
+      )
+      .join('') +
+    `<Relationship Id="rId${names.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+    '</Relationships>';
+  const styles =
+    `${XML_HEAD}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>' +
+    '</cellXfs></styleSheet>';
+  const contentTypes =
+    `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    names
+      .map(
+        (_name, index) =>
+          `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
+      )
+      .join('') +
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
+    '</Types>';
+  const files: Record<string, string> = {
+    '[Content_Types].xml': contentTypes,
+    '_rels/.rels': PACKAGE_RELS('xl/workbook.xml'),
+    'docProps/core.xml': corePropertiesXml(title),
+    'xl/workbook.xml': workbook,
+    'xl/_rels/workbook.xml.rels': workbookRels,
+    'xl/styles.xml': styles,
+  };
+  sheetXml.forEach((content, index) => {
+    files[`xl/worksheets/sheet${index + 1}.xml`] = content;
+  });
+  return { bytes: await zipped(files), numbers, cells };
+}
+
+/** Reopens the workbook: every sheet is there and holds every cell written. */
+async function verifyXlsx(bytes: Uint8Array, sheets: number, cells: number): Promise<void> {
+  const zip = await JSZip.loadAsync(bytes);
+  let found = 0;
+  for (let index = 1; index <= sheets; index += 1) {
+    const sheet = await zip.file(`xl/worksheets/sheet${index}.xml`)?.async('string');
+    if (sheet === undefined) {
+      throw new ToolError('verification-failed', {
+        engine: 'model',
+        engineMessage: `xlsx sheet ${index} missing`,
+      });
+    }
+    found += sheet.match(/<c r="/g)?.length ?? 0;
+  }
+  if (found !== cells) {
+    throw new ToolError('verification-failed', {
+      engine: 'model',
+      engineMessage: `xlsx read-back found ${found} cells, ${cells} were written`,
+    });
+  }
+}
+
+function csvField(text: string, delimiter: CsvDelimiter): string {
+  return /["\r\n]/.test(text) || text.includes(delimiter) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function writeCsv(sheets: readonly Sheet[], delimiter: CsvDelimiter): { bytes: Uint8Array; rows: number } {
+  const blocks = sheets.map((sheet) =>
+    sheet.rows.map((row) => row.map((cell) => csvField(cell, delimiter)).join(delimiter)).join('\r\n'),
+  );
+  const text = `${blocks.join('\r\n\r\n')}\r\n`;
+  // The read-back: the same rows come out of an RFC 4180 reader.
+  const expected = sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0) + Math.max(0, sheets.length - 1);
+  const parsed = parseCsv(text, delimiter);
+  if (parsed.length !== expected) {
+    throw new ToolError('verification-failed', {
+      engine: 'model',
+      engineMessage: `csv read-back found ${parsed.length} rows, ${expected} were written`,
+    });
+  }
+  return { bytes: new TextEncoder().encode(`﻿${text}`), rows: expected };
+}
+
+/* ------------------------------------------------------------------ *
+ * the operation
+ * ------------------------------------------------------------------ */
+
+export async function exportOffice(
+  bytes: Uint8Array,
+  options: OfficeExportOptions,
+  context: OperationContext,
+): Promise<OfficeExportResult> {
+  throwIfAborted(context.signal);
+  if (options.pages.length === 0) {
+    throw new ToolError('selection-empty', { engine: 'ui', engineMessage: 'export-office: no pages' });
+  }
+  const mupdf = await loadMupdf();
+  throwIfAborted(context.signal);
+  const doc = openPdf(mupdf, bytes);
+  const steps: string[] = ['office.read'];
+  const notes: OperationNote[] = [];
+  let pages: ReadPage[];
+  let title: string;
+  let language: string;
+  try {
+    title = doc.getMetaData('info:Title')?.trim() ?? '';
+    // The catalog's `/Lang` (BCP 47, what Word's `w:lang` takes too), when the PDF has one.
+    language = readText(doc.getTrailer().get('Root').get('Lang'))?.trim() ?? '';
+    pages = await readPages(doc, options.pages, options.format === 'docx', context);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    throw mapMupdfError(error, 'export-office');
+  } finally {
+    doc.destroy();
+  }
+  throwIfAborted(context.signal);
+
+  const stem = options.baseName.replace(/\.pdf$/i, '') || 'document';
+  if (title === '') title = stem;
+  const textless = pages
+    .filter((page) =>
+      page.layout.blocks.every(
+        (block) =>
+          block.kind !== 'text' ||
+          block.lines.every((line) => line.chars.every((char) => char.c.trim() === '')),
+      ),
+    )
+    .map((page) => page.index + 1);
+  const unreadable = pages.reduce(
+    (sum, page) =>
+      sum +
+      page.layout.blocks.reduce(
+        (blockSum, block) =>
+          blockSum +
+          (block.kind === 'text'
+            ? block.lines.reduce(
+                (lineSum, line) => lineSum + line.chars.filter((char) => char.c === '\uFFFD').length,
+                0,
+              )
+            : 0),
+        0,
+      ),
+    0,
+  );
+
+  let file: OutputFile;
+  if (options.format === 'docx') {
+    steps.push('office.tables', 'office.write');
+    const written = await writeDocx(pages, title, language, context);
+    throwIfAborted(context.signal);
+    steps.push('verify');
+    await verifyDocx(written.bytes, written.written);
+    file = { name: `${stem}.docx`, bytes: written.bytes, mime: MIME.docx };
+    notes.push(note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: pages.length }));
+    notes.push(note('lost', 'op.note.exportOffice.docxApproximate'));
+    if (written.tables > 0)
+      notes.push(note('preserved', 'op.note.exportOffice.tables', { count: written.tables }));
+    if (written.streams > 0) {
+      notes.push(note('warning', 'op.note.exportOffice.streamTables', { count: written.streams }));
+    }
+    if (written.pictures > 0)
+      notes.push(note('preserved', 'op.note.exportOffice.pictures', { count: written.pictures }));
+  } else {
+    steps.push('office.tables');
+    const names = options.sheetName ?? {
+      table: (n: number) => `Table ${n}`,
+      page: (n: number) => `Page ${n}`,
+    };
+    const { sheets, tables, streams, unruled, textOutside } = sheetsOf(pages, names);
+    if (sheets.length === 0) {
+      throw new ToolError('no-text', {
+        engine: 'model',
+        engineMessage: 'export-office: the pages hold no text to put in cells',
+      });
+    }
+    steps.push('office.write', 'verify');
+    context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
+    if (options.format === 'xlsx') {
+      const written = await writeXlsx(sheets, title);
+      await verifyXlsx(written.bytes, sheets.length, written.cells);
+      file = { name: `${stem}.xlsx`, bytes: written.bytes, mime: MIME.xlsx };
+      notes.push(note('changed', 'op.note.exportOffice.done', { format: 'XLSX', pages: pages.length }));
+      notes.push(note('changed', 'op.note.exportOffice.sheets', { count: sheets.length }));
+      if (written.numbers > 0)
+        notes.push(note('changed', 'op.note.exportOffice.numbers', { count: written.numbers }));
+    } else {
+      const written = writeCsv(sheets, options.csvDelimiter ?? ',');
+      file = { name: `${stem}.csv`, bytes: written.bytes, mime: MIME.csv };
+      notes.push(note('changed', 'op.note.exportOffice.done', { format: 'CSV', pages: pages.length }));
+      notes.push(
+        note('changed', 'op.note.exportOffice.csvRows', { rows: written.rows, tables: sheets.length }),
+      );
+    }
+    if (tables > 0) notes.push(note('preserved', 'op.note.exportOffice.tables', { count: tables }));
+    if (streams > 0) notes.push(note('warning', 'op.note.exportOffice.streamTables', { count: streams }));
+    if (textOutside) notes.push(note('lost', 'op.note.exportOffice.outsideText'));
+    if (unruled.length > 0) {
+      notes.push(note('warning', 'op.note.exportOffice.unruled', { pages: unruled.join(', ') }));
+    }
+  }
+  if (textless.length > 0)
+    notes.push(note('warning', 'op.note.exportOffice.noText', { pages: textless.join(', ') }));
+  if (unreadable > 0) notes.push(note('lost', 'op.note.exportOffice.unreadable', { count: unreadable }));
+  return { file, steps, notes };
+}

@@ -43,7 +43,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark |
 | 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
-| 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF |
+| 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification |
 | 🧰 **Tools** | OCR (TR/EN) · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
@@ -184,6 +184,23 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
     document become link annotations. The title comes from the file or its name.
   - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
+- **PDF to Word, Excel and CSV.** **Export → Word, Excel or CSV** (also in the tools panel,
+  the palette and the home screen) rebuilds the pages in the browser as an editable file.
+  - **Word (DOCX):** paragraphs that reflow, with their fonts, sizes, bold, italic and
+    colour. Larger type becomes Heading 1–3, so Word's navigation pane and table of contents
+    see it. Alignment, indents and spacing are measured from the page, each page keeps its
+    size and orientation, and two-column text is read column by column. Ruled tables
+    become Word tables with their merged cells. Tables without rules are recognised from
+    the spacing of the text and become borderless tables. Pictures keep their transparency;
+    charts and drawings made of vector graphics are carried as pictures.
+  - **Excel (XLSX):** one sheet per table, with merged cells and the column widths of the
+    rules. A page without any table becomes one sheet of its rows. A value becomes a number
+    only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
+    thousand, or one point two three four?), and so does `007`.
+  - **CSV:** the same tables in one UTF-8 file, with the comma or semicolon that Excel
+    expects in your region.
+  - The file is read back before it is offered (Word with mammoth, an independent reader),
+    and the report says what was approximated.
 
 ### Redaction, security, signing
 
@@ -300,6 +317,14 @@ The limits are defined once, in
   - The old binary DOC, XLS and PPT formats, OpenDocument and RTF are not converted, and the
     app says so.
   - An HTML page's stylesheets and images on the internet are not loaded.
+- **Converting from PDF.** A PDF records where each glyph goes, not paragraphs, tables or
+  columns, so the export reconstructs them and can be wrong.
+  - Exact positions, text boxes, headers and footers, form fields and annotations are not
+    reproduced. A paragraph that continues in the next column stays split in two.
+  - A table without rules is a guess from the spacing; the report says how many there were.
+  - A chart or drawing becomes a picture, its labels included, so its text cannot be
+    edited.
+  - Scanned pages have no text to export until OCR has added it.
 - **Simple signatures.** A drawn, typed or photographed signature is a picture on the page,
   not a certified digital signature: it proves nothing about who signed or whether the
   document changed afterwards. The dialog says so; use certificate signing for that.
