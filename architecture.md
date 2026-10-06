@@ -107,7 +107,7 @@ That took the entry chunk from 250.6 to 244.9 kB gzip (2026-10-04).
 |---|---|
 | `errors.ts` | The single error contract. `ToolError` carries a stable code (29 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
 | `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
-| `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, `createTranslator(locale)` with per-key fallback to Turkish, and identical key sets in `tr` and `en`. |
+| `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Turkish and English are bundled; another language's dictionary is fetched by `loadLocale` when it is chosen, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
 Because `MessageKey` is a union of literal keys, passing an unknown key is a compile
 error. That is why operation notes, dialog titles and error text are typed as `MessageKey`

@@ -40,6 +40,21 @@ say why.
 - A test must check behaviour, and must fail when that behaviour breaks.
 - Update the affected documentation in the same commit.
 
+## Adding a language
+
+The interface ships in Turkish and English. To add a language:
+
+1. Add a dictionary file under `packages/shared/src/i18n/` that exports a `Dictionary`
+   (any subset of the keys in `tr.ts`; a missing key falls back, so a partial translation
+   is usable).
+2. Add one entry to `LOCALES` in `packages/shared/src/i18n/locales.ts`: its BCP 47 `id`,
+   its own name, `dir` (`rtl` for Arabic, Hebrew, Persian, Urdu), `fallback: 'en'` and a
+   `load` that imports the file, so the dictionary is downloaded only when the language is
+   chosen.
+
+The language picker lists it, the browser's language selects it on a first visit, and
+dates and numbers are formatted with its `id`.
+
 ## Repository hygiene
 
 The pre-commit hook (`tools/hooks/guard.mjs`) refuses engine builds, traineddata, wasm and
