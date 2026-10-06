@@ -52,6 +52,27 @@
         }
       ]
     },
+    "ghostscript": {
+      "packages": [
+        {
+          "name": "@bentopdf/gs-wasm",
+          "version": "0.1.1",
+          "license": "AGPL-3.0-only"
+        }
+      ],
+      "files": [
+        {
+          "path": "engines/ghostscript/gs.js",
+          "bytes": 38034,
+          "sha256": "5e7e3b3dfc7afc5e60de8dd6dab66145c75afb74f7d671f711f390b3bb69c6d0"
+        },
+        {
+          "path": "engines/ghostscript/gs.wasm",
+          "bytes": 15533046,
+          "sha256": "c3373cd4a123f05b68513b57969db485d7f60f4b90145299de8c3182ea28f9b9"
+        }
+      ]
+    },
     "handwriting": {
       "packages": [
         {

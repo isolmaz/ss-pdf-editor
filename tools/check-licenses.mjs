@@ -38,6 +38,9 @@ const ALLOWED = [
   'BlueOak-1.0.0',
   'Zlib',
   'AGPL-3.0-or-later',
+  // `@bentopdf/gs-wasm` (Ghostscript for WebAssembly, the PDF/A engine): AGPL-3.0 exactly as Artifex
+  // publishes Ghostscript; the project is AGPL-3.0, so the combined work stays under the same licence.
+  'AGPL-3.0-only',
   'LGPL-3.0-or-later',
   '(MIT OR Apache-2.0)',
   '(BSD-2-Clause OR MIT)',

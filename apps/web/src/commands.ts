@@ -743,6 +743,23 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       run: dialog('export-office'),
     },
     {
+      id: 'tools.pdfa',
+      labelKey: 'pdfa.title',
+      group: 'tools',
+      // The converted file opens in a new tab, so the source may be read-only.
+      disabled: noDocument,
+      keywords: ['pdf/a', 'pdfa', 'archive', 'arsiv', 'archival', 'iso 19005', 'verapdf'],
+      run: dialog('pdfa'),
+    },
+    {
+      id: 'tools.pdfa-check',
+      labelKey: 'pdfa.command.check',
+      group: 'tools',
+      disabled: noDocument,
+      keywords: ['pdf/a', 'pdfa', 'check', 'denetim', 'validate', 'dogrula', 'verapdf'],
+      run: () => host.showRightTab('pdfa'),
+    },
+    {
       id: 'tools.outline-edit',
       labelKey: 'outline.title',
       group: 'tools',

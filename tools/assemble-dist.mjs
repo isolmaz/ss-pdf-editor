@@ -108,6 +108,8 @@ copyFileSync(licenceFile, join(out, 'LICENSE'));
  */
 const LICENCE_SOURCES = [
   ['mupdf', 'mupdf/LICENSE'],
+  // PDF/A conversion (`pdf-core/ops/pdfa.ts`): Ghostscript compiled to WebAssembly.
+  ['@bentopdf/gs-wasm', '@bentopdf/gs-wasm/LICENSE'],
   ['tesseract.js', 'tesseract.js/LICENSE.md'],
   ['tesseract.js-core', 'tesseract.js-core/LICENSE'],
   ['@fontsource/space-grotesk', '@fontsource/space-grotesk/LICENSE'],

@@ -52,6 +52,7 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'xfa-remove': async () => (await import('./xfa')).xfaRemoveDialog,
   'xfa-data': async () => (await import('./xfa')).xfaDataDialog,
   'xfa-flatten': async () => (await import('./xfa')).xfaFlattenDialog,
+  pdfa: async () => (await import('./pdfa')).pdfaDialog,
 };
 
 /**
