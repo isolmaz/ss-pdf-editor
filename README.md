@@ -415,7 +415,9 @@ These describe how the build works; they are not promises.
     positioned with inline styles;
   - `object-src 'none'`, `base-uri 'none'`, `form-action 'none'` and
     `frame-ancestors 'none'`;
-  - `nosniff`, `Referrer-Policy: no-referrer`, a deny-all `Permissions-Policy` and HSTS.
+  - `nosniff`, `Referrer-Policy: no-referrer`, HSTS, and a `Permissions-Policy` that turns
+    off the microphone, location, payment and device APIs and allows the camera to this
+    origin only (`camera=(self)`, for the document scanner).
 
   The dev and preview servers apply the same file. The dev server adds only
   `'unsafe-inline'` for scripts, for React refresh, and logs that it does.
