@@ -149,6 +149,21 @@ test('an unknown path gets the styled 404 page with working exits', async ({ pag
   await at(page, '/editor/');
 });
 
+test('an unknown path under /en/ gets the English 404 page, whose exits stay in English', async ({
+  page,
+}) => {
+  // The host serves the nearest 404.html: `/en/404.html` here, the Turkish one at the root.
+  await page.goto('/en/no-such-page');
+  expect(await page.evaluate(async () => (await fetch('/en/no-such-page')).status)).toBe(404);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page Not Found');
+  await page.getByRole('link', { name: 'Back to Home', exact: true }).click();
+  await at(page, '/en/');
+  await page.goto('/en/no-such-page');
+  await page.getByRole('link', { name: 'Launch the PDF Editor', exact: true }).click();
+  await at(page, '/editor/');
+});
+
 test('the stored theme applies before first paint and survives a reload', async ({ page }) => {
   const canvases: string[] = [];
   for (const mode of ['dark', 'light']) {

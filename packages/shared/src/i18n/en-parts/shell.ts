@@ -118,7 +118,8 @@ export const shellPart = {
   'settings.sweep.hint': 'Removes old copies that no longer belong to any document.',
   'settings.sweep.action': 'Clean up',
   'settings.offline': 'Offline packages',
-  'settings.offline.hint': 'Downloads the editing engines to this device so it works without internet.',
+  'settings.offline.hint':
+    'Downloads the PDF engines and fonts to this device; the tools you have used here then work without internet.',
   'settings.offline.check': 'Check status',
   'settings.offline.prepare': 'Prepare',
   'settings.shortcuts.open': 'Show',

@@ -68,6 +68,21 @@ function resolveFile(pathname) {
   return null;
 }
 
+/**
+ * Cloudflare's `not_found_handling: "404-page"`: the nearest `404.html`, looked up from the
+ * request's own directory towards the root, so `/en/…` gets the English page and every
+ * other path the Turkish one at the root.
+ */
+function notFoundPage(pathname) {
+  const parts = pathname.split('/').filter((part) => part !== '' && part !== '.' && part !== '..');
+  const directory = pathname.endsWith('/') ? parts : parts.slice(0, -1);
+  for (let depth = directory.length; depth >= 0; depth -= 1) {
+    const candidate = join(distRoot, ...directory.slice(0, depth), '404.html');
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${port}`);
   const headers = headersFor(sections, url.pathname);
@@ -75,10 +90,10 @@ createServer((req, res) => {
 
   const file = resolveFile(url.pathname);
   if (file === null) {
-    const notFound = join(distRoot, '404.html');
+    const notFound = notFoundPage(url.pathname);
     res.statusCode = 404;
     res.setHeader('Content-Type', MIME['.html']);
-    res.end(existsSync(notFound) ? readFileSync(notFound) : 'Not found');
+    res.end(notFound === null ? 'Not found' : readFileSync(notFound));
     return;
   }
   res.statusCode = 200;

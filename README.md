@@ -344,8 +344,10 @@ nothing leaving the browser.
     Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian,
     Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and
     traditional), Japanese and Korean.
-  - Turkish and English are in the offline package. The other packs are served by this site
-    and downloaded the first time you choose them; after that they work offline too.
+  - The OCR engine and every language pack are served by this site. Turkish and English are
+    the two packs listed in the offline manifest, but Settings → Offline use does not fetch
+    them (see [Offline use](#offline-use)). The engine and each pack are downloaded the first
+    time you run OCR with them; after that they work offline too.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
     Right-to-left words come back in reading order.
@@ -384,8 +386,9 @@ nothing leaving the browser.
     handed over**: the operation stops and says which rule failed.
   - A file that already claims the chosen level is left as it is only when it passes every
     rule and the checker could read all of it; otherwise it is converted like any other.
-  - The checker covers 20 rule groups (header and trailer, encryption, streams, XMP and the
-    `pdfaid` claim, output intent, device colour, transparency, fonts, images, actions,
+  - The checker covers 20 rule groups (header, trailer, encryption, file structure, streams,
+    XMP metadata, the `pdfaid` claim, XMP extension schemas, XMP against the Info dictionary,
+    output intent, device colour, transparency, fonts, images, graphics state, actions,
     annotations, forms, layers, embedded files). It reports each rule as passed, broken (with
     page and the thing at fault, and the ISO clause) or unchecked, and lists what it never
     looks at. **It is not a full veraPDF validation.** Its rules were calibrated against veraPDF
@@ -457,7 +460,10 @@ The limits are defined once, in
   is disabled and the UI says why.
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
-- **Build budgets.**
+- **Build budgets.** These are targets that are measured by hand. No script or quality gate
+  measures the built output against them; `BUILD_BUDGETS` in `packages/shared/src/limits.ts`
+  only holds the numbers, and `pnpm assemble:dist` only prints the sizes of what it
+  assembles.
   - ≤ 250 KiB gzip for the first-paint JavaScript. Not met yet: measured 2026-10-06 the
     entry chunk is 219 KiB, but with the UI chunks it preloads the first paint is 313 KiB,
     because the editor shell still loads with the home screen (`architecture.md` §2).
@@ -607,6 +613,7 @@ The limits are defined once, in
 
 | Command | What it does |
 |---|---|
+| `pnpm prepare` | Sets `core.hooksPath` to `.githooks` so the git hooks run; it runs by itself after `pnpm install` |
 | `pnpm dev` | Vite dev server for the editor (`pnpm --filter site dev` for the landing, port 5175) |
 | `pnpm build` | Builds the landing (`apps/site/dist`), then the editor (`apps/web/dist`) |
 | `pnpm assemble:dist` | Composes the deployable `dist/` |
@@ -620,7 +627,8 @@ The limits are defined once, in
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
 | `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
-| `pnpm ci:verify` / `ci:full` | The full local gate / the same plus the behaviour harnesses |
+| `pnpm ci:behavior` | The behaviour harnesses in `tools/spikes/`: the phase 3 and phase 4 browser drivers against the assembled `dist/`, then the signing check (needs `openssl`) |
+| `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
 | `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
 
 Engine binaries are never committed, and the pre-commit hook blocks them. On a fresh
@@ -630,20 +638,21 @@ clone, `pnpm fetch:engines --sync` is therefore required.
 
 ```
 apps/
-  web/          the editor PWA (served at /editor/)
-  site/         landing and legal pages (static HTML, TR + EN)
+  web/              the editor PWA (served at /editor/)
+  site/             landing and legal pages (static HTML, TR + EN)
 packages/
-  shared/       error contract, limits, i18n (Turkish and English)
-  model/        session store, operation journal, drafts, save router
-  core/         engine adapters (pdf.js, MuPDF, Tesseract) and every operation
-  text-engine/  text model, editability, reflow, fonts
-  ui/           React surfaces: viewer, panels, dialogs, tools, printing
-public/         _headers, sw.js, 404, manifest, robots/sitemap
-tools/          dist assembly, engine pins, licence audit, regression harness,
-                git hooks, behaviour checks (spikes/), README clip recorder
-e2e/            Playwright specs for the editor flows and the site
-docs/media/     the README clips
-.github/        issue and pull request templates (no workflows)
+  shared/           error contract, limits, i18n (Turkish and English)
+  pdf-model/        session store, operation journal, drafts, save router
+  pdf-core/         engine adapters (pdf.js, MuPDF, Tesseract) and every operation
+  pdf-text-engine/  text model, editability, reflow, fonts
+  pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
+public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
+                    manifest, robots/sitemap
+tools/              dist assembly, engine pins, licence audit, regression harness,
+                    git hooks, behaviour checks (spikes/), README clip recorder
+e2e/                Playwright specs for the editor flows and the site
+docs/media/         the README clips
+.github/            issue and pull request templates (no workflows)
 ```
 
 ---
@@ -693,7 +702,7 @@ All gates run locally; the repository has no GitHub Actions workflow.
 |---|---|
 | `apps/site/dist` | `dist/` root (landing, legal pages, `/en/`) |
 | `apps/web/dist` | `dist/editor/` |
-| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, manifest, `engines/**`, `fonts/**`) |
+| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `engines/**`, `fonts/**`) |
 
 The same step also does the following:
 
@@ -721,13 +730,17 @@ pnpm worker:deploy:dry      # same, with --dry-run
 - **Shell.** The editor's start page, the scripts it starts with and its Turkish and
   English text are cached when the worker installs, so a reload without a network still
   shows a working home screen.
-- **On request only.** Everything else is precached only when you ask for it, in
+- **On request only.** The rest is precached only when you ask for it, in
   Settings → Offline use.
-  It covers the shell, pdf.js, MuPDF and the fonts. OCR is not included, and neither is the
-  PDF/A converter (15.5 MB of WebAssembly): it is cached the first time the tool runs and
-  works offline after that.
-- **Readiness.** It is checked path by path. A half-downloaded pack is reported as
-  `missing`, with the missing paths named.
+  It covers the shell, pdf.js, MuPDF and the fonts. It does not fetch OCR, although the
+  manifest lists a `tesseract` capability (the OCR engine and the Turkish and English
+  packs), and it does not fetch the PDF/A converter (15.5 MB of WebAssembly) either. The
+  service worker stores any file under `/engines/` the first time it is fetched, so the OCR
+  engine, a language pack and the converter are cached when you first use them online and
+  work offline after that.
+- **Readiness.** It is checked path by path, for the same capabilities the preparation
+  fetches; OCR, cached on first use, is not counted against it. A half-downloaded pack is
+  reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
   reads an older cache.
 

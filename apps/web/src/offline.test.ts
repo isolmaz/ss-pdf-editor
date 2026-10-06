@@ -9,7 +9,7 @@
 
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { OfflineCapability } from './offline';
+import type { OfflineCapability, WorkerReadiness } from './offline';
 import {
   allOfflinePaths,
   capabilityReadiness,
@@ -195,7 +195,27 @@ describe('the page ↔ worker exchange', () => {
     expect(readiness?.matchesBuild).toBe(false);
     expect(readiness?.version).toBe('v7');
     expect(Object.keys(readiness?.capabilities ?? {}).sort()).toEqual(['core', 'mupdf']);
-    expect(incompleteCapabilities(readiness as NonNullable<typeof readiness>)).toEqual(['mupdf']);
+    expect(
+      incompleteCapabilities(readiness as WorkerReadiness, requiredCapabilities({ ocr: false })),
+    ).toEqual(['mupdf']);
+  });
+
+  it('judges a preparation only by what it fetches: OCR, cached on first use, is left out', async () => {
+    stubWorker(() => ({
+      type: 'READINESS_STATUS',
+      version: 'v7',
+      matchesBuild: true,
+      capabilities: {
+        core: { ready: true, missing: [] },
+        pdfjs: { ready: true, missing: [] },
+        mupdf: { ready: true, missing: [] },
+        fonts: { ready: true, missing: [] },
+        tesseract: { ready: false, missing: ['/engines/tesseract/tur.traineddata.gz'] },
+      },
+    }));
+    const readiness = (await requestOfflineReadiness()) as WorkerReadiness;
+    expect(incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }))).toEqual([]);
+    expect(incompleteCapabilities(readiness, requiredCapabilities({ ocr: true }))).toEqual(['tesseract']);
   });
 
   it('ignores a reply that is not the one it asked for', async () => {

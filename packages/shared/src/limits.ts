@@ -39,7 +39,10 @@ export const LIMITS: Record<DeviceTier, DocumentLimits> = {
   },
 };
 
-/** Build budgets verified by the CI budget step. */
+/**
+ * Build size targets, measured by hand. No script or gate checks the build against them;
+ * `limits.test.ts` only pins the numbers.
+ */
 export const BUILD_BUDGETS = {
   firstPaintJsGzipBytes: 250 * 1024,
   firstPaintLandingBytes: 60 * 1024,

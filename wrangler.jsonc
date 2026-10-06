@@ -4,7 +4,7 @@
   // path never runs JavaScript on Cloudflare, it only hands back files.
   //
   // `tools/assemble-dist.mjs` produces exactly what is uploaded: the landing at `/`,
-  // the editor at `/editor/`, the legal pages, `404.html` and the pinned engines.
+  // the editor at `/editor/`, the legal pages, `404.html`, `en/404.html` and the pinned engines.
   // `dist/_headers` travels with it, so the CSP and the COOP/COEP pair for `/editor/*`
   // are enforced by the host and never depend on a dashboard setting.
   //
@@ -16,7 +16,8 @@
   "assets": {
     "directory": "./dist",
     // `/gizlilik` and `/kosullar` are written as `.html` files and must resolve without
-    // the extension; unknown paths get the styled Turkish 404 page.
+    // the extension; an unknown path gets the nearest `404.html`: the English one under
+    // `/en/`, the Turkish one everywhere else.
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },

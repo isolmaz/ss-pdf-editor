@@ -1229,7 +1229,7 @@ export function App({ store }: AppProps) {
       setNotice(t('offline.unavailable'));
       return;
     }
-    const missing = incompleteCapabilities(readiness);
+    const missing = incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }));
     setNotice(
       missing.length === 0
         ? t('offline.ready')
@@ -1258,7 +1258,7 @@ export function App({ store }: AppProps) {
       return;
     }
     const readiness = await requestOfflineReadiness();
-    const missing = readiness === null ? [] : incompleteCapabilities(readiness);
+    const missing = readiness === null ? [] : incompleteCapabilities(readiness, required);
     if (missing.length === 0) {
       setNotice(t('offline.prepared', { count: result.prepared }));
       return;

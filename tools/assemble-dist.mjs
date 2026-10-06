@@ -5,6 +5,7 @@
  *   dist/                 <- apps/site/dist (landing at /, /gizlilik, /kosullar)
  *   dist/editor/          <- apps/web/dist  (the PWA, base /editor/)
  *   dist/{_headers,404.html,robots.txt,sitemap.xml,manifest.webmanifest,favicon.svg,theme-boot.js}
+ *   dist/en/404.html      <- the English not-found page (`public/en/404.html`)
  *   dist/engines/**       <- pinned engine builds (fetched, never committed)
  *
  * One Cloudflare Worker (static assets) serves this tree; deploying stays manual and is

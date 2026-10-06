@@ -16,9 +16,20 @@ Five rules explain most of the decisions in this codebase:
 
 1. **Three engines, one contract.** pdf.js renders and reads, MuPDF writes (every writer,
    §5.1) and also erases and encrypts, Tesseract recognises (a fourth, Ghostscript, exists
-   only to write PDF/A, §5.13). Each is reachable only through an adapter in
-   `packages/pdf-core/src/engines/`; no component, panel or app file imports an engine
-   package directly. Operations are `bytes in → bytes (or files) out` plus a report
+   only to write PDF/A, §5.13). Each is loaded and called only through an adapter in
+   `packages/pdf-core/src/engines/`. Outside that directory the engine packages appear in
+   three ways, and no app file imports one:
+   - `pdf-core` operations import MuPDF and pdf.js **types** for the objects an adapter
+     hands them, and `pdf-core/src/text-source.ts` dynamically imports `pdfjs-dist` for its
+     operator enum, the one runtime import there;
+   - three `pdf-ui` files import pdf.js, because the viewer and the XFA form are drawn by
+     its viewer layer: `viewer/PdfViewerPane.tsx` and `dialogs/XfaFormDialog.tsx` load
+     `pdfjs-dist/web/pdf_viewer.mjs` and its CSS dynamically, and `ops/xfa-raster.ts`
+     imports the `PDFDocumentProxy` type and `XfaLayer` (`pdf-ui` depends on `pdfjs-dist`
+     for this);
+   - no other component or panel imports an engine package.
+
+   Operations are `bytes in → bytes (or files) out` plus a report
    (`packages/pdf-core/src/ops/types.ts`).
 2. **Document state is a data model, not a store library.** Sessions, the operation
    journal, drafts and the save router are plain TypeScript in `pdf-model`, DOM-free and
@@ -78,18 +89,21 @@ at `src/*.ts`, and Vite compiles the TypeScript once, at the app boundary.
 ### Entry points are chosen for bundle shape, not tidiness
 
 `pdf-ui` declares subpath exports (`./ui`, `./viewer`, `./panels`, `./dialog`, `./tools`,
-`./printing`, `./palette`, `./text-edit`, `./tokens.css`) and `apps/web/src/App.tsx`
-imports through them. The root barrel is not tree-shakeable in practice, so importing it
-for a value pulls the whole surface into the first paint. Two concrete consequences are
-recorded in the code:
+`./printing`, `./palette`, `./text-edit`, `./scan`, `./tokens.css`) and
+`apps/web/src/App.tsx` imports through them. The root barrel is not tree-shakeable in
+practice, so importing it for a value pulls the whole surface into the first paint. Two
+concrete consequences are recorded in the code:
 
 - `packages/pdf-ui/src/shell/ShellSurface.tsx` is the `./ui` entry and is **only a re-export
   barrel** — it is the deliberate first-paint import surface, not a component. There is
   no `ShellSurface` component; the shell is `apps/web/src/App.tsx`.
-- `packages/pdf-core/src/ops/index.ts` re-exports every operation **except `./sign`**. Routing
-  signing through the barrel pulled `pkijs` + `asn1js` into the entry chunk (measured:
-  302.66 KiB gzip against a locked ≤ 250 KiB budget); the sign dialog imports
-  `pdf-core/ops/sign` directly so the ASN.1 stack keeps its own chunk.
+- `packages/pdf-core/src/ops/index.ts` re-exports only some of the operation modules; the
+  others (sanitize, PDF/A, structure, XFA, scan, conversion and more) are imported by
+  subpath, as `pdf-core/ops/<name>`, which `pdf-core`'s `./ops/*` export allows. The one
+  omission its code explains is `./sign`: routing signing through the barrel pulled `pkijs`
+  + `asn1js` into the entry chunk (measured: 302.66 KiB gzip against a locked ≤ 250 KiB
+  budget); the sign dialog imports `pdf-core/ops/sign` directly so the ASN.1 stack keeps
+  its own chunk.
 
 Everything heavy is a dynamic `import()`: the pdf.js core, the viewer stack, the dialogs,
 the dock panels, the print surface and the palette are all loaded on demand, and
@@ -1249,11 +1263,13 @@ also avoids the names already in the file). A radio group takes the group's labe
 name and each member's own label as its option; a group left with one member is created as
 a checkbox.
 
-**Scans.** A page whose text is mostly invisible OCR text (more than 55 % of its characters)
-has no drawings, so `rasterRules` renders it at 2x, thresholds it (Otsu) and merges dark
-horizontal runs into rulings that feed the same label rules. It finds underlines and cell
-rules only; boxes, squares and circles are not looked for in pixels. A page with no text at
-all is reported in `needsOcr`, and the panel says to run OCR first.
+**Scans.** A page is a scan when its largest single picture covers at least 55 %
+(`SCAN_SHARE = 0.55`) of the page area. If such a page has text and its own drawing gives
+fewer than 3 horizontal rules, `rasterRules` renders it at 2x, thresholds it (Otsu) and
+merges dark horizontal runs into rulings that feed the same label rules. It finds
+underlines and cell rules only; boxes, squares and circles are not looked for in pixels. A
+scan page with no text at all is reported in `needsOcr`, and the panel says to run OCR
+first.
 
 **The review.** `FormDetectPanel` and `FieldCandidateLayer` hold no document state. The shell
 keeps the detection per document version (`currentDetect` is null when the working id
@@ -1433,8 +1449,12 @@ space.
 `pdf-ui` is a controlled React library: **props and callbacks, no context, no store**. A
 repo-wide search finds no `createContext`/`useContext`. The only module-level state is
 what a preference needs — theme and locale in `localStorage`, the interface mode owned by
-`apps/web/src/interface-mode.ts` and announced on `window` — plus one module-level
-translator (`tools/labels.ts`) for surfaces with fixed prop contracts.
+`apps/web/src/interface-mode.ts` and announced on `window`. There is no module-level
+translator. Text comes from a `t: Translator` prop, and a few surfaces take it as optional
+(`t?: Translator`): `ThemeSelector`, `LanguageSelector`, `ModeSelector` and `ExportDialog` in
+`pdf-ui`, and `UpdateBanner` in `apps/web`. Without `t` they use fallback text of their own
+(Turkish strings in the theme and mode selectors, `Language` as the language selector's
+label, the message key itself in `ExportDialog`).
 
 Document state lives in `pdf-model`; UI state lives in `apps/web/src/App.tsx`; engine
 state lives inside the pdf.js viewer. The **one reverse channel** is the viewer's
@@ -2150,6 +2170,10 @@ Versioning is the interesting half:
   `apps/web/src/offline-packages.json` — the single list, read by the app *and* by the
   build. A capability is ready only when every path it needs is cached, with the missing
   ones named; a substring check would report a half-downloaded language pack as ready.
+  The shell asks only about the capabilities the preparation fetches
+  (`incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }))`): `tesseract`
+  is cached on first use, and counting it made every finished preparation read as
+  incomplete.
 - A cache written under a different identity is not evidence for this build:
   `matchesBuild` is false and nothing may be called ready.
 - The worker only ever caches paths from the build's own manifest. A page cannot hand it an
@@ -2235,8 +2259,12 @@ is what both the browser harnesses and the Playwright suite run against.
 A single Cloudflare Worker serving `dist/` as static assets (`wrangler.jsonc`): no
 Functions, no SSR, no database, and the request path never executes application JavaScript.
 `html_handling: auto-trailing-slash` makes the extension-less legal paths resolve,
-`not_found_handling: 404-page` serves the styled Turkish 404, and the custom domain is
-declared in the config. Wrangler is pinned at 4.135.0 inside the deploy scripts.
+`not_found_handling: 404-page` answers an unknown path with the nearest `404.html` — the
+styled Turkish `dist/404.html`, or the English `dist/en/404.html` under `/en/` (see
+[Cloudflare's static-site routing](https://developers.cloudflare.com/workers/static-assets/routing/static-site-generation/))
+— and the custom domain is declared in the config. `tools/preview-dist.mjs` follows the
+same nearest-404 rule when it serves `dist/`. Wrangler is pinned at 4.135.0 inside the
+deploy scripts.
 
 The release path is local gates, then a deliberate push, then Cloudflare: the build pipeline
 validates the pushed commit with `pnpm ci:verify` and its configured deploy command runs
@@ -2261,6 +2289,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Source-level behaviour | `tools/audit/regressions.cjs` — browser-free checks (it prints its own count) that transpile the **real** sources and run them against doubles (OPFS, service worker, pdf.js handle), plus selected React callbacks extracted from `App.tsx` by AST. Subjects: Save/Save As semantics, draft validation and encoding, journal snapshot stability, branch release, service-worker offline behaviour and cache isolation, OPFS persistence and recovery, pdf.js loading paths, OCR worker cleanup, the redaction save guard, failed writes and dirtiness, and a final unhandled-rejection sweep |
 | Gate integrity | `tools/audit/require-tests.mjs` fails the build when the unit run discovered zero test files, so an empty run cannot pass as a green gate |
 | Built application | Playwright against assembled `dist/` under production headers: shell and shortcut help, real PDF rendering, persisted/session selection move/rotate/delete/undo, unchanged pending-edit canvases, note export/reopen, tooltip hover/focus/mobile, offline reload, shared vault and OCR (its two real documents live in the ignored `e2e/fixtures/local/`; without them those specs skip with a stated reason); `editor-stability.spec.ts` holds the document still — a mark scrolls with its page, arming every tool and posting a notice leave the viewer where it is, the status-bar rotate turns the page on screen, typed Turkish text reaches the file as `/FreeText`, a protected file asks for its password and opens read-only, and document properties, an attachment added then removed in the panel, and bookmarks added then deleted in the outline form, written by the in-browser MuPDF writer, reach the exported file. `e2e/flows-document.spec.ts` drives the editor flows the other specs do not: a non-PDF is refused and a valid file opens afterwards, page stepper and zoom, page duplicate/move/delete with undo checked against the exported bytes, search, a form value, a value typed into a field on the page undoing in one step, a redaction box removing text from the export, and closing an edited document and the recent list (its controls named in the interface language; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes). `e2e/flows-pages.spec.ts` covers the page and file flows, each read back from the produced bytes: insert (blank and a page range of another file), merge at the start and end, extract (the page opens as `name-p2.pdf` while the source keeps its pages), split by ranges, export as images (PNG size at the chosen DPI, JPG chosen in the export dialog) and as text, print up to the browser print call (range, decoded sheets, a range error, the dialog in the interface language and its button reachable on a short window), opening by drop, reordering by drag, and a thumbnail's own rotate and delete buttons acting on that thumbnail's page (they once acted on the previous selection). `e2e/flows-modes.spec.ts` covers the modes and the release flow: two `Ctrl+Z` presses sent back to back undo two steps (history presses queue behind one another instead of being refused or lost), the status bar shows no zoom with no document open, reading mode (English text, arrow/page keys, Escape) and presentation mode (full screen, one page per key, Escape), the update banner and its Refresh against a second origin that ships a byte-different `/sw.js` (including a first-visit page, whose first update must reload too), and signing: the stamp on the page, a signature an independent `openssl cms -verify` accepts over the whole `/ByteRange`, no warning when exporting the file just signed, and the warning (then a broken signature on "Save anyway") when an edit after signing is exported — the save path judges every version the applied history produced, not only the newest. It also runs a menu-bar sweep (two-page/single spread, fit page, magnifier, theme, batch dialog, all in the interface language, and `<html lang>` following the detected locale). `e2e/flows-commands.spec.ts` drives the menu-bar commands the other specs leave out, one test per command or family, each read back from the produced bytes (`readProducedEntry` in `tool-fixture.ts` prints one object of the file): optimize (metadata cleared, pages rasterised), page boxes and labels, new form field with form data export (downloaded, document untouched) and import, replace pages, replace image, compare / accessibility tagging / redaction audit, page numbering, security (encrypted download with the permission bits) with remove password, link tool, layers written into `/OCProperties`, Select all and Rename (the header name edits in place; the export is named after it), browser storage (save, delete stored copies, sensitive session), underline/strikeout/squiggly, the home Merge PDFs tile (two chosen files become one new document, in the order chosen), the export dialog's compression level filling the Optimize form (`export-presets.ts`), a Bates batch started from the home screen, and an English check of every dialog's text and default values. `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does. `e2e/flows-parity.spec.ts` drives the parity flows, each failing on any console error: the palette's empty state (Enter runs nothing; *Advanced mode* keeps the keyboard), a comment thread with a reply and a status exported as XFDF and imported into a fresh copy, field detection on a Chromium-printed flat form (remove one, add the rest, one undo), sanitize removing the author from the exported file, PDF/A-2b opened in a new tab and passing its own check, the PDF/UA rows and the tag tree of a tagged print, the home grid's full rows, the missing-input error, and the language and right-to-left switches |
+| Landing and legal pages | `e2e/site.spec.ts`, Playwright against the same assembled `dist/`, covers the six pages of `apps/site` in Turkish and English: each is well-formed (one `h1` and one `main`, language, description, canonical, three `hreflang` links and a sitemap entry, resolving links and anchors), the language switch leads to the translation and back, the English pages contain no Turkish letters, the header call to action opens `/editor/` from both languages, section anchors scroll and the FAQ expands, an unknown path gets the styled 404 page with working exits (the English one under `/en/`, whose exits stay in English), the stored theme is applied by a synchronous `theme-boot.js` before first paint and survives a reload, fonts and images load with no CSP violation, and the skip link is the first tab stop with no sideways scroll at phone width |
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
