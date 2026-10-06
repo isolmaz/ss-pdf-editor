@@ -88,7 +88,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   document, builds a PDF from images, merges several PDFs in the order you choose or starts
   a batch run, and lists recent documents with search, sorting and stars. *All tools* lays
   every tool out by task; pick a tool first and the editor asks for the file when the tool
-  needs one.
+  needs one. A file that does not open drops the tool, so it never runs on a later document.
 - **Viewer.** pdf.js's own viewer stack drives continuous virtualised scrolling, text
   selection and search with match highlighting.
 - **View modes.** You get single-page, book and full-screen presentation modes, a

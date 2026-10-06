@@ -1711,6 +1711,9 @@ disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
 cancelled picker (the File System Access `AbortError` or the plain input's `cancel` event)
 drops the pending command, so it cannot run on a document opened later for another reason.
+So does every other way the pick ends without a document: a picker failure, a file kind
+refused as unsupported, an open or a conversion refused as busy or failing, and a cancelled
+password prompt.
 
 **Recent entries reopen their file.** Chromium hands a `FileSystemFileHandle` for a file picked
 with `showOpenFilePicker` or dropped (`DataTransferItem.getAsFileSystemHandle`), and
