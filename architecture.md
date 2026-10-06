@@ -356,8 +356,9 @@ had to stay green. The moves, and the defects they fixed on the way:
   opens DOCX/XLSX/PPTX itself, but only as reflowed text: a sheet lost its labels and grid, a
   slide became one paragraph and a Word table a list of cells. So each format is first read
   into HTML — DOCX through mammoth (BSD-2-Clause, `externalFileAccess` off), XLSX and PPTX by
-  `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom`, text and CSV by `ops/convert-text.ts`
-  (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are. Every part is
+  `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom` (a part xmldom cannot read is
+  `corrupt-document`; one it had to repair, such as a sheet cut off mid-row, is converted and
+  named in a `lost` note), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are. Every part is
   laid out (`Document.style` adds only the `@page` margin, before `layout`) and run through
   one `DocumentWriter`. The source's outline and links are written afterwards by the
   existing writers (`applyOutlineEdit`, `applyLinkEdit`, schemes other than `http:`,
@@ -987,8 +988,10 @@ them into the first paint.
   four point pairs (Gaussian elimination), and `estimatePageAspect`.
 - `scan-detect.ts` — `detectPage`. The picture is reduced to 400 px, grayscale, a 5×5
   Gaussian, Sobel gradients, non-maximum suppression and hysteresis. Each edge pixel votes in a
-  Hough accumulator only for lines whose normal is within 4° of its gradient; the twelve
-  strongest separated lines, plus the four edges of the frame (a page that runs out of the
+  Hough accumulator only for lines whose normal is within 6° of its gradient, and a peak is
+  read over three neighbouring distance bins (a side whose distance falls between two bins, or
+  whose gradient the 400 px reduction jitters — a page turned 45°, a hard-edged one — split its
+  votes and fell under the floor at 4° and one bin); the twelve strongest separated lines, plus the four edges of the frame (a page that runs out of the
   picture), are combined four at a time as two pairs of opposite sides. A candidate must be
   convex with angles of 45–135° and cover at least 12 % of the picture, and is scored by the
   geometric mean of how much of each side lies on an edge of the right direction, squared, times
@@ -1161,7 +1164,8 @@ and a counter and a remover cannot disagree because they are one function.
 Rendition, RichMediaExecute and a `file:` URI are "active" (default on); other URIs and
 GoToR/GoToE are "external links" (default off); GoTo, Named, Hide, ResetForm, SetOCGState and
 the media actions stay. A Link whose external action went and that has no other destination is
-removed with it; one whose script went stays.
+removed with it; one whose script went stays, unless external links are removed in the same
+run.
 
 **Hidden layers** (`sanitize-layers.ts`). Visibility is read from the default configuration
 (`/BaseState`, `/ON`, `/OFF`, an `/AS` View usage state) and from OCMD membership policies; a

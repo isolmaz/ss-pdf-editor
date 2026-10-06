@@ -26,6 +26,8 @@ export const convertPart = {
     'Tables were cut to {rows} rows and {columns} columns; {cells} cells were left out.',
   'op.note.convert.pptxApproximate':
     'Each slide became a page of its own size, with its text, tables and pictures in reading order. The slide design (positions, backgrounds, themes) is not reproduced exactly.',
+  'op.note.convert.xmlDamaged':
+    'Parts of the file are damaged ({parts}); what could be read was converted, and content may be missing.',
   'op.note.convert.imagesSkipped':
     '{count} images were left out because their format is not supported (such as EMF, WMF or SVG).',
   'op.note.convert.csvTruncated': 'The table was cut to {rows} rows; the file had {total}.',

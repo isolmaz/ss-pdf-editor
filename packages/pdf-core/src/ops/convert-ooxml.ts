@@ -56,13 +56,19 @@ export function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function parseXml(text: string, path: string): Document {
+/**
+ * One XML part. Only a fatal error stops the conversion. xmldom reports a mismatched or
+ * cut-off tag as a warning or an error and recovers, so a damaged part still reads — but
+ * what it lost is unknown, so its path goes into `damaged` and the report says so instead
+ * of passing a truncated sheet off as an empty one.
+ */
+function parseXml(text: string, path: string, damaged?: Set<string>): Document {
   let failure: string | null = null;
   const parser = new DOMParser({
-    // xmldom 0.8 reads `errorHandler`; an `onError` key is ignored. Only a fatal error
-    // stops the conversion: a producer's quirk is a warning and the part still reads.
+    // xmldom 0.8 reads `errorHandler`; an `onError` key is ignored.
     errorHandler: (level: string, message: string) => {
       if (level === 'fatalError') failure = message;
+      else damaged?.add(path);
     },
   } as never);
   const document = parser.parseFromString(text, 'application/xml') as unknown as Document;
@@ -70,6 +76,13 @@ function parseXml(text: string, path: string): Document {
     throw new ToolError('corrupt-document', { engine: 'model', path, engineMessage: failure ?? 'empty XML' });
   }
   return document;
+}
+
+/** The loss note for the parts `parseXml` had to repair, if any. */
+function damageNotes(damaged: ReadonlySet<string>): OperationNote[] {
+  return damaged.size === 0
+    ? []
+    : [note('lost', 'op.note.convert.xmlDamaged', { parts: [...damaged].join(', ') })];
 }
 
 /** Element children whose local name is `name` (namespace prefixes vary between producers). */
@@ -281,7 +294,8 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
   if (workbookText === null) {
     throw new ToolError('unsupported-format', { engine: 'model', path, engineMessage: 'no xl/workbook.xml' });
   }
-  const workbook = parseXml(workbookText, 'xl/workbook.xml');
+  const damaged = new Set<string>();
+  const workbook = parseXml(workbookText, 'xl/workbook.xml', damaged);
   const date1904 = ['1', 'true'].includes(
     descendants(workbook, 'workbookPr')[0]?.getAttribute('date1904') ?? '',
   );
@@ -291,13 +305,15 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
   const strings =
     sharedText === null
       ? []
-      : children(parseXml(sharedText, 'sharedStrings').documentElement, 'si').map(sharedString);
+      : children(parseXml(sharedText, 'xl/sharedStrings.xml', damaged).documentElement, 'si').map(
+          sharedString,
+        );
 
   /** Style index → is this cell a date. */
   const dateStyles: boolean[] = [];
   const stylesText = await entryText(zip, 'xl/styles.xml');
   if (stylesText !== null) {
-    const styles = parseXml(stylesText, 'xl/styles.xml');
+    const styles = parseXml(stylesText, 'xl/styles.xml', damaged);
     const custom = new Map<number, string>();
     for (const format of descendants(styles, 'numFmt')) {
       custom.set(Number(format.getAttribute('numFmtId')), format.getAttribute('formatCode') ?? '');
@@ -319,7 +335,7 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
     if (target === undefined) continue;
     const sheetText = await entryText(zip, target);
     if (sheetText === null) continue;
-    const document = parseXml(sheetText, target);
+    const document = parseXml(sheetText, target, damaged);
 
     const grid = new Map<number, Map<number, string>>();
     let maxRow = -1;
@@ -405,7 +421,10 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
       engineMessage: 'the workbook has no sheets',
     });
   }
-  const notes: OperationNote[] = [note('changed', 'op.note.convert.xlsxApproximate')];
+  const notes: OperationNote[] = [
+    note('changed', 'op.note.convert.xlsxApproximate'),
+    ...damageNotes(damaged),
+  ];
   if (truncated > 0) {
     notes.push(
       note('lost', 'op.note.convert.xlsxTruncated', {
@@ -564,7 +583,8 @@ export async function pptxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
       engineMessage: 'no ppt/presentation.xml',
     });
   }
-  const presentation = parseXml(presentationText, 'ppt/presentation.xml');
+  const damaged = new Set<string>();
+  const presentation = parseXml(presentationText, 'ppt/presentation.xml', damaged);
   const size = descendants(presentation, 'sldSz')[0];
   const page = {
     width: Number(size?.getAttribute('cx') ?? 9144000) / EMU_PER_POINT,
@@ -578,7 +598,7 @@ export async function pptxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
     if (target === undefined) continue;
     const slideText = await entryText(zip, target);
     if (slideText === null) continue;
-    const slide = parseXml(slideText, target);
+    const slide = parseXml(slideText, target, damaged);
     if (slide.documentElement.getAttribute('show') === '0') continue;
     const context: SlideContext = { zip, rels: await relationships(zip, target), skippedImages: 0 };
     const tree = descendants(slide, 'spTree')[0];
@@ -593,7 +613,10 @@ export async function pptxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
       engineMessage: 'the presentation has no slides',
     });
   }
-  const notes: OperationNote[] = [note('changed', 'op.note.convert.pptxApproximate')];
+  const notes: OperationNote[] = [
+    note('changed', 'op.note.convert.pptxApproximate'),
+    ...damageNotes(damaged),
+  ];
   if (skippedImages > 0) notes.push(note('lost', 'op.note.convert.imagesSkipped', { count: skippedImages }));
   return { parts, title: await coreTitle(zip), notes };
 }

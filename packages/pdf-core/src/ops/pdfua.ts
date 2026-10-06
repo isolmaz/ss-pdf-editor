@@ -1407,11 +1407,12 @@ function wrongValue(path: string, message: string): ToolError {
 }
 
 function setInfoTitle(doc: PDFDocument, title: string): void {
-  const trailer = doc.getTrailer();
-  let info = dictOf(trailer.get('Info'));
+  let info = dictOf(doc.getTrailer().get('Info'));
   if (info === null) {
     const created = doc.addObject(doc.newDictionary());
-    trailer.put('Info', created);
+    // A trailer handle taken before `addObject` is stale: a `put` through it reads back but is
+    // not saved, so a file without an Info dictionary lost its title. Fetch the trailer afresh.
+    doc.getTrailer().put('Info', created);
     info = resolved(created) ?? created;
   }
   info.put('Title', text(doc, title));
