@@ -248,8 +248,12 @@ export async function imageFromFile(file: File): Promise<StampSource | null> {
  * Whether a JPEG's EXIF orientation turns or mirrors it (tag 0x0112 ≠ 1). The browser
  * applies the tag when it decodes, a PDF reader does not, so a turned JPEG is re-encoded
  * upright instead of embedded as it is.
+ *
+ * An EXIF block whose offsets point past its bytes (cut short, or written wrong by the
+ * camera) counts as turned: its orientation cannot be read, and re-encoding what the
+ * browser decoded is right either way. A `DataView` read past the end throws.
  */
-async function jpegIsTurned(file: Blob): Promise<boolean> {
+export async function jpegIsTurned(file: Blob): Promise<boolean> {
   const bytes = new Uint8Array(await file.slice(0, 128 * 1024).arrayBuffer());
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let offset = 2;
@@ -257,17 +261,21 @@ async function jpegIsTurned(file: Blob): Promise<boolean> {
     if (bytes[offset] !== 0xff) return false;
     const marker = bytes[offset + 1] ?? 0;
     const length = view.getUint16(offset + 2);
-    if (marker === 0xe1 && view.getUint32(offset + 4) === 0x45786966) {
-      const tiff = offset + 10;
-      const little = view.getUint16(tiff) === 0x4949;
-      const entries = view.getUint16(tiff + view.getUint32(tiff + 4, little), little);
-      const first = tiff + view.getUint32(tiff + 4, little) + 2;
-      for (let index = 0; index < entries; index += 1) {
-        const entry = first + index * 12;
-        if (entry + 10 > bytes.length) return false;
-        if (view.getUint16(entry, little) === 0x0112) return view.getUint16(entry + 8, little) !== 1;
+    if (marker === 0xe1 && offset + 8 <= bytes.length && view.getUint32(offset + 4) === 0x45786966) {
+      try {
+        const tiff = offset + 10;
+        const little = view.getUint16(tiff) === 0x4949;
+        const entries = view.getUint16(tiff + view.getUint32(tiff + 4, little), little);
+        const first = tiff + view.getUint32(tiff + 4, little) + 2;
+        for (let index = 0; index < entries; index += 1) {
+          const entry = first + index * 12;
+          if (view.getUint16(entry, little) === 0x0112) return view.getUint16(entry + 8, little) !== 1;
+        }
+        return false;
+      } catch (error) {
+        if (error instanceof RangeError) return true;
+        throw error;
       }
-      return false;
     }
     if (marker === 0xda) return false;
     offset += 2 + length;

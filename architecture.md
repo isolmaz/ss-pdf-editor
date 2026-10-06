@@ -1970,9 +1970,12 @@ it, so its handles are there at once. The simple-signature dialog (`pdf-ui/dialo
 draws on a canvas with speed-weighted quadratic strokes, renders a typed name in one of two
 pinned handwriting faces (Dancing Script and Great Vibes, latin and latin-ext), or turns a
 photo's paper transparent by luminance (`ops/stamp-source.ts`); everything is trimmed to its
-ink and leaves as one PNG. A remembered signature is opt-in and stays in this browser's
-`localStorage` (`apps/web/src/signature-store.ts`, six entries at most); a sensitive session
-does not offer it. The dialog states that
+ink and leaves as one PNG. An added picture (`imageFromFile`) keeps a JPEG's own bytes
+unless it must shrink or its EXIF orientation turns it (`jpegIsTurned`); an EXIF block whose
+offsets point past its bytes counts as turned, so the picture is re-encoded from what the
+browser decoded rather than lost to a `RangeError`. A remembered signature is opt-in and
+stays in this browser's `localStorage` (`apps/web/src/signature-store.ts`, six entries at
+most); a sensitive session does not offer it. The dialog states that
 the picture is not a certified signature.
 
 Form fields, widgets and popups are **not** deletion targets: `isDeletableAnnotation()` drops
