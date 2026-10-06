@@ -5,6 +5,7 @@ import { batchPart } from './en-parts/batch';
 import { boxesPart } from './en-parts/boxes';
 import { commonPart } from './en-parts/common';
 import { comparePart } from './en-parts/compare';
+import { convertPart } from './en-parts/convert';
 import { dialogsPart } from './en-parts/dialogs';
 import { docopsPart } from './en-parts/docops';
 import { enginesPart } from './en-parts/engines';
@@ -65,6 +66,7 @@ export const en: Record<MessageKey, string> = {
   ...securityPart,
   ...shellPart,
   ...signaturePart,
+  ...convertPart,
   ...stampPart,
   ...verifyPart,
 

@@ -129,6 +129,18 @@ const LICENCE_SOURCES = [
   ['use-sync-external-store', 'use-sync-external-store/LICENSE'],
   ['@cloudflare/kumo', '@cloudflare/kumo/LICENSE'],
   ['@phosphor-icons/react', '@phosphor-icons/react/LICENSE'],
+  // The converter to PDF (`pdf-core/ops/convert*.ts`): mammoth and what it bundles in.
+  ['mammoth', 'mammoth/LICENSE'],
+  ['lop', 'lop/LICENSE'],
+  ['option', 'option/LICENSE'],
+  ['underscore', 'underscore/LICENSE'],
+  ['xmlbuilder', 'xmlbuilder/LICENSE'],
+  ['dingbat-to-unicode', 'dingbat-to-unicode/LICENSE'],
+  ['base64-js', 'base64-js/LICENSE'],
+  ['@xmldom/xmldom', '@xmldom/xmldom/LICENSE'],
+  ['jszip', 'jszip/LICENSE.markdown'],
+  // jszip's browser build (`dist/jszip.min.js`) carries pako inside it, and says so in its header.
+  ['pako', 'pako/LICENSE'],
 ];
 
 /**

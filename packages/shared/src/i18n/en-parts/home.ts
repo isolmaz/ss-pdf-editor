@@ -14,8 +14,9 @@ export const homePart = {
   'home.start.merge.desc': 'Combine several PDFs into one document, in the order you choose.',
   'home.start.batch.title': 'Batch processing',
   'home.start.batch.desc': 'Run the same steps over many files at once.',
-  'home.drop.title': 'Drop a PDF here',
-  'home.drop.desc': 'or click to choose a file',
+  'home.drop.title': 'Drop files here',
+  'home.drop.desc':
+    'A PDF opens; Word, Excel, PowerPoint, HTML and text are converted to PDF. Click to choose a file.',
 
   'home.tools.search': 'Search tools…',
   'home.tools.activeDocument': 'Tools apply to the open document: {name}',

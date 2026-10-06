@@ -169,6 +169,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   // File: the verbs every reader has.
   'file.new',
   'file.merge',
+  'file.convert',
   'file.create-images',
   'file.save',
   'file.export',
@@ -253,6 +254,7 @@ export const SIMPLE_MODE_DOCK_TABS: readonly DocumentPanelTab[] = ['pages', 'out
 export const STANDALONE_COMMAND_IDS: ReadonlySet<string> = new Set([
   'file.new',
   'file.merge',
+  'file.convert',
   'file.create-images',
   'file.batch',
 ]);
@@ -303,6 +305,28 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'file',
       keywords: ['merge', 'combine', 'join', 'birlestir', 'birlestirme'],
       run: dialog('merge-files'),
+    },
+    {
+      id: 'file.convert',
+      labelKey: 'convert.command',
+      group: 'file',
+      // Standalone: Word, Excel, PowerPoint, HTML, text, CSV or EPUB in, a new PDF tab out.
+      keywords: [
+        'convert',
+        'donustur',
+        'word',
+        'docx',
+        'excel',
+        'xlsx',
+        'powerpoint',
+        'pptx',
+        'html',
+        'txt',
+        'csv',
+        'epub',
+        'office',
+      ],
+      run: dialog('convert-to-pdf'),
     },
     {
       id: 'file.save',
