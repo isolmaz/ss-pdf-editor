@@ -798,6 +798,35 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'an alternative text is written onto the image object it describes',
   },
 
+  /* — the sanitiser: one step per category it was asked for — */
+  {
+    steps: [
+      'sanitize.javascript',
+      'sanitize.files',
+      'sanitize.metadata',
+      'sanitize.private',
+      'sanitize.thumbnails',
+      'sanitize.unused',
+    ],
+    mayChange: [],
+    why: 'scripts, attached files, metadata, private application data, thumbnails and unused objects are not drawn: the pages, their text and the forms are untouched, and the operation proves it by rendering sampled pages before and after',
+  },
+  {
+    steps: ['sanitize.links', 'sanitize.comments'],
+    mayChange: ['annotations'],
+    why: 'external links and comments are annotations, and removing them removes annotations',
+  },
+  {
+    steps: ['sanitize.forms'],
+    mayChange: ['formFieldCount', 'formFieldValues', 'annotations', 'pageContent', 'textContent'],
+    why: 'flattening or removing form fields deletes the fields and the widgets and, when flattened, bakes their appearance into the page',
+  },
+  {
+    steps: ['sanitize.layers'],
+    mayChange: ['pageContent', 'textContent', 'annotations'],
+    why: 'hidden layer content is cut out of the content streams; what the page shows is unchanged (the operation compares renders), but the streams are not',
+  },
+
   /* — encryption — */
   {
     steps: ['encrypt=aes-256', 'save(encrypt=none)'],

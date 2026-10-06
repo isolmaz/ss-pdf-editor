@@ -702,6 +702,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       run: dialog('unlock'),
     },
     {
+      id: 'tools.sanitize',
+      labelKey: 'sanitize.title',
+      group: 'tools',
+      disabled: noEdit,
+      keywords: ['sanitize', 'clean', 'metadata', 'javascript', 'attachment', 'temizle', 'ust veri', 'gizli'],
+      run: dialog('sanitize'),
+    },
+    {
       id: 'tools.properties',
       labelKey: 'properties.title',
       group: 'tools',

@@ -27,6 +27,7 @@ import { propertiesPart } from './en-parts/properties';
 import { propsPart } from './en-parts/props';
 import { redactPart } from './en-parts/redact';
 import { reviewPart } from './en-parts/review';
+import { sanitizePart } from './en-parts/sanitize';
 import { scanPart } from './en-parts/scan';
 import { securityPart } from './en-parts/security';
 import { shellPart } from './en-parts/shell';
@@ -77,6 +78,7 @@ export const en: Record<MessageKey, string> = {
   ...findReplacePart,
   ...reviewPart,
   ...scanPart,
+  ...sanitizePart,
   ...stampPart,
   ...verifyPart,
   ...sigValidatePart,

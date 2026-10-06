@@ -30,6 +30,7 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   properties: async () => (await import('./properties')).propertiesDialog,
   protect: async () => (await import('./security')).protectDialog,
   unlock: async () => (await import('./security')).unlockDialog,
+  sanitize: async () => (await import('./sanitize')).sanitizeDialog,
   redact: async () => (await import('./redact')).redactDialog,
   ocr: async () => (await import('./ocr')).ocrDialog,
   impose: async () => (await import('./impose')).imposeDialog,

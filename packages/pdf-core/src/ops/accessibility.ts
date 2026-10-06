@@ -595,6 +595,15 @@ function readInstructions(buffer: Uint8Array): readonly Instruction[] | null {
   return operands.length === 0 ? instructions : null;
 }
 
+/**
+ * The content-stream scanner under its public names: the sanitiser's hidden-layer pass
+ * (`sanitize-layers.ts`) cuts marked-content sections out of a page at exactly the
+ * instruction boundaries tagging splices at, and a second scanner would be a second idea of
+ * where a string or an inline image ends.
+ */
+export type { Instruction as ContentInstruction, Operand as ContentOperand };
+export { readInstructions as readContentInstructions };
+
 /** The first `count` operands when every one of them is a number, otherwise `null`. */
 function numbersOf(instruction: Instruction, count: number): readonly number[] | null {
   if (instruction.operands.length < count) return null;

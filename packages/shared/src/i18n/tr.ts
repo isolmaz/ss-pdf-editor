@@ -35,6 +35,7 @@ import { propertiesPart } from './parts/properties';
 import { propsPart } from './parts/props';
 import { redactPart } from './parts/redact';
 import { reviewPart } from './parts/review';
+import { sanitizePart } from './parts/sanitize';
 import { scanPart } from './parts/scan';
 import { securityPart } from './parts/security';
 import { shellPart } from './parts/shell';
@@ -80,6 +81,7 @@ export const tr = {
   ...findReplacePart,
   ...reviewPart,
   ...scanPart,
+  ...sanitizePart,
   ...stampPart,
   ...verifyPart,
   ...sigValidatePart,
