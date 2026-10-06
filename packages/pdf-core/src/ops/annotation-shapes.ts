@@ -41,6 +41,7 @@ import {
   visibleBox,
 } from '../engines/mupdf-write';
 import { writeFreeTextAnnotations } from './annotation-freetext';
+import type { ReviewRecordRequest } from './annotation-review';
 import { type QuarterTurn, transformPdfAnnotations } from './annotation-transform';
 import {
   type AnnotationMark,
@@ -559,6 +560,10 @@ function markerAppearance(
  *     here too, because the engine fills polygons and would paint the stroke's
  *     bounding box.
  *
+ * After the rotation step below, the replies and review states the session holds on
+ * its marks are written as `/IRT` records (`ops/annotation-review.ts`): a reply needs
+ * the reference its comment was given, which only exists once the comment is written.
+ *
  * Steps 2 to 4 are MuPDF rewrites, so they end the incremental fast path
  * and the report says so; a session holding only marks the engine
  * can write keeps it.
@@ -691,11 +696,63 @@ export async function writeAnnotationsToFile(
     }
   }
 
+  const answered = marks.filter(
+    (mark) =>
+      !present.has(mark.id) &&
+      ((mark.replies?.length ?? 0) > 0 || (mark.review !== undefined && mark.review.state !== 'None')),
+  );
+  if (answered.length > 0) {
+    const targets = await markerTargets(bytes, answered, context);
+    const records: ReviewRecordRequest[] = [];
+    for (const mark of answered) {
+      const target = targets.find((candidate) => candidate.markId === mark.id);
+      if (target === undefined) {
+        throw new ToolError('verification-failed', {
+          engine: 'mupdf',
+          engineMessage: `the comment ${mark.id} could not be resolved for its replies`,
+        });
+      }
+      const base = { pageIndex: target.pageIndex, parentId: target.id } as const;
+      for (const reply of mark.replies ?? []) {
+        records.push({
+          ...base,
+          kind: 'reply',
+          id: reply.id,
+          author: reply.author,
+          createdAt: reply.createdAt,
+          contents: reply.contents,
+        });
+      }
+      if (mark.review !== undefined && mark.review.state !== 'None') {
+        records.push({
+          ...base,
+          kind: 'state',
+          id: `${mark.id}-state`,
+          author: mark.review.author,
+          createdAt: mark.review.at,
+          state: mark.review.state,
+        });
+      }
+    }
+    // Loaded here, not at the top: most saves carry no reply, and the entry chunk stays lean.
+    const { writeCommentReview } = await import('./annotation-review');
+    const reviewed = await writeCommentReview(bytes, records, context);
+    bytes = reviewed.bytes;
+    steps.push(...reviewed.report.steps);
+    notes.push(...reviewed.report.notes);
+  }
+
   return {
     bytes,
     report: {
       engine:
-        shapes.length > 0 || markers.length > 0 || texts.length > 0 || turned.length > 0 ? 'mupdf' : 'pdfjs',
+        shapes.length > 0 ||
+        markers.length > 0 ||
+        texts.length > 0 ||
+        turned.length > 0 ||
+        answered.length > 0
+          ? 'mupdf'
+          : 'pdfjs',
       steps,
       notes,
       inputBytes: handle.pageCount === 0 ? 0 : bytes.byteLength,
@@ -706,6 +763,7 @@ export async function writeAnnotationsToFile(
         markers.length === 0 &&
         texts.length === 0 &&
         turned.length === 0 &&
+        answered.length === 0 &&
         !engineMarks.some((mark) => OWNED_KINDS.includes(mark.kind)),
     },
   };

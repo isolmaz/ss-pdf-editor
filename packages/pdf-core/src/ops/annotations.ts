@@ -94,6 +94,40 @@ export type AnnotationKind =
   | 'note'
   | 'freetext';
 
+/**
+ * The review states a reader offers for a comment (`/StateModel /Review`, ISO 32000-2
+ * §12.5.6.3). `None` is a state of its own: it is how a reviewer takes a state back.
+ */
+export type ReviewState = 'Accepted' | 'Rejected' | 'Cancelled' | 'Completed' | 'None';
+
+export const REVIEW_STATES: readonly ReviewState[] = [
+  'None',
+  'Accepted',
+  'Rejected',
+  'Cancelled',
+  'Completed',
+];
+
+/**
+ * A reply to a comment. In the file it becomes a `/Text` annotation whose `/IRT` names
+ * the comment it answers (`ops/annotation-review.ts`); in the session it travels with
+ * the mark it answers, so a reply to a comment that is not written yet is not lost.
+ */
+export interface CommentReply {
+  readonly id: string;
+  readonly author: string;
+  readonly contents: string;
+  /** ISO 8601. */
+  readonly createdAt: string;
+}
+
+/** The latest review state set on a comment, by whom and when (ISO 8601). */
+export interface CommentReview {
+  readonly state: ReviewState;
+  readonly author: string;
+  readonly at: string;
+}
+
 /** Mark kinds the pdf.js writer cannot finish and the MuPDF step takes over. */
 export const OWNED_KINDS: readonly AnnotationKind[] = ['underline', 'strikeout', 'squiggly', 'shapes'];
 
@@ -146,6 +180,10 @@ export interface AnnotationMark {
    * keep in step.
    */
   readonly rotation?: 0 | 90 | 180 | 270;
+  /** Replies, oldest first; written as `/IRT` replies when the mark is written. */
+  readonly replies?: readonly CommentReply[];
+  /** The review state, written as a `/State` record when the mark is written. */
+  readonly review?: CommentReview;
 }
 
 /**
@@ -254,6 +292,19 @@ export interface ExistingAnnotation {
    * reader's 1 pt default for an annotation whose file has neither.
    */
   readonly thickness?: number;
+  /**
+   * `/IRT`: the id of the annotation this one answers, in the same `17R` spelling as
+   * `id`. Present for replies and review-state records (`replyType` `R`) and for
+   * annotations grouped with another one (`replyType` `Group`).
+   */
+  readonly inReplyTo?: string;
+  readonly replyType?: 'R' | 'Group';
+  /** `/State` of a review record (`Accepted`, `Marked`, …), as the file spells it. */
+  readonly state?: string;
+  /** `/StateModel` of a review record: `Review` or `Marked`. */
+  readonly stateModel?: string;
+  /** `/CreationDate`, as the engine reports it. */
+  readonly created?: string;
 }
 
 /** The pdf.js surface these operations need, as `PdfDocumentHandle` exposes it. */
@@ -859,10 +910,27 @@ interface EngineAnnotationRecord {
   readonly contentsObj?: unknown;
   readonly titleObj?: unknown;
   readonly modificationDate?: unknown;
+  readonly creationDate?: unknown;
+  readonly inReplyTo?: unknown;
+  readonly replyType?: unknown;
+  readonly state?: unknown;
+  readonly stateModel?: unknown;
 }
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
+}
+
+/**
+ * A PDF name the engine passed through as its own `Name` object — `/State` and
+ * `/StateModel` arrive as `{ name: 'Accepted' }`, not as a string — or a plain string.
+ */
+function nameOf(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (value !== null && typeof value === 'object' && 'name' in value && typeof value.name === 'string') {
+    return value.name;
+  }
+  return null;
 }
 
 function asNumberArray(value: unknown): number[] | null {
@@ -991,6 +1059,11 @@ export async function readAnnotations(
       const borderWidth =
         style !== null && typeof style === 'object' && 'width' in style ? style.width : undefined;
       const thickness = finiteNumber(borderWidth);
+      const inReplyTo = asString(record.inReplyTo);
+      const replyType = record.replyType === 'Group' ? 'Group' : inReplyTo === null ? undefined : 'R';
+      const state = nameOf(record.state);
+      const stateModel = nameOf(record.stateModel);
+      const created = asString(record.creationDate);
       result.push({
         id: asString(record.id) ?? `${pageIndex}-${result.length}`,
         subtype,
@@ -1008,6 +1081,11 @@ export async function readAnnotations(
         ...(color === null ? {} : { color }),
         ...(opacity === undefined ? {} : { opacity }),
         ...(thickness === undefined || thickness <= 0 ? {} : { thickness }),
+        ...(inReplyTo === null ? {} : { inReplyTo }),
+        ...(replyType === undefined ? {} : { replyType }),
+        ...(state === null ? {} : { state }),
+        ...(stateModel === null ? {} : { stateModel }),
+        ...(created === null ? {} : { created }),
       });
     }
   }
@@ -1069,7 +1147,7 @@ export async function markerTargets(
 }
 
 /** The pdf.js spelling of an object reference: `17R` for generation 0 (`Ref.toString`). */
-function referenceOf(entry: PDFObject): string {
+export function referenceOf(entry: PDFObject): string {
   // `asIndirect()` answers only the number; the engine's own `17 5 R` carries the generation.
   const match = /^(\d+) (\d+) R$/.exec(entry.toString());
   const objectNumber = match === null ? entry.asIndirect() : Number(match[1]);

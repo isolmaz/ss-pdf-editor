@@ -1,0 +1,30 @@
+/** Comment replies, review states and XFDF (`pdf-core/ops/annotation-review.ts`, `annotation-xfdf.ts`). */
+
+export const reviewPart = {
+  'ann.reply': 'Yanıtla',
+  'ann.reply.label': 'Yanıtınız',
+  'ann.reply.send': 'Gönder',
+  'ann.reply.cancel': 'Vazgeç',
+  'ann.reply.remove': 'Yanıtı sil',
+  'ann.reply.count': '{count} yanıt',
+  'ann.reply.added': 'Yanıt eklendi',
+  'ann.reply.done': 'Yanıt belgeye yazıldı.',
+  'ann.reply.pendingDone': 'Yanıt eklendi; yorumla birlikte kaydedilecek.',
+  'ann.state.label': 'İnceleme durumu',
+  'ann.state.None': 'Durum yok',
+  'ann.state.Accepted': 'Kabul edildi',
+  'ann.state.Rejected': 'Reddedildi',
+  'ann.state.Cancelled': 'İptal edildi',
+  'ann.state.Completed': 'Tamamlandı',
+  'ann.state.Marked': 'İşaretli',
+  'ann.state.by': '{state} · {author}',
+  'ann.state.changed': 'İnceleme durumu değiştirildi',
+  'ann.state.done': 'İnceleme durumu belgeye yazıldı: {state}.',
+  'ann.data.exportXfdf': 'Yorumları XFDF olarak dışa aktar',
+  'ann.data.xfdfExported': '{count} yorum yanıtlarıyla birlikte XFDF olarak dışa aktarıldı: {name}',
+  'ann.data.xfdfSkipped':
+    '{count} ek açıklama yorum olmadığı için (damga, bağlantı, form alanı) dışa aktarılmadı.',
+  'ann.data.repliesImported': '{count} yanıt ve inceleme durumu yorumlarına bağlandı.',
+  'op.note.annotate.replies': '{count} yanıt, yanıtladığı yoruma bağlı olarak (/IRT) yazıldı.',
+  'op.note.annotate.states': '{count} inceleme durumu (/State) yazıldı.',
+} as const;

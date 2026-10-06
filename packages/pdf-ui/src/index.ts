@@ -48,7 +48,7 @@ export {
   type MeasureSettingsProps,
 } from './ops/MeasureLayer';
 export { RedactionLayer, type RedactionLayerProps } from './ops/RedactionLayer';
-export { CommentsPanel, type CommentsPanelProps } from './panels/CommentsPanel';
+export { CommentsPanel, type CommentsPanelProps, type ReviewTarget } from './panels/CommentsPanel';
 export {
   DocumentPanel,
   type DocumentPanelProps,

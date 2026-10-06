@@ -1323,6 +1323,41 @@ remove several marks. New drawing gestures already use session UUIDs. Recovered 
 records are converted through their original storage keys and reminted; engine-local keys
 must never become persistent mark identity.
 
+**Threads.** A reply or a review state in the file is a `/Text` annotation whose `/IRT`
+names the comment it answers (`ops/annotation-review.ts` writes them; the pure
+`ops/annotation-threads.ts` reads them). `commentThreads()` folds every such record into
+the comment its `/IRT` chain ends at: the panel lists replies under the comment and shows
+the newest `Review` state beside it. A record whose comment is gone stays a row of its own.
+Records are still targets, so the panel can remove a reply by identity, but they have no
+boxes. They are written with an empty appearance (a state also with the Hidden flag), so
+no reader stacks a second icon on the comment, and a pointer never lands on one.
+`withThreadRecords()` widens a removal of a comment to its records before
+`planMarkRemoval`, as readers with threads do. A session mark carries its replies and
+review state on itself (`AnnotationMark.replies`, `.review`), and `writeAnnotationsToFile`
+writes them once `markerTargets` has resolved the reference the mark was given. A reply to a
+file comment is written at once through `writeFileAnnotation`, as one journal step. The
+writer refuses a parent that is not on its page or is a popup, widget or link, and reads
+every record back by `/NM`, `/IRT` and `/State`. pdf.js reports `/State` and `/StateModel`
+as name objects (`{ name }`), which `readAnnotations` unwraps.
+
+**XFDF** (`ops/annotation-xfdf.ts`, loaded on demand) exports the file's comments
+(`readAnnotations`) and the session's marks together, each with its thread, in PDF user
+space. Session marks are turned through each page's top edge. Elements are named by their
+id, and replies and states point at their comment with `inreplyto`. The import reads
+`highlight`, `underline`, `strikeout`, `squiggly`, `ink`, `square`, `circle`, `line`,
+`text` and `freetext` into session marks in PDF user space (`toAppSpace` turns them).
+Replies and states are attached to the mark their chain ends at. Every mark gets a fresh id:
+a name like `5R` is an object number in some file, possibly the comment already on screen.
+The browser's `DOMParser` parses it, and `@xmldom/xmldom` is used only where there is
+none (Node); an attribute is read with `hasAttribute` first, because that package answers
+`''` for a missing one. `toAppSpace` mirrors a line's two ends point by point. A line's
+`rect` is its ends in drag order, and normalising it as a box turned the line around.
+
+**FDF strings.** A value with any character outside ASCII is written whole as UTF-16BE
+behind the `\376\377` BOM (`form-data.ts`). The writer used to escape only the non-ASCII
+characters as two-byte units inside a single-byte string, so `gö` came back as `g\0ö`.
+That broke Turkish form values and comments in every reader.
+
 `planMarkRemoval(targets, keys)` turns a selection into the two paths it needs, and
 `removeTargets()` is **the one removal intent** for Delete, the strip and both panels:
 

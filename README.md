@@ -40,7 +40,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | | |
 | --- | --- |
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
-| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark |
+| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
@@ -127,6 +127,19 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     securely, use redaction.
 - **Style.** The app sets colour, opacity, thickness and author. Multiply blending keeps
   text readable, and freehand strokes stay continuous in the exported file.
+- **Comment threads.** In the Notes panel every comment can be answered and given a review
+  status (Accepted, Rejected, Cancelled, Completed), as in Acrobat.
+  - A reply is a real PDF reply (`/IRT`) and a status is a real `/State` record, so Acrobat,
+    Foxit and other readers show the same thread. Replies and statuses already in a file
+    are listed under their comment.
+  - A comment already in the file gets the reply at once, as one undoable step. A comment
+    not saved yet keeps it until the comment itself is written.
+  - Deleting a comment deletes its replies and statuses with it.
+- **Comment exchange.** Comments can be exported and imported as **XFDF** (the XML format
+  review tools share), FDF (Acrobat's container) or JSON (this app's lossless form).
+  - XFDF carries the comments already in the file as well as the unsaved ones, with their
+    replies and statuses. JSON and FDF carry the unsaved ones.
+  - Imported comments arrive as unsaved marks that can still be edited.
 - **Operations in two steps.** Every operation opens in the tools panel. First you set it
   up, then *Preview* runs it and shows a report. The report's own button applies the
   result. Pop-up windows are used only for decisions that block, such as a password,
@@ -368,6 +381,10 @@ The limits are defined once, in
   the file and can be undone. It is not a forensic scrub.
 - **Typed text.** Each save that adds typed text embeds the full Noto Sans font (about
   630 KB), without subsetting. A reader that ignores `/AP` falls back to Helvetica.
+- **XFDF.** Appearance streams and rich-text styling do not travel: rich text is read as
+  plain text, and a rotated mark is exported as it was drawn, unrotated. A private
+  `Marked` check mark is shown but not written or imported. Stamps, links and form fields
+  are not comments and are left out of the export, and the notice counts them.
 - **Protected documents.** These are read-only. To edit one, make an explicit unlocked copy.
 - **Text editing.** Only horizontal text is editable. Vertical text, skewed baselines and
   Type3 text are not. Unknown fonts are re-rendered in a substitute font, and the UI says

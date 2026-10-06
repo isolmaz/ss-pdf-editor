@@ -12,7 +12,8 @@
  *
  *  - **JSON** is the lossless one, and it is ours: `{ version, pageCount, marks }`.
  *    Everything the model carries (kind, page, quads, colour, opacity, thickness,
- *    shape, ink strokes, contents, author, createdAt) round-trips exactly.
+ *    shape, ink strokes, contents, author, createdAt, replies, review state)
+ *    round-trips exactly.
  *  - **FDF** is the container Acrobat's own “export comments” writes, and it is
  *    reused here through the **same** writer/parser the form-data interchange uses
  *    (`form-data.ts`). The records are keyed `ann.<index>.<field>`; an exported file
@@ -23,12 +24,23 @@
  * would mean re-deriving `/AP` streams the PDF engine already builds, and importing
  * one would mean parsing arbitrary annotation dictionaries — a fidelity claim this
  * module does not make. The FDF written here carries the same *records* as the JSON
- * (geometry included, so the round trip is lossless for our own files); reading
- * Acrobat's comment FDF is not read yet.
+ * (geometry included, so the round trip is lossless for our own files); Acrobat's
+ * comment FDF is read by `parseAcrobatCommentsFdf` below.
+ *
+ * XFDF, the XML form every review tool exchanges, is `annotation-xfdf.ts`: it carries
+ * the file's own annotations as well as the session's, with their replies and states.
  */
 
 import { ToolError } from 'pdf-shared';
-import type { AnnotationKind, AnnotationMark, MarkBox } from './annotations';
+import {
+  type AnnotationKind,
+  type AnnotationMark,
+  type CommentReply,
+  type CommentReview,
+  type MarkBox,
+  REVIEW_STATES,
+  type ReviewState,
+} from './annotations';
 import { type FdfToken, type FormDataRecord, parseFdf, serializeFdf, tokenizePdfSource } from './form-data';
 
 /** The JSON envelope's version, bumped when the record shape changes meaning. */
@@ -80,10 +92,14 @@ export function toAppSpace(mark: AnnotationMark, pageTop: number): AnnotationMar
     Math.max(box[0], box[2]),
     pageTop - Math.min(box[1], box[3]),
   ];
+  // A line's `rect` is its two ends in drag order (`lineEndpoints`), not a box: each
+  // point is mirrored where it is, or the line would come back pointing the other way.
+  const line = mark.kind === 'shapes' && mark.shape === 'line';
+  const flipPoints = (box: MarkBox): MarkBox => [box[0], pageTop - box[1], box[2], pageTop - box[3]];
   return {
     ...mark,
     quads: mark.quads.map(flip),
-    ...(mark.rect === undefined ? {} : { rect: flip(mark.rect) }),
+    ...(mark.rect === undefined ? {} : { rect: line ? flipPoints(mark.rect) : flip(mark.rect) }),
     ...(mark.strokes === undefined
       ? {}
       : {
@@ -146,7 +162,62 @@ function recordsFor(index: number, mark: AnnotationMark): readonly FormDataRecor
       value: mark.strokes.map((stroke) => stroke.map((value) => Number(value.toFixed(3))).join(' ')),
     });
   }
+  // Replies and the review state travel as one JSON text per entry: FDF values are
+  // strings, and a reply is three of them that must stay together.
+  if (mark.replies !== undefined && mark.replies.length > 0) {
+    records.push({
+      name: `${prefix}.replies`,
+      value: mark.replies.map((reply) => JSON.stringify(replyRecord(reply))),
+    });
+  }
+  if (mark.review !== undefined)
+    records.push({ name: `${prefix}.review`, value: JSON.stringify(mark.review) });
   return records;
+}
+
+/** A reply as a file carries it; the id is the session's own and is minted again on import. */
+function replyRecord(reply: CommentReply): Omit<CommentReply, 'id'> {
+  return { author: reply.author, contents: reply.contents, createdAt: reply.createdAt };
+}
+
+/** Replies out of their JSON texts; an entry that is not one is dropped. */
+function decodeReplies(values: readonly string[]): readonly CommentReply[] {
+  const replies: CommentReply[] = [];
+  for (const value of values) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed === null || typeof parsed !== 'object') continue;
+      const { author, contents, createdAt } = parsed as Record<string, unknown>;
+      if (typeof contents !== 'string' || contents.trim() === '') continue;
+      replies.push({
+        id: crypto.randomUUID(),
+        author: typeof author === 'string' ? author : '',
+        contents,
+        createdAt: typeof createdAt === 'string' ? createdAt : new Date().toISOString(),
+      });
+    } catch {
+      // Not a reply record; the mark itself still imports.
+    }
+  }
+  return replies;
+}
+
+/** The review state out of its JSON text, or `null` when it is not one. */
+function decodeReview(value: string | null): CommentReview | null {
+  if (value === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (parsed === null || typeof parsed !== 'object') return null;
+    const { state, author, at } = parsed as Record<string, unknown>;
+    if (typeof state !== 'string' || !REVIEW_STATES.includes(state as ReviewState)) return null;
+    return {
+      state: state as ReviewState,
+      author: typeof author === 'string' ? author : '',
+      at: typeof at === 'string' ? at : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Rebuilds one mark from its records; `null` when the record set is unusable. */
@@ -201,6 +272,8 @@ function markFromRecords(
   if (rotation !== 0 && rotation !== 90 && rotation !== 180 && rotation !== 270) return null;
   const shape = text('shape');
   const createdAt = text('created') ?? text('createdAt');
+  const replies = decodeReplies(list('replies'));
+  const review = decodeReview(text('review'));
   return {
     id: crypto.randomUUID(),
     kind: kind as AnnotationKind,
@@ -217,6 +290,8 @@ function markFromRecords(
     ...(strokes.length === 0 ? {} : { strokes }),
     ...(rect === undefined ? {} : { rect }),
     ...(fontSize === null ? {} : { fontSize }),
+    ...(replies.length === 0 ? {} : { replies }),
+    ...(review === null ? {} : { review }),
   };
 }
 
@@ -252,6 +327,10 @@ export function serializeAnnotationsJson(
         : {
             strokes: mark.strokes.map((stroke) => stroke.map((value) => Number(value.toFixed(3))).join(' ')),
           }),
+      ...(mark.replies === undefined || mark.replies.length === 0
+        ? {}
+        : { replies: mark.replies.map(replyRecord) }),
+      ...(mark.review === undefined ? {} : { review: mark.review }),
     })),
   };
   return new TextEncoder().encode(pretty ? JSON.stringify(payload, null, 2) : JSON.stringify(payload));
@@ -293,11 +372,18 @@ export function parseAnnotationsJson(text: string): AnnotationDataResult {
       if (typeof value === 'string' || typeof value === 'boolean') fields.set(key, value);
       else if (typeof value === 'number') fields.set(key, String(value));
       else if (Array.isArray(value)) {
+        // Replies are objects in the JSON and JSON texts in the record model.
         fields.set(
           key,
-          value.filter((item): item is string => typeof item === 'string'),
+          value.flatMap((item) =>
+            typeof item === 'string'
+              ? [item]
+              : item !== null && typeof item === 'object'
+                ? [JSON.stringify(item)]
+                : [],
+          ),
         );
-      }
+      } else if (value !== null && typeof value === 'object') fields.set(key, JSON.stringify(value));
     }
     const mark = markFromRecords(fields);
     if (mark === null) skipped += 1;
@@ -592,7 +678,7 @@ function markFromAcrobat(index: number, entry: CommentEntry): AnnotationMark | n
 
 /** `/M` in Acrobat's own date form; anything else becomes “now”, which is a fact about the
  * import and is why the panel shows the date the file carried when it carried one. */
-function isoFromAcrobatDate(value: string): string {
+export function isoFromAcrobatDate(value: string): string {
   const match = /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/.exec(value.trim());
   if (match === null) return new Date().toISOString();
   const [, year, month = '01', day = '01', hour = '00', minute = '00', second = '00'] = match;

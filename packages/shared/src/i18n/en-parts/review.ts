@@ -1,0 +1,30 @@
+/** Comment replies, review states and XFDF (`pdf-core/ops/annotation-review.ts`, `annotation-xfdf.ts`). */
+
+export const reviewPart = {
+  'ann.reply': 'Reply',
+  'ann.reply.label': 'Your reply',
+  'ann.reply.send': 'Send',
+  'ann.reply.cancel': 'Cancel',
+  'ann.reply.remove': 'Delete reply',
+  'ann.reply.count': '{count} replies',
+  'ann.reply.added': 'Reply added',
+  'ann.reply.done': 'The reply was written to the document.',
+  'ann.reply.pendingDone': 'Reply added; it is saved together with the comment.',
+  'ann.state.label': 'Review status',
+  'ann.state.None': 'No status',
+  'ann.state.Accepted': 'Accepted',
+  'ann.state.Rejected': 'Rejected',
+  'ann.state.Cancelled': 'Cancelled',
+  'ann.state.Completed': 'Completed',
+  'ann.state.Marked': 'Marked',
+  'ann.state.by': '{state} · {author}',
+  'ann.state.changed': 'Review status changed',
+  'ann.state.done': 'The review status was written to the document: {state}.',
+  'ann.data.exportXfdf': 'Export comments as XFDF',
+  'ann.data.xfdfExported': '{count} comments exported as XFDF with their replies: {name}',
+  'ann.data.xfdfSkipped':
+    '{count} annotations are not comments (stamps, links, form fields) and were not exported.',
+  'ann.data.repliesImported': '{count} replies and review states were attached to their comments.',
+  'op.note.annotate.replies': '{count} replies were written, each linked to the comment it answers (/IRT).',
+  'op.note.annotate.states': '{count} review states (/State) were written.',
+} as const;
