@@ -4222,7 +4222,9 @@ export function App({ store }: AppProps) {
         setNotice(
           answer.kind === 'reply'
             ? t('ann.reply.pendingDone')
-            : t('ann.state.by', { state: t(`ann.state.${answer.state}`), author }),
+            : author.trim() === ''
+              ? t(`ann.state.${answer.state}`)
+              : t('ann.state.by', { state: t(`ann.state.${answer.state}`), author }),
         );
         return;
       }

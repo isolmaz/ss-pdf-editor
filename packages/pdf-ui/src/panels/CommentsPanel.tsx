@@ -410,10 +410,12 @@ export function CommentsPanel({
                           title={
                             row.review === null
                               ? t('ann.state.label')
-                              : t('ann.state.by', {
-                                  state: t(stateKey(row.review.state) ?? 'ann.state.None'),
-                                  author: row.review.author,
-                                })
+                              : row.review.author.trim() === ''
+                                ? t(stateKey(row.review.state) ?? 'ann.state.None')
+                                : t('ann.state.by', {
+                                    state: t(stateKey(row.review.state) ?? 'ann.state.None'),
+                                    author: row.review.author,
+                                  })
                           }
                           onChange={(event) =>
                             onSetState(

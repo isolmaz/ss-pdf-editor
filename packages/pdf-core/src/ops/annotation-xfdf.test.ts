@@ -119,6 +119,19 @@ describe('XFDF round trip of the session marks', () => {
     expect(ids.some((id) => originals.has(id))).toBe(false);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it('writes a state set by nobody in particular as the bare state, as Acrobat does', () => {
+    const anonymous = mark({ id: 'n', kind: 'note', rect: [1, 1, 21, 21] });
+    const text = new TextDecoder().decode(
+      serializeXfdf({
+        marks: [{ ...anonymous, review: { state: 'Accepted', author: '', at: '2026-10-04T09:00:00.000Z' } }],
+        existing: [],
+        pageTop: () => TOP,
+      }).bytes,
+    );
+    expect(text).toContain('<contents>Accepted</contents>');
+    expect(text).not.toContain('set by');
+  });
 });
 
 describe('XFDF export of the file`s own annotations', () => {
