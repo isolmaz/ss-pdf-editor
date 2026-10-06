@@ -134,7 +134,7 @@ export function OperationForm({
 
       {done ? (
         <>
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 overflow-y-auto pe-1">
             <OperationReportPanel t={t} report={result.report} />
           </div>
           <div className="flex shrink-0 justify-end gap-2 border-t border-kumo-line/40 pt-2">
@@ -148,7 +148,7 @@ export function OperationForm({
         </>
       ) : (
         <>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pe-1">
             {running ? null : (
               // The form stays mounted through failure and cancellation: the fields
               // are the retry, so the button that just failed runs again once the

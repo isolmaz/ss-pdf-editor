@@ -93,7 +93,7 @@ export function ToolRail({ t, activeTool, markupTool, onSelectTool, canEdit }: T
   return (
     <nav
       aria-label={t('tools.all')}
-      className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-contain border-r border-kumo-line bg-kumo-base py-2 select-none"
+      className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-contain border-e border-kumo-line bg-kumo-base py-2 select-none"
     >
       {RAIL.map((spec) => {
         const armed = spec.id === 'markup' ? isMarkupTool(activeTool) : activeTool === spec.id;

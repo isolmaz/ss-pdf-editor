@@ -168,7 +168,7 @@ export function FormDetectPanel({
                   type="button"
                   aria-current={candidate.id === selectedId ? 'true' : undefined}
                   onClick={() => onSelect(candidate.id)}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-start"
                   title={t(SOURCE_KEYS[candidate.source])}
                 >
                   <span className="min-w-0 flex-1 truncate text-xs text-kumo-default">

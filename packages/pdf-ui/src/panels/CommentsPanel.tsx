@@ -278,7 +278,7 @@ export function CommentsPanel({
         >
           {t('ann.data.exportXfdf')}
         </button>
-        <label className="ml-auto flex h-6 cursor-pointer items-center rounded-sm px-1.5 text-[11px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default">
+        <label className="ms-auto flex h-6 cursor-pointer items-center rounded-sm px-1.5 text-[11px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default">
           {t('ann.data.import')}
           <input
             type="file"
@@ -322,7 +322,7 @@ export function CommentsPanel({
                       onSelect?.(selectedId === row.id ? null : row.id);
                       onGoToPage(row.pageIndex);
                     }}
-                    className="w-full text-left"
+                    className="w-full text-start"
                   >
                     <span className="flex items-center gap-1.5">
                       <span
@@ -421,7 +421,7 @@ export function CommentsPanel({
                               event.target.value as ReviewState,
                             )
                           }
-                          className="ml-auto h-5 min-w-0 rounded-sm border border-kumo-line bg-kumo-base px-0.5 text-[10px] text-kumo-default disabled:opacity-40"
+                          className="ms-auto h-5 min-w-0 rounded-sm border border-kumo-line bg-kumo-base px-0.5 text-[10px] text-kumo-default disabled:opacity-40"
                         >
                           {REVIEW_STATES.map((state) => (
                             <option key={state} value={state}>
@@ -442,7 +442,7 @@ export function CommentsPanel({
                   </span>
                   {row.replies.length > 0 ? (
                     <ul
-                      className="mt-1 flex flex-col gap-0.5 border-l border-kumo-line pl-1.5"
+                      className="mt-1 flex flex-col gap-0.5 border-s border-kumo-line ps-1.5"
                       aria-label={t('ann.reply.count', { count: row.replies.length })}
                     >
                       {row.replies.map((reply) => (

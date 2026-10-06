@@ -354,7 +354,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
               right: rightPageCount,
             })}
             {mismatch === 0 ? null : (
-              <span className="ml-1 text-kumo-warning">
+              <span className="ms-1 text-kumo-warning">
                 {t('compare.mismatch' as MessageKey, { delta: mismatch })}
               </span>
             )}
@@ -371,7 +371,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
           <table className="w-full border-collapse">
             <caption className="sr-only">{t('compare.table' as MessageKey)}</caption>
             <thead>
-              <tr className="text-left text-[11px] text-kumo-subtle">
+              <tr className="text-start text-[11px] text-kumo-subtle">
                 <th scope="col" className={CELL_CLASS}>
                   {t('compare.column.page' as MessageKey)}
                 </th>
@@ -396,7 +396,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
                   className={ROW_CLASS}
                   data-compare-row={`${row.method}:${String(row.pageIndex + 1)}`}
                 >
-                  <th scope="row" className={`${CELL_CLASS} text-left text-kumo-default`}>
+                  <th scope="row" className={`${CELL_CLASS} text-start text-kumo-default`}>
                     {row.pageIndex + 1}
                   </th>
                   <td className={`${CELL_CLASS} text-kumo-subtle`}>

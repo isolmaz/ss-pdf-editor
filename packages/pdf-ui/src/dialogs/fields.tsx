@@ -613,7 +613,7 @@ export function FieldList({
                       key={fileKey(file)}
                       className="flex items-center gap-1 rounded-sm border border-kumo-line/60 bg-kumo-base px-2 py-1 text-[11px] text-kumo-default"
                     >
-                      <span className="w-5 shrink-0 text-right tabular-nums text-kumo-subtle">
+                      <span className="w-5 shrink-0 text-end tabular-nums text-kumo-subtle">
                         {index + 1}.
                       </span>
                       <span className="min-w-0 flex-1 truncate">{file.name}</span>

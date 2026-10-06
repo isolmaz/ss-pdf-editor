@@ -159,7 +159,11 @@ export function Dock({ t, side, tabs, activeId, onSelect, onToggle, wide = false
           aria-label={t(side === 'left' ? 'dock.toggleLeft' : 'dock.toggleRight')}
           className="flex size-6 items-center justify-center rounded text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong transition-colors"
         >
-          {side === 'left' ? <CaretDoubleLeft size={14} /> : <CaretDoubleRight size={14} />}
+          {side === 'left' ? (
+            <CaretDoubleLeft size={14} className="rtl:-scale-x-100" />
+          ) : (
+            <CaretDoubleRight size={14} className="rtl:-scale-x-100" />
+          )}
         </button>
       </div>
       <div
@@ -176,7 +180,7 @@ export function Dock({ t, side, tabs, activeId, onSelect, onToggle, wide = false
   return (
     <div
       className={`flex h-full shrink-0 border-kumo-line bg-kumo-base ${
-        side === 'left' ? 'w-72 border-r' : wide ? 'w-[26rem] max-w-full border-l' : 'w-80 border-l'
+        side === 'left' ? 'w-72 border-e' : wide ? 'w-[26rem] max-w-full border-s' : 'w-80 border-s'
       }`}
     >
       {side === 'left' ? (
