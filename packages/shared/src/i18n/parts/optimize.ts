@@ -14,12 +14,7 @@ export const optimizePart = {
   'optimize.dpi': 'Çözünürlük (DPI)',
   'optimize.greyscale': 'Gri tonlamaya çevir',
   'optimize.stripMetadata': 'Üst veriyi temizle',
-  'optimize.sourceInfo': 'Görsel sıkıştırma kaynağı',
-  'optimize.loss.rasterize':
-    'Metin katmanı, bağlantılar, içindekiler ve açıklamalar görüntüye dönüşür; arama çalışmaz.',
-  'optimize.loss.stripMetadata': 'Belge üst verisi (Info) silinir.',
   'optimize.producerKept': 'Üretici satırı korunur.',
-  'optimize.done': 'Optimizasyon tamamlandı.',
   'optimize.grew': 'Sonuç dosya özgün dosyadan büyük; sıkıştırma kazanç sağlamadı.',
   'optimize.saved': '{before} → {after} ({percent}% azalma)',
   'optimize.noGain': 'Kazanç yok: {before} → {after}',

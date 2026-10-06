@@ -6,7 +6,6 @@
 export const shellPart = {
   'tools.all': 'TÜM ARAÇLAR',
   'toolbar.select': 'Seçim Aracı',
-  'toolbar.highlight': 'Vurgula',
   'toolbar.text': 'Metni Düzenle',
   'toolbar.shape': 'Şekil Çiz (Kare / Dikdörtgen)',
   'toolbar.comment': 'Yorum / Not Ekle',
@@ -39,13 +38,7 @@ export const shellPart = {
   'shell.shortcuts.actualSize': 'Gerçek boyut (%100)',
   'shell.shortcuts.firstPage': 'İlk sayfa',
   'shell.shortcuts.lastPage': 'Son sayfa',
-  'shell.about.title': 'Hakkında',
-  'shell.about.locality':
-    'Belge içeriği cihazınızda işlenir. Tarayıcı sürümü hiçbir ağ isteği yapmaz; çekirdek özellikler paketler indirildikten sonra çevrimdışı çalışır.',
-  'shell.about.engines': 'Kullanılan motorlar',
   'shell.about.offline': 'Çevrimdışı hazırlık',
-  'shell.about.offline.ready': 'hazır',
-  'shell.about.offline.missing': 'eksik',
   'shell.about.prepare': 'Çevrimdışı için hazırla',
   'shell.about.source': 'Kaynak kodu (AGPL-3.0)',
 
@@ -69,23 +62,16 @@ export const shellPart = {
   'panel.history.empty': 'Bu belgede işlem geçmişi yok.',
   'panel.history.undoable': '{count} adım geri alınabilir',
   'panel.history.redoable': '{count} adım yinelenebilir',
-  'panel.history.apply': 'Uygula',
   'panel.toolSettings': 'Araç ayarları',
   'panel.toolSettings.none': 'Etkin araç yok.',
   'panel.redaction': 'Karartma',
-  'panel.tools': 'Araçlar',
   'panel.pages.selection': 'Seçim: {count} sayfa',
-  'panel.pages.current': 'Geçerli sayfa {page}',
 
   'progress.label': 'İşlem durumu',
-  'progress.idle': 'Hazır',
   'progress.cancel': 'İptal et',
   'progress.pages': '{done}/{total} sayfa',
 
-  'status.noDocument': 'Belge yok',
-  'status.saved': 'Kaydedildi',
   'status.dirty': 'Kaydedilmemiş değişiklikler',
-  'status.workingVersion': 'Çalışma sürümü: {label}',
 
   /* Offline readiness (`offline.ts`): what the worker answers, said as it is. */
   'offline.unavailable':
@@ -115,7 +101,6 @@ export const shellPart = {
   'tool.hint.redact': 'Silinecek alanı sürükleyin; Uygula ile kalıcı olarak silinir.',
   'tool.redact.pending': '{count} alan işaretli',
   'tool.redact.apply': 'Karartmayı uygula',
-  'shell.moreActions': 'Diğer işlemler',
   'settings.open': 'Ayarlar',
   'settings.title': 'Ayarlar',
   'settings.intro': 'Tercihler bu cihazda saklanır; belgeleriniz hiçbir yere gönderilmez.',

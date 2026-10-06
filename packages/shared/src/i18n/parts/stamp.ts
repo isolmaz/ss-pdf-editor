@@ -28,14 +28,10 @@ export const stampPart = {
   'stamp.differentFirst': 'İlk sayfa farklı',
   'stamp.firstTemplate': 'İlk sayfa biçimi',
   'stamp.firstTemplateHint': 'Yalnızca 1. sayfaya çizilir; boş bırakılamaz.',
-  'stamp.includeDate': 'Tarih ekle',
-  'stamp.includeFile': 'Dosya adı ekle',
   'stamp.bates.title': 'Bates numaralandırma',
   'stamp.bates.prefix': 'Ön ek',
   'stamp.bates.digits': 'Basamak sayısı',
   'stamp.done': '{count} sayfaya damga eklendi.',
-  'stamp.rotateAware': 'Sayfa döndürmeleri dikkate alındı.',
-  'stamp.emptyText': 'Damga metni boş olamaz.',
 
   'watermark.title': 'Filigran',
   'watermark.intro':
@@ -57,6 +53,5 @@ export const stampPart = {
   'watermark.tileSpacingHint': 'Döşemeler arasındaki uzaklık (mm).',
   'watermark.noPrint': 'Yazdırmada gizle (NoPrint)',
   'watermark.done': '{count} sayfaya filigran eklendi.',
-  'watermark.needText': 'Filigran metni gerekli.',
   'watermark.defaultText': 'TASLAK',
 } as const;

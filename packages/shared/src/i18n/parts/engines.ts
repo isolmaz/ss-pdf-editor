@@ -14,7 +14,6 @@ export const enginesPart = {
   'op.note.security.opensWithoutPassword':
     'Belge parolasız açılıyor; izinler yalnızca sahip parolasıyla sınırlanır.',
   'op.note.security.verified': 'Çıktı yeniden açılıp şifreleme doğrulandı.',
-  'op.note.security.notEncrypted': 'Çıktıda şifreleme bulunamadı; işlem durduruldu.',
   'op.note.security.protectionRemoved': 'Parola kaldırıldı; çıktı korumasız.',
   'op.note.security.alreadyUnprotected': 'Belge zaten şifresiz; dosya değiştirilmedi.',
 

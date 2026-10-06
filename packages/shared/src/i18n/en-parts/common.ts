@@ -1,6 +1,5 @@
 export const commonPart = {
   'unit.pt': 'pt',
-  'unit.mm': 'mm',
   'op.apply': 'Preview',
   'op.cancel': 'Cancel',
   'op.close': 'Close',
@@ -27,7 +26,6 @@ export const commonPart = {
   'op.result.fullRewrite': 'Fully rewritten (not incremental)',
   'op.result.losses': 'Losses',
   'op.result.preserved': 'Preserved',
-  'op.result.notes': 'Notes',
   'op.result.apply': 'Apply to document',
   'op.result.newTab': 'Open in new tab',
   'op.result.download': 'Download',
@@ -35,7 +33,6 @@ export const commonPart = {
   'op.result.noChangePages': 'Nothing changed: no page to apply the action to.',
   'op.result.opened': 'Opened in new tab: {name}',
   'op.result.downloaded': 'Downloaded: {name}',
-  'op.result.files': '{count} file(s) generated',
   'op.result.confirmDestructive': 'This operation may permanently delete content. Continue?',
 
   'op.undo': 'Undo',
@@ -43,15 +40,6 @@ export const commonPart = {
   'op.undo.done': 'Undone: {label}',
   'op.undo.unavailable': 'Data for this step is not in this session; cannot undo.',
   'op.redo.done': 'Redone: {label}',
-  'op.history.empty': 'No operation history for this document.',
 
   'op.step.pages': 'page layout',
-  'op.step.rotate': 'page rotation',
-  'op.step.metadata': 'metadata',
-  'op.step.stamp': 'stamp',
-  'op.step.mupdf': 'MuPDF engine write',
-  'op.step.qpdf': 'encryption',
-  'op.step.ocr': 'OCR',
-  'op.step.render': 'rendering',
-  'op.step.verify': 'verification',
 } as const;

@@ -8,19 +8,13 @@ export const filePart = {
   'file.add.afterCurrent': 'After current page',
   'file.add.choose': 'Select PDF',
   'file.add.sourceHint': 'Pages will be inserted at the selected position.',
-  'file.add.noFile': 'No document selected to insert.',
   'file.add.done': '{count} page(s) added.',
-  'file.merge.metadataFrom': 'Metadata source',
-  'file.merge.metadataFrom.first': 'First document',
-  'file.merge.metadataFrom.current': 'Current document',
 
   'file.createImages.title': 'Create PDF from Images',
   'file.createImages.intro':
     'Each image becomes a page. Unsupported files are skipped and reported; a new document without a text layer is produced.',
   'file.createImages.name': 'Images',
   'file.createImages.files': 'Images',
-  'file.createImages.choose': 'Select Images',
-  'file.createImages.empty': 'No images selected.',
   'file.createImages.pageSize': 'Page size',
   'file.createImages.pageSize.fit': 'Fit to image',
   'file.createImages.pageSize.a4': 'A4',
@@ -33,8 +27,6 @@ export const filePart = {
   'file.createImages.orientation': 'EXIF orientation',
   'file.createImages.orientation.auto': 'Auto apply',
   'file.createImages.orientation.ignore': 'Ignore',
-  'file.createImages.done': 'PDF created from {count} image(s).',
-  'file.createImages.unsupported': 'Unsupported image skipped: {name}',
 
   'export.images.title': 'Export Pages as Images',
   'export.images.intro':
@@ -49,10 +41,7 @@ export const filePart = {
   'export.images.dpiHint': 'Higher DPI produces larger files.',
   'export.images.namePattern': 'File name pattern',
   'export.images.namePatternHint': 'Number and extension are added automatically; defaults to document name.',
-  'export.images.zip': 'Download as ZIP',
   'export.images.done': '{count} image(s) exported.',
-  'export.images.tooLarge':
-    '{dpi} DPI is too large for this page (limit {megapixels} MP). Try {suggested} DPI.',
 
   'export.text.title': 'Export Text',
   'export.text.intro':
@@ -60,9 +49,6 @@ export const filePart = {
   'export.text.format': 'Format',
   'export.text.format.text': 'Plain text',
   'export.text.format.markdown': 'Markdown',
-  'export.text.source': 'Text source',
-  'export.text.source.layer': 'Document text layer',
-  'export.text.source.ocr': 'OCR (scanned pages)',
   'export.text.detected': 'This document appears scanned; OCR is recommended.',
   'export.text.done': 'Text exported: {name}',
   'export.text.covered': 'Text extracted from {count} page(s).',

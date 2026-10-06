@@ -72,6 +72,5 @@ export { StatusBar, type StatusBarProps } from './shell/StatusBar';
 export { Magnifier, type MagnifierProps } from './tools/Magnifier';
 export { SnapshotMenu, type SnapshotMenuProps } from './tools/SnapshotMenu';
 export { usePresentation } from './tools/usePresentation';
-export { useViewHistory } from './tools/useViewHistory';
 export { ContextMenu, type ContextMenuProps } from './viewer/ContextMenu';
 export { PdfViewerPane, type PdfViewerPaneProps, type ViewerApi } from './viewer/PdfViewerPane';

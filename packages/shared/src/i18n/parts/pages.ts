@@ -5,7 +5,6 @@
 export const pagesPart = {
   'pages.select.all': 'Tümünü seç',
   'pages.select.none': 'Seçimi temizle',
-  'pages.select.invert': 'Seçimi ters çevir',
   'pages.selected': '{count} sayfa seçildi',
   'pages.moveUp': 'Yukarı taşı',
   'pages.moveDown': 'Aşağı taşı',
@@ -23,8 +22,6 @@ export const pagesPart = {
   'pages.extract.title': 'Sayfaları ayıkla',
   'pages.extract.intro':
     'Seçilen sayfalar yeni bir belge olur; geçerli belge değişmez. Bileşim yeni bir katalog yazar: görünüm tercihleri, dil ve katman yapılandırması yeni belgeye taşınmaz.',
-  'pages.extract.done': '{count} sayfa ayıklandı.',
-  'pages.insert': 'Sayfa ekle…',
 
   'split.title': 'Belgeyi böl',
   'split.intro':
@@ -42,13 +39,5 @@ export const pagesPart = {
   'split.maxSizeHint': 'Parçalar bu boyutu aşmamaya çalışılır; tek sayfa daha büyükse tek başına çıkar.',
   'split.partNames': 'Dosya adı öneki',
   'split.partNamesHint': 'Boş bırakılırsa belgenin adı kullanılır; numara ve uzantı otomatik eklenir.',
-  'split.preview': '{count} parça üretilecek',
   'split.done': '{count} parça üretildi.',
-  'split.zip': 'ZIP olarak indir',
-  'split.tooMany': 'Çok fazla parça üretilecek; aralığı daraltın.',
-
-  'pages.range.invalid': 'Sayfa aralığı okunamadı: {value}',
-  'pages.range.duplicate': 'Aralıkta tekrar eden sayfa var: {value}',
-  'pages.range.outOfBounds': 'Aralık belge sınırlarını aşıyor: {value}',
-  'pages.range.none': 'Aralık en az bir sayfa içermeli.',
 } as const;

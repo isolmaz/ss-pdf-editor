@@ -35,7 +35,6 @@ export const commonPart = {
   'op.result.fullRewrite': 'Yeniden yazıldı (artımlı değil)',
   'op.result.losses': 'Kaybedilenler',
   'op.result.preserved': 'Korunanlar',
-  'op.result.notes': 'Notlar',
   'op.result.apply': 'Belgeye uygula',
   'op.result.newTab': 'Yeni sekmede aç',
   'op.result.download': 'İndir',
@@ -43,7 +42,6 @@ export const commonPart = {
   'op.result.noChangePages': 'Değişiklik yapılmadı: işlemin uygulanacağı sayfa bulunamadı.',
   'op.result.opened': 'Yeni sekmede açıldı: {name}',
   'op.result.downloaded': 'İndirildi: {name}',
-  'op.result.files': '{count} dosya üretildi',
   'op.result.confirmDestructive': 'Bu işlem geri alınamaz biçimde içerik silebilir. Devam edilsin mi?',
 
   'op.undo': 'Geri al',
@@ -51,17 +49,6 @@ export const commonPart = {
   'op.undo.done': 'Geri alındı: {label}',
   'op.undo.unavailable': 'Bu adımın verisi bu oturumda yok; geri alınamıyor.',
   'op.redo.done': 'Yinelendi: {label}',
-  'op.history.empty': 'Bu belgede işlem geçmişi yok.',
 
   'op.step.pages': 'sayfa düzeni',
-  'op.step.rotate': 'sayfa döndürme',
-  'op.step.metadata': 'üst veri',
-  'op.step.stamp': 'damga',
-  'op.step.mupdf': 'MuPDF yazımı',
-  'op.step.qpdf': 'şifreleme',
-  'op.step.ocr': 'OCR',
-  'op.step.render': 'görüntüleme',
-  'op.step.verify': 'doğrulama',
-
-  'unit.mm': 'mm',
 } as const;

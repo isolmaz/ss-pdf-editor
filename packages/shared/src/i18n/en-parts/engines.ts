@@ -3,7 +3,6 @@ export const enginesPart = {
   'op.note.security.opensWithoutPassword':
     'Document opens without password; permissions are restricted by owner password only.',
   'op.note.security.verified': 'Output reopened and encryption verified.',
-  'op.note.security.notEncrypted': 'No encryption found in output; operation halted.',
   'op.note.security.protectionRemoved': 'Password removed; output is unprotected.',
   'op.note.security.alreadyUnprotected': 'Document is already unencrypted; file unchanged.',
   'op.note.redact.contentErased': 'Targeted content deleted from document.',

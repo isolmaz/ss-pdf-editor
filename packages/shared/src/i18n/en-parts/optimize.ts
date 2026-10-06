@@ -10,12 +10,7 @@ export const optimizePart = {
   'optimize.dpi': 'Resolution (DPI)',
   'optimize.greyscale': 'Convert to greyscale',
   'optimize.stripMetadata': 'Clear metadata',
-  'optimize.sourceInfo': 'Image compression source',
-  'optimize.loss.rasterize':
-    'Text layer, links, bookmarks and annotations convert to image; search will not work.',
-  'optimize.loss.stripMetadata': 'Document metadata (Info) is deleted.',
   'optimize.producerKept': 'Producer string is preserved.',
-  'optimize.done': 'Optimization completed.',
   'optimize.grew': 'Result file is larger than original; compression yielded no savings.',
   'optimize.saved': '{before} → {after} ({percent}% reduction)',
   'optimize.noGain': 'No savings: {before} → {after}',

@@ -112,7 +112,6 @@ import {
   selectionBoxes,
   ToolProperties,
   usePresentation,
-  useViewHistory,
 } from 'pdf-ui/tools';
 import type {
   AnnotationTool,
@@ -725,7 +724,6 @@ export function App({ store }: AppProps) {
    * reading the ref (same object, two access patterns).
    */
   const [viewer, setViewer] = useState<ViewerApi | null>(null);
-  const _history = useViewHistory(viewer, { page: currentPage });
   const presentation = usePresentation(viewer);
 
   const activeTab = session.tabs.find((tab) => tab.id === session.activeId) ?? null;

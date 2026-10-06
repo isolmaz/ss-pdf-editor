@@ -12,19 +12,13 @@ export const filePart = {
   'file.add.afterCurrent': 'Geçerli sayfadan sonra',
   'file.add.choose': 'PDF seç',
   'file.add.sourceHint': 'Sayfaları, seçilen konuma eklenir.',
-  'file.add.noFile': 'Eklenecek belge seçilmedi.',
   'file.add.done': '{count} sayfa eklendi.',
-  'file.merge.metadataFrom': 'Üst veri kaynağı',
-  'file.merge.metadataFrom.first': 'İlk belge',
-  'file.merge.metadataFrom.current': 'Geçerli belge',
 
   'file.createImages.title': 'Görsellerden PDF oluştur',
   'file.createImages.intro':
     'Her görsel bir sayfa olur. Desteklenmeyen dosyalar atlanır ve rapora yazılır; metin katmanı olmayan yeni bir belge üretilir.',
   'file.createImages.name': 'Görseller',
   'file.createImages.files': 'Görseller',
-  'file.createImages.choose': 'Görsel seç',
-  'file.createImages.empty': 'Görsel seçilmedi.',
   'file.createImages.pageSize': 'Sayfa boyutu',
   'file.createImages.pageSize.fit': 'Görsele göre',
   'file.createImages.pageSize.a4': 'A4',
@@ -37,8 +31,6 @@ export const filePart = {
   'file.createImages.orientation': 'EXIF yönü',
   'file.createImages.orientation.auto': 'Otomatik uygula',
   'file.createImages.orientation.ignore': 'Yoksay',
-  'file.createImages.done': '{count} görselden PDF oluşturuldu.',
-  'file.createImages.unsupported': 'Desteklenmeyen görsel atlandı: {name}',
 
   'export.images.title': 'Sayfaları görüntü olarak dışa aktar',
   'export.images.intro':
@@ -54,10 +46,7 @@ export const filePart = {
   'export.images.namePattern': 'Dosya adı',
   'export.images.namePatternHint':
     'Numara ve uzantı otomatik eklenir; boş bırakılırsa belgenin adı kullanılır.',
-  'export.images.zip': 'ZIP olarak indir',
   'export.images.done': '{count} görüntü üretildi.',
-  'export.images.tooLarge':
-    '{dpi} DPI bu sayfa için çok büyük (sınır {megapixels} MP). {suggested} DPI deneyin.',
 
   'export.text.title': 'Metni dışa aktar',
   'export.text.intro':
@@ -65,9 +54,6 @@ export const filePart = {
   'export.text.format': 'Biçim',
   'export.text.format.text': 'Düz metin',
   'export.text.format.markdown': 'Markdown',
-  'export.text.source': 'Metin kaynağı',
-  'export.text.source.layer': 'Belgenin metin katmanı',
-  'export.text.source.ocr': 'OCR (taranmış sayfalar)',
   'export.text.detected': 'Bu belge taranmış görünüyor; OCR önerilir.',
   'export.text.done': 'Metin dışa aktarıldı: {name}',
   'export.text.covered': '{count} sayfadan metin çıkarıldı.',

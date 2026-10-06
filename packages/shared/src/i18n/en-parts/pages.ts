@@ -1,7 +1,6 @@
 export const pagesPart = {
   'pages.select.all': 'Select all',
   'pages.select.none': 'Clear selection',
-  'pages.select.invert': 'Invert selection',
   'pages.selected': '{count} page(s) selected',
   'pages.moveUp': 'Move up',
   'pages.moveDown': 'Move down',
@@ -19,8 +18,6 @@ export const pagesPart = {
   'pages.extract.title': 'Extract Pages',
   'pages.extract.intro':
     'Selected pages form a new document; current document is unchanged. Output writes a new catalog: viewer preferences, language and layer configuration are not carried over.',
-  'pages.extract.done': '{count} page(s) extracted.',
-  'pages.insert': 'Insert page…',
 
   'split.title': 'Split Document',
   'split.intro':
@@ -38,13 +35,5 @@ export const pagesPart = {
   'split.maxSizeHint': 'Parts will not exceed this size; if a single page is larger, it stands alone.',
   'split.partNames': 'Filename prefix',
   'split.partNamesHint': 'Defaults to document name; number and extension are added automatically.',
-  'split.preview': '{count} part(s) will be generated',
   'split.done': '{count} part(s) generated.',
-  'split.zip': 'Download as ZIP',
-  'split.tooMany': 'Too many parts would be produced; please narrow the range.',
-
-  'pages.range.invalid': 'Invalid page range: {value}',
-  'pages.range.duplicate': 'Duplicate page in range: {value}',
-  'pages.range.outOfBounds': 'Range exceeds document bounds: {value}',
-  'pages.range.none': 'Range must contain at least one page.',
 } as const;
