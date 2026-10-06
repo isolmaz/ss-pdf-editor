@@ -291,7 +291,7 @@ export const en: Record<MessageKey, string> = {
   'close.discard': 'Close without saving',
   'close.save': 'Save and close',
   'inspection.loading': 'Inspecting document…',
-  'inspection.failed': 'Inspection failed: {error}',
+  'inspection.failed': 'Document details could not be read. Saving and exporting are stopped; try again.',
   'inspection.retry': 'Retry inspection',
   'lang.select': 'Language',
 

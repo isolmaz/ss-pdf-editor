@@ -32,6 +32,7 @@ import {
   planMarkRemoval,
   planMarkTransform,
   removalCount,
+  withThreadRecords,
 } from './annotation-interaction';
 
 /** The page's own top edge in these fixtures: the reference `pageTop − pdfY` flips on. */
@@ -407,5 +408,45 @@ describe('planMarkTransform with nothing to move', () => {
     const plan = planMarkTransform(input, targetsOf(input), ['measure:m0'], { dx: 5, dy: 5, rotation: 90 });
     expect(plan.measures[0]).toBe(empty);
     expect(plan.measures).toBe(input.measures);
+  });
+});
+
+describe('withThreadRecords', () => {
+  const comment = (id: string, extra: Partial<ExistingAnnotation> = {}) =>
+    fileAnnotation(id, { subtype: 'Text', kind: 'note', ...extra });
+  const existing = [
+    comment('1R'),
+    comment('2R', { inReplyTo: '1R', replyType: 'R' }),
+    comment('3R', { inReplyTo: '2R', replyType: 'R', state: 'Accepted', stateModel: 'Review' }),
+    comment('4R'),
+    comment('5R', { inReplyTo: '4R', replyType: 'R', pageIndex: 1 }),
+  ];
+
+  it('adds the replies and state records of a selected comment, at any depth and on their own page', () => {
+    expect(withThreadRecords(['existing:0:1R'], existing)).toEqual([
+      'existing:0:1R',
+      'existing:0:2R',
+      'existing:0:3R',
+    ]);
+    expect(withThreadRecords(['existing:0:4R', 'annotation:a1'], existing)).toEqual([
+      'existing:0:4R',
+      'annotation:a1',
+      'existing:1:5R',
+    ]);
+  });
+
+  it('does not repeat a record that was already selected, and leaves a selected reply alone', () => {
+    expect(withThreadRecords(['existing:0:2R', 'existing:0:1R'], existing)).toEqual([
+      'existing:0:2R',
+      'existing:0:1R',
+      'existing:0:3R',
+    ]);
+    // Removing only a reply does not take its comment or the other threads with it.
+    expect(withThreadRecords(['existing:0:2R'], existing)).toEqual(['existing:0:2R']);
+  });
+
+  it('returns the selection itself when nothing in the file is a thread', () => {
+    const keys = ['existing:0:1R'];
+    expect(withThreadRecords(keys, [comment('1R'), comment('4R')])).toBe(keys);
   });
 });
