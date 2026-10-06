@@ -73,7 +73,7 @@ export const propsPart = {
     'Alt sertifikanın adları izin verilen alt ağacın dışında ya da dışlanan alt ağacın içinde.',
   'props.sig.revocation.indeterminate': 'Belirlenemedi',
   'props.sig.revocation.note':
-    'İptal kanıtı (CRL/OCSP) ağ erişimi gerektirir; bu sürüm çevrimdışı çalıştığı için her zaman "belirlenemedi" olarak gösterilir.',
+    'İptal kanıtı yalnızca bu cihazda zaten bulunan listelerden okunur: aşağıda içe aktardığınız CRL’ler ile PDF içine gömülü CRL ve OCSP yanıtları. Hiçbir şey ağdan çekilmez; bir yayımcı için liste yoksa sonuç "belirlenemedi" olur.',
   'props.sig.trust.note':
     'Sertifika güveni yalnızca kullanıcının içe aktardığı güven kökleriyle denetlenir: zincir, sertifika imzaları WebCrypto ile doğrulanarak köke kadar yürünür. Hiç kök aktarılmadıysa sonuç "denetlenmedi" olur — bu bir hüküm değil, kanıt yokluğudur.',
   'props.sig.chain': 'Zincir: {path}',

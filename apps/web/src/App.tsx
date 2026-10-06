@@ -40,6 +40,7 @@ import { inspectProtection, type ProtectionState } from 'pdf-core/ops/security';
 import { verifySignatures } from 'pdf-core/ops/signature-status';
 import type { OperationContext, OperationNote, OperationProgress } from 'pdf-core/ops/types';
 import {
+  addRevocationList,
   addTrustRoot,
   copyForEngine,
   type Draft,
@@ -52,10 +53,15 @@ import {
   type JsonValue,
   keysForDraft,
   type OpenDocumentKeys,
+  parseRevocationLists,
   parseTrustRoots,
   planDocumentCleanup,
   planVaultCleanup,
+  type RevocationList,
+  type RevocationListsFile,
+  removeRevocationList,
   removeTrustRoot,
+  revocationListDer,
   type SessionStore,
   type SessionTab,
   sha256Hex,
@@ -1361,6 +1367,25 @@ export function App({ store }: AppProps) {
     () => trustRoots.map((root) => toDer(root)).filter((der): der is Uint8Array => der !== null),
     [trustRoots],
   );
+  /**
+   * The CRLs the user imported: the same OPFS settings directory and the same re-check when
+   * the list changes (an imported CRL is exactly what turns "indeterminate" into an answer).
+   */
+  const [revocationLists, setRevocationLists] = useState<readonly RevocationList[]>([]);
+  useEffect(() => {
+    let live = true;
+    void readAppFile('revocation-lists.json').then((raw) => {
+      if (live) setRevocationLists(parseRevocationLists(raw).lists);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const revocationListBytes = useMemo(
+    () =>
+      revocationLists.map((list) => revocationListDer(list)).filter((der): der is Uint8Array => der !== null),
+    [revocationLists],
+  );
   const [factsInventory, setDocumentFacts] = useState<{
     readonly tabId: string;
     readonly version: string;
@@ -1403,7 +1428,7 @@ export function App({ store }: AppProps) {
         const bytes = await materializeBase(contextFor(tab, handle), { signal: controller.signal });
         const [fonts, signatures, attachments, protection] = await Promise.all([
           listPdfFonts(bytes, controller.signal),
-          verifySignatures(bytes, controller.signal, { roots: trustRootBytes }),
+          verifySignatures(bytes, controller.signal, { roots: trustRootBytes, crls: revocationListBytes }),
           listPdfAttachments(handle),
           inspectProtection(bytes),
         ]);
@@ -1445,8 +1470,8 @@ export function App({ store }: AppProps) {
     })();
     return () => controller.abort();
     // Same rule as the form inventory: the effect re-runs with the working version —
-    // and with the trust roots, since importing one is exactly what changes a verdict.
-  }, [activeTab, activeHandle, contextFor, trustRootBytes, inspectionRevision]);
+    // and with the trust roots and imported CRLs, since importing one is exactly what changes a verdict.
+  }, [activeTab, activeHandle, contextFor, trustRootBytes, revocationListBytes, inspectionRevision]);
 
   /**
    * The object-level audit of a produced redaction (first safety
@@ -2425,6 +2450,18 @@ export function App({ store }: AppProps) {
       setNotice(t('props.sig.roots.added', { count: imported.length }));
     },
     [t, trustRoots],
+  );
+
+  /** The CRLs the panel parsed; they are stored as imported and judged when a signature is checked. */
+  const storeRevocationLists = useCallback(
+    (imported: readonly RevocationList[]) => {
+      let next: RevocationListsFile = { version: 1, lists: revocationLists };
+      for (const list of imported) next = addRevocationList(next, list);
+      setRevocationLists(next.lists);
+      void writeAppFile('revocation-lists.json', next);
+      setNotice(t('props.sig.crls.added', { count: imported.length }));
+    },
+    [t, revocationLists],
   );
 
   const prepareOutput = useCallback(
@@ -5291,6 +5328,13 @@ export function App({ store }: AppProps) {
                             void writeAppFile('trust-roots.json', next);
                           }}
                           onImportTrustRoots={storeTrustRoots}
+                          revocationLists={revocationLists}
+                          onRemoveRevocationList={(id) => {
+                            const next = removeRevocationList({ version: 1, lists: revocationLists }, id);
+                            setRevocationLists(next.lists);
+                            void writeAppFile('revocation-lists.json', next);
+                          }}
+                          onImportRevocationLists={storeRevocationLists}
                           security={documentFacts?.security ?? null}
                           loading={documentFacts === null}
                           disabled={!canEdit}

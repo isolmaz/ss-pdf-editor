@@ -10,8 +10,8 @@
  * subordinate certificate. A name match is never enough.
  *
  * **What it cannot say.** A signature that verifies against an imported root is trusted
- * *by that root* — nothing more. Revocation is a question for a CRL or an OCSP responder
- * and this build has neither (`SignatureRevocation` is always `'indeterminate'`), and a
+ * *by that root* — nothing more. Revocation is a different question, answered from lists
+ * already on the device by `signature-revocation.ts`; trust here says nothing about it, and a
  * certificate that expired last week may have been revoked yesterday. The verdicts here
  * therefore name the root they reached (`path`), and the caller shows it.
  *
@@ -264,19 +264,30 @@ export function ecdsaDerToRaw(der: Uint8Array, fieldBytes: number): Uint8Array |
 }
 
 /** Which of the three answers a signature check produced. */
-type SignatureOutcome = 'ok' | 'mismatch' | 'unsupported' | 'malformed';
+export type SignatureOutcome = 'ok' | 'mismatch' | 'unsupported' | 'malformed';
 
-/** Whether `child`'s `tbsCertificate` verifies with `parent`'s public key. */
-async function signedBy(
+/**
+ * Whether `signature` is `parent`'s signature over `signed`, for the algorithm named by
+ * `algorithmId`.
+ *
+ * Shared by every signed structure that is checked against a certificate's key: a
+ * certificate's `tbsCertificate` here, and a CRL, an OCSP response or a timestamp token's
+ * signed attributes in the revocation and timestamp checks. `hashFallback` serves the CMS
+ * case, where the signature algorithm is plain `rsaEncryption` and the hash is named by the
+ * SignerInfo's own `digestAlgorithm` instead of by the signature OID.
+ */
+export async function verifyDataSignature(
   subtle: SubtleCrypto,
-  child: Certificate,
   parent: Certificate,
+  algorithmId: string,
+  signature: Uint8Array,
+  signed: Uint8Array,
+  hashFallback?: string,
 ): Promise<SignatureOutcome> {
-  const hash = CERTIFICATE_SIGNATURE_HASH[child.signatureAlgorithm.algorithmId];
+  const hash =
+    CERTIFICATE_SIGNATURE_HASH[algorithmId] ?? (algorithmId === RSA_KEY ? hashFallback : undefined);
   if (hash === undefined) return 'unsupported';
   const { spki, key, curve } = publicKeyOf(parent);
-  const der = new Uint8Array(child.signatureValue.valueBlock.valueHexView);
-  const signed = new Uint8Array(child.tbsView);
   try {
     if (key === RSA_KEY) {
       const imported = await subtle.importKey(
@@ -286,14 +297,19 @@ async function signedBy(
         false,
         ['verify'],
       );
-      return (await subtle.verify({ name: 'RSASSA-PKCS1-v1_5' }, imported, bufferOf(der), bufferOf(signed)))
+      return (await subtle.verify(
+        { name: 'RSASSA-PKCS1-v1_5' },
+        imported,
+        bufferOf(signature),
+        bufferOf(signed),
+      ))
         ? 'ok'
         : 'mismatch';
     }
     if (key !== EC_KEY || curve === null) return 'unsupported';
     const fieldBytes = CURVE_FIELD_BYTES[curve];
     if (fieldBytes === undefined) return 'unsupported';
-    const raw = ecdsaDerToRaw(der, fieldBytes);
+    const raw = ecdsaDerToRaw(signature, fieldBytes);
     if (raw === null) return 'malformed';
     const imported = await subtle.importKey(
       'spki',
@@ -313,7 +329,22 @@ async function signedBy(
   }
 }
 
-function validityOf(certificate: Certificate, now: Date): CertificateValidity {
+/** Whether `child`'s `tbsCertificate` verifies with `parent`'s public key. */
+async function signedBy(
+  subtle: SubtleCrypto,
+  child: Certificate,
+  parent: Certificate,
+): Promise<SignatureOutcome> {
+  return verifyDataSignature(
+    subtle,
+    parent,
+    child.signatureAlgorithm.algorithmId,
+    new Uint8Array(child.signatureValue.valueBlock.valueHexView),
+    new Uint8Array(child.tbsView),
+  );
+}
+
+export function validityOf(certificate: Certificate, now: Date): CertificateValidity {
   const from = certificate.notBefore.value;
   const to = certificate.notAfter.value;
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 'unknown';
@@ -635,13 +666,19 @@ async function validatePath(
   subtle: SubtleCrypto,
   path: readonly Certificate[],
   now: Date,
+  leafApplied: readonly string[],
 ): Promise<PathOutcome> {
   const last = path.length - 1;
 
   for (const [index, certificate] of path.entries()) {
     if (
       certificate.extensions?.some(
-        (entry) => entry.critical && APPLIED_CRITICAL_EXTENSIONS[entry.extnID] !== true,
+        (entry) =>
+          entry.critical &&
+          APPLIED_CRITICAL_EXTENSIONS[entry.extnID] !== true &&
+          // A critical extension the **caller** applies to the end-entity certificate itself
+          // (a timestamp check enforces the critical `extKeyUsage` that RFC 3161 §2.3 requires).
+          !(index === 0 && leafApplied.includes(entry.extnID)),
       )
     ) {
       return { ok: false, reason: 'unsupported-critical-extension', indeterminate: true };
@@ -730,6 +767,13 @@ export interface TrustInput {
   readonly roots?: readonly Uint8Array[];
   /** The clock is passed in so the verdict is reproducible in a check. */
   readonly now?: Date;
+  /**
+   * Critical extensions of the **signer** certificate the caller enforces itself, so the walk
+   * need not refuse them: a time-stamping authority's certificate carries a critical
+   * `extKeyUsage` (RFC 3161 §2.3), and `signature-timestamp` checks it. Applies to the
+   * first certificate of the path only — a CA's critical extension is never excused.
+   */
+  readonly leafCriticalExtensions?: readonly string[];
 }
 
 /** One walk over the candidate issuers, collecting the best failure seen on the way. */
@@ -738,6 +782,8 @@ interface WalkState {
   reachableFailure: { reason: TrustReason; indeterminate: boolean } | null;
   /** No path reached an anchor; the pool simply does not contain the issuer. */
   sawCandidate: boolean;
+  /** See {@link TrustInput.leafCriticalExtensions}. */
+  readonly leafApplied: readonly string[];
 }
 
 /** Depth-first over the candidate paths, bounded by `MAX_DEPTH` and a visited set. */
@@ -753,7 +799,7 @@ async function walk(
 ): Promise<readonly Certificate[] | null> {
   const anchored = anchorSet.some((anchor) => sameBytes(anchor.tbsView, current.tbsView));
   if (anchored) {
-    const outcome = await validatePath(subtle, path, now);
+    const outcome = await validatePath(subtle, path, now, state.leafApplied);
     if (outcome.ok) return path;
     // A definite failure on a path that *did* reach an anchor outranks an indeterminate
     // one: “this chain is broken” is a stronger statement than “this chain could not be
@@ -826,7 +872,11 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
     return { verdict: 'not-checked', path: [name], validity, notAfter, reason: 'no-roots' };
   }
 
-  const state: WalkState = { reachableFailure: null, sawCandidate: false };
+  const state: WalkState = {
+    reachableFailure: null,
+    sawCandidate: false,
+    leafApplied: input.leafCriticalExtensions ?? [],
+  };
   const found = await walk(subtle, roots, signer, pool, now, [signer], new Set([signer]), state);
   if (found !== null) {
     return {
