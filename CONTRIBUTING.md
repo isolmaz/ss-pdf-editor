@@ -21,7 +21,10 @@ pnpm dev                     # the editor on a local dev server
 
 ## Checks
 
-Every change must pass the local gates; this repository runs no hosted CI:
+Every change must pass the local gates. GitHub Actions (`.github/workflows/ci.yml`) re-runs the
+`pnpm ci:verify` steps on every pull request and on pushes to `main`; it does not run `pnpm e2e` or
+`pnpm ci:behavior`, so those stay local. `pnpm ci:verify` runs the same checks as CI on your machine;
+the individual commands are:
 
 ```sh
 pnpm typecheck
