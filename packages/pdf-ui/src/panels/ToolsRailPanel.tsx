@@ -1,6 +1,7 @@
 import {
   Archive,
   ArrowClockwise,
+  Broom,
   CaretDown,
   CaretLeft,
   CaretRight,
@@ -288,6 +289,13 @@ export function ToolsRailPanel({
           description: t('tools.unlockDesc'),
           icon: LockOpen,
           onClick: () => selectTool('unlock'),
+        },
+        {
+          id: 'sanitize',
+          title: t('tools.sanitize'),
+          description: t('tools.sanitizeDesc'),
+          icon: Broom,
+          onClick: () => selectTool('sanitize'),
         },
         {
           id: 'redact',

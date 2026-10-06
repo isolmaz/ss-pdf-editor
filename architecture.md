@@ -1067,6 +1067,53 @@ files built to the XFA 3.3 schema; the first one with an unusual binding will sh
 report's `notSynced` count. The sync costs one extra MuPDF open per version for a document with
 pending inline edits (the form inventory already opens one).
 
+### 5.11 Sanitize
+
+`ops/sanitize.ts` removes, in one step, what a document carries that its pages do not show
+(Acrobat's "Sanitize Document"). Steps: `sanitize.javascript`, `sanitize.files`,
+`sanitize.metadata`, `sanitize.private`, `sanitize.thumbnails`, `sanitize.layers` and
+`sanitize.unused`, plus the links, comments and forms steps the selection adds (all declared in
+`OPERATION_TABLE`).
+
+**One sweep, two uses.** `sweep()` walks every object (`sanitize-graph.ts`: reached from the
+trailer or not — a byte scan cannot see inside object streams) and counts what each selected
+category finds, and removes it when `mutate` is set. The operation runs it mutating on the
+input, saves with `garbage=compact,compress`, **re-opens the output and runs the same sweep
+read-only**: every selected category must count zero, or the operation throws
+`verification-failed`. `found`, `removed` and `left` in the report are measured, never assumed,
+and a counter and a remover cannot disagree because they are one function.
+
+**Actions are decided per type** (ISO 32000-1 §12.6.4), wherever one hangs (`/A`, `/PA`,
+`/AA`, `/OpenAction`, and each `/Next` chain). JavaScript, Launch, ImportData, SubmitForm,
+Rendition, RichMediaExecute and a `file:` URI are "active" (default on); other URIs and
+GoToR/GoToE are "external links" (default off); GoTo, Named, Hide, ResetForm, SetOCGState and
+the media actions stay. A Link whose external action went and that has no other destination is
+removed with it; one whose script went stays.
+
+**Hidden layers** (`sanitize-layers.ts`). Visibility is read from the default configuration
+(`/BaseState`, `/ON`, `/OFF`, an `/AS` View usage state) and from OCMD membership policies; a
+`/VE` visibility expression is `undecided` and left alone. Page and form-XObject content is
+rewritten with the accessibility tokenizer (`readContentInstructions`): inside a hidden
+`/OC … BDC … EMC` region only ink is dropped; graphics-state operators, `q/Q`, `BT/ET` and
+clipping stay, and a region is cut only if it is closed, its text objects are balanced and no
+path is left open. Anything else stays and is reported (`layersLeft`). Resource names no longer
+used are pruned and OCGs nothing refers to are dropped.
+
+**The MuPDF hazard.** Calling `.resolve()` on the reference of some stream objects (a tiling
+Pattern's content stream) makes the save lose that stream. The graph helpers therefore operate
+on references (`isDictionary`, `get`, `forEach`, `put`, `delete` resolve internally) and never
+resolve anything that may be a stream.
+
+**The picture does not change** unless the selection changes it: when nothing selected draws,
+up to 40 evenly spread pages are rendered before and after and compared by pixel digest; a
+difference is `verification-failed`. With comments, links, forms or file attachments selected
+the report says the pages were not compared.
+
+**Said plainly:** there is no "embedded search index" category (Acrobat's location is not
+publicly specified; whatever it is stored as falls under files, private data or unused
+objects); 3D and RichMedia scripts are reported, not edited; a signature does not survive the
+rewrite and the report says so; an XFA form carrying `<script` is dropped whole.
+
 ---
 
 ## 6. `pdf-text-engine` — the text model
@@ -1258,7 +1305,7 @@ and the panel used to do exactly that right after handing over its result, so ev
 applied from the panel was aborted before it reached the document
 (`e2e/editor-stability.spec.ts` fails with that call reinstated).
 
-`ops/index.ts` registers **35** dialog ids against lazy `import()` loaders, so a
+`ops/index.ts` registers **36** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
@@ -1281,7 +1328,11 @@ user's.
 The command palette runs **one command per opening**: Enter reaches both the input's own
 handler and the list's item activation, and a keyboard-chosen command used to run twice — a
 tool toggle armed and disarmed itself, and an operation's second run was refused as
-"another operation is running".
+"another operation is running". Enter runs the highlighted command only while it is still in
+the filtered list (matched by id): the primitive does not clear its highlight when a query
+filters every item out, and Enter on "No matching commands" used to run whatever had been
+highlighted before — the first command, "Create a blank document". The empty state's
+"Advanced mode" button hands focus back to the input, since the button disappears with it.
 
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
@@ -1772,6 +1823,9 @@ shows.
 - **XFA** scripts never run; a static form's data is synced by normal binding only, and
   what it cannot bind is counted in the report; a flattened dynamic form is pictures plus an
   invisible text layer (§5.10).
+- **Sanitize** has no "embedded search index" category, does not read scripts inside 3D or
+  rich media annotations, leaves hidden-layer content it cannot cut out exactly (a `/VE`
+  expression, an unbalanced or open region) and reports it, and invalidates signatures.
 - **`adbe.pkcs7.sha1`** signatures are reported `unchecked`, because their digest relation
   differs from the detached-CMS one this build verifies.
 
