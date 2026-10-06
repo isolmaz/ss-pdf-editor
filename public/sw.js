@@ -78,7 +78,20 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       await cache.addAll(CORE_SHELL_URLS);
-      for (const path of shellPathsOf(await readManifest())) {
+      const manifest = await readManifest();
+      // The rest of the core package — the interface's own fonts — is the shell too: the
+      // first visit fetched them before this worker controlled the page, so nothing else
+      // would cache them, and a reload offline fell back to system fonts.
+      for (const path of manifest?.capabilities?.core ?? []) {
+        if (typeof path !== 'string' || CORE_SHELL_URLS.includes(path)) continue;
+        try {
+          const res = await fetch(path);
+          if (res.ok) await cache.put(path, res);
+        } catch {
+          // a font missed here is cached by the next online load that fetches it
+        }
+      }
+      for (const path of shellPathsOf(manifest)) {
         try {
           const res = await fetch(path);
           if (res.ok) await cache.put(path, res);

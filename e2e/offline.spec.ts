@@ -50,6 +50,16 @@ test.describe('offline shell', () => {
       // screen's controls are interactive.
       await expect(page.getByText('SsPdfEditor')).toBeVisible();
       await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible();
+      // And in its own type: the interface's fonts came out of the cache too. The first
+      // visit fetched them before the worker controlled the page, so only the worker's
+      // install can have cached them.
+      const failedFaces = await page.evaluate(async () => {
+        await document.fonts.ready;
+        return [...document.fonts]
+          .filter((face) => face.status === 'error')
+          .map((face) => `${face.family} ${face.weight}`);
+      });
+      expect(failedFaces).toEqual([]);
       expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
     } finally {
       await context.setOffline(false);
