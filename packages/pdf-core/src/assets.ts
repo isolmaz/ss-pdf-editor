@@ -26,6 +26,16 @@ export const MUPDF_ASSETS = {
 } as const;
 
 /**
+ * Ghostscript compiled to WebAssembly (PDF/A conversion). Loaded only when that tool runs,
+ * inside a module worker: `js` is the emscripten loader, imported at runtime and never
+ * bundled; the 15.5 MB `wasm` is fetched beside it.
+ */
+export const GHOSTSCRIPT_ASSETS = {
+  js: `${ENGINE_BASE_URL}/ghostscript/gs.js`,
+  wasm: `${ENGINE_BASE_URL}/ghostscript/gs.wasm`,
+} as const;
+
+/**
  * tesseract.js workers and language packs. All four paths are passed to
  * `createWorker` explicitly: tesseract.js otherwise resolves its worker, core and
  * language data from a CDN (browser default `workerPath` in

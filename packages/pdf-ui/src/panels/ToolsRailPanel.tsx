@@ -243,6 +243,13 @@ export function ToolsRailPanel({
           icon: FileDoc,
           onClick: () => selectTool('export-office'),
         },
+        {
+          id: 'pdfa',
+          title: t('tools.pdfa'),
+          description: t('tools.pdfaDesc'),
+          icon: Archive,
+          onClick: () => selectTool('pdfa'),
+        },
       ],
     },
     {

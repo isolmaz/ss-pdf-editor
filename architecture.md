@@ -15,7 +15,8 @@ measurement is named.
 Five rules explain most of the decisions in this codebase:
 
 1. **Three engines, one contract.** pdf.js renders and reads, MuPDF writes (every writer,
-   §5.1) and also erases and encrypts, Tesseract recognises. Each is reachable only through an adapter in
+   §5.1) and also erases and encrypts, Tesseract recognises (a fourth, Ghostscript, exists
+   only to write PDF/A, §5.13). Each is reachable only through an adapter in
    `packages/pdf-core/src/engines/`; no component, panel or app file imports an engine
    package directly. Operations are `bytes in → bytes (or files) out` plus a report
    (`packages/pdf-core/src/ops/types.ts`).
@@ -127,7 +128,7 @@ chunks; it is still over the 250 KiB budget the README states.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (35 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (37 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
 | `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -304,6 +305,7 @@ the same certificate twice is one entry.
 | `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
+| `engines/ghostscript.ts` (+ `ghostscript-worker.ts`, `ghostscript-run.ts`) | `@bentopdf/gs-wasm` 0.1.1 (Ghostscript 10.06.0, wasm ~14.8 MiB) | one module Web Worker per conversion, terminated after it | PDF/A conversion only (§5.13) |
 
 **Every writer runs on MuPDF.** They were consolidated from pdf-lib one operation at a time
 (2026-09-28/29): each move first got a behaviour test that passed against the pdf-lib writer
@@ -489,7 +491,7 @@ its indirect reference.
 There is **no shared engine interface**. The one shared handle type is
 `PdfDocumentHandle`, implemented only by `openWithPdfjs`; the other adapters are function
 modules, and the MuPDF writers share `engines/mupdf-write.ts`. The single cross-engine
-vocabulary is `OperationEngine = 'pdfjs' | 'mupdf' | 'tesseract' | 'model'`.
+vocabulary is `OperationEngine = 'pdfjs' | 'mupdf' | 'tesseract' | 'model' | 'ghostscript'`.
 
 Every adapter obeys the same two rules:
 
@@ -1248,6 +1250,99 @@ precision and 67 % recall. Documents that are not forms (an article, a résumé,
 Word, PowerPoint, HTML, EPUB and text, a 100-page book) gave no candidates, except a
 "Notes:" colon, a spreadsheet's TRUE cell, and the signature captions of a certificate and
 an invoice.
+### 5.13 PDF/A: conversion and checker
+
+`ops/pdfa.ts` (`convertToPdfA`) converts to PDF/A-1b, 2b or 3b; `ops/pdfa-check.ts`
+(`checkPdfA`) says whether a file claims PDF/A and which rules it breaks. The dialog `pdfa`
+(`pdf-ui/ops/pdfa.ts`, result opens in a new tab) and the dock panel `PdfAPanel` use them.
+
+**Why Ghostscript.** Producing PDF/A rewrites colour, fonts and structure; it is not a flag.
+MuPDF cannot convert colours on write, cannot embed a font the file does not carry and cannot
+flatten transparency, so building it ourselves would have meant a second PDF writer. Ghostscript
+10.06 (AGPL-3.0, the licence of this project) does all three as a mode of `pdfwrite`
+(`-dPDFA=1|2|3`): colours go to the output intent's space, a font the file lacks is replaced by
+an equivalent from Ghostscript's own set (the only honest way to embed one that is not there,
+and the report counts them), part 1 flattens transparency, and the XMP packet is written from
+the Information dictionary. veraPDF 1.30 accepted its output on every fixture below.
+
+**Delivery.** `@bentopdf/gs-wasm@0.1.1` is a dev dependency pinned exactly.
+`tools/fetch-engines.mjs` copies `gs.js` (38 KB) and `gs.wasm` (15.5 MB) into
+`public/engines/ghostscript/`, their SHA-256 are in `asset-pins.json`, `verify-assets.mjs`
+re-hashes them, and the package's `LICENSE` is registered in `assemble-dist.mjs`
+(`check-licenses.mjs` lists `AGPL-3.0-only` as allowed; the combined work is AGPL-3.0).
+Nothing loads until a conversion runs: `ghostscript.ts` starts a module worker
+(`new Worker(new URL('./ghostscript-worker.ts', import.meta.url), { type: 'module' })`;
+`worker.format: 'es'` in `vite.config.ts`), the worker imports `gs.js` by URL behind a
+`vite-ignore` marker (the same runtime-URL rule as MuPDF) and the document travels by transfer.
+The worker is terminated when the run ends, and an abort terminates it at once. The CSP is
+unchanged (`worker-src 'self' blob:`, `'wasm-unsafe-eval'`). A file that cannot be fetched is
+`asset-missing`; running out of memory is `out-of-memory`; anything else the engine throws is
+`pdfa-failed`. `public/sw.js` caches `/engines/*` on first use, so the converter works offline
+after one run (measured in the built app with the network switched off), but it is **not** in
+the "prepare offline" manifest (15.5 MB).
+
+**The output intent without a shipped profile.** A PDF/A file needs an `/OutputIntents` entry
+with an ICC profile (veraPDF 6.2.4.3 otherwise). `ghostscript-run.ts` runs a short PostScript
+program that copies the engine's own `%rom%iccprofiles/default_rgb.icc` (sRGB) out of its
+read-only file system into `/tmp/srgb.icc`, and `PDFA_def.ps` embeds it, with the document's
+title, author, subject, keywords, creator and dates (`/DOCINFO`) and `/Lang`. The profile is the
+one the engine converts with, so the intent describes the colours it produced. The Producer
+cannot be set: Ghostscript writes `GPL Ghostscript 10.06.0`, and the report says so.
+
+**Pipeline.** (1) `checkPdfA` on the input; a file that already claims the part and breaks no
+rule is returned as it is (`incremental: true`). (2) `prepareForPdfA` (`ops/pdfa-prepare.ts`).
+(3) Ghostscript with `-dPDFA=N -dPDFACompatibilityPolicy=1 -sColorConversionStrategy=RGB
+-dAutoRotatePages=/None -dUseCropBox` and no downsampling. (4) `checkPdfA(output, { part })`:
+**a file that breaks a rule, or any rule that could not run, throws `pdfa-not-compliant`** and
+no bytes are offered. (5) Read-back: page count equal; the share of the input's words the output
+still extracts on up to 12 sampled pages (`wordRecall`, warning under 90 %); a 360 px grey render
+of up to 6 pages compared block by block (`comparePage`, warning over 5 % mean or 50 % in one
+16 × 16 block). The render leaves annotations out (their counts are compared by subtype,
+`annotationCounts`), because MuPDF draws a rescaled sticky-note icon differently from other
+viewers. The baseline is the input, or the prepared file when form fields were flattened (their
+values are drawn into the page then).
+
+**What preparing is for.** Each step exists because a fixture lost something without it.
+Ghostscript drops every widget and field value (fields are flattened first, `forms.ts`); it
+copied an `OpenAction` script into a stray catalog `/A` key (forbidden actions are removed from
+the catalog, pages, annotations and outline); it drops annotations without the Print flag, links
+and sticky notes included (the flag is set, and a missing appearance is drawn through MuPDF by
+rewriting a property with its own value so the annotation is dirty: `setRect(getRect())` would
+move it, since the argument is in page space); it loses the character mapping of a MacRoman
+TrueType font without `/ToUnicode` (one is built from the encoding). The `/ToUnicode` pass reads
+the fonts in a **second document**: reading a page's fonts resolves its images and MuPDF 1.28.1
+then saves them without their streams (the hazard of §5.8), which broke every picture of a page
+until the read was moved out of the document that is written. Attachments are removed for parts
+1 and 2 and kept for part 3 with `/AFRelationship` and a media type; owner-password encryption
+is dropped (a file that needs a password is refused).
+
+**The checker** runs 20 rule groups over the object graph (every object, so nothing hides in an
+unreferenced stream) and the content streams (`pdfa-content.ts`: a tokenizer with a
+graphics-state stack that follows `q`/`Q`, `cs`/`CS`, `Do`, `sh`, `BI`, patterns and `gs`):
+`header`, `trailer`, `encryption`, `structure`, `streams`, `xmp`, `xmp-claim`, `xmp-schemas`,
+`xmp-info`, `output-intent`, `device-colour`, `transparency`, `fonts`, `images`,
+`graphics-state`, `actions`, `annotations`, `forms`, `layers`, `embedded-files`, each with its
+ISO 19005 clause per part (`PDFA_CLAUSES`) and a state `pass | fail | na | unchecked`. XMP is
+parsed with `@xmldom/xmldom` (`pdfa-xmp.ts`). Where it differs from the standard is documented in
+the file header (a font only used for invisible text is exempt in parts 2 and 3; a JavaScript
+name tree is reported even if nothing runs it). Every report carries `notChecked`: font
+programs, ICC bodies, exact syntax, XMP value formats, the PDF/A of embedded files, and the
+accessibility rules of level A. The panel prints that list and the sentence that this is not a
+full veraPDF validation on every run, and `op.note.pdfa.limits` does the same in the operation
+report. The per-rule sentences are `pdfa.rule.<id>` and `pdfa.violation.<id>` in both
+languages; the identifiers printed beside a violation (a font name, a PDF key, a diagnostic
+phrase) are technical details and are not translated.
+
+**Calibration.** veraPDF 1.30.2 was run as a development-only reference (not shipped) over the
+fixtures: generated files for each rule (non-embedded and custom-encoded fonts, transparency,
+CMYK, LZW, JavaScript forms, attachments, annotations, layers, tags, labels, rotation and crop
+box), hand-mutated PDF/A files (wrong part, no output intent, no XMP, an external namespace, a
+missing Print flag) and three real documents, each input and each output at parts 1, 2 and 3:
+267 file and level pairs, **267 agree on pass or fail**. Every conversion output (48 from the
+generated and real fixtures, plus the three of a 139-page scan) passes veraPDF. Measured behaviour worth knowing: part 1 turns a page that
+uses transparency into a picture (a 98 KB file became 4.2 MB, its text no longer extractable,
+its links gone) and the report says so; a font with ligatures and no `/ToUnicode` loses part of
+its text mapping.
 
 ---
 
@@ -1440,7 +1535,7 @@ and the panel used to do exactly that right after handing over its result, so ev
 applied from the panel was aborted before it reached the document
 (`e2e/editor-stability.spec.ts` fails with that call reinstated).
 
-`ops/index.ts` registers **36** dialog ids against lazy `import()` loaders, so a
+`ops/index.ts` registers **37** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
@@ -1973,6 +2068,9 @@ shows.
   has OCR text, and tells a picture-only scan to be run through OCR first. Labels outside
   its rules (an unlabelled line, a select showing only a placeholder) are missed, and a
   signature caption on a document that is not a form can be proposed.
+- **PDF/A** is checked by a subset of veraPDF's rules, and the conversion rewrites the whole
+  file (§5.13): signatures stop validating, form fields are flattened, tags are not kept, and
+  PDF/A-1b turns pages that use transparency into pictures.
 - **`adbe.pkcs7.sha1`** signatures are reported `unchecked`, because their digest relation
   differs from the detached-CMS one this build verifies.
 
@@ -2024,9 +2122,10 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
 
-Inventory: 256 pinned files across seven groups — `mupdf` (3), `pdfjs` (200: worker,
+Inventory: 258 pinned files across eight groups — `mupdf` (3), `pdfjs` (200: worker,
 cmaps, standard fonts, wasm), `tesseract` (33: module, worker, core `.wasm.js` + `.wasm`,
-Turkish and English in `fast` and `best`, 25 more languages in `best`), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
+Turkish and English in `fast` and `best`, 25 more languages in `best`), `ghostscript` (2:
+`gs.js` loader and `gs.wasm`, from `@bentopdf/gs-wasm`), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
 Dancing Script and Great Vibes, latin and latin-ext, for typed signatures).
 
 `tools/verify-assets.mjs` is the verification half of the pair: it re-hashes every pinned

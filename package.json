@@ -34,6 +34,7 @@
     "worker:deploy:dry": "pnpm run assemble:dist && npx --yes wrangler@4.135.0 deploy --dry-run"
   },
   "devDependencies": {
+    "@bentopdf/gs-wasm": "0.1.1",
     "@biomejs/biome": "2.5.13",
     "@expo-google-fonts/noto-sans": "0.4.2",
     "@tesseract.js-data/ara": "1.0.0",

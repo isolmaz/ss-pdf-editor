@@ -46,7 +46,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing · compression |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing · compression · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
 
@@ -359,6 +359,25 @@ nothing leaving the browser.
     artifact. A file with no tags shows the order its content is drawn in; change it and the
     types, then tag the document. Edits are a draft applied in one write, verified by
     reading the file back.
+- **PDF/A.** **Tools → Save as PDF/A** converts the document to PDF/A-2b (the default),
+  PDF/A-3b or PDF/A-1b and opens the result in a new tab; the original stays open. The
+  **PDF/A** panel (palette: *PDF/A check*) checks any file, converted or not.
+  - The conversion runs Ghostscript 10.06 compiled to WebAssembly in a worker, loaded only
+    when the tool is used. Colours become sRGB with an sRGB output intent, every font is
+    embedded, and the XMP metadata is written from the document's own title, author and dates.
+    Form fields are flattened, scripts and forbidden annotations removed, and missing
+    annotation appearances drawn first, so filled-in form values and links survive in PDF/A-2b
+    and 3b.
+  - Before the result is offered, the checker runs on it. **A file that breaks a rule is never
+    handed over**: the operation stops and says which rule failed.
+  - The checker covers 20 rule groups (header and trailer, encryption, streams, XMP and the
+    `pdfaid` claim, output intent, device colour, transparency, fonts, images, actions,
+    annotations, forms, layers, embedded files). It reports each rule as passed, broken (with
+    page and the thing at fault, and the ISO clause) or unchecked, and lists what it never
+    looks at. **It is not a full veraPDF validation.** Its rules were calibrated against veraPDF
+    1.30 while developing it (same pass or fail verdict on every fixture used).
+  - The report compares sampled pages before and after: the share of words still extractable
+    and a grey render, so a conversion that changed the look or the text says so.
 - **Comparison.** Compare two documents by text or by pixels; the report always says which
   method it used.
 - **Batch.** Run one ordered set of steps over many files, with a report for each file.
@@ -489,6 +508,21 @@ The limits are defined once, in
   - The audit scans raw bytes, so it cannot see inside compressed streams or object
     streams.
   - It says so, and when object streams are present it skips the orphan-object verdict.
+- **PDF/A.**
+  - The checker is a subset of veraPDF. A clean result is not a certificate: font programs,
+    ICC profile bodies, exact file syntax, XMP value formats and the accessibility rules of
+    level A are not checked, and the panel lists them on every run.
+  - Ghostscript rewrites the whole file. Digital signatures stop validating, form fields are
+    flattened into the page, the tag structure is not kept, hidden annotations are dropped,
+    and the Producer field reads `GPL Ghostscript 10.06.0`. The report lists each of these.
+  - A font that is not embedded in the source is replaced by a similar one; the letter shapes
+    can differ and the report counts them.
+  - PDF/A-1b forbids transparency, so pages that use it are turned into pictures: their text
+    can no longer be selected, their links are lost and the file can grow many times over.
+    PDF/A-2b and 3b keep such pages as they are.
+  - Attachments survive only in PDF/A-3b. A password-protected file is refused.
+  - Text can come out different where a font has ligatures or a custom encoding and no
+    `/ToUnicode`; the report gives the share of words that still extract.
 - **Deleting marks.** Only annotations are deleted, never page content. A deletion rewrites
   the file and can be undone. It is not a forensic scrub.
 - **Typed text.** A reader that ignores `/AP` falls back to Helvetica.
@@ -667,7 +701,9 @@ pnpm worker:deploy:dry      # same, with --dry-run
 
 - **Scope.** `public/sw.js` is scoped to `/editor/` and caches static assets only.
 - **On request only.** Precaching runs only when you ask for it, in Settings → Offline use.
-  It covers the shell, pdf.js, MuPDF and the fonts. OCR is not included.
+  It covers the shell, pdf.js, MuPDF and the fonts. OCR is not included, and neither is the
+  PDF/A converter (15.5 MB of WebAssembly): it is cached the first time the tool runs and
+  works offline after that.
 - **Readiness.** It is checked path by path. A half-downloaded pack is reported as
   `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
@@ -697,5 +733,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [`LICENSE`](LICENSE) fo
 text.
 
 The project must use AGPL-3.0-or-later because the distribution ships MuPDF, which is
-licensed AGPL-3.0-or-later. The editor's **Help → Source code (AGPL-3.0)** command links
+licensed AGPL-3.0-or-later. It also ships Ghostscript (AGPL-3.0-only, through
+`@bentopdf/gs-wasm`) for PDF/A conversion; the combined work is distributed under the
+GNU Affero General Public License version 3. The editor's **Help → Source code (AGPL-3.0)** command links
 to this repository, as section 13 of the licence requires.

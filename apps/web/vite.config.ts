@@ -20,6 +20,9 @@ export default defineConfig({
     cssTarget: ['chrome123', 'firefox120', 'safari17.5'],
     sourcemap: true,
   },
+  // The Ghostscript worker imports its engine at runtime, which a classic (IIFE) worker
+  // bundle cannot do everywhere; module workers can.
+  worker: { format: 'es' },
   server: { port: 5173, strictPort: true },
   preview: { port: 4173, strictPort: true },
 });

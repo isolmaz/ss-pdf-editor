@@ -15,7 +15,7 @@
 import type { MessageKey } from 'pdf-shared';
 
 /** Engines that can produce bytes. Kept as a union so the save report can name them. */
-export type OperationEngine = 'pdfjs' | 'mupdf' | 'tesseract' | 'model';
+export type OperationEngine = 'pdfjs' | 'mupdf' | 'tesseract' | 'model' | 'ghostscript';
 
 export interface OperationProgress {
   /** Stable step id, used as the progress bar's key (e.g. `render`, `ocr`). */

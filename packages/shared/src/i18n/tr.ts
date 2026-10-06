@@ -31,6 +31,7 @@ import { optimizePart } from './parts/optimize';
 import { pageeditPart } from './parts/pageedit';
 import { pageopsPart } from './parts/pageops';
 import { pagesPart } from './parts/pages';
+import { pdfaPart } from './parts/pdfa';
 import { phase4Part } from './parts/phase4';
 import { propertiesPart } from './parts/properties';
 import { propsPart } from './parts/props';
@@ -90,6 +91,7 @@ export const tr = {
   ...verifyPart,
   ...sigValidatePart,
   ...xfaPart,
+  ...pdfaPart,
 
   'open.pdfFilter': 'PDF belgesi',
   'open.progress': 'Belge açılıyor…',
@@ -244,6 +246,12 @@ export const tr = {
   'error.voice-unavailable.hint': 'İşletim sistemine yerel bir Türkçe ses kurun.',
   'error.permission-denied.message': 'Dosya erişim izni verilmedi.',
   'error.permission-denied.hint': 'İzin verin veya Dışa aktar ile indirin.',
+  'error.pdfa-failed.message': 'PDF/A dönüştürücü çalışamadı.',
+  'error.pdfa-failed.hint':
+    'Dosyayı yeniden deneyin; sürerse çevrimdışı hazırlık ekranından motor paketini yeniden indirin.',
+  'error.pdfa-not-compliant.message': 'Dosya PDF/A kurallarına uygun hale getirilemedi.',
+  'error.pdfa-not-compliant.hint':
+    'Denetim sonucundaki ihlallere bakın; başka bir PDF/A düzeyini deneyebilirsiniz.',
   'error.internal.message': 'Beklenmeyen bir hata oluştu.',
   'error.internal.hint': 'İşlemi yeniden deneyin; sürerse bildirin.',
 

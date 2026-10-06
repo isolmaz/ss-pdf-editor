@@ -658,6 +658,19 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'scan.ts composes the scanned pages through images.ts into a brand-new document; nothing of a source survives by construction',
   },
   {
+    steps: ['pdfa.*'],
+    mayChange: [
+      'pageContent',
+      'textContent',
+      'cropBox',
+      'formFieldCount',
+      'formFieldValues',
+      'annotations',
+      'signatures',
+    ],
+    why: 'pdfa.ts has Ghostscript rewrite the whole file: it flattens form fields, drops hidden annotations and invalidates signatures, may flatten transparency to pictures in PDF/A-1, and writes the visible box as the page; the page count is checked equal and the page order never changes',
+  },
+  {
     steps: ['images.create'],
     mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox'],
     why: 'images.ts creates a brand-new document; nothing of the source survives by construction',
