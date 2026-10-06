@@ -302,6 +302,28 @@ describe('the chain and the summary', () => {
     expect(summarizeRevocation(full, false)).toBe('not-revoked');
   });
 
+  it('does not call a certificate cleared only by a list too old to speak for the signature not revoked', async () => {
+    const ca = await makeCa('CA');
+    const leaf = await makeLeaf('Signer', ca);
+    // Issued after the signature (1 March), but past its nextUpdate today (1 June).
+    const expired = await issueCrl({ issuer: ca, thisUpdate: day(3, 15), nextUpdate: day(4, 15) });
+    const stale = await check(leaf, [ca], [expired]);
+    expect(stale[0]).toMatchObject({ status: 'good', stale: true, coversValidationTime: true });
+    // The signer's own time can be back-dated to sit before an old list: only a current list
+    // proves anything then.
+    expect(summarizeRevocation(stale, false)).toBe('not-revoked-outdated');
+    // A trusted timestamp fixes the time, and a list issued after it still speaks for it.
+    expect(summarizeRevocation(stale, true)).toBe('not-revoked');
+
+    // Signed in June, list issued in May: not even a trusted time lets it exclude a revocation
+    // in between.
+    const current = await issueCrl({ issuer: ca, ...CRL_DATES });
+    const early = await check(leaf, [ca], [current], day(6, 1));
+    expect(early[0]).toMatchObject({ status: 'good', stale: false, coversValidationTime: false });
+    expect(summarizeRevocation(early, true)).toBe('not-revoked-outdated');
+    expect(summarizeRevocation(early, false)).toBe('not-revoked-outdated');
+  });
+
   it('summarises the empty and the all-unknown cases as indeterminate', () => {
     expect(summarizeRevocation([], true)).toBe('indeterminate');
     const unknown = { status: 'unknown' } as RevocationCertCheck;

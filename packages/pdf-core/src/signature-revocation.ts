@@ -836,7 +836,13 @@ export async function checkRevocation(input: {
  * ------------------------------------------------------------------ */
 
 /**
- * `'not-revoked'` — every checked certificate was cleared by a verified list.
+ * `'not-revoked'` — every checked certificate was cleared by a verified list that speaks for
+ * the validation time.
+ * `'not-revoked-outdated'` — every checked certificate was cleared, but some list is too old to
+ * rule out a revocation: it was issued before the validation time, or it is past its
+ * `nextUpdate` while the validation time is not a trusted timestamp (a signer's own claimed
+ * time can be back-dated to sit before an old list, so only a current list then proves
+ * anything).
  * `'revoked'` — one was revoked, and either the revocation is not provably later than the
  * signature or it is.
  * `'revoked-after-signing'` — every revocation found is dated after a **trusted** validation
@@ -847,6 +853,7 @@ export async function checkRevocation(input: {
  */
 export type RevocationSummary =
   | 'not-revoked'
+  | 'not-revoked-outdated'
   | 'revoked'
   | 'revoked-after-signing'
   | 'partial'
@@ -864,6 +871,13 @@ export function summarizeRevocation(
     const allLater = revoked.every((check) => check.timing === 'after-signing');
     return allLater && trustedTime ? 'revoked-after-signing' : 'revoked';
   }
-  if (checks.every((check) => check.status === 'good')) return 'not-revoked';
+  if (checks.every((check) => check.status === 'good')) {
+    // A list issued before the signature cannot exclude a revocation in between; a list past
+    // its nextUpdate proves nothing about a time the signer could have chosen.
+    const outdated = checks.some(
+      (check) => check.coversValidationTime === false || (check.stale && !trustedTime),
+    );
+    return outdated ? 'not-revoked-outdated' : 'not-revoked';
+  }
   return checks.some((check) => check.status === 'good') ? 'partial' : 'indeterminate';
 }

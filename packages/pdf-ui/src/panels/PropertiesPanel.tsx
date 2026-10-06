@@ -130,6 +130,7 @@ const TRUST_REASON_LABEL: Record<TrustReason, MessageKey> = {
 
 const REVOCATION_LABEL: Record<SignatureRevocation, MessageKey> = {
   'not-revoked': 'props.sig.revocation.notRevoked',
+  'not-revoked-outdated': 'props.sig.revocation.notRevokedOutdated',
   revoked: 'props.sig.revocation.revoked',
   'revoked-after-signing': 'props.sig.revocation.revokedAfter',
   partial: 'props.sig.revocation.partial',
@@ -138,6 +139,8 @@ const REVOCATION_LABEL: Record<SignatureRevocation, MessageKey> = {
 
 const REVOCATION_TONE: Record<SignatureRevocation, string> = {
   'not-revoked': 'text-kumo-success',
+  // Nothing names the certificate, but the lists are too old to say it was good when it mattered.
+  'not-revoked-outdated': 'text-kumo-warning',
   revoked: 'text-kumo-danger',
   // The signature was made while the certificate was good, but the certificate is revoked now.
   'revoked-after-signing': 'text-kumo-warning',

@@ -613,7 +613,7 @@ The verdict has four independent fields, never one badge:
 |---|---|
 | `integrity` | `valid` / `invalid` / `unchecked` |
 | `trust` | `trusted` / `untrusted` / `self-signed` / `indeterminate` / `not-checked` |
-| `revocation` | `not-revoked` / `revoked` / `revoked-after-signing` / `partial` / `indeterminate` — from lists already on the device only (§5.3.1); `indeterminate` when none speaks for any certificate |
+| `revocation` | `not-revoked` / `not-revoked-outdated` / `revoked` / `revoked-after-signing` / `partial` / `indeterminate` — from lists already on the device only (§5.3.1); `indeterminate` when none speaks for any certificate |
 | `coverage` | `covers-whole-document` / `covers-partial` / `unknown`, computed from the ByteRange |
 
 plus `changesAfterSigning`, derived from the `startxref`/`/Prev` revision chain.
@@ -659,7 +659,12 @@ but not including a self-signed root, are checked.
   name). A `good` carries `coversValidationTime` (was the list issued at or after the signature?)
   and `stale` (past its `nextUpdate` today). A lasting revocation outranks everything; otherwise
   the newest statement decides. The summary is `partial` when nothing is revoked, something was
-  cleared and something has no list (typically the CA above the signer).
+  cleared and something has no list (typically the CA above the signer). When every certificate
+  was cleared, the summary is `not-revoked` only if each list speaks for the validation time:
+  a list issued before it, or a `stale` list while the validation time is not a trusted
+  timestamp, makes it `not-revoked-outdated` (a warning, not a pass). The signer's own claimed
+  time can be back-dated to sit before an old list that still names nothing, so only a
+  current list proves anything then.
 - **Before or after the signature.** A revocation is compared with the *validation time*. It is
   called `revoked-after-signing` — harmless to the signature — only when that time is a trusted
   timestamp; the signer's own `signingTime`/`/M` can be back-dated and never earns the excuse.

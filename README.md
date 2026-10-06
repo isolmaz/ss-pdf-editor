@@ -318,7 +318,10 @@ nothing leaving the browser.
     the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
     the CRLs and OCSP responses stored in the PDF (the `/DSS` and the signature's own
     revocation archive). Each certificate in the chain is reported not revoked, revoked (with
-    date and reason, and whether that is before or after the signature) or unknown.
+    date and reason, and whether that is before or after the signature) or unknown. A list
+    issued before the signature, or one past its next-update date when no trusted timestamp
+    fixes the signing time, cannot rule out a revocation: the summary then says the lists are
+    too old instead of "not revoked".
   - RFC 3161 timestamps are verified offline, both a signature's own timestamp and
     document timestamps (`ETSI.RFC3161`): the hash it covers, its signature, the authority's
     time-stamping certificate and, with a root you imported, its chain. A timestamp from an
