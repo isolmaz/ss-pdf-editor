@@ -30,6 +30,7 @@ import { reviewPart } from './en-parts/review';
 import { securityPart } from './en-parts/security';
 import { shellPart } from './en-parts/shell';
 import { signaturePart } from './en-parts/signature';
+import { sigValidatePart } from './en-parts/sigvalidate';
 import { stampPart } from './en-parts/stamp';
 import { texteditPart } from './en-parts/textedit';
 import { verifyPart } from './en-parts/verify';
@@ -75,6 +76,7 @@ export const en: Record<MessageKey, string> = {
   ...reviewPart,
   ...stampPart,
   ...verifyPart,
+  ...sigValidatePart,
 
   'open.progress': 'Opening the document…',
   'open.pdfFilter': 'PDF document',

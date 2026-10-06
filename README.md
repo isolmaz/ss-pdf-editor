@@ -45,7 +45,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
-| 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification |
+| 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
 | 🧰 **Tools** | OCR in 27 languages · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
@@ -255,6 +255,15 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - Trust is checked only against certificates you imported.
+  - Revocation is read from lists already on your device, never fetched: CRLs you import in
+    the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
+    the CRLs and OCSP responses stored in the PDF (the `/DSS` and the signature's own
+    revocation archive). Each certificate in the chain is reported not revoked, revoked (with
+    date and reason, and whether that is before or after the signature) or unknown.
+  - RFC 3161 timestamps are verified offline, both a signature's own timestamp and
+    document timestamps (`ETSI.RFC3161`): the hash it covers, its signature, the authority's
+    time-stamping certificate and, with a root you imported, its chain. A timestamp from an
+    authority you trust is the time the signature is judged at.
 
 ### OCR, accessibility, comparison, batch
 
@@ -363,8 +372,15 @@ The limits are defined once, in
   not a certified digital signature: it proves nothing about who signed or whether the
   document changed afterwards. The dialog says so; use certificate signing for that.
 - **Signing.**
-  - Only PAdES B-B is supported: no RFC 3161 timestamp, and no revocation check, since
-    there is no network. Revocation is therefore always reported `indeterminate`.
+  - Only PAdES B-B is written: a new signature carries no timestamp (there is no network to
+    ask an authority), and no revocation data.
+  - Revocation is only as good as the lists you provide: with no list for an issuer the
+    answer is `unknown`, and a list issued before the signature cannot rule out a later
+    revocation (the panel says so). Indirect CRLs, delta CRLs on their own and partitioned
+    CRLs are not processed. Both OCSP and CRL entries use the revocation date, not the
+    invalidity date.
+  - A timestamp from an authority you have not imported is shown but not relied on. Document
+    timestamps are not used to judge the signatures before them.
   - An empty trust store reports `not-checked`.
   - RFC 5280 policy processing is not implemented.
   - Supported keys are RSA PKCS#1 v1.5 and ECDSA P-256/384/521, with SHA-256/384/512.
