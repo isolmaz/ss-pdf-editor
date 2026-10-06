@@ -43,3 +43,10 @@ vi.mock('./packages/pdf-core/src/assets.ts', async (importOriginal) => {
     },
   };
 });
+
+// The interface catalogues are chunks the shell loads before its first render
+// (`apps/web/src/main.tsx`); the suite loads both the same way, so a translator built in a
+// test has its words.
+const { loadLocale } = await import('./packages/shared/src/i18n/index.ts');
+await loadLocale('tr');
+await loadLocale('en');

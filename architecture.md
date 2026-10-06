@@ -99,6 +99,17 @@ annotation removal, layer writes, attachments, the redaction audit and the font 
 — go through `apps/web/src/lazy-ops.ts`: same signatures, loaded on the first call.
 That took the entry chunk from 250.6 to 244.9 kB gzip (2026-10-04).
 
+Two more things kept growing it. **Icon weights**: every Phosphor icon carries its
+drawing in six weights, and the `weight` prop picks one at render time, so the bundler
+keeps all six. `tools/vite/phosphor-weights.mjs` drops `thin` and `light`, which nothing
+draws (the editor uses `regular`, `bold`, `fill` and `duotone`; Kumo `regular`, `bold`
+and `fill`). **Catalogues**: both language catalogues were in the entry, and only one is
+ever shown. Each is now a chunk of its own (`LocaleInfo.load`), and `main.tsx` awaits the
+interface language's catalogue before the first render. `main.tsx` imports from
+`pdf-ui/ui`, not the `pdf-ui` barrel, which `App.tsx` loads lazily. Together these took the
+entry chunk from 366.7 to 280.9 KiB (gzip level 9, 2026-10-06), after the parity work had
+grown it past the budget.
+
 ---
 
 ## 3. `pdf-shared` — the vocabulary
@@ -107,7 +118,7 @@ That took the entry chunk from 250.6 to 244.9 kB gzip (2026-10-04).
 |---|---|
 | `errors.ts` | The single error contract. `ToolError` carries a stable code (29 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
 | `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
-| `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Turkish and English are bundled; another language's dictionary is fetched by `loadLocale` when it is chosen, and the shell sets `<html lang>` and `<html dir>` from the registry. |
+| `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
 Because `MessageKey` is a union of literal keys, passing an unknown key is a compile
 error. That is why operation notes, dialog titles and error text are typed as `MessageKey`

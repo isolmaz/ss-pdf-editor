@@ -1,6 +1,5 @@
-import { en } from './en';
 import { type Locale, localeInfo } from './locales';
-import { type MessageKey, tr } from './tr';
+import type { MessageKey } from './tr';
 
 export type { LocaleInfo } from './locales';
 export { isLocale, LOCALE_IDS, LOCALES, localeInfo, matchLocale } from './locales';
@@ -15,13 +14,10 @@ export const DEFAULT_LOCALE: Locale = 'tr';
 export type Dictionary = Partial<Record<MessageKey, string>>;
 
 /**
- * The dictionaries in memory. Turkish and English are bundled; another locale's is
- * added by `loadLocale` before the interface switches to it.
+ * The dictionaries in memory. Each is its own chunk; `loadLocale` adds one before the
+ * interface uses its language — the shell awaits the first before its first render.
  */
-const DICTIONARIES = new Map<string, Dictionary>([
-  ['tr', tr],
-  ['en', en],
-]);
+const DICTIONARIES = new Map<string, Dictionary>();
 
 /** Fetch a registered locale's dictionary (and its fallback's) so `createTranslator` has it. */
 export async function loadLocale(locale: Locale): Promise<void> {
@@ -66,18 +62,20 @@ function lookupChain(locale: Locale): readonly Dictionary[] {
     const dictionary = DICTIONARIES.get(id);
     if (dictionary !== undefined) chain.push(dictionary);
   }
-  if (!seen.has('tr')) chain.push(tr);
+  const turkish = DICTIONARIES.get('tr');
+  if (!seen.has('tr') && turkish !== undefined) chain.push(turkish);
   return chain;
 }
 
 /**
  * The translator for a locale: its own words, a missing key from its fallback, and
- * Turkish last, so a half-translated locale can never render a blank label.
+ * Turkish last when it is loaded, so a half-translated locale can never render a blank
+ * label. A key no loaded dictionary has comes back as the key itself.
  */
 export function createTranslator(locale: Locale = DEFAULT_LOCALE): Translator {
   const chain = lookupChain(locale);
   const translate = (key: MessageKey, params?: Readonly<Record<string, string | number>>): string => {
-    let template: string = tr[key];
+    let template: string = key;
     for (const dictionary of chain) {
       const value = dictionary[key];
       if (value !== undefined) {
