@@ -40,6 +40,35 @@ export const PINS_GENERATED_BY = 'tools/fetch-engines.mjs';
 const MIB = 1024 * 1024;
 const HASH_CHUNK = 1024 * 1024;
 
+/** OCR languages beyond Turkish and English; the order is `OCR_LANGUAGE_CODES_ALL`'s. */
+const OCR_EXTRA_LANGUAGES = [
+  'deu',
+  'fra',
+  'spa',
+  'ita',
+  'por',
+  'nld',
+  'pol',
+  'ces',
+  'hun',
+  'ron',
+  'swe',
+  'aze',
+  'kmr',
+  'rus',
+  'ukr',
+  'bul',
+  'ell',
+  'ara',
+  'fas',
+  'heb',
+  'hin',
+  'chi_sim',
+  'chi_tra',
+  'jpn',
+  'kor',
+];
+
 /**
  * The engine table.
  *
@@ -226,6 +255,14 @@ const ENGINES = [
         from: '4.0.0_best_int/eng.traineddata.gz',
         to: 'lang/best/eng.traineddata.gz',
       },
+      // The other languages ship the integerized best model only (`engines/tesseract.ts`,
+      // `OCR_LANGUAGE_CODES_ALL`): the LSTM-only worker reads nothing else, and the
+      // `4.0.0` Chinese pack alone (27 MB) is over the 25 MiB a deployed asset may be.
+      ...OCR_EXTRA_LANGUAGES.map((code) => ({
+        package: `@tesseract.js-data/${code}`,
+        from: `4.0.0_best_int/${code}.traineddata.gz`,
+        to: `lang/best/${code}.traineddata.gz`,
+      })),
     ],
   },
 ];

@@ -25,4 +25,6 @@ export const enginesPart = {
   'op.note.ocr.overwriteIsAdditive': 'Overwrite mode does not delete existing text; new layer is added.',
   'op.note.ocr.lowConfidence': 'Page {page}: low recognition confidence ({confidence}%).',
   'op.note.ocr.hiddenLayer': 'Text layer rendered invisibly; text is selectable and searchable.',
+  'op.note.ocr.bestModel':
+    'Some of the chosen languages ship only the best-quality model, so recognition used it (slower, more accurate).',
 } as const;
