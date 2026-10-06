@@ -16,6 +16,7 @@
 export { AccessibilityPanel, type AccessibilityPanelProps } from './AccessibilityPanel';
 export { CommentsPanel, type CommentsPanelProps, type ReviewTarget } from './CommentsPanel';
 export { ComparePanel, type ComparePanelProps } from './ComparePanel';
+export { FormDetectPanel, type FormDetectPanelProps, type FormDetectPhase } from './FormDetectPanel';
 export { FormPanel, type FormPanelProps } from './FormPanel';
 export { PropertiesPanel, type PropertiesPanelProps } from './PropertiesPanel';
 export { RedactionAuditPanel, type RedactionAuditPanelProps } from './RedactionAuditPanel';

@@ -12,6 +12,7 @@ import { enginesPart } from './en-parts/engines';
 import { errorsPart } from './en-parts/errors';
 import { filePart } from './en-parts/file';
 import { findReplacePart } from './en-parts/findreplace';
+import { formDetectPart } from './en-parts/formdetect';
 import { formsPart } from './en-parts/forms';
 import { homePart } from './en-parts/home';
 import { imposePart } from './en-parts/impose';
@@ -79,6 +80,7 @@ export const en: Record<MessageKey, string> = {
   ...reviewPart,
   ...scanPart,
   ...sanitizePart,
+  ...formDetectPart,
   ...stampPart,
   ...verifyPart,
   ...sigValidatePart,

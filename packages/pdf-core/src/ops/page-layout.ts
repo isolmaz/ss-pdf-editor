@@ -114,7 +114,7 @@ export function fontFamily(name: string): string {
   return family.replace(/(?:PS)?MT$/, '').trim() || 'Arial';
 }
 
-function rgb(color: readonly number[] | null | undefined): number {
+export function rgb(color: readonly number[] | null | undefined): number {
   if (color === null || color === undefined || color.length === 0) return 0;
   if (color.length === 1) {
     const grey = Math.round((color[0] ?? 0) * 255);
@@ -129,7 +129,7 @@ function rgb(color: readonly number[] | null | undefined): number {
   return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
 }
 
-function apply(matrix: Matrix, x: number, y: number): readonly [number, number] {
+export function apply(matrix: Matrix, x: number, y: number): readonly [number, number] {
   const [a, b, c, d, e, f] = matrix;
   return [a * x + c * y + e, b * x + d * y + f];
 }
@@ -142,12 +142,12 @@ function apply(matrix: Matrix, x: number, y: number): readonly [number, number] 
  * Taking the wrapper off the finalizer leaves the object to its owner, the page run. (The
  * structured-text walker's fonts and images were measured the same way and are sound.)
  */
-function borrowed(value: Shade | Image): void {
+export function borrowed(value: Shade | Image): void {
   const owner = value.constructor as { _finalizer?: FinalizationRegistry<unknown> };
   owner._finalizer?.unregister(value);
 }
 
-function transformBox(box: Rect, matrix: Matrix): Box {
+export function transformBox(box: Rect, matrix: Matrix): Box {
   const corners = [
     apply(matrix, box[0], box[1]),
     apply(matrix, box[2], box[1]),
@@ -206,7 +206,7 @@ function pathShape(path: Path, ctm: Matrix): { box: Box; drawing: boolean } {
 }
 
 /** Each subpath of a path as its points, in page space. */
-function subpaths(path: Path, ctm: Matrix): (readonly [number, number])[][] {
+export function subpaths(path: Path, ctm: Matrix): (readonly [number, number])[][] {
   const out: (readonly [number, number])[][] = [];
   let current: (readonly [number, number])[] = [];
   path.walk({

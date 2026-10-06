@@ -96,7 +96,7 @@ export interface FormFill {
 }
 
 export interface FieldCreation {
-  readonly kind: 'text' | 'checkbox' | 'dropdown' | 'radio' | 'optionlist';
+  readonly kind: 'text' | 'checkbox' | 'dropdown' | 'radio' | 'optionlist' | 'signature';
   readonly name: string;
   /** 0-based page. */
   readonly pageIndex: number;
@@ -106,6 +106,22 @@ export interface FieldCreation {
   readonly options?: readonly string[];
   readonly fontSize?: number;
   readonly required?: boolean;
+  /**
+   * No white background and no black border: for a field laid over something the page
+   * already draws (a rule, a box, a square), where a second frame would double it.
+   */
+  readonly plain?: boolean;
+  /** A text field that wraps and takes several lines. */
+  readonly multiline?: boolean;
+  /** A text field of this many equal cells (`/Ff` comb, `/MaxLen`). */
+  readonly comb?: number;
+  /**
+   * One rectangle per radio option, `x, y, width, height` in user space, instead of the
+   * options stacked inside `rect`: radio buttons that sit where the page already drew them.
+   */
+  readonly optionRects?: readonly (readonly [number, number, number, number])[];
+  /** The page's `/Rotate`: the widget draws upright on a turned page (`/MK /R`). */
+  readonly rotation?: 0 | 90 | 180 | 270;
 }
 
 export interface FormCalculation {
@@ -789,6 +805,47 @@ export async function readFormFields(
   });
 }
 
+/** One field's widgets as they sit on the pages: where a reader draws them. */
+export interface FormWidgetInfo {
+  readonly name: string;
+  readonly kind: FormFieldKind;
+  /** 0-based page of each widget, `null` when it cannot be resolved. */
+  readonly widgets: readonly {
+    readonly pageIndex: number | null;
+    /** `x0, y0, x1, y1` in PDF user space (lower-left origin), ascending. */
+    readonly rect: readonly [number, number, number, number];
+  }[];
+}
+
+/**
+ * Every field with the rectangle of each widget — what "does this field exist where it
+ * should" needs, and what the field list leaves out. A read, like `readFormFields`.
+ */
+export async function readFormWidgets(
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+): Promise<readonly FormWidgetInfo[]> {
+  return await withDocument(bytes, 'form.read', async ({ doc }) => {
+    const pages = pageIndexMap(doc);
+    const result: FormWidgetInfo[] = [];
+    for (const field of collectFields(doc)) {
+      if (signal?.aborted === true) break;
+      result.push({
+        name: field.name,
+        kind: kindOf(field),
+        widgets: field.widgets.map((widget) => {
+          const [ax = 0, ay = 0, bx = 0, by = 0] = readNumbers(widget.dict.get('Rect'));
+          return {
+            pageIndex: widgetPage(doc, pages, widget),
+            rect: [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)] as const,
+          };
+        }),
+      });
+    }
+    return result;
+  });
+}
+
 function refuseValue(name: string, message: string): never {
   throw new ToolError('value-out-of-range', {
     engine: 'mupdf',
@@ -984,7 +1041,13 @@ export async function createFormFields(
       await fonts.get();
       const form = ensureAcroForm(doc);
       const size = Math.min(Math.max(spec.fontSize ?? 12, MIN_FONT_SIZE), MAX_FONT_SIZE);
-      const chrome = { MK: { BC: [0, 0, 0], BG: [1, 1, 1] }, BS: { W: 1 } };
+      const turn = spec.rotation === undefined || spec.rotation === 0 ? {} : { R: spec.rotation };
+      const chrome =
+        spec.plain === true
+          ? Object.keys(turn).length === 0
+            ? {}
+            : { MK: turn }
+          : { MK: { BC: [0, 0, 0], BG: [1, 1, 1], ...turn }, BS: { W: 1 } };
       const widget = (rect: readonly number[], extra: Record<string, unknown>) =>
         doc.addObject({
           Type: 'Annot',
@@ -1033,7 +1096,12 @@ export async function createFormFields(
           const slot = Math.max(height / options.length, 12);
           widgets = options.map((_option, optionIndex) => {
             const top = y + height - optionIndex * slot;
-            const kid = widget([x, top - slot, x + Math.min(width, slot), top], { Parent: entry });
+            const own = spec.optionRects?.[optionIndex];
+            const place =
+              own === undefined
+                ? [x, top - slot, x + Math.min(width, slot), top]
+                : [own[0], own[1], own[0] + own[2], own[1] + own[3]];
+            const kid = widget(place, { Parent: entry });
             entry.get('Kids').push(kid);
             return kid;
           });
@@ -1064,11 +1132,18 @@ export async function createFormFields(
           widgets = [entry];
           break;
         }
+        case 'signature': {
+          entry = widget(rect, { FT: 'Sig', T: title, Ff: required });
+          widgets = [entry];
+          break;
+        }
         default: {
+          const comb = spec.comb !== undefined && spec.comb > 1 ? Math.floor(spec.comb) : 0;
           entry = widget(rect, {
             FT: 'Tx',
             T: title,
-            Ff: required,
+            Ff: required | (spec.multiline === true ? FF.multiline : 0) | (comb > 0 ? FF.comb : 0),
+            ...(comb > 0 ? { MaxLen: comb } : {}),
             DA: da,
             ...(spec.defaultValue === undefined ? {} : { V: pdfText(doc, spec.defaultValue) }),
           });

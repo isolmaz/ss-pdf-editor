@@ -94,6 +94,8 @@ export interface CommandHost {
   readonly measureMode: 'distance' | 'perimeter' | 'area' | null;
   /** Open a right-dock tab; the comparison and the accessibility check live there. */
   readonly showRightTab: (tab: string) => void;
+  /** Open the forms tab and read the page for fields to add (Prepare form). */
+  readonly detectFormFields?: () => void;
   /** Open the left dock on one of its views (the layer write lives behind a tab). */
   readonly openLeftTab: (tab: DocumentPanelTab) => void;
   readonly pageAction: (action: PageAction) => void;
@@ -220,6 +222,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'tools.signature-simple',
   'tools.image-add',
   'tools.form-fields',
+  'tools.form-detect',
   'tools.link',
   'tools.numbering',
   'tools.watermark',
@@ -936,6 +939,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       disabled: noEdit,
       run: dialog('form-create-field'),
+    },
+    {
+      id: 'tools.form-detect',
+      labelKey: 'cmd.formDetect.label',
+      group: 'tools',
+      disabled: noEdit || host.detectFormFields === undefined,
+      keywords: ['detect', 'prepare form', 'fields', 'flat form', 'alan', 'algila', 'form hazirla'],
+      run: () => host.detectFormFields?.(),
     },
     {
       id: 'tools.form-data',

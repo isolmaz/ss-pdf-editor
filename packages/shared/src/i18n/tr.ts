@@ -20,6 +20,7 @@ import { enginesPart } from './parts/engines';
 import { errorsPart } from './parts/errors';
 import { filePart } from './parts/file';
 import { findReplacePart } from './parts/findreplace';
+import { formDetectPart } from './parts/formdetect';
 import { formsPart } from './parts/forms';
 import { homePart } from './parts/home';
 import { imposePart } from './parts/impose';
@@ -82,6 +83,7 @@ export const tr = {
   ...reviewPart,
   ...scanPart,
   ...sanitizePart,
+  ...formDetectPart,
   ...stampPart,
   ...verifyPart,
   ...sigValidatePart,
