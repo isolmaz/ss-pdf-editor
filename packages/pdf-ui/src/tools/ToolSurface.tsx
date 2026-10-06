@@ -11,6 +11,7 @@
  */
 
 export { selectionBoxes, type TextSelection } from '../ops/AnnotationLayer';
+export { FieldCandidateLayer, type FieldCandidateLayerProps } from '../ops/FieldCandidateLayer';
 export {
   MarkInteractionLayer,
   type MarkInteractionLayerProps,
