@@ -10,7 +10,10 @@
     "./engines/*": "./src/engines/*.ts"
   },
   "dependencies": {
+    "@xmldom/xmldom": "0.8.15",
     "asn1js": "3",
+    "jszip": "3.10.1",
+    "mammoth": "1.13.0",
     "mupdf": "1.28.1",
     "pdf-shared": "workspace:*",
     "pdf-text-engine": "workspace:*",

@@ -45,6 +45,7 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   sign: async () => (await import('./sign')).signDialog,
   'new-document': async () => (await import('./start')).newDocumentDialog,
   'merge-files': async () => (await import('./start')).mergeFilesDialog,
+  'convert-to-pdf': async () => (await import('./convert')).convertDialog,
 };
 
 /**
@@ -52,7 +53,12 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
  * Known synchronously, before the spec loads, because the shell decides from the id alone
  * whether an opening needs a document at all.
  */
-const STANDALONE: ReadonlySet<string> = new Set(['images-to-pdf', 'new-document', 'merge-files']);
+const STANDALONE: ReadonlySet<string> = new Set([
+  'images-to-pdf',
+  'new-document',
+  'merge-files',
+  'convert-to-pdf',
+]);
 
 export function isStandaloneDialog(id: string): boolean {
   return STANDALONE.has(id);

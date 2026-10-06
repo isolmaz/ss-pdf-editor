@@ -46,7 +46,19 @@ const ALLOWED = [
   // `@expo-google-fonts/*`: MIT for the loader code, OFL-1.1 for the font binary it ships — the
   // same code+asset conjunction as `(MIT AND Zlib)`, and both halves are already allowed above.
   '(MIT AND OFL-1.1)',
+  // `jszip` (through mammoth, the DOCX reader): dual-licensed, and the MIT option is the one
+  // this product takes.
+  '(MIT OR GPL-3.0-or-later)',
 ];
+
+/**
+ * Packages whose `license` field is not an SPDX id but whose LICENSE file was read and is a
+ * licence on the list above. Keyed by exact version: a new version is checked again.
+ */
+const VERIFIED = {
+  // `"license": "BSD"`; its LICENSE file is the BSD-2-Clause text verbatim (lop → mammoth).
+  'duck@0.1.12': 'BSD-2-Clause',
+};
 
 /** Assets only (OFL fonts, CC image/word corpora) — warned about, never fatal alone. */
 const ASSET_ONLY = ['CC-BY-4.0'];
@@ -111,7 +123,22 @@ function readStoreLicenses() {
   return { source: 'node_modules/.pnpm walk (pnpm command unavailable)', groups };
 }
 
+/** Move every package {@link VERIFIED} names into the group of the licence its file states. */
+function applyVerified(groups) {
+  for (const [pkg, licence] of Object.entries(VERIFIED)) {
+    for (const [declared, packages] of groups) {
+      const index = packages.indexOf(pkg);
+      if (index < 0 || declared === licence) continue;
+      packages.splice(index, 1);
+      if (packages.length === 0) groups.delete(declared);
+      groups.set(licence, [...(groups.get(licence) ?? []), pkg]);
+    }
+  }
+  return groups;
+}
+
 function classify(groups) {
+  applyVerified(groups);
   const counts = [];
   const copyleft = [];
   const warnings = [];

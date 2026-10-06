@@ -20,6 +20,7 @@ import {
   Database,
   Drop,
   Eraser,
+  FileArrowUp,
   FileImage,
   FilePlus,
   Files,
@@ -94,6 +95,7 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'page.labels', category: 'pages', icon: Tag, descriptionKey: 'home.tool.labels' },
   { id: 'tools.impose', category: 'pages', icon: SquaresFour, descriptionKey: 'home.tool.impose' },
   { id: 'tools.numbering', category: 'pages', icon: ListNumbers, descriptionKey: 'home.tool.numbering' },
+  { id: 'file.convert', category: 'convert', icon: FileArrowUp, descriptionKey: 'home.tool.convert' },
   { id: 'file.create-images', category: 'convert', icon: Images, descriptionKey: 'home.tool.createImages' },
   {
     id: 'tools.export-images',

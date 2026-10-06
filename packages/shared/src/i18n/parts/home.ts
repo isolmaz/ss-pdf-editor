@@ -19,8 +19,9 @@ export const homePart = {
   'home.start.merge.desc': 'Birden çok PDF’i istediğiniz sırayla tek bir belgede birleştirin.',
   'home.start.batch.title': 'Toplu işlem',
   'home.start.batch.desc': 'Aynı adımları birçok dosyaya tek seferde uygulayın.',
-  'home.drop.title': 'PDF’i buraya bırakın',
-  'home.drop.desc': 'ya da dosya seçmek için tıklayın',
+  'home.drop.title': 'Dosyaları buraya bırakın',
+  'home.drop.desc':
+    'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’e dönüştürülür. Dosya seçmek için tıklayın.',
 
   'home.tools.search': 'Araç ara…',
   'home.tools.activeDocument': 'Araçlar açık belgeye uygulanır: {name}',

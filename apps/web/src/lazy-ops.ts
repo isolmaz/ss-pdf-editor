@@ -42,3 +42,9 @@ export const addImageStamp: Lazy<typeof import('pdf-core/ops/image-stamp').addIm
 export const resizeImageStamp: Lazy<typeof import('pdf-core/ops/image-stamp').resizeImageStamp> = async (
   ...args
 ) => (await import('pdf-core/ops/image-stamp')).resizeImageStamp(...args);
+
+export const convertToPdf: Lazy<typeof import('pdf-core/ops/convert').convertToPdf> = async (...args) =>
+  (await import('pdf-core/ops/convert')).convertToPdf(...args);
+
+export const imagesToPdf: Lazy<typeof import('pdf-core/ops/images').imagesToPdf> = async (...args) =>
+  (await import('pdf-core/ops/images')).imagesToPdf(...args);

@@ -625,6 +625,20 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'create.ts makes a brand-new document of empty pages; nothing of a source exists to keep',
   },
   {
+    steps: ['convert.*'],
+    mayChange: [
+      'pageCount',
+      'pageOrder',
+      'pageContent',
+      'textContent',
+      'rotation',
+      'cropBox',
+      'annotations',
+      'outlines',
+    ],
+    why: 'convert.ts lays another format out as a brand-new PDF and writes its headings as the outline and its links as link annotations; nothing of a PDF source exists to keep',
+  },
+  {
     steps: ['images.create'],
     mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox'],
     why: 'images.ts creates a brand-new document; nothing of the source survives by construction',
