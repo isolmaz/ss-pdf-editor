@@ -116,7 +116,7 @@ grown it past the budget.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (34 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (35 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
 | `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -290,7 +290,7 @@ the same certificate twice is one entry.
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
 | `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
-| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
+| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 
@@ -1113,6 +1113,70 @@ the report says the pages were not compared.
 publicly specified; whatever it is stored as falls under files, private data or unused
 objects); 3D and RichMedia scripts are reported, not edited; a signature does not survive the
 rewrite and the report says so; an XFA form carrying `<script` is dropped whole.
+### 5.12 Form field detection
+
+`ops/form-detect.ts` finds the places a flat page asks to be written in and offers them as
+form-field candidates; `createDetectedFields` turns the kept ones into real AcroForm
+fields through `createFormFields` (`ops/forms.ts`). Nothing is learned or downloaded: it is
+a rule set over what MuPDF reports.
+
+**Reading.** `readDetectionPage` takes, per page, the stext lines and characters
+(`readPageLayout`), the table finder's rulings, and one `mupdf.Device` pass that collects
+filled and stroked rectangles, circles (four or more curves and at most one line), rounded
+rectangles, dots and ink. Dotted leaders are rebuilt from runs of dots and periods. All of
+it is in MuPDF's displayed space (top-left origin, `/Rotate` applied) and is converted once
+with `displayToAppRect` into the app space of section 9; the widget `/Rect` is then derived
+with `topLeftRectToUserSpace`, and a turned page gets `/MK /R` so the widget text reads
+upright. The pure rule set, `ops/form-detect-rules.ts` (`detectPageFields`), sees only that
+`DetectionPage` value and is the unit-testable part.
+
+**Rules.** A text candidate comes from an underline or dotted leader with a label to its
+left or above, a blank gap after a colon label, an empty box, an empty table cell next to a
+label cell (for a header grid, an empty body), or a comb of equal cells (the `comb` flag).
+A checkbox comes from a small square or a ☐ □ ❑ glyph; circles of the same size form radio
+groups by their row or column and their labels; a Signature / İmza label with a line is a
+signature field. The safeguards that keep ordinary documents from reading as forms: runs of
+prose are never labels, a line of heading size (1.25 times the body) is not a label, labels
+under 0.55 of the body size are dropped, a region covered in ink is "crowded" and skipped,
+page numbers, figure captions and footnote markers are not labels, a captioned box needs 15
+pt free under its caption, a table needs a quarter of its cells empty before neighbouring
+cells count as labels, and a filled outline inside an outline is one stroked shape (how
+browsers print borders). A candidate over an existing widget is dropped. Confidence is
+`high` (a label and a drawn place agree) or `medium` (inferred, such as a colon with a gap).
+
+**Names.** The name is the nearest label, cleaned (`cleanLabel`: the periods of an
+abbreviation removed, leader runs and colons dropped) and made unique (`uniqueName`, which
+also avoids the names already in the file). A radio group takes the group's label as its
+name and each member's own label as its option; a group left with one member is created as
+a checkbox.
+
+**Scans.** A page whose text is mostly invisible OCR text (more than 55 % of its characters)
+has no drawings, so `rasterRules` renders it at 2x, thresholds it (Otsu) and merges dark
+horizontal runs into rulings that feed the same label rules. It finds underlines and cell
+rules only; boxes, squares and circles are not looked for in pixels. A page with no text at
+all is reported in `needsOcr`, and the panel says to run OCR first.
+
+**The review.** `FormDetectPanel` and `FieldCandidateLayer` hold no document state. The shell
+keeps the detection per document version (`currentDetect` is null when the working id
+changes, so any landed write closes the review) and the set of removed ids. Applying goes
+through `writeFileAnnotation`, so the step is journaled and one undo takes every field back.
+
+**Verification.** `createDetectedFields` re-reads the saved bytes with `readFormWidgets`
+and checks, for every created field, its name, kind, page and rectangle (within 0.75 pt),
+and that the document's field count grew by the number created; otherwise it throws
+`ToolError('verification-failed')` and nothing is written. The steps are `load`,
+`form.createField`, `verify`, `save`.
+
+**Measured on 15 generated fixtures** (flat forms built with MuPDF, forms printed from
+Chromium with the DOM as ground truth, three turned pages, a synthetic OCR-layered scan,
+and documents that are not forms). The fixtures were written next to the rules, so these
+figures are optimistic and are not a claim about real-world forms. Every vector fixture
+with a form scored 100 % precision and 92 % to 100 % recall (the misses: an unlabelled
+second address line, and a select whose only text is its placeholder); the scan scored 100 %
+precision and 67 % recall. Documents that are not forms (an article, a résumé, converted
+Word, PowerPoint, HTML, EPUB and text, a 100-page book) gave no candidates, except a
+"Notes:" colon, a spreadsheet's TRUE cell, and the signature captions of a certificate and
+an invoice.
 
 ---
 
@@ -1826,6 +1890,12 @@ shows.
 - **Sanitize** has no "embedded search index" category, does not read scripts inside 3D or
   rich media annotations, leaves hidden-layer content it cannot cut out exactly (a `/VE`
   expression, an unbalanced or open region) and reports it, and invalidates signatures.
+- **Form field detection** is a heuristic over drawn rules, boxes, glyphs and labels; it
+  proposes and the user confirms. It reads no Wingdings or other private-use checkbox
+  glyph, finds only horizontal rules (no boxes, squares or circles) on a scan that already
+  has OCR text, and tells a picture-only scan to be run through OCR first. Labels outside
+  its rules (an unlabelled line, a select showing only a placeholder) are missed, and a
+  signature caption on a document that is not a form can be proposed.
 - **`adbe.pkcs7.sha1`** signatures are reported `unchecked`, because their digest relation
   differs from the detached-CMS one this build verifies.
 

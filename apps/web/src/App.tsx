@@ -33,6 +33,7 @@ import {
   pdfNameFor,
   unsupportedDocumentKind,
 } from 'pdf-core/ops/convert-formats';
+import type { FormDetection } from 'pdf-core/ops/form-detect';
 import { fieldValueText, fillFormFields, readFormFields } from 'pdf-core/ops/forms';
 import { type MeasureMark, type MeasureMode, type MeasureScale, scaleForRatio } from 'pdf-core/ops/measure';
 import type { RedactRect } from 'pdf-core/ops/redact';
@@ -123,6 +124,7 @@ import type { ScannedDocument } from 'pdf-ui/scan';
 import {
   type CanvasShapeKind,
   type CanvasToolId,
+  FieldCandidateLayer,
   Magnifier,
   MarkInteractionLayer,
   type MarkTarget,
@@ -325,6 +327,10 @@ const CommentsPanel = lazy(async () => {
 const FormPanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
   return { default: module.FormPanel };
+});
+const FormDetectPanel = lazy(async () => {
+  const module = await import('pdf-ui/panels');
+  return { default: module.FormDetectPanel };
 });
 const RedactionAuditPanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
@@ -798,6 +804,20 @@ export function App({ store }: AppProps) {
   } | null>(null);
   const [inspectionRevision, setInspectionRevision] = useState(0);
   const [selectedField, setSelectedField] = useState<string | null>(null);
+  /**
+   * Prepare form: the detector's candidates for **one version of one document**, under
+   * review. They describe the bytes they were read from, so a version change (the user's
+   * edit, or the fields' own creation) ends the review: `currentDetect` reads `null` for
+   * any other version, which is also how a landed write closes it.
+   */
+  const [formDetect, setFormDetect] = useState<{
+    readonly tabId: string;
+    readonly version: string;
+    readonly phase: 'scanning' | 'review';
+    readonly detection: FormDetection | null;
+    readonly removed: ReadonlySet<string>;
+    readonly selectedId: string | null;
+  } | null>(null);
 
   /**
    * The tools slices need a render when the viewer API arrives, and a ref does not
@@ -819,6 +839,10 @@ export function App({ store }: AppProps) {
   const formFields = currentForms?.fields ?? null;
   const xfaInfo = currentForms?.xfa ?? null;
   const [xfaDetailsOpen, setXfaDetailsOpen] = useState(false);
+  const currentDetect =
+    activeTab !== null && formDetect?.tabId === activeTab.id && formDetect.version === activeTab.working.id
+      ? formDetect
+      : null;
 
   /**
    * The file's annotations for the bytes on screen — `null` while the read is still in
@@ -1747,6 +1771,47 @@ export function App({ store }: AppProps) {
     },
     [contextFor, formFields, setBusy, setHandle, store, t, refuseBusy],
   );
+
+  /**
+   * Detect fields: a read of the working bytes (`pdf-core/ops/form-detect.ts`), so nothing
+   * is journaled and nothing can be lost. The result is only kept while it still describes
+   * the version it was read from; a version that landed in the meantime drops it.
+   */
+  const startFormDetect = useCallback(async () => {
+    const tab = store.active;
+    const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+    if (tab === null || handle === null) return;
+    if (busyRef.current) {
+      refuseBusy();
+      return;
+    }
+    const version = tab.working.id;
+    setRightDock(true);
+    setRightTab('forms');
+    setFormDetect({
+      tabId: tab.id,
+      version,
+      phase: 'scanning',
+      detection: null,
+      removed: new Set(),
+      selectedId: null,
+    });
+    try {
+      const base = await materializeBase(contextFor(tab, handle));
+      const { detectFormFields } = await import('pdf-core/ops/form-detect');
+      const detection = await detectFormFields(base, { signal: new AbortController().signal });
+      setFormDetect((current) =>
+        current?.tabId === tab.id && current.version === version && current.phase === 'scanning'
+          ? { ...current, phase: 'review', detection }
+          : current,
+      );
+      if (detection.candidates.length === 0) setNotice(t('formDetect.panel.none'));
+    } catch (error) {
+      setFormDetect(null);
+      const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
+      setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+    }
+  }, [contextFor, refuseBusy, store, t]);
 
   /**
    * Drafts: the model data of every open tab — never the source
@@ -4147,6 +4212,27 @@ export function App({ store }: AppProps) {
     [annotationAuthor, setAnnotations, store, t, writeFileAnnotation],
   );
 
+  /**
+   * Add the candidates the user kept as real form fields: one journal step that undo takes
+   * back whole, written through the same boundary as a placed stamp. The operation reads the
+   * result back (name, type, page, rectangle) before it returns.
+   */
+  const applyFormDetect = useCallback(() => {
+    const review = currentDetect;
+    if (review?.detection == null || review.phase !== 'review') return;
+    const kept = review.detection.candidates.filter((candidate) => !review.removed.has(candidate.id));
+    if (kept.length === 0) return;
+    setRightTab('forms');
+    writeFileAnnotation(
+      { key: 'formDetect.note.created', params: { count: kept.length } },
+      async (base, signal) => {
+        const { createDetectedFields } = await import('pdf-core/ops/form-detect');
+        return await createDetectedFields(base, kept, { signal });
+      },
+      t('formDetect.done', { count: kept.length }),
+    );
+  }, [currentDetect, t, writeFileAnnotation]);
+
   /** What a picture is called in the notices and in the comment list readers show. */
   const stampKind = useCallback(
     (role: StampSource['role']) =>
@@ -4574,6 +4660,7 @@ export function App({ store }: AppProps) {
           setCanvasTool('measure');
         },
         measureMode,
+        detectFormFields: () => void startFormDetect(),
         showRightTab: (tab) => {
           setRightDock(true);
           setRightTab(tab);
@@ -4668,6 +4755,7 @@ export function App({ store }: AppProps) {
       useAdvancedMode,
       pickImage,
       openSignature,
+      startFormDetect,
     ],
   );
 
@@ -5299,6 +5387,31 @@ export function App({ store }: AppProps) {
                           onCancel={() => setCanvasTool('select')}
                         />
                       ) : null}
+                      {viewer !== null &&
+                      canEdit &&
+                      currentDetect?.phase === 'review' &&
+                      currentDetect.detection !== null ? (
+                        <FieldCandidateLayer
+                          t={t}
+                          viewer={viewer}
+                          candidates={currentDetect.detection.candidates.filter(
+                            (candidate) => !currentDetect.removed.has(candidate.id),
+                          )}
+                          selectedId={currentDetect.selectedId}
+                          onSelect={(id) =>
+                            setFormDetect((current) =>
+                              current === null ? current : { ...current, selectedId: id },
+                            )
+                          }
+                          onRemove={(id) =>
+                            setFormDetect((current) =>
+                              current === null
+                                ? current
+                                : { ...current, removed: new Set(current.removed).add(id) },
+                            )
+                          }
+                        />
+                      ) : null}
                       {/*
                 The text tool wears its own layer rather than sharing the annotation
                 one: it reads the page's structured text (an engine call) and paints
@@ -5572,6 +5685,38 @@ export function App({ store }: AppProps) {
                         </p>
                       }
                     >
+                      <FormDetectPanel
+                        t={t}
+                        phase={currentDetect?.phase ?? 'idle'}
+                        detection={currentDetect?.detection ?? null}
+                        removed={currentDetect?.removed ?? new Set<string>()}
+                        selectedId={currentDetect?.selectedId ?? null}
+                        disabled={!canEdit}
+                        onDetect={() => void startFormDetect()}
+                        onCancel={() => setFormDetect(null)}
+                        onApply={applyFormDetect}
+                        onRemove={(id) =>
+                          setFormDetect((current) =>
+                            current === null
+                              ? current
+                              : { ...current, removed: new Set(current.removed).add(id) },
+                          )
+                        }
+                        onRestore={() =>
+                          setFormDetect((current) =>
+                            current === null ? current : { ...current, removed: new Set() },
+                          )
+                        }
+                        onSelect={(id) => {
+                          setFormDetect((current) =>
+                            current === null ? current : { ...current, selectedId: id },
+                          );
+                          const candidate = currentDetect?.detection?.candidates.find(
+                            (entry) => entry.id === id,
+                          );
+                          if (candidate !== undefined) viewerApi.current?.goToPage(candidate.pageIndex);
+                        }}
+                      />
                       {currentForms?.error !== undefined ? (
                         <div role="alert" className="flex flex-col gap-2 p-2 text-xs text-kumo-danger">
                           <p>

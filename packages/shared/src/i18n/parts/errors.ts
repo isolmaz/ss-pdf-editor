@@ -15,6 +15,9 @@ export const errorsPart = {
   'error.value-out-of-range.hint': 'İşaretli alanı izin verilen en küçük ve en büyük değer arasında girin.',
   'error.selection-empty.message': 'Önce sayfa seçin.',
   'error.selection-empty.hint': 'Sayfalar panelinden bir veya daha fazla sayfa seçin.',
+  'error.input-missing.message': 'Bu işlemin üzerinde çalışacağı bir şey henüz yok.',
+  'error.input-missing.hint':
+    'Paneldeki alandan istenen dosyayı ya da görselleri seçin veya bir sayfa tarayın, sonra yeniden çalıştırın.',
   'error.no-text.message': 'Seçilen sayfalarda okunabilir metin yok.',
   'error.no-text.hint': 'Sayfalar taranmış görünüyor; önce OCR uygulayıp yeniden deneyin.',
   'error.no-match.message': 'Aranan metin seçilen sayfalarda bulunamadı.',

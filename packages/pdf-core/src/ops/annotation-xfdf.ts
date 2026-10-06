@@ -409,9 +409,10 @@ async function xmlParser(onError: (message: string) => void): Promise<Parser> {
   if (typeof globalThis.DOMParser === 'function') return new globalThis.DOMParser();
   const { DOMParser } = await import('@xmldom/xmldom');
   return new DOMParser({
-    onError: (level: string, message: string) => {
-      if (level === 'fatalError') onError(message);
-    },
+    // xmldom 0.8 reads `errorHandler` (an `onError` key is ignored) and reports a
+    // mismatched or unclosed tag only as a warning; the browser's parser refuses such a
+    // file, so every level fails here too.
+    errorHandler: (_level: string, message: string) => onError(message),
   } as never) as unknown as Parser;
 }
 

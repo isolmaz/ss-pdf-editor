@@ -247,7 +247,7 @@ export function HomeScreen({
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label
               htmlFor={fileInputId}
-              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus sm:col-span-2 lg:col-span-1 lg:row-span-2"
+              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus"
             >
               <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110">
                 <CloudArrowUp size={24} weight="duotone" aria-hidden="true" />

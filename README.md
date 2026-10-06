@@ -41,7 +41,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | --- | --- |
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
-| 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
+| 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
@@ -151,6 +151,11 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
   flatten them and add simple calculations. Form data can be imported or exported as FDF
   or JSON; exporting downloads only the data file.
+  - **Detect fields** (Forms panel, or `Ctrl+K`) prepares a flat form: it proposes text
+    fields, checkboxes, radio groups and signature fields from underlines, dotted leaders,
+    boxes, cells, comb boxes, circles and colon labels. Fields are named from the nearest
+    label. You see every candidate on the page, remove the ones you do not want and add the
+    rest in one undoable step; the result is re-read before it is saved.
 - **XFA forms.** A PDF form can carry XFA (Adobe's XML form format) next to or instead of
   its AcroForm. The editor says so in a notice under the tool strip, and what it does
   depends on the kind of form:
@@ -473,6 +478,16 @@ The limits are defined once, in
 - **Text editing.** Only horizontal text is editable. Vertical text, skewed baselines and
   Type3 text are not. Unknown fonts are re-rendered in a substitute font, and the UI says
   so.
+- **Detect fields.** A heuristic: it proposes, you confirm.
+  - It reads vector drawings and text. On a scan that already has OCR text it finds only
+    horizontal rules, so boxes, checkboxes and circles are missed; a picture-only scan is
+    refused with a note to run OCR first.
+  - Unlabelled lines, a select that shows only a placeholder and private-use checkbox
+    glyphs (such as Wingdings) are missed, and a signature caption on a document that is
+    not a form can be proposed.
+  - Measured only on generated fixtures, where it scored full precision and 92 % to 100 %
+    recall on forms; those fixtures were written alongside the rules, so expect less on
+    real forms.
 - **Find and replace.**
   - Matches in scanned, rotated, skewed or Type3 text are left alone and counted in the
     report; run OCR first to make a scan searchable.
@@ -499,7 +514,7 @@ The limits are defined once, in
   - The XFA renderer is pdf.js's: a form that relies on features it does not implement
     (scripts, some layouts, barcodes) draws incompletely.
   - Only two hand-built XFA 3.3 files were tested, no real-world form; see
-    `architecture.md` §5.9.
+    `architecture.md` §5.10.
 - **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
   malformed journal makes the whole draft unreadable on purpose.
 - **Early engine spikes.** Some code comments mention a measurement from an *early engine

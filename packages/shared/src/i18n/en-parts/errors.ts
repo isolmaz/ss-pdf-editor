@@ -8,6 +8,9 @@ export const errorsPart = {
   'error.value-out-of-range.hint': 'Enter a value between the minimum and maximum allowed limits.',
   'error.selection-empty.message': 'Select pages first.',
   'error.selection-empty.hint': 'Select one or more pages from the Pages panel.',
+  'error.input-missing.message': 'This operation has nothing to work with yet.',
+  'error.input-missing.hint':
+    'Choose the file or images it asks for in the panel, or scan a page, then run it again.',
   'error.no-text.message': 'The selected pages hold no readable text.',
   'error.no-text.hint': 'The pages look scanned; run OCR first and try again.',
   'error.no-match.message': 'The search text was not found on the selected pages.',
