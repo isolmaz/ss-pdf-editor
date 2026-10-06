@@ -1,5 +1,5 @@
 /**
- * The OPFS vault, against the failures that make it lose or misreport data (`F07`, `F08`).
+ * The OPFS vault, against the failures that make it lose or misreport data.
  *
  * `navigator.storage.getDirectory()` is faked here — there is no OPFS in Node — but only at
  * that one boundary: everything above it (the key derivation, the manifest write order, the
@@ -155,7 +155,7 @@ describe('createOpfsDraftStorage', () => {
     failures.write.add('a.json');
     await expect(storage.writeDraft(MANIFEST('a'))).rejects.toThrow();
     // Without the abort the swap file and its exclusive lock survive the failure, and the
-    // next write for the same key blocks on a lock nobody will release (`F08`).
+    // next write for the same key blocks on a lock nobody will release.
     expect(failures.aborted).toContain('a.json');
     // A failed write must never read as a successful persistence.
     expect((await storage.readDraftInventory?.())?.drafts).toEqual([]);
@@ -178,7 +178,7 @@ describe('createOpfsDraftStorage', () => {
     const inventory = await storage.readDraftInventory?.();
     // The read failure used to escape the per-file boundary and abort the whole listing,
     // which made every *other* draft look absent — the exact input a cleanup pass must not
-    // mistake for “nothing is referenced” (`F07`).
+    // mistake for “nothing is referenced”.
     expect(inventory?.drafts.map((draft) => draft.id)).toEqual(['good']);
     expect(inventory?.unreadable).toEqual(['bad.json']);
   });

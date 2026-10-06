@@ -1,5 +1,5 @@
 /**
- * Model-side measurements (`PLAN.md §7`, `R09`).
+ * Model-side measurements.
  *
  *   pnpm measure:model
  *
@@ -11,7 +11,7 @@
  * What is measured:
  *
  *  - **Journal cost against history depth.** `append` copies the array it keeps, which is
- *    the price of handing out stable snapshots (`F11`). Whether that price matters at
+ *    the price of handing out stable snapshots. Whether that price matters at
  *    realistic depths is a question for a number, not a preference.
  *  - **Snapshot retention against the byte budget.** `#remember` applies a byte budget but
  *    also keeps a minimum number of snapshots whatever the budget says, so a document whose

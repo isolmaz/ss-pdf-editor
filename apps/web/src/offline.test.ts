@@ -1,5 +1,5 @@
 /**
- * Offline readiness and preparation, against the failures that make it lie (`R04`).
+ * Offline readiness and preparation, against the failures that make it lie.
  *
  * The cases worth testing are the ones the previous implementation got wrong: a partially
  * cached capability reported as ready, and a cache from another release counted as

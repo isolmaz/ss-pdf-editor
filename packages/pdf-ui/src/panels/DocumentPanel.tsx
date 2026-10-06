@@ -11,17 +11,17 @@ import { SearchResultsPanel } from './SearchResultsPanel';
 import { SignaturesPanel } from './SignaturesPanel';
 
 /**
- * Left dock of the reader half (`PLAN.md §5/Phase 1`): the page list, the document
+ * Left dock of the reader half: the page list, the document
  * outline, its attachments, optional content groups, signature fields and the
  * search results, in one panel with a tab per view.
  *
  * Every view reads the same `PdfDocumentHandle` the shell already owns, and the ones
  * that navigate do it through the viewer's imperative API — the panel never touches
- * pdf.js directly (`AGENTS.md` module boundaries), which is also why it stays
+ * pdf.js directly, which is also why it stays
  * testable outside a browser canvas.
  *
  * A tab strip, nothing else: the views themselves own their behaviour. The pages
- * tab is `PagesPanel` (`PLAN.md §5/Phase 2`, with the selection and reorder
+ * tab is `PagesPanel` (with the selection and reorder
  * machinery the reader half needs); the rest are read when their tab is shown, not
  * before.
  */
@@ -89,7 +89,7 @@ export interface DocumentPanelProps {
    * The tabs this surface offers. Omitted means every tab, which is what the advanced
    * mode and every existing caller get. The simple mode drops the readers for advanced
    * structure — attachments, layers and the signature-field list — while the tabs that
-   * answer "what is in this document and where" stay (`PLAN.md §4.1`).
+   * answer "what is in this document and where" stay.
    */
   readonly visibleTabs?: readonly DocumentPanelTab[];
   readonly tab?: DocumentPanelTab;

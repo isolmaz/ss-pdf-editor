@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Phase 3 acceptance harness — throwaway driver, not the e2e suite (`PLAN.md §9/K21`, `K28`).
+ * Phase 3 acceptance harness — throwaway driver, not the e2e suite.
  *
  *   node tools/spikes/phase3-check.mjs [--port 4198] [--keep]
  *
- * What the phase promised (`PLAN.md §5`):
+ * What the phase promised:
  *
  *   > open → search → highlight → comment → fill a form → delete 2 pages, add 1 →
  *   > apply header/footer → save → reopen: everything in place
@@ -16,7 +16,7 @@
  * for the save — the bytes of the file the app writes.
  *
  * Beyond the acceptance sentence it checks the pieces that sentence cannot reach:
- *  - a shape annotation, which is the half of `K18` pdf.js cannot write;
+ *  - a shape annotation, which is the half pdf.js cannot write;
  *  - a text mark's `/Subtype` after a save (underline is an underline in the file);
  *  - the form inventory panel and a field fill through it;
  *  - page boxes, page labels, page insertion and a page replace through their dialogs;
@@ -92,8 +92,8 @@ function buildFixture(dir) {
 }
 
 /**
- * `--only <regex>` runs a subset, in the file's order. Added for bisecting the press-loss
- * reported in `WORKLOG.md §4` point 10: which earlier check leaves the session in a state
+ * `--only <regex>` runs a subset, in the file's order. Added for bisecting a press-loss
+ * defect: which earlier check leaves the session in a state
  * where a real press is lost. A subset run still needs the checks a step depends on — the
  * point test is a comment on a mark, and every page check needs the interface-mode step
  * that leaves the simple mode, for instance — so the filter is inclusive by name.
@@ -599,7 +599,7 @@ try {
      * Deterministic, because the editor's appearance is not instant: the row marks itself
      * selected at once, and the inline control arrives with the inventory reload after it.
      * Waiting for the input alone made this step pass or fail by timing — the same build
-     * measured 10/16 and 12/16 on consecutive runs (`WORKLOG.md §4`). So: select, wait for
+     * measured 10/16 and 12/16 on consecutive runs. So: select, wait for
      * the selection to be *visible*, and retry like a user would rather than guess a delay.
      */
     for (let attempt = 0; attempt < 3 && (await input.count()) === 0; attempt += 1) {

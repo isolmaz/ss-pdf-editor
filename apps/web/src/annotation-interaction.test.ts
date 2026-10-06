@@ -1,6 +1,5 @@
 /**
- * Which mark a pointer meets, and what one edit does to the marks it selected
- * (`local://selection-edit-contract.txt`).
+ * Which mark a pointer meets, and what one edit does to the marks it selected.
  *
  * Two of the four cases below are geometry, and both are the kind of thing nothing
  * else in the suite can see. A mark that carries `rotation` is *painted* turned about

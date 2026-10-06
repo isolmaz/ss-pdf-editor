@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { JOURNAL_SCHEMA, type JournalEntry, OperationJournal } from './journal';
 
 /**
- * Behavioural contract of the single chronological journal (`PLAN.md §9/K12`).
+ * Behavioural contract of the single chronological journal.
  * These are the properties the undo/redo UI and the save router depend on; the
- * `highlight → rotate → comment → undo×3` case is the one `PLAN.md §7` names.
+ * `highlight → rotate → comment → undo×3` case is the acceptance case.
  */
 
 const op = (kind: string, labelKey: string, engine: JournalEntry['engine'] = 'model') =>
@@ -134,7 +134,7 @@ describe('OperationJournal', () => {
   it('refuses a cursor that points outside the entries it restored', () => {
     // Clamping used to move the document to a state the user never left: the cursor is
     // the *identity* of the restored version, so a cursor that does not fit its entries is
-    // corruption to report, not a number to round (`F09`).
+    // corruption to report, not a number to round.
     const entry = {
       id: 'x',
       seq: 0,

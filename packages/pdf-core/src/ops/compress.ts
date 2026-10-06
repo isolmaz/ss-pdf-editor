@@ -1,5 +1,5 @@
 /**
- * Optimisation (`REPORT.md §3` A6, defects 3 and 16).
+ * Optimisation (defects 3 and 16).
  *
  * Two modes, and the report says plainly which one ran:
  *  - `structure` — a MuPDF rewrite that drops unused and duplicate objects, compresses
@@ -8,8 +8,8 @@
  *  - `raster` — every selected page is rendered and replaced by an image of itself,
  *    which is lossy and therefore carries explicit `lost` notes.
  *
- * The source project reported `gained: false` while writing a **larger** file
- * (`REPORT.md §4.3`); here the size delta is measured and a growth is stated as
+ * The source project reported `gained: false` while writing a **larger** file;
+ * here the size delta is measured and a growth is stated as
  * such — never presented as a win.
  *
  * Engine facts this file depends on:
@@ -42,7 +42,7 @@ import {
 export interface StructureCompressOptions {
   readonly mode: 'structure';
   readonly stripMetadata: boolean;
-  /** Producer line survives every clean-up (`PLAN.md §2.1/6`). */
+  /** Producer line survives every clean-up. */
   readonly keepProducer: boolean;
 }
 
@@ -80,7 +80,7 @@ function requireRange(value: number, min: number, max: number, field: string): n
 
 /**
  * Size delta, reported the way the user experiences it: a smaller file is a win,
- * an equal or larger file is stated as such (`REPORT.md §4.3`).
+ * an equal or larger file is stated as such.
  */
 function sizeNotes(inputBytes: number, outputBytes: number): OperationNote[] {
   const before = formatBytes(inputBytes);
@@ -113,12 +113,12 @@ async function compressStructure(
   context: OperationContext,
 ): Promise<OperationOutcome> {
   if (options.stripMetadata && !options.keepProducer) {
-    // The producer line is product policy (`PLAN.md §2.1/6`), not a preference:
+    // The producer line is product policy, not a preference:
     // "strip the metadata but not keep the producer line" is unsatisfiable, and
     // failing loudly beats silently ignoring one of the two halves.
     throw new ToolError('unsupported', {
       engine: 'model',
-      engineMessage: 'the producer line cannot be stripped (PLAN.md §2.1/6)',
+      engineMessage: 'the producer line cannot be stripped',
     });
   }
 
@@ -131,7 +131,7 @@ async function compressStructure(
     pageCount = doc.countPages();
     if (options.stripMetadata) {
       // Every Info key but the producer line, which `saveRewrite` sets again: "clean
-      // metadata" never removes the notice (`PLAN.md §2.1/6`).
+      // metadata" never removes the notice.
       const info = resolved(doc.getTrailer().get('Info'));
       if (info?.isDictionary() === true) {
         const keys: string[] = [];
@@ -166,7 +166,7 @@ async function compressStructure(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report };
@@ -364,7 +364,7 @@ async function compressRaster(
     inputBytes: bytes.byteLength,
     outputBytes: assembled.bytes.byteLength,
     pageCount: assembled.pageCount,
-    // Re-serialised: never incremental (`PLAN.md §3.3` rule 3).
+    // Re-serialised: never incremental.
     incremental: false,
   };
   return { bytes: assembled.bytes, report };

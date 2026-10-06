@@ -1,5 +1,5 @@
 /**
- * Comments and annotations (`PLAN.md §5/Phase 3`).
+ * Comments and annotations.
  *
  * The panel is the document's annotation inventory seen from one place: the marks
  * this session holds (not yet written to the file) **and** the annotations the file
@@ -157,7 +157,7 @@ export function CommentsPanel({
       </div>
 
       {/*
-        The review as a file of its own (`PLAN.md §5/Phase 3`). A mark this app owns
+        The review as a file of its own. A mark this app owns
         lives in the session until a save writes it, and the engine's own marks live
         in the engine's storage — so a review that has to move between machines needs
         its own export, not the PDF.

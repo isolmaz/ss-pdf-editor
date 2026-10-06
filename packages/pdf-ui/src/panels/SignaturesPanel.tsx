@@ -5,10 +5,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PanelLoading, PanelMessage } from './PanelParts';
 
 /**
- * The signature fields of the document ("İmzalar", `PLAN.md §5/Phase 1`). A reader
+ * The signature fields of the document ("İmzalar"). A reader
  * panel and nothing more: it lists the fields the AcroForm declares, says whether the
  * document carries a signature for each one, and jumps to the page the field is on.
- * No signing, no verification, no PAdES — that is Phase 4.
+ * Signing is `ops/sign.ts`; verification status is shown in the properties panel.
  */
 
 export interface SignaturesPanelProps {

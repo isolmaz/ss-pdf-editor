@@ -1,5 +1,5 @@
 /**
- * Output verification (`PLAN.md §3.3` rule 5, `R06`): the sentences for the fact table
+ * Output verification: the sentences for the fact table
  * `apps/web/src/operations.ts` returns and for the notice a save ends on.
  *
  * The vocabulary is the point. Three sentences describe three *different* answers —

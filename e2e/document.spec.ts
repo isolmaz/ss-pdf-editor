@@ -2,7 +2,7 @@ import { expect, test } from 'playwright/test';
 import { fixturePdf } from './fixture-pdf';
 
 /**
- * Opening a document (`R08`).
+ * Opening a document.
  *
  * **Boundary:** a native OS file picker cannot be automated, so this spec drives the
  * `<input type="file">` the home screen already renders — the one its "choose from device"

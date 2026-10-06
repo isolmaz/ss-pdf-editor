@@ -1,5 +1,5 @@
 /**
- * Document properties: Info + XMP read/write (`REPORT.md §3` A11).
+ * Document properties: Info + XMP read/write.
  */
 
 export const propertiesPart = {

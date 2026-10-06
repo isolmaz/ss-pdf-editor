@@ -1,7 +1,6 @@
 /**
- * The run/cancel state machine every operation dialog shares (`PLAN.md §3.4`,
- * §5/Phase 2 acceptance: "every panel has cancel + progress + undoable
- * application").
+ * The run/cancel state machine every operation dialog shares ("every panel has
+ * cancel + progress + undoable application").
  *
  * One hook, so that eighteen capabilities cannot each invent their own
  * progress/cancel behaviour:
@@ -41,7 +40,7 @@ export interface OperationFailure {
   readonly hint: string;
   /**
    * The engine's own error text, verbatim. Diagnostics only — it is never rendered
-   * as the user message (`AGENTS.md > Errors`), but a failed operation with no
+   * as the user message, but a failed operation with no
    * evidence is undiagnosable, so it travels to the surface as a `data-` attribute
    * a probe (or the user's local diagnostics copy) can read.
    */

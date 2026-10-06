@@ -1,6 +1,5 @@
 /**
- * Page-structure capabilities (`REPORT.md §3` A2 reorder, A3 rotate/delete/
- * duplicate, A4 extract, A5 split).
+ * Page-structure capabilities (reorder, rotate/delete/duplicate, extract, split).
  */
 
 export const pagesPart = {

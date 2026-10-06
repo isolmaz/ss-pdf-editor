@@ -1,9 +1,9 @@
 /**
- * Phase 4 accessibility (`PLAN.md §5/Phase 4`): the check report, the tagging
+ * Accessibility: the check report, the tagging
  * writer and the alt-text writes of `ops/accessibility.ts`, and the panel that
  * shows them (`panels/AccessibilityPanel.tsx`).
  *
- * The words this workstream alone says live here: the operation's progress lines
+ * The words only this feature says live here: the operation's progress lines
  * and its write notes (`op.progress.a11y.*`, `op.note.a11y.*`), the sentences the
  * check reports per finding (`op.a11y.check.*`), the two lists that say what was
  * looked at and what was not (`op.a11y.checked.*`, `op.a11y.notChecked.*`), and the

@@ -1,5 +1,5 @@
 /**
- * Form data interchange: FDF and JSON (`PLAN.md §6` A11, §5/Phase 3).
+ * Form data interchange: FDF and JSON.
  *
  * FDF is the format Acrobat has always used for "export form data" / "import form
  * data", and it is a PDF dialect: a header line, one indirect object holding

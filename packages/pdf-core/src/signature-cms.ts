@@ -1,5 +1,5 @@
 /**
- * The CMS `SignedData` a PAdES B-B signature carries (`PLAN.md §3.7`, `K9`).
+ * The CMS `SignedData` a PAdES B-B signature carries.
  *
  * Why this file exists separately from `ops/sign.ts`: the PDF side decides *what* is
  * signed (a byte range, a field, an appearance); this side turns "these bytes, this
@@ -12,7 +12,7 @@
  * pair: `contentType` and `messageDigest` (CMS, RFC 5652 §11.1), and `signingCertificateV2`
  * (RFC 5035) binding the signer's certificate into the signature. There is **no**
  * timestamp: `B-T` needs an RFC 3161 TSA, the public ones are not CORS-enabled and
- * `connect-src 'self'` forbids reaching them anyway (`K11`) — that belongs to the helper,
+ * `connect-src 'self'` forbids reaching them anyway — that belongs to the helper,
  * never to this build. The signature is produced entirely locally with WebCrypto.
  *
  * **The signature algorithm comes from the key, never from the caller.** A `CryptoKey`

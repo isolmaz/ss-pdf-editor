@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { type ChangeSummary, NO_CHANGES, planSave, type SavePathId } from './save-router';
 
 /**
- * Save routing + dependency order (`PLAN.md §3.3`, `§9/K14`). The router decides
+ * Save routing + dependency order. The router decides
  * *which* paths run and in which order; these tests pin the decisions that cost
  * data when they are wrong (incremental fast path, metadata after a rewrite,
  * protection never silently dropped, signature last).

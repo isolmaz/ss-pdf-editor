@@ -1,5 +1,5 @@
 /**
- * Document-operation notes, progress labels and report wording for the Phase 2
+ * Document-operation notes, progress labels and report wording for the
  * capabilities implemented in `packages/pdf-core/src/ops` (`metadata`, `stamp`,
  * `impose`, `compress`, `text-export`).
  *
@@ -7,7 +7,7 @@
  * declared here, so an untranslated note stays a compile error instead of an
  * English string in the interface (`packages/pdf-core/src/ops/types.ts`).
  *
- * The loss/preservation wording is the product promise from `PLAN.md §1.2`: a
+ * The loss/preservation wording is a product promise: a
  * `lost` note names what the user will actually miss, a `preserved` note names
  * the guarantee the operation makes, a `warning` says where to look.
  */

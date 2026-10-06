@@ -1,10 +1,10 @@
 /**
- * Two-tier limits and budgets (`PLAN.md §3.4`, `§9/K6`).
+ * Two-tier limits and budgets.
  *
  * Desktop: warn at 1500 pages, hard ceiling 2000 pages / 300 MB.
  * Mobile: above ~300 pages / 64 MB the app switches to viewing mode.
  * The 300 MB desktop target is a *measured* number: spike #5 confirms it or
- * the limits are revised explicitly in `PLAN.md §9/K6` — never silently.
+ * the limits are revised explicitly — never silently.
  */
 
 export type DeviceTier = 'desktop' | 'mobile';
@@ -13,7 +13,7 @@ export interface DocumentLimits {
   readonly warnPages: number;
   readonly maxPages: number;
   readonly maxBytes: number;
-  /** Render cache budget in bytes (LRU ceiling, `PLAN.md §3.4`). */
+  /** Render cache budget in bytes (LRU ceiling). */
   readonly renderCacheBytes: number;
   /** Above this the editor keeps opening but editing is disabled. */
   readonly viewingOnlyAbovePages?: number;
@@ -39,7 +39,7 @@ export const LIMITS: Record<DeviceTier, DocumentLimits> = {
   },
 };
 
-/** Build budgets verified by the CI budget step (`PLAN.md §7`). */
+/** Build budgets verified by the CI budget step. */
 export const BUILD_BUDGETS = {
   firstPaintJsGzipBytes: 250 * 1024,
   firstPaintLandingBytes: 60 * 1024,

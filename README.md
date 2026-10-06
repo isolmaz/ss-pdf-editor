@@ -44,6 +44,7 @@ regenerates every clip).
 9. [Build, assemble, deploy](#build-assemble-deploy)
 10. [Offline use](#offline-use)
 11. [Honest limits and known gaps](#honest-limits-and-known-gaps)
+12. [License](#license)
 
 ---
 
@@ -325,7 +326,11 @@ e2e/            Playwright specs: shell and shortcut help, document, tool marks 
                 `flows-commands` for the other menu-bar commands); and the marketing site
                 (`site.spec.ts`: link/anchor/language/SEO integrity, language switch,
                 CTA, 404, theme boot, CSP-clean resources, phone layout)
+.github/        issue and pull request templates (no workflows: the gates run locally)
 ```
+
+`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md` cover contributing, conduct and
+private vulnerability reporting.
 
 ---
 
@@ -337,7 +342,7 @@ e2e/            Playwright specs: shell and shortcut help, document, tool marks 
 
 `pnpm ci:full` adds `ci:behavior`: two browser harnesses and a signing harness:
 
-- `tools/spikes/phase3-check.mjs` — the Phase 3 acceptance sentence end to end
+- `tools/spikes/phase3-check.mjs` — the acceptance sentence end to end
   (open → search → highlight → comment → fill a form → delete 2 pages, add 1 →
   header/footer → save → reopen) against the assembled distribution.
 - `tools/spikes/phase4-check.mjs` — a text-edit round trip that re-reads the produced
@@ -475,11 +480,25 @@ skipped by the restore path rather than misread — and a malformed journal make
 draft unreadable on purpose, because silently dropping one entry would shift every later
 state.
 
-**Missing design-phase documents.** Comments throughout the code cite `PLAN.md`,
-`AGENTS.md`, `REPORT.md` and `WORKLOG.md` (items such as `K9`, `K12`, `K17`, `R06`,
-`F11`). Those documents are **not** part of this tree, so those identifiers cannot be
-resolved from the repository; the comments that carry them are self-contained, but the
-numbering has no local index. `architecture.md` records the design rules they describe in
-prose rather than by number. Likewise, a comment that cites an **archived spike** points at
-a Phase 0 prototype or probe that measured the behaviour the code relies on; those were
-removed before the public release and are not in this tree.
+**Early engine spikes.** A source comment that says a behaviour was measured in an
+**early engine spike** refers to a prototype or probe that was removed before the public
+release; the comment itself states what was measured, and `architecture.md` records the
+design rules in prose.
+
+## License
+
+SsPdfEditor
+Copyright (C) 2026 isolmaz <info@isolmaz.com>
+
+This program is free software: you can redistribute it and/or modify it under the terms of
+the GNU Affero General Public License as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version. It is distributed in the
+hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [`LICENSE`](LICENSE) for the full
+text.
+
+AGPL-3.0-or-later is required because the assembled distribution ships MuPDF
+(`dist/engines/mupdf/**`), which is licensed AGPL-3.0-or-later. The build copies every
+bundled licence text into `dist/licenses/`, and `dist/licenses/INDEX.json` names the package
+each one came from. The editor's **Help → Source code (AGPL-3.0)** command links to this
+repository, as section 13 of the licence asks of a network service.

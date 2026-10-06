@@ -1,6 +1,6 @@
 /**
  * Hosting policy for local dev/preview — the "production headers from day one"
- * rule (`PLAN.md §9/K26`, §5/Phase 0).
+ * rule.
  *
  * `public/_headers` is the single source of truth for the production policy
  * (Cloudflare applies it at the edge, for Pages and static-assets Workers alike). This plugin parses that same file

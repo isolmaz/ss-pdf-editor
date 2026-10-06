@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Dependency licence audit (AGENTS.md > Dependencies: a new dependency requires a free-licence
- * check; `PLAN.md §2.1` forbids paid components).
+ * Dependency licence audit (a new dependency requires a free-licence
+ * check; paid components are not allowed).
  *
  *   node tools/check-licenses.mjs
  *
@@ -11,7 +11,7 @@
  *   allowed      free licences we accept (SPDX ids, including dual-licence expressions)
  *   copyleft     AGPL/GPL/LGPL/MPL — allowed, but printed separately because they carry
  *                obligations that the bundled licence texts in dist/licenses/ must carry
- *                (`PLAN.md §2.1.6`)
+ *
  *   warn         CC-BY-4.0 — acceptable for assets only, never for code
  *   anything else (unknown, missing, paid/commercial) fails the run with the offending packages.
  */
@@ -48,7 +48,7 @@ const ALLOWED = [
   '(MIT AND OFL-1.1)',
 ];
 
-/** Assets only (`PLAN.md §2`: OFL fonts, CC image/word corpora) — warned about, never fatal alone. */
+/** Assets only (OFL fonts, CC image/word corpora) — warned about, never fatal alone. */
 const ASSET_ONLY = ['CC-BY-4.0'];
 
 const COPYLEFT = /\b(?:A?GPL|LGPL|MPL)\b/;
@@ -171,12 +171,8 @@ if (violations.length === 0) {
   console.log(`\nVERDICT: PASS — ${total} package(s), every licence free and recognised (0 violations).\n`);
 } else {
   const bad = violations.reduce((sum, entry) => sum + entry.packages.length, 0);
-  console.error(
-    `\nVERDICT: FAIL — ${bad} package(s) with a licence that is neither free nor recognised (PLAN.md §2.1):\n`,
-  );
+  console.error(`\nVERDICT: FAIL — ${bad} package(s) with a licence that is neither free nor recognised:\n`);
   for (const entry of violations) console.error(`  ${entry.licence}: ${entry.packages.join(', ')}`);
-  console.error(
-    '\nRemove the dependency or replace it with a free alternative. See AGENTS.md > Dependencies.\n',
-  );
+  console.error('\nRemove the dependency or replace it with a free alternative. See CONTRIBUTING.md.\n');
   process.exitCode = 1;
 }

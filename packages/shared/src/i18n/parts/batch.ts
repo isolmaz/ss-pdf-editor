@@ -1,5 +1,5 @@
 /**
- * Batch processing (`PLAN.md §5/Phase 4`: “queue, rule sets, … templates”).
+ * Batch processing (“queue, rule sets, … templates”).
  *
  * The dialog's own words only: every step name and every step parameter is the
  * operation's own key (`optimize.*`, `ocr.*`, `security.*` …), because a batch is a

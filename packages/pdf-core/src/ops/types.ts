@@ -1,19 +1,18 @@
 /**
- * The operation contract every Phase 2 capability runs through
- * (`PLAN.md §3.3`, §5/Phase 2, `REPORT.md §3`).
+ * The operation contract every capability runs through.
  *
  * One shape for all 18 capabilities: bytes in → bytes (or files) out, with
  * progress, cancellation and an honest report of what changed. The save router
  * and the UI never talk to an engine directly — they call an operation.
  *
- * Why the report is part of the result and not optional (`PLAN.md §1.2`):
+ * Why the report is part of the result and not optional:
  * "which operation loses what is stated in the UI beforehand" is a product
  * contract, so a capability that cannot describe its own losses cannot be
  * wired in. Notes are i18n keys, which makes an untranslated note a compile
  * error instead of an English string in the interface.
  */
 
-import { type MessageKey, ToolError } from 'pdf-shared';
+import type { MessageKey } from 'pdf-shared';
 
 /** Engines that can produce bytes. Kept as a union so the save report can name them. */
 export type OperationEngine = 'pdfjs' | 'mupdf' | 'tesseract' | 'model';
@@ -28,7 +27,7 @@ export interface OperationProgress {
 }
 
 export interface OperationContext {
-  /** Every long operation is cancellable (`PLAN.md §3.4`). */
+  /** Every long operation is cancellable. */
   readonly signal: AbortSignal;
   readonly onProgress?: (progress: OperationProgress) => void;
 }
@@ -43,7 +42,7 @@ export interface OperationNote {
 
 export interface OperationReport {
   readonly engine: OperationEngine;
-  /** Engine steps that actually ran, in order (`PLAN.md §3.3` step 3). */
+  /** Engine steps that actually ran, in order. */
   readonly steps: readonly string[];
   readonly notes: readonly OperationNote[];
   readonly inputBytes: number;
@@ -51,7 +50,7 @@ export interface OperationReport {
   readonly pageCount: number;
   /**
    * Whether the file *format* stayed incremental. Any non-incremental writer
-   * ends the fast path and must say so in the report (`PLAN.md §3.3` rule 3).
+   * ends the fast path and must say so in the report.
    */
   readonly incremental: boolean;
 }
@@ -108,17 +107,4 @@ export function formatBytes(bytes: number): string {
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
-}
-
-/**
- * Body of an operation whose engine work has not landed yet. During the Phase 2
- * build the op files exist with their final signatures so parallel work cannot
- * drift; a capability that is still a stub fails loudly (and is caught by the
- * Phase 2 verification script) instead of quietly producing an unchanged file.
- */
-export function notImplemented(operation: string): never {
-  throw new ToolError('unsupported', {
-    engine: 'model',
-    engineMessage: `operation not implemented: ${operation}`,
-  });
 }

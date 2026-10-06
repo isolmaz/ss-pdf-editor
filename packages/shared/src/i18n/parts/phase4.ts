@@ -1,12 +1,12 @@
 /**
- * Phase 4 writers (`PLAN.md §5/Phase 4`): the text editor (`ops/text-edit.ts`),
+ * Content writers: the text editor (`ops/text-edit.ts`),
  * link annotations (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`) and
  * the layer pane's writes (`ops/layer-write.ts`).
  *
  * One part for all four because they are one workflow: a text edit lands in a
  * layer, moves a link's rectangle and renumbers the outline a link points at, and
  * every one of them is a **writer of a file the user already has** — so the notes
- * below are the measurements of `PLAN.md §1.2`, not reassurance. What was erased
+ * below are measurements, not reassurance. What was erased
  * is the text the verifier could not find any more; what was inserted is the text
  * it did find; a substitution names both faces; a clamp says the page index the
  * request asked for was not the page index that was written.
@@ -14,8 +14,8 @@
  * Framework vocabulary stays in the shared parts: `op.progress.redact`,
  * `op.progress.redact.save`, `op.note.redact.singleRevision` and
  * `op.note.metadata.producerKept` are reused by these operations and are
- * registered with the redaction and metadata keys. Only the words Phase 4 alone
- * says live here.
+ * registered with the redaction and metadata keys. Only the words these writers
+ * alone say live here.
  *
  * Every `{param}` is passed by the call site; the list parameters carry the comma
  * joined names the report shows (`summarise`, `clipList`), already clipped there.
@@ -123,7 +123,7 @@ export const phase4Part = {
   'sign.done': 'İmza yazıldı ({signer}); dosyayı kaydedin ya da dışa aktarın.',
   'sign.open': 'Belgeyi imzala',
 
-  /* ----- signature status in the shell (K17: the pre-save warning and the badge) ----- */
+  /* ----- signature status in the shell (the pre-save warning and the badge) ----- */
 
   'sig.warn.breaks.title': 'Kaydetmek imzayı geçersiz kılacak',
   'sig.warn.breaks.body':

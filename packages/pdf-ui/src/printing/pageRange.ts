@@ -1,5 +1,5 @@
 /**
- * Page-range parsing for the print dialog (`PLAN.md §5/Phase 1`: "printing with
+ * Page-range parsing for the print dialog ("printing with
  * page range and scale").
  *
  * The field is free text, so the parser is forgiving exactly where a keyboard

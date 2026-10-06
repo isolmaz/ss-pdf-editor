@@ -1,10 +1,10 @@
 /**
- * The trust roots the user imported (`PLAN.md §5` Phase 4: “certificate validation against
- * user-imported trust roots (no online service)”; `K17`).
+ * The trust roots the user imported (“certificate validation against
+ * user-imported trust roots (no online service)”).
  *
  * A trust root is a **decision the user made**, not a fact this app can discover: there is
  * no built-in CA list, because shipping one would silently vouch for certificates the user
- * never chose, and there is no network to fetch revocation (`K9`). What is stored here is
+ * never chose, and there is no network to fetch revocation. What is stored here is
  * therefore exactly what was imported: the certificate's DER, a label to recognise it by,
  * and when it arrived.
  *

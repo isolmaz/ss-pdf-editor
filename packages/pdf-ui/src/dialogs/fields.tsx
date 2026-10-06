@@ -1,5 +1,5 @@
 /**
- * Field rendering for the operation dialogs (`PLAN.md §4.1`, §5/Phase 2).
+ * Field rendering for the operation dialogs.
  *
  * Every capability declares its inputs as `FieldSpec`s and gets the same
  * renderer, so the eighteen dialogs cannot drift apart in layout, labelling or

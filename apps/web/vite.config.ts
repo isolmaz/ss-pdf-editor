@@ -7,7 +7,7 @@ import { hosting } from '../../tools/vite/hosting.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
-// The editor is served at /editor/ (K31); the landing owns /.
+// The editor is served at /editor/; the landing owns /.
 export default defineConfig({
   base: '/editor/',
   plugins: [react(), tailwindcss(), ...hosting({ repoRoot, relaxDevCsp: true })],

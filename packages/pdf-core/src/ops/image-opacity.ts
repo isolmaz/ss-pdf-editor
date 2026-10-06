@@ -1,5 +1,5 @@
 /**
- * Image opacity (`PLAN.md §5/Phase 4`: “replace, crop, compress, rotate, **opacity**”).
+ * Image opacity (“replace, crop, compress, rotate, **opacity**”).
  *
  * Opacity is the one image action that is **not** an image-stream change: how transparently
  * an image is drawn is a graphics-state fact, so an `/ExtGState` with `/ca` is selected
@@ -260,7 +260,7 @@ export async function applyImageOpacity(
       inputBytes: bytes.byteLength,
       outputBytes: out.byteLength,
       pageCount,
-      // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+      // Re-serialised: the incremental fast path is over.
       incremental: false,
     };
     return { bytes: out, report };

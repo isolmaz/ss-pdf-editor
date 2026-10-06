@@ -4,7 +4,7 @@ import { findViewerDom, pageIndexAtTop } from './viewer-dom';
 import './tools.css';
 
 /**
- * Presentation mode (`PLAN.md §5/Phase 1`): the document alone, page by page.
+ * Presentation mode: the document alone, page by page.
  *
  * Full screen is the **browser's** state, not React state — `apps/web/src/App.tsx`
  * owns its full-screen toggle through `document.fullscreenElement` and has no
@@ -14,12 +14,12 @@ import './tools.css';
  * screen by any route (Escape, F11, another window taking over) is treated as
  * leaving presentation, and when the browser refuses the request the layout still
  * works in-page — the same capability contract the File System Access split
- * follows (`K10`).
+ * follows.
  *
  * Nothing here renders: the caller draws the toggle with `tools.present` /
  * `tools.presentExit`. Everything that changes what the document shows goes
  * through `ViewerApi` (`setSpreadMode`, `setZoom`, `goToPage`) — no pdf.js calls
- * and no second source of document state (`K23`).
+ * and no second source of document state.
  *
  * Two details follow pdf.js's own rules rather than ours: **entering full screen
  * resizes the container**, and pdf.js recomputes a `page-width` fit only when

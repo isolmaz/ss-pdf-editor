@@ -4,7 +4,7 @@ import { fixturePdf } from './fixture-pdf';
 import { useAdvancedMode } from './settings';
 
 /**
- * Two windows on one vault (`R03`).
+ * Two windows on one vault.
  *
  * **Boundary:** these are two real tabs in one browser context, so they share the origin's
  * OPFS, its `BroadcastChannel` and its `navigator.locks` — the mechanisms

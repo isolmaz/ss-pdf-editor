@@ -5,7 +5,7 @@ import { type PrintPageSize, resolvePrintSource } from './printSource';
 import './print.css';
 
 /**
- * `window.print()` for the shell (`PLAN.md §5/Phase 1`, Phase 3: "range, scale,
+ * `window.print()` for the shell ("range, scale,
  * N-up, booklet, duplex, margins and produce the PDF to print").
  *
  * Two actions share one hook:
@@ -25,7 +25,7 @@ import './print.css';
  *    than as a file.
  *
  * The two are deliberately separate: `start` keeps printing exactly what the
- * viewer shows (archived spike `browser-check-slices.mjs` verifies that path), and
+ * viewer shows (the verified path), and
  * the imposition settings belong to the produced file, which the dialog says.
  */
 
@@ -77,7 +77,7 @@ export interface PrintController {
   readonly failure: PrintFailure | null;
   start(request: PrintRequest): void;
   /**
-   * Produce the imposed file instead of printing (`PLAN.md §5/Phase 3`). Resolves
+   * Produce the imposed file instead of printing. Resolves
    * with the produced bytes for the caller to open or keep, or `null` when there
    * is nothing to impose; a failure throws the operation's own `ToolError`.
    */
@@ -264,7 +264,7 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
   );
 
   /**
-   * Build the imposed file (`PLAN.md §5/Phase 3`) instead of printing it. The
+   * Build the imposed file instead of printing it. The
    * document bytes come from the engine document behind the viewer — the same
    * bytes `start` rasterises — so what the user asked to print is what gets
    * imposed, unsaved annotations and form values included.

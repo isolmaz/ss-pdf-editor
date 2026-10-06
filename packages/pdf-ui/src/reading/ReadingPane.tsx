@@ -1,5 +1,5 @@
 /**
- * Reading mode (`PLAN.md §5/Phase 1`): the current page as one readable column.
+ * Reading mode: the current page as one readable column.
  *
  * This is a **viewer overlay**, not a second viewer: it renders no PDF, it re-reads
  * the text the engine already extracted (`useReadingText`), so opening and closing it
@@ -8,8 +8,7 @@
  *
  * Accessibility: the pane is a named region that takes focus when it opens (so the
  * keyboard rule below applies at once), every action is a real button with a dictionary
- * label, and the speech controls exist only when a local voice does — no dead buttons
- * (`K19`).
+ * label, and the speech controls exist only when a local voice does — no dead buttons.
  */
 
 import { CaretLeft, CaretRight, Pause, Play, SpeakerHigh, Stop, X } from '@phosphor-icons/react';

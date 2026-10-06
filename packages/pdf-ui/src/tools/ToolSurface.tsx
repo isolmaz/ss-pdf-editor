@@ -1,7 +1,7 @@
 /**
  * The reader's tool overlays (reading mode, magnifier, snapshot, presentation,
  * view history). Their own import path for the same reason as the shell surface:
- * the root barrel is not reducible by a bundler (`WORKLOG.md §4`).
+ * the root barrel is not reducible by a bundler.
  *
  * The mark tools live here too — `MarkInteractionLayer` plus the `MarkTarget`
  * contract it consumes — because selection, the marquee and the move are one

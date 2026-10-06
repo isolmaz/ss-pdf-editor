@@ -30,7 +30,7 @@ import { verifyPart } from './en-parts/verify';
 import type { MessageKey } from './tr';
 
 /**
- * English dictionary — complete, maintained locale with full parity to Turkish (`K3`).
+ * English dictionary — complete, maintained locale with full parity to Turkish.
  * Every key declared in `tr` is provided here.
  */
 export const en: Record<MessageKey, string> = {

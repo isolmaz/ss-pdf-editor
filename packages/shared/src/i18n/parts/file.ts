@@ -1,6 +1,5 @@
 /**
- * File-level capabilities (`REPORT.md §3` A1 merge/add, A17 images→PDF,
- * A8 text export, A7 image export).
+ * File-level capabilities (merge/add, images→PDF, text export, image export).
  */
 
 export const filePart = {

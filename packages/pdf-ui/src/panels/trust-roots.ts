@@ -1,5 +1,5 @@
 /**
- * Reading certificate files into trust roots (`K17`).
+ * Reading certificate files into trust roots.
  *
  * It lives beside the panel that offers the action, not in the shell: reading a certificate
  * needs `pkijs` (through `pdf-core/signature-pkcs12`), and the shell is the one place the

@@ -9,7 +9,7 @@
  *
  * Both answers come from `pdf-core/ops/page-ranges.ts` and never from a second
  * parser: `parsePageRanges` owns the syntax (Turkish errors, duplicates
- * rejected, out-of-range reported — `REPORT.md §4.17`), `validateRanges` owns
+ * rejected, out-of-range reported), `validateRanges` owns
  * the document bound. A capability that parsed the string itself would be the
  * fifth parser in the tree, and the first one to disagree about `1,1`.
  */

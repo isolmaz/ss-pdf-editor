@@ -1,5 +1,5 @@
 /**
- * OPFS-backed draft storage (`PLAN.md §3.5`, `K10`): the browser half of
+ * OPFS-backed draft storage: the browser half of
  * `pdf-model/drafts`, which stays DOM-free.
  *
  * Layout inside the origin's private file system:
@@ -9,8 +9,7 @@
  *                                    written once per source, never per change
  *
  * Drafts of documents the user opened through a File System Access handle keep that
- * handle in the session and only need the model data here, so the vault stays small
- * (`§7` draft-cost gate).
+ * handle in the session and only need the model data here, so the vault stays small.
  */
 
 import type { Draft, DraftInventory, DraftStorage } from 'pdf-model';
@@ -56,7 +55,7 @@ async function writeFile(path: string, name: string, data: string | Uint8Array):
     // A writable that rejects leaves its swap file and its exclusive lock behind, and the
     // file keeps its previous contents — which is why the caller must see the failure
     // rather than a success. The abort is best-effort: it must never replace the error
-    // that explains what actually went wrong (`F08`).
+    // that explains what actually went wrong.
     await writable.abort().catch(() => undefined);
     throw error;
   }
@@ -120,8 +119,7 @@ export function createOpfsDraftStorage(): DraftStorage {
         if (!name.endsWith('.json')) continue;
         // One unreadable file is *reported*, never fatal: a read that throws here would
         // abort the whole inventory and make every remaining draft look absent, which is
-        // exactly the state a cleanup pass must not mistake for “nothing is referenced”
-        // (`F07`).
+        // exactly the state a cleanup pass must not mistake for “nothing is referenced”.
         try {
           const bytes = await readFile(DRAFTS, name);
           if (bytes === null) {

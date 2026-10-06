@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The non-vacuity gate for the unit suite (`R08`).
+ * The non-vacuity gate for the unit suite.
  *
  * `vitest run --passWithNoTests` is what the repository wants for a checkout that has no
  * tests yet — but as a CI gate it has one failure mode that looks exactly like success:

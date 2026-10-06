@@ -1,5 +1,5 @@
 /**
- * PKCS#12 (`.p12`/`.pfx`) import — how a signing identity enters this build (`PLAN.md §3.7`).
+ * PKCS#12 (`.p12`/`.pfx`) import — how a signing identity enters this build.
  *
  * A certificate alone is not a signing identity: the user's file is a container holding the
  * certificate, its chain and the **private key**, protected by a password. The key never
@@ -9,7 +9,7 @@
  *
  * Everything happens locally: `pkijs` parses the ASN.1 and WebCrypto does the arithmetic,
  * with no network, no keychain and no OS integration. That is the whole reason this build
- * can sign at all (`K9`: the document never leaves the device).
+ * can sign at all (the document never leaves the device).
  */
 
 import type { OctetString } from 'asn1js';

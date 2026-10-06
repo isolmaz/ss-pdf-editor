@@ -1,6 +1,6 @@
 /**
- * The public type surface of the text engine — `PLAN.md §5/Phase 4a` (text model),
- * `4b` (editability), `4d-1` (block-local reflow) and `4e` (font engine).
+ * The public type surface of the text engine: the text model, editability,
+ * block-local reflow and the font engine.
  *
  * ## Coordinate space (fixed for this whole package)
  *
@@ -12,7 +12,7 @@
  * The engine never emits *rotated page space*: the spike measured that MuPDF
  * **annotation** geometry lives in rotated page space while content streams live in
  * unrotated user space, and that mixing the two fails silently (text survives,
- * nothing is removed — archived spike `text-replace/NOTES.md`, "The exact APIs
+ * nothing is removed — an early engine spike, "The exact APIs
  * called"). The conversion lives in exactly one place: pdf-core's writer
  * (`applyTextEdit`). Everything here is unrotated and top-left.
  *
@@ -32,7 +32,7 @@ export interface GlyphBox {
   readonly rect: Rect;
   /** Measured advance along the line direction, in points: this glyph's origin to
    *  the next one; for the last glyph of a line, the along-direction extent of its
-   *  own box (archived spike `text-replace/textmodel.ts:107-114` measured the same
+   *  own box (an early engine spike measured the same
    *  quantity for a whole line: first char's left edge → last char's right edge). */
   readonly advance: number;
 }
@@ -101,7 +101,7 @@ export type LineOrientation = 'horizontal' | 'reversed' | 'vertical' | 'skewed';
 
 /**
  * One glyph as the extractor reports it. MuPDF's `StructuredText.walk` gives
- * exactly this set per character (archived spike `text-replace/textmodel.ts:88-101`):
+ * exactly this set per character:
  * the character, the baseline origin, the size, the quad and the font name.
  */
 export interface CharInput {
@@ -144,7 +144,7 @@ export interface PageTextInput {
 }
 
 /** `editable`: re-renderable in the same face. `substituted`: editable, but the
- *  replacement is re-rendered in a substitute font (`PLAN.md §5/Phase 4e`).
+ *  replacement is re-rendered in a substitute font.
  *  `not-editable`: never silently damaged — the UI marks it (`4b`). */
 export type EditabilityVerdict = 'editable' | 'substituted' | 'not-editable';
 
@@ -244,7 +244,7 @@ export interface FontMatch {
   /** A different programme from the block's original ink is required. Note that a
    *  re-render always embeds a fresh font programme even when `substituted` is
    *  false, because a font read back from the file answers glyph id 0 for every
-   *  character (archived spike `text-replace/NOTES.md`, round-2 variant A). */
+   *  character. */
   readonly substituted: boolean;
   /** True when the original font's family/weight/italic was reproduced exactly. */
   readonly exact: boolean;
@@ -281,7 +281,7 @@ export interface ReflowOptions {
   /** First-line indent of every paragraph, in points. */
   readonly indent?: number;
   /** Hard box for the reflow. `null` derives it from the block (width from the
-   *  block, height free — the box grows, `PLAN.md §5/4d-1`). */
+   *  block, height free — the box grows). */
   readonly box?: Rect | null;
   /** Shrink the font until the text fits, down to this size (auto-shrink asks for
    *  this). Absent → the text is laid out at `fontSize` and may overflow. */

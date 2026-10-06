@@ -1,5 +1,5 @@
 /**
- * The app's action list (`PLAN.md §4.1` menu bar, §4.3 shortcuts, §4.3 palette).
+ * The app's action list: the menu bar, the shortcuts and the palette.
  *
  * Every capability of the file/page/tools menus is described once here and then
  * appears in three surfaces — the menu bar, the `Ctrl+K` palette and the toolbar
@@ -8,7 +8,7 @@
  * The list is a function of live state (`buildCommands`) rather than a constant:
  * enablement genuinely depends on what is open, what is selected and what the
  * device tier allows, and a disabled entry with a reason is better than a hidden
- * one (`PLAN.md §4.5`: an unsupported capability is stated, never silently
+ * one (an unsupported capability is stated, never silently
  * failing).
  */
 
@@ -22,7 +22,7 @@ import { shortcutHint } from './useShortcuts';
 export const SOURCE_URL = 'https://github.com/isolmaz/ss-pdf-editor';
 
 /**
- * Which surface the user is working in (`PLAN.md §4.1`).
+ * Which surface the user is working in.
  *
  * **Simple** is the default: the capabilities the reference readers put in their free
  * tier — read, annotate, fill, sign, edit, organise pages, print. **Advanced** is
@@ -99,7 +99,7 @@ export interface CommandHost {
   readonly clearSelection: () => void;
   readonly palette: () => void;
   /**
-   * The canvas tools (`PLAN.md §5/Phase 3`). The arming state is the shell's **one**
+   * The canvas tools. The arming state is the shell's **one**
    * canonical tool (`CanvasToolId`) rather than a set of per-feature flags: one value
    * per surface means the menu's check mark, the rail's pressed button and the layer
    * that actually owns the pointer cannot disagree, which is what five parallel
@@ -119,17 +119,17 @@ export interface CommandHost {
   /** Theme preference and setter for settings commands. */
   readonly theme: 'light' | 'dark' | 'system';
   readonly setTheme: (theme: 'light' | 'dark' | 'system') => void;
-  /** Sensitive session state and toggle (`K16`). */
+  /** Sensitive session state and toggle. */
   readonly sensitiveSession: boolean;
   readonly toggleSensitiveSession: () => void;
-  /** Explicit OPFS save action (`PLAN.md §3.5`). */
+  /** Explicit OPFS save action. */
   readonly opfsSave: () => void;
-  /** User-requested scoped cleanup of this document's stored copies (`K10`). */
+  /** User-requested scoped cleanup of this document's stored copies. */
   readonly purgeActiveDocument: () => void;
-  /** Delete vault blobs no document references any more (`K10`, `vault.ts`). */
+  /** Delete vault blobs no document references any more (`vault.ts`). */
   readonly sweepVault: () => void;
   /**
-   * Offline readiness (`R04`, `PLAN.md §5/S13`): the worker's own answer, and the
+   * Offline readiness: the worker's own answer, and the
    * preparation pass that fills the cache. Both are app callbacks rather than an
    * `OfflinePanel`, because the answer is one line and the panel that would hold it
    * would be a surface without content.
@@ -461,7 +461,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabled: noDocument,
       keywords: ['layer', 'ocg', 'katman'],
       // The layer write lives behind a tab, so a command that cannot open that tab is
-      // not a way in (`PLAN.md §4.3`).
+      // not a way in.
       run: () => host.openLeftTab('layers'),
     },
     {

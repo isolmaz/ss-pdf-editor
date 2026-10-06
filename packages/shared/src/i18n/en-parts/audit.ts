@@ -34,7 +34,7 @@ export const auditPart = {
   'audit.names': 'File contains name tree (/Names) record(s) ({count}).',
   'audit.clean.names': 'No name tree (/Names) records found.',
 
-  /* The notice the audit ends on: what the scan covered, and what it found (`R06`). */
+  /* The notice the audit ends on: what the scan covered, and what it found. */
   'audit.notice.terms': 'The redaction audit ran against {count} term(s); the result is in the panel.',
   'audit.notice.residual':
     'The redaction audit reported {count} finding(s): erased text may still be in the file. The result is in the panel.',

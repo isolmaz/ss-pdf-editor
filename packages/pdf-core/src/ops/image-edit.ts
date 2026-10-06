@@ -1,5 +1,5 @@
 /**
- * Editing the images a PDF already contains (`PLAN.md §5/Phase 4`: “select an image
+ * Editing the images a PDF already contains (“select an image
  * object (pdf.js OPS), replace, crop, compress, rotate, opacity”).
  *
  * The split this module is built on: **the pixels are the caller's job, the PDF
@@ -564,7 +564,7 @@ export async function applyImageEdit(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report };
@@ -574,7 +574,7 @@ export async function applyImageEdit(
  * Re-open the produced file and check that every replaced object is still the image the
  * page names. A file that does not parse, a page count that moved, an object that is no
  * longer an image, or a page that no longer names it is `verification-failed` — the
- * caller keeps the original and the session stays dirty (`PLAN.md §3.3` rule 5/6).
+ * caller keeps the original and the session stays dirty.
  */
 async function verifyOutput(
   produced: Uint8Array,

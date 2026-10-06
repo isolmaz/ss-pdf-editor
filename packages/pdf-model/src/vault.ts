@@ -1,5 +1,5 @@
 /**
- * The retention policy for the browser vault (`PLAN.md §3.5`, `K10`).
+ * The retention policy for the browser vault.
  *
  * This module is **policy, not storage**: it decides which blob keys *may* be deleted,
  * and it is deliberately free of the DOM so the decision can be checked without a
@@ -26,7 +26,7 @@
  * 3. **Deletion is logical, not physical.** Removing a row from the origin-private file
  *    system does not overwrite the bytes underneath, and it cannot reach a copy the user
  *    downloaded, opened from disk, or that the browser put in a backup. The UI must not
- *    describe it as secure erasure (`K10`).
+ *    describe it as secure erasure.
  */
 
 import type { Draft, DraftInventory } from './drafts';

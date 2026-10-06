@@ -1,12 +1,12 @@
 /**
- * The geometric shapes pdf.js cannot write (`PLAN.md §9/K18`).
+ * The geometric shapes pdf.js cannot write.
  *
  * The engine's new-annotation writer (`AnnotationFactory.saveNewAnnotations`,
  * `build/pdf.worker.mjs:53115`) dispatches on five editor types only —
  * `FREETEXT`, `HIGHLIGHT`, `INK`, `STAMP`, `SIGNATURE` — and those are the four
  * text-markup kinds plus freehand drawing. Squares, circles and lines have **no**
  * writer anywhere in the engine, so their dictionary **and** their appearance
- * stream are built here. That is the other half of `K18`: the engine supplies the
+ * stream are built here. That is the other half of the annotation writer: the engine supplies the
  * layer and the write path for the types it has, and this module finishes the ones
  * it does not.
  *
@@ -24,7 +24,7 @@
  *
  * The combined write of *all* mark kinds lives at the bottom
  * (`writeAnnotationsToFile`), because the three steps have a dependency order and
- * one caller must own it (`PLAN.md §3.3` step 3).
+ * one caller must own it.
  */
 
 import type { PDFDocument, PDFObject } from 'mupdf';
@@ -85,7 +85,7 @@ const KAPPA = 0.5523;
  *
  * Spelled out as data rather than taken from an engine module: a value import from an
  * engine package would drag it into the first-paint chunk (the entry once measured
- * 440 KiB gzip against a 250 KiB budget, `PLAN.md §7`); engines load lazily.
+ * 440 KiB gzip against a 250 KiB budget); engines load lazily.
  *
  * PDF 32000-1 Table A.1 is the source for each mnemonic.
  */
@@ -546,7 +546,7 @@ function markerAppearance(
 // ---------------------------------------------------------------------------
 
 /**
- * The whole annotation write, in dependency order (`PLAN.md §3.3` step 3).
+ * The whole annotation write, in dependency order.
  *
  * Three steps, because the engines own different halves:
  *  1. **Engine step** — text markup and ink go into the document through
@@ -560,7 +560,7 @@ function markerAppearance(
  *     bounding box.
  *
  * Steps 2 to 4 are MuPDF rewrites, so they end the incremental fast path
- * (`§3.3` rule 3) and the report says so; a session holding only marks the engine
+ * and the report says so; a session holding only marks the engine
  * can write keeps it.
  *
  * ## Rotation

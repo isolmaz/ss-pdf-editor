@@ -1,5 +1,5 @@
 /**
- * Imposition (`PLAN.md §6`; `REPORT.md §3` A16).
+ * Imposition.
  *
  * Three layouts over one operation: N-up, saddle-stitch booklet and poster
  * tiling. The sheet geometry — including paper, orientation, gutter, margins and
@@ -208,8 +208,7 @@ export const imposeDialog: OperationDialogSpec = {
     if (plan.sheets > MAX_SHEETS) {
       // Same vocabulary limit as the split ceiling: the error contract's sentences
       // are per code, and `range-invalid`'s hint (enter a narrower range) is the
-      // actionable one — fewer pages or fewer tiles. A dedicated code carrying the
-      // sheet count is Phase 3 work.
+      // actionable one — fewer pages or fewer tiles.
       throw new ToolError('range-invalid', {
         engine: 'ui',
         engineMessage: `imposition plan produces ${plan.sheets} sheets, over the ${MAX_SHEETS} ceiling`,

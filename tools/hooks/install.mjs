@@ -2,7 +2,7 @@
 /**
  * Point git at this repository's own hooks (`.githooks/`), so `pre-commit` and `pre-push`
  * run `tools/hooks/guard.mjs` — the rule that engine builds, binaries, keys and oversized
- * blobs never enter git (`AGENTS.md` > Disk/bundle hygiene).
+ * blobs never enter git.
  *
  * `core.hooksPath` cannot be committed, so a fresh clone starts without the guard. This
  * runs from the `prepare` script, i.e. after `pnpm install`, and is deliberately quiet and

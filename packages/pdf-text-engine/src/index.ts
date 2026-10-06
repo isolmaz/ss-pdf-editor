@@ -1,6 +1,5 @@
 /**
- * `pdf-text-engine` — the text model and block-local reflow engine of
- * `PLAN.md §5/Phase 4`.
+ * `pdf-text-engine` — the text model and block-local reflow engine.
  *
  *   - `4a` text model — `buildTextPage`, `lineOrientation`, `blockOrientation`;
  *   - `4b` editability — `measureEditability`;

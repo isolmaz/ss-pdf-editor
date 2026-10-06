@@ -11,9 +11,9 @@ import {
 import { findViewerDom, pageIndexAtTop } from './viewer-dom';
 
 /**
- * Back/forward over view jumps (`PLAN.md §5/Phase 1`).
+ * Back/forward over view jumps.
  *
- * The hook reads the viewer instead of owning it (`K23`): a *view* is the page at
+ * The hook reads the viewer instead of owning it: a *view* is the page at
  * the top of the scroll container plus the viewer's effective scale. It samples
  * that pair whenever the container scrolls, its layout mutates (pdf.js rewrites
  * the page geometry on every scale change, so zoom, fit-width and window resizes

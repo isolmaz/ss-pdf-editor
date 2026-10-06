@@ -1,11 +1,11 @@
 /**
- * The text tool's canvas layer (`PLAN.md §5/Phase 4a-4b`).
+ * The text tool's canvas layer.
  *
  * The block model comes from **MuPDF's structured text** (`pdf-core/text-source`),
  * which is the engine that already answers block → line → character with quads and
  * already knows the page's `/Rotate`; segmenting pdf.js's flat text items into
  * blocks would mean inventing the gap thresholds the spike deliberately did not
- * need (archived spike `text-replace/NOTES.md`). The model is then built by the pure
+ * need. The model is then built by the pure
  * `pdf-text-engine` package, so what this layer paints and what the writer erases
  * come from one source of truth.
  *
@@ -16,7 +16,7 @@
  *
  * The layer is an overlay, not a second viewer: it shows block boxes over the pages
  * the viewer has already painted, and a click hands the selection to the app. It
- * never touches the document (`AGENTS.md`: state changes go through the model).
+ * never touches the document (state changes go through the model).
  */
 
 import type { OperationContext } from 'pdf-core';
@@ -134,7 +134,7 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
         // The reader failing is a real failure: say so on the page rather than
         // leaving an empty overlay that looks like "there is no text here". The
         // engine's own message goes to the diagnostic attribute, never to the UI
-        // (`AGENTS.md`: raw engine text is diagnostics, the dictionary is the text).
+        // (raw engine text is diagnostics, the dictionary is the text).
         const toolError = toToolError(error);
         setFailure(toolError.code);
         setFailureDetail(toolError.details.engineMessage ?? String(error));

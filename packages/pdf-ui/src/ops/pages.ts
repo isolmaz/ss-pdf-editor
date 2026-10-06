@@ -1,5 +1,5 @@
 /**
- * Page-structure capabilities (`PLAN.md §6`; `REPORT.md §3` A4, A5).
+ * Page-structure capabilities.
  *
  * Extraction and splitting are the same engine path seen from two sides: both
  * compose their output from the pages of the document that owns the annotation
@@ -43,8 +43,8 @@ const MAX_SPLIT_PARTS = 200;
  * A4 — extract the selected pages as a new document.
  *
  * `new-tab`, never `replace`: the pages are produced *beside* the document, which
- * is what makes the capability non-destructive (`REPORT.md §3` A4's target
- * selection defect — the source project could only download them).
+ * is what makes the capability non-destructive (the source project could only
+ * download them).
  */
 export const extractPagesDialog: OperationDialogSpec = {
   id: 'extract-pages',
@@ -179,8 +179,7 @@ export const splitDialog: OperationDialogSpec = {
     if (plan.parts.length > MAX_SPLIT_PARTS) {
       // The error contract's sentences are per code, not per situation
       // (`pdf-shared/errors.ts`): `range-invalid` is the one whose hint tells the
-      // user what to do — enter a narrower range. A dedicated code carrying the
-      // count is the honest fix, and it is Phase 3 work.
+      // user what to do — enter a narrower range.
       throw new ToolError('range-invalid', {
         engine: 'ui',
         engineMessage: `split plan produces ${plan.parts.length} parts, over the ${MAX_SPLIT_PARTS} ceiling`,
@@ -207,7 +206,7 @@ export const splitDialog: OperationDialogSpec = {
         inputBytes: context.bytes.length,
         outputBytes: files.reduce((sum, file) => sum + file.bytes.length, 0),
         pageCount: context.pageCount,
-        // A composition is a freshly written file (`PLAN.md §3.3` rule 3).
+        // A composition is a freshly written file.
         incremental: false,
       },
       noticeKey: 'split.done',

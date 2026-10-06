@@ -1,12 +1,12 @@
 /**
- * The signing dialog (`PLAN.md §5/Phase 4`: “PAdES B-B (pkijs + WebCrypto, fully
- * local)”; `K9`, `K11`, `K17`).
+ * The signing dialog (“PAdES B-B (pkijs + WebCrypto, fully
+ * local)”).
  *
  * Three separations this file keeps, each of them a decision rather than a style:
  *
  *  - **The identity stays in the browser.** The PKCS#12 container and its password are
  *    read here, turned into a WebCrypto key handle, and never leave the tab: no upload,
- *    no key escrow, no account (`K9`). The password is used once, to unwrap the key, and
+ *    no key escrow, no account. The password is used once, to unwrap the key, and
  *    is not kept in the session.
  *  - **The dialog owns no PDF.** It computes one rectangle — where the visible stamp
  *    goes — from the page box the op reads, hands it to `signPdf`, and gets bytes back.
@@ -14,7 +14,7 @@
  *  - **A signature is not a save.** `resultKind: 'replace'` puts the signed bytes into the
  *    session, so the next Save or Export writes the signed file; the notice and the
  *    properties panel say what the signature covers, and the pre-save warning says what a
- *    further change will do to it (`K17`).
+ *    further change will do to it.
  */
 
 import { readPageBoxes } from 'pdf-core/ops/page-boxes';

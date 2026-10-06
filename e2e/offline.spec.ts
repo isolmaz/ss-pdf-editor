@@ -1,7 +1,7 @@
 import { expect, test } from 'playwright/test';
 
 /**
- * The offline contract (`R04`) against the built distribution.
+ * The offline contract against the built distribution.
  *
  * What is asserted is the real thing and not a plausibility check: the worker registers and
  * takes control, the build's own manifest names the release, the cache it opened carries

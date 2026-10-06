@@ -14,15 +14,15 @@ import { currentViewPages, resolvePrintSource } from './printSource';
 import { type PrintProducedFile, type PrintScale, usePrinting } from './usePrinting';
 
 /**
- * The print dialog (`PLAN.md §5/Phase 1`: "printing with page range and scale";
- * Phase 3: "range, scale, N-up, booklet, duplex, margins and produce the PDF to
+ * The print dialog ("printing with page range and scale";
+ * The print dialog: "range, scale, N-up, booklet, duplex, margins and produce the PDF to
  * print").
  *
  * Two actions, one set of choices:
  *
  *  - **Yazdır** prepares the selected pages and hands them to the browser's own
- *    print dialog. It prints what the viewer shows, one page per sheet — the path
- *    archived spike `browser-check-slices.mjs` verifies, and the reason the
+ *    print dialog. It prints what the viewer shows, one page per sheet — the
+ *    verified path, and the reason the
  *    imposition choices below are marked as belonging to the produced file
  *    (`print.imposeHint`) instead of pretending to change it.
  *  - **Yazdırılacak PDF'i üret** runs `buildPrintDocument` over the same pages and

@@ -1,11 +1,11 @@
 /**
- * OCR (`PLAN.md §6`; `REPORT.md §3` A15).
+ * OCR.
  *
  * The dialog's job is small and exact, because both of A15's defects were places
  * where the UI and the core disagreed:
  *  - the DPI field offers 150–300 and rejects anything else in the field itself
  *    (`FieldSpec.number`'s range, the same rule `OcrOptions.dpi` enforces), so the
- *    value the user sees is the value tesseract gets (`REPORT.md §4.5`: the old UI
+ *    value the user sees is the value tesseract gets (the old UI
  *    offered 120–400 while the core rejected >300);
  *  - the "existing text" mode is explicit, and in `skip` mode the dialog asks the
  *    engine which pages actually carry text (`detectScannedPages`) so the report can
@@ -44,7 +44,7 @@ export const ocrDialog: OperationDialogSpec = {
       labelKey: 'ocr.languages',
       hintKey: 'ocr.languagesHint',
       // Turkish first: the product's first locale, and the pack the row is tested
-      // against (`PLAN.md §6` A15's quality gate).
+      // against (the OCR quality gate).
       defaultValue: ['tur'],
       options: OCR_LANGUAGES.map((language) => ({
         value: language,

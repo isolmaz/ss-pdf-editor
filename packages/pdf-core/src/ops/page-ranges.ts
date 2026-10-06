@@ -1,6 +1,6 @@
 /**
- * Page ranges — the one parser every capability shares (`REPORT.md §4.17`
- * closes here: Turkish errors, duplicates rejected, out-of-range reported).
+ * Page ranges — the one parser every capability shares (Turkish errors,
+ * duplicates rejected, out-of-range reported).
  *
  * Input syntax: `1-3, 5, 8-10`, open ranges (`3-`, `-4`), single pages, Turkish
  * separators tolerated (`;` and whitespace). Output is 0-based page indices,
@@ -9,7 +9,7 @@
  *
  * Pure and DOM-free so the model, the UI and Node tests share exactly one rule.
  * Errors are `ToolError`s with the shared `range-invalid` code and **no English
- * text** (`REPORT.md §4.1`).
+ * text**.
  */
 
 import { ToolError } from 'pdf-shared';
@@ -46,8 +46,8 @@ function addPage(pages: number[], seen: Set<number>, pageNumber: number, segment
  *
  * Rules (each one closes a source-project defect):
  *  - 1-based input, 0-based output;
- *  - out-of-range pages are an error, never silently clamped (`REPORT.md §4.17`
- *    — the old parser accepted `1,1` and clamps);
+ *  - out-of-range pages are an error, never silently clamped (the old parser
+ *    accepted `1,1` and clamped);
  *  - duplicates are an error, because a duplicated range in a split produces
  *    two identical parts;
  *  - `pageCount` of 0 rejects everything;
@@ -132,7 +132,7 @@ export function chunkPages(pages: readonly number[], size: number): number[][] {
 }
 
 /**
- * Part file name for a split. Fixes `REPORT.md §4.17`: the source project broke
+ * Part file name for a split. The source project broke
  * past 999 pages by string-padding into the extension; the width grows with the
  * part count instead.
  */

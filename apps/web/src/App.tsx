@@ -12,7 +12,7 @@ import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-ha
 // package barrel: a barrel re-export keeps every operation module in the graph the
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
 // and the engine chunk it pulls in is what the ≤250 KiB budget is there to keep
-// out (`PLAN.md §7`).
+// out.
 import {
   parseAnnotationData,
   serializeAnnotationsFdf,
@@ -59,7 +59,7 @@ import { lazy, Suspense } from 'react';
 
 /**
  * The signature prompt rides the same boundary as the capability dialogs: it is needed
- * once per save of a signed document, and the first paint must not carry it (`PLAN.md §7`).
+ * once per save of a signed document, and the first paint must not carry it.
  */
 const CloseDocumentDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
@@ -84,7 +84,7 @@ const PasswordDialog = lazy(async () => {
 /**
  * The keyboard shortcut list. Help is not a document operation — it opens with no tab
  * and in either mode — but it carries Kumo's dialog primitives, so it rides the dialog
- * boundary with the other modals rather than the first paint (`PLAN.md §7`).
+ * boundary with the other modals rather than the first paint.
  */
 const ShortcutsDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
@@ -208,13 +208,12 @@ import { SHELL_SHORTCUT_GROUPS, useShellShortcuts } from './useShortcuts';
 import { createVaultChannel, type VaultChannel } from './vault-channel';
 
 /**
- * The editor shell (`PLAN.md §4.1`).
+ * The editor shell.
  *
- * Phase 1 delivered the reader; Phase 2 wires the 18 capabilities into it. The
- * shape that matters here: a panel or dialog never produces "its own output PDF".
+ * The reader with every capability wired into it. The shape that matters here: a panel or dialog never produces "its own output PDF".
  * It returns produced bytes, and this file is the only place that decides what
  * they mean — a new working version (journaled, undoable), a new tab, or a
- * download (`PLAN.md §1.1`, §3.3).
+ * download.
  */
 
 /** The product name the shell falls back to; `index.html`'s `<title>` carries the same string. */
@@ -264,7 +263,7 @@ interface MarkedRect {
 /**
  * What an open operation dialog runs against: frozen bytes plus the identity of
  * the tab and working version they were frozen from. A dialog whose input is no
- * longer that exact version applies nothing (`PLAN.md §5/S06`).
+ * longer that exact version applies nothing.
  */
 interface DialogInput {
   readonly tabId: string;
@@ -282,7 +281,7 @@ interface DialogInput {
  * The properties panel is the only consumer of the font reader, the signature
  * verifier and the embedded-file writer; loading them with the shell would put a
  * capability nobody has asked for into the first paint. The budget is a locked
- * decision (`PLAN.md §7`), so the split is where it belongs: in the module graph.
+ * decision, so the split is where it belongs: in the module graph.
  */
 const PropertiesPanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
@@ -302,7 +301,7 @@ const RedactionAuditPanel = lazy(async () => {
 });
 /**
  * Printing and the command palette are the two surfaces that held the entry chunk
- * over the budget (`WORKLOG.md §4`, re-analysed in `local://firstpaint.md`):
+ * over the budget:
  * `PrintDialog` is the only file that puts Kumo's dialog/select/checkbox/input/radio
  * primitives on the first-paint graph, and the palette is the only consumer of
  * Kumo's command palette. Both are reached by a gesture, so both load on demand —
@@ -319,7 +318,7 @@ const CommandPalette = lazy(async () => {
 });
 /**
  * The batch dialog: a queue of files, not the open document. It carries Kumo's form and
- * dialog primitives, so it lives behind the same boundary as the other dialogs (`PLAN.md §7`).
+ * dialog primitives, so it lives behind the same boundary as the other dialogs.
  */
 const BatchDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
@@ -328,7 +327,7 @@ const BatchDialog = lazy(async () => {
 /**
  * The comparison and accessibility panels read the working bytes and (for the
  * accessibility writer) touch the file, so they ride the dock panels' own boundary rather
- * than the first paint (`PLAN.md §7`).
+ * than the first paint.
  */
 const ComparePanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
@@ -352,7 +351,7 @@ const MeasureSettings = lazy(async () => {
 });
 /**
  * The text tool's overlay — it reads the page's structured text and parses the font
- * metric tables, so it arrives with the tool (`PLAN.md §7`).
+ * metric tables, so it arrives with the tool.
  */
 const TextLayer = lazy(async () => {
   const module = await import('pdf-ui/text-edit');
@@ -380,7 +379,7 @@ export function App({ store }: AppProps) {
    */
   const pendingEngineValues = useRef(new Map<string, EngineValuesDraft>());
   /**
-   * The words a document's applied redactions removed (`R06`, `K16`).
+   * The words a document's applied redactions removed.
    *
    * The audit's question is "does this file still carry what was erased", and the marks
    * themselves cannot answer it: a `RedactRect` is geometry, and the words under it are
@@ -401,7 +400,7 @@ export function App({ store }: AppProps) {
    * The translator, reachable from effect bodies **without** becoming one of their
    * dependencies. Recovery used to take `t` in its dep list, so changing the interface
    * language re-ran it: every draft was restored a second time, over tabs that were
-   * already open (`F06`).
+   * already open.
    */
   const tRef = useRef(t);
   useEffect(() => {
@@ -423,7 +422,7 @@ export function App({ store }: AppProps) {
   /**
    * A gesture the synchronous gate refuses says so. The gate itself stays
    * synchronous — this only speaks when it closes, because an inert control and a
-   * refused action must not look the same (`K22`, `PLAN.md §5/S06`).
+   * refused action must not look the same.
    */
   const refuseBusy = useCallback(() => setNotice(t('op.busy')), [t]);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
@@ -434,7 +433,7 @@ export function App({ store }: AppProps) {
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [magnifierOn, setMagnifierOn] = useState(false);
   const [lensZoom, setLensZoom] = useState(4);
-  /** Phase 2 surface state: dialogs, palette, docks, page selection, progress, tools. */
+  /** Surface state: dialogs, palette, docks, page selection, progress, tools. */
   const [dialogSpec, setDialogSpec] = useState<OperationDialogSpec | null>(null);
   /**
    * The frozen input of the open dialog: the tab it belongs to, the working
@@ -443,7 +442,7 @@ export function App({ store }: AppProps) {
    * renders — is what stops a tab switch during materialisation from pairing one
    * document's bytes with another document's name, page count and handle, and it
    * makes an operation that landed behind the dialog a reason to dismiss rather
-   * than a silent mismatch (`PLAN.md §5/S06`).
+   * than a silent mismatch.
    */
   const [dialogInput, setDialogInput] = useState<DialogInput | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -486,7 +485,7 @@ export function App({ store }: AppProps) {
    */
   const [lockedTabs, setLockedTabs] = useState<ReadonlyMap<string, string>>(() => new Map());
   /**
-   * **The one canvas tool** (`local://tool-interaction-contract.txt`). Every surface
+   * **The one canvas tool.** Every surface
    * that can arm or stop a tool writes this value and nothing else — the left rail,
    * the menu, the palette, the right rail, the context menu, the text/link/redaction
    * routes and the engine's own mode reset. The parallel states this replaces
@@ -594,7 +593,7 @@ export function App({ store }: AppProps) {
     setMode(next);
     // A dialog the simple mode hides must not stay open behind the filter: closing it
     // returns the user to a surface the mode actually offers, rather than leaving them
-    // on a screen the menus can no longer reach (`PLAN.md §4.1`).
+    // on a screen the menus can no longer reach.
     if (next === 'simple') {
       cancelRef.current?.abort();
       setDialogId(null);
@@ -629,7 +628,7 @@ export function App({ store }: AppProps) {
     [store],
   );
   /**
-   * Annotation marks of the active tab (`PLAN.md §5/Phase 3`). They are session
+   * Annotation marks of the active tab. They are session
    * state, not engine state: the engine owns the gesture for the four types it has
    * an editor for, and the mark it produces is taken over here so the journal, the
    * comment panel and the writer all see the same list.
@@ -663,7 +662,7 @@ export function App({ store }: AppProps) {
   const [annotationThickness, setAnnotationThickness] = useState(2);
   const [annotationAuthor, setAnnotationAuthor] = useState('');
   /**
-   * The measure tool's own state (`PLAN.md §5/Phase 4`): the scale the document is
+   * The measure tool's own state: the scale the document is
    * drawn at, the marks the session holds, the grid settings and the live reading.
    * Colour, opacity, thickness and author are the annotation style — a ruler and a
    * highlighter are the same kind of mark, and two colour pickers would be two answers
@@ -818,7 +817,7 @@ export function App({ store }: AppProps) {
 
   /**
    * The document names the browser's own surfaces: the printed file, a "Save as…"
-   * suggestion and the window itself. The print dialog and `K10`'s export both
+   * suggestion and the window itself. The print dialog and the export both
    * take their suggested file name from `document.title`, so it follows the active
    * document (and says so when there are unsaved changes) instead of staying the
    * product name while a contract sits open.
@@ -835,7 +834,7 @@ export function App({ store }: AppProps) {
     const currentBytes = activeTab.working.produced?.bytes.byteLength ?? activeTab.source.size;
     return checkDocumentLimits(tier, tabPageCount(activeTab), currentBytes);
   }, [activeTab, tier]);
-  /** Editing is off in viewing mode and while an operation runs (`PLAN.md §3.4`). */
+  /** Editing is off in viewing mode and while an operation runs. */
   const viewingOnly = verdict.kind === 'viewing-only';
   const locked = activeTab !== null && lockedTabs.has(activeTab.id);
   const canEdit =
@@ -894,7 +893,7 @@ export function App({ store }: AppProps) {
   /**
    * The snapshot keys a document retains, per device tier. Desktop keeps the journal's
    * own history; the smaller tiers keep one produced version, because a phone's storage
-   * budget is the constraint that matters there (`PLAN.md §7`).
+   * budget is the constraint that matters there.
    */
   const retainedSnapshotsFor = useCallback(
     (tab: SessionTab): readonly ProducedDocument[] =>
@@ -913,7 +912,7 @@ export function App({ store }: AppProps) {
    * `null` means the inventory was incomplete and **nothing was deleted** — an orphan blob
    * costs space, a deleted live blob costs the user a document. This is deletion from
    * application storage; it does not overwrite the bytes underneath, and it cannot reach a
-   * download, an external original or a browser backup (`K10`).
+   * download, an external original or a browser backup.
    */
   const forgetTabDraft = useCallback(
     async (tabId: string): Promise<readonly string[] | null> => {
@@ -946,7 +945,7 @@ export function App({ store }: AppProps) {
 
   /**
    * The **one** implementation of draft persistence, used by the manual save command and
-   * the debounced automatic save alike (`F04`).
+   * the debounced automatic save alike.
    *
    * The model state is captured synchronously before the first `await`, so the manifest
    * always describes the version whose bytes were written — reading it again after the
@@ -958,7 +957,7 @@ export function App({ store }: AppProps) {
       if (before === undefined) return 'gone';
       if (before.sensitive) {
         // A sensitive document never enters persistence, and whatever an earlier session
-        // stored for it leaves now (`F05`).
+        // stored for it leaves now.
         await forgetTabDraft(tabId);
         return 'sensitive';
       }
@@ -1089,7 +1088,7 @@ export function App({ store }: AppProps) {
   }, [channel, draftStorage, openVaultKeys, readInventory, t]);
 
   /**
-   * Offline readiness (`R04`, `PLAN.md §5/S13`, `K2`): what the worker's cache actually
+   * Offline readiness: what the worker's cache actually
    * holds for **this build**, said as it is.
    *
    * `null` is not "nothing is ready": it is "there is no service worker to ask", and the
@@ -1113,7 +1112,7 @@ export function App({ store }: AppProps) {
   }, [t]);
 
   /**
-   * Fill the cache for the capabilities core editing needs (`R04`).
+   * Fill the cache for the capabilities core editing needs.
    *
    * A preparation that was interrupted is not rounded up to success: `failed` is the
    * paths that did not arrive, and it is reported with the count that did — the failure
@@ -1177,7 +1176,7 @@ export function App({ store }: AppProps) {
     try {
       // The same implementation the automatic save uses, and the same write queue: a
       // manual save that took its own path wrote a manifest against a source key nothing
-      // ever stored (`F04`), and could race the debounced one (`F05`).
+      // ever stored, and could race the debounced one.
       const queued = draftWrites.current.then(() => persistTabDraft(activeTab.id));
       // The queue's own copy swallows the failure so later writes still run; the promise
       // below is what carries the error to the user.
@@ -1253,16 +1252,16 @@ export function App({ store }: AppProps) {
   }, [activeTab, activeHandle, contextFor, inspectionRevision]);
 
   /**
-   * Document facts for the properties panel (`PLAN.md §5/Phase 3`, `K17`): fonts,
+   * Document facts for the properties panel: fonts,
    * embedded files, security and the four-state signature verdict. Read per working
    * version — a font list from a previous version is not a fact about this one.
    */
   const [auditReport, setAuditReport] = useState<RedactionAudit | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
   /**
-   * The signature a pending save would touch, and whether that save rewrites the file
-   * (`K17`). The prompt is state rather than a `window.confirm` so the answer is a real
-   * button in the app's own surface (`K24`). The decision resumes exactly the frozen
+   * The signature a pending save would touch, and whether that save rewrites the file.
+   * The prompt is state rather than a `window.confirm` so the answer is a real
+   * button in the app's own surface. The decision resumes exactly the frozen
    * output operation that asked; it never authorizes a later call or another tab.
    */
   const [signatureWarning, setSignatureWarning] = useState<{
@@ -1287,7 +1286,7 @@ export function App({ store }: AppProps) {
     [t],
   );
   /**
-   * The certificates the user imported as trust roots (`K17`). They live in the app's own
+   * The certificates the user imported as trust roots. They live in the app's own
    * OPFS directory — a device setting, never a document fact — and the verdicts re-run
    * when the list changes, because a trust decision is exactly what a re-check is for.
    */
@@ -1394,7 +1393,7 @@ export function App({ store }: AppProps) {
   }, [activeTab, activeHandle, contextFor, trustRootBytes, inspectionRevision]);
 
   /**
-   * The object-level audit of a produced redaction (`PLAN.md §9/K16`, first safety
+   * The object-level audit of a produced redaction (first safety
    * contract). It runs on the **working bytes**, and the needles it searches for are
    * the words the user asked to erase — the audit answers "did the file keep a trace
    * of what was removed", which the redaction report alone cannot.
@@ -1410,7 +1409,7 @@ export function App({ store }: AppProps) {
        * The needles are the words the user erased: what the applied redactions removed
        * (read from the pre-redaction bytes, `redactedTerms`) plus whatever the marks
        * still pending cover. An empty list is not silently treated as "nothing to find"
-       * — the notice below reports how many terms the scan actually had (`R06`).
+       * — the notice below reports how many terms the scan actually had.
        */
       const pending = await redactionNeedles(
         bytes,
@@ -1439,7 +1438,7 @@ export function App({ store }: AppProps) {
     }
   }, [contextFor, store, t]);
 
-  /** Embedded files: the three writes the properties panel offers (`§5/Phase 3`). */
+  /** Embedded files: the three writes the properties panel offers. */
   const addAttachmentsToDocument = useCallback(
     async (files: readonly File[]) => {
       const tab = store.active;
@@ -1547,7 +1546,7 @@ export function App({ store }: AppProps) {
    * submit, so one edit arrived as **six identical writes** — six working versions, six
    * journal entries and six inventory reloads — and that churn is what a real press cannot
    * survive: measured, the same click that deletes two pages on a quiet panel does nothing
-   * after a fill (archived spike `phase3-pages-probe.mts`, `WORKLOG.md §4`). The operation is
+   * after a fill. The operation is
    * the same one the dialog uses; only a no-op is skipped.
    */
   const fillField = useCallback(
@@ -1588,7 +1587,7 @@ export function App({ store }: AppProps) {
   );
 
   /**
-   * Drafts (`PLAN.md §3.5`): the model data of every open tab — never the source
+   * Drafts: the model data of every open tab — never the source
    * bytes of a document the user opened through a handle. On startup the restorable
    * drafts come back as tabs so closing the browser is not losing work.
    */
@@ -1688,7 +1687,7 @@ export function App({ store }: AppProps) {
     return () => {
       disposed = true;
     };
-    // `t` is deliberately absent (`F06`): it is read through `tRef`, so switching the
+    // `t` is deliberately absent: it is read through `tRef`, so switching the
     // interface language no longer replays startup recovery over live tabs.
   }, [draftStorage, store]);
 
@@ -1746,7 +1745,7 @@ export function App({ store }: AppProps) {
       setOpening(true);
       try {
         /**
-         * The size gate runs **inside** the guarded block (`R07`). Thrown before it, the
+         * The size gate runs **inside** the guarded block. Thrown before it, the
          * error escaped the function itself: the drop zone, the home screen and the file
          * input all call this fire-and-forget, so an oversized file produced no notice at
          * all — the one failure the limit exists to explain.
@@ -1826,7 +1825,7 @@ export function App({ store }: AppProps) {
   );
 
   /**
-   * The fire-and-forget way in (`R07`).
+   * The fire-and-forget way in.
    *
    * Four surfaces open a file — the picker, the drop zone, the home screen and the
    * hidden input — and three of them have no promise to await, so `void openFile(...)`
@@ -1846,7 +1845,7 @@ export function App({ store }: AppProps) {
   );
 
   /**
-   * Open with the File System Access picker when it exists (`K10`): the returned
+   * Open with the File System Access picker when it exists: the returned
    * handle is what makes in-place **Save** possible later. Without it the shell
    * keeps its file-input path and Save stays disabled in favour of Export — the
    * browser-matrix contract, not a defect.
@@ -1866,7 +1865,7 @@ export function App({ store }: AppProps) {
     } catch (error) {
       // A cancelled picker is a user decision, not an error worth a banner — and only a
       // *picker* failure gets the picker's sentence: an open that failed has its own
-      // message and hint, which `openFromSurface` reports (`R07`).
+      // message and hint, which `openFromSurface` reports.
       if (error instanceof DOMException && error.name === 'AbortError') return;
       setNotice(t('open.pickerFailed'));
       return;
@@ -1887,8 +1886,7 @@ export function App({ store }: AppProps) {
       /**
        * Opening is the transition, so a cancelled caller — the tab it came from
        * was closed while the dialog's result was opening — must not leave an
-       * orphan tab behind: the handle is destroyed and nothing is registered
-       * (`PLAN.md §5/S06`).
+       * orphan tab behind: the handle is destroyed and nothing is registered.
        */
       if (signal?.aborted === true) {
         await handle.destroy();
@@ -1919,7 +1917,7 @@ export function App({ store }: AppProps) {
   );
 
   /**
-   * The review as a file (`annotation-data.ts`, `PLAN.md §5/Phase 3`). The session's
+   * The review as a file (`annotation-data.ts`). The session's
    * marks leave as JSON (lossless) or FDF (the container Acrobat's own comment
    * export uses, carrying the same records), and come back the same way — a mark the
    * engine drew is in the engine's storage and a mark we own is in the session, so
@@ -1948,7 +1946,7 @@ export function App({ store }: AppProps) {
       anchor.href = url;
       anchor.download = name;
       anchor.click();
-      // Blob URLs are cleaned up right after the operation (`PLAN.md §3.7`).
+      // Blob URLs are cleaned up right after the operation.
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
       setNotice(t('ann.data.exported', { count: marks.length, name }));
     },
@@ -2051,8 +2049,7 @@ export function App({ store }: AppProps) {
         // PDF **user space**, not CSS pixels: the engine's own records and this
         // model both express geometry in points from the page's top-left. Mixing
         // the two mapped every captured mark onto the wrong part of the page —
-        // a 1527 px page box against 841.89 pt of geometry (`WORKLOG.md §4`,
-        // 2026-09-16).
+        // a 1527 px page box against 841.89 pt of geometry (2026-09-16).
         const geometry = api.pageGeometry(index);
         if (geometry === null) continue;
         boxes[index] = { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height };
@@ -2076,13 +2073,12 @@ export function App({ store }: AppProps) {
       setNotice(t('ann.captured', { count: marks.length }));
       // Returned as well as stored: a writer that runs in the same tick reads the
       // fresh marks from here, because the state update above has not rendered yet
-      // (`workingBytes` — the export path lost exactly these marks, `WORKLOG.md §4`).
+      // (`workingBytes` — the export path lost exactly these marks).
       return added;
     },
     // No tool setting is a dependency: this callback is handed to `PdfViewerPane`,
     // whose load effect depends on it, and reading the style from the ref is what
-    // stops "change the colour" from tearing down and rebuilding the pdf.js stack
-    // (`local://tool-interaction-contract.txt`, risk R1).
+    // stops "change the colour" from tearing down and rebuilding the pdf.js stack.
     [setAnnotations, store, t],
   );
   const takeEngineAnnotationsRef = useRef(takeEngineAnnotations);
@@ -2192,7 +2188,7 @@ export function App({ store }: AppProps) {
   }, [markMode, settleNativeEditors, sweepOrphanAnnotations]);
 
   /**
-   * Store the roots the panel parsed (`K17`). The parsing lives in the panel's chunk — it
+   * Store the roots the panel parsed. The parsing lives in the panel's chunk — it
    * needs pkijs, and the shell must not carry it (see `pdf-ui/panels/trust-roots.ts`).
    */
   const storeTrustRoots = useCallback(
@@ -2241,7 +2237,7 @@ export function App({ store }: AppProps) {
        * Redaction marks are **not** applied by materialization: they are intents the user
        * has staged, and the destructive step is theirs to run. Refusing here is the whole
        * point — the alternative is a Save that marks the tab clean while the delivered file
-       * still contains the content the user asked to remove (`F01`). This is deliberately
+       * still contains the content the user asked to remove. This is deliberately
        * not automatic redaction; the user applies or clears the marks.
        */
       if (pendingOverlays(tab).redactions.length > 0) {
@@ -2288,7 +2284,7 @@ export function App({ store }: AppProps) {
       }
 
       /**
-       * The run's **own** steps identify the operation (`R06`): the historical steps are
+       * The run's **own** steps identify the operation: the historical steps are
        * already inside the live handle these bytes are compared against, so declaring
        * them again would only weaken the promise the check makes. What the run itself
        * materialised — engine values, annotations, measurements — is exactly the delta
@@ -2344,7 +2340,7 @@ export function App({ store }: AppProps) {
        * promise the user can leave open for minutes, and a second Save (a shortcut, a
        * second click) that starts while it is open would run a second preparation and a
        * second write against the same document — two commits, one of them for bytes the
-       * other already replaced (`F03`). The `finally` below releases it on every path,
+       * other already replaced. The `finally` below releases it on every path,
        * including cancellation.
        */
       const controller = new AbortController();
@@ -2376,7 +2372,7 @@ export function App({ store }: AppProps) {
          * the document that was opened. A newly picked destination is normally empty, and
          * another file the user chose explicitly is theirs to overwrite — comparing either
          * against the *source* hash rejected every Save As that was not a re-save of the
-         * original (`F02`). The in-place path keeps the original/last-written protection.
+         * original. The in-place path keeps the original/last-written protection.
          */
         const targetIsSource = target !== undefined && target === tab.source.handle;
         const expected = targetIsSource
@@ -2410,7 +2406,7 @@ export function App({ store }: AppProps) {
           }
           // Only now is this handle the document's own file: attaching it before the write
           // succeeded would make the next Save write in place over a file this one never
-          // managed to commit (`F02`).
+          // managed to commit.
           store.setHandle(preparedTab.id, target);
         } else {
           // Direct download fallback when File System Access is not available
@@ -2428,7 +2424,7 @@ export function App({ store }: AppProps) {
           steps: execution.steps.map((step) => `${step.engine}:${step.id}`),
           appliedSteps: execution.appliedSteps.map((step) => `${step.engine}:${step.id}`),
           incremental: execution.plan.incremental,
-          // The fact table itself, not a summary of it (`R06`): the notice below says
+          // The fact table itself, not a summary of it: the notice below says
           // what the save established, and the output keeps the record a later surface
           // can read back.
           verification,
@@ -2460,7 +2456,7 @@ export function App({ store }: AppProps) {
       const abandoned = handles.current.get(id);
       handles.current.delete(id);
       if (abandoned !== undefined) {
-        // Closing a tab is not a place where a failure may be swallowed (`R07`), and it
+        // Closing a tab is not a place where a failure may be swallowed, and it
         // is not a place where one may be thrown at the user either: the document is
         // gone from the session, so the release is reported and the close proceeds.
         void abandoned.destroy().catch(() => setNotice(tRef.current('notice.engineReleaseFailed')));
@@ -2472,8 +2468,8 @@ export function App({ store }: AppProps) {
         .then(async () => {
           // The reference graph is read fresh and *whole*: the previous version derived it
           // from `readDrafts()`, which reports an unreadable or unlistable vault as “no
-          // drafts” — the exact input that makes a shared source blob look unreferenced
-          // (`F07`). An incomplete inventory deletes nothing and says so.
+          // drafts” — the exact input that makes a shared source blob look unreferenced.
+          // An incomplete inventory deletes nothing and says so.
           const removed = await forgetTabDraft(id);
           if (removed === null) setNotice(tRef.current('vault.incomplete'));
         })
@@ -2544,7 +2540,7 @@ export function App({ store }: AppProps) {
         .then((found) => {
           // Keyed to the bytes the read describes: a read that lands after a byte
           // operation replaced that version describes a document nobody is looking at,
-          // and it is dropped rather than shown (`S06`).
+          // and it is dropped rather than shown.
           if (viewerApi.current !== api || tab === null || bytesKey === null) return;
           setExistingInventory({ tabId: tab.id, bytesKey, annotations: found });
         })
@@ -2566,7 +2562,7 @@ export function App({ store }: AppProps) {
         .applyEngineValues(pending)
         .then((applied) => {
           if (viewerApi.current !== api) return;
-          // The staged copy goes only once the engine has taken it (`R07`): a rejection
+          // The staged copy goes only once the engine has taken it: a rejection
           // must leave the entries where a retry can still reach them, and a restore
           // that applied **nothing** is reported with its own count instead of the
           // silence the previous version kept for exactly that case.
@@ -2657,7 +2653,7 @@ export function App({ store }: AppProps) {
   }, [checkpointEngineValues, store, t, takeEngineAnnotations]);
 
   /**
-   * Export (`K10`, `§3.5`): writes the **current version** as a new file. Without a
+   * Export: writes the **current version** as a new file. Without a
    * File System Access handle this is the only way to keep work — and it must be
    * *this* file, not the bytes the user opened.
    */
@@ -2685,11 +2681,11 @@ export function App({ store }: AppProps) {
         anchor.href = url;
         anchor.download = tab.name;
         anchor.click();
-        // Blob URLs are cleaned up right after the operation (`PLAN.md §3.7`).
+        // Blob URLs are cleaned up right after the operation.
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
-        // The browser-matrix contract (`§4.5`): without an in-place handle the user
+        // The browser-matrix contract: without an in-place handle the user
         // must know why this writes a *new* file instead of saving the one they opened.
-        // The verification table travels with it either way (`R06`): an export is a
+        // The verification table travels with it either way: an export is a
         // write, and what the checks established belongs on the same line as the news
         // that it happened.
         setNotice(
@@ -2723,7 +2719,7 @@ export function App({ store }: AppProps) {
   /**
    * Dialog opening materialises the base **first**: the dialog's `run` receives
    * frozen bytes, so a form value typed a second earlier cannot be lost between
-   * opening the panel and pressing Apply (`§3.3` step 2).
+   * opening the panel and pressing Apply.
    */
   const openDialog = useCallback(
     (id: string, presets?: Readonly<Record<string, FieldValue>>) => {
@@ -2746,7 +2742,7 @@ export function App({ store }: AppProps) {
        * switch, a close or an operation landing while this runs makes them an
        * input to a document that is no longer in front. The check runs after
        * every `await`, so the dialog either opens with a coherent input or does
-       * not open at all (`PLAN.md §5/S06`).
+       * not open at all.
        */
       const stale = () => {
         const current = store.active;
@@ -2758,7 +2754,7 @@ export function App({ store }: AppProps) {
           if (stale()) return;
           // The spec is a dynamic import: a capability's dialog code loads when the
           // capability is opened, which is what keeps fifteen dialogs out of the
-          // first-paint bundle (`PLAN.md §7` budget).
+          // first-paint bundle.
           const spec = await dialogById(id);
           if (spec === undefined || stale()) return;
           if (spec.changesPageGeometry && pendingOverlays(tab).redactions.length > 0) {
@@ -2995,7 +2991,7 @@ export function App({ store }: AppProps) {
    * A dialog belongs to the version it froze. When the active tab changes — the
    * user switched, closed it, or an operation landed behind the modal — the
    * frozen input is no longer that tab's document, so the dialog is dismissed
-   * instead of being applied to bytes it was never opened for (`PLAN.md §5/S06`).
+   * instead of being applied to bytes it was never opened for.
    */
   useEffect(() => {
     const input = dialogInput;
@@ -3063,7 +3059,7 @@ export function App({ store }: AppProps) {
   /**
    * The accessibility writers' results arrive as bytes plus notes; they land in the session
    * exactly like every other produced file (journal entry → save router), so the panel never
-   * writes a file of its own (`PLAN.md §3.3`).
+   * writes a file of its own.
    */
   const applyAccessibility = useCallback(
     async (outcome: { readonly bytes: Uint8Array; readonly notes: readonly OperationNote[] }) => {
@@ -3092,8 +3088,7 @@ export function App({ store }: AppProps) {
        * The result belongs to the tab and version the dialog froze, not to
        * whatever is active when the click lands. Read both fresh from the store:
        * a tab switch or a landed operation between opening and applying must
-       * refuse the result rather than write one document's bytes onto another
-       * (`PLAN.md §5/S06`).
+       * refuse the result rather than write one document's bytes onto another.
        */
       const tab = store.getSnapshot().tabs.find((item) => item.id === input.tabId) ?? null;
       const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
@@ -3163,7 +3158,7 @@ export function App({ store }: AppProps) {
           /**
            * The words this redaction removed, read from the bytes it ran on — the marks
            * the run received are frozen in `dialogContext`, and `input.bytes` is the
-           * version they were measured against (`R06`, `K16`). Taken *before* the notice
+           * version they were measured against. Taken *before* the notice
            * because the audit that needs them runs later, on bytes where those words are
            * already gone.
            */
@@ -3250,7 +3245,7 @@ export function App({ store }: AppProps) {
 
   /**
    * The layers panel writes the view state it shows into the file
-   * (`PLAN.md §5/Phase 4`: “layers (OCG) view/edit”).
+   * (“layers (OCG) view/edit”).
    *
    * The panel holds the engine's view state and no bytes; this file holds the bytes and
    * no view, so the request travels from there to here — the same ownership rule every
@@ -3286,7 +3281,7 @@ export function App({ store }: AppProps) {
   );
 
   /**
-   * The attachments panel's two writes (`PLAN.md §5/Phase 4`: “attachments add/remove”).
+   * The attachments panel's two writes (“attachments add/remove”).
    * Same route as the layer write: the panel hands over the picked files (or the names to
    * drop) and the shell runs the operation on the working document.
    */
@@ -3649,7 +3644,7 @@ export function App({ store }: AppProps) {
     setRightTab('comments');
   }, []);
 
-  /** Page-structure actions (`REPORT.md §3` A2/A3): journaled, cancellable. */
+  /** Page-structure actions: journaled, cancellable. */
   const runPageAction = useCallback(
     (action: PageAction) => {
       /**
@@ -3698,7 +3693,7 @@ export function App({ store }: AppProps) {
             /**
              * A page action that did nothing says so. The silent version was found by a
              * driver that clicked a disabled button and saw only a stale notice — an
-             * inert control and a refused action must not look the same (`K22`).
+             * inert control and a refused action must not look the same.
              */
             setNotice(t('op.result.noChangePages'));
           }
@@ -3725,9 +3720,9 @@ export function App({ store }: AppProps) {
   const dismissNotice = useCallback(() => setNotice(null), []);
 
   /**
-   * Undo/redo (`K12`). The model moves its own state and reports which bytes the
+   * Undo/redo. The model moves its own state and reports which bytes the
    * viewer must show; mounting them is the app's half of the contract. A step whose
-   * snapshot the session no longer holds is reported, never guessed (`§3.5`).
+   * snapshot the session no longer holds is reported, never guessed.
    */
   const stepHistory = useCallback(
     async (direction: 'undo' | 'redo'): Promise<void> => {
@@ -4666,7 +4661,7 @@ export function App({ store }: AppProps) {
                         key={activeTab.working.id}
                         t={t}
                         // The shell's one route from the session to bytes: a mark drawn a
-                        // moment ago is part of what is compared (`K14`, §3.3).
+                        // moment ago is part of what is compared.
                         readDocument={() => currentBytes({ signal: new AbortController().signal })}
                         onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
                         onNotice={setNotice}

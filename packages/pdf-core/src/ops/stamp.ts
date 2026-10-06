@@ -1,6 +1,5 @@
 /**
- * Stamping: header/footer, page numbers, Bates numbering and watermarks
- * (`REPORT.md §3` A9, A10).
+ * Stamping: header/footer, page numbers, Bates numbering and watermarks.
  *
  * A9's source defect was `/Rotate` blindness — page numbering landed sideways on
  * rotated pages. Placement here is computed in **displayed page space** (the page
@@ -654,7 +653,7 @@ async function stampOpened(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount: total,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report };

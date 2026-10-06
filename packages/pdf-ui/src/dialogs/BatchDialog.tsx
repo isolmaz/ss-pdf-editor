@@ -1,6 +1,5 @@
 /**
- * The batch surface: many files, one rule set, one per-file report
- * (`PLAN.md §5/Phase 4`).
+ * The batch surface: many files, one rule set, one per-file report.
  *
  * This is a **bespoke dialog, not an `OperationDialogSpec`** — deliberately, and
  * for the same reason `printing/PrintDialog.tsx` is: the spec contract
@@ -61,14 +60,10 @@ import type { DialogParams, FieldSpec, FieldValue } from './types';
  * ------------------------------------------------------------------ */
 
 /**
- * The sentence ids of this surface. The dictionary does not carry them yet — the
- * Turkish and English text of every one is written out in
- * `local://batch-integration.md` for the dictionary owner, because this
- * workstream owns no file under `packages/shared/src/i18n/`. The lookup below is
- * the single bridge: every read still goes through `Translator` (so the
- * integration step is a dictionary edit and nothing here changes), and an
- * unwired key renders **its own id** — visible in the surface, never a hardcoded
- * English string (`AGENTS.md` > Language rules).
+ * The sentence ids of this surface, declared in `packages/shared/src/i18n/parts/batch.ts`
+ * (Turkish) and `en-parts/batch.ts` (English). The lookup below is the single bridge:
+ * every read goes through `Translator`, and a key missing from the dictionary renders
+ * **its own id** — visible in the surface, never a hardcoded English string.
  */
 type BatchMessageKey =
   | 'batch.title'

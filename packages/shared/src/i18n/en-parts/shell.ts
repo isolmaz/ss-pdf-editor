@@ -82,7 +82,7 @@ export const shellPart = {
   'status.dirty': 'Unsaved changes',
   'status.workingVersion': 'Working version: {label}',
 
-  /* Offline readiness (`offline.ts`, `R04`): what the worker answers, said as it is. */
+  /* Offline readiness (`offline.ts`): what the worker answers, said as it is. */
   'offline.unavailable': 'Offline status could not be read: no service worker is running in this window.',
   'offline.ready': 'Every package offline use needs is ready.',
   'offline.incomplete': 'Missing capabilities ({count}): {facts}.',

@@ -1,11 +1,11 @@
 /**
- * The result surface every operation ends in (`PLAN.md §1.2`, §3.3 rule 7).
+ * The result surface every operation ends in.
  *
  * The report is the product's honesty contract made visible: the page count, the
  * size delta, whether the file stayed incremental or was rewritten, the engine
  * steps that actually ran, and — grouped and translated — what the operation
  * lost, changed, warned about and preserved. It is a panel and not a modal
- * (`§3.3` rule 7: "a report is produced in the background ... a blocking
+ * ("a report is produced in the background ... a blocking
  * confirmation appears only for destructive steps"), so the same component can
  * be rendered inside the operation dialog or under a save.
  *

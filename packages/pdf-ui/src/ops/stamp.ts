@@ -1,10 +1,10 @@
 /**
- * Page furniture (`PLAN.md §6`; `REPORT.md §3` A9, A10).
+ * Page furniture.
  *
  * Both capabilities draw on the page rather than changing its content, and both
  * go through the same `stampDocument` writer: one text block per page for
  * numbering, one text or image block for a watermark. The placement work — the
- * `/Rotate`-aware anchor arithmetic (`REPORT.md §3` A9's "placement can be wrong
+ * `/Rotate`-aware anchor arithmetic (the source project's "placement can be wrong
  * on a rotated page") and the `{page}`/`{total}`/`{date}`/`{file}` substitution —
  * lives in the operation; the dialog only collects what the operation offers.
  */

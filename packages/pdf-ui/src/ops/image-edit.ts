@@ -1,5 +1,5 @@
 /**
- * The image dialog (`PLAN.md §5/Phase 4`: “Image editing: select an image object,
+ * The image dialog (“Image editing: select an image object,
  * replace, …”).
  *
  * The split with `pdf-core/ops/image-edit.ts` is the point of this file: the op owns the

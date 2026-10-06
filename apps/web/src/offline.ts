@@ -1,5 +1,5 @@
 /**
- * Offline capability packages and their readiness (`PLAN.md §5/S13`, `K2`, `K19`).
+ * Offline capability packages and their readiness.
  *
  * The service worker caches static assets; this module decides what a *capability* needs
  * before it may be called ready, and it is the only place that answers “can I open this

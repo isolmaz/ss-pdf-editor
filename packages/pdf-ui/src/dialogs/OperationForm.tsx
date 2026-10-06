@@ -10,7 +10,7 @@
  *
  * Decisions worth naming:
  *
- *  - **A destructive spec asks twice** (`§3.3` rule 7). The second step is a
+ *  - **A destructive spec asks twice.** The second step is a
  *    `role="alert"` sentence with the way out focused first: a keyboard user who
  *    confirms by muscle memory must not land on irreversible content loss.
  *  - **The confirm button is disabled while the fields are wrong.** `fieldErrors`

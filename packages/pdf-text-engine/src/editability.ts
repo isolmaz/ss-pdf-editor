@@ -1,6 +1,6 @@
 /**
- * Editability measurement — `PLAN.md §5/Phase 4b`: *which text is really editable?*
- * and, for the answer that is "editable, but not in its own font", the `4e` product
+ * Editability measurement: *which text is really editable?*
+ * and, for the answer that is "editable, but not in its own font", the font-engine product
  * expectation. Non-editable blocks come back as `not-editable` so the UI can mark
  * them with its red frame; nothing here is silent.
  *
@@ -9,8 +9,7 @@
  * The extractor reports a font *name*, not an embedding flag, and no font programme
  * is readable in a useful way anyway: the spike measured that a font read back from a
  * saved file answers glyph id 0 for **every** character, so the original programme is
- * never reused and every edit round embeds a fresh one (archived spike `text-replace/NOTES.md`,
- * round-2 variant A). Editability therefore asks the only question that has an
+ * never reused and every edit round embeds a fresh one. Editability therefore asks the only question that has an
  * answer: *can we reproduce this block's face, or does the block need a substitute?*
  *
  * The verdict ladder (`verdictOf`), first match wins — the order is the order the
@@ -21,7 +20,7 @@
  *      draws horizontal lines only, so a rotated block would be re-written at the
  *      wrong angle — and the spike solved rotation by carrying a direction vector,
  *      which the writer's request type does not have
- *      (archived spike `text-replace/replace.ts:74-95`, `placement.dir`).
+ *     .
  *   3. `skewed` → **not-editable**. A slightly rotated baseline cannot be reproduced
  *      horizontally, and a "small" skew is exactly what a user notices as damage.
  *   4. `type3` → **not-editable**. Type3 text is vector artwork with a font-like

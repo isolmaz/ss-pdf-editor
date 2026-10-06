@@ -1,5 +1,5 @@
 /**
- * Service Worker for SsPdfEditor (`PLAN.md §5/S13`, `K2`, `K9`, `K19`).
+ * Service Worker for SsPdfEditor.
  * Scoped to `/editor/` with same-origin static asset caching only.
  *
  * Security Invariants:
@@ -8,7 +8,7 @@
  *  - Document data or user bytes are NEVER stored in CacheStorage.
  *  - Cached responses maintain CORP/COOP/COEP headers to keep cross-origin isolation intact.
  *
- * ## Versioning (`R04`)
+ * ## Versioning
  *
  * `CACHE_NAME` is stamped at build time by `tools/assemble-dist.mjs`, which reads the same
  * `apps/web/src/offline-packages.json` this worker serves readiness for. Two consequences,
@@ -98,7 +98,7 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         // Only this application's caches, and only the previous *versions* of them: the
         // namespace is shared by the whole origin, so an unfiltered delete would reach
-        // another app's storage (`R04`).
+        // another app's storage.
         Promise.all(
           keys
             .filter((key) => key.startsWith('pdf-editor-static-') && key !== CACHE_NAME)
@@ -184,7 +184,7 @@ self.addEventListener('fetch', (event) => {
         .catch(async () => {
           const cached = await caches.match(request);
           // The previous version referenced a `response` that is not in scope here; the
-          // offline answer is what the branch was always meant to return (`R04`).
+          // offline answer is what the branch was always meant to return.
           return cached ? withIsolationHeaders(cached, isNavigate) : offlineMissing();
         }),
     );
@@ -247,7 +247,7 @@ self.addEventListener('message', (event) => {
 
   if (data.type === 'PREPARE_PACKAGE') {
     // Registered synchronously: work started in a message handler without `waitUntil`
-    // can be terminated with the event (`R04`).
+    // can be terminated with the event.
     event.waitUntil(
       (async () => {
         const manifest = await readManifest();

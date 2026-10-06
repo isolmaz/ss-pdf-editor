@@ -1,12 +1,11 @@
 /**
- * Page list of the left dock (`PLAN.md §5/Phase 2`; `REPORT.md §4.2`, §4.12, §4.13).
+ * Page list of the left dock.
  *
- * Phase 2's page management: the thumbnails are selectable (click, `Ctrl`/`Cmd`
+ * Page management: the thumbnails are selectable (click, `Ctrl`/`Cmd`
  * toggle, `Shift` range, `Ctrl+A` while the list owns focus, `Escape`), movable
  * (drag, arrow keys, or an explicit "move to" field) and rotatable/deletable/
  * duplicatable/extractable as a set. Every one of those leaves the panel as a
- * `PageMoveAction` — the panel never touches the document or the engine
- * (`AGENTS.md` module boundaries), and selection is the shell's state
+ * `PageMoveAction` — the panel never touches the document or the engine, and selection is the shell's state
  * (`selectedPages` is a controlled prop), so the list and the commands that act
  * on it cannot disagree about what is selected.
  *
@@ -18,15 +17,15 @@
  * 2. **A fresh canvas per attempt, and an observer that stays attached** — a
  *    superseded render task writing into a reused node showed pages upside down,
  *    and disconnecting the observer after its first hit left aborted thumbnails
- *    black forever (`WORKLOG.md §5`).
+ *    black forever.
  * 3. **No hover-only affordance** — the source project's per-card toolbar was
  *    `group-hover:flex`, so it was unreachable on touch, and drag reordering had
- *    no keyboard equivalent (`REPORT.md §4.13`). Here the selection toolbar is
+ *    no keyboard equivalent. Here the selection toolbar is
  *    always in flow when something is selected, and every reorder has two
  *    non-drag equivalents: `Alt`/`Ctrl` + arrows, and the "move to page" field.
  * 4. **One announcement** — the live region reports the selection only; the
  *    action's own sentence is announced by the app when the action lands
- *    (`REPORT.md §4.12`), so a click that both selects and moves cannot be
+ *   , so a click that both selects and moves cannot be
  *    announced twice.
  */
 
@@ -423,7 +422,7 @@ export function PagesPanel({
           {/*
             The touch and keyboard path to a reorder: drag is the pointer shortcut,
             this field is the one that works with a finger, a stylus or a keyboard
-            alone (`REPORT.md §4.13`).
+            alone.
           */}
           <form className="flex items-center gap-1" onSubmit={submitMoveTo}>
             <label className="text-xs text-kumo-subtle" htmlFor={moveToId}>
@@ -489,7 +488,7 @@ export function PagesPanel({
               <div
                 role="option"
                 data-page-option={page}
-                // The browser verification scripts (archived spike `verify-thumbnails.mjs`)
+                // The browser verification scripts
                 // select thumbnails by this attribute; it stays a stable hook.
                 data-thumb={page}
                 aria-selected={isSelected}
@@ -590,7 +589,7 @@ export function PagesPanel({
 /**
  * One page's canvas, drawn the first time the item becomes visible and never
  * eagerly: the whole point of the observer is that a 2000-page document costs
- * 2000 cheap placeholders, not 2000 render tasks (`PLAN.md §3.4`).
+ * 2000 cheap placeholders, not 2000 render tasks.
  */
 function PageThumbnail({
   document,
@@ -615,8 +614,8 @@ function PageThumbnail({
   /**
    * Each attempt owns a **fresh canvas**. Reusing the element across tab switches
    * let a superseded render task (aborted, or still finishing after the panel
-   * remounted) write into the same node as its replacement: the owner saw the
-   * result as a page drawn upside down.
+   * remounted) write into the same node as its replacement: the result was a
+   * page drawn upside down.
    */
   const draw = useCallback(
     async (signal: AbortSignal) => {

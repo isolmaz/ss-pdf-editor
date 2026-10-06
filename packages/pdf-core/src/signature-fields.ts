@@ -1,7 +1,7 @@
 /**
- * Signature fields ("İmzalar", `PLAN.md §5/Phase 1`): the reader side of digital
+ * Signature fields ("İmzalar"): the reader side of digital
  * signatures — which fields a document has and whether each one carries a signature.
- * Nothing here signs anything; PAdES is Phase 4.
+ * Nothing here signs anything; signing is `ops/sign.ts`.
  *
  * The engine's field data drives it, with one trap: `getFieldObjects()` keys the
  * AcroForm fields by their fully qualified name and marks a signature widget with

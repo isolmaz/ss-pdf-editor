@@ -1,7 +1,6 @@
 /**
- * Page boxes and page size (`PLAN.md §5/Phase 3`: "Media/Crop/Trim/Bleed/Art,
- * resize, scale, auto-crop (white margins), rotate/shift content";
- * `REPORT.md §3` A6 page boxes, A8 rotate).
+ * Page boxes and page size ("Media/Crop/Trim/Bleed/Art,
+ * resize, scale, auto-crop (white margins), rotate/shift content").
  *
  * Six modes over one MuPDF writer (`engines/mupdf-write.ts`): set one box, resize the
  * page with the content placed inside it, scale content (and optionally the boxes),
@@ -484,7 +483,7 @@ export async function applyPageBoxes(
 
     if (changed.length === 0) {
       // Nothing to write: returning the input untouched keeps the "no unnecessary
-      // writer step" rule (`PLAN.md §3.3` rule 4) and leaves the session clean.
+      // writer step" rule and leaves the session clean.
       return {
         bytes: bytes.slice(),
         report: {
@@ -518,7 +517,7 @@ export async function applyPageBoxes(
     inputBytes: bytes.byteLength,
     outputBytes: produced.byteLength,
     pageCount,
-    // The document is re-serialised: never incremental (`PLAN.md §3.3` rule 3).
+    // The document is re-serialised: never incremental.
     incremental: false,
   };
   return { bytes: produced, report, changed };
@@ -990,7 +989,7 @@ function describe(plan: ValidatedPlan, stats: ChangeStats, count: number): Opera
   if (stats.unchangedPages > 0) {
     notes.push(note('preserved', 'boxes.note.unchangedPages', { count: stats.unchangedPages }));
   }
-  // `saveRewrite` sets the producer line before the save (`PLAN.md §2.1/6`).
+  // `saveRewrite` sets the producer line before the save.
   notes.push(note('preserved', 'boxes.note.producer'));
   return notes;
 }

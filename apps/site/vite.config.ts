@@ -7,7 +7,7 @@ import { hosting } from '../../tools/vite/hosting.mjs';
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 // Landing + legal pages: static HTML on the shared token layer, no framework
-// JS (PLAN.md §4.7, K31). Phase 0 delivers the shell; content lands at Phase 5.
+// JS.
 export default defineConfig({
   plugins: [tailwindcss(), ...hosting({ repoRoot })],
   publicDir: false,

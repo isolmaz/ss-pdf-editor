@@ -1,5 +1,5 @@
 /**
- * Draft validation and engine-value encoding (`PLAN.md §3.5`, `F09`, `F10`).
+ * Draft validation and engine-value encoding.
  *
  * A draft read from storage is untrusted input, and the two ways it can lie are the ones
  * worth testing: a journal that was silently *repaired* (so the restored cursor points at

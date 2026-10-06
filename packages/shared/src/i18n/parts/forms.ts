@@ -1,9 +1,9 @@
 /**
- * Form v2 (`PLAN.md §5/Phase 3`, §6 A11).
+ * Form v2.
  *
  * The notes here are measurements the operation reports (what was filled, what
  * the engine could not regenerate, which names the data file did not match), so
- * the wording is part of the honesty contract of `PLAN.md §1.2`. The reason keys
+ * the wording is part of the product's honesty contract. The reason keys
  * are the sentences a validation refusal shows.
  *
  * Wired into `tr.ts` by the integration owner (the keys arrive with the ops).

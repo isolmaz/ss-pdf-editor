@@ -1,7 +1,6 @@
 /**
- * Certificate trust, decided **locally** against roots the user imported (`PLAN.md §5`
- * Phase 4: “certificate validation against user-imported trust roots (no online service)”;
- * `K9`, `K17`).
+ * Certificate trust, decided **locally** against roots the user imported (“certificate
+ * validation against user-imported trust roots (no online service)”).
  *
  * There is no trust store in the browser and no network to ask: a certificate is trusted
  * here only because a certificate the user put in the list signs it, and the path is

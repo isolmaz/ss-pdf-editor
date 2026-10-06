@@ -35,7 +35,7 @@ import { loadMupdf, type Mupdf, mapMupdfError, openPdf, savePdf } from './mupdf'
 import { notoSansBytes } from './noto';
 
 /**
- * The producer line every writer merges back in (`PLAN.md §2.1/6`) — product policy:
+ * The producer line every writer merges back in — product policy:
  * `clean` never removes it. Defined here, where it is written, and re-exported by
  * `ops/metadata.ts` for the operations that report it.
  */

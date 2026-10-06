@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SessionStore } from './session';
 
 /**
- * Session store behaviour (`PLAN.md §9/K23`): one source of truth for open
+ * Session store behaviour: one source of truth for open
  * documents, stable snapshots for `useSyncExternalStore`, and a dirty flag that
  * belongs to exactly one document.
  */

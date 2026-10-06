@@ -6,7 +6,7 @@ import { useAdvancedMode } from './settings';
 import { readProducedPageTexts, readProducedPdf } from './tool-fixture';
 
 /**
- * Real OCR, on both kinds of document it has to handle (`R09`, `R10`).
+ * Real OCR, on both kinds of document it has to handle.
  *
  * **Boundary:** the fixtures are real PDFs kept out of the repository (they are large):
  * put them in `e2e/fixtures/local/`, which `.gitignore` covers. Two shapes matter, and the

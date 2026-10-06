@@ -1,5 +1,5 @@
 /**
- * The pdf.js chunk cache (`PLAN.md §3.6`, budget in `§7`): the 1.5 MB parser is
+ * The pdf.js chunk cache: the 1.5 MB parser is
  * imported once for the session and shared by every caller — and a **failed** import
  * must not be remembered, since `warmPdfjs()` already ran at idle on this page, so one
  * transient chunk failure would otherwise leave every later open failing until a hard

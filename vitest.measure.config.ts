@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 /**
- * The measurement configuration (`R09`).
+ * The measurement configuration.
  *
  * Deliberately separate from the default one: `pnpm measure:model` reports numbers and
  * asserts nothing, so it must not run inside `pnpm unit` — a benchmark on the commit path

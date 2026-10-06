@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verify-only entry point over `tools/asset-pins.json` (`PLAN.md §5` Phase 0 item 3;
- * AGENTS.md > Development Commands: `node tools/verify-assets.mjs`).
+ * Verify-only entry point over `tools/asset-pins.json` (`node tools/verify-assets.mjs`).
  *
  *   node tools/verify-assets.mjs
  *

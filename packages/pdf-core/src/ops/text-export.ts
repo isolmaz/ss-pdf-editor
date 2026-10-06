@@ -1,5 +1,5 @@
 /**
- * Text extraction (`REPORT.md §3` A8, defect: "transparent engine choice").
+ * Text extraction (defect: "transparent engine choice").
  *
  * The engine is chosen by measurement, not by hope: pages whose text layer is
  * empty are reported so the UI can say "this looks scanned — OCR first" instead
@@ -123,7 +123,7 @@ export async function exportText(
     throw new ToolError('selection-empty', { engine: 'model', engineMessage: 'no pages to export' });
   }
 
-  // The adapter hands pdf.js a disposable copy, so the master buffer is safe (K15).
+  // The adapter hands pdf.js a disposable copy, so the master buffer is safe.
   const handle = await openWithPdfjs(bytes, { signal: context.signal });
   const pageCount = handle.pageCount;
   const ordered = [...options.pages].sort((a, b) => a - b);

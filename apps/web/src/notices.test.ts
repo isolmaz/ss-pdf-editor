@@ -1,5 +1,5 @@
 /**
- * The notice line as data (`R06`, `R07`): what the shell says when a draft restore
+ * The notice line as data: what the shell says when a draft restore
  * ends, when a promise it cannot await rejects, and what a verification table reads as.
  *
  * These are the cases the previous shell got wrong in ways only a person could see: a

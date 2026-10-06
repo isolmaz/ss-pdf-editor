@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Phase 4 acceptance harness — throwaway driver, not the e2e suite (`PLAN.md §9/K21`, `K28`).
+ * Phase 4 acceptance harness — throwaway driver, not the e2e suite.
  *
  *   node tools/spikes/phase4-check.mjs [--port 4199] [--keep]
  *
- * What the phase promised (`PLAN.md §5/Phase 4`):
+ * What the phase promised:
  *
  *   > a text paragraph is edited → saved → reopened: the new text is searchable,
  *   > the targeted occurrence of the old text is gone (the same string elsewhere in
@@ -22,7 +22,7 @@
  *
  * Two prerequisites the driver sets rather than hopes for: the browser context is pinned to
  * `tr-TR`, because every label it looks up is Turkish and the app otherwise takes the
- * host's language; and the workstream commands that the simple mode hides (measure,
+ * host's language; and the advanced commands that the simple mode hides (measure,
  * compare, accessibility, batch) are reached only after the run leaves the default simple
  * mode through the header's own switch. A missing Playwright browser fails the run with an
  * install line instead of skipping it: this driver *is* the browser evidence, and a green
@@ -318,7 +318,7 @@ try {
     // pdf.js's fontkit noise about the pinned Noto Sans (`FT_Load_Glyph … invalid
     // outline`) arrives through console.error and was measured in the previous
     // session as engine noise with no observable consequence. Kept out of the page
-    // error count so the count stays a signal (`WORKLOG.md §4`).
+    // error count so the count stays a signal.
     if (/FT_Load_Glyph|invalid composite glyph/.test(text)) return;
     consoleErrors.push(`console: ${text.slice(0, 200)}`);
   });
@@ -488,10 +488,10 @@ try {
     },
   );
   /**
-   * The Phase 4 workstreams added after the text engine (measurement, comparison,
+   * The features added after the text engine (measurement, comparison,
    * accessibility, batch). Each drives the app's own route — the palette or a menu — and
    * asserts the produced artefact, exactly like the checks above. Signing has its own
-   * driver (`sign-browser-probe.mts`), because its acceptance is a cryptographic verdict
+   * driver (`sign-check.mts`), because its acceptance is a cryptographic verdict
    * rather than a surface assertion.
    *
    * They also share one prerequisite, and this check is it: **simple mode is the default**

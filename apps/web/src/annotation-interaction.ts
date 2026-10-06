@@ -1,6 +1,5 @@
 /**
- * The common mark layer's App half (`local://tool-interaction-contract.txt`, and the
- * selection/edit API of `local://selection-edit-contract.txt`).
+ * The common mark layer's App half: the one canvas tool and the selection/edit API.
  *
  * Four families of mark live on the page — the session's own annotations, its
  * measurements, its redaction intents and the annotations the file already carries —

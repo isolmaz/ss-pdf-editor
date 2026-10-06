@@ -1,13 +1,12 @@
 /**
- * Plan an edit for the writer — `PLAN.md §5/Phase 4c` + `4d-1`: turn a model + an
+ * Plan an edit for the writer: turn a model + an
  * edit intent into the **serializable request** pdf-core's `applyTextEdit` consumes.
  *
  * The two halves of the plan are the two halves the spike measured:
  *
  *   - **erase** — one rect per line of the block, widened by `ERASE_PAD_PT`, merged
  *     where they actually overlap. The spike erased a single padded box around the
- *     whole block (archived spike `text-replace/main.ts:293` and `:581` both call
- *     `pad(box, 1.5)`), and its case c quantified the risk of a wide region: a
+ *     whole block (`pad(box, 1.5)`), and its case c quantified the risk of a wide region: a
  *     region edge that reaches a rule's edge pixels changes 14 px of 1,440 in the
  *     band while the rule itself survives (`NOTES.md`, case c). Per-line rects are
  *     tighter than a block box, so 1 pt is enough — and a rect is additionally capped
@@ -44,7 +43,7 @@ const ENGINE = 'pdf-text-engine';
 
 /**
  * Erase padding, in points, on each side of a line's ink box. The spike's harness
- * used 1.5 pt (archived spike `text-replace/main.ts:293`) on a *block* box; a line's
+ * used 1.5 pt on a *block* box; a line's
  * own ink box already excludes the inter-line gaps that made the block box generous,
  * so 1 pt is the smallest pad that still covers the antialiasing fringe of the
  * outermost glyph edge (2 px at the spike's 2x render scale) — and staying minimal is

@@ -1,13 +1,13 @@
 /**
- * The measurement tool surface (`PLAN.md §4.3`: `M` = measure, 📐 Measure;
- * `§5/Phase 4`: "measurement tools, ruler/grid/snap").
+ * The measurement tool surface (`M` = measure, 📐 Measure: "measurement tools,
+ * ruler/grid/snap").
  *
  * Two halves in one file, because they share the thing that is hard here:
  *
  *  - **`MeasureLayer`** — the canvas overlay: it takes the pointer while the tool
  *    is armed, draws the chain the user is clicking (with the live value on it),
  *    draws the grid when it is on, snaps the pointer, and hands the finished mark
- *    to the app. It never touches the document (`AGENTS.md`: state changes go
+ *    to the app. It never touches the document (state changes go
  *    through the model).
  *  - **`MeasureSettings`** — the tool's own settings strip: mode, scale, unit,
  *    grid spacing, snapping, colour/opacity/thickness/author, and the readout.
@@ -23,23 +23,21 @@
  *    `RedactionLayer` make;
  *  - app space → the screen with `appToDisplayPoint` × the page's own CSS scale,
  *    which is the pair the core verified against pdf.js's `PageViewport` matrix
- *    for all four rotations (archived spike `measure-probe.mts`).
+ *    for all four rotations.
  *
  * The overlay therefore stays correct at every zoom level and on a `/Rotate 90`
  * page. `AnnotationLayer`'s own `pageProjection` places marks in page points
  * without multiplying by the zoom scale, so at 150 % a mark there is drawn at
  * two-thirds of its offset — the scale factor here is what keeps the ruler under
- * the pointer instead of beside it. (Recorded for the integrator in
- * `local://measure-integration.md`; this file does not touch that component.)
+ * the pointer instead of beside it. (This file does not touch that component.)
  *
  * ## Text
  *
  * Every sentence comes from the dictionary. The measurement-specific keys
- * (`tools.measure.*`) do not exist in `parts/` yet — adding them is the
- * integrator's file to write, and the note lists each one with its Turkish and
- * English text. Until then `label()` shows the key itself, which is a visible
- * "not wired yet" marker rather than a wrong word: a component that invented
- * Turkish here would be the harder bug to find.
+ * (`tools.measure.*`) live in `parts/measure.ts` and `en-parts/measure.ts`; a key
+ * missing there makes `label()` show the key itself, which is a visible "not wired"
+ * marker rather than a wrong word: a component that invented Turkish here would be
+ * the harder bug to find.
  */
 
 import type {
@@ -670,7 +668,7 @@ function modeKey(mode: MeasureMode): 'distance' | 'perimeter' | 'area' {
 // ---------------------------------------------------------------------------
 
 /**
- * The tool's own settings strip (`PLAN.md §4.3`: the density of a professional
+ * The tool's own settings strip (the density of a professional
  * tool — one row, no dialog). The shell mounts it where it mounts the annotation
  * styles; every control edits state the shell owns, so a value never disappears
  * while switching docks.

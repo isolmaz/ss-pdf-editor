@@ -1,5 +1,5 @@
 /**
- * Images in and out (`REPORT.md §3` A7, A17; defects 16 and 7).
+ * Images in and out (defects 16 and 7).
  *
  * A17 closes three source defects: EXIF orientation is honoured (parsed from the
  * JPEG APP1 segment by hand — no dependency), the fit mode is selectable
@@ -25,7 +25,7 @@
  *    image has no orientation, pdf.js and Acrobat ignore the tag, but MuPDF-based
  *    readers apply it — and would turn an already upright picture a second time;
  *  - JFIF/EXIF resolution tags are deliberately not read: `pageSize: 'fit'` is
- *    defined as the pixel size at 72 dpi (`REPORT.md §3` A17).
+ *    defined as the pixel size at 72 dpi.
  */
 
 import { ToolError } from 'pdf-shared';
@@ -95,7 +95,7 @@ export async function imagesToPdf(
         readonly height: number;
       };
       try {
-        // A disposable copy (`K15`), with the orientation tag neutralised (file header).
+        // A disposable copy, with the orientation tag neutralised (file header).
         const copy = exif === null ? image.bytes.slice() : neutraliseOrientation(image.bytes, exif);
         const decoded = new mupdf.Image(copy);
         try {
@@ -155,7 +155,7 @@ export async function imagesToPdf(
       inputBytes,
       outputBytes: bytes.length,
       pageCount: embedded,
-      // A brand-new file: never an incremental update (`PLAN.md §3.3` rule 3).
+      // A brand-new file: never an incremental update.
       incremental: false,
     },
   };
@@ -169,7 +169,7 @@ export interface ImageExportOptions {
   readonly dpi: number;
   /** `baseName` is expanded with `-NNN` and the format's extension. */
   readonly baseName: string;
-  /** Megapixel ceiling per page (the 16 MP budget of `PLAN.md §3.4`). */
+  /** Megapixel ceiling per page (the 16 MP budget). */
   readonly maxMegapixels: number;
 }
 
@@ -230,7 +230,7 @@ export async function exportImages(
       if (megapixels > options.maxMegapixels) {
         // The caller can act on this: `pageIndex` names the failing page, and the
         // largest DPI that still fits the budget follows from the same page size,
-        // so the UI can offer "try {suggested} DPI" (`REPORT.md §4.7`).
+        // so the UI can offer "try {suggested} DPI".
         const maxScale = Math.sqrt((options.maxMegapixels * 1_000_000) / (points.width * points.height));
         const suggestedDpi = Math.max(1, Math.floor(maxScale * 72));
         throw new ToolError('file-too-large', {
@@ -347,7 +347,7 @@ function drawBox(pageWidth: number, pageHeight: number, margin: number): Box {
   return { x: margin, y: margin, width, height };
 }
 
-/** `fit` = the pixel size at 72 dpi, so one pixel is one point (`REPORT.md §3` A17). */
+/** `fit` = the pixel size at 72 dpi, so one pixel is one point. */
 function pageSizeFor(
   size: ImagesToPdfOptions['pageSize'],
   picture: { readonly width: number; readonly height: number },

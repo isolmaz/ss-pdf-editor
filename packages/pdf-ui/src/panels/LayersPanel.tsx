@@ -7,7 +7,7 @@ import { Button } from '../components/Button';
 import { PanelLoading, PanelMessage } from './PanelParts';
 
 /**
- * The optional content groups of the document ("Katmanlar", `PLAN.md §5/Phase 1`):
+ * The optional content groups of the document ("Katmanlar"):
  * the layer tree with a checkbox per group. A checkbox goes through pdf.js's public
  * `setVisibility` (`pdf-core/layers.ts`) — never through the rendering stack — and
  * changes **the view only**; the page repaints, the file does not change.
@@ -32,7 +32,7 @@ export interface LayersPanelProps {
    * Fired after the engine accepted a visibility change. The engine alone does not
    * repaint: pdf.js only re-renders when its `optionalContentConfigPromise` is
    * re-assigned, so the shell wires this to the viewer. Measured before it existed:
-   * the checkbox flipped while the canvas stayed byte-identical (`WORKLOG.md §4`).
+   * the checkbox flipped while the canvas stayed byte-identical.
    */
   readonly onLayersChanged?: () => void;
   /**

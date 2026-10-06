@@ -1,17 +1,17 @@
 /**
- * MuPDF adapter (`PLAN.md §3.1`, engine table in §2): the only place that talks
+ * MuPDF adapter: the only place that talks
  * to `mupdf.js`.
  *
  * MuPDF is AGPL-3.0-or-later and every byte of it is served from **our own
- * origin** (`/engines/mupdf/mupdf.js`, SHA-256 pinned, `PLAN.md §3.6`); the wasm
+ * origin** (`/engines/mupdf/mupdf.js`, SHA-256 pinned); the wasm
  * resolves next to that file, so no runtime request ever leaves the device. The
  * module is imported by its **runtime URL** (behind a `vite-ignore` marker) so the
  * bundler neither resolves nor inlines a 9.93 MiB wasm engine into the first-paint
  * chunk —
  * MuPDF only loads when a redaction, box, layer or widget step actually runs
- * (`PLAN.md §3.3` rule 4: "no redaction, no MuPDF touch").
+ * ("no redaction, no MuPDF touch").
  *
- * `K15`: engines work on a **disposable copy** of the bytes, never the app-owned
+ * Engines work on a **disposable copy** of the bytes, never the app-owned
  * master buffer. The copy is made here, in `openPdf`.
  *
  * Error vocabulary (measured on mupdf@1.28.1): the wasm layer throws plain
@@ -196,7 +196,7 @@ export function rectToPageSpace(
  * The full-rewrite save option string.
  *
  * `garbage=compact,compress,clean` is the string measured in
- * the archived spike `redaction/NOTES.md §2`: it is the only option set that leaves a
+ * an early engine spike: it is the only option set that leaves a
  * **single revision** in the output (`/Prev` 0, one `startxref`), drops the object
  * that held the erased content stream, and renumbers the survivors (page-1 content
  * object 6 → 10 in a 2-page fixture). `incremental` is never an option here: after
@@ -250,7 +250,7 @@ export function mapMupdfError(error: unknown, context: string): ToolError {
 }
 
 /**
- * Open a PDF from a **disposable copy** (`K15`) and hand back the PDF-specific
+ * Open a PDF from a **disposable copy** and hand back the PDF-specific
  * interface. The caller owns the returned document and must `destroy()` it —
  * `asPDF()` returns the same wrapper for a PDF, so one destroy releases the wasm
  * document exactly once.
@@ -280,7 +280,7 @@ export function openPdf(mupdf: Mupdf, bytes: Uint8Array): PDFDocument {
 /**
  * `saveToBuffer` hands back a **wasm-owned** buffer: copy the bytes out and free
  * the buffer, otherwise the emscripten heap keeps the whole output until the
- * document is destroyed (spike pattern, archived spike `redaction/engine.ts`).
+ * document is destroyed (the pattern an early engine spike settled).
  *
  * The option argument is a string (`'encrypt=…,permissions=…'`,
  * `MUPDF_FULL_SAVE_OPTIONS`, `'incremental'`); the object form exists only because
@@ -300,7 +300,7 @@ const LATIN1_CHUNK = 0x8000;
 
 /**
  * Raw bytes as a latin1 ("binary") string — the shape object-level audits need
- * (archived spike `redaction/audit.ts`): a needle can then be counted with plain
+ *: a needle can then be counted with plain
  * `indexOf` across dictionary text, hex strings and undecoded streams without
  * decoding the file as UTF-8 (a PDF is binary; UTF-8 decoding would mangle bytes
  * and hide occurrences).

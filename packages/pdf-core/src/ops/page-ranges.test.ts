@@ -10,11 +10,11 @@ import {
 } from './page-ranges';
 
 /**
- * The page-range parser is one of the five critical modules `K28` names: every
+ * The page-range parser is one of the critical modules: every
  * printing, OCR, redaction, extraction, split and imposition surface feeds user
  * text through it, and its failure mode is silent data loss (the wrong pages
  * exported) rather than a crash. These cases are the source project's defects
- * (`REPORT.md §4.17`) restated as behaviour.
+ * restated as behaviour.
  */
 describe('parsePageRanges', () => {
   it('reads single pages, lists and ranges into ascending 0-based indices', () => {
@@ -133,7 +133,7 @@ describe('partFileName', () => {
   });
 
   it('keeps the extension and numeric order past 999 parts', () => {
-    // The source project's name builder broke here (`REPORT.md §4.17`).
+    // The source project's name builder broke here.
     expect(partFileName('buyuk.pdf', 999, 1000)).toBe('buyuk-1000.pdf');
     expect(partFileName('buyuk.pdf', 1233, 2000)).toBe('buyuk-1234.pdf');
   });

@@ -1,5 +1,5 @@
 /**
- * OCR (`REPORT.md §3` A15).
+ * OCR.
  */
 
 export const ocrPart = {

@@ -6,7 +6,7 @@ import { type PageImage, pageImageAt } from './viewer-dom';
 import './tools.css';
 
 /**
- * Magnifier (`PLAN.md §5/Phase 1`): a lens that follows the pointer over the
+ * Magnifier: a lens that follows the pointer over the
  * pages and shows the region under it at 2×–8×.
  *
  * The lens never re-renders a page. When it activates — or the page under the
@@ -87,7 +87,7 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
      * Every frame blits from a **small window** of the page canvas, not from a copy of
      * the whole thing. The first version copied the entire canvas whenever pdf.js
      * replaced or rescaled it — on a 130-page image-heavy document that is a ~20 MB copy
-     * per page change, i.e. exactly the hitch the owner reported as an unstable
+     * per page change, i.e. exactly the hitch that made the magnifier feel unstable
      * magnifier. The window is re-copied only when the pointer (or the lens zoom) needs
      * pixels outside it, which keeps a frame's work proportional to the lens, not to the
      * document.

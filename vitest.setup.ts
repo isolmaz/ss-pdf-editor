@@ -3,8 +3,8 @@
  * The unit suite's engine seams: **the engines load from the installed packages** instead
  * of from the browser URLs the adapters use (`/engines/...`, which only a served build
  * has). The bytes are the same pinned packages the build copies, so code under test runs
- * the engines it ships with — only the loaders change, which is the use AGENTS.md reserves
- * mocks for.
+ * the engines it ships with — only the loaders change, which is the only use mocks are
+ * reserved for.
  *
  * - MuPDF: `loadMupdf` imports the installed `mupdf` module.
  * - pdf.js: the standard-font, CMap and wasm directories point at the installed

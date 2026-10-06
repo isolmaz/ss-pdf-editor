@@ -1,6 +1,6 @@
 /**
- * Error vocabulary added by Phase 2 (`PLAN.md §3.1`): the codes the operation
- * panels can raise in addition to the Phase 0/1 set. Every code needs a Turkish
+ * Error vocabulary of the operation panels: the codes they can raise in addition
+ * to the base set. Every code needs a Turkish
  * message and a "what to do" hint — `errors.test.ts` holds the line count.
  */
 

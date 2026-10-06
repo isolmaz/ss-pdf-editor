@@ -16,7 +16,7 @@
  * **Only what the module actually exports is declared here.** `AnnotationEditorType`,
  * `AnnotationMode` and `AnnotationEditorParamsType` are *not* among `web/pdf_viewer.mjs`'s
  * exports (they live in `build/pdf.mjs`); declaring them here once let a runtime
- * `undefined.NONE` through the typecheck and cost a render (`WORKLOG.md §4`, 2026-09-16).
+ * `undefined.NONE` through the typecheck and cost a render.
  * Their numbers live in `viewer/PdfViewerPane.tsx` as named constants instead.
  */
 declare module 'pdfjs-dist/web/pdf_viewer.mjs' {
@@ -96,7 +96,7 @@ declare module 'pdfjs-dist/web/pdf_viewer.mjs' {
     /**
      * Upper bound on a page canvas backing store, in device pixels. Default in pdf.js is
      * 16 Mpx (~64 MB per canvas); we pass 4 Mpx so a DPR-scaled page cannot blow the paint
-     * budget (measured: 16 s of main-thread painting in a 19.7 s scroll, `WORKLOG.md §4`).
+     * budget (measured: 16 s of main-thread painting in a 19.7 s scroll).
      */
     maxCanvasPixels?: number;
   }

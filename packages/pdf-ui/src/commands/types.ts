@@ -1,10 +1,10 @@
 /**
- * Command registry (`PLAN.md §4.1`, §4.3).
+ * Command registry.
  *
  * One description per user action, consumed by three surfaces — the menu bar,
  * the floating toolbar and the `Ctrl+K` palette. Every action therefore has an
  * accessible name, a shortcut hint and a single implementation, which is what
- * "every mouse action has a keyboard equivalent" needs in practice (`§4.4`).
+ * "every mouse action has a keyboard equivalent" needs in practice.
  *
  * Commands are built by the app on every render (they close over live state) and
  * passed down; the components stay presentational so the palette, the menus and

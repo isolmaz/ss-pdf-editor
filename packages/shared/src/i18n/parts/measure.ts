@@ -1,5 +1,5 @@
 /**
- * Phase 4 measurement tool (`PLAN.md §5/Phase 4`): distance, perimeter and area
+ * Measurement tool: distance, perimeter and area
  * measured on the page, with the page's scale, a grid and snapping.
  *
  * The words this tool alone says live here: the tool and its three measurements

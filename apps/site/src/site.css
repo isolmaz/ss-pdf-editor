@@ -1,4 +1,4 @@
-/* Landing + legal pages share the product token layer (K24, K31): same Kumo
+/* Landing + legal pages share the product token layer: same Kumo
    semantic tokens, no framework JS, no third-party request. */
 @import "@cloudflare/kumo/styles/tailwind";
 @import "tailwindcss";

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build the deployable static layout into `dist/` (`PLAN.md §4.7`, `K31`).
+ * Build the deployable static layout into `dist/`.
  *
  *   dist/                 <- apps/site/dist (landing at /, /gizlilik, /kosullar)
  *   dist/editor/          <- apps/web/dist  (the PWA, base /editor/)
@@ -8,7 +8,7 @@
  *   dist/engines/**       <- pinned engine builds (fetched, never committed)
  *
  * One Cloudflare Worker (static assets) serves this tree; deploying stays manual and is
- * never a CI step (`K26`).
+ * never a CI step.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -54,7 +54,7 @@ copyInto(join(root, 'apps/web/dist'), join(out, 'editor'));
 copyInto(join(root, 'public'), out);
 
 /**
- * The offline identity (`R04`): one version for the cache name, the manifest and the
+ * The offline identity: one version for the cache name, the manifest and the
  * worker, derived from the pinned asset hashes and the release stamp. Deriving it here —
  * from `tools/asset-pins.json`, the same table `verify-assets` enforces — is what makes
  * "the cached engine belongs to this shell" a checkable fact instead of an assumption:
@@ -94,7 +94,7 @@ if (!existsSync(licenceFile)) {
 copyFileSync(licenceFile, join(out, 'LICENSE'));
 
 /**
- * Every bundled licence text, copied into `dist/licenses/` (`R10`).
+ * Every bundled licence text, copied into `dist/licenses/`.
  *
  * MIT, BSD, Apache-2.0, OFL-1.1 and AGPL-3.0 all require the notice to accompany the
  * copies that are distributed, and a minifier strips the comments that would otherwise

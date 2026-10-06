@@ -1,5 +1,5 @@
 /**
- * The interface mode: the simple/advanced switch (`PLAN.md §4.1`).
+ * The interface mode: the simple/advanced switch.
  *
  * **Simple** is the default. It is a *discovery* filter, not a permission system: it
  * decides which commands the palette and the menus offer, which tools rail groups are

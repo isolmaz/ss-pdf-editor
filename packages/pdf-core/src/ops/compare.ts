@@ -1,5 +1,5 @@
 /**
- * Document comparison (`PLAN.md §5/Phase 4` — "document comparison, text and
+ * Document comparison ("document comparison, text and
  * rendered pixels"): what a second document changed, stated per page.
  *
  * Two independent answers, and the method is never implied:
@@ -14,7 +14,7 @@
  *  - `compareVisual` renders both documents through the **existing** viewer adapter
  *    (`engines/pdfjs-handle.ts`) at one fixed low DPI, 4x box-downscales them to
  *    greyscale and reports the differing-pixel percentage plus the number of differing
- *    tiles, so a block that merely moved is visible as such (`PLAN.md §7` pixel policy:
+ *    tiles, so a block that merely moved is visible as such (pixel policy:
  *    4x downscaled greyscale, <= 0.5 % pixel difference).
  *
  * Both are bounded, both take the shared `AbortSignal`/progress contract, and both
@@ -26,7 +26,7 @@
  *
  * **The raster surface is injected.** `compress.ts` may call `document.createElement`
  * because it is a main-thread writer, but this module is also the engine half of the
- * comparison probe (archived spike `compare-probe.mts`) and must run in Node, where no
+ * comparison probe and must run in Node, where no
  * canvas exists. The caller therefore supplies `createCanvas`, and the page's pixels
  * are read back through `getImageData` — the same call `compress.ts` already makes.
  */
@@ -571,7 +571,7 @@ export async function compareText(
 /**
  * The 2D surface this module needs: exactly what `renderPage` writes into and what
  * `getImageData` reads back. A DOM canvas satisfies it structurally; a Node caller
- * supplies its own (archived spike `compare-probe.mts`).
+ * supplies its own.
  */
 export interface CompareCanvasPixels {
   getImageData(
@@ -613,7 +613,7 @@ export interface VisualPageComparison {
 export interface VisualComparison {
   readonly method: 'pixels';
   readonly dpi: number;
-  /** Percent at or below which a page counts as identical (`PLAN.md §7`). */
+  /** Percent at or below which a page counts as identical. */
   readonly thresholdPercent: number;
   readonly leftPageCount: number;
   readonly rightPageCount: number;

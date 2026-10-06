@@ -1,9 +1,8 @@
 /**
- * Optional content groups, written (`PLAN.md §5/Phase 4`: "layers (OCG) view/edit",
- * `§5/Phase 1`: the layer palette). The reader half is `src/layers.ts` — the viewer's
+ * Optional content groups, written ("layers (OCG) view/edit"; the layer palette). The reader half is `src/layers.ts` — the viewer's
  * own `OptionalContentConfig`, which toggles the *session*; this file is the one that
  * changes the document, and the two are deliberately separate: a toggle the user made
- * in the panel must not touch the file until a save writes it (`PLAN.md §3.5`).
+ * in the panel must not touch the file until a save writes it.
  *
  * Written is ISO 32000-2 §8.11.4.3 (the default configuration dictionary) and nothing
  * else:
@@ -35,7 +34,7 @@
  *
  * Text (group names) goes through `text()` from `engines/mupdf-write.ts` (the engine's
  * `newString`: PDFDocEncoding when it fits, UTF-16BE otherwise) — the one encoder every
- * MuPDF writer uses, so Turkish names cannot be broken by a second one (`PLAN.md §9/K3`).
+ * MuPDF writer uses, so Turkish names cannot be broken by a second one.
  * The file is edited through MuPDF's object model; group identity is the object number,
  * as it was the reference under pdf-lib.
  */
@@ -277,7 +276,7 @@ function verificationFailed(message: string, cause?: unknown): ToolError {
  * Re-open the produced bytes and read the layer state back: the arrays have to say what
  * the request asked for, the order has to start with the groups it named, and a renamed
  * group has to carry its new name. A mismatch is `verification-failed` — the caller keeps
- * the original file and the session stays dirty (`PLAN.md §3.3` rule 5/6).
+ * the original file and the session stays dirty.
  */
 async function verifyOutput(
   produced: Uint8Array,
@@ -505,7 +504,7 @@ function editLayers(
  * Toggle layers, reorder them and rename them in the document's **default
  * configuration**. Every part of the request is optional; a call that asks for nothing,
  * whose names all miss, **or whose state the document already states** returns the input
- * bytes unchanged with `incremental: true` (`PLAN.md §3.3` rule 3, the no-op route).
+ * bytes unchanged with `incremental: true` (the no-op route).
  *
  * The third case is not an optimisation: the layers panel sends the state it is showing
  * every time its button is pressed, so without it a click that changed nothing would
@@ -572,7 +571,7 @@ export async function applyLayerWrite(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report };

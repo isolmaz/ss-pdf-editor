@@ -1,5 +1,5 @@
 /**
- * Splitting (`REPORT.md §3` A5; defects 17: English errors, duplicate ranges,
+ * Splitting (defects 17: English errors, duplicate ranges,
  * names past 999).
  *
  * Four modes: ranges, every N pages, by approximate size, and booklet
@@ -10,7 +10,7 @@
  * Every part is produced through the composition path (`composeDocument`) on a
  * pdf.js document opened from the bytes being split — the document that owns the
  * annotation storage — so annotations and form values travel into the parts
- * instead of being rebuilt away (`WORKLOG.md §3` row 1). The source project's
+ * instead of being rebuilt away. The source project's
  * split was a `copyPages` rebuild, which is exactly the defect this replaces.
  */
 
@@ -48,7 +48,7 @@ export interface SplitPlan {
   readonly names: readonly string[];
 }
 
-/** A booklet signature is two folded sheets: four pages (`REPORT.md §3` A5). */
+/** A booklet signature is two folded sheets: four pages. */
 const DEFAULT_SIGNATURE_PAGES = 4;
 
 /**
@@ -173,7 +173,7 @@ function planRanges(options: SplitOptions): number[][] {
     throw new ToolError('selection-empty', { engine: 'model', engineMessage: 'no range was entered' });
   }
   // The whole expression is parsed first: one parser decides what a duplicate, a
-  // descending or an out-of-range page means (`REPORT.md §4.17`).
+  // descending or an out-of-range page means.
   parsePageRanges(source, options.pageCount);
   return source
     .split(/[,;\n]+/)

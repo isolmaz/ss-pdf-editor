@@ -198,7 +198,7 @@ await check('verify: the product’s own verifier reports the signature valid', 
     throw new Error(`signer reads "${String(verdict.signer)}"`);
   if (verdict.coverage !== 'covers-whole-document') throw new Error(`coverage is ${verdict.coverage}`);
   // A self-signed certificate is *read* as self-signed, and trust is never claimed: this
-  // build has no trust store and no network (`K17`).
+  // build has no trust store and no network.
   if (verdict.trust !== 'self-signed')
     throw new Error(`a self-signed certificate must read self-signed, got "${verdict.trust}"`);
   if (verdict.changesAfterSigning !== 0)

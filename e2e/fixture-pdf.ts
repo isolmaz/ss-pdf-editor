@@ -17,7 +17,7 @@ export function fixturePdf(): Uint8Array {
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << >> /Contents 4 0 R >>',
     `<< /Length ${content.length} >>\nstream\n${content}endstream`,
-    '<< /Title (R08 fixture) /Producer (pdf-editor e2e) >>',
+    '<< /Title (e2e fixture) /Producer (pdf-editor e2e) >>',
   ];
 
   const chunks: string[] = ['%PDF-1.7\n'];

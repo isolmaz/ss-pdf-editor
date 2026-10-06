@@ -1,5 +1,5 @@
 /**
- * The application menu bar (`PLAN.md §4.1`, §4.3): one trigger per `MENU_GROUPS`
+ * The application menu bar: one trigger per `MENU_GROUPS`
  * entry, the commands of that group in a menu, and the same `Command` objects the
  * palette and the toolbar render.
  *
@@ -97,7 +97,7 @@ export function MenuBar({ t, commands }: MenuBarProps) {
     if (next === undefined) return;
     setAnchorGroup(next);
     triggerRefs.current.get(next)?.focus();
-    // Moving along an open bar swaps which menu is showing (`§4.1`).
+    // Moving along an open bar swaps which menu is showing.
     if (openGroup !== null) openMenu(next, true, false);
   };
 

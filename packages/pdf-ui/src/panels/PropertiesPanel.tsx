@@ -1,13 +1,13 @@
 /**
- * Document facts (`PLAN.md §5/Phase 3` — "Document properties panel": font list,
+ * Document facts ("Document properties panel": font list,
  * embedded files add/remove, security tab, verification status of existing signatures).
  *
  * The panel is **presentational**: every read and every write belongs to an operation
  * in `pdf-core` (fonts, attachments, signature status), and the host hands the results
  * in. It renders the four signature states separately — integrity, trust, revocation
  * evidence and post-signing modification each get their own label and their own
- * sentence — because `PLAN.md §9/K17` forbids a single "valid" badge. The trust states
- * are shown with the reason the app cannot go further (`K9`: no network, no trust
+ * sentence — because the product never shows a single "valid" badge. The trust states
+ * are shown with the reason the app cannot go further (no network, no trust
  * store), never as an implied verdict.
  *
  * Accessibility: sections are `h3`-rooted regions with `aria-labelledby`, list changes
@@ -52,7 +52,7 @@ export interface PropertiesPanelProps {
   readonly onAddAttachments?: (files: readonly File[]) => void;
   readonly onReadAttachment?: (name: string) => void;
   /**
-   * The certificates the **user** imported (`pdf-model/trust-roots`, `K17`). They are shown
+   * The certificates the **user** imported (`pdf-model/trust-roots`). They are shown
    * beside the verdicts because a "trusted" line without the root it reached is not
    * something a reader can check; the label is the certificate's own common name.
    */

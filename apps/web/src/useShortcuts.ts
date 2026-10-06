@@ -3,11 +3,11 @@ import type { MenuGroup } from 'pdf-ui';
 import { useEffect } from 'react';
 
 /**
- * The shell's keyboard layer (`PLAN.md §5/Phase 1`: “shortcut infrastructure”,
- * extended in Phase 2 with undo/redo, the palette and the docks).
+ * The shell's keyboard layer: the shortcut infrastructure, with undo/redo, the
+ * palette and the docks.
  *
- * One place owns the bindings so a second, competing handler cannot appear later
- * (`AGENTS.md` decision rules). The viewer keeps `Ctrl+F`, `F3` and `Escape` — they
+ * One place owns the bindings so a second, competing handler cannot appear later.
+ * The viewer keeps `Ctrl+F`, `F3` and `Escape` — they
  * belong to the find bar's own focus scope — and this hook covers everything that
  * acts on the shell: open, save, export, zoom, page navigation.
  *
@@ -31,7 +31,7 @@ import { useEffect } from 'react';
  * deliberately part of the "editing wins" set: `Ctrl+Z` inside a form field must undo
  * the typing, not the document's last operation.
  *
- * Documented deviations from `PLAN.md §4.3`, because the browser owns the key and a
+ * Documented deviations from the usual desktop bindings, because the browser owns the key and a
  * binding that can never fire is dead code: `Ctrl+W` (close tab), `Ctrl+Tab`
  * (switch tab) and `Ctrl+Shift+R` (hard reload in Chromium) are not bound here, and
  * they are not listed as bindings either. Closing and switching tabs stay reachable
@@ -75,7 +75,7 @@ export interface ShellShortcuts {
   readonly previousPage: () => void;
   readonly firstPage: () => void;
   readonly lastPage: () => void;
-  /** Phase 2 additions. */
+  /** Editing, palette and docks. */
   readonly undo: ShellAction;
   readonly redo: ShellAction;
   readonly palette: () => void;

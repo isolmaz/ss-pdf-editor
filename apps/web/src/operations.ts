@@ -1,10 +1,10 @@
 /**
  * Page-structure actions and the bridge between an operation's produced bytes and
- * the session model (`PLAN.md §3.3`, §9/K12, §9/K15).
+ * the session model.
  *
  * Two things live here and nowhere else:
  *
- * 1. **Materializing the base.** `PLAN.md §3.3` step 2 says a save (or any
+ * 1. **Materializing the base.** A save (or any
  *    operation) starts from exactly one base PDF. In this app that base is:
  *    what the viewer holds if it has engine-side edits (a form value, an
  *    annotation) → the produced bytes of the newest applied operation → the
@@ -19,7 +19,7 @@
  *
  * Structural page actions (rotate/delete/duplicate/move/insert) go through
  * `composeDocument`, i.e. through pdf.js `extractPages` on the live document, so
- * annotations and form values travel with the pages (`WORKLOG.md §3` row 1).
+ * annotations and form values travel with the pages.
  */
 
 import {
@@ -52,7 +52,7 @@ import { checkDocumentLimits, detectDeviceTier, ToolError, type Translator } fro
 import type { PageMoveAction } from 'pdf-ui';
 import { type MarkRemovalRequest, normalizePendingMarks } from './annotation-interaction';
 // The annotation-removal writer loads on its first call (`lazy-ops.ts`): neither the
-// barrel nor a static module import may put it in the shell's first paint (`PLAN.md §7`).
+// barrel nor a static module import may put it in the shell's first paint.
 import { removePdfAnnotations } from './lazy-ops';
 import type { SaveStepDescription } from './save-plan';
 
@@ -132,8 +132,7 @@ export async function materializeBase(
  * pdf.js exposes no "is the storage dirty" getter, and its `serializable` getter
  * answers a sentinel when the storage is empty — so the test is whether the
  * storage yields any entry at all (`AnnotationStorage` is `[Symbol.iterator]`-able,
- * `build/pdf.mjs`). Exported because the save execution plan needs the same answer
- * (`§3.3` step 2).
+ * `build/pdf.mjs`). Exported because the save execution plan needs the same answer.
  */
 export function hasEngineEdits(handle: PdfDocumentHandle): boolean {
   const storage: unknown = handle.raw.annotationStorage;
@@ -143,7 +142,7 @@ export function hasEngineEdits(handle: PdfDocumentHandle): boolean {
 }
 
 /**
- * The annotation step of the save execution plan (`PLAN.md §3.3` step 3): the
+ * The annotation step of the save execution plan: the
  * session's own marks written into the bytes the engine just produced.
  *
  * Runs on a **second** handle over those bytes, because the live handle's storage
@@ -488,14 +487,13 @@ export function downloadFiles(files: readonly OutputFile[]): void {
     anchor.href = url;
     anchor.download = file.name;
     anchor.click();
-    // Generated blob URLs are cleaned up after each operation (`PLAN.md §3.7`).
+    // Generated blob URLs are cleaned up after each operation.
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 }
 
 /**
- * What an operation is allowed to change, and what verification therefore promises
- * (`PLAN.md §3.3` rule 5, `R06`).
+ * What an operation is allowed to change, and what verification therefore promises.
  *
  * The previous shape asked three questions — page count, "is the text still there" on
  * three sampled pages, and a set of form/outline/label presence checks — and decided
@@ -528,11 +526,11 @@ export function downloadFiles(files: readonly OutputFile[]): void {
  *    separately);
  *  - `failed` — a checked, promised fact did not hold. This one is never *returned*: it
  *    is thrown as `verification-failed`, because a save that cannot be verified must
- *    not mark the session saved (`§3.3` rule 5/6), and the thrown error is where that
+ *    not mark the session saved, and the thrown error is where that
  *    verdict lives.
  */
 
-/** The document facts a declaration speaks about (`R06`). */
+/** The document facts a declaration speaks about. */
 export type DocumentFact =
   | 'pageCount'
   | 'pageOrder'
@@ -880,7 +878,7 @@ function declarationFor(steps: readonly string[] | undefined): {
 } {
   if (steps === undefined) {
     // No declaration at all is not "nothing changes": it is an operation nobody has
-    // characterised, and the run must say so (`R06`).
+    // characterised, and the run must say so.
     return { facts: new Set(), identity: { kind: 'unverified', steps: [] } };
   }
   const facts = new Set<DocumentFact>();
@@ -955,7 +953,7 @@ type RecordFact = (
 /**
  * The run's promise, as each check reads it: `throw` means the fact was declared to
  * survive and verification promises it; `degrade` is the honest alternative when the
- * operation was never characterised (`R06`), and it names the step ids that made the
+ * operation was never characterised, and it names the step ids that made the
  * operation unknown.
  */
 interface PreservePolicy {
@@ -1240,7 +1238,7 @@ async function checkPageLabels(
 }
 
 /**
- * Verification before a write (`PLAN.md §3.3` rule 5, `R06`). A save that cannot be
+ * Verification before a write. A save that cannot be
  * verified must not mark the session saved, so a fact the operation promised to
  * preserve but did not throws `verification-failed` naming that fact rather than
  * returning a verdict the caller could ignore.
@@ -1355,7 +1353,7 @@ export async function verifyForWrite(
 }
 
 /**
- * The words a set of redaction marks covers (`R06`, `K16`): the needles the object
+ * The words a set of redaction marks covers: the needles the object
  * audit needs to answer "does the file still carry what the user erased".
  *
  * The marks themselves carry geometry only, and `verifyRedaction` deliberately knows

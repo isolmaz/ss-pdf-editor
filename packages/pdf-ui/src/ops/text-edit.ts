@@ -1,5 +1,5 @@
 /**
- * The text-edit dialog (`PLAN.md §5/Phase 4a-4f`).
+ * The text-edit dialog.
  *
  * The whole manoeuvre is three calls, and the order is the plan's: the model block
  * is reflowed **inside its own box** (`4d-1`), the layout is turned into the
@@ -172,7 +172,7 @@ export const textEditDialog: OperationDialogSpec = {
       },
       metrics,
     );
-    // The writer fetches the font from our own origin (`K9`); the id → path map is
+    // The writer fetches the font from our own origin; the id → path map is
     // the served catalogue, never a third-party URL.
     const outcome = await applyTextEdit(
       context.bytes,

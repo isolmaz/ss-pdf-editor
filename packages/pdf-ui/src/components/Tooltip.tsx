@@ -2,7 +2,7 @@ import { Tooltip as BaseTooltip } from '@cloudflare/kumo/primitives/tooltip';
 import type { ReactElement, ReactNode } from 'react';
 
 /**
- * The shell's one tooltip (`K24`): Kumo's tooltip primitive (base-ui), wrapped so
+ * The shell's one tooltip: Kumo's tooltip primitive (base-ui), wrapped so
  * the three things the hand-rolled chips got wrong cannot come back.
  *
  * 1. **It portals.** The popup is appended to `document.body` and positioned

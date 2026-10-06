@@ -1,5 +1,5 @@
 /**
- * Page labels (`PLAN.md §5/Phase 3`: "Header/footer + Bates + page labels").
+ * Page labels ("Header/footer + Bates + page labels").
  *
  * Read and write are deliberately split across the two engines, because neither
  * one covers both directions on the pinned versions:
@@ -255,7 +255,7 @@ export async function writePageLabels(
       inputBytes: bytes.byteLength,
       outputBytes: produced.byteLength,
       pageCount,
-      // A MuPDF full save is never incremental (`PLAN.md §3.3` rule 3).
+      // A MuPDF full save is never incremental.
       incremental: false,
     },
   };

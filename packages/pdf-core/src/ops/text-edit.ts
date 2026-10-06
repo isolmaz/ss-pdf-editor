@@ -1,7 +1,7 @@
 /**
- * Text editing, writer half (`PLAN.md §5/Phase 4` items 4c, 4e, 4f).
+ * Text editing, writer half.
  *
- * One operation performs the whole manoeuvre, in the order `PLAN.md §3.3`
+ * One operation performs the whole manoeuvre, in the order the save pipeline
  * requires:
  *
  *   1. **erase** (4c) — MuPDF redaction annotations over the given rectangles,
@@ -9,14 +9,14 @@
  *      content stream; nothing is painted over them. `black_boxes = false` is the
  *      measured difference between "the content is gone" and "the content is
  *      covered by a bar that advertises the edit and cannot be lifted"
- *      (archived spike `text-replace/NOTES.md`).
+ *     .
  *   2. **insert** (4e) — MuPDF embeds the fonts, draws the replacement lines at
  *      their baselines in one new content stream per page and rewrites the file.
  *   3. **verify** (4f) — the produced bytes are re-opened with **pdf.js**, the
  *      independent reader, and three claims are measured: the erased text is gone
  *      from that page's text content, the new text is present and searchable, and
  *      the page count did not move. Any mismatch throws `verification-failed` and
- *      no bytes are handed back (`PLAN.md §3.3` rule 5).
+ *      no bytes are handed back.
  *
  * ## Coordinate spaces — getting this wrong is silent, so it happens once, here
  *
@@ -49,7 +49,7 @@
  * encode that line. Everything else falls back to Noto and is reported
  * as a substitution.
  *
- * `request.fonts` is fetched from **our own origin only** (`K9`): a URL that
+ * `request.fonts` is fetched from **our own origin only**: a URL that
  * resolves elsewhere is refused here rather than becoming a third-party request.
  */
 
@@ -886,7 +886,7 @@ function clipText(value: string): string {
 }
 
 /**
- * Font bytes from `request.fonts`, **same origin only** (`K9`: the app makes no
+ * Font bytes from `request.fonts`, **same origin only** (the app makes no
  * third-party request, and a font is not the place to start). The URL is resolved
  * against the document's own origin, so a relative `/fonts/…` path works and an
  * absolute one is checked rather than trusted.

@@ -1,5 +1,5 @@
 /**
- * Encryption and unlocking (`PLAN.md §6`; `REPORT.md §3` A12, A13).
+ * Encryption and unlocking.
  *
  * The two directions of the same engine capability, and the two result kinds that
  * keep them apart: protecting **replaces** the working document (the user asked
@@ -9,8 +9,7 @@
  *
  * Nothing here re-implements the policy: an empty open password is refused by
  * `protectDocument` (`error.password-policy` says why), the produced bytes are
- * re-opened and their permissions checked inside the operation (`PLAN.md §3.3`
- * rule 9), and a wrong unlock password raises `wrong-password` rather than a raw
+ * re-opened and their permissions checked inside the operation, and a wrong unlock password raises `wrong-password` rather than a raw
  * engine string.
  */
 
@@ -22,8 +21,7 @@ import type { OperationDialogSpec } from '../dialogs/types';
  *
  * The eight permissions `ProtectionPermissions` carries are all granted by
  * default (`ALL_PERMISSIONS`): a user unchecks what to forbid, and the dialog
- * never has to explain a permission that is missing from the UI (`REPORT.md §3`
- * A12 — `allowModify` was hard-coded `false` in the source project).
+ * never has to explain a permission that is missing from the UI (`allowModify` was hard-coded `false` in the source project).
  */
 export const protectDialog: OperationDialogSpec = {
   id: 'protect',

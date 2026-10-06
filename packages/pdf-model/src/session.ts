@@ -1,5 +1,5 @@
 /**
- * Session store (`PLAN.md §9/K23`, §3.2).
+ * Session store.
  *
  * Document/session state lives here — plain TypeScript, DOM-free, observable —
  * **not** in a store library. React subscribes through `useSyncExternalStore`.
@@ -45,7 +45,7 @@ export interface SessionTab {
   readonly dirty: boolean;
   /** Journal state last successfully written; null means an unknown legacy baseline. */
   readonly savedState: string | null;
-  /** Sensitive session: persistent drafts off (`K16`). */
+  /** Sensitive session: persistent drafts off. */
   readonly sensitive: boolean;
 }
 
@@ -139,7 +139,7 @@ export class SessionStore {
     this.#publish();
   }
 
-  /** `dirty` flips back only when a write for that exact version succeeded (§3.3/6). */
+  /** `dirty` flips back only when a write for that exact version succeeded. */
   setDirty(id: string, dirty: boolean): void {
     if (!this.#tabs.some((tab) => tab.id === id && tab.dirty !== dirty)) return;
     this.#tabs = this.#tabs.map((tab) => {
@@ -151,13 +151,13 @@ export class SessionStore {
     this.#publish();
   }
 
-  /** Tab title. Not a document change: renaming is not journaled (`§3.5`). */
+  /** Tab title. Not a document change: renaming is not journaled. */
   renameTab(id: string, name: string): void {
     this.#tabs = this.#tabs.map((tab) => (tab.id === id ? { ...tab, name } : tab));
     this.#publish();
   }
 
-  /** Sensitive session: persistent drafts off (`K16`). */
+  /** Sensitive session: persistent drafts off. */
   setSensitive(id: string, sensitive: boolean): void {
     this.#tabs = this.#tabs.map((tab) => (tab.id === id ? { ...tab, sensitive } : tab));
     this.#publish();
@@ -171,7 +171,7 @@ export class SessionStore {
     this.#publish();
   }
 
-  /** Output history — what was written where (`§3.5`, closes `REPORT.md §4.19`). */
+  /** Output history — what was written where. */
   addOutput(id: string, output: OutputVersion): void {
     this.#tabs = this.#tabs.map((tab) =>
       tab.id === id
@@ -207,7 +207,7 @@ export class SessionStore {
      * Bytes first, budget second — and the *abandoned* branch is released before the
      * budget is applied. Applying a byte budget over a list that still holds the redo
      * snapshots this append is about to invalidate counted unreachable bytes as if they
-     * were live, and evicted reachable history to pay for them (`F11`).
+     * were live, and evicted reachable history to pay for them.
      */
     const appended = tab.journal.append({
       labelKey: input.labelKey,
@@ -317,8 +317,7 @@ export class SessionStore {
      * An overlay edit is a journal entry like any other, so it invalidates the redo tail
      * the same way an operation does — including the produced documents that tail pointed
      * at. Releasing them only in `applyOperation` left an overlay-only branch holding
-     * snapshots nothing could reach, and the byte budget was then applied over them
-     * (`F11`).
+     * snapshots nothing could reach, and the byte budget was then applied over them.
      */
     const appended = tab.journal.append({
       labelKey,
@@ -348,7 +347,7 @@ export class SessionStore {
   }
 
   /**
-   * Chronological undo (`K12`). The store moves its own state and reports what
+   * Chronological undo. The store moves its own state and reports what
    * the viewer must show; the app re-materializes the engine handle from
    * `step.produced` (or the source master when it is `null`).
    */

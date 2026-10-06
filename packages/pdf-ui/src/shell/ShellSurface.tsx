@@ -4,7 +4,7 @@
  * The library's root export re-exports every panel, dialog and tool, and a barrel
  * over a large surface is what the bundler cannot reduce: importing one component
  * through it brought the whole graph into the first paint (measured: 206 KiB gzip
- * for the barrel against 15 KiB for the viewer pane alone, `WORKLOG.md §4`). The
+ * for the barrel against 15 KiB for the viewer pane alone). The
  * shell therefore imports the group it needs, and each group is a plain
  * re-export of the components in it — no behaviour lives here.
  *
@@ -23,7 +23,6 @@
 export { MenuBar, type MenuBarProps } from '../commands/MenuBar';
 export { type Command, MENU_GROUPS, type MenuGroup } from '../commands/types';
 export { type AppButtonProps, Button } from '../components/Button';
-export { EmptyState, type EmptyStateProps } from '../components/EmptyState';
 export {
   applyLocale,
   getStoredLocale,
@@ -69,5 +68,3 @@ export { ToolsRailPanel, type ToolsRailPanelProps } from '../panels/ToolsRailPan
 export { ContextMenu, type ContextMenuProps } from '../viewer/ContextMenu';
 export { Dock, type DockProps, type DockTab } from './Dock';
 export { StatusBar, type StatusBarProps } from './StatusBar';
-export { type DocumentTabDescriptor, TabStrip, type TabStripProps } from './TabStrip';
-export { TopBar, type TopBarProps } from './TopBar';

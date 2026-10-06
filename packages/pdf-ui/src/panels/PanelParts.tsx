@@ -1,5 +1,5 @@
 /**
- * The two body states the reader panels share (`PLAN.md §5/Phase 1`). They live in
+ * The two body states the reader panels share. They live in
  * one file because four panels would otherwise carry four copies of the same markup;
  * both states are product surface, not leftovers.
  */

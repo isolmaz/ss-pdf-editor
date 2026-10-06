@@ -8,6 +8,7 @@ Thanks for your interest in SsPdfEditor. Issues and pull requests are welcome.
   [`architecture.md`](architecture.md) for the module boundaries and the write pipeline.
 - For anything larger than a small fix, open an issue first so the approach can be agreed.
 - Security problems go to [`SECURITY.md`](SECURITY.md), not to a public issue.
+- Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development
 
@@ -38,6 +39,15 @@ say why.
 - A bug fix comes with a regression test that fails without the fix.
 - A test must check behaviour, and must fail when that behaviour breaks.
 - Update the affected documentation in the same commit.
+
+## Repository hygiene
+
+The pre-commit hook (`tools/hooks/guard.mjs`) refuses engine builds, traineddata, wasm and
+font binaries, private keys, env files and any file over 5 MiB: engines and fonts are
+fetched by `pnpm fetch:engines` and pinned in `tools/asset-pins.json`, never committed.
+
+A new dependency must carry a free licence; `pnpm check:licenses` audits every installed
+package and fails on one that is neither free nor recognised.
 
 ## Licence
 

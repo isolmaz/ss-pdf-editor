@@ -1,11 +1,11 @@
 /**
- * Engine asset locations (`PLAN.md §3.6`).
+ * Engine asset locations.
  *
  * Engines are fetched into `public/engines/**` by `pnpm fetch:engines`, verified
  * against `tools/asset-pins.json` and served from our own origin — never from a
  * CDN, never at runtime from a third party. The paths below are absolute on
  * purpose: the editor is served from `/editor/` while the engines live at the
- * site root, exactly as the deployed layout has it (`K31`).
+ * site root, exactly as the deployed layout has it.
  */
 
 export const ENGINE_BASE_URL = '/engines';
@@ -31,7 +31,7 @@ export const MUPDF_ASSETS = {
  * language data from a CDN (browser default `workerPath` in
  * `src/worker/browser/defaultOptions.js`, `langPath` in
  * `src/worker-script/index.js`), which would be a third-party request and a network
- * call in the browser build (`K9`).
+ * call in the browser build.
  */
 export const TESSERACT_ASSETS = {
   /**
@@ -51,7 +51,7 @@ export const TESSERACT_ASSETS = {
    */
   core: `${ENGINE_BASE_URL}/tesseract/tesseract-core-simd-lstm.wasm.js`,
   coreWasm: `${ENGINE_BASE_URL}/tesseract/tesseract-core-simd-lstm.wasm`,
-  /** `tessdata_fast` — the default; `best` is the quality gate's comparison (`K29`). */
+  /** `tessdata_fast` — the default; `best` is the quality gate's comparison. */
   fastLangPath: `${ENGINE_BASE_URL}/tesseract/lang/fast`,
   bestLangPath: `${ENGINE_BASE_URL}/tesseract/lang/best`,
 } as const;
@@ -66,5 +66,5 @@ export const NOTO_ASSETS = {
   semiBold: '/fonts/noto/NotoSans-SemiBold.ttf',
 } as const;
 
-/** Languages whose traineddata is pinned for offline use (`PLAN.md §3.6`). */
+/** Languages whose traineddata is pinned for offline use. */
 export const OCR_LANGUAGE_CODES = ['tur', 'eng'] as const;

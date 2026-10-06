@@ -44,7 +44,7 @@
   Cache-Control: public, max-age=0, must-revalidate
   Service-Worker-Allowed: /editor/
 
-# The offline identity (`R04`): the version the worker compares its cache against. It
+# The offline identity: the version the worker compares its cache against. It
 # must never be served stale — a cached manifest from a previous release would make a new
 # shell believe the old engine bytes are its own.
 /offline-manifest.json

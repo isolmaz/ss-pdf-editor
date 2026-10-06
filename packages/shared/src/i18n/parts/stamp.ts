@@ -1,5 +1,5 @@
 /**
- * Header/footer, page numbering, Bates and watermark (`REPORT.md §3` A9, A10).
+ * Header/footer, page numbering, Bates and watermark.
  */
 
 export const stampPart = {

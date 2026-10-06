@@ -1,5 +1,5 @@
 /**
- * Page boxes, page size and page labels (`PLAN.md §5/Phase 3`: "Page boxes & size",
+ * Page boxes, page size and page labels ("Page boxes & size",
  * "Header/footer + Bates + page labels").
  *
  * Every `labelKey`/`hintKey`/`unitKey`/`titleKey`/`introKey`, every `note(...)` key and
@@ -17,7 +17,7 @@
 
 export const boxesPart = {
   'boxes.title': 'Sayfa kutuları ve boyutu',
-  /* progress: the unit is a page, never a synthetic percentage (`PLAN.md §3.4`) */
+  /* progress: the unit is a page, never a synthetic percentage */
   'op.progress.boxes': 'Sayfa kutuları yazılıyor',
   'op.progress.labels': 'Sayfa etiketleri yazılıyor',
   'op.progress.boxes.measure': 'İçerik sınırları ölçülüyor',

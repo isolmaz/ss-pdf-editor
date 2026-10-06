@@ -1,12 +1,12 @@
 /**
  * Measurement tools — the ruler, the perimeter chain, the area polygon — and the
- * real PDF `/Measure` annotations they become (`PLAN.md §4.3`: `M` = measure;
- * `§5/Phase 4`: "measurement tools, ruler/grid/snap").
+ * real PDF `/Measure` annotations they become (`M` = measure: "measurement tools,
+ * ruler/grid/snap").
  *
  * ## The three coordinate spaces, and why this file names all of them
  *
- * `WORKLOG.md §4` records the two coordinate-space defects that made every text
- * edit silent, and `K18`'s annotation writer already settled the rule for this
+ * Two coordinate-space defects once made every text edit silent, and the
+ * annotation writer already settled the rule for this
  * app: a pointer produces **one** space, and it is converted once, explicitly.
  *
  *  - **app space** — what `ViewerApi.pointToPage` answers and therefore what
@@ -38,7 +38,7 @@
  *   | 180      | `x2 − X`     | `H − Y`      |
  *   | 270      | `Y`          | `x2 − X`     |
  *
- * and archived spike `measure-probe.mts` checks every row against that transform
+ * and an early engine spike checked every row against that transform
  * for an **offset** box (`/MediaBox [20 30 420 630]`), which is the case where a
  * flip about `page.getSize().height` — instead of about the box's own top — is
  * silently off by the box origin.
@@ -103,7 +103,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Every entry point here is bounded (`PLAN.md §3.4`): a chain is a user gesture,
+ * Every entry point here is bounded: a chain is a user gesture,
  * not a path tracer, and a document cannot be asked to carry an unbounded number
  * of new annotations in one call.
  */
@@ -612,7 +612,7 @@ export function measureMark(
 // formatting
 // ---------------------------------------------------------------------------
 
-/** The product's default locale is Turkish (`K3`); numbers are printed with it. */
+/** The product's default locale is Turkish; numbers are printed with it. */
 export const DEFAULT_MEASURE_LOCALE = 'tr';
 
 /**
@@ -649,7 +649,7 @@ export function significantDecimals(value: number): number {
 /**
  * One formatter per locale and precision: the live readout runs on pointer moves,
  * and `Intl.NumberFormat` construction is an order of magnitude more expensive
- * than `format()` (`PLAN.md §3.4`: no avoidable work in a render loop).
+ * than `format()` (no avoidable work in a render loop).
  */
 const FORMATTERS = new Map<string, Intl.NumberFormat>();
 
@@ -907,8 +907,8 @@ export async function writeMeasureAnnotations(
       inputBytes: bytes.byteLength,
       outputBytes: saved.byteLength,
       pageCount: pages.length,
-      // A rewrite re-serialises the file: the incremental fast path ends here
-      // (`PLAN.md §3.3` rule 3), and the report says so.
+      // A rewrite re-serialises the file: the incremental fast path ends here,
+      // and the report says so.
       incremental: false,
     };
     return { bytes: saved, written, report };
@@ -1089,8 +1089,7 @@ function contentsFor(mark: MeasureMark, measurement: Measurement): string {
  * annotations with appearance streams written by this app's own writer, and the
  * perspective caveat (a reader may shift a few points) holds for a ruler exactly as
  * it holds for a rectangle. The measurement-specific keys this feature should carry
- * are listed in `local://measure-integration.md` — a dictionary part the integrator
- * owns, not a file this workstream may add to.
+ * belong in a dictionary part of their own, not in this file.
  */
 function measureNotes(count: number): readonly OperationNote[] {
   return [

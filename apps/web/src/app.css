@@ -4,7 +4,7 @@
 @import "pdf-ui/tokens.css";
 
 /* Our own sources — Tailwind v4 does not scan node_modules or sibling
-   packages unless told to (K24: Kumo's classes live in its dist). */
+   packages unless told to (Kumo's classes live in its dist). */
 @source "./";
 @source "../../../packages/pdf-ui/src";
 @source "../../../packages/pdf-ui/node_modules/@cloudflare/kumo/dist";

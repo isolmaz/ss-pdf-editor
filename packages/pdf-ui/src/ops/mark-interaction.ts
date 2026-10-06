@@ -1,5 +1,5 @@
 /**
- * The geometry and the data contract every mark tool shares (`PLAN.md §5/Phase 3`).
+ * The geometry and the data contract every mark tool shares.
  *
  * Four families of marks can be selected, marqueed and moved on the canvas —
  * session annotations, measurements, redaction intents and the annotations the

@@ -1,5 +1,5 @@
 /**
- * Outlines (bookmarks), written (`PLAN.md §5/Phase 4`: "Link & outline editing").
+ * Outlines (bookmarks), written ("Link & outline editing").
  * The read half is the app's own `PdfDocumentHandle.getOutline()`
  * (`engines/pdfjs-handle.ts`), which resolves every entry's destination to a
  * **0-based page index** and keeps the entry when it cannot (`pageIndex: null`); the
@@ -681,7 +681,7 @@ function verificationFailed(message: string, cause?: unknown): ToolError {
  * A file that does not parse, a page count that moved, a node total that is not the one
  * just written, `/Outlines` still present after it was emptied, or a renamed item that
  * does not carry its new title is `verification-failed`: the caller keeps the original
- * file and the session stays dirty (`PLAN.md §3.3` rule 5/6).
+ * file and the session stays dirty.
  */
 async function verifyOutput(
   produced: Uint8Array,
@@ -875,7 +875,7 @@ export async function applyOutlineEdit(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report };

@@ -1,5 +1,5 @@
 /**
- * Operation-dialog, command and dock vocabulary (`PLAN.md §4.1`, §5/Phase 2).
+ * Operation-dialog, command and dock vocabulary.
  *
  * Only the keys the shared dialog framework itself authors live here: the field
  * renderer, the progress/cancel state machine and the result report. A
@@ -17,7 +17,7 @@
 
 export const dialogsPart = {
   /**
-   * The confirm button of the blocking destructive step (`PLAN.md §3.3` rule 7).
+   * The confirm button of the blocking destructive step.
    * Deliberately a verb with no object: the sentence above it names the loss, and
    * `op.result.confirmDestructive` is the question this answers.
    */

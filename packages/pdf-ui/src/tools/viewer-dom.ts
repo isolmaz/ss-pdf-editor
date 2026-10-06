@@ -20,7 +20,7 @@ import type { ViewerApi } from '../viewer/PdfViewerPane';
  *
  * Every function here is a read: nothing calls pdf.js, nothing writes, nothing
  * holds state — the tools stay consumers of the viewer, never a second source of
- * document state (`K23`).
+ * document state.
  *
  * **Known gap:** `ViewerApi` exposes no container reference and no document
  * handle, so a second viewport (a future split view) would resolve the first

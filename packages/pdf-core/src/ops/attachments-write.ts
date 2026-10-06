@@ -1,6 +1,5 @@
 /**
- * Embedded files, written (`PLAN.md §5/Phase 3`: "attachments add/remove";
- * `REPORT.md §3` B19). The reader half is `attachments.ts` — this file is the one
+ * Embedded files, written ("attachments add/remove"). The reader half is `attachments.ts` — this file is the one
  * that changes the document, and both halves go through the operation contract
  * because both produce a file.
  *
@@ -36,7 +35,7 @@
  * never silently completed or silently failed. When a call changes nothing the
  * **input bytes are returned unchanged** with `incremental: true` (the shape
  * `annotations.ts` already uses for a skipped step): rewriting a file for a no-op
- * would end the incremental fast path for nothing (`PLAN.md §3.3` rule 3).
+ * would end the incremental fast path for nothing.
  *
  * Key order: a new pair goes before the first key that sorts after it (keys compared
  * as decoded text), so a sorted tree stays sorted. pdf-lib, the previous writer,
@@ -288,7 +287,7 @@ export async function addAttachments(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report, added };

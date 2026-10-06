@@ -1,5 +1,5 @@
 /**
- * Source / working / output versioning (`PLAN.md §9/K15`, §3.2, §3.5).
+ * Source / working / output versioning.
  *
  * Three things stay apart on purpose:
  *  - **source** — the immutable master bytes plus hash; never handed to an engine,
@@ -57,7 +57,7 @@ export interface WorkingVersion {
   /**
    * Bytes produced by the newest applied operation. Absent means "the working
    * version is still the source master" — which is what Export and Save must
-   * both respect (`K15`: the source is never overwritten by a reconstruction).
+   * both respect (the source is never overwritten by a reconstruction).
    */
   readonly produced?: ProducedDocument;
 }
@@ -76,7 +76,7 @@ export interface OutputVersion {
   readonly steps: readonly string[];
   readonly incremental: boolean;
   /**
-   * What verification established for these bytes (`PLAN.md §3.3` rule 5, `R06`),
+   * What verification established for these bytes,
    * stored with the output instead of only announced: the facts that were checked, the
    * facts the operation declared it may change, and every fact this build cannot check.
    *
@@ -103,7 +103,7 @@ export interface OutputVersion {
   };
 }
 
-/** Engine-facing copy. The master buffer is never exposed (K15). */
+/** Engine-facing copy. The master buffer is never exposed. */
 export function copyForEngine(bytes: Uint8Array): Uint8Array {
   return bytes.slice();
 }

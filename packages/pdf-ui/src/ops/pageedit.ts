@@ -1,5 +1,5 @@
 /**
- * Page management v2 dialogs (`PLAN.md §5/Phase 3`): insert pages, replace pages.
+ * Page management v2 dialogs: insert pages, replace pages.
  *
  * Both dialogs follow the shape `ops/pages.ts` established — declarative fields,
  * a `run` that resolves the page scope through `ops/scope.ts`, and an engine path

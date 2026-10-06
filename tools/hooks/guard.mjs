@@ -5,8 +5,7 @@
  *   node tools/hooks/guard.mjs staged    # pre-commit: paths staged for this commit
  *   node tools/hooks/guard.mjs tracked   # pre-push:   every tracked path, plus size checks
  *
- * It enforces the repository hygiene rules that AGENTS.md states
- * ("Disk/bundle hygiene") and PLAN.md §3.6 relies on: engine builds,
+ * It enforces the repository hygiene rules: engine builds,
  * traineddata/wasm/font binaries, private keys, env files and oversized blobs
  * never enter git. Dependency-free and fast, so a fresh clone can commit.
  *
@@ -32,10 +31,7 @@ const SECRETS_DIR = /^secrets\//;
 const MAX_BYTES = 5 * 1024 * 1024;
 
 const RULES = [
-  [
-    ENGINE_PATH,
-    'engine assets live under public/engines/** and are fetched by `pnpm fetch:engines` (PLAN.md §3.6)',
-  ],
+  [ENGINE_PATH, 'engine assets live under public/engines/** and are fetched by `pnpm fetch:engines`'],
   [SECRETS_DIR, 'the secrets/ directory is never committed'],
   [KEY_FILE, 'private keys (*.pem, *.key, *.p12, *.pfx) are never committed'],
   [ENV_FILE, 'env files are never committed (only .env.example is tracked)'],
@@ -58,7 +54,7 @@ for (const file of listFiles()) {
       const size = statSync(`${root}/${file}`).size;
       if (size > MAX_BYTES) {
         failures.push(
-          `${file}\n    ${(size / 1048576).toFixed(1)} MiB exceeds the 5 MiB commit limit — fetch it by script or ask the owner`,
+          `${file}\n    ${(size / 1048576).toFixed(1)} MiB exceeds the 5 MiB commit limit — fetch it by script instead`,
         );
       }
     } catch {
@@ -70,7 +66,7 @@ for (const file of listFiles()) {
 if (failures.length > 0) {
   console.error(`\nguard (${mode}): ${failures.length} problem(s)\n`);
   for (const line of failures) console.error(`  ${line}`);
-  console.error('\nNothing was committed. See AGENTS.md > Disk/bundle hygiene.\n');
+  console.error('\nNothing was committed. See CONTRIBUTING.md.\n');
   process.exit(1);
 }
 

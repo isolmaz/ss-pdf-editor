@@ -1,5 +1,5 @@
 /**
- * Reading mode, step 2: local-only read-aloud (`PLAN.md §5/Phase 1`, `K19`).
+ * Reading mode, step 2: local-only read-aloud.
  *
  * Web Speech can speak through remote voices, so the locked decision is enforced here
  * at the only place that picks a voice: a voice is eligible when
@@ -35,7 +35,7 @@ export interface ReadAloudApi {
 }
 
 export interface ReadAloudOptions {
-  /** BCP-47 language of the voice to look for; Turkish is the product language (`K3`). */
+  /** BCP-47 language of the voice to look for; Turkish is the product language. */
   readonly lang?: string;
 }
 
@@ -108,7 +108,7 @@ export function useReadAloud(text: string, options: ReadAloudOptions = {}): Read
   useEffect(() => {
     const synthesis = speechSynthesisOrNull();
     // A new page is a new reading: stop the old queue, prepare this page's utterances
-    // and put the controls back. The queue is document-global (`K19`), so nothing else
+    // and put the controls back. The queue is document-global, so nothing else
     // — not even closing the pane — would stop a forgotten utterance.
     synthesis?.cancel();
     chunks.current = splitUtterances(text);

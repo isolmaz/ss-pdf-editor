@@ -1,5 +1,5 @@
 /**
- * Turkish dictionary — the complete locale (`PLAN.md §9/K3`).
+ * Turkish dictionary — the complete locale.
  *
  * Never hardcode user-facing text: components read keys from here through
  * `t()`. The `en` locale is a scaffold with the same key shape; missing keys

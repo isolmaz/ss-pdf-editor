@@ -1,7 +1,6 @@
 /**
  * The common mark surface: selection, the marquee and the move, for every family
- * of mark the session can hold (`PLAN.md §5/Phase 3`, contract
- * `local://selection-edit-contract.txt`).
+ * of mark the session can hold.
  *
  * It exists because there used to be three partial answers to "delete a mark".
  * `AnnotationLayer` hit-tested only its own session marks, from a hardcoded 8-point

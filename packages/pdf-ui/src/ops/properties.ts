@@ -1,11 +1,10 @@
 /**
- * Document properties (`PLAN.md §6`; `REPORT.md §3` A11).
+ * Document properties.
  *
  * The dialog reads the document before it writes it (`readMetadata`), and that
  * read is what makes "empty means unchanged" honest rather than accidental:
  *  - a filled field that already holds the same text is **not** a change, so the
- *    file is not rewritten for nothing (a rewrite ends the fast path, `PLAN.md
- *    §3.3` rule 3);
+ *    file is not rewritten for nothing (a rewrite ends the fast path);
  *  - when nothing differs and no clean-up was asked for, the dialog produces no
  *    file at all and says so in its report instead of journaling an empty step.
  *

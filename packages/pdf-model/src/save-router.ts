@@ -1,5 +1,5 @@
 /**
- * Save routing and execution planning (`PLAN.md §3.3`, `§9/K14`).
+ * Save routing and execution planning.
  *
  * The router does not pick a chain of engines "just in case": it picks the
  * paths the change type actually needs, then orders those steps by dependency.
@@ -8,7 +8,7 @@
  *   2. produce the base PDF      →  original bytes | saveDocument | extractPages | full rewrite
  *   3. dependency-ordered transforms (erase before insert, metadata after the
  *      final MuPDF write, encryption last content step, signature very last)
- *   4. verification              →  `PLAN.md §7`
+ *   4. verification
  *   5. write, then mark **only that version** saved
  *
  * Any non-incremental writer ends the fast path and must appear in the save

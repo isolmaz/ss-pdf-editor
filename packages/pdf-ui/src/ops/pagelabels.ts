@@ -1,6 +1,5 @@
 /**
- * Page labels (`PLAN.md §5/Phase 3`: "Header/footer + Bates + page labels";
- * `REPORT.md §3` A11 label read).
+ * Page labels ("Header/footer + Bates + page labels").
  *
  * One rule per run, because a PDF label plan is written as one range per page where
  * the numbering changes and this dialog is a static form: it collects the rule (which

@@ -1,5 +1,5 @@
 /**
- * Page boxes & size (`PLAN.md §5/Phase 3`: "Media/Crop/Trim/Bleed/Art, resize, scale,
+ * Page boxes & size ("Media/Crop/Trim/Bleed/Art, resize, scale,
  * auto-crop (white margins), rotate/shift content").
  *
  * One dialog, six modes, one operation (`applyPageBoxes`). Everything the mode needs

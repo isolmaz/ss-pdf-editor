@@ -1,9 +1,9 @@
 /**
- * Link annotations, written (`PLAN.md §5/Phase 4`: "Link & outline editing"; the
+ * Link annotations, written ("Link & outline editing"; the
  * read half is the viewer's own link layer, this file is the one that changes the
  * document).
  *
- * pdf.js has an editor only for its own annotation types (`K18`), so the dictionary
+ * pdf.js has an editor only for its own annotation types, so the dictionary
  * is built here at the object level through MuPDF (`engines/mupdf-write.ts`):
  * `doc.addObject(...)` for the dictionary and its reference, and the page's `/Annots`
  * array as the only place the annotation is attached. What is written is
@@ -57,7 +57,7 @@
  * one `/P`), so nothing else can still reach them.
  *
  * A call that changes nothing returns the **input bytes unchanged** with
- * `incremental: true` (`PLAN.md §3.3` rule 3): rewriting a file for a no-op would
+ * `incremental: true`: rewriting a file for a no-op would
  * end the incremental fast path for nothing.
  */
 
@@ -424,7 +424,7 @@ function linkAnnotation(
  *
  * A file that does not parse, a page count that moved, or a page whose link count is
  * not the sum of its additions and removals is `verification-failed`: the caller keeps
- * the original file and the session stays dirty (`PLAN.md §3.3` rule 5/6).
+ * the original file and the session stays dirty.
  */
 async function verifyOutput(
   produced: Uint8Array,
@@ -842,7 +842,7 @@ export async function applyLinkEdit(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report };

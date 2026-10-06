@@ -1,5 +1,5 @@
 /**
- * Redaction audit (`PLAN.md §5/Phase 3`, §9/K16) — the sentences of the object-level
+ * Redaction audit — the sentences of the object-level
  * report `packages/pdf-core/src/ops/redact-audit.ts` produces and of its panel.
  *
  * Three rules hold these strings together. A `clean.*` key is a claim about the *file*
@@ -54,7 +54,7 @@ export const auditPart = {
   'audit.clean.names': 'Ad ağacı (/Names) kaydı yok.',
 
   /*
-   * The notice the audit ends on (`R06`). It reports what the scan *covered* — the
+   * The notice the audit ends on. It reports what the scan *covered* — the
    * terms it was given — because a clean report over zero terms says nothing about
    * the document, and reading it as "the redaction is complete" is the failure this
    * sentence exists to prevent.

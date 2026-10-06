@@ -1,5 +1,5 @@
 /**
- * Document accessibility (`PLAN.md §5/Phase 4`): a check that reports **facts** about a
+ * Document accessibility: a check that reports **facts** about a
  * file, a writer that produces a tagged file with real marked-content sequences, and an
  * alt-text writer for the images and form fields a check found.
  *
@@ -41,7 +41,7 @@
  *      can move;
  *   4. `tagDocument` re-opens its own output and counts the marked-content sequences
  *      against the tree's MCRs before handing back a byte; a mismatch is
- *      `verification-failed` (`PLAN.md §3.3` rule 5).
+ *      `verification-failed`.
  *
  * A page whose text cannot be related to its content honestly (no text layer, no
  * extractable blocks, an undecodable stream, ranges that overlap) is **left untagged**
@@ -89,12 +89,9 @@ import {
 
 /**
  * The `MessageKey` seam. Every key below is declared in
- * `packages/shared/src/i18n/parts/a11y.ts` by the commit that wires this op into the
- * dictionary; this workstream may not touch `packages/shared/src/i18n/` (`K3`
- * ownership), so until that commit `MessageKey` cannot name the literals and the cast
- * is the single place that stands in for the missing entry — the same seam
- * `RedactionAuditPanel` documents for its own copy keys. `local://a11y-integration.md`
- * carries the full list with its Turkish and English sentences.
+ * `packages/shared/src/i18n/parts/a11y.ts` (Turkish) and `en-parts/a11y.ts` (English);
+ * the cast is the single place a key string becomes a `MessageKey` — the same seam
+ * `RedactionAuditPanel` uses for its own copy keys.
  */
 function dictKey(value: string): MessageKey {
   return value as MessageKey;
@@ -1975,8 +1972,7 @@ async function tagOpened(
       inputBytes: bytes.byteLength,
       outputBytes: out.byteLength,
       pageCount,
-      // Page content streams were rewritten: the incremental fast path is over
-      // (`PLAN.md §3.3` rule 3).
+      // Page content streams were rewritten: the incremental fast path is over.
       incremental: false,
     },
   };
@@ -2055,7 +2051,7 @@ function claimsFor(
 /**
  * Re-open the produced file and count its own marked-content sequences against the
  * structure tree. Three things are checked, and any of them failing is
- * `verification-failed` (`PLAN.md §3.3` rule 5): the tree exists with a `/Document`, the
+ * `verification-failed`: the tree exists with a `/Document`, the
  * marked-content count of each page matches the MCRs written for it, and every MCID the
  * tree names is really in that page's content stream. A tree pointing at nothing is the
  * failure this whole operation is built to avoid, so it is measured rather than assumed.

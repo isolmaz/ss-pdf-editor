@@ -1,5 +1,5 @@
 /**
- * Full-document text search (`PLAN.md §5/Phase 1`): every match of a query, page by
+ * Full-document text search: every match of a query, page by
  * page, over the text the reader already extracts.
  *
  * There is no second extractor here: the pages come from the adapter's

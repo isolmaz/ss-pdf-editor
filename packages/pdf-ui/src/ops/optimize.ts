@@ -1,5 +1,5 @@
 /**
- * Optimisation (`PLAN.md §6`; `REPORT.md §3` A6, defects 3 and 16).
+ * Optimisation (defects 3 and 16).
  *
  * Two modes, one operation. The dialog's whole job is to make the difference
  * between them unmissable before the button is pressed: `structure` re-serialises
@@ -7,7 +7,7 @@
  * loses their text layer, links, annotations and outline.
  *
  * `destructive` is a **spec-level** flag, so choosing the raster mode makes the
- * whole dialog ask twice (`PLAN.md §3.3` rule 7). The alternative — a lost note
+ * whole dialog ask twice. The alternative — a lost note
  * the user only reads afterwards — is exactly the "report told me later"
  * behaviour the phase exists to remove, so the flag is set and `introKey` carries
  * the sentence the confirmation is about.
@@ -40,7 +40,7 @@ export const compressDialog: OperationDialogSpec = {
       advanced: true,
       kind: 'checkbox',
       labelKey: 'optimize.stripMetadata',
-      // The producer line is never stripped (`PLAN.md §2.1/6`), so the reassurance
+      // The producer line is never stripped, so the reassurance
       // belongs next to the checkbox that sounds like it would.
       hintKey: 'optimize.producerKept',
       defaultValue: false,
@@ -96,8 +96,8 @@ export const compressDialog: OperationDialogSpec = {
         : {
             mode: 'structure',
             stripMetadata: params.stripMetadata === true,
-            // Hard-coded, never a field: the producer line is a product policy
-            // (`PLAN.md §2.1/6`), not a user choice.
+            // Hard-coded, never a field: the producer line is a product policy,
+            // not a user choice.
             keepProducer: true,
           };
 
@@ -106,7 +106,7 @@ export const compressDialog: OperationDialogSpec = {
       onProgress: context.onProgress,
     });
 
-    // `REPORT.md §4.3`: the source project reported "no gain" while writing a
+    // The source project reported "no gain" while writing a
     // *larger* file. The size delta the user opened this dialog for is stated in
     // the notice, and the report carries the same two numbers.
     const { inputBytes, outputBytes } = outcome.report;

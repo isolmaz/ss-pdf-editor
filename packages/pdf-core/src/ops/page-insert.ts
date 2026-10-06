@@ -1,14 +1,12 @@
 /**
- * Page insertion and replacement — page management v2 (`PLAN.md §5/Phase 3`:
- * "add page (from file/document/blank/image), replace").
+ * Page insertion and replacement — page management v2 ("add page (from file/document/blank/image), replace").
  *
  * Both operations are **compositions**, not rebuilds: the output is produced by
  * pdf.js's own `extractPages` running on the *live* document that owns the
  * annotation storage (`composeDocument` with `document: null`) — the rule
  * `ops/compose.ts` documents and measured: a byte source carries 0 storage-backed
  * annotations where the live handle carries 1 `Highlight`. Form values and
- * annotations therefore travel into the result instead of being rebuilt away
- * (`WORKLOG.md §3` row 1).
+ * annotations therefore travel into the result instead of being rebuilt away.
  *
  * What the engine does **not** carry is the base document's Info: `#makeInfo`
  * copies Info only for a single-document composition, and both operations have a
@@ -90,7 +88,7 @@ export const PAPER_POINTS: Readonly<Record<'a4' | 'letter', PageSizePt>> = {
 
 /**
  * Ceiling on the pages one insert may produce. The desktop tier's hard page
- * limit is 2000 (`PLAN.md §3.4`, `pdf-shared/limits.ts`); a blank-page count is
+ * limit is 2000 (`pdf-shared/limits.ts`); a blank-page count is
  * a number a user types, so it is checked before anything is allocated.
  */
 const MAX_PAGE_BUDGET = 2000;
@@ -301,7 +299,7 @@ export async function pageSizesOf(
 ): Promise<readonly PageSizePt[]> {
   const mupdf = await loadMupdf();
   // Read-only: nothing is written back, so the page tree is read without the
-  // password check `openForWrite` makes (`PLAN.md §3.3` rule 9).
+  // password check `openForWrite` makes.
   const document = openPdf(mupdf, bytes);
   try {
     const pages = pageObjects(document);
@@ -613,8 +611,7 @@ export async function insertPages(
       inputBytes: options.bytes.length + built.bytes.length,
       outputBytes: bytes.length,
       pageCount: outputCount,
-      // A composition writes a fresh file, never an incremental update
-      // (`PLAN.md §3.3` rule 3).
+      // A composition writes a fresh file, never an incremental update.
       incremental: false,
     },
   };

@@ -1,5 +1,5 @@
 /**
- * Annotations and comments (`PLAN.md §5/Phase 3`, `§9/K18`).
+ * Annotations and comments.
  *
  * ## Where the geometry comes from
  *
@@ -16,8 +16,7 @@
  * which builds the annotation dictionaries **and their appearance streams** and
  * appends them to the page's `/Annots` array — the same path the engine's own
  * editor layer uses. Reusing it means a highlight's appearance is the engine's,
- * not an approximation of ours, and the file stays an incremental update
- * (`K14` path 1).
+ * not an approximation of ours, and the file stays an incremental update.
  *
  * The entry shapes below are the ones the worker's creator consumes, read from
  * `build/pdf.worker.mjs` rather than guessed:
@@ -37,7 +36,7 @@
  * geometric shapes are therefore finished by `ops/annotation-shapes.ts`**, which
  * rewrites the subtype of a text mark and builds a shape's dictionary plus its
  * appearance stream through MuPDF (`engines/mupdf-write.ts`). The engine writes the geometry; we own the four
- * types it cannot write (`K18`).
+ * types it cannot write.
  *
  * ## The comment
  *
@@ -45,7 +44,7 @@
  * which the worker writes as `/Contents` — what every reader shows as the note.
  * The body is prefixed with `pdf-editor-ann:<id>` so a re-read can tell our
  * annotations from the document's own; that marker is also what makes the
- * acceptance round trip checkable (`WORKLOG.md §3`).
+ * acceptance round trip checkable.
  *
  * ## Rotation
  *
@@ -500,7 +499,7 @@ export function contentsFor(mark: AnnotationMark): string {
  * a note's box, an underline's bar and a `/Line`'s diagonal all map onto themselves
  * at 90°. `writeAnnotationsToFile` writes the unturned copy and then hands the
  * resulting annotation to `ops/annotation-transform`, which turns the geometry and
- * the appearance together (`PLAN.md §3.3` step 3).
+ * the appearance together.
  */
 export function storageEntriesFor(
   mark: AnnotationMark,
@@ -593,7 +592,7 @@ export function storageEntriesFor(
   }
 }
 
-/** `/Subtype` for each text-line kind this module retags (`K18`). */
+/** `/Subtype` for each text-line kind this module retags. */
 const RETAG_SUBTYPES: Readonly<Record<string, string>> = {
   underline: 'Underline',
   strikeout: 'StrikeOut',
@@ -833,7 +832,7 @@ export async function writeAnnotations(
       inputBytes: options.inputBytes ?? bytes.byteLength,
       outputBytes: bytes.byteLength,
       pageCount: handle.pageCount,
-      // Annotations ride the incremental writer (`K14` path 1).
+      // Annotations ride the incremental writer.
       incremental: true,
     },
   };
@@ -1142,7 +1141,7 @@ export function marksFromEngineEntries(
       // `quadPoints` is `null`: `FreeHighlightOutline.serialize` hands over the
       // sampled runs (`outlines.points`) and the drawn path (`outlines.outline`).
       // Reading that path as quads is what turned every free highlight into a row of
-      // disconnected boxes (`WORKLOG.md` §4, 2026-09-22), so the strokes are taken
+      // disconnected boxes, so the strokes are taken
       // first and the outline is only decoded when no sampled run survives.
       const sampled = outlinePoints(value.outlines, top);
       const drawnStrokes = sampled.length > 0 ? sampled : [drawnPath(value.outlines, top)];

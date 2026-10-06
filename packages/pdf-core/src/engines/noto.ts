@@ -4,7 +4,7 @@
  *
  * Why it matters: the standard 14 fonts use WinAnsi encoding, which has no `ş ğ ı İ`;
  * the source project stamped and watermarked with a standard font and silently produced
- * broken Turkish (`REPORT.md §3` A9/A10).
+ * broken Turkish.
  *
  * The bytes are engine-neutral, so they live here rather than in one engine's adapter:
  * the MuPDF writers (`engines/mupdf-write.ts`) embed them and the text model measures
@@ -18,7 +18,7 @@ const fontCache = new Map<boolean, Promise<Uint8Array>>();
 
 /**
  * The pinned Noto Sans bytes. Fetched from our own origin once and kept for the
- * session: the app makes no third-party request (`K9`), so a missing asset is an
+ * session: the app makes no third-party request, so a missing asset is an
  * `asset-missing` error the offline readiness screen can act on — not a silent
  * fallback to a font that cannot spell Turkish.
  *

@@ -1,5 +1,5 @@
 /**
- * Operation-aware output verification (`R06`, `PLAN.md §3.3` rule 5).
+ * Operation-aware output verification.
  *
  * Every case here builds a real PDF with MuPDF and reads it back through the same
  * pdf.js adapter the application uses, because the defect this suite guards against was

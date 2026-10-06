@@ -1,5 +1,5 @@
 /**
- * Annotation data interchange: JSON and FDF (`PLAN.md §5/Phase 3`, the annotation
+ * Annotation data interchange: JSON and FDF (the annotation
  * bullet's “import/export (JSON/FDF)”).
  *
  * Why it exists at all: a mark this app owns (underline, strikeout, squiggly,
@@ -24,7 +24,7 @@
  * one would mean parsing arbitrary annotation dictionaries — a fidelity claim this
  * module does not make. The FDF written here carries the same *records* as the JSON
  * (geometry included, so the round trip is lossless for our own files); reading
- * Acrobat's comment FDF is a Phase 4 item, recorded in `WORKLOG.md §4`.
+ * Acrobat's comment FDF is not read yet.
  */
 
 import { ToolError } from 'pdf-shared';
@@ -401,8 +401,7 @@ export function parseAnnotationData(bytes: Uint8Array): AnnotationDataResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Acrobat's “export comments” container (`PLAN.md §5/Phase 3`, the carried item in
- * `WORKLOG.md §4`).
+ * Acrobat's “export comments” container.
  *
  * It is an FDF whose `/Fields` entries are **annotations**, not form values, and the
  * annotation travels as a PDF object: either as a `/V` **string** whose text is the
@@ -410,9 +409,8 @@ export function parseAnnotationData(bytes: Uint8Array): AnnotationDataResult {
  * or — from other producers — as a `/V` dictionary directly. Both are read here.
  *
  * **What this reader knows and what it does not.** The shape above is the documented one,
- * and the check that covers it built a file in exactly that shape (archived spike
- * `annotation-data-probe.mjs`); a file **exported by a real Acrobat** has not been run
- * through it, because the tree has none and test corpora come from the owner (`K28`). The
+ * and the check that covers it built a file in exactly that shape; a file **exported by a real Acrobat** has not been run
+ * through it, because the repository has no such file. The
  * honest consequences are visible in the result: values that do not parse are *skipped and
  * counted*, a subtype this model cannot hold is counted too, and the page a comment sits on
  * is taken from `/Page` when the producer wrote it — Acrobat's own export does not, and a

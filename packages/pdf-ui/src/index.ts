@@ -2,7 +2,6 @@ export { CommandPalette, type CommandPaletteProps } from './commands/CommandPale
 export { MenuBar, type MenuBarProps } from './commands/MenuBar';
 export { type Command, MENU_GROUP_KEYS, MENU_GROUPS, type MenuGroup } from './commands/types';
 export { type AppButtonProps, Button } from './components/Button';
-export { EmptyState, type EmptyStateProps } from './components/EmptyState';
 export {
   applyLocale,
   getStoredLocale,
@@ -70,8 +69,6 @@ export { ReadingPane, type ReadingPaneProps } from './reading/ReadingPane';
 export type { ReadingViewer } from './reading/useReadingText';
 export { Dock, type DockProps, type DockTab } from './shell/Dock';
 export { StatusBar, type StatusBarProps } from './shell/StatusBar';
-export { type DocumentTabDescriptor, TabStrip, type TabStripProps } from './shell/TabStrip';
-export { TopBar, type TopBarProps } from './shell/TopBar';
 export { Magnifier, type MagnifierProps } from './tools/Magnifier';
 export { SnapshotMenu, type SnapshotMenuProps } from './tools/SnapshotMenu';
 export { usePresentation } from './tools/usePresentation';

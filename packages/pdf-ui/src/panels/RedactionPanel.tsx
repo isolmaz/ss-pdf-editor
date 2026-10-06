@@ -1,6 +1,6 @@
 /**
- * The redaction mark list (`PLAN.md §4.1` right dock: "Redaction marks";
- * `§5/Phase 3` redaction v2 adds the pattern search that fills it).
+ * The redaction mark list (right dock: "Redaction marks"; the pattern search
+ * fills it).
  *
  * The panel owns exactly two things: which areas are marked, and clearing them.
  * Everything about *how* a mark is made — box drawing, text search, the handling

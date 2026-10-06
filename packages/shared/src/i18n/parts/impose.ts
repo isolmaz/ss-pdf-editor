@@ -1,5 +1,5 @@
 /**
- * Imposition: N-up, booklet and poster (`REPORT.md §3` A16) plus print extras (A18).
+ * Imposition: N-up, booklet and poster plus print extras.
  */
 
 export const imposePart = {

@@ -1,9 +1,9 @@
 /*
- * No-flash theme bootstrap (`PLAN.md §4.4`).
+ * No-flash theme bootstrap.
  *
  * Classic same-origin script: it runs before the first paint, so the stored
  * theme choice applies without a flash — and it keeps `script-src 'self'` free
- * of 'unsafe-inline' (`K26`). No stored choice means "follow the system": the
+ * of 'unsafe-inline'. No stored choice means "follow the system": the
  * media query drives both native color-scheme and Kumo's data-mode selector.
  */
 (() => {

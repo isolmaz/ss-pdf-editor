@@ -1,7 +1,7 @@
 /**
- * Form dialogs (`PLAN.md §5/Phase 3`, §6 A11).
+ * Form dialogs.
  *
- * Three capabilities, three dialogs, one shape — the Phase 2 contract: a spec plus
+ * Three capabilities, three dialogs, one shape — the dialog contract: a spec plus
  * a `run` that receives frozen bytes and returns produced files with a report.
  *
  * The framework has no dynamic field list (`dialogs/types.ts` is a static

@@ -1,5 +1,5 @@
 /**
- * The active canvas tool's property strip — one row, no dialog (`PLAN.md §4.3`).
+ * The active canvas tool's property strip — one row, no dialog.
  *
  * The shell owns the settings and mounts this strip outside the scroll-clipped
  * viewer, so the values a tool is about to use never disappear while switching

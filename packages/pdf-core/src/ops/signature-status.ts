@@ -1,11 +1,11 @@
 /**
- * Signature status (`PLAN.md §5/Phase 3`: "verification status of existing
- * signatures"; `PLAN.md §6` B20; `PLAN.md §9/K17`) — and the parts a browser with
- * **no network** can honestly deliver (`K9`): cryptographic integrity over the bytes
+ * Signature status ("verification status of existing
+ * signatures") — and the parts a browser with
+ * **no network** can honestly deliver: cryptographic integrity over the bytes
  * the document actually ships, the certificate's own issuer/subject relationship, and
  * what the `/ByteRange` covers.
  *
- * K17 forbids a single "valid" badge, so nothing here returns one: integrity, trust,
+ * The product never shows a single "valid" badge, so nothing here returns one: integrity, trust,
  * revocation evidence and post-signing modification are four separate fields, and
  * `trust` is `'not-checked'`, `revocation` is always `'indeterminate'` — a local check
  * that cannot consult a trust store or a CRL/OCSP responder must not imply either.
@@ -62,7 +62,7 @@ export type { TrustReason };
 
 export type SignatureIntegrity = 'valid' | 'invalid' | 'unchecked';
 /**
- * Where the certificate's trust stands (`K17`).
+ * Where the certificate's trust stands.
  *
  * `'trusted'` is only reachable through a chain that ends at a certificate the **user**
  * imported (`signature-trust.ts`); `'untrusted'` means such a chain was attempted and a
@@ -1180,7 +1180,7 @@ async function verifyOne(
 
   // Coverage and the revision count come from the raw layout, so they are reported even
   // when the cryptographic verdict cannot be reached: "the signature does not cover what
-  // it should" is a different fact from "the digest did not match" (`K17`).
+  // it should" is a different fact from "the digest did not match".
   const coverage: SignatureCoverage = raw === null ? 'unknown' : coverageOf(bytes, raw.byteRange);
   const signedRevisions = raw === null ? 0 : changesAfterSigning(bytes, raw.byteRange, revisions);
   const unchecked = (cause: string): SignatureVerification => ({
@@ -1348,7 +1348,7 @@ export async function verifySignatures(
           : commonName(contents, certificate.subject, { nodes: MAX_ASN1_NODES }),
       // `issuer == subject` is the whole of the claim: a locally self-signed
       // certificate. Whether the signature under it verifies is a trust question this
-      // build cannot answer (`K17`, no trust store, no network).
+      // build cannot answer (no trust store, no network).
       selfSigned:
         contents !== null &&
         certificate !== null &&

@@ -1,5 +1,5 @@
 /**
- * Optimisation and export of the whole document (`REPORT.md §3` A6).
+ * Optimisation and export of the whole document.
  */
 
 export const optimizePart = {

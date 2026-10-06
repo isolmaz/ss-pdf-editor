@@ -1,5 +1,5 @@
 /**
- * Page composition (`PLAN.md §3.3` — the `extractPages` path).
+ * Page composition (the `extractPages` path).
  *
  * This is the one place where a document's page order, rotation and page count
  * change, and it is the reason a page delete is *real* the moment it is applied
@@ -8,7 +8,7 @@
  * Two rules from the routing table are encoded here:
  *  - the composition runs on the **document that owns the annotation storage**
  *    (`document: null`), because passing byte sources drops storage-backed
- *    annotations (`WORKLOG.md §3` row 1, measured: the same document carries 1
+ *    annotations (measured: the same document carries 1
  *    `Highlight` through, a byte source 0);
  *  - merge input documents are passed as bytes and are never touched otherwise.
  *
@@ -37,7 +37,7 @@
  *  - Info is copied from the base document only when the composition is
  *    single-document, and the engine stamps its own `Creator`/`Producer`
  *    (`PDF.js`/`Firefox`), which is why the rotation pass merges the product
- *    producer line back in (`PLAN.md §2.1/6`).
+ *    producer line back in.
  *
  * The rotation pass and the merge's metadata step run on MuPDF's object model
  * (`engines/mupdf-write.ts`); a composition that turns nothing is only counted, never
@@ -190,8 +190,7 @@ export async function composeDocument(
       const pages = pageObjects(doc);
       assertPageCount(pages.length, options.pageCount);
       applyRotation(pages, rotated, context);
-      // The engine stamped its own producer line; `saveRewrite` puts ours back
-      // (`PLAN.md §2.1/6`).
+      // The engine stamped its own producer line; `saveRewrite` puts ours back.
       bytes = saveRewrite(doc, 'composeDocument.rotate');
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') throw error;
@@ -231,8 +230,7 @@ export async function composeDocument(
       inputBytes: extraBytes + (await downloadInfo(handle)),
       outputBytes: bytes.length,
       pageCount: options.pageCount,
-      // A composition is a freshly written file, never an incremental update
-      // (`PLAN.md §3.3` rule 3).
+      // A composition is a freshly written file, never an incremental update.
       incremental: false,
     },
   };
@@ -251,7 +249,7 @@ export async function composeDocument(
  * stay byte sources and are never touched.
  *
  * Metadata comes from the base document only: the added documents' Info and XMP
- * are dropped, and the report says so (`REPORT.md §3` A1 — the source project
+ * are dropped, and the report says so (the source project
  * took `sources[0]` without ever telling the user).
  */
 export async function mergeDocuments(
@@ -464,7 +462,7 @@ function buildEntries(options: ComposeOptions, planned: readonly PlannedPage[]):
     }
     let shared: Uint8Array | null | undefined;
     const documentFor = (): Uint8Array | null => {
-      // One disposable copy per source, shared by its entries: `K15` keeps the
+      // One disposable copy per source, shared by its entries: the disposable-copy rule keeps the
       // caller's buffer out of the engine, and the worker clones the buffer per
       // entry, so nothing is gained by slicing once more for every copy level.
       if (shared === undefined) shared = source.bytes === undefined ? null : source.bytes.slice();
@@ -521,7 +519,7 @@ function baseCopyLevelCount(planned: readonly PlannedPage[], baseIndex: number):
 /**
  * Apply the per-page `/Rotate`. The engine copied each source page's own
  * `/Rotate` into the output (`#makePageCopy`), so the requested angle adds to
- * the rotation the page already carries — `PLAN.md §3.2`: user rotation on top of
+ * the rotation the page already carries — user rotation on top of
  * the source rotation.
  */
 function applyRotation(

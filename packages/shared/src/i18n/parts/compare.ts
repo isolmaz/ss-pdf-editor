@@ -1,9 +1,9 @@
 /**
- * Phase 4 document comparison (`PLAN.md §5/Phase 4`): the text diff and the
+ * Document comparison: the text diff and the
  * rendered-pixel diff of two documents (`ops/compare.ts`) and the panel that
  * renders their per-page rows (`panels/ComparePanel.tsx`).
  *
- * The words this workstream alone says live here: the panel's tab label
+ * The words only this feature says live here: the panel's tab label
  * (`panel.compare`), the two run commands, the table's headers and the empty,
  * running and no-result states (`compare.*`), the per-row method, status and
  * detail lines, and the names of the bounds a comparison ran into

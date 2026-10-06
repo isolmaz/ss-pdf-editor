@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PanelLoading, PanelMessage } from './PanelParts';
 
 /**
- * Every match of the current query ("Sonuçlar", `PLAN.md §5/Phase 1`), as a flat
+ * Every match of the current query ("Sonuçlar"), as a flat
  * list of the pages it sits on. The scan runs in `pdf-core` over the text the reader
  * already extracts (no second extractor), page by page, cancellable and yielding to
  * the event loop — a 500-page document fills the list without freezing the dock.

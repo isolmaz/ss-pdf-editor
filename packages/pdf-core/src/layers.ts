@@ -1,5 +1,5 @@
 /**
- * Optional content groups ("Katmanlar", `PLAN.md §5/Phase 1`): the layer palette of
+ * Optional content groups ("Katmanlar"): the layer palette of
  * a PDF, read through pdf.js's public `OptionalContentConfig`.
  *
  * Two engine facts shape this module:

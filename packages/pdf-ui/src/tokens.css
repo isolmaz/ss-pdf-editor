@@ -1,5 +1,5 @@
 /**
- * Our token layer on top of Kumo (`PLAN.md §9/K24`).
+ * Our token layer on top of Kumo.
  *
  * Kumo's semantic tokens are the vocabulary; brand values override Kumo's CSS
  * custom properties instead of forking components. Rules that hold everywhere:
@@ -7,7 +7,7 @@
  * Tailwind colour, never a `dark:` variant — dark mode is automatic through
  * `light-dark()` and `color-scheme`.
  *
- * Space Grotesk is the chosen self-hosted UI face (P6). The system stack is
+ * Space Grotesk is the chosen self-hosted UI face. The system stack is
  * retained for readable fallback while font assets load.
  */
 

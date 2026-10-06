@@ -1,5 +1,5 @@
 /**
- * File-level capabilities (`PLAN.md §6`; `REPORT.md §3` A1, A17, A7, A8).
+ * File-level capabilities.
  *
  * Four capabilities that take or produce whole documents. None of them
  * implements anything: each `run` composes the parameters the dialog collected,
@@ -14,9 +14,8 @@
  * dialog contract, while `OpRunResult.report` is required. Their reports are
  * therefore assembled here from what the dialog itself knows — the page set it
  * asked for, the produced byte sizes and the one fact the user must not have to
- * discover afterwards (an image export carries no text layer). Moving those two
- * reports into the operations is Phase 3 work; the sentence they need already
- * lives in this capability's dictionary part.
+ * discover afterwards (an image export carries no text layer). The sentence they
+ * need lives in this capability's dictionary part.
  */
 
 import {
@@ -35,7 +34,7 @@ import { ToolError } from 'pdf-shared';
 import type { OperationDialogSpec, OpRunResult } from '../dialogs/types';
 import { resolveScope } from './scope';
 
-/** The megapixel ceiling one exported page may hold (`PLAN.md §3.4`, the 16 MP budget). */
+/** The megapixel ceiling one exported page may hold (the 16 MP budget). */
 const MAX_MEGAPIXELS = 16;
 
 /** An export produces files, not a document: the report describes the files it wrote. */
@@ -54,7 +53,7 @@ function exportReport(
     outputBytes: files.reduce((sum, file) => sum + file.bytes.length, 0),
     pageCount,
     // A rendered image or an extracted text file is never an incremental update
-    // of the document (`PLAN.md §3.3` rule 3).
+    // of the document.
     incremental: false,
   };
 }
@@ -257,7 +256,7 @@ export const imagesToPdfDialog: OperationDialogSpec = {
  * A7 — export pages as image files.
  *
  * The page set, the DPI and the name stem reach `exportImages` unchanged; the
- * megapixel ceiling is a product budget, not a user choice (`PLAN.md §3.4`), so
+ * megapixel ceiling is a product budget, not a user choice, so
  * a page that would exceed it fails with the operation's own message naming the
  * largest DPI that fits.
  */
@@ -331,7 +330,7 @@ export const exportImagesDialog: OperationDialogSpec = {
 /**
  * A8 — export the text layer.
  *
- * `REPORT.md §3` A8 asks for a transparent engine choice, and the honest half of
+ * Text export asks for a transparent engine choice, and the honest half of
  * that is what this dialog does **not** offer: the source selection "text layer /
  * OCR" is absent because `exportText` has no OCR path (it takes pages, format and
  * a name), and a choice that cannot reach an operation is a dead option. Scanned

@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
  * Fetch the pinned engine builds into `public/engines/**` and keep their
- * SHA-256 pins in `tools/asset-pins.json` (`PLAN.md §5` Phase 0 item 3;
- * AGENTS.md > Assets: engines are fetched by script, pinned by size + hash and
- * never committed).
+ * SHA-256 pins in `tools/asset-pins.json` (engines are fetched by script, pinned
+ * by size + hash and never committed).
  *
  *   node tools/fetch-engines.mjs            verify the files on disk against the pins (default)
  *   node tools/fetch-engines.mjs --update   copy the engine builds and rewrite the pins
@@ -61,7 +60,7 @@ const ENGINES = [
     package: 'pdfjs-dist',
     target: 'engines/pdfjs',
     // pdf.js fetches the worker, cMaps, standard fonts and its wasm decoders from `baseUrl`
-    // at runtime (`PLAN.md §2`), so they must be same-origin files rather than bundle imports.
+    // at runtime, so they must be same-origin files rather than bundle imports.
     entries: [
       { from: 'build/pdf.worker.mjs', to: 'pdf.worker.mjs' },
       { from: 'build/pdf.worker.min.mjs', to: 'pdf.worker.min.mjs' },
@@ -128,7 +127,7 @@ const ENGINES = [
     id: 'noto',
     package: '@expo-google-fonts/noto-sans',
     target: 'fonts/noto',
-    // Embedding face for stamps, header/footer and signature text (`PLAN.md §2`, OFL-1.1). Text
+    // Embedding face for stamps, header/footer and signature text (OFL-1.1). Text
     // drawn by the MuPDF writers is embedded from a real TTF rather than a base-14 font: the built-in faces
     // carry no Turkish diacritics (Ğ/ğ, İ/ı, Ş/ş) and cannot be subset reliably. Two of the
     // eighteen weights the package ships: regular for body text, semibold for headings and
@@ -142,9 +141,9 @@ const ENGINES = [
     id: 'tesseract',
     package: 'tesseract.js',
     target: 'engines/tesseract',
-    // OCR (`PLAN.md §2`, Apache-2.0). The worker is a plain script the OCR engine spawns from our
+    // OCR (Apache-2.0). The worker is a plain script the OCR engine spawns from our
     // own origin; `corePath` points at the core loader below instead of the default CDN, because
-    // the browser build makes no third-party request, ever (§2.1/3, §3.7).
+    // the browser build makes no third-party request, ever.
     //
     // Which core the worker picks is decided inside `getCore.js`: with the default
     // `OEM.LSTM_ONLY` it importScripts `<corePath>/tesseract-core-simd-lstm.wasm.js` on a SIMD
@@ -521,7 +520,7 @@ function update({ write = true } = {}) {
   if (failures.length > 0) {
     console.error(`\nfetch-engines ${write ? '--update' : '--sync'}: ${failures.length} problem(s)\n`);
     for (const failure of failures) console.error(`  ${failure}`);
-    console.error('\nNo pins written. See AGENTS.md > Assets.');
+    console.error('\nNo pins written.');
     process.exitCode = 1;
     return;
   }

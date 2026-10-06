@@ -1,6 +1,5 @@
 /**
- * Object-level audit of a produced document (`PLAN.md §9/K16` first safety contract,
- * `§5/Phase 3`).
+ * Object-level audit of a produced document (the first redaction safety contract).
  *
  * `ops/redact.ts` checks the marked *areas* (`verifyRedaction`); this module checks
  * the *file*: every place an erased string still appears in the raw bytes, and every
@@ -8,7 +7,7 @@
  * redacted document anywhere, so it is built to be read — a check that found nothing
  * reports that it found nothing, in the same shape as a check that found something.
  *
- * **The recipe, measured in archived spike `redaction/audit.ts`.** The bytes are read as
+ * **The recipe, measured in an early engine spike.** The bytes are read as
  * a latin1 string (`hexStringToLatin1`, `engines/mupdf.ts`) and then scanned with plain
  * `indexOf`/regex passes. That is the point of latin1: one byte is one character, so a
  * needle is found inside dictionary text, inside hex strings and inside undecoded
@@ -27,7 +26,7 @@
  * present (that is not caution for its own sake: reading references out of a compressed
  * object stream is impossible here, and the naive check invented three orphans on a
  * perfectly ordinary four-object fixture). The spike's object-level pass
- * (archived spike `redaction/audit.ts:205-263`: `newIndirect(n).readStream()` per object)
+ * (`newIndirect(n).readStream()` per object)
  * is the layer that sees inside; it needs the engine in the loop, which this scan
  * deliberately does not.
  *
@@ -174,7 +173,7 @@ const MARKER_CHECKS: readonly MarkerCheck[] = [
 ];
 
 /**
- * Object-level audit of a produced document (`PLAN.md §9/K16` first safety contract).
+ * Object-level audit of a produced document (the first redaction safety contract).
  * `needles` are the strings the user asked to erase; the audit reports every place
  * they still appear in the raw bytes, and every structural trace the file carries.
  *

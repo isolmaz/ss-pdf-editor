@@ -6,7 +6,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
  * `public/_headers` is parsed by the same code the Vite plugin uses, so what
  * this server sends is what Cloudflare will send — CSP, COOP/COEP on
  * `/editor/*`, cache rules. That is the point: the editor and the site must run
- * under the real policy, not a relaxed substitute (`PLAN.md §5/Phase 0`).
+ * under the real policy, not a relaxed substitute.
  *
  * Usage: node tools/preview-dist.mjs [--root dist] [--port 4178]
  */
@@ -55,7 +55,7 @@ function resolveFile(pathname) {
   } catch {
     // A malformed escape (`/%E0%A4%A`) is a request for something this server does not
     // have, not a reason to end the process: `URIError` used to escape the request
-    // handler, close the connection and exit with code 1 (`F16`).
+    // handler, close the connection and exit with code 1.
     return null;
   }
   const relativePath = normalize(decoded).replace(/^([/\\])+/, '');

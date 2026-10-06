@@ -1,6 +1,5 @@
 /**
- * Batch processing: many documents, one ordered rule set, one report
- * (`PLAN.md §5/Phase 4`).
+ * Batch processing: many documents, one ordered rule set, one report.
  *
  * A batch is **not** a second engine and **not** a second save router. Every step
  * of a rule set names an operation this repository already ships (`ops/metadata`,
@@ -18,7 +17,7 @@
  *     same problem one level up — a list of saves — so it is ordered by the same
  *     rule (`STEP_PHASE`), and a run whose executed order differs from the
  *     declared order says so in its report instead of quietly reshuffling.
- *  2. **Which path?** The two paths of `PLAN.md §3.3` stay the two paths:
+ *  2. **Which path?** The two save paths stay the two paths:
  *     operations that only touch metadata, overlays or image streams run on the
  *     bytes and hand bytes back (the MuPDF writer path), while a step
  *     that changes the *page set* goes through `openWithPdfjs` +
@@ -32,7 +31,7 @@
  * Everything is bounded: an item larger than the desktop document ceiling is
  * refused with `file-too-large`, a rule set longer than `MAX_BATCH_ITEMS` files
  * is refused before any work starts, and the only thing that leaves this module
- * is the `ToolError` contract (`AGENTS.md` > Errors) — an engine's raw English
+ * is the `ToolError` contract — an engine's raw English
  * message travels in `ToolError.details.engineMessage` for the report and never
  * becomes a user-facing sentence.
  */
@@ -76,7 +75,7 @@ export const BATCH_TEMPLATE_VERSION = 1;
 
 /**
  * One file in a run. Bytes plus a name: a batch is what the user dropped on the
- * dialog, so the runner never opens a file itself (`K15`: the caller owns the
+ * dialog, so the runner never opens a file itself (the caller owns the
  * master copy and hands disposable buffers over).
  */
 export interface BatchItem {
@@ -173,7 +172,7 @@ export interface BatchStepParams {
 
 export type BatchStepKind = keyof BatchStepParams;
 
-/** The step kinds a template may name, in the order the integration note lists them. */
+/** The step kinds a template may name, in the order the dialog lists them. */
 export const BATCH_STEP_KINDS: readonly BatchStepKind[] = [
   'pages',
   'compress',
@@ -188,7 +187,7 @@ export const BATCH_STEP_KINDS: readonly BatchStepKind[] = [
 
 /**
  * `{ kind, params }` — the discipline `pdf-model/src/operations.ts` uses for the
- * journal: data only, never a function (`K12`). The union is discriminated on
+ * journal: data only, never a function. The union is discriminated on
  * `kind`, so a step whose params do not match its kind is a compile error.
  */
 export type BatchStep = {
@@ -453,7 +452,7 @@ export function planBatch(steps: readonly BatchStep[]): BatchPlan {
  * Bound on one run. The report holds the produced bytes of every item (that is
  * what the caller asked for), so the item count is bounded as well as the item
  * size — an unbounded queue is how a batch turns into an out-of-memory crash
- * instead of a message (`PLAN.md §3.4`).
+ * instead of a message.
  */
 export const MAX_BATCH_ITEMS = 256;
 
@@ -476,7 +475,7 @@ export interface BatchProgress {
 }
 
 export interface BatchRunOptions {
-  /** Checked between steps and between items (`PLAN.md §3.4`). */
+  /** Checked between steps and between items. */
   readonly signal: AbortSignal;
   readonly onProgress?: (progress: BatchProgress) => void;
 }
@@ -507,7 +506,7 @@ export interface BatchItemDone {
 /**
  * A failed item. The mapped code is the whole contract: the surface reads
  * `messageKey`/`hintKey` from the dictionary and shows `detail` only as a
- * diagnostic (`AGENTS.md` > Errors).
+ * diagnostic.
  */
 export interface BatchItemFailure {
   readonly status: 'failed';
@@ -873,7 +872,7 @@ async function applyStep(
 }
 
 /**
- * The page-extraction path, for bytes (`PLAN.md §3.3`: `extractPages`). It is the
+ * The page-extraction path, for bytes (`extractPages`). It is the
  * path `ops/split.ts` takes and the reason a batch-local composition is not
  * written here: open the item with the pdf.js adapter, compose through
  * `composeDocument` on that live document, destroy it.
@@ -968,7 +967,7 @@ async function applyImage(
       inputBytes: head.report.inputBytes,
       outputBytes: tail.report.outputBytes,
       pageCount: tail.report.pageCount,
-      // Every write re-serialises the file (`PLAN.md §3.3` rule 3).
+      // Every write re-serialises the file.
       incremental: false,
     },
   };

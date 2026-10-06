@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 /**
  * Status bar: where the user is, and what the engine is doing.
  *
- * The memory/limit readout is the honest surface `PLAN.md §3.4` asks for — a
+ * The memory/limit readout is the honest surface — a
  * viewing-only downgrade or a size warning is stated here, never applied
  * silently. The memory budget indicator provides live feedback on memory consumption.
  */
@@ -22,19 +22,19 @@ export interface StatusBarProps {
   readonly tier: 'desktop' | 'mobile';
   readonly limits: LimitVerdict;
   /**
-   * The signature verdicts of the working version (`K17`). The badge is the *summary*
+   * The signature verdicts of the working version. The badge is the *summary*
    * the properties panel expands: how many signatures the document carries, whether any
    * of them failed to verify, and how many revisions were written after the newest one.
    */
   readonly signatures?: readonly SignatureVerification[];
   /**
-   * Live memory usage and budget ceiling (`PLAN.md §3.4`, §4.1).
+   * Live memory usage and budget ceiling.
    */
   readonly memoryUsage?: {
     readonly usedBytes: number;
     readonly budgetBytes: number;
   };
-  /** Sensitive session active indicator (`K16`). */
+  /** Sensitive session active indicator. */
   readonly sensitive?: boolean;
   /**
    * The page and view controls, when a document is open. They replace the plain page
@@ -122,7 +122,7 @@ export function StatusBar({
         <Badge>{t(tier === 'mobile' ? 'shell.deviceTier.mobile' : 'shell.deviceTier.desktop')}</Badge>
       </span>
 
-      {/* Memory budget meter (PLAN.md §3.4, §4.1) */}
+      {/* Memory budget meter */}
       {memoryUsage === undefined ? null : (
         <div
           className="hidden items-center gap-1.5 xl:flex"
@@ -143,7 +143,7 @@ export function StatusBar({
         </div>
       )}
 
-      {/* Sensitive session active indicator (K16) */}
+      {/* Sensitive session active indicator */}
       {sensitive ? (
         <span
           className="flex items-center gap-1 text-kumo-warning font-medium"

@@ -8,7 +8,7 @@
  * the product code calls. A test that only asked the repository's own verifier would pass
  * for a wrong conversion that the same conversion produced.
  *
- * The `R01` block is the reproduced defect: a DER `ECDSA-Sig-Value` handed straight to
+ * The first block is the reproduced defect: a DER `ECDSA-Sig-Value` handed straight to
  * `SubtleCrypto.verify` is not the fixed-width pair that API takes, so a valid P-256
  * certificate chain came back `untrusted`.
  */
@@ -76,7 +76,7 @@ function opensslSaysSigned(child: CertificateFixture, issuer: CertificateFixture
   );
 }
 
-describe('R01 — ECDSA certificate signature encoding', () => {
+describe('ECDSA certificate signature encoding', () => {
   it.each(['P-256', 'P-384', 'P-521'] as const)(
     'validates a real %s chain, and OpenSSL agrees with the bytes',
     async (curve) => {
@@ -195,7 +195,7 @@ describe('R01 — ECDSA certificate signature encoding', () => {
   });
 });
 
-describe('R02 — certificate path validation', () => {
+describe('certificate path validation', () => {
   it('tries every issuer alternative, not just the first name match', async () => {
     const root = await makeCa('Alternatives Root');
     // Two certificates with the *same* subject name; only the second may issue.

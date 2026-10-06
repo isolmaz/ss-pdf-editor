@@ -1,5 +1,5 @@
 /**
- * The outline dialog (`PLAN.md §5/Phase 4`: “Link & outline editing”).
+ * The outline dialog (“Link & outline editing”).
  *
  * Four modes over one tree, because that is how an outline is actually edited: rewrite
  * the whole thing from a list (the paste-a-table case), append a child under a node,
@@ -83,7 +83,7 @@ function parseNodes(raw: string): readonly OutlineNodeInput[] {
 /**
  * A field the user must fill. Empty is `selection-empty`, the same code the list parser
  * uses for a line with no title: telling the user "this document cannot do that" for a
- * blank text box is a lie about the document (`PLAN.md §3.1`).
+ * blank text box is a lie about the document.
  */
 function requireField(raw: string, field: string): string {
   const value = raw.trim();

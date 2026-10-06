@@ -1,8 +1,8 @@
 /**
- * Engine-backed capabilities: encryption/unlocking (`REPORT.md §3` A12/A13),
- * redaction (A14) and OCR (A15).
+ * Engine-backed capabilities: encryption/unlocking,
+ * redaction and OCR.
  *
- * The notes here are the honesty contract of `PLAN.md §1.2` for the three
+ * The notes here are the product's honesty contract for the three
  * operations where "did it actually work?" is the whole question: an encryption
  * that silently produced an unencrypted file, a redaction that left the text in
  * a previous revision, or an OCR layer that is not selectable must be visible in

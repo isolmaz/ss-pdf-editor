@@ -9,7 +9,7 @@ import './app.css';
 const container = document.getElementById('root');
 if (container === null) throw new Error('#root is missing from index.html');
 
-// One session store for the whole app (K23). React subscribes to it; nothing
+// One session store for the whole app. React subscribes to it; nothing
 // else owns document state.
 const store = new SessionStore();
 
@@ -26,7 +26,7 @@ createRoot(container).render(
 //
 // The two surfaces the shell reaches through a dynamic boundary (`pdf-ui/printing`,
 // `pdf-ui/palette`) are warmed the same way and for the same reason: they are lazy so
-// the entry chunk stays inside the ≤250 KiB budget (`PLAN.md §7`), and prefetching them
+// the entry chunk stays inside the ≤250 KiB budget, and prefetching them
 // on idle keeps the first `Ctrl+P` or `Ctrl+K` from being a visible wait.
 const warm = () => {
   warmPdfjs();

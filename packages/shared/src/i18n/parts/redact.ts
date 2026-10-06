@@ -1,5 +1,5 @@
 /**
- * Redaction (`REPORT.md §3` A14) — true erasure with MuPDF.
+ * Redaction — true erasure with MuPDF.
  */
 
 export const redactPart = {

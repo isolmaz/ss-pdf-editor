@@ -44,7 +44,7 @@ export interface ToolsRailPanelProps {
    * Only the groups whose tools are *advanced* are hidden: redaction, encryption and the
    * stamp/watermark set. Page organising, export and signing stay, because a free reader
    * carries all three and hiding them would make the simple mode less capable than the
-   * software it is measured against (`PLAN.md §4.1`).
+   * software it is measured against.
    */
   readonly visibleGroups?: readonly string[];
   readonly onExportModal?: () => void;

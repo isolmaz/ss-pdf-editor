@@ -1,5 +1,5 @@
 /**
- * The annotation tool surface (`PLAN.md §5/Phase 3`, `§9/K18`).
+ * The annotation tool surface.
  *
  * One component, two jobs, because they share the only thing that is hard here —
  * the geometry:
@@ -13,7 +13,7 @@
  *    user sees before saving is what the file will contain afterwards.
  *
  * **Every kind is created here.** The engine's own annotation editors are not used
- * at all any more; the second half of `K18` is retired, and with it the ink editor
+ * at all any more; the engine-editor half of the annotation writer is retired, and with it the ink editor
  * that made the user's stroke come out dotted: pdf.js's `InkEditor` produced the
  * mark, and the hand-off that converted its engine record read the sampled path as
  * one stroke **per point**, so a continuous pen stroke reached the screen (and then

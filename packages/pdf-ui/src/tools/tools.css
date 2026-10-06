@@ -1,9 +1,8 @@
 /**
  * Tool surfaces that need layout Tailwind expresses poorly, plus the one place
- * this layer must beat pdf.js's own class: a full-screen viewer container
- * (`PLAN.md §5/Phase 1`).
+ * this layer must beat pdf.js's own class: a full-screen viewer container.
  *
- * Colours, type and spacing still come from the token layer (`K24`); only
+ * Colours, type and spacing still come from the token layer; only
  * geometry, stacking and the fullscreen box live here. Imported by the modules
  * that own the rules, so mounting a tool brings its styles with it.
  */

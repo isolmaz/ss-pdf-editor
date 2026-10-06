@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from 'playwright/test';
 
 /**
- * Browser gate for the shipped shell (`R08`).
+ * Browser gate for the shipped shell.
  *
  * The specs run against the **assembled** `dist/` served by the repository's own preview
  * server (`tools/preview-dist.mjs`), not against a dev server and not against mocks: that

@@ -9,7 +9,7 @@ export const DEFAULT_LOCALE: Locale = 'tr';
 
 /**
  * A locale supplies the keys it maintains. Turkish is the complete locale;
- * every other locale is a scaffold and falls back to `tr` per key (`K3`).
+ * every other locale is a scaffold and falls back to `tr` per key.
  */
 export type Dictionary = Partial<Record<MessageKey, string>>;
 
@@ -23,7 +23,7 @@ export interface Translator {
 const PARAM = /\{(\w+)\}/g;
 
 /**
- * Turkish-first translator (`K3`). `en` is a scaffold: a key missing there
+ * Turkish-first translator. `en` is a scaffold: a key missing there
  * falls back to Turkish so a half-translated locale can never render blank UI.
  */
 export function createTranslator(locale: Locale = DEFAULT_LOCALE): Translator {

@@ -1,10 +1,10 @@
 /**
- * pdf.js adapter (`PLAN.md §3.1`): the only place that talks to pdf.js.
+ * pdf.js adapter: the only place that talks to pdf.js.
  *
  * Components and panels never import `pdfjs-dist` directly — they use this
  * adapter, so the engine's error vocabulary is mapped once (Turkish user text,
  * see `pdf-shared`), assets are wired once (CMaps/standard fonts/wasm) and the
- * `K15` rule is enforced: engines receive a **disposable copy** of the bytes,
+ * disposable-copy rule is enforced: engines receive a **disposable copy** of the bytes,
  * never the app-owned master buffer (pdf.js may transfer/detach it).
  */
 
@@ -17,7 +17,7 @@ type PdfjsModule = typeof import('pdfjs-dist');
 let pdfjsModule: Promise<PdfjsModule> | null = null;
 
 /**
- * pdf.js is an **engine chunk, loaded lazily** (`PLAN.md §3.6`, budget in §7):
+ * pdf.js is an **engine chunk, loaded lazily**:
  * the shell must paint without dragging a 1.5 MB parser into the first paint.
  * The import is cached, so opening a second document does not re-fetch it.
  *
@@ -54,7 +54,7 @@ export function warmPdfjs(): void {
 /**
  * The shape pdf.js accepts for `getDocument({ annotationStorage })`: the storage
  * is seeded from a plain map before the document proxy exists, which is how a
- * reopened document gets its unsaved annotation layer back (`PLAN.md §3.5`).
+ * reopened document gets its unsaved annotation layer back.
  * Values are pdf.js's own serializable annotation records.
  */
 export interface PdfAnnotationStorageInit {
@@ -156,14 +156,14 @@ export interface PdfDocumentHandle {
   renderPage(pageIndex: number, canvas: HTMLCanvasElement, options: PdfRenderOptions): Promise<void>;
   getPageText(pageIndex: number): Promise<string>;
   /**
-   * Document outline with destinations resolved to 0-based page indices
-   * (`PLAN.md §5/Phase 1`). Entries whose destination cannot be resolved —
+   * Document outline with destinations resolved to 0-based page indices.
+   * Entries whose destination cannot be resolved —
    * external URLs, unresolvable named destinations — keep `pageIndex: null` and
    * stay visible rather than being dropped silently.
    */
   getOutline(): Promise<readonly PdfOutlineEntry[]>;
   /**
-   * The page's text runs with their geometry (`PLAN.md §5/Phase 4f`): the read
+   * The page's text runs with their geometry: the read
    * side of the text writer's own verification and of any selection path that
    * needs positions rather than one joined string. Coordinates stay in PDF user
    * space — the rotation a reader applies is reported beside them, not baked in.
@@ -176,7 +176,7 @@ export interface PdfDocumentHandle {
    */
   operatorList(pageIndex: number): Promise<PageOperatorList>;
   /**
-   * `K14` path 1 — incremental **file format**, full-size buffer in memory.
+   * The incremental path — incremental **file format**, full-size buffer in memory.
    * The buffer is `ArrayBuffer`-backed on purpose: the File System Access
    * writable stream accepts exactly `ArrayBufferView<ArrayBuffer>`.
    */
@@ -232,10 +232,10 @@ export async function openWithPdfjs(
 
   const pdfjs = await loadPdfjs();
   // Loading the chunk is asynchronous too, and an abort that arrives during it must not
-  // start a parse the caller has already given up on (`F12`).
+  // start a parse the caller has already given up on.
   if (signal?.aborted) throw abortError();
   const loadingTask = pdfjs.getDocument({
-    // Disposable copy: the caller keeps the master buffer (K15).
+    // Disposable copy: the caller keeps the master buffer.
     data: bytes.slice(),
     password: options.password,
     cMapUrl: PDFJS_ASSETS.cmaps,
@@ -249,15 +249,14 @@ export async function openWithPdfjs(
     // main thread, which converts it with `convertRGBToRGBA` **in JavaScript** — a
     // measured ~170 ms per 1240x1754 page, i.e. 16 s of main-thread work inside a 19.7 s
     // scroll of a 130-page image-heavy document, and 45 % of all JS time
-    // (archived spike `measure-scroll.mjs --profile`, `WORKLOG.md §4`). With it on, the
+    //. With it on, the
     // images arrive as bitmaps and the main thread only blits them.
     isOffscreenCanvasSupported: true,
     // Seeded before the document exists, so a restored annotation layer is part
-    // of the render from the first page paint (`PLAN.md §3.5` drafts).
+    // of the render from the first page paint.
     ...(options.annotationStorage === undefined ? {} : { annotationStorage: options.annotationStorage }),
     // Embedded document JavaScript stays inert: pdf.js core never executes it —
-    // execution needs a PDFScriptingManager that we deliberately do not attach
-    // (`PLAN.md §3.7`).
+    // execution needs a PDFScriptingManager that we deliberately do not attach.
   });
 
   let destroyed = false;
@@ -273,7 +272,7 @@ export async function openWithPdfjs(
    * handler rejects the password capability with whatever it is given). The previous
    * version answered with the same rejected password, or with nothing at all, so a
    * password-protected document left `loadingTask.promise` pending forever — and every
-   * `await openWithPdfjs(...)` in the application with it (`F12`).
+   * `await openWithPdfjs(...)` in the application with it.
    *
    * One attempt per supplied password, then the honest failure: `wrong-password` when the
    * engine said the previous one was wrong, `password-required` when none was supplied.
@@ -307,7 +306,7 @@ export async function openWithPdfjs(
     document = await loadingTask.promise;
   } catch (error) {
     // A task that failed is torn down here: leaving it alive keeps a worker and a partial
-    // document for a file the user will never see (`F12`). Best-effort — the mapped error
+    // document for a file the user will never see. Best-effort — the mapped error
     // is what the caller must receive.
     await loadingTask.destroy().catch(() => undefined);
     throw mapPdfjsError(error);
@@ -349,7 +348,7 @@ export async function openWithPdfjs(
       // pdf.js writes the viewport transform onto the context and restores it only when the
       // render *completes*. A cancelled task therefore leaves the transform (and the page
       // background) behind: the next render on the same canvas draws into that state and the
-      // result is visibly skewed — the owner saw a page come back upside down after a panel
+      // result is visibly skewed — a page could come back upside down after a panel
       // switch. Resetting the canvas before handing it to pdf.js makes every render start
       // from a known context.
       const context = canvas.getContext('2d');
@@ -479,7 +478,7 @@ export async function openWithPdfjs(
         // `getData` was meant — measured on every export without a form edit.
         if (document.annotationStorage.size === 0) return new Uint8Array(await document.getData());
         // v6 returns the full buffer (originalData.length + delta) — incremental
-        // file format, full-size memory (K14, §3.3/2).
+        // file format, full-size memory.
         return new Uint8Array(await document.saveDocument());
       } catch (error) {
         throw mapPdfjsError(error);

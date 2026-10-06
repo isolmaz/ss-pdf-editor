@@ -1,7 +1,7 @@
 /**
  * Selection's core writer: persisted annotations, removed by exact reference.
  *
- * What this suite is here to catch (`WORKLOG.md §3`, the round trip):
+ * What this suite is here to catch:
  *
  *  - **A broad erase.** Every survivor assertion is about a survivor of the *same
  *    kind on the same page* as something that was removed — a "delete every

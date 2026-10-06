@@ -1,6 +1,6 @@
 /**
  * Fixture writer and reader for the spikes and behaviour harnesses, on MuPDF's object
- * model — throwaway tooling (`PLAN.md §9/K21`), never shipped.
+ * model — throwaway tooling, never shipped.
  *
  * The harnesses used to build their documents with pdf-lib. The product no longer carries
  * pdf-lib, so the fixtures are written with the engine the product writes with. The

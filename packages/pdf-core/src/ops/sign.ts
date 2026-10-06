@@ -1,8 +1,8 @@
 /**
- * Writing a PAdES B-B signature into a PDF (`PLAN.md §5/Phase 4`, §3.7, `K9`).
+ * Writing a PAdES B-B signature into a PDF.
  *
  * The operation is the last thing that may touch the file — the plan's save order says so
- * (`PLAN.md §3.3`: “… metadata after the final MuPDF write, **signature last**”) — because
+ * (“… metadata after the final MuPDF write, **signature last**”) — because
  * a signature covers the bytes it was made over: any later rewrite, even one that changes
  * nothing a reader sees, breaks it. Everything here is therefore arranged around one
  * number, the `/ByteRange`, and the file is serialised **once**, with the numbers written
@@ -20,9 +20,9 @@
  * placeholder must be large enough that the CMS never has to be split. The bytes a reader
  * does not use are zero padding, which is what every signing tool writes.
  *
- * **What this module does not do:** it does not timestamp (B-T is helper-only, `K11`), and
- * it does not decide what a signed document may be edited by — that is the session's rule
- * (`K17`): a signed file is a *new version*, and the shell never pretends the working
+ * **What this module does not do:** it does not timestamp (B-T is helper-only), and
+ * it does not decide what a signed document may be edited by — that is the session's rule:
+ * a signed file is a *new version*, and the shell never pretends the working
  * document is the signed one.
  */
 
@@ -436,7 +436,7 @@ export async function signPdf(
     inputBytes: bytes.byteLength,
     outputBytes: produced.byteLength,
     pageCount,
-    // The file is a signed revision: nothing may rewrite it afterwards (`K17`).
+    // The file is a signed revision: nothing may rewrite it afterwards.
     incremental: false,
   };
   return { bytes: produced, report };

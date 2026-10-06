@@ -7,12 +7,12 @@ import { findViewerDom, pagesInView, type ViewerDom } from './viewer-dom';
 import './tools.css';
 
 /**
- * View snapshot (`PLAN.md §5/Phase 1`): the pages the viewport shows right now,
+ * View snapshot: the pages the viewport shows right now,
  * composed into one PNG, ready for the clipboard or a file.
  *
  * The bitmap is the viewer's **own render pipeline output** — the canvases pdf.js
  * already painted, at `devicePixelRatio × scale` device pixels — instead of a
- * second render call from a component (`AGENTS.md`: engines are reached through
+ * second render call from a component (engines are reached through
  * the pane, never directly). Pages are placed where pdf.js laid them out, so
  * spreads, margins and the page gap come out the way they look on screen.
  *
@@ -22,7 +22,7 @@ import './tools.css';
  */
 
 /**
- * Blob URLs are revoked once the download has started (`PLAN.md §3.7`); the same
+ * Blob URLs are revoked once the download has started; the same
  * delay the shell's Export uses gives the browser time to pick the file up.
  */
 const REVOKE_DELAY_MS = 10_000;
@@ -44,7 +44,7 @@ type SnapshotState =
 
 /**
  * The clipboard action exists only where the async clipboard can take a PNG;
- * without it the action is absent rather than broken (`K10` capability branch).
+ * without it the action is absent rather than broken.
  */
 function canCopyImage(): boolean {
   return typeof ClipboardItem === 'function' && typeof navigator.clipboard?.write === 'function';
@@ -65,7 +65,7 @@ function copyFailure(error: unknown): ToolError {
 /**
  * Canvas has no CSS colour resolution of its own, so a token is resolved through
  * a probe element: the paper behind the pages stays the theme's paper in light
- * and dark alike (`K24`: the token layer is the only colour vocabulary).
+ * and dark alike (the token layer is the only colour vocabulary).
  */
 function tokenColour(token: string): string {
   const probe = document.createElement('span');
@@ -239,7 +239,7 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
     anchor.download = snapshot.name;
     anchor.click();
     // Revoked once the download has started; the timer is tracked, so closing or
-    // unmounting the panel cannot leave a blob URL behind (`PLAN.md §3.7`).
+    // unmounting the panel cannot leave a blob URL behind.
     const timer = window.setTimeout(() => {
       URL.revokeObjectURL(url);
       urlsRef.current.delete(url);

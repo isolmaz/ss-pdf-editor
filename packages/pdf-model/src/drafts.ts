@@ -3,13 +3,12 @@ import { JOURNAL_SCHEMA } from './journal';
 import type { ProducedDocument } from './operations';
 
 /**
- * Drafts — what a session leaves behind so a closed tab can come back
- * (`PLAN.md §3.5` persistence, §5/Phase 1 “the draft returns after closing and
- * reopening the tab”).
+ * Drafts — what a session leaves behind so a closed tab can come back (“the
+ * draft returns after closing and reopening the tab”).
  *
  * Two rules shape this module, and both are contracts rather than preferences:
  *
- * - **The draft is model data** (`§7` draft-cost gate: a 300 MB document’s draft
+ * - **The draft is model data** (draft-cost gate: a 300 MB document’s draft
  *   writes model data only). Change data — the journal — is what a draft carries.
  * - **The master copy belongs to the source vault, not to the draft.** A source
  *   that lives on the user’s disk through a File System Access handle is referred to
@@ -19,7 +18,7 @@ import type { ProducedDocument } from './operations';
  *
  * The module is DOM-free on purpose: the storage backend arrives as an interface, so
  * the OPFS implementation lives in the browser app and this policy stays testable in
- * Node (`AGENTS.md` module boundaries).
+ * Node.
  */
 
 export interface DraftSnapshot extends Omit<ProducedDocument, 'bytes'> {
@@ -123,7 +122,7 @@ async function encodeValue(value: unknown, spend: (bytes: number) => boolean, de
     // Only a *plain* object is a record. A typed array, a `Map`, a `Date` or an engine
     // class instance projects into `{0: …, 1: …}` under `Object.entries`, which decodes to
     // an object that is not the value that was stored — a silently wrong restore. Such a
-    // value is counted as dropped instead (`F10`).
+    // value is counted as dropped instead.
     const prototype: unknown = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return UNREPRESENTABLE;
     const source = value as Record<string, unknown>;
@@ -171,7 +170,7 @@ export async function encodeEngineValues(
     /**
      * The budget is spent **per entry and only on success**. Charging as we go let an
      * entry that was then refused keep the bytes it had already claimed, so a value that
-     * was never written could starve a later one that would have fitted (`F10`).
+     * was never written could starve a later one that would have fitted.
      */
     let spent = 0;
     const value = await encodeValue(raw, (bytes) => {
@@ -301,7 +300,7 @@ function isJournalEntry(value: unknown): value is JournalEntry {
  * A filtered array is worse than a rejected one: the cursor that was persisted with the
  * journal points into that array, so dropping a malformed entry silently shifts every
  * logical state after it — the restored document would show a different history from the
- * one the user left, and `undo` would step to the wrong version (`F09`). One bad entry
+ * one the user left, and `undo` would step to the wrong version. One bad entry
  * therefore makes the whole draft unreadable, and the caller reports that instead.
  *
  * Returns `null` for “not readable”, never a repaired array.

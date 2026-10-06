@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Phase 4 fixture builder — throwaway tooling (`PLAN.md §9/K21`, `K28`).
+ * Phase 4 fixture builder — throwaway tooling.
  *
  *   node tools/spikes/make-phase4-fixture.mjs [--out <path>] [--replace-image <path>]
  *
@@ -13,7 +13,7 @@
  * Page 1  a Turkish paragraph drawn in an **embedded subset font** (Noto Sans), with
  *         the sentinel word `KADIKÖY` in the middle of it — the text-edit target.
  * Page 2  a second paragraph carrying the *same* sentinel, so the acceptance check
- *         can prove that only the targeted occurrence disappeared (`K16`).
+ *         can prove that only the targeted occurrence disappeared.
  * Page 3  a bitmap image at a known rectangle — the image-editing target.
  * Page 4  a `/URI` link annotation and a two-entry outline — link + outline editing.
  * Page 5  a text form field — the fill-path regression that the other phases rely on.

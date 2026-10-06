@@ -1,6 +1,5 @@
 /**
- * The sentences the shell puts on its notice line, as data (`PLAN.md §3.7`, `R06`,
- * `R07`).
+ * The sentences the shell puts on its notice line, as data.
  *
  * Three failure paths in `App.tsx` used to end in either silence or a sentence that was
  * not about what happened: a restored draft whose engine values were all dropped said
@@ -13,7 +12,7 @@
  * So the choice of words is a pure function here, and the component only renders the
  * result. A descriptor carries the dictionary key plus the numbers that key
  * interpolates, never English text: `renderNotice` is the one place that reaches the
- * translator. Facts of the verification table (`R06`) travel as *keys* too and are
+ * translator. Facts of the verification table travel as *keys* too and are
  * translated where they are rendered, because "verified" without its list is the
  * sentence this module exists to stop producing.
  */
@@ -97,7 +96,7 @@ export function noticeLine(descriptors: readonly NoticeDescriptor[], t: Translat
 }
 
 /**
- * What a finished engine-values restore did (`R07`).
+ * What a finished engine-values restore did.
  *
  * The count of applied edits is the product's promise, so a restore that applied
  * **nothing** must say so instead of leaving the user with a document that silently
@@ -119,7 +118,7 @@ export function engineValuesNotices(input: {
 /**
  * A failure as the two sentences the product uses everywhere: a `ToolError`'s own
  * message and hint when it is one, and `fallback` only when the cause is not a
- * `ToolError` at all (`AGENTS.md`: the dictionary is the text, the engine message is
+ * `ToolError` at all (the dictionary is the text, the engine message is
  * diagnostics). The fallback is a parameter because the honest sentence depends on the
  * path — a failed open, a failed draft write and a failed engine release are different
  * promises.
@@ -143,7 +142,7 @@ function factNotice(check: FactCheck): NoticeFact {
 }
 
 /**
- * The verification table of a save or export, as notice lines (`R06`).
+ * The verification table of a save or export, as notice lines.
  *
  * The verified group is always reported, because "the save was verified" is a claim
  * about specific checks and the user is entitled to see which. The declared group is
@@ -174,7 +173,7 @@ export function verificationNotices(verification: WriteVerification): readonly N
 }
 
 /**
- * What a redaction audit covered (`R06`, `K16`): how many terms the scan was given, and
+ * What a redaction audit covered: how many terms the scan was given, and
  * whether it reported residual text. A clean report over zero terms says nothing about
  * the file, and the previous call site passed an empty needle list — the sentence has
  * to separate "we looked and found nothing" from "we had nothing to look for".

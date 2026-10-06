@@ -1,5 +1,5 @@
 /**
- * Encryption and unlocking (`REPORT.md §3` A12, A13).
+ * Encryption and unlocking.
  */
 
 export const securityPart = {

@@ -6,17 +6,17 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * The reader half of the shell: pdf.js's own `PDFViewer` stack
- * (`PLAN.md §5/Phase 1`) — continuous virtualized scrolling, the text layer with
+ * — continuous virtualized scrolling, the text layer with
  * real selection, and `PDFFindController` for search with match highlighting.
  * Hand-rolling those layers is the "engine called from a component" pattern this
  * repository forbids, and the pdf.js layers are the ones the reading half is
- * meant to reuse (`K18`).
+ * meant to reuse.
  *
  * The viewer stack is an **engine chunk, loaded lazily** the way `pdf-core`
- * loads the pdf.js core (`§3.6`): the shell paints without it, and the CSS ships
+ * loads the pdf.js core: the shell paints without it, and the CSS ships
  * with the chunk. The component owns the viewer lifetime and exposes the
  * imperative actions the shell needs (zoom, find) through `onReady`; document
- * state stays in the session model (`K23`).
+ * state stays in the session model.
  *
  * The engine's **annotation editors are never enabled** (`annotationEditorMode:
  * DISABLE`): they are the one part of the stack this app does not use, because
@@ -44,7 +44,7 @@ export interface ViewerApi {
   openFind(): void;
   /**
    * The engine-side delta of this document — form values and annotation edits that
-   * only reach the file on save (`PLAN.md §3.5`: the draft carries model data, so it
+   * only reach the file on save (the draft carries model data, so it
    * carries exactly this and not the bytes).
    */
   captureEngineValues(): Promise<EngineValuesDraft>;
@@ -55,7 +55,7 @@ export interface ViewerApi {
    * pdf.js's own layer toggle works by re-assigning this promise
    * (`pdf_viewer.mjs`: `setOCGState` then `optionalContentConfigPromise = Promise.resolve(config)`):
    * mutating the config alone leaves the canvas exactly as it was, which is what the
-   * layer panel measured before this existed (`WORKLOG.md §4`).
+   * layer panel measured before this existed.
    */
   refreshOptionalContent(): Promise<void>;
   /**
@@ -147,7 +147,7 @@ export interface PdfViewerPaneProps {
   readonly onScaleChange?: (scale: number) => void;
   /**
    * Fires on the first engine-side modification of this document (a form value, an
-   * annotation) — the shell turns that into the tab's dirty flag (`§3.3`), which is
+   * annotation) — the shell turns that into the tab's dirty flag, which is
    * what decides whether Save/Export writes the current version.
    */
   readonly onModifiedChange?: () => void;
@@ -186,7 +186,7 @@ const FIND_NOT_FOUND = 1;
  * FREETEXT 3, HIGHLIGHT 9, STAMP 13, INK 15, POPUP 16, SIGNATURE 101, COMMENT 102};
  * `AnnotationMode` = {DISABLE 0, ENABLE 1, ENABLE_FORMS 2, ENABLE_STORAGE 3}), and
  * reading them off that module would make the whole 1.7 MB engine a static import —
- * the entry chunk measured 237 → 582 kB gzip when it was (`WORKLOG.md §4`, the
+ * the entry chunk measured 237 → 582 kB gzip when it was (the
  * reason this shim exists at all). The numbers therefore live here, as the one
  * place the app spells them.
  *
@@ -317,8 +317,8 @@ export function PdfViewerPane({
    * The pdf.js stack is built once per document: its load effect must not re-run
    * because a tool setting or a selected mark changed the identity of a callback the
    * shell passed down. It did — the takeover callback closes over the annotation
-   * style state, so picking a colour rebuilt the whole document (`agent://AnnotationAnalysis`
-   * R1). The ref is refreshed every render, so the closure that runs is still the
+   * style state, so picking a colour rebuilt the whole document.
+   * The ref is refreshed every render, so the closure that runs is still the
    * shell's current one.
    */
   const callbacksRef = useRef({
@@ -556,7 +556,7 @@ export function PdfViewerPane({
         // Cap a page's backing store. pdf.js scales by `devicePixelRatio` and only
         // stops at 16 Mpx (≈64 MB per canvas); on a DPR-1.5 display that is ~4.7 Mpx per
         // letter page and 16 s of main-thread painting inside a 19.7 s scroll of a
-        // 130-page image-heavy document (`WORKLOG.md §4`). 4 Mpx keeps full detail at
+        // 130-page image-heavy document. 4 Mpx keeps full detail at
         // 100 % on a normal display and clamps the DPR blow-up where it matters.
         maxCanvasPixels: 4 * 1024 * 1024,
       });
@@ -801,7 +801,7 @@ export function PdfViewerPane({
           setFind((previous) => ({ ...previous, open: true, query }));
           dispatchFind('', query, false);
         },
-        // The engine-side delta (`PLAN.md §3.5`): pdf.js keeps form values and
+        // The engine-side delta: pdf.js keeps form values and
         // annotation edits in `annotationStorage` until a save writes them, and its
         // `serializable` getter is the one projection that is safe to clone — editor
         // instances become plain objects there, bitmaps included.
@@ -834,7 +834,7 @@ export function PdfViewerPane({
           // `null` (a highlight's geometry is produced by `serialize()`, which is
           // what the `serializable` getter calls — `build/pdf.mjs`). Reading the
           // live objects produced empty captures and a highlight that never
-          // reached the file (`WORKLOG.md §4`, 2026-09-16).
+          // reached the file.
           const serializable = document.raw.annotationStorage?.serializable as unknown as
             | { map?: unknown }
             | undefined;
@@ -958,8 +958,7 @@ export function PdfViewerPane({
       // listener sees them; an annotation the editor commits is *not* an input event,
       // and the only signal pdf.js offers is the storage's own callbacks
       // (`AnnotationStorage.onSetModified` / `onAnnotationEditor`, `build/pdf.mjs`) —
-      // without them a freshly drawn highlight left the tab clean and the mark uncaptured
-      // (`WORKLOG.md §4`, 2026-09-16).
+      // without them a freshly drawn highlight left the tab clean and the mark uncaptured.
       const storage = document.raw.annotationStorage as unknown as EngineAnnotationStorage | undefined;
       const previousSetModified = storage?.onSetModified ?? null;
       const previousEditor = storage?.onAnnotationEditor ?? null;

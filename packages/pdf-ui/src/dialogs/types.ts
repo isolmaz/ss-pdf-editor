@@ -1,5 +1,5 @@
 /**
- * Declarative operation dialogs (`PLAN.md §4.1`, §5/Phase 2).
+ * Declarative operation dialogs.
  *
  * Eighteen capabilities need eighteen dialogs, and every one of them is the same
  * shape: a few fields, a page scope, a Run button, progress with cancel, then a
@@ -7,7 +7,7 @@
  * new tab", "download"). Modelling that once — as a **spec** plus a `run`
  * function — keeps every capability's implementation to the part that is
  * actually about the capability, and keeps progress/cancel/report behaviour
- * identical across all of them (the Phase 2 acceptance criterion).
+ * identical across all of them.
  *
  * A dialog never touches an engine directly: `run` receives the frozen working
  * bytes and returns produced files plus an `OperationReport`.
@@ -90,7 +90,7 @@ export type FieldSpec =
   | ({
       /**
        * A paragraph field. The text engine's whole point is editing a block of
-       * text, and a single-line `Input` cannot show one (`PLAN.md §5/Phase 4a`).
+       * text, and a single-line `Input` cannot show one.
        */
       readonly kind: 'multiline';
       readonly defaultValue: string;
@@ -122,7 +122,7 @@ export type DialogParams = Readonly<Record<string, FieldValue>>;
 export type OperationRunContext = Omit<OpRunContext, 'signal' | 'onProgress'>;
 
 export interface OpRunContext {
-  /** Cancellation is part of the contract, not an option (`PLAN.md §3.4`). */
+  /** Cancellation is part of the contract, not an option. */
   readonly signal: AbortSignal;
   /** The dialog host replaces this with its own reporter before calling `run`. */
   readonly onProgress: (progress: OperationProgress) => void;
@@ -150,7 +150,7 @@ export interface OpRunContext {
    */
   readonly link?: LinkTargetRect;
   /**
-   * The text block the text tool handed over (`PLAN.md §5/Phase 4a`): the block the
+   * The text block the text tool handed over: the block the
    * user clicked, the page model it came from, and the font catalogue + metric tables
    * the plan needs. It travels here for the same reason the redaction marks do — the
    * model the user pointed at must be the model that gets edited, and re-reading the
@@ -209,7 +209,7 @@ export interface OperationDialogSpec {
    * `new-tab` opens it beside the current one, `download` writes files.
    */
   readonly resultKind: DialogResultKind;
-  /** Irreversible content loss: run shows a blocking confirmation (`§3.3` rule 7). */
+  /** Irreversible content loss: run shows a blocking confirmation. */
   readonly destructive?: boolean;
   /** Page identities/coordinates change without a pending-mark mapping. Refuse before running. */
   readonly changesPageGeometry?: boolean;

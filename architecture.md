@@ -157,7 +157,7 @@ Guarantees the class actually provides:
   produced snapshot, or the source master when `before`/`after` is `null`), `overlays`
   (canvas-only edits), or `unavailable` when the bytes the step names are no longer held.
 
-`DOCUMENT_CHANGE_KIND = 'document.change'` is the single op kind Phase 2+ writes:
+`DOCUMENT_CHANGE_KIND = 'document.change'` is the single op kind document capabilities write:
 
 ```ts
 { before: string | null, beforeOverlays, after: string, engine: string, steps: string[] }
@@ -440,9 +440,7 @@ notes first.
 
 Every long operation is cancellable through `OperationContext.signal`; `throwIfAborted()`
 and engine-specific abort handling are checked between phases, and a cancelled OCR run
-terminates its worker rather than abandoning it. `ops/types.ts` still exports a
-`notImplemented()` helper from the Phase 2 build, but it has **zero callers** — no
-operation in the package is a stub.
+terminates its worker rather than abandoning it. No operation in the package is a stub.
 
 ### 5.3 The signature stack
 
@@ -684,7 +682,7 @@ code point of both Noto faces this matches what `@pdf-lib/fontkit`, the parser i
 replaced, reported: same coverage, same advances, same header numbers
 (`text-source.test.ts` keeps fontkit's figures as the expected values).
 
-The pieces, in the order the Phase 4 pipeline uses them:
+The pieces, in the order the text-edit pipeline uses them:
 
 1. **Text model (`model.ts`)** — `buildTextPage()` turns an extractor's per-character
    output into blocks → lines → words → glyph boxes, computes each block's style from the
@@ -1239,7 +1237,7 @@ shows.
 
 ---
 
-## 11. Deliberate limits and unresolved references
+## 11. Deliberate limits and unreachable code
 
 ### 11.1 Deliberate limits
 
@@ -1254,23 +1252,7 @@ shows.
 - **`adbe.pkcs7.sha1` and `ETSI.RFC3161`** signatures are reported `unchecked`, because
   their digest relation differs from the detached-CMS one this build verifies.
 
-### 11.2 Referenced documents that are not in this tree
-
-Comments throughout the code cite `PLAN.md`, `AGENTS.md`, `REPORT.md` and `WORKLOG.md`, and
-carry item identifiers such as `K9`, `K12`, `K17`, `K26`, `R04`, `R06`, `F11`. **None of
-those documents is present in this repository**, so the identifiers cannot be resolved
-locally and no index maps them to rules. The comments that carry them are individually
-self-contained, and every rule this document describes was read out of the code that
-enforces it rather than out of a cited plan item. If the plan documents are restored, the
-numbering should be re-checked against the code, because the code has moved since.
-
-### 11.3 Unreferenced exports
-
-Three components are exported from `pdf-ui` but imported by nothing:
-`packages/pdf-ui/src/shell/TopBar.tsx`, `packages/pdf-ui/src/shell/TabStrip.tsx` and
-`packages/pdf-ui/src/components/EmptyState.tsx`. The app uses its own header, tab strip and
-home screen instead. They are dead weight in the package's public surface, not dead code
-on any runtime path.
+### 11.2 Unreachable code
 
 The view-history stack (`packages/pdf-ui/src/tools/history.ts` and `useViewHistory.ts`) is
 in the same position for a different reason: the hook is constructed in `App.tsx` but its
@@ -1407,13 +1389,13 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Source-level behaviour | `tools/audit/regressions.cjs` — browser-free checks (it prints its own count) that transpile the **real** sources and run them against doubles (OPFS, service worker, pdf.js handle), plus selected React callbacks extracted from `App.tsx` by AST. Subjects: Save/Save As semantics, draft validation and encoding, journal snapshot stability, branch release, service-worker offline behaviour and cache isolation, OPFS persistence and recovery, pdf.js loading paths, OCR worker cleanup, the redaction save guard, failed writes and dirtiness, and a final unhandled-rejection sweep |
 | Gate integrity | `tools/audit/require-tests.mjs` fails the build when the unit run discovered zero test files, so an empty run cannot pass as a green gate |
 | Built application | Playwright against assembled `dist/` under production headers: shell and shortcut help, real PDF rendering, persisted/session selection move/rotate/delete/undo, unchanged pending-edit canvases, note export/reopen, tooltip hover/focus/mobile, offline reload, shared vault and OCR (its two real documents live in the ignored `e2e/fixtures/local/`; without them those specs skip with a stated reason); `editor-stability.spec.ts` holds the document still — a mark scrolls with its page, arming every tool and posting a notice leave the viewer where it is, the status-bar rotate turns the page on screen, typed Turkish text reaches the file as `/FreeText`, a protected file asks for its password and opens read-only, and document properties, an attachment added then removed in the panel, and bookmarks added then deleted in the outline form, written by the in-browser MuPDF writer, reach the exported file. `e2e/flows-document.spec.ts` drives the editor flows the other specs do not: a non-PDF is refused and a valid file opens afterwards, page stepper and zoom, page duplicate/move/delete with undo checked against the exported bytes, search, a form value, a value typed into a field on the page undoing in one step, a redaction box removing text from the export, and closing an edited document and the recent list (its controls named in the interface language; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes). `e2e/flows-pages.spec.ts` covers the page and file flows, each read back from the produced bytes: insert (blank and a page range of another file), merge at the start and end, extract (the page opens as `name-p2.pdf` while the source keeps its pages), split by ranges, export as images (PNG size at the chosen DPI, JPG chosen in the export dialog) and as text, print up to the browser print call (range, decoded sheets, a range error, the dialog in the interface language and its button reachable on a short window), opening by drop, reordering by drag, and a thumbnail's own rotate and delete buttons acting on that thumbnail's page (they once acted on the previous selection). `e2e/flows-modes.spec.ts` covers the modes and the release flow: two `Ctrl+Z` presses sent back to back undo two steps (history presses queue behind one another instead of being refused or lost), the status bar shows no zoom with no document open, reading mode (English text, arrow/page keys, Escape) and presentation mode (full screen, one page per key, Escape), the update banner and its Refresh against a second origin that ships a byte-different `/sw.js` (including a first-visit page, whose first update must reload too), and signing: the stamp on the page, a signature an independent `openssl cms -verify` accepts over the whole `/ByteRange`, no warning when exporting the file just signed, and the warning (then a broken signature on "Save anyway") when an edit after signing is exported — the save path judges every version the applied history produced, not only the newest. It also runs a menu-bar sweep (two-page/single spread, fit page, magnifier, theme, batch dialog, all in the interface language, and `<html lang>` following the detected locale). `e2e/flows-commands.spec.ts` drives the menu-bar commands the other specs leave out, one test per command or family, each read back from the produced bytes (`readProducedEntry` in `tool-fixture.ts` prints one object of the file): optimize (metadata cleared, pages rasterised), page boxes and labels, new form field with form data export (downloaded, document untouched) and import, replace pages, replace image, compare / accessibility tagging / redaction audit, page numbering, security (encrypted download with the permission bits) with remove password, link tool, layers written into `/OCProperties`, Select all and Rename (the header name edits in place; the export is named after it), browser storage (save, delete stored copies, sensitive session), underline/strikeout/squiggly, the home Combine card (the merge dialog opens on the file just chosen), the export dialog's compression level filling the Optimize form (`export-presets.ts`), a Bates batch started from the home screen, and an English check of every dialog's text and default values. `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does |
-| Cross-engine acceptance | `pnpm ci:behavior`: the Phase 3 sentence end to end in a real browser, the Phase 4 text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
+| Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
 `tools/spikes/` keeps only what still runs: the three `ci:behavior` checks
 (`phase3-check.mjs`, `phase4-check.mjs`, `sign-check.mts`), the fixture builders they use
 (`mupdf-fixture.mjs`, `make-phase4-fixture.mjs`, `node-mupdf-hook.mjs`) and the README clip
-recorder (`readme-media.mjs`, `readme-demo-pdf.mjs`). Nothing there ships. The Phase 0
+recorder (`readme-media.mjs`, `readme-demo-pdf.mjs`). Nothing there ships. The early
 prototype apps and one-off probes were removed before the public release; a source comment
-that says **archived spike** cites one of them as the measurement behind a decision, and
-those notes stay in the maintainer's archived development repository.
+that says a behaviour was measured in an **early engine spike** refers to one of them, and
+the comment itself states what was measured.

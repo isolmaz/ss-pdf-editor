@@ -1,5 +1,5 @@
 /**
- * Reading mode, step 1: the current page as reading-order blocks (`PLAN.md §5/Phase 1`).
+ * Reading mode, step 1: the current page as reading-order blocks.
  *
  * The text comes from the **engine-side extraction the rest of the reader already
  * uses**: the pdf.js adapter's `PdfDocumentHandle` (`pdf-core/engines/pdfjs-handle.ts`).
@@ -28,7 +28,7 @@ import { buildReadingBlocks, type ReadingBlock, type ReadingTextItem, toReadingT
 export type ReadingViewer = ViewerApi & { readonly document?: PdfDocumentHandle };
 
 /**
- * Every failure is a dictionary key, never an engine message (`AGENTS.md > Errors`).
+ * Every failure is a dictionary key, never an engine message.
  * This one means the viewer handed us no text source at all — a wiring gap, not a
  * document problem, so it must not be reported as "no text on this page".
  */

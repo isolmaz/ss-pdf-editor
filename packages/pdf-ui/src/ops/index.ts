@@ -1,12 +1,12 @@
 /**
- * The Phase 2 dialog registry.
+ * The operation dialog registry.
  *
  * Every capability the file/page/tools menus can run is described by exactly one
  * `OperationDialogSpec`, and each spec is loaded **when its dialog opens** rather
  * than with the shell. The specs are not small — field tables, page-scope
  * handling, per-mode previews — and none of them is needed to paint the editor,
  * so keeping them out of the entry graph is what holds the first-paint budget
- * (`PLAN.md §7`: ≤ 250 KiB gzip) while still shipping fifteen capabilities.
+ * (≤ 250 KiB gzip) while still shipping fifteen capabilities.
  *
  * The map is the single source of truth for "which dialogs exist": `App.tsx` asks
  * for one by id, and an unknown id is a no-op rather than an empty dialog.

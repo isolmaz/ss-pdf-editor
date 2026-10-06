@@ -1,12 +1,12 @@
 /**
- * Document properties: Info and XMP (`REPORT.md §3` A11, defect: XMP absent).
+ * Document properties: Info and XMP (defect: XMP absent).
  *
  * Written through MuPDF's object model (`engines/mupdf-write.ts`). The engine
  * edits Info but knows nothing about the XMP fields we own, so the packet is
  * built and parsed by our own small reader/writer — no dependency, DOM-free, and
  * it keeps the `/Metadata` stream a **single** well-formed packet.
  *
- * The producer line is product policy (`PLAN.md §2.1/6`): `clean` never removes
+ * The producer line is product policy: `clean` never removes
  * it, and every write merges `SsPdfEditor (MuPDF 1.28)` back in.
  *
  * Facts this file depends on:
@@ -66,7 +66,7 @@ export interface MetadataPatch {
   readonly writeXmp: boolean;
 }
 
-/** The producer line every writer merges back in (`PLAN.md §2.1/6`); owned by the writer. */
+/** The producer line every writer merges back in; owned by the writer. */
 export { PRODUCER_LINE };
 
 export interface MetadataWriteOptions {
@@ -800,7 +800,7 @@ export async function writeMetadata(
     inputBytes: bytes.byteLength,
     outputBytes: out.byteLength,
     pageCount,
-    // Re-serialised: the incremental fast path is over (`PLAN.md §3.3` rule 3).
+    // Re-serialised: the incremental fast path is over.
     incremental: false,
   };
   return { bytes: out, report };

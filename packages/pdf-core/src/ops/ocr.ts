@@ -1,8 +1,8 @@
 /**
- * OCR (`REPORT.md §3` A15).
+ * OCR.
  *
  * Two source defects are closed here by construction:
- *  - the DPI the UI offers is the DPI the engine gets (`REPORT.md §4.5`: the UI
+ *  - the DPI the UI offers is the DPI the engine gets (the UI
  *    offered 120–400 while the core silently rejected >300);
  *  - rotation is applied **once**: the render uses the page's own rotation and
  *    the text layer is written in unrotated page space, so a rotated scan does
@@ -84,7 +84,7 @@ export interface OcrOutcome extends OperationOutcome {
 }
 
 /**
- * The documented working range of the pinned cores (`REPORT.md §4.5`): below 150
+ * The documented working range of the pinned cores: below 150
  * the LSTM loses small glyphs, above 300 the render cost explodes with no measured
  * accuracy gain. Outside the range the operation **fails** — the source tool quietly
  * clamped values and produced text that did not match the page.
@@ -248,15 +248,14 @@ export async function ocrDocument(
         ],
         inputBytes: bytes.byteLength,
         outputBytes: produced.byteLength,
-        // The file is re-serialised: the incremental fast path ends here
-        // (`PLAN.md §3.3` rule 3).
+        // The file is re-serialised: the incremental fast path ends here.
         incremental: false,
         pageCount,
       },
     };
   } finally {
     // pdf.js and the OCR worker both hold wasm heaps; releasing them here keeps the
-    // operation accountable for what it allocated (`PLAN.md §3.7`).
+    // operation accountable for what it allocated.
     await handle.destroy().catch(() => undefined);
     await terminateOcrWorkers();
   }

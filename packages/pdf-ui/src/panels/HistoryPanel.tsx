@@ -1,6 +1,6 @@
 /**
- * The step list (`PLAN.md §4.1` right dock: "History (labelled step list, e.g.
- * “Rotated page 3”)", `§4.4` live-region announcements).
+ * The step list (right dock: "History (labelled step list, e.g. “Rotated page 3”)",
+ * with live-region announcements).
  *
  * The journal is data, not functions (`pdf-model/journal.ts`): each entry carries
  * an i18n key plus JSON params, so the panel can only render what the entry

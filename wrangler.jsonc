@@ -1,12 +1,12 @@
 {
-  // Deployment for the browser build (`K26`): a Worker that serves the assembled
+  // Deployment for the browser build: a Worker that serves the assembled
   // `dist/` as static assets. No API, no database, no Functions, no SSR — the request
   // path never runs JavaScript on Cloudflare, it only hands back files.
   //
   // `tools/assemble-dist.mjs` produces exactly what is uploaded: the landing at `/`,
   // the editor at `/editor/`, the legal pages, `404.html` and the pinned engines.
   // `dist/_headers` travels with it, so the CSP and the COOP/COEP pair for `/editor/*`
-  // are enforced by the host and never depend on a dashboard setting (`K26`).
+  // are enforced by the host and never depend on a dashboard setting.
   //
   // Cloudflare Builds validates with `pnpm ci:verify`; its configured Deploy command
   // runs `pnpm run worker:deploy`, also available manually. The same command's
@@ -16,13 +16,13 @@
   "assets": {
     "directory": "./dist",
     // `/gizlilik` and `/kosullar` are written as `.html` files and must resolve without
-    // the extension; unknown paths get the styled Turkish 404 page (`K31`).
+    // the extension; unknown paths get the styled Turkish 404 page.
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },
   "routes": [
     {
-      // The published surface (`K31`). Remove this block to deploy without touching DNS
+      // The published surface. Remove this block to deploy without touching DNS
       // and attach the domain from the dashboard instead.
       "pattern": "pdf.isolmaz.com",
       "custom_domain": true

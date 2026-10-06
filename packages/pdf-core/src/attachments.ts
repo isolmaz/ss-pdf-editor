@@ -1,5 +1,5 @@
 /**
- * Embedded files ("Ekler") of a PDF (`PLAN.md §5/Phase 1`): the attachment list a
+ * Embedded files ("Ekler") of a PDF: the attachment list a
  * reader can show and write out. Read-only by contract — nothing here changes the
  * document.
  *

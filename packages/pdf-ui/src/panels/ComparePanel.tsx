@@ -1,5 +1,5 @@
 /**
- * Document comparison (`PLAN.md §5/Phase 4` — "document comparison, text and
+ * Document comparison ("document comparison, text and
  * rendered pixels"): two documents, one row per page, and the method stated per row.
  *
  * The panel is the second half of `ops/compare.ts`; it holds no engine logic and no
@@ -20,10 +20,9 @@
  * come from the shell's one route to bytes (`readDocument`), and nothing here writes
  * to the file or the journal — a comparison changes nothing.
  *
- * **Dictionary seam.** The `compare.*` keys below are literals of the integration note
- * (`local://compare-integration.md`) and are not merged into
- * `packages/shared/src/i18n` yet, so `MessageKey` cannot name them; `as MessageKey` is
- * that seam, exactly as `RedactionAuditPanel` documents its own. No user-facing text is
+ * **Dictionary seam.** The `compare.*` keys below live in
+ * `packages/shared/src/i18n/parts/compare.ts` and `en-parts/compare.ts`; `as MessageKey`
+ * is the seam, exactly as `RedactionAuditPanel` uses its own. No user-facing text is
  * written in this file.
  */
 

@@ -1,5 +1,5 @@
 /**
- * The read side of Phase 4 (`PLAN.md §5/Phase 4a`, `4e`): **MuPDF structured text →
+ * The read side of text editing: **MuPDF structured text →
  * the neutral `PageTextInput`** the model builder consumes, plus the font metric
  * tables the UI and the plan path need.
  *
@@ -24,9 +24,9 @@
  *
  * ## Boundaries
  *
- * Both engines get a **disposable copy** of the bytes (`K15`): MuPDF through
+ * Both engines get a **disposable copy** of the bytes: MuPDF through
  * `openPdf`, pdf.js through `openWithPdfjs` — the master buffer is never handed to an
- * engine. No third-party origin is contacted (`K9`): the font files this module
+ * engine. No third-party origin is contacted: the font files this module
  * fetches are same-origin only, refused otherwise (`loadFontMetrics`).
  */
 
@@ -133,8 +133,8 @@ export async function readPageText(
     };
   } finally {
     // A wasm document that is never destroyed keeps its objects in the emscripten heap
-    // for the life of the tab, and nothing in the app can see that memory (`K15`'s
-    // other half). `openPdf` hands back one wrapper per document, so one destroy is
+    // for the life of the tab, and nothing in the app can see that memory (the other
+    // half of the disposable-copy rule). `openPdf` hands back one wrapper per document, so one destroy is
     // one release.
     doc.destroy();
   }
@@ -197,7 +197,7 @@ function readGeometry(doc: PDFDocument, pageIndex: number): { box: PageBox; rota
 
 /**
  * `preserve-whitespace` — the flag every MuPDF text read in this repo uses
- * (archived spike `text-replace/textmodel.ts`, `ops/redact.ts`, `ops/text-edit.ts`). It
+ *. It
  * keeps the characters MuPDF would otherwise fold into gaps, so the model can measure
  * word gaps from glyph origins instead of guessing them, and it drops nothing the page
  * actually drew. The installed build (mupdf 1.28.1) accepts the string verbatim.
@@ -451,7 +451,7 @@ type OperatorIds = Readonly<Record<string, number | undefined>>;
  * (`openWithPdfjs`).
  *
  * The import is dynamic for the reason the adapter's is: pdf.js is a 1.5 MB engine
- * chunk that must not join the shell's first paint (`PLAN.md §3.6`). It is read through
+ * chunk that must not join the shell's first paint. It is read through
  * a shape of our own so that a build which does not export the enum degrades to the
  * colour fallback instead of failing to compile, and a name it does not have leaves a
  * gap instead of matching the wrong operator.
@@ -531,7 +531,7 @@ function dominantColor(counts: ReadonlyMap<string, number>): string | null {
  * Metric tables for the given served font files (`id → served path`, which is
  * `TEXT_FONT_FILES`).
  *
- * **Same origin only** (`K9`): the path is resolved against the document's own origin,
+ * **Same origin only**: the path is resolved against the document's own origin,
  * so a `/fonts/…` path works and an absolute URL that leaves the origin is refused
  * rather than fetched. `ops/text-edit.ts > fetchFontBytes` enforces the same rule for
  * the same asset directory, so the two halves of an edit cannot disagree about where a
@@ -579,7 +579,7 @@ export async function readFontMetrics(bytes: Uint8Array, path: string): Promise<
 }
 
 /**
- * One font file's bytes, from this origin only (`K9`: the app makes no third-party
+ * One font file's bytes, from this origin only (the app makes no third-party
  * request, and a substitution font is not the place to start). The error label is
  * `fonts`, so one grep finds every font-asset failure.
  */

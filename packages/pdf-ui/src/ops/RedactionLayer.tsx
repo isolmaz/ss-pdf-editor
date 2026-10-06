@@ -1,5 +1,5 @@
 /**
- * Redaction marking layer (`REPORT.md §3` A14).
+ * Redaction marking layer.
  *
  * The user draws the areas to erase **on the page**, and what they see is what the
  * engine erases: every rectangle is converted at pointer-up through
@@ -10,7 +10,7 @@
  * The layer is an overlay, not a second viewer: it takes pointer events only while
  * the tool is active (`pointerEvents: 'auto'` on an otherwise inert, transparent
  * box), draws its preview in the same coordinate space as the pointer, and hands
- * the finished mark to the app. It never touches the document (`AGENTS.md`: state
+ * the finished mark to the app. It never touches the document (state
  * changes go through the model).
  *
  * A drawn box smaller than `MIN_MARK_SIZE` points is discarded: a click is not a

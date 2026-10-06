@@ -1,5 +1,5 @@
 /**
- * Form v2 (`PLAN.md §5/Phase 3`, §6 A11): field inventory, filling, validation,
+ * Form v2: field inventory, filling, validation,
  * locking, **creation**, flattening and simple calculation fields.
  *
  * MuPDF's object model carries every write here (`engines/mupdf-write.ts`); the field
@@ -78,7 +78,7 @@ export interface FormFieldInfo {
 /**
  * A field's value as one line of text: the panel renders it, and the app compares it
  * against an incoming write so a fill that would repeat the document's own value is not
- * written at all (`App.tsx` `fillField`, `WORKLOG.md §4`).
+ * written at all (`App.tsx` `fillField`).
  *
  * `Array.isArray` does not narrow a `readonly string[]` union member, so the array case is
  * reached by elimination.
@@ -883,7 +883,7 @@ export async function fillFormFields(
 }
 
 /**
- * Create fields (`PLAN.md §5/Phase 3`: "creation").
+ * Create fields ("creation").
  *
  * Every widget gets a black border on white and an appearance drawn with the embedded
  * Noto Sans, so a Turkish default value is legible and encodable. (The pdf-lib writer
@@ -1059,7 +1059,7 @@ export async function createFormFields(
   });
 }
 
-/** Lock or require fields (`PLAN.md §5/Phase 3`: "locking"). */
+/** Lock or require fields ("locking"). */
 export async function setFieldFlags(
   bytes: Uint8Array,
   names: readonly string[],
@@ -1269,7 +1269,7 @@ export async function flattenForm(
 
 /**
  * A four-function calculator over the form's own fields — the *simple* subset
- * `PLAN.md §5/Phase 3` asks for, and no more.
+ * a form needs, and no more.
  *
  * Grammar, in full:
  *
@@ -1290,7 +1290,7 @@ export async function flattenForm(
  *
  * Deliberately not implemented: PDF JavaScript (`AFSimple_Calculate`) and the
  * full Acrobat formula language. Executing embedded form scripts is off by
- * decision (`PLAN.md §3.7`), and a calculator we cannot test is not worth
+ * decision, and a calculator we cannot test is not worth
  * shipping.
  */
 export function evaluateCalculation(expression: string, values: Readonly<Record<string, number>>): number {
@@ -1550,7 +1550,7 @@ function recordsOf(doc: PDFDocument): readonly FormDataRecord[] {
   return records;
 }
 
-/** Fields + values as FDF or JSON (`REPORT.md §3` A11's interchange requirement). */
+/** Fields + values as FDF or JSON. */
 export async function exportFormData(
   bytes: Uint8Array,
   format: 'fdf' | 'json',

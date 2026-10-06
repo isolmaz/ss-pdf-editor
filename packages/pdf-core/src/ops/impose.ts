@@ -1,5 +1,5 @@
 /**
- * Imposition (`REPORT.md §3` A16): N-up, booklet and poster.
+ * Imposition: N-up, booklet and poster.
  *
  * The source project lost page cropping, never rotated content, and had no paper
  * options. Here the sheet geometry is computed explicitly, source content is
@@ -22,7 +22,7 @@
  * and the back side `[2i + 2, N - 2i - 1]` — the classic imposition that folds
  * into reading order 1, 2-3, 4-5, …, N.
  *
- * `buildPrintDocument` (Phase 3, the print dialog's "produce the PDF to print")
+ * `buildPrintDocument` (the print dialog's "produce the PDF to print")
  * lays the same cells out for a **duplex** printer. Its sheet order is the whole
  * feature, so it is written out here instead of being derived in code:
  *
@@ -682,14 +682,14 @@ function imposeOpened(
     inputBytes: bytes.byteLength,
     outputBytes: produced.byteLength,
     pageCount: out.countPages(),
-    // A freshly built document: never incremental (`PLAN.md §3.3` rule 3).
+    // A freshly built document: never incremental.
     incremental: false,
   };
   return { bytes: produced, report };
 }
 
 /* ------------------------------------------------------------------ *
- * Print imposition: the PDF a duplex printer can be handed (`PLAN.md §5/Phase 3`)
+ * Print imposition: the PDF a duplex printer can be handed
  * ------------------------------------------------------------------ */
 
 /** Which side of a physical sheet carries which half of the job (file header table). */
@@ -912,7 +912,7 @@ export async function buildPrintDocument(
   const mupdf = await loadMupdf();
   // Read-only: the source is only measured and embedded, so it is opened without the
   // writer's password check — a re-layout of pages the caller already has the plaintext
-  // of must not stop at it (`PLAN.md §3.3` rule 9).
+  // of must not stop at it.
   const source = openPdf(mupdf, bytes);
   const out = new mupdf.PDFDocument();
   try {

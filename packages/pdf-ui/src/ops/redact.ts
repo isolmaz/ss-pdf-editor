@@ -1,12 +1,12 @@
 /**
- * Redaction (`PLAN.md §6`; `REPORT.md §3` A14).
+ * Redaction.
  *
  * The marks this dialog erases are the rectangles the user drew on the page
  * (`context.redactions`, gathered by `ops/RedactionLayer.tsx`), and they are read
  * here rather than derived: the marks and the erasure have to be the same
  * geometry (`dialogs/types.ts`).
  *
- * *Not* exposed: "find text and mark" (`REPORT.md §3` A14's pattern find). A
+ * *Not* exposed: "find text and mark" (a pattern find). A
  * `RedactRect` is a rectangle in MuPDF page points, while `searchPdfText` returns
  * character offsets in the extracted text (`pageIndex`, `index`, `length`,
  * `snippet`) — the two cannot be connected without text geometry, and pdf-core
@@ -25,7 +25,7 @@ import type { OperationDialogSpec } from '../dialogs/types';
 
 /**
  * The `imageMethod` values are MuPDF's own redaction constants, measured in spike
- * #4 (archived spike `redaction/NOTES.md`: `applRedactions(..., REDACT_IMAGE_*)`):
+ * #4 (`applyRedactions(..., REDACT_IMAGE_*)`):
  * `0` leaves images alone, `1` removes a whole image the mark touches, `2` clears
  * only the pixels inside the box.
  */
@@ -49,7 +49,7 @@ export const redactDialog: OperationDialogSpec = {
   introKey: 'redact.intro',
   confirmKey: 'op.apply',
   resultKind: 'replace',
-  // True erasure: the glyphs are removed from the file, not covered (`§3.3` rule 7).
+  // True erasure: the glyphs are removed from the file, not covered.
   destructive: true,
   fields: [
     {
@@ -134,7 +134,7 @@ export const redactDialog: OperationDialogSpec = {
           ...(verification.remaining.length === 0
             ? []
             : [note('warning', 'redact.verify.remaining', { count: verification.remaining.length })]),
-          // `K16`: a clean export does not imply the local traces are gone.
+          // A clean export does not imply the local traces are gone.
           note('warning', 'redact.warning.localTrace'),
         ],
       },

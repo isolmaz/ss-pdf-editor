@@ -1,5 +1,5 @@
 /*
- * The printed sheet (`PLAN.md §5/Phase 1`: "printing with page range and scale").
+ * The printed sheet ("printing with page range and scale").
  *
  * `usePrinting` rasterises the selected pages into `.pdf-print-root` and hands
  * the result to `window.print()`; this file decides what reaches the paper — the
@@ -7,7 +7,7 @@
  * images carry no border and no shadow. Class names are prefixed `pdf-print-` so
  * nothing here can be mistaken for a Kumo component style.
  *
- * Semantic-token discipline (`K24`) applies to the app's chrome; paper has no
+ * Semantic-token discipline applies to the app's chrome; paper has no
  * theme, so the sheet declares no colours at all and the page's own raster —
  * which already paints white — is what shows.
  */

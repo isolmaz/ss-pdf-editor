@@ -1,12 +1,12 @@
 /**
- * Page insert / page replace (`PLAN.md §5/Phase 3`, page management v2) and the
- * print dialog's Phase 3 controls.
+ * Page insert / page replace (page management v2) and the
+ * print dialog's controls.
  *
  * Two capabilities and one dialog share this part because they are one workflow:
  * the pages an insert or a replace produces are the pages a print sheet carries,
  * and the print dialog's imposition controls (`print.perSheet`, `print.booklet`,
  * `print.duplex`) are the same words the page order is explained with. The notes
- * below are *measurements* the operations report (`PLAN.md §1.2`): what the
+ * below are *measurements* the operations report: what the
  * engine carried, what it dropped, and which flip axis the printer has to be set
  * to — a produced duplex file that a user prints single-sided is the failure
  * this part exists to prevent.

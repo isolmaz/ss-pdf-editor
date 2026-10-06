@@ -4,7 +4,7 @@
  * The modal dialogs (close, password, signature warning, export, shortcuts, batch) and
  * `OperationForm` — the one body every operation renders in the tools panel — carry the
  * field widgets, the report panel and the run hook. None of that is reachable before it
- * is opened, so the shell loads it on demand (`PLAN.md §7` budget; the same reason the
+ * is opened, so the shell loads it on demand (the same reason the
  * dock panels have their own boundary).
  *
  * A re-export module, so the components themselves do not move.

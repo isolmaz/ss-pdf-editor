@@ -187,7 +187,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
     t: (key) => key,
     sha256Hex: model.sha256Hex,
     downloadFiles: (files) => downloads.push(...files),
-    // The save path words its notices with the app's own helpers (`R06`); binding the real
+    // The save path words its notices with the app's own helpers; binding the real
     // functions keeps the harness honest about what the user would read.
     noticeLine: appNotices.noticeLine,
     verificationNotices: appNotices.verificationNotices,
@@ -541,7 +541,7 @@ async function main() {
         drafts.delete(id);
       },
     };
-    // The manual save runs the *shared* persistence callback (`F04`): the harness builds
+    // The manual save runs the *shared* persistence callback: the harness builds
     // that callback from the same source the app calls, then the `opfsSave` command over it.
     const persistBindings = {
       store,
@@ -1091,7 +1091,7 @@ async function main() {
       unreadable: unreadable ? ['damaged.json'] : [],
       enumerationFailed,
     };
-    // `forgetTabDraft` is the app's own cleanup callback (`F07`): the harness builds it
+    // `forgetTabDraft` is the app's own cleanup callback: the harness builds it
     // from source, so a discard that stopped consulting the whole inventory would show up
     // here as a delete it must not have made.
     const cleanupBindings = {
@@ -1121,7 +1121,7 @@ async function main() {
       cancelRef: { current: null },
       handles: { current: new Map() },
       pendingEngineValues: { current: new Map([[tab.id, { entries: [], dropped: 0 }]]) },
-      // The redaction needles a document accumulated (R06): closing it releases them, so
+      // The redaction needles a document accumulated: closing it releases them, so
       // the binding has to exist for the extracted callback to run at all.
       redactedTerms: { current: new Map() },
       draftWrites: { current: Promise.resolve() },

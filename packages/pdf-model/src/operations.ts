@@ -1,10 +1,9 @@
 /**
- * Applied operations and the version snapshots that make them undoable
- * (`PLAN.md §3.2`, §3.5, §9/K12).
+ * Applied operations and the version snapshots that make them undoable.
  *
- * **Why one op kind.** Every Phase 2 capability — page delete, rotate, stamp,
+ * **Why one op kind.** Every document capability — page delete, rotate, stamp,
  * OCR, redaction, encryption — ends the same way: the working document becomes
- * a *new* PDF. `PLAN.md §3.3` calls that a writer step, and `K12` allows
+ * a *new* PDF. That is a writer step, and the journal allows
  * engine-opaque operations to revert through the nearest **working-version
  * snapshot** rather than through a replayable payload. So the journal stores the
  * data-only fact "the working document's bytes were replaced (before → after)"
@@ -14,7 +13,7 @@
  *  - undo/redo move between snapshots (and back to the source master for
  *    `before: null`), so chronological order is preserved across engines;
  *  - a snapshot the session no longer holds makes the step **unavailable**, and
- *    the UI says so instead of replaying a payload onto the wrong base (§3.5);
+ *    the UI says so instead of replaying a payload onto the wrong base;
  *  - structural page edits (reorder/delete/duplicate/insert) are materialized
  *    through `extractPages` *when they are applied*, so what the viewer shows is
  *    what the file holds — a page delete does not wait for a save to become real.
@@ -23,7 +22,7 @@
 import type { MessageKey } from 'pdf-shared';
 import type { JournalEntry, JsonValue } from './journal';
 
-/** The journal op kind Phase 2 writes. Data only — never functions (`K12`). */
+/** The journal op kind document capabilities write. Data only — never functions. */
 export const DOCUMENT_CHANGE_KIND = 'document.change';
 
 export interface DocumentChangePayload {
@@ -82,7 +81,7 @@ export const SNAPSHOT_BUDGET = {
    * makes a single undo always possible; it is also what lets a document whose versions
    * are each larger than the budget exceed it, which `tools/measure` reports as a number
    * rather than hiding. There is exactly **one** of these constants — a second copy in
-   * `session.ts` had drifted to a different value (`R09`).
+   * `session.ts` had drifted to a different value.
    */
   keepNewest: 2,
 } as const;

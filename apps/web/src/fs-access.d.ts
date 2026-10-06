@@ -1,5 +1,5 @@
 /**
- * The File System Access entry points this app calls (`PLAN.md §9/K10`).
+ * The File System Access entry points this app calls.
  *
  * `lib.dom` declares `FileSystemFileHandle` and `createWritable()` (checked with
  * TypeScript 6.0) but **not** the picker functions — they come from the WICG File
@@ -9,7 +9,7 @@
  *
  * The shell never assumes these exist: when they are missing (Firefox, Safari) the
  * Open button falls back to a file input and Save is disabled in favour of Export —
- * the browser-matrix contract in `PLAN.md §4.5`, not a defect.
+ * the documented browser-support contract, not a defect.
  */
 
 interface FilePickerAcceptType {

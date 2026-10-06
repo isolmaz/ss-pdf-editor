@@ -1,5 +1,5 @@
 /**
- * The redaction audit report (`PLAN.md §5/Phase 3`, `§9/K16`): what a produced
+ * The redaction audit report: what a produced
  * document still carries after the erasure, in the user's language.
  *
  * The panel renders a report; it never produces one. `pdf-core`'s

@@ -1,12 +1,12 @@
 /**
- * The one error contract of the app (`PLAN.md §3.1`).
+ * The one error contract of the app.
  *
  * Engines speak their own error vocabularies (pdf.js, qpdf, MuPDF, tesseract,
  * fetch). Components never see those: every failure that can reach the
  * user is normalised here into a {@link ToolError} with a stable code, an i18n
  * key for the user-facing text and a "what to do next" hint key.
  *
- * Rules (AGENTS.md > Errors):
+ * Rules:
  *  - no silent catch: a `catch` either rethrows, wraps into a ToolError, or is
  *    explicitly documented as expected control flow;
  *  - raw English engine messages never reach the UI — they travel in
@@ -49,7 +49,7 @@ export const TOOL_ERROR_CODES = [
 
 export type ToolErrorCode = (typeof TOOL_ERROR_CODES)[number];
 
-/** Codes whose user text is part of the product contract (Phase 2 defect 1). */
+/** Codes whose user text is part of the product contract. */
 export const TOOL_ERROR_KEYS = TOOL_ERROR_CODES.reduce<Record<ToolErrorCode, string>>(
   (keys, code) => {
     keys[code] = `error.${code}.message`;

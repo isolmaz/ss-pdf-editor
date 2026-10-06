@@ -3,7 +3,7 @@ import { expect, test } from 'playwright/test';
 import { useDarkTheme, useLanguage } from './settings';
 
 /**
- * The shell a user meets first (`R08`).
+ * The shell a user meets first.
  *
  * These assertions are about *visible* state — text and attributes — because that is what a
  * "it still works" claim has to mean. The visible strings come from the i18n catalogues

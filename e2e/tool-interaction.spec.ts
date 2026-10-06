@@ -1,5 +1,5 @@
 /**
- * The unified mark tools, as a user meets them (`local://tool-interaction-contract.txt`).
+ * The unified mark tools, as a user meets them.
  *
  * There is no eraser tool here, and no native editor: a mark the user draws — a
  * highlight over selected text, a stroke, a shape — is created by the shell's own

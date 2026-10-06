@@ -1,12 +1,12 @@
 /**
- * Redaction (`REPORT.md §3` A14).
+ * Redaction.
  *
  * The source project rasterised the touched page at 144 dpi — it lost the text
- * layer, the metadata and the neighbouring content (`REPORT.md §4.4`). This
+ * layer, the metadata and the neighbouring content. This
  * implementation erases instead: MuPDF redaction annotations over the marked
  * rectangles, `applyRedactions`, then a full (`garbage`) write.
  *
- * Measured behaviour this file depends on (archived spike `redaction/NOTES.md`):
+ * Measured behaviour this file depends on:
  * redaction is **glyph-level** — the glyph run inside the box goes, the
  * surrounding text of the same line stays; `canBeSavedIncrementally()` turns
  * false, so the produced bytes must be a full rewrite and the router must never
@@ -18,7 +18,7 @@
  * offset — no y-flip anywhere. It is also the space `page.search()` and
  * `toStructuredText()` report in, which is what makes the verification below a
  * direct comparison; the page's own `/Rotate` is part of it (measured in
- * archived spike `text-replace/NOTES.md`: an annotation rect stored in PDF user
+ * an early engine spike: an annotation rect stored in PDF user
  * space is accepted silently and removes **nothing**).
  */
 
@@ -65,8 +65,7 @@ export interface RedactVerification {
 /**
  * Info keys that can carry document content. They are the same fields the metadata
  * op manages (`ops/metadata.ts` `DocumentMetadata`); `producer` is deliberately
- * absent — the producer line is product policy and survives every cleanup
- * (`PLAN.md §2.1/6`).
+ * absent — the producer line is product policy and survives every cleanup.
  */
 const CONTENT_INFO_KEYS = [
   'META_INFO_TITLE',
@@ -81,7 +80,7 @@ const CONTENT_INFO_KEYS = [
  * a rule that runs through a redacted box would otherwise reveal where the covered
  * content started and ended. `REDACT_LINE_ART_NONE` (0) is the text-replacement
  * setting, where the box must survive — a different operation with a different
- * contract (archived spike `text-replace/NOTES.md`, case c).
+ * contract.
  */
 const LINE_ART_METHOD_REMOVE_IF_TOUCHED = 2;
 
@@ -158,7 +157,7 @@ export async function redactDocument(
   const verification = await verifyRedaction(produced, options.marks);
   if (!verification.marksCleared) {
     // A failed check never hands back a file to write: the session stays dirty and
-    // the original survives (`PLAN.md §3.3` rule 5/6). The page list is in the
+    // the original survives. The page list is in the
     // engine message for the report and the bug report.
     throw new ToolError('verification-failed', {
       engine: 'mupdf',
@@ -186,8 +185,8 @@ export async function redactDocument(
           marks: options.marks.length,
           pages: byPage.size,
         }),
-        // An empty mark erases nothing while the count still claims a redaction
-        // (`K16`): state it instead of letting a clean verification speak for it.
+        // An empty mark erases nothing while the count still claims a redaction:
+        // state it instead of letting a clean verification speak for it.
         ...(emptyMarks.length > 0
           ? [note('warning', 'op.note.redact.emptyMarks', { pages: emptyMarks.join(', ') })]
           : []),
@@ -213,7 +212,7 @@ export async function redactDocument(
 
 /**
  * Check that the marks are actually empty in the *produced* bytes — the
- * "targeted occurrence removed" contract of `K16`, measured rather than assumed.
+ * "targeted occurrence removed" contract of redaction, measured rather than assumed.
  *
  * The probe is a character walk over `toStructuredText()` (spike-verified shape:
  * `onChar(c, origin, font, size, quad)`, quad in page space) and a quad/rect
@@ -354,7 +353,7 @@ function applyMarks(
       annotations.push(annotation);
     }
     // A mark that covers no glyph, image or line-art draw erases nothing while
-    // looking like it did — the false success `K16` forbids. The structured
+    // looking like it did — the false success redaction must never report. The structured
     // text plus the display list (draw commands) answer "did this rectangle
     // intersect anything drawable", and the answer is reported, not assumed.
     let touched = false;
@@ -388,7 +387,7 @@ function applyMarks(
     // contract; the PDF-side graphic coverage read is a documented limit.
     // `black_boxes: false` — the erase is a content operation, not a painted
     // rectangle; painting would leave a black bar that advertises the redaction and
-    // cannot be lifted, and `K16` wants the content gone, not covered.
+    // cannot be lifted, and redaction wants the content gone, not covered.
     page.applyRedactions(false, options.imageMethod, LINE_ART_METHOD_REMOVE_IF_TOUCHED, options.textMethod);
     return touched;
   } finally {
@@ -422,7 +421,7 @@ function cleanInfoAndXmp(mupdf: Mupdf, doc: PDFDocument): boolean {
     else root.delete('Metadata');
     cleaned = true;
   }
-  // Product policy: the producer line is merged back, never stripped (`PLAN.md §2.1/6`).
+  // Product policy: the producer line is merged back, never stripped.
   doc.setMetaData(Document.META_INFO_PRODUCER, PRODUCER_LINE);
   return cleaned;
 }

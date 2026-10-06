@@ -1,5 +1,5 @@
 /**
- * Bulk text find for the redaction mark list (`PLAN.md §5/Phase 3`, `§6` A14).
+ * Bulk text find for the redaction mark list.
  *
  * The erasure engine (`ops/redact.ts`) takes rectangles; this module is what turns a
  * user's pattern list into them. Nothing here erases anything, and nothing here
@@ -40,7 +40,7 @@
  * its own `g`, and a sticky match is meaningless over a whole page) and the rest are
  * handed to `RegExp`, which rejects anything unknown.
  *
- * **A hit is a list of quads, never one quad** (`WORKLOG.md §4`, spike #4). `search`
+ * **A hit is a list of quads, never one quad**. `search`
  * returns `Quad[][]` — one inner array per hit, holding every quad the hit spans
  * (`mupdf.js:486-493` groups them from the mark array). Reading a hit as a single quad
  * gives `undefined` coordinates, `NaN` rectangles, and a redaction that then erases the

@@ -1,5 +1,5 @@
 /**
- * Cross-window vault coordination (`PLAN.md §3.5`, `K10`).
+ * Cross-window vault coordination.
  *
  * The vault lives in the origin's private file system, which every tab of this origin
  * shares. The in-window write queue in `App.tsx` serialises one tab's writes; it says

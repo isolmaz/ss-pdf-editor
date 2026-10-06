@@ -1,14 +1,14 @@
 /**
- * Reading-mode text shaping (`PLAN.md §5/Phase 1`, reading mode + voice) — the pure
+ * Reading-mode text shaping (reading mode + voice) — the pure
  * half of the reading pane: engine text runs become reading-order blocks, and page
  * text becomes the utterance chunks the speech queue speaks.
  *
- * Scope: **block-local** (`K13`, step 4d-1). Lines are grouped by baseline proximity
+ * Scope: **block-local**. Lines are grouped by baseline proximity
  * in PDF user space (`y` grows upwards, so the result does not depend on page
  * rotation) and blocks are separated by vertical gaps. There is no page-flow or
  * overflow handling and no column detection: a multi-column page therefore reads its
  * columns line by line, left to right — that is the out-of-scope research line
- * (`PLAN.md §9`, 4d-2), not a defect here.
+ * (4d-2), not a defect here.
  *
  * This module is DOM-free and engine-free (plain numbers in, blocks out), so it can
  * move to `packages/pdf-core` with its caller without a rewrite; it lives in

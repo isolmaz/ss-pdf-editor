@@ -1,5 +1,5 @@
 /**
- * Text editing (`PLAN.md §5/Phase 4a-4f`).
+ * Text editing.
  *
  * Two vocabulary decisions worth keeping:
  *

@@ -1,11 +1,11 @@
 /**
- * Annotations and comments (`PLAN.md §5/Phase 3`).
+ * Annotations and comments.
  *
  * The keys here are the annotation capability's own sentences: the mark kinds the
  * comment panel and the on-canvas layer name, the note lines the writer's report
  * carries, and the progress labels. They live in their own part because the
  * capability is one unit — a mark kind without its translated name is a blank row
- * in the panel, and the writer's report is the honesty contract of `PLAN.md §1.2`
+ * in the panel, and the writer's report is the product's honesty contract
  * rather than decoration.
  *
  * Wired into `tr.ts` by the integration owner (the keys arrive with the ops).

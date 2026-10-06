@@ -1,15 +1,15 @@
 /**
- * Encryption and unlocking (`REPORT.md §3` A12, A13).
+ * Encryption and unlocking.
  *
- * Engine decision (`WORKLOG.md §2/P9`, decided 2026-09-15): **MuPDF is the crypto
+ * Engine decision (decided 2026-09-15): **MuPDF is the crypto
  * engine.** The plan's first option — vendoring our own emscripten build of qpdf
  * — needs a toolchain this project does not have, and the available npm package
  * is a single-maintainer MEMFS CLI wrapper with no API surface, which is exactly
  * the dependency the plan refuses to audit. MuPDF already writes AES-256 with a
- * permission bitmask and was proven end-to-end in Phase 0 spike #1
- * (archived spike `save-paths/branches.ts`: `encrypt=aes-256,user-password=…`).
+ * permission bitmask and was proven end-to-end in an early engine spike
+ * (`encrypt=aes-256,user-password=…`).
  *
- * Rule 9 of `PLAN.md §3.3` still holds and is enforced here: output protection
+ * The protection rule still holds and is enforced here: output protection
  * is never silently downgraded — a re-protected document must open with the same
  * password and report its permissions, or the operation fails.
  *
@@ -244,7 +244,7 @@ export async function protectDocument(
       inputBytes: bytes.byteLength,
       outputBytes: produced.byteLength,
       // Encryption rewrites the trailer with an /Encrypt dictionary; there is no
-      // incremental form of it (`PLAN.md §3.3` rule 3).
+      // incremental form of it.
       incremental: false,
       pageCount,
     },
@@ -254,7 +254,7 @@ export async function protectDocument(
 /**
  * Re-open the produced bytes and assert the protection the user asked for.
  * A mismatch throws `verification-failed`: the caller keeps the original file and
- * the session stays dirty (`PLAN.md §3.3` rule 5/6).
+ * the session stays dirty.
  */
 function verifyProtection(mupdf: Mupdf, produced: Uint8Array, options: ProtectOptions, bits: number): void {
   const doc = openPdf(mupdf, produced);
@@ -354,7 +354,7 @@ export async function unlockDocument(
     const cipher = cipherFromEngine(doc.getMetaData(mupdf.Document.META_ENCRYPTION));
     if (cipher === 'none' && !doc.needsPassword()) {
       // Nothing to remove: returning the input untouched is the honest outcome, and
-      // it keeps the "no unnecessary writer step" rule (`PLAN.md §3.3` rule 4).
+      // it keeps the "no unnecessary writer step" rule.
       return {
         bytes: bytes.slice(),
         report: {
@@ -504,8 +504,8 @@ function cipherFromEngine(encryption: string | undefined): string {
 }
 
 /**
- * Text of up to three pages (first, middle, last) — the sampling `PLAN.md §3.3`
- * rule 5 asks for ("text-extraction sampling **including middle pages**"). Pages
+ * Text of up to three pages (first, middle, last) — the verification sampling
+ * ("text-extraction sampling **including middle pages**"). Pages
  * without text (scans) compare as empty strings, which is why the page count is
  * checked as well.
  */

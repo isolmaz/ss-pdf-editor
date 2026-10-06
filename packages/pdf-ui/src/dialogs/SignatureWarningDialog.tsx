@@ -1,5 +1,5 @@
 /**
- * The pre-save signature warning (`PLAN.md §9/K17`: “editing after signing invalidates
+ * The pre-save signature warning (“editing after signing invalidates
  * the signature → pre-save warning and a status badge”).
  *
  * One question with two answers, because the save router knows which one applies and the
@@ -13,8 +13,7 @@
  *    exists for, and the confirm button says so.
  *
  * It is deliberately not a `window.confirm`: the dialog is keyboard-reachable, it names
- * the signature it is talking about, and it is the same surface the rest of the app uses
- * (`K24`).
+ * the signature it is talking about, and it is the same surface the rest of the app uses.
  */
 
 import { Dialog } from '@cloudflare/kumo/components/dialog';

@@ -1,5 +1,5 @@
 /**
- * The link dialog (`PLAN.md §5/Phase 4`: “Link & outline editing”).
+ * The link dialog (“Link & outline editing”).
  *
  * A link is added over a rectangle the user dragged: `ops/link-edit.ts` takes that
  * rectangle in the space a drag on the rendered page measures in, and the annotation

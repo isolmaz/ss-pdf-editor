@@ -6,8 +6,7 @@
  * The printing slice needs it for `canvas.toBlob()`, whose completion is a
  * callback: the alternative is the `new Promise((resolve, reject) => …)`
  * executor form, which the repository's rules keep out of product code. The
- * declaration is local to this folder rather than a shared compiler change,
- * exactly as archived spike `**` does it.
+ * declaration is local to this folder rather than a shared compiler change.
  */
 interface PromiseConstructor {
   withResolvers<T>(): {

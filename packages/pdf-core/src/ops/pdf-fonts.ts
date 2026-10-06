@@ -1,5 +1,5 @@
 /**
- * Font inventory of a document (`PLAN.md §5/Phase 3` — "Document properties
+ * Font inventory of a document ("Document properties
  * panel": font list). Read-only: nothing here changes the file. The walk runs over
  * MuPDF's object model (`engines/mupdf-write.ts` holds the binding rules) and never
  * calls a helper that normalises or creates entries.
@@ -177,7 +177,7 @@ function walkPages(doc: PDFDocument, signal: AbortSignal | undefined): readonly 
  * empty list, not an error.
  */
 export async function listPdfFonts(bytes: Uint8Array, signal?: AbortSignal): Promise<readonly PdfFontInfo[]> {
-  // `openForWrite` hands the engine a copy (`K15`: never the app-owned master buffer);
+  // `openForWrite` hands the engine a copy (never the app-owned master buffer);
   // nothing is edited or saved here.
   const { doc } = await openForWrite(bytes);
   try {

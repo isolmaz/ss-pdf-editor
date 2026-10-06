@@ -1,6 +1,6 @@
 /**
- * Removing persisted annotations — selection's verified writer (`PLAN.md
- * §5/Phase 3`; the annotation-deletion capability).
+ * Removing persisted annotations — selection's verified writer (the
+ * annotation-deletion capability).
  *
  * ## What this is not
  *
@@ -63,8 +63,7 @@
  * requested id is gone from its page, every other annotation of every touched page
  * is still there under the same id, no page gained an annotation, and each page's
  * `/Annots` entry count is its count before minus what was removed from it. A
- * mismatch is `verification-failed` and the caller keeps the original file
- * (`PLAN.md §3.3` rule 5/6).
+ * mismatch is `verification-failed` and the caller keeps the original file.
  *
  * The write is MuPDF's rewrite (`engines/mupdf-write.ts`), which regenerates no
  * appearance stream: regenerating field appearances would rewrite the form the
@@ -362,7 +361,7 @@ function nothingToDo(bytes: Uint8Array): AnnotationRemovalOutcome {
     report: {
       engine: 'mupdf',
       // No engine pass ran, so no step id is claimed: the report says the call
-      // changed nothing (`PLAN.md §3.3` rule 3) instead of naming work nobody did.
+      // changed nothing instead of naming work nobody did.
       steps: [],
       notes: [note('warning', 'op.note.annotate.nothing')],
       inputBytes: bytes.byteLength,
@@ -407,7 +406,7 @@ function applyRemovals(
 /**
  * Remove persisted annotations, all of them or none.
  *
- * Bytes in, bytes out, through MuPDF: the input is never mutated (`K15`) and the
+ * Bytes in, bytes out, through MuPDF: the input is never mutated and the
  * produced file is verified before it is returned. Every target is resolved on the
  * page it names, `/Widget` targets are refused, an owned popup goes with its
  * comment, and an annotation object is deleted only when nothing else still points
@@ -581,8 +580,8 @@ export async function removePdfAnnotations(
       inputBytes: bytes.byteLength,
       outputBytes: saved.byteLength,
       pageCount: expectation.pageCount,
-      // A rewrite re-serialises the file: the incremental fast path ends here
-      // (`PLAN.md §3.3` rule 3), and the report says so.
+      // A rewrite re-serialises the file: the incremental fast path ends here,
+      // and the report says so.
       incremental: false,
     },
   };

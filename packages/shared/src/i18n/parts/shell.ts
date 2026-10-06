@@ -1,6 +1,6 @@
 /**
- * Shell additions for Phase 2: menu bar, command palette, right dock, progress
- * and history (`PLAN.md §4.1`, §4.3).
+ * Shell vocabulary: menu bar, command palette, right dock, progress
+ * and history.
  */
 
 export const shellPart = {
@@ -87,7 +87,7 @@ export const shellPart = {
   'status.dirty': 'Kaydedilmemiş değişiklikler',
   'status.workingVersion': 'Çalışma sürümü: {label}',
 
-  /* Offline readiness (`offline.ts`, `R04`): what the worker answers, said as it is. */
+  /* Offline readiness (`offline.ts`): what the worker answers, said as it is. */
   'offline.unavailable':
     'Çevrimdışı hazırlık durumu okunamadı: bu pencerede çalışan bir servis çalışanı yok.',
   'offline.ready': 'Çevrimdışı kullanım için gereken tüm paketler hazır.',

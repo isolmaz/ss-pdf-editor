@@ -1,11 +1,11 @@
 /**
- * The form field inventory (`PLAN.md §5/Phase 3`, §6 A11).
+ * The form field inventory.
  *
  * A list of what the document's AcroForm declares, in the engine's own order:
  * name, kind, current value, and whether it is locked or required. An editable
  * field carries an inline control that commits through `onFill` — the panel never
  * writes to the document itself, so the value takes the same journaled path a
- * dialog's result would (`AGENTS.md`: state changes go through the model).
+ * dialog's result would (state changes go through the model).
  *
  * Read-only fields keep their value visible and their control disabled: a locked
  * field that looks editable is worse than one that looks locked, because the user
@@ -59,7 +59,7 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
   // draft of a field nobody was editing, i.e. close the inline control as soon as
   // any reload landed. That is why the panel was editable on a quiet document and
   // not after a fill, and why stopping the redundant writes made no field editable
-  // at all (`WORKLOG.md §4`, 2026-09-16): the editor's life depended on nothing
+  // at all: the editor's life depended on nothing
   // reloading. Keeping a draft that equals its field is harmless — it renders the
   // document's own value — and an edit in progress is kept by the seed effect below
   // because it differs from the field. A value that changes under an open draft is
@@ -67,7 +67,7 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
 
   // Selecting a text-ish field starts its draft from the document's own value: the
   // inline control renders only while a draft exists, and nothing else ever created
-  // one — so no field was editable at all (`WORKLOG.md §4`, 2026-09-16). A draft
+  // one — so no field was editable at all. A draft
   // that is already open is left alone, or typing would be overwritten by a re-render.
   useEffect(() => {
     if (selectedName === undefined || selectedName === null) return;
@@ -158,7 +158,7 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
                      * The row seeds its own draft, not only the effect on `selectedName`: a
                      * click on the row that is *already* selected changes nothing the effect
                      * watches, so re-opening a field after a write left it uneditable —
-                     * measured in the acceptance driver's own order (`WORKLOG.md §4`), where
+                     * measured in the acceptance driver's own order, where
                      * the first open works and the open after the fill does not.
                      */
                     if (isEditableKind(field.kind)) {

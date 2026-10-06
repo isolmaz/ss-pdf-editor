@@ -1,7 +1,7 @@
 /*
- * Reading mode (`PLAN.md §5/Phase 1`) — the pane's own styles.
+ * Reading mode — the pane's own styles.
  *
- * Token discipline (`K24`, `AGENTS.md`): semantic Kumo tokens and our own
+ * Token discipline: semantic Kumo tokens and our own
  * `--color-pdf-*` / `--font-sans` values only — no raw colour, no `dark:` variant.
  * Dark mode arrives through the tokens' own `light-dark()` pairs.
  *

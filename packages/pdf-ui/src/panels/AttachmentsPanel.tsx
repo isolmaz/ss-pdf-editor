@@ -6,7 +6,7 @@ import { Button } from '../components/Button';
 import { PanelLoading, PanelMessage } from './PanelParts';
 
 /**
- * The embedded files of the document ("Ekler", `PLAN.md §5/Phase 1`): what the file
+ * The embedded files of the document ("Ekler"): what the file
  * carries with it, and the one action a reader has on them — write one out.
  *
  * Sizes are not part of the engine's attachment metadata (v6 hands out `filename`
@@ -59,7 +59,7 @@ interface Downloads {
 
 /**
  * Object URLs, downloaded through an anchor and revoked once the browser has started
- * the file — the pattern the shell's Export and `SnapshotMenu` use (`PLAN.md §3.7`).
+ * the file — the pattern the shell's Export and `SnapshotMenu` use.
  * URLs and timers are tracked so unmounting the panel leaves neither behind.
  */
 function createDownloads(): Downloads {

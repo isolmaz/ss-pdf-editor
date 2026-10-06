@@ -1,5 +1,5 @@
 /**
- * The single chronological operation journal (`PLAN.md §9/K12`, §3.2).
+ * The single chronological operation journal.
  *
  * One log per document. Every entry is **data** (engine, op kind, JSON payload,
  * schema version) — never functions, because the persisted draft goes through
@@ -46,7 +46,7 @@ export interface JournalSnapshot {
 /**
  * Entry schema. 2 added `labelParams` (the History panel shows "3 sayfa silindi",
  * which a bare key cannot express); a draft written by schema 1 is skipped by
- * `parseDraft` rather than misread (`PLAN.md §3.5`).
+ * `parseDraft` rather than misread.
  */
 export const JOURNAL_SCHEMA = 2;
 
@@ -102,7 +102,7 @@ export class OperationJournal {
      * subscription may compare it, and `undo`/`redo` read it across an `await`. Truncating
      * and pushing in place therefore rewrote history that callers already held: a snapshot
      * taken before an append silently became a different array, and the branch's abandoned
-     * redo entries stayed visible in it (`F11`).
+     * redo entries stayed visible in it.
      */
     const kept = discarded.length > 0 ? this.#entries.slice(0, this.#cursor) : this.#entries;
     const entry: JournalEntry = {
@@ -166,8 +166,8 @@ export class OperationJournal {
       throw new Error(`journal schema ${snapshot.schema} is not readable by this build`);
     }
     // A cursor outside the array is corruption, not something to clamp: clamping it would
-    // silently move the restored document to a different state than the one the user left
-    // (`F09`). `parseDraft` rejects such a draft before it gets here; this is the second
+    // silently move the restored document to a different state than the one the user left.
+    // `parseDraft` rejects such a draft before it gets here; this is the second
     // line of defence for a caller that builds a snapshot itself.
     if (
       !Number.isSafeInteger(snapshot.cursor) ||

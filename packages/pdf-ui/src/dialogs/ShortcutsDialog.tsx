@@ -1,5 +1,5 @@
 /**
- * The keyboard shortcut list (`PLAN.md §4.3`), the surface the Help menu and the
+ * The keyboard shortcut list, the surface the Help menu and the
  * palette open.
  *
  * Help is **not a document operation**: it answers with no tab open and in either

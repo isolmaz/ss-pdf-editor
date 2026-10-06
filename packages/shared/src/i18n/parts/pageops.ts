@@ -1,11 +1,10 @@
 /**
  * Page composition, split and image operations — the notes and progress
- * sentences of `ops/compose.ts`, `ops/split.ts` and `ops/images.ts`
- * (`REPORT.md §3` A4, A5, A7, A17).
+ * sentences of `ops/compose.ts`, `ops/split.ts` and `ops/images.ts`.
  *
  * Why these are their own part: every entry is a *measurement* the operation
  * reports back (what the engine carried, what it dropped, what it is doing right
- * now), so the wording is part of the honesty contract of `PLAN.md §1.2` rather
+ * now), so the wording is part of the product's honesty contract rather
  * than UI decoration. `op.note.compose.catalog` is shared by `composeDocument`
  * and `mergeDocuments` because both run the same pdf.js `extractPages` writer
  * and therefore drop the same catalog entries.
@@ -14,7 +13,7 @@
  */
 
 export const pageopsPart = {
-  // Progress: real units, never a synthetic percentage (PLAN.md §3.4).
+  // Progress: real units, never a synthetic percentage.
   'op.progress.compose.extract': 'Sayfalar bileştiriliyor…',
   // Counts belong to the banner's own template (`op.progress`): a label that also
   // interpolated them printed the placeholder twice — "Döndürme uygulanıyor:

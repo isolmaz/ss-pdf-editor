@@ -1,12 +1,11 @@
 /**
  * Document properties panel: font inventory, embedded files, security summary and the
- * four-state signature status (`PLAN.md §5/Phase 3`, `PLAN.md §6` A11 + `REPORT.md §3`
- * B20). Turkish, like every other part (`K3`); merged into `tr.ts` by the integration
+ * four-state signature status. Turkish, like every other part; merged into `tr.ts` by the integration
  * owner, never imported from it.
  *
- * The signature keys follow `PLAN.md §9/K17`: integrity, trust, revocation evidence and
+ * The signature keys never collapse into one "valid" badge: integrity, trust, revocation evidence and
  * post-signing modification are four separate statements, and the two that this build
- * cannot answer say **why** in their own sentence (`K9`: no network, no imported trust
+ * cannot answer say **why** in their own sentence (no network, no imported trust
  * roots) instead of hiding behind a single badge.
  */
 

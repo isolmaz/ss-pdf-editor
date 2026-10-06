@@ -5,7 +5,7 @@
  * taken from the bitmap the viewer already rendered and blown up to the lens
  * size. This is the whole per-frame computation: the page bitmap is copied once
  * when the lens activates or the page/scale changes, and a frame is a single
- * scaled blit of a region — never a page render (`PLAN.md §5/Phase 1`).
+ * scaled blit of a region — never a page render.
  *
  * Kept out of the component so the arithmetic, which mixes CSS pixels, the
  * viewer's device-pixel ratio and the lens's own backing store, can be checked

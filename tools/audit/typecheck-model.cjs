@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Strict typecheck of the model/shared/storage subset (`R08`).
+ * Strict typecheck of the model/shared/storage subset.
  *
  * This is **not** a replacement for `pnpm typecheck`, and it is narrower than it once
  * claimed. It re-runs the root's strict compiler settings (including its `DOM` lib, which

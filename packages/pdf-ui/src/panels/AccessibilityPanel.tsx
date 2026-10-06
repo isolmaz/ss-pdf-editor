@@ -1,5 +1,5 @@
 /**
- * The accessibility surface (`PLAN.md §5/Phase 4`): a check the user runs, the report it
+ * The accessibility surface: a check the user runs, the report it
  * produces, the tag write, and the alt-text list for the images the check found.
  *
  * ## Three different things, three different places
@@ -22,7 +22,7 @@
  *
  * ## Ownership
  *
- * The panel asks; the shell owns the bytes (`K23`). Reading the working bytes, applying a
+ * The panel asks; the shell owns the bytes. Reading the working bytes, applying a
  * produced file, journaling it and routing the save all belong to the host — this file
  * calls `read()` for the current revision and hands produced outcomes to `onTagged` /
  * `onAltWritten`. After a write the report on screen describes a file that no longer
@@ -31,10 +31,9 @@
  * ## Copy
  *
  * Every sentence is a dictionary key. The keys live in
- * `packages/shared/src/i18n/parts/a11y.ts` and are added by the commit that wires this
- * panel in (`local://a11y-integration.md` lists them with both languages); until then
- * `MessageKey` cannot name the literals, which is what the `key()` seam below is — the
- * same seam `RedactionAuditPanel` documents, not a second dictionary.
+ * `packages/shared/src/i18n/parts/a11y.ts` and `en-parts/a11y.ts`; the `key()` seam
+ * below turns a key string into a `MessageKey` — the same seam `RedactionAuditPanel`
+ * uses, not a second dictionary.
  */
 
 import type {
@@ -58,7 +57,7 @@ export interface AccessibilityPanelProps {
   /**
    * The current working bytes, from the host's own route (`workingBytes`,
    * `apps/web/src/operations.ts`). A function, never a captured copy: the check must read
-   * the revision on screen when the button is pressed (`K14`).
+   * the revision on screen when the button is pressed.
    */
   readonly read: (context: OperationContext) => Promise<Uint8Array>;
   /**

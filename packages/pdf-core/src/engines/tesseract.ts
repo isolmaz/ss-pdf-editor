@@ -1,5 +1,5 @@
 /**
- * Tesseract adapter (`PLAN.md §3.1`, engine table in §2): the only place that
+ * Tesseract adapter: the only place that
  * talks to `tesseract.js`.
  *
  * **Zero network beyond our origin.** `tesseract.js` defaults every asset to a
@@ -8,7 +8,7 @@
  * explicitly from `TESSERACT_ASSETS`, and `corePath` ends in `js` so the worker
  * loads exactly the file we pinned instead of probing directory variants
  * (`src/worker-script/browser/getCore.js:21`). A CDN fetch would be both a
- * privacy leak and an offline failure (`PLAN.md §3.6`, `K9`).
+ * privacy leak and an offline failure.
  *
  * The module, the worker and the wasm core are all downloaded on first use —
  * nothing of this reaches the first-paint bundle.
@@ -205,7 +205,7 @@ async function releaseWorker(entry: WorkerEntry): Promise<void> {
   }
 }
 
-/** Drop every cached worker — the operation's cleanup step (`PLAN.md §3.7`). */
+/** Drop every cached worker — the operation's cleanup step. */
 export async function terminateOcrWorkers(): Promise<void> {
   const pending = [...workers.values()];
   workers.clear();
@@ -214,7 +214,7 @@ export async function terminateOcrWorkers(): Promise<void> {
       try {
         // Awaited, not fired and forgotten: `terminate()` resolves once the worker's wasm
         // heap is actually released, and an OCR operation's caller treats this function's
-        // resolution as “the memory is back”. Returning early made that a lie (`F13`).
+        // resolution as “the memory is back”. Returning early made that a lie.
         await (await entry).worker.terminate().catch(() => undefined);
       } catch {
         // Never-started worker: nothing to terminate.
@@ -324,7 +324,7 @@ export function mapTesseractError(error: unknown, context: string): ToolError {
 }
 
 /**
- * Availability probe for the offline readiness screen (`PLAN.md §3.6`): a HEAD
+ * Availability probe for the offline readiness screen: a HEAD
  * request to the exact pinned path. It reports what the browser can actually reach,
  * which is the question the screen asks; a network failure is an answer ("not
  * available"), not an error to surface.

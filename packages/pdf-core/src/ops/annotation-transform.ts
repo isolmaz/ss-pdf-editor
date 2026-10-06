@@ -1,5 +1,5 @@
 /**
- * Moving and turning annotations (`PLAN.md §5/Phase 3`; the select → move/rotate half
+ * Moving and turning annotations (the select → move/rotate half
  * of the mark feature, next to `ops/annotation-remove.ts`).
  *
  * ## The one rule about rotation
@@ -78,8 +78,7 @@
  * every target, a fresh wrapper in place of each target's appearance (still
  * pointing at the original stream), the dictionary of every *non*-target
  * annotation, and the form's fields with their values. A mismatch is
- * `verification-failed` and the caller keeps the original file
- * (`PLAN.md §3.3` rule 5/6).
+ * `verification-failed` and the caller keeps the original file.
  *
  * The write is MuPDF's rewrite (`engines/mupdf-write.ts`), which regenerates no
  * appearance stream — regenerating field appearances would rewrite the form this
@@ -943,7 +942,7 @@ function nothingToDo(bytes: Uint8Array): AnnotationTransformOutcome {
     report: {
       engine: 'mupdf',
       // No engine pass ran, so no step id is claimed: the report says the call
-      // changed nothing (`PLAN.md §3.3` rule 3) instead of naming work nobody did.
+      // changed nothing instead of naming work nobody did.
       steps: [],
       notes: [note('warning', 'op.note.annotate.nothing')],
       inputBytes: bytes.byteLength,
@@ -1177,7 +1176,7 @@ function resolveTarget(
 /**
  * Move and turn persisted annotations, all of them or none.
  *
- * Bytes in, bytes out, through MuPDF: the input is never mutated (`K15`) and the
+ * Bytes in, bytes out, through MuPDF: the input is never mutated and the
  * produced file is verified before it is returned. Every target is resolved on the
  * page it names, `/Widget` and `/Popup` targets are refused, and the geometry and
  * appearance of each resolved annotation are rewritten together — a rect that moved

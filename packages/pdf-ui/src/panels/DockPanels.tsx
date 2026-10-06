@@ -7,7 +7,7 @@
  * audit panel needs the byte-level auditor. None of them is visible
  * before a tab is opened, so re-exporting them through one module gives the shell
  * a single dynamic-import boundary — and keeps a capability nobody has asked for
- * out of the first paint, which is what the ≤250 KiB budget is for (`PLAN.md §7`).
+ * out of the first paint, which is what the ≤250 KiB budget is for.
  *
  * The re-export is the whole file: the panels themselves stay where they are, so
  * nothing about their own surface changes.

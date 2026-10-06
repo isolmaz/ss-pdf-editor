@@ -1,6 +1,6 @@
 /**
- * The command palette (`PLAN.md §4.1`: "every operation, panel and setting is
- * searchable by name", `§4.3` `Ctrl+K`).
+ * The command palette ("every operation, panel and setting is
+ * searchable by name", `Ctrl+K`).
  *
  * Built on Kumo's `CommandPalette` — unlike the menu bar, a real primitive exists
  * here (its `Root` is a base-ui dialog plus a base-ui autocomplete), and it brings
@@ -40,8 +40,8 @@ export interface CommandPaletteProps {
    * How many commands the simple mode is hiding from this list, when it is on.
    *
    * A filter that hides a capability without saying so is indistinguishable from a
-   * missing feature. When this is above zero the empty state offers the way out
-   * (`PLAN.md §4.1`), so a user who searches for something the mode hides learns the mode
+   * missing feature. When this is above zero the empty state offers the way out,
+   * so a user who searches for something the mode hides learns the mode
    * exists instead of concluding the application cannot do it.
    */
   readonly hiddenByMode?: number;

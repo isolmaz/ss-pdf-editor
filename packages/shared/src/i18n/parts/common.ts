@@ -1,5 +1,5 @@
 /**
- * Shared operation vocabulary (`PLAN.md §9/K3`): the words every Phase 2 panel,
+ * Shared operation vocabulary: the words every operation panel,
  * dialog, progress line and result report uses.
  *
  * The dictionary is split by namespace so a capability's copy lives with the

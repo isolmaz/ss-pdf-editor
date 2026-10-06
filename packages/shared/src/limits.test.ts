@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { BUILD_BUDGETS, checkDocumentLimits, detectDeviceTier, LIMITS } from './limits';
 
 /**
- * The two-tier limits (`PLAN.md §3.4`, `§9/K6`). A wrong verdict here either
+ * The two-tier limits. A wrong verdict here either
  * blocks a document the app could open or lets a document through that will
  * exhaust the tab, so the boundaries are tested on both tiers.
  */
