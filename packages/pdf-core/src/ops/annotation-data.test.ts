@@ -142,3 +142,121 @@ describe('commentText', () => {
     expect(commentText('Reviewed by legal')).toBe('Reviewed by legal');
   });
 });
+
+describe('serializeAnnotationsJson layout', () => {
+  it('is indented for people by default and compact on request, with the same content', () => {
+    const pretty = decode(serializeAnnotationsJson([note()], 3));
+    const compact = decode(serializeAnnotationsJson([note()], 3, false));
+    expect(pretty).toContain('\n  "marks"');
+    expect(compact).not.toContain('\n');
+    expect(JSON.parse(compact)).toEqual(JSON.parse(pretty));
+  });
+});
+
+describe('annotation data details', () => {
+  it('writes no reply record for a mark without replies, and one for a mark with them', () => {
+    const plain = decode(serializeAnnotationsFdf([{ ...note(), replies: [] }], 3));
+    expect(plain).not.toContain('replies');
+    const reply = { id: 'r', author: 'A', contents: 'x', createdAt: '2026-10-02T08:00:00.000Z' };
+    expect(decode(serializeAnnotationsFdf([{ ...note(), replies: [reply] }], 3))).toContain('replies');
+    expect(decode(serializeAnnotationsJson([{ ...note(), replies: [] }], 3, false))).not.toContain('replies');
+  });
+
+  it('reads an FDF with no records at all as an empty review, not as a foreign file', () => {
+    const parsed = parseAnnotationData(serializeFdf([]));
+    expect(parsed.marks).toEqual([]);
+    expect(parsed.skipped).toBe(0);
+  });
+
+  it('keeps a mark on the first page, and skips one with a negative page', () => {
+    const base = JSON.parse(decode(serializeAnnotationsJson([note()], 3))) as {
+      marks: Record<string, unknown>[];
+    };
+    const withPage = (pageIndex: number) =>
+      parseAnnotationsJson(JSON.stringify({ marks: [{ ...base.marks[0], pageIndex }] }));
+    expect(withPage(0).marks[0]?.pageIndex).toBe(0);
+    expect(withPage(-1).skipped).toBe(1);
+  });
+
+  it('ignores array entries that are neither text nor objects', () => {
+    const base = JSON.parse(decode(serializeAnnotationsJson([note()], 3))) as {
+      marks: Record<string, unknown>[];
+    };
+    for (const junk of [[5], [null], [true]]) {
+      const parsed = parseAnnotationsJson(JSON.stringify({ marks: [{ ...base.marks[0], strokes: junk }] }));
+      expect(parsed.marks[0]?.strokes).toBeUndefined();
+    }
+  });
+});
+
+describe('Acrobat comment FDF', () => {
+  const fdf = (...dictionaries: string[]): Uint8Array =>
+    new TextEncoder().encode(
+      `%FDF-1.2\n1 0 obj\n<< /FDF << /Fields [ ${dictionaries
+        .map((dictionary, at) => `<< /T (c${at}) /V (${dictionary}) >>`)
+        .join(' ')} ] >> >>\nendobj\n%%EOF\n`,
+    );
+
+  it('reads a highlight: kind, colour, boxes, text, author, opacity, date and its own id', () => {
+    const parsed = parseAnnotationData(
+      fdf(
+        '<< /Subtype /Highlight /NM (guid-1) /Page 0 /Rect [10 20 110 40] /C [1 0 0] /CA 0.5 ' +
+          '/QuadPoints [10 40 110 40 10 20 110 20] /Contents (Merhaba) /T (Ayse) /M (D:20261002080000) >>',
+      ),
+    );
+    expect(parsed.space).toBe('pdf-user');
+    expect(parsed.skipped).toBe(0);
+    expect(parsed.marks).toHaveLength(1);
+    expect(parsed.marks[0]).toMatchObject({
+      id: 'guid-1',
+      kind: 'highlight',
+      pageIndex: 0,
+      quads: [[10, 20, 110, 40]],
+      rect: [10, 20, 110, 40],
+      color: '#ff0000',
+      opacity: 0.5,
+      contents: 'Merhaba',
+      author: 'Ayse',
+      createdAt: '2026-10-02T08:00:00.000Z',
+    });
+    expect(parsed.pageUnknown).toBe(0);
+  });
+
+  it('names a comment after its field when it has no id, and by position when it has neither', () => {
+    const [byField] = parseAnnotationData(fdf('<< /Subtype /Text /Rect [1 2 3 4] >>')).marks;
+    expect(byField?.id).toBe('c0');
+    const withId = parseAnnotationData(fdf('<< /Subtype /Text /NM (own) /Rect [1 2 3 4] >>')).marks[0];
+    expect(withId?.id).toBe('own');
+    const unnamed = new TextEncoder().encode(
+      '%FDF-1.2\n1 0 obj\n<< /FDF << /Fields [ << /T () /V (<< /Subtype /Text /Rect [1 2 3 4] >>) >> ] >> >>\nendobj\n',
+    );
+    expect(parseAnnotationData(unnamed).marks[0]?.id).toBe('acrobat-0');
+  });
+
+  it('falls back to the rect when there are no quad points, and skips a comment with no place', () => {
+    const parsed = parseAnnotationData(
+      fdf('<< /Subtype /Square /Rect [1 2 3 4] >>', '<< /Subtype /Highlight /Rect [1 2 3] >>'),
+    );
+    expect(parsed.marks).toHaveLength(1);
+    expect(parsed.marks[0]?.quads).toEqual([[1, 2, 3, 4]]);
+    expect(parsed.marks[0]).toMatchObject({ kind: 'shapes', shape: 'square' });
+    expect(parsed.skipped).toBe(1);
+    expect(parsed.pageUnknown).toBe(1);
+  });
+
+  it('keeps an ink stroke of exactly two points and drops a shorter one', () => {
+    const parsed = parseAnnotationData(fdf('<< /Subtype /Ink /Rect [0 0 9 9] /InkList [[1 2 3 4] [5 6]] >>'));
+    expect(parsed.marks[0]?.strokes).toEqual([[1, 2, 3, 4]]);
+  });
+
+  it('clamps a colour channel and reads a grey value as the three channels', () => {
+    const [bright, grey] = parseAnnotationData(
+      fdf(
+        '<< /Subtype /Underline /Rect [1 2 3 4] /C [2 0.5 0] >>',
+        '<< /Subtype /Underline /Rect [1 2 3 4] /C [0.2] >>',
+      ),
+    ).marks;
+    expect(bright?.color).toBe('#ff8000');
+    expect(grey?.color).toBe('#333333');
+  });
+});

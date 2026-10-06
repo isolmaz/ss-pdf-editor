@@ -83,6 +83,15 @@ describe('parsePageRanges', () => {
     );
   });
 
+  it('names the offending 1-based page when validation refuses', () => {
+    try {
+      validateRanges({ pages: [4], source: '5' }, 3);
+      throw new Error('expected a refusal');
+    } catch (error) {
+      expect(isToolError(error) && error.details.path).toBe('5');
+    }
+  });
+
   it('reports failures as the shared error contract, never as English engine text', () => {
     try {
       parsePageRanges('abc', 5);
@@ -118,6 +127,7 @@ describe('chunkPages', () => {
 
   it('refuses a non-positive size', () => {
     expect(() => chunkPages([0], 0)).toThrowError();
+    expect(chunkPages([0, 1, 2], 1)).toEqual([[0], [1], [2]]);
   });
 });
 

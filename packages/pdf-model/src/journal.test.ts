@@ -72,6 +72,38 @@ describe('OperationJournal', () => {
     expect(restored.length).toBe(1);
   });
 
+  it('amends only the newest entry at the head, as one undo step with a fresh id', () => {
+    const journal = new OperationJournal();
+    expect(journal.amendLast({ kind: 'x', payload: 1 })).toBeUndefined();
+
+    journal.append(op('a', 'A'));
+    const second = journal.append(op('b', 'B')).entry;
+    const before = journal.entries;
+    const amended = journal.amendLast({ kind: 'b2', payload: 2 });
+    expect(amended?.op).toEqual({ kind: 'b2', payload: 2 });
+    expect(amended?.labelKey).toBe('B');
+    expect(amended?.seq).toBe(second.seq);
+    expect(amended?.id).not.toBe(second.id);
+    expect(journal.length).toBe(2);
+    expect(journal.entries.map((entry) => entry.op.kind)).toEqual(['a', 'b2']);
+    expect(before.map((entry) => entry.op.kind)).toEqual(['a', 'b']);
+
+    journal.undo();
+    expect(journal.amendLast({ kind: 'nope', payload: 0 })).toBeUndefined();
+    expect(journal.entries.map((entry) => entry.op.kind)).toEqual(['a', 'b2']);
+    journal.undo();
+    expect(journal.amendLast({ kind: 'nope', payload: 0 })).toBeUndefined();
+  });
+
+  it('restores a snapshot whose cursor is zero', () => {
+    const source = new OperationJournal();
+    source.append(op('a', 'A'));
+    source.undo();
+    const restored = OperationJournal.fromJSON(source.toJSON());
+    expect(restored.cursor).toBe(0);
+    expect(restored.redo()?.op.kind).toBe('a');
+  });
+
   it('refuses a fractional or non-finite cursor', () => {
     const entries = new OperationJournal();
     entries.append(op('a', 'A'));

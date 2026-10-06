@@ -5,9 +5,16 @@
  * or a rewrite reported as harmless.
  */
 
-import { SessionStore } from 'pdf-model';
+import type { AnnotationMark } from 'pdf-core';
+import { type JsonValue, SessionStore } from 'pdf-model';
 import { describe, expect, it } from 'vitest';
-import { extendsBytes, planSaveExecution, signatureWarning, signedBytesFate } from './save-plan';
+import {
+  appliedVersionBytes,
+  extendsBytes,
+  planSaveExecution,
+  signatureWarning,
+  signedBytesFate,
+} from './save-plan';
 
 const bytes = (...values: number[]) => new Uint8Array(values);
 
@@ -155,6 +162,65 @@ describe('planSaveExecution', () => {
     const plan = planSaveExecution({ ...input(master), encryptedOutput: true });
     expect(plan.steps.map((step) => step.id)).toEqual(['pdfjs.saveDocument']);
     expect(plan.plan.encrypted).toBe(true);
+  });
+
+  /** A journal whose entries cover every payload shape the plan must read or skip. */
+  const tabWithHistory = (undone: number) => {
+    const tab = tabOf();
+    const add = (kind: string, payload: JsonValue) =>
+      tab.journal.append({ labelKey: kind, engine: 'model', op: { kind, payload } });
+    add('document.change', { engine: 'mupdf', steps: ['rotate'], after: 'v1' });
+    add('highlight', { engine: 'pdfjs', steps: ['stamp'], after: 'v-highlight' });
+    add('document.change', null);
+    add('document.change', ['stamp']);
+    add('document.change', { engine: 'x', steps: 'ab', after: 7 });
+    add('document.change', { engine: 5, steps: ['watermark'], after: 'v-bad-engine' });
+    add('document.change', { engine: 'pdfjs', steps: ['bates', 3], after: 'v2' });
+    add('document.change', { engine: 'mupdf', steps: ['metadata'], after: 'v3' });
+    for (let count = 0; count < undone; count += 1) tab.journal.undo();
+    return tab;
+  };
+
+  it('lists only the string steps of well-formed applied document changes', () => {
+    const plan = planSaveExecution({ ...input(master), tab: tabWithHistory(0) });
+    expect(plan.appliedSteps).toEqual([
+      { id: 'rotate', engine: 'mupdf', note: 'already applied' },
+      { id: 'bates', engine: 'pdfjs', note: 'already applied' },
+      { id: 'metadata', engine: 'mupdf', note: 'already applied' },
+    ]);
+  });
+
+  it('leaves the steps of an undone entry out of the plan and the change set', () => {
+    const plan = planSaveExecution({ ...input(master), tab: tabWithHistory(1) });
+    expect(plan.appliedSteps.map((step) => step.id)).toEqual(['rotate', 'bates']);
+    expect(plan.changeSet.metadata).toBe(false);
+    expect(plan.changeSet.pageOrder).toBe(true);
+  });
+
+  it('returns the bytes of the versions the applied history produced, not undone or malformed ones', () => {
+    const snapshots = ['v1', 'v2', 'v3', 'v-highlight', 'v-bad-engine', '7'].map((id, index) => ({
+      id,
+      bytes: bytes(index),
+    }));
+    expect(appliedVersionBytes(tabWithHistory(0), snapshots)).toEqual([
+      bytes(0),
+      bytes(1),
+      bytes(2),
+      bytes(3),
+      bytes(4),
+    ]);
+    expect(appliedVersionBytes(tabWithHistory(1), snapshots)).toEqual([
+      bytes(0),
+      bytes(1),
+      bytes(3),
+      bytes(4),
+    ]);
+  });
+
+  it('marks annotations changed only for unsaved engine values or live annotations', () => {
+    expect(planSaveExecution(input(master)).changeSet.annotations).toBe(false);
+    const mark = { kind: 'note' } as unknown as AnnotationMark;
+    expect(planSaveExecution({ ...input(master), annotations: [mark] }).changeSet.annotations).toBe(true);
   });
 
   it('marks annotations and forms changed when the engine holds unsaved values', () => {
