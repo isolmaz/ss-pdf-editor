@@ -38,6 +38,7 @@ import { reviewPart } from './parts/review';
 import { securityPart } from './parts/security';
 import { shellPart } from './parts/shell';
 import { signaturePart } from './parts/signature';
+import { sigValidatePart } from './parts/sigvalidate';
 import { stampPart } from './parts/stamp';
 import { texteditPart } from './parts/textedit';
 import { verifyPart } from './parts/verify';
@@ -78,6 +79,7 @@ export const tr = {
   ...reviewPart,
   ...stampPart,
   ...verifyPart,
+  ...sigValidatePart,
 
   'open.pdfFilter': 'PDF belgesi',
   'open.progress': 'Belge açılıyor…',

@@ -596,13 +596,15 @@ The verdict has four independent fields, never one badge:
 |---|---|
 | `integrity` | `valid` / `invalid` / `unchecked` |
 | `trust` | `trusted` / `untrusted` / `self-signed` / `indeterminate` / `not-checked` |
-| `revocation` | **always `indeterminate`** — there is no OCSP and no CRL in this codebase |
+| `revocation` | `not-revoked` / `revoked` / `revoked-after-signing` / `partial` / `indeterminate` — from lists already on the device only (§5.3.1); `indeterminate` when none speaks for any certificate |
 | `coverage` | `covers-whole-document` / `covers-partial` / `unknown`, computed from the ByteRange |
 
 plus `changesAfterSigning`, derived from the `startxref`/`/Prev` revision chain.
 `adbe.pkcs7.detached` and `ETSI.CAdES.detached` are the accepted SubFilters;
-`adbe.pkcs7.sha1` and `ETSI.RFC3161` are reported `unchecked` because their digest relation
-differs — **timestamps are never validated**.
+`adbe.pkcs7.sha1` is reported `unchecked` because its digest relation differs. `ETSI.RFC3161`
+entries are document timestamps and get their own check (§5.3.2). Four more facts ride along:
+`timestamp` (the RFC 3161 token, when there is one), `revocationChecks` (one answer per
+certificate), and `validationTime` with its `validationTimeSource`.
 
 **Trust (`signature-trust.ts`).** Path building follows the RFC 5280 §6.1 shape: candidate
 issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, each link's
@@ -612,6 +614,59 @@ supplied clock, and `basicConstraints` cA / `keyUsage.keyCertSign` / `pathLenCon
 implemented**, and a critical extension outside the applied set forces `indeterminate`
 rather than being ignored. With no roots imported the answer is `not-checked` with reason
 `no-roots` — an absence of evidence is never reported as `untrusted`.
+
+#### 5.3.1 Revocation from lists already on the device
+
+`signature-revocation.ts` (loaded lazily, like `signature-trust.ts`; `pkijs` + WebCrypto, no new
+dependency). There is **no network**: a "not revoked" answer can only come from a list somebody
+handed the app — a CRL the user imported (stored beside the trust roots in the app's OPFS
+settings directory, `pdf-model/revocation-lists.ts`, `revocation-lists.json`, versioned, with the
+dates shown in the panel), a CRL or OCSP response in the signature's CMS (the Adobe
+`adbe-revocationInfoArchival` attribute, read from the signed *and* unsigned attributes, and
+`SignedData.crls`) or in the document's `/DSS` (`Certs`, `CRLs`, `OCSPs`, read by reference and
+bounded to 256 entries / 16 MiB). The signer certificate and every certificate above it, up to
+but not including a self-signed root, are checked.
+
+- **Who may speak for whom.** The chain is rebuilt from *signatures* (each certificate's issuer
+  is the pool member whose key verifies it), and a list is accepted for a certificate only when
+  it is signed by that verified issuer: the CRL's issuer name must match, its signature must
+  verify, the issuer's `keyUsage` must allow `cRLSign` when present and the issuer must be valid
+  at `thisUpdate`. An OCSP response must be signed by the issuer or by a delegate the issuer
+  signed with `id-kp-OCSPSigning`, and its `CertID` (issuer name and key hash, serial) must match.
+  This is what stops a PDF from embedding a CA with the real CA's name and a CRL saying nothing
+  is revoked (measured: such a CRL is rejected as `invalid-list` and cannot hide a real revocation).
+- **Answers.** `good` (a verified complete list does not name the certificate), `revoked`
+  (date and reason from the list; `removeFromCRL` entries are not revocations) or `unknown` with a
+  reason: `no-list`, `no-issuer`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
+  critical extension), `list-scope` (delta, `onlySomeReasons`, a partition the certificate does not
+  name). A `good` carries `coversValidationTime` (was the list issued at or after the signature?)
+  and `stale` (past its `nextUpdate` today). A lasting revocation outranks everything; otherwise
+  the newest statement decides. The summary is `partial` when nothing is revoked, something was
+  cleared and something has no list (typically the CA above the signer).
+- **Before or after the signature.** A revocation is compared with the *validation time*. It is
+  called `revoked-after-signing` — harmless to the signature — only when that time is a trusted
+  timestamp; the signer's own `signingTime`/`/M` can be back-dated and never earns the excuse.
+
+#### 5.3.2 RFC 3161 timestamps
+
+`signature-timestamp.ts` verifies a token offline: it is a `SignedData` over a `TSTInfo`; the
+`messageImprint` equals the hash (the token's own algorithm) of the data it covers — the
+signature *value* for a signature timestamp (unsigned attribute `id-aa-signatureTimeStampToken`),
+the `/ByteRange` bytes for a document timestamp (`/SubFilter /ETSI.RFC3161`); `messageDigest` and
+the CMS signature verify with the TSA certificate found by its `sid`; that certificate has
+`id-kp-timeStamping` and was valid **at `genTime`**. Failures are separate reasons (`imprint-mismatch`,
+`bad-signature`, `tsa-key-usage`, `tsa-validity`, …); an algorithm WebCrypto cannot provide is
+`unchecked`. The TSA's chain is validated by `signature-trust.ts` at `genTime` (its critical
+`extKeyUsage`, which RFC 3161 mandates, is passed as a leaf extension the caller enforces) and its
+certificates go through §5.3.1. `status` says what the token is; `trusted` says whether its time
+may be used: valid, chained to an imported root, nothing revoked.
+
+`signature-validation.ts` orders it: the timestamp first, then the validation time
+(`timestamp` > `timestamp-untrusted` > claimed `signing-time` > `clock`), then trust (validated at the
+trusted timestamp's time, so a certificate that expired later reads as valid — the panel says
+so) and revocation. The helper shared by every signed structure (`verifyDataSignature`) lives in
+`signature-trust.ts`. Probes with a real OpenSSL PKI (CA, intermediate, signers, TSAs, an OCSP
+responder, CRLs) and tokens built with pkijs where OpenSSL refuses to make them were run end to end.
 
 ### 5.4 Redaction
 
@@ -1531,8 +1586,11 @@ shows.
 
 ## 11. Deliberate limits
 
-- **Signing** is PAdES B-B: no RFC 3161 timestamp, no revocation data, no policy
-  processing, and trust only from user-imported roots.
+- **Signing** is PAdES B-B: no RFC 3161 timestamp and no revocation data are *written*, no policy
+  processing, and trust only from user-imported roots. **Verification** of revocation and
+  timestamps reads only what is on the device: indirect, standalone delta and partitioned CRLs are
+  `unknown`, the invalidity date is not used, a document timestamp does not vouch for the
+  signatures before it, and a timestamp's TSA is trusted only through an imported root.
 - **Accessibility** reports facts, not conformance, and does not evaluate reading order,
   tables, lists, contrast, font embedding or alt-text quality. Existing structure trees are
   refused rather than merged.
@@ -1542,8 +1600,8 @@ shows.
 - **Find and replace** skips matches in text that is not editable and table cells with no
   room, and reports both. A paragraph laid out again has no hyphenation of its own, and a
   line-end hyphen before a lower-case letter is always read as hyphenation.
-- **`adbe.pkcs7.sha1` and `ETSI.RFC3161`** signatures are reported `unchecked`, because
-  their digest relation differs from the detached-CMS one this build verifies.
+- **`adbe.pkcs7.sha1`** signatures are reported `unchecked`, because their digest relation
+  differs from the detached-CMS one this build verifies.
 
 ---
 

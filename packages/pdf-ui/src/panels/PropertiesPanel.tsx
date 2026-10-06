@@ -22,18 +22,22 @@
 
 import type { PdfFontInfo } from 'pdf-core/ops/pdf-fonts';
 import type {
+  RevocationCertCheck,
   SignatureCoverage,
   SignatureIntegrity,
   SignatureRevocation,
   SignatureTrust,
   SignatureVerification,
+  TimestampCheck,
   TrustReason,
+  ValidationTimeSource,
 } from 'pdf-core/ops/signature-status';
-import type { TrustRoot } from 'pdf-model';
+import type { RevocationList, TrustRoot } from 'pdf-model';
 import type { MessageKey, Translator } from 'pdf-shared';
 import { type ReactElement, useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PanelLoading, PanelMessage } from './PanelParts';
+import { importRevocationLists } from './revocation-lists';
 import { importTrustRoots } from './trust-roots';
 
 export interface PropertiesPanelProps {
@@ -64,6 +68,14 @@ export interface PropertiesPanelProps {
    */
   readonly onImportTrustRoots?: (roots: readonly TrustRoot[]) => void;
   readonly onRemoveTrustRoot?: (id: string) => void;
+  /**
+   * The CRLs the user imported (`pdf-model/revocation-lists`). Shown with their dates, because a
+   * list is only as good as its `nextUpdate`; the parsed lists come back through
+   * `onImportRevocationLists` for the same chunk-size reason as the roots.
+   */
+  readonly revocationLists?: readonly RevocationList[];
+  readonly onImportRevocationLists?: (lists: readonly RevocationList[]) => void;
+  readonly onRemoveRevocationList?: (id: string) => void;
 }
 
 const INTEGRITY_LABEL: Record<SignatureIntegrity, MessageKey> = {
@@ -117,8 +129,96 @@ const TRUST_REASON_LABEL: Record<TrustReason, MessageKey> = {
 };
 
 const REVOCATION_LABEL: Record<SignatureRevocation, MessageKey> = {
+  'not-revoked': 'props.sig.revocation.notRevoked',
+  revoked: 'props.sig.revocation.revoked',
+  'revoked-after-signing': 'props.sig.revocation.revokedAfter',
+  partial: 'props.sig.revocation.partial',
   indeterminate: 'props.sig.revocation.indeterminate',
 };
+
+const REVOCATION_TONE: Record<SignatureRevocation, string> = {
+  'not-revoked': 'text-kumo-success',
+  revoked: 'text-kumo-danger',
+  // The signature was made while the certificate was good, but the certificate is revoked now.
+  'revoked-after-signing': 'text-kumo-warning',
+  // Not a failure: part of the chain was cleared, part had no list to ask.
+  partial: 'text-kumo-warning',
+  indeterminate: 'text-kumo-subtle',
+};
+
+const TIMESTAMP_LABEL: Record<TimestampCheck['status'], MessageKey> = {
+  valid: 'props.sig.ts.status.valid',
+  invalid: 'props.sig.ts.status.invalid',
+  unchecked: 'props.sig.ts.status.unchecked',
+};
+
+const TIMESTAMP_TONE: Record<TimestampCheck['status'], string> = {
+  valid: 'text-kumo-success',
+  invalid: 'text-kumo-danger',
+  unchecked: 'text-kumo-subtle',
+};
+
+const TIMESTAMP_KIND_LABEL: Record<TimestampCheck['kind'], MessageKey> = {
+  signature: 'props.sig.ts.kind.signature',
+  document: 'props.sig.ts.kind.document',
+};
+
+const TIMESTAMP_REASON_LABEL: Record<NonNullable<TimestampCheck['reason']>, MessageKey> = {
+  malformed: 'props.sig.ts.reason.malformed',
+  'imprint-mismatch': 'props.sig.ts.reason.imprint-mismatch',
+  'unsupported-hash': 'props.sig.ts.reason.unsupported-hash',
+  'no-tsa-certificate': 'props.sig.ts.reason.no-tsa-certificate',
+  'digest-mismatch': 'props.sig.ts.reason.digest-mismatch',
+  'bad-signature': 'props.sig.ts.reason.bad-signature',
+  'unsupported-signature': 'props.sig.ts.reason.unsupported-signature',
+  'tsa-key-usage': 'props.sig.ts.reason.tsa-key-usage',
+  'tsa-validity': 'props.sig.ts.reason.tsa-validity',
+};
+
+const VALIDATION_TIME_LABEL: Record<ValidationTimeSource, MessageKey> = {
+  timestamp: 'props.sig.vt.timestamp',
+  'timestamp-untrusted': 'props.sig.vt.timestamp-untrusted',
+  'signing-time': 'props.sig.vt.signing-time',
+  clock: 'props.sig.vt.clock',
+};
+
+const REVOCATION_ROLE_LABEL: Record<RevocationCertCheck['role'], MessageKey> = {
+  signer: 'props.sig.rev.role.signer',
+  intermediate: 'props.sig.rev.role.intermediate',
+  timestamp: 'props.sig.rev.role.timestamp',
+};
+
+const REVOCATION_REASON_LABEL: Record<NonNullable<RevocationCertCheck['reason']>, MessageKey> = {
+  unspecified: 'props.sig.rev.reason.unspecified',
+  keyCompromise: 'props.sig.rev.reason.keyCompromise',
+  cACompromise: 'props.sig.rev.reason.cACompromise',
+  affiliationChanged: 'props.sig.rev.reason.affiliationChanged',
+  superseded: 'props.sig.rev.reason.superseded',
+  cessationOfOperation: 'props.sig.rev.reason.cessationOfOperation',
+  certificateHold: 'props.sig.rev.reason.certificateHold',
+  privilegeWithdrawn: 'props.sig.rev.reason.privilegeWithdrawn',
+  aACompromise: 'props.sig.rev.reason.aACompromise',
+};
+
+const REVOCATION_WHY_LABEL: Record<NonNullable<RevocationCertCheck['unknownReason']>, MessageKey> = {
+  'no-list': 'props.sig.rev.why.noList',
+  'no-issuer': 'props.sig.rev.why.noIssuer',
+  'invalid-list': 'props.sig.rev.why.invalidList',
+  'unsupported-list': 'props.sig.rev.why.unsupportedList',
+  'list-scope': 'props.sig.rev.why.listScope',
+};
+
+const REVOCATION_SOURCE_LABEL: Record<string, MessageKey> = {
+  'crl.imported': 'props.sig.rev.src.crl.imported',
+  'crl.embedded': 'props.sig.rev.src.crl.embedded',
+  'ocsp.embedded': 'props.sig.rev.src.ocsp.embedded',
+  'ocsp.imported': 'props.sig.rev.src.ocsp.imported',
+};
+
+/** An instant as `2026-10-06 16:20:11 UTC`: the same words in both languages, no locale guesswork. */
+function formatInstant(iso: string): string {
+  return `${iso.slice(0, 19).replace('T', ' ')} UTC`;
+}
 
 const COVERAGE_LABEL: Record<SignatureCoverage, MessageKey> = {
   'covers-whole-document': 'props.sig.coverage.whole',
@@ -217,6 +317,112 @@ function SignatureState({
   );
 }
 
+/**
+ * One certificate's revocation answer, in a sentence, with the notes that qualify it: a list
+ * issued before the signature cannot rule out a later revocation, and a revocation is only
+ * called harmless when the time it is compared with is a trusted timestamp.
+ */
+function RevocationLine({
+  check,
+  source,
+  t,
+}: {
+  readonly check: RevocationCertCheck;
+  readonly source: ValidationTimeSource;
+  readonly t: Translator;
+}) {
+  const role = t(REVOCATION_ROLE_LABEL[check.role]);
+  const notes: string[] = [];
+  let line: string;
+  let tone = META_CLASS;
+  if (check.status === 'revoked') {
+    tone = 'text-[11px] text-kumo-danger';
+    line = t('props.sig.rev.revoked', {
+      role,
+      subject: check.subject,
+      date: check.revokedAt === null ? '—' : formatInstant(check.revokedAt),
+      reason: t(REVOCATION_REASON_LABEL[check.reason ?? 'unspecified']),
+    });
+    if (check.timing === 'before-signing') notes.push(t('props.sig.rev.timingBefore'));
+    else if (check.timing === 'after-signing') {
+      notes.push(
+        t(source === 'timestamp' ? 'props.sig.rev.timingAfter' : 'props.sig.rev.timingAfterClaimed'),
+      );
+    }
+  } else if (check.status === 'good') {
+    tone = 'text-[11px] text-kumo-success';
+    line = t('props.sig.rev.good', {
+      role,
+      subject: check.subject,
+      source: t(
+        REVOCATION_SOURCE_LABEL[`${check.source}.${check.origin}`] ?? 'props.sig.rev.src.ocsp.imported',
+      ),
+      date: check.thisUpdate === null ? '—' : formatInstant(check.thisUpdate),
+    });
+    if (check.coversValidationTime === false) notes.push(t('props.sig.rev.noteBefore'));
+  } else {
+    line = t('props.sig.rev.unknown', {
+      role,
+      subject: check.subject,
+      why: t(REVOCATION_WHY_LABEL[check.unknownReason ?? 'no-list']),
+    });
+  }
+  if (check.stale && check.nextUpdate !== null) {
+    notes.push(t('props.sig.rev.noteStale', { date: formatInstant(check.nextUpdate) }));
+  }
+  return (
+    <li className="flex flex-col gap-0.5" data-revocation-status={check.status}>
+      <span className={tone}>{line}</span>
+      {notes.map((note) => (
+        <span key={note} className={`${META_CLASS} ps-2`}>
+          {note}
+        </span>
+      ))}
+    </li>
+  );
+}
+
+/** The timestamp token's own facts: when, by whom, and whether its time may be relied on. */
+function TimestampDetails({
+  timestamp,
+  source,
+  t,
+}: {
+  readonly timestamp: TimestampCheck;
+  readonly source: ValidationTimeSource;
+  readonly t: Translator;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5" data-timestamp-status={timestamp.status}>
+      {timestamp.genTime === null ? null : (
+        <p className={META_CLASS}>
+          {t('props.sig.ts.detail', {
+            kind: t(TIMESTAMP_KIND_LABEL[timestamp.kind]),
+            time: formatInstant(timestamp.genTime),
+            tsa: timestamp.tsa ?? t('props.sig.ts.tsaUnknown'),
+            hash: timestamp.hashAlgorithm ?? '—',
+          })}
+        </p>
+      )}
+      {timestamp.reason === null ? null : (
+        <p className="text-[11px] text-kumo-danger">{t(TIMESTAMP_REASON_LABEL[timestamp.reason])}</p>
+      )}
+      {timestamp.status !== 'valid' ? null : (
+        <p className={META_CLASS}>
+          {t(timestamp.trusted ? 'props.sig.ts.trust.trusted' : 'props.sig.ts.trust.untrusted')}
+        </p>
+      )}
+      {timestamp.kind === 'signature' && timestamp.tsaRevocation.length > 0 ? (
+        <ul className="flex flex-col gap-0.5">
+          {timestamp.tsaRevocation.map((check) => (
+            <RevocationLine key={`${check.role}|${check.subject}`} check={check} source={source} t={t} />
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function SignatureRow({
   signature,
   t,
@@ -259,9 +465,17 @@ function SignatureRow({
         <SignatureState
           labelKey="props.sig.field.revocation"
           valueKey={REVOCATION_LABEL[signature.revocation]}
-          tone="text-kumo-subtle"
+          tone={REVOCATION_TONE[signature.revocation]}
           t={t}
         />
+        {signature.timestamp === null ? null : (
+          <SignatureState
+            labelKey="props.sig.field.timestamp"
+            valueKey={TIMESTAMP_LABEL[signature.timestamp.status]}
+            tone={TIMESTAMP_TONE[signature.timestamp.status]}
+            t={t}
+          />
+        )}
         <SignatureState
           labelKey="props.sig.field.coverage"
           valueKey={COVERAGE_LABEL[signature.coverage]}
@@ -269,6 +483,29 @@ function SignatureRow({
           t={t}
         />
       </dl>
+      {signature.timestamp === null ? null : (
+        <TimestampDetails timestamp={signature.timestamp} source={signature.validationTimeSource} t={t} />
+      )}
+      {signature.revocationChecks.length === 0 ? null : (
+        <ul aria-label={t('props.sig.rev.title')} className="flex flex-col gap-0.5">
+          {signature.revocationChecks.map((check) => (
+            <RevocationLine
+              key={`${check.role}|${check.subject}`}
+              check={check}
+              source={signature.validationTimeSource}
+              t={t}
+            />
+          ))}
+        </ul>
+      )}
+      {signature.validationTime === null ? null : (
+        <p className={META_CLASS}>
+          {t('props.sig.validationTime', {
+            time: formatInstant(signature.validationTime),
+            source: t(VALIDATION_TIME_LABEL[signature.validationTimeSource]),
+          })}
+        </p>
+      )}
       {signature.trustReason === null ? null : (
         <p className={META_CLASS}>{t(TRUST_REASON_LABEL[signature.trustReason])}</p>
       )}
@@ -288,7 +525,12 @@ function SignatureRow({
               ? 'props.sig.certExpired'
               : signature.certificateValidity === 'not-yet-valid'
                 ? 'props.sig.certNotYet'
-                : 'props.sig.certValidUntil',
+                : // Judged at a trusted timestamp, a certificate that has since expired was still
+                  // valid when the signature was made: say so rather than "valid until <past>".
+                  signature.validationTimeSource === 'timestamp' &&
+                    new Date(signature.certificateNotAfter) < new Date()
+                  ? 'props.sig.certValidAtTimestamp'
+                  : 'props.sig.certValidUntil',
             { date: signature.certificateNotAfter.slice(0, 10) },
           )}
         </p>
@@ -317,11 +559,16 @@ export function PropertiesPanel({
   trustRoots = [],
   onImportTrustRoots,
   onRemoveTrustRoot,
+  revocationLists = [],
+  onImportRevocationLists,
+  onRemoveRevocationList,
 }: PropertiesPanelProps): ReactElement {
   const ids = useId();
   const fileInput = useRef<HTMLInputElement>(null);
   const rootInput = useRef<HTMLInputElement>(null);
   const [rootError, setRootError] = useState<string | null>(null);
+  const crlInput = useRef<HTMLInputElement>(null);
+  const [crlError, setCrlError] = useState<string | null>(null);
   const announcement = useListAnnouncement(
     { fonts: fonts?.length ?? null, attachments: attachments.length, signatures: signatures.length },
     t,
@@ -524,6 +771,63 @@ export function PropertiesPanel({
               const files = [...(event.target.files ?? [])];
               event.target.value = '';
               if (files.length > 0) void importTrustRoots(files, t, onImportTrustRoots, setRootError);
+            }}
+          />
+        </div>
+
+        {/* Imported CRLs: the only revocation evidence the user supplies. Each is listed with the
+            dates the verifier will hold it to, and removable, like the roots above. */}
+        <div className="flex flex-col gap-1 border-t border-kumo-line pt-1.5">
+          <p className="text-[11px] text-kumo-subtle">{t('props.sig.crls.title')}</p>
+          {revocationLists.length === 0 ? (
+            <p className={META_CLASS}>{t('props.sig.crls.empty')}</p>
+          ) : (
+            <ul aria-label={t('props.sig.crls.title')} className="flex flex-col gap-1">
+              {revocationLists.map((list) => (
+                <li key={list.id} className="flex items-center gap-2 text-[11px]">
+                  <span className="min-w-0 flex-1 text-kumo-default">
+                    {t('props.sig.crls.item', {
+                      issuer: list.label,
+                      thisUpdate: list.thisUpdate === null ? '—' : list.thisUpdate.slice(0, 10),
+                      nextUpdate:
+                        list.nextUpdate === null ? t('props.sig.crls.noNext') : list.nextUpdate.slice(0, 10),
+                      count: list.revokedCount,
+                    })}
+                    {list.delta ? ` · ${t('props.sig.crls.delta')}` : ''}
+                    {list.nextUpdate !== null && new Date(list.nextUpdate) < new Date() ? (
+                      <span className="text-kumo-warning"> · {t('props.sig.crls.expired')}</span>
+                    ) : null}
+                  </span>
+                  <Button
+                    variant="outline"
+                    aria-label={t('props.sig.crls.removeNamed', { name: list.label })}
+                    onClick={() => onRemoveRevocationList?.(list.id)}
+                  >
+                    {t('props.sig.crls.remove')}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className={META_CLASS}>{t('props.sig.crls.note')}</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => crlInput.current?.click()}>
+              {t('props.sig.crls.import')}
+            </Button>
+            {crlError === null ? null : <span className="text-[11px] text-kumo-danger">{crlError}</span>}
+          </div>
+          <input
+            ref={crlInput}
+            type="file"
+            accept=".crl,.pem,.der,application/pkix-crl"
+            multiple
+            aria-label={t('props.sig.crls.import')}
+            className="sr-only"
+            onChange={(event) => {
+              const files = [...(event.target.files ?? [])];
+              event.target.value = '';
+              if (files.length > 0)
+                void importRevocationLists(files, t, onImportRevocationLists, setCrlError);
             }}
           />
         </div>

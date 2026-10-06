@@ -7,8 +7,13 @@
  *
  * The product never shows a single "valid" badge, so nothing here returns one: integrity, trust,
  * revocation evidence and post-signing modification are four separate fields, and
- * `trust` is `'not-checked'`, `revocation` is always `'indeterminate'` — a local check
- * that cannot consult a trust store or a CRL/OCSP responder must not imply either.
+ * `trust` is `'not-checked'` until the user has imported a root. `revocation` is
+ * `'indeterminate'` unless a CRL or OCSP response **already on the device** — one the user
+ * imported, or one embedded in the signature or the document's `/DSS` — speaks for the
+ * certificates (`signature-revocation.ts`); nothing is ever fetched. Timestamp tokens, in a
+ * signature or as `ETSI.RFC3161` document timestamps, are verified offline
+ * (`signature-timestamp.ts`), and a trusted one is the time the signature is judged at
+ * (`signature-validation.ts`).
  *
  * Path implemented (ISO 32000-2 keys read, and where):
  *  - §12.8.1: a signature dictionary carries `/ByteRange` (four integers,
@@ -22,9 +27,9 @@
  *    self-validating and finds the dictionary without trusting any parser.
  *  - §12.8.2.1: `/SubFilter` decides whether the `/Contents` blob is a detached CMS
  *    `SignedData` (`adbe.pkcs7.detached`, `ETSI.CAdES.detached`). The legacy
- *    `adbe.pkcs7.sha1`, the RFC 3161 timestamp (`ETSI.RFC3161`) and the PKCS#1 shape
- *    (`adbe.x509.rsa_sha1`) are *not* the same digest relation and are reported
- *    `unchecked` rather than guessed at.
+ *    `adbe.pkcs7.sha1` and the PKCS#1 shape (`adbe.x509.rsa_sha1`) are *not* the same
+ *    digest relation and are reported `unchecked` rather than guessed at. `ETSI.RFC3161`
+ *    is a timestamp token over the ByteRange, not a signature: its own check runs.
  *  - §12.8.1: `/M` (signing date) and the field's name for display.
  *  - §7.5.6 / §7.5.8.4: the revision chain. `startxref` at the end of the file gives
  *    the newest cross-reference section; each one's trailer `/Prev` gives the previous
@@ -53,12 +58,15 @@ import type { MessageKey } from 'pdf-shared';
 import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { pageObjects, readName, readNumbers, readText, resolved } from '../engines/mupdf-write';
+import type { RevocationCertCheck, RevocationSummary } from '../signature-revocation';
+import type { TimestampCheck } from '../signature-timestamp';
 import type { CertificateValidity, TrustCheck, TrustReason } from '../signature-trust';
+import type { DssData, EvidenceOutcome, ValidationTimeSource } from '../signature-validation';
 import { throwIfAborted } from './types';
 
 // Consumers of `SignatureVerification` need the reason vocabulary without reaching past
-// this module into the ASN.1-heavy one it is built on.
-export type { TrustReason };
+// this module into the ASN.1-heavy ones it is built on.
+export type { RevocationCertCheck, TimestampCheck, TrustReason, ValidationTimeSource };
 
 export type SignatureIntegrity = 'valid' | 'invalid' | 'unchecked';
 /**
@@ -75,7 +83,14 @@ export type SignatureIntegrity = 'valid' | 'invalid' | 'unchecked';
  * absence of evidence rather than a verdict.
  */
 export type SignatureTrust = 'trusted' | 'untrusted' | 'self-signed' | 'indeterminate' | 'not-checked';
-export type SignatureRevocation = 'indeterminate';
+/**
+ * What lists already on the device say about the signer's certificate and the ones above it:
+ * `'not-revoked'` (cleared by a verified list), `'revoked'`, `'revoked-after-signing'` (only
+ * ever for a **trusted** timestamp that predates the revocation), or `'indeterminate'` — no
+ * verified list speaks for at least one certificate. Per-certificate detail is
+ * `SignatureVerification.revocationChecks`.
+ */
+export type SignatureRevocation = RevocationSummary;
 export type SignatureCoverage = 'covers-whole-document' | 'covers-partial' | 'unknown';
 
 export interface SignatureVerification {
@@ -103,6 +118,16 @@ export interface SignatureVerification {
   readonly trustReason: TrustReason | null;
   /** i18n key explaining the verdict in one sentence, never a bare badge. */
   readonly reasonKey: MessageKey;
+  /**
+   * The RFC 3161 token: the signature's own timestamp (an unsigned attribute), or — for an
+   * `ETSI.RFC3161` entry — the document timestamp the entry *is*. `null` when there is none.
+   */
+  readonly timestamp: TimestampCheck | null;
+  /** One answer per certificate checked (signer, then the intermediates above it). */
+  readonly revocationChecks: readonly RevocationCertCheck[];
+  /** The moment the signature is judged at, ISO, and how far it can be believed. */
+  readonly validationTime: string | null;
+  readonly validationTimeSource: ValidationTimeSource;
 }
 
 const MAX_SIGNATURES = 64;
@@ -950,6 +975,38 @@ function collectSignatureFields(
   return collected;
 }
 
+/** How much validation data a `/DSS` may hand over: a hostile file cannot make this unbounded. */
+const MAX_DSS_ITEMS = 256;
+const MAX_DSS_BYTES = 16 * 1024 * 1024;
+
+/**
+ * The document security store (`/Root /DSS`, ISO 32000-2 §12.8.4.3): the certificates, CRLs
+ * and OCSP responses a signer's tool archived so the signature can be validated later,
+ * offline. Each entry is a stream, read by reference; an entry that is not one is skipped.
+ * Nothing in it is believed — every list is checked against the certificate that issued it.
+ */
+function readDss(doc: PDFDocument): DssData {
+  const catalog = resolved(doc.getTrailer().get('Root'));
+  const dss = catalog === null ? null : resolved(catalog.get('DSS'));
+  if (dss === null || !dss.isDictionary()) return { certs: [], crls: [], ocsps: [] };
+  const budget = { bytes: MAX_DSS_BYTES };
+  const streams = (key: string): Uint8Array[] => {
+    const array = resolved(dss.get(key));
+    if (array?.isArray() !== true) return [];
+    const out: Uint8Array[] = [];
+    for (let index = 0; index < array.length && out.length < MAX_DSS_ITEMS; index += 1) {
+      const entry = array.get(index);
+      if (entry.isNull() || !entry.isStream()) continue;
+      const data = entry.readStream().asUint8Array().slice();
+      budget.bytes -= data.length;
+      if (budget.bytes < 0) break;
+      out.push(data);
+    }
+    return out;
+  };
+  return { certs: streams('Certs'), crls: streams('CRLs'), ocsps: streams('OCSPs') };
+}
+
 /** Whether the raw bytes carry a `/ByteRange` key at all: without one, nothing is signed. */
 function mentionsByteRange(bytes: Uint8Array): boolean {
   const needle = [0x2f, 0x42, 0x79, 0x74, 0x65, 0x52, 0x61, 0x6e, 0x67, 0x65]; // "/ByteRange"
@@ -1008,6 +1065,8 @@ interface SigningFacts {
   readonly trust: TrustCheck;
   /** Whether the caller supplied any roots at all: without one there is no verdict to give. */
   readonly hasRoots: boolean;
+  /** Timestamp, revocation and validation time; `null` for a subfilter that is not verified. */
+  readonly evidence: EvidenceOutcome | null;
 }
 
 /**
@@ -1127,6 +1186,9 @@ function verdictKey(integrity: SignatureIntegrity, cause: string | null): Messag
 /** The detached CMS subfilters whose `/Contents` is a `SignedData` over the byte range. */
 const DETACHED_SUBFILTERS = new Set(['adbe.pkcs7.detached', 'ETSI.CAdES.detached']);
 
+/** A document timestamp (ISO 32000-2 §12.8.5): `/Contents` is an RFC 3161 token, not a signature. */
+const TIMESTAMP_SUBFILTER = 'ETSI.RFC3161';
+
 /** The DER of one TLV, header included — how `issuer` and `subject` are compared. */
 function tlvBytes(der: Uint8Array, tlv: Tlv): Uint8Array {
   return der.subarray(tlv.start, tlv.start + tlv.headerLength + tlv.length);
@@ -1171,11 +1233,15 @@ async function verifyOne(
     signer: facts.signer,
     signedAt: facts.signedAt,
     trust,
-    revocation: 'indeterminate' as SignatureRevocation,
+    revocation: (facts.evidence?.revocation ?? 'indeterminate') as SignatureRevocation,
     trustPath: facts.trust.path,
     certificateValidity: facts.trust.validity,
     certificateNotAfter: facts.trust.notAfter,
     trustReason: facts.trust.reason,
+    timestamp: facts.evidence?.timestamp ?? null,
+    revocationChecks: facts.evidence?.revocationChecks ?? [],
+    validationTime: facts.evidence === null ? null : facts.evidence.validationTime.toISOString(),
+    validationTimeSource: facts.evidence?.validationTimeSource ?? ('clock' as ValidationTimeSource),
   };
 
   // Coverage and the revision count come from the raw layout, so they are reported even
@@ -1233,6 +1299,103 @@ async function verifyOne(
   };
 }
 
+/** The two covered segments of a ByteRange, joined; `null` when the range leaves the file. */
+function coveredBytes(bytes: Uint8Array, range: ByteRangeTuple): Uint8Array | null {
+  const [start1, length1, start2, length2] = range;
+  if (start1 + length1 > bytes.length || start2 + length2 > bytes.length) return null;
+  const covered = new Uint8Array(length1 + length2);
+  covered.set(bytes.subarray(start1, start1 + length1), 0);
+  covered.set(bytes.subarray(start2, start2 + length2), length1);
+  return covered;
+}
+
+interface TimestampEntryOptions {
+  readonly roots: readonly Uint8Array[];
+  readonly crls: readonly Uint8Array[];
+  readonly dss: DssData;
+  readonly now: Date;
+}
+
+/**
+ * An `ETSI.RFC3161` entry is a **document timestamp** (ISO 32000-2 §12.8.5), not a signature:
+ * its `/Contents` is a time-stamp token whose imprint is the hash of the ByteRange. The four
+ * fields keep their meaning for it — `integrity` says whether the token is what it claims
+ * (imprint, CMS signature, TSA certificate), `trust` is the TSA's chain against the imported
+ * roots at the token's own time, and `signer` is the TSA — and `timestamp` carries the rest.
+ */
+async function verifyTimestampEntry(
+  bytes: Uint8Array,
+  field: SignatureField,
+  raw: RawSignature | null,
+  revisions: readonly number[],
+  options: TimestampEntryOptions,
+): Promise<SignatureVerification> {
+  const coverage: SignatureCoverage = raw === null ? 'unknown' : coverageOf(bytes, raw.byteRange);
+  const changes = raw === null ? 0 : changesAfterSigning(bytes, raw.byteRange, revisions);
+  const unchecked: SignatureVerification = {
+    fieldName: field.name,
+    subFilter: field.subFilter ?? '',
+    signer: null,
+    signedAt: null,
+    integrity: 'unchecked',
+    trust: 'not-checked',
+    revocation: 'indeterminate',
+    coverage,
+    changesAfterSigning: changes,
+    trustPath: [],
+    certificateValidity: 'unknown',
+    certificateNotAfter: null,
+    trustReason: null,
+    reasonKey: verdictKey('unchecked', 'layout'),
+    timestamp: null,
+    revocationChecks: [],
+    validationTime: null,
+    validationTimeSource: 'clock',
+  };
+  const covered = raw === null ? null : coveredBytes(bytes, raw.byteRange);
+  if (covered === null || field.contents === null) return unchecked;
+
+  const { timestamp, revocation } = await (await import('../signature-validation')).evaluateDocumentTimestamp(
+    {
+      token: field.contents,
+      covered,
+      roots: options.roots,
+      importedCrls: options.crls,
+      dss: options.dss,
+      now: options.now,
+    },
+  );
+  const trust: SignatureTrust =
+    timestamp.tsaTrust === 'trusted'
+      ? 'trusted'
+      : timestamp.tsaTrust === 'indeterminate'
+        ? 'indeterminate'
+        : timestamp.tsaSelfSigned
+          ? 'self-signed'
+          : options.roots.length > 0
+            ? 'untrusted'
+            : 'not-checked';
+  return {
+    ...unchecked,
+    signer: timestamp.tsa,
+    signedAt: timestamp.genTime,
+    integrity: timestamp.status,
+    trust,
+    revocation,
+    trustPath: timestamp.tsaPath,
+    // The TSA certificate is judged at the token's own time (`signature-timestamp.ts`).
+    certificateValidity: timestamp.status === 'valid' ? 'valid' : 'unknown',
+    certificateNotAfter: timestamp.tsaNotAfter,
+    trustReason: timestamp.tsaTrustReason,
+    reasonKey: `props.sig.reason.timestamp.${timestamp.status}`,
+    timestamp,
+    revocationChecks: timestamp.tsaRevocation,
+    validationTime: timestamp.genTime,
+    validationTimeSource:
+      timestamp.status !== 'valid' ? 'clock' : timestamp.trusted ? 'timestamp' : 'timestamp-untrusted',
+  };
+}
+
 /** What the ByteRange covers (§12.8.1), and what lies outside it. */
 function coverageOf(bytes: Uint8Array, range: ByteRangeTuple): SignatureCoverage {
   const [start1, length1, start2, length2] = range;
@@ -1271,6 +1434,11 @@ export interface VerifySignaturesOptions {
    * chain nobody has vouched for.
    */
   readonly roots?: readonly Uint8Array[];
+  /**
+   * CRLs the user imported, DER (`pdf-model/revocation-lists`). With none, revocation is read
+   * only from what the file itself embeds; with neither it stays `'indeterminate'`.
+   */
+  readonly crls?: readonly Uint8Array[];
   /** The clock, so a check can pin “expired” to a date instead of to today. */
   readonly now?: Date;
 }
@@ -1289,6 +1457,7 @@ export async function verifySignatures(
   const mupdf = await loadMupdf();
   const doc = openPdf(mupdf, bytes);
   let fields: readonly SignatureField[];
+  let dss: DssData = { certs: [], crls: [], ocsps: [] };
   try {
     if (doc.needsPassword()) {
       throw new ToolError('encrypted-unsupported', {
@@ -1297,6 +1466,7 @@ export async function verifySignatures(
       });
     }
     fields = collectSignatureFields(doc, signal);
+    dss = readDss(doc);
   } catch (error) {
     // `throwIfAborted` raises a plain `Error` named `AbortError`; mapping it would turn
     // a cancellation into a failure the caller has to report.
@@ -1310,18 +1480,48 @@ export async function verifySignatures(
   const raw = scanRawSignatures(bytes);
   const revisions = revisionStarts(bytes);
   const results: SignatureVerification[] = [];
+  const now = options.now ?? new Date();
+  const roots = options.roots ?? [];
 
   for (const field of fields) {
     if (signal !== undefined) throwIfAborted(signal);
 
     const contents = field.contents;
-    const cms = contents === null ? NO_CMS : readCms(contents);
-    const certificate = contents === null ? null : cms.certificate;
     const range = field.byteRange;
     // A raw entry is only accepted when the four numbers are identical to the object
     // graph's: a dictionary that arrived inside an object stream carries numbers for a
     // file this scan never saw, and hashing those ranges would be nonsense.
     const match = range === null ? undefined : raw.find((entry) => sameRange(entry.byteRange, range));
+    if (field.subFilter === TIMESTAMP_SUBFILTER) {
+      results.push(
+        await verifyTimestampEntry(bytes, field, match ?? null, revisions, {
+          roots,
+          crls: options.crls ?? [],
+          dss,
+          now,
+        }),
+      );
+      continue;
+    }
+    const cms = contents === null ? NO_CMS : readCms(contents);
+    const certificate = contents === null ? null : cms.certificate;
+    // The timestamp, the lists that can speak for the certificates, and the moment the
+    // signature is judged at — before the trust walk, because a trusted timestamp is the date
+    // the certificate path is validated at. Only the detached formats are verified at all.
+    const evidence =
+      contents === null || !DETACHED_SUBFILTERS.has(field.subFilter ?? '')
+        ? null
+        : await (await import('../signature-validation')).evaluateEvidence({
+            contents,
+            signatureValue: cms.signature,
+            signer: certificate?.der ?? new Uint8Array(),
+            chain: cms.others,
+            claimedAt: isoFromPdfDate(field.signedAt),
+            roots,
+            importedCrls: options.crls ?? [],
+            dss,
+            now,
+          });
     // The chain walk runs on the certificates the CMS carried, against the imported
     // roots: a verdict about trust is only meaningful when both sides exist.
     /**
@@ -1336,8 +1536,8 @@ export async function verifySignatures(
         : await (await import('../signature-trust')).checkTrust({
             signer: certificate?.der ?? new Uint8Array(),
             chain: cms.others,
-            roots: options.roots ?? [],
-            now: options.now,
+            roots,
+            now: evidence?.trustAt ?? now,
           });
     const facts: SigningFacts = {
       subFilter: field.subFilter ?? '',
@@ -1367,7 +1567,8 @@ export async function verifySignatures(
               curve: cms.certificate.curve,
             },
       trust,
-      hasRoots: (options.roots ?? []).length > 0,
+      hasRoots: roots.length > 0,
+      evidence,
     };
 
     results.push(await verifyOne(bytes, field, facts, match ?? null, revisions));

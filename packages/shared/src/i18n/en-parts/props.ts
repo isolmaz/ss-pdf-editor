@@ -63,7 +63,7 @@ export const propsPart = {
     'A subordinate certificate has names outside the permitted subtrees, or inside an excluded one.',
   'props.sig.revocation.indeterminate': 'Indeterminate',
   'props.sig.revocation.note':
-    'Revocation proof (CRL/OCSP) requires network access; this offline version always reports "indeterminate".',
+    'Revocation is read only from lists already on this device: the CRLs you import below and the CRLs and OCSP responses stored in the PDF. Nothing is fetched from the network; with no list for an issuer, the result is "indeterminate".',
   'props.sig.trust.note':
     'Certificate trust is evaluated solely against user-imported trust roots: certificate chain is validated via WebCrypto up to the root. If no roots were imported, result is "not checked" — this reflects lack of proof, not a negative verdict.',
   'props.sig.chain': 'Chain: {path}',
