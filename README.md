@@ -700,7 +700,11 @@ pnpm worker:deploy:dry      # same, with --dry-run
 ## Offline use
 
 - **Scope.** `public/sw.js` is scoped to `/editor/` and caches static assets only.
-- **On request only.** Precaching runs only when you ask for it, in Settings → Offline use.
+- **Shell.** The editor's start page, the scripts it starts with and its Turkish and
+  English text are cached when the worker installs, so a reload without a network still
+  shows a working home screen.
+- **On request only.** Everything else is precached only when you ask for it, in
+  Settings → Offline use.
   It covers the shell, pdf.js, MuPDF and the fonts. OCR is not included, and neither is the
   PDF/A converter (15.5 MB of WebAssembly): it is cached the first time the tool runs and
   works offline after that.
