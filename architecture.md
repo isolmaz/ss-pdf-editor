@@ -2097,7 +2097,11 @@ Versioning is the interesting half:
   previous release's cache, and activation deletes only caches in **its own** namespace —
   the origin's storage is shared with other applications.
 - Install fills the new cache without touching the old one, so an interrupted preparation
-  leaves the working version exactly as it was.
+  leaves the working version exactly as it was. It caches the core shell, the scripts and
+  styles `index.html` names, and the interface catalogues: each language is a run-time
+  chunk the HTML never names, so `tools/assemble-dist.mjs` finds them by their source maps
+  and lists them as `shell` in `offline-manifest.json` (the build fails if a registered
+  language has no chunk). Without them an offline reload painted raw message keys.
 - Readiness is a **set-containment** test over the exact paths in
   `apps/web/src/offline-packages.json` — the single list, read by the app *and* by the
   build. A capability is ready only when every path it needs is cached, with the missing

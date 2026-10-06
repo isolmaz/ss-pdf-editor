@@ -53,6 +53,17 @@ async function readManifest() {
   }
 }
 
+/**
+ * The build's own interface catalogues (`shell` in the manifest). The entry fetches its
+ * language at run time, so the crawl of `index.html` never names it, and a shell reloaded
+ * offline without one paints raw message keys. Only `/editor/assets/` paths are taken.
+ */
+function shellPathsOf(manifest) {
+  const list = manifest?.shell;
+  if (!Array.isArray(list)) return [];
+  return list.filter((path) => typeof path === 'string' && path.startsWith('/editor/assets/'));
+}
+
 /** Every path any capability needs, so one preparation pass can fill the whole cache. */
 function pathsOf(manifest) {
   const paths = new Set();
@@ -67,6 +78,14 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       await cache.addAll(CORE_SHELL_URLS);
+      for (const path of shellPathsOf(await readManifest())) {
+        try {
+          const res = await fetch(path);
+          if (res.ok) await cache.put(path, res);
+        } catch {
+          // a catalogue missed here is cached by the next online load that fetches it
+        }
+      }
       try {
         const htmlRes = await fetch('/editor/index.html');
         if (htmlRes.ok) {
