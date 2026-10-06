@@ -205,10 +205,14 @@ export function CommandPalette({
         className="text-xs"
         onKeyDown={(event) => {
           if (event.key !== 'Enter') return;
-          if (highlighted === undefined || highlighted.disabled === true) return;
+          // The primitive does not report a cleared highlight when the query filters
+          // every item out, so the last one it named may no longer be on the list; the
+          // list is matched by id because a re-render rebuilds the command objects.
+          const command = results.find((item) => item.id === highlighted?.id);
+          if (command === undefined || command.disabled === true) return;
           // Also stops the primitive from writing the label into the input.
           event.preventDefault();
-          runCommand(highlighted);
+          runCommand(command);
         }}
       />
       <KumoCommandPalette.List>
@@ -262,7 +266,15 @@ export function CommandPalette({
                 </span>
                 <button
                   type="button"
-                  onClick={onUseAdvanced}
+                  onClick={(event) => {
+                    // The button leaves with the empty state, and focus with it: back to
+                    // the input, where Enter and the arrows work. (Kumo's input takes no ref.)
+                    const input = event.currentTarget
+                      .closest('[role="dialog"]')
+                      ?.querySelector<HTMLInputElement>('[role="combobox"]');
+                    onUseAdvanced?.();
+                    input?.focus();
+                  }}
                   className="rounded-md border border-kumo-line px-2 py-1 text-xs font-medium text-kumo-strong hover:bg-kumo-recessed"
                 >
                   {t('setting.mode.advanced')}

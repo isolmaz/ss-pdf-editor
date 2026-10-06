@@ -1328,7 +1328,11 @@ user's.
 The command palette runs **one command per opening**: Enter reaches both the input's own
 handler and the list's item activation, and a keyboard-chosen command used to run twice — a
 tool toggle armed and disarmed itself, and an operation's second run was refused as
-"another operation is running".
+"another operation is running". Enter runs the highlighted command only while it is still in
+the filtered list (matched by id): the primitive does not clear its highlight when a query
+filters every item out, and Enter on "No matching commands" used to run whatever had been
+highlighted before — the first command, "Create a blank document". The empty state's
+"Advanced mode" button hands focus back to the input, since the button disappears with it.
 
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
