@@ -225,7 +225,13 @@ import {
   type WriteVerification,
 } from './operations';
 import { addRecentDocument, loadRecentDocuments } from './recent';
-import { getRecentHandle, pruneRecentHandles, putRecentHandle, reopenFromHandle } from './recent-handles';
+import {
+  ensureWriteAccess,
+  getRecentHandle,
+  pruneRecentHandles,
+  putRecentHandle,
+  reopenFromHandle,
+} from './recent-handles';
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
@@ -2770,6 +2776,11 @@ export function App({ store }: AppProps) {
       setBusy(true);
       try {
         let target = tab.source.handle;
+        // A handle read back from IndexedDB (a restored draft, a reopened recent entry) has
+        // no write access until the user grants it: asked here, the first await of the click.
+        if (target !== undefined && !(await ensureWriteAccess(target))) {
+          throw new ToolError('permission-denied', { engine: 'model' });
+        }
         if (target === undefined && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
           try {
             const suggestedName = tab.name.toLowerCase().endsWith('.pdf') ? tab.name : `${tab.name}.pdf`;

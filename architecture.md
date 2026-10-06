@@ -1718,9 +1718,13 @@ its bytes, and none for a sensitive session. A recent entry then reopens the fil
 browser asks for read permission again on that click (`requestPermission` needs the gesture),
 a refusal is reported and taken as the answer, and a file that has moved or gone is reported
 before the picker is offered. A tab restored from a draft gets its handle back, so it can still
-Save over its file rather than only Export. Handles whose entry has left the list are pruned
-after the startup restore, which is the one reader that needs them. A reopened file keeps its
-star: `addRecentDocument` used to drop it when the entry it replaced was starred.
+Save over its file rather than only Export. A handle read back this way holds no write access
+(a reopened entry asked for `read` only), so `saveActive` asks for `readwrite`
+(`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
+up the gesture; a refusal is `permission-denied`, and nothing is written. Handles whose entry
+has left the list are pruned after the startup restore, which is the one reader that needs
+them. A reopened file keeps its star: `addRecentDocument` used to drop it when the entry it
+replaced was starred.
 
 Playwright's bundled Chromium (153) kills an off-the-record page that deserialises a file
 handle from IndexedDB; Chrome 154 and Edge 154 in the same off-the-record context do not

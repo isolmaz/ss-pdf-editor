@@ -97,8 +97,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   installed on the device.
 - **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
   reopens a document by its identity, never by its file name. In Chromium-based browsers it
-  reopens the file itself (the browser asks for permission again); elsewhere it asks you to
-  choose the file.
+  reopens the file itself (the browser asks for permission again, and once more for write
+  access the first time you save over it); elsewhere it asks you to choose the file.
 - **The document never moves under you.** Marks, selections, measurements and staged
   redactions scroll and zoom with their page. Tools, progress and notices never shift
   the page.

@@ -80,6 +80,21 @@ export async function pruneRecentHandles(keep: ReadonlySet<string>): Promise<voi
   }
 }
 
+/**
+ * Whether an in-place Save may write over `handle`, asking the user once when the browser
+ * says `prompt`. A handle read back from IndexedDB holds no write access yet: one restored
+ * with a draft, and one a recent entry reopened (which asks for `read` only). Must be the
+ * first await of the click that saves: `requestPermission` needs that gesture, and the
+ * preparation that follows would use it up. A browser without the permission calls has
+ * already granted what the picker gave.
+ */
+export async function ensureWriteAccess(handle: FileSystemFileHandle): Promise<boolean> {
+  const descriptor = { mode: 'readwrite' } as const;
+  let state = (await handle.queryPermission?.(descriptor)) ?? 'granted';
+  if (state === 'prompt') state = (await handle.requestPermission?.(descriptor)) ?? 'denied';
+  return state === 'granted';
+}
+
 export type HandleReopen =
   | { readonly kind: 'file'; readonly file: File; readonly handle: FileSystemFileHandle }
   | { readonly kind: 'denied' }
