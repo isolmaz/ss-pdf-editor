@@ -410,8 +410,8 @@ export function parseAnnotationData(bytes: Uint8Array): AnnotationDataResult {
  * or — from other producers — as a `/V` dictionary directly. Both are read here.
  *
  * **What this reader knows and what it does not.** The shape above is the documented one,
- * and the check that covers it builds a file in exactly that shape (`tools/spikes/
- * annotation-data-probe.mjs`); a file **exported by a real Acrobat** has not been run
+ * and the check that covers it built a file in exactly that shape (archived spike
+ * `annotation-data-probe.mjs`); a file **exported by a real Acrobat** has not been run
  * through it, because the tree has none and test corpora come from the owner (`K28`). The
  * honest consequences are visible in the result: values that do not parse are *skipped and
  * counted*, a subtype this model cannot hold is counted too, and the page a comment sits on

@@ -5,7 +5,7 @@
  * Input is the extractor's plain data (`PageTextInput`), output is plain data
  * (`TextPage`). The extractor is anything that can walk a page's structured text —
  * MuPDF's `StructuredText.walk` gives exactly the fields `CharInput` carries
- * (`tools/spikes/text-replace/textmodel.ts:88-101` walks block → line → char and keeps
+ * (archived spike `text-replace/textmodel.ts:88-101` walks block → line → char and keeps
  * the quad, which is what makes rotated text solvable without a second code path).
  *
  * ## What this module infers, and from what
@@ -15,7 +15,7 @@
  *     line box and the extractor's baseline kept;
  *   - **blocks** — lines ordered top-to-bottom **only when the block is horizontal**
  *     (the spike ordered lines by their projection on the line's `down` vector,
- *     `tools/spikes/text-replace/replace.ts:78-84`; sorting a rotated block by the y
+ *     archived spike `text-replace/replace.ts:78-84`; sorting a rotated block by the y
  *     scalar would scramble it, so a non-horizontal block keeps the extractor's order);
  *   - **style** — font name (mode), family/weight/italic from the name
  *     (`describeFontName`), size (median glyph size), leading (median baseline
@@ -60,7 +60,7 @@ const WORD_GAP_EM = 0.15;
  * Deviation tolerance for the alignment inference, in points. The model has no
  * alignment flag to read, so it compares the block's line edges. 1 pt sits between
  * the spike's two containment tolerances — it padded a target box by 2 pt and then
- * allowed 0.01 pt of slack (`tools/spikes/text-replace/main.ts:398`) — and it is well
+ * allowed 0.01 pt of slack (archived spike `text-replace/main.ts:398`) — and it is well
  * under one space at body sizes (2.75 pt at 11 pt), so a ragged edge cannot pass as
  * a flush one.
  */
@@ -437,14 +437,14 @@ function styleFor(source: BlockInput): StyleFacts | null {
 /**
  * Leading of a block: the median baseline distance between consecutive lines, which
  * is what a paragraph's rhythm actually is. The spike took the distance between the
- * first two baselines instead (`tools/spikes/text-replace/replace.ts:86-92`) because
+ * first two baselines instead (archived spike `text-replace/replace.ts:86-92`) because
  * it only had the lines it was about to erase; a median over the whole block ignores
  * the one wide gap a paragraph break puts in a MuPDF block.
  *
  * A single-line block has no such distance, so it falls back to
  * `DEFAULT_LEADING_RATIO` × size — the same role the spike's `fallbackLeading`
  * played (`replace.ts:83-91`), where the harness passed the fixture's own leading
- * (18 pt at the 11 pt body size, `tools/spikes/text-replace/fixture.ts:78-79`).
+ * (18 pt at the 11 pt body size, archived spike `text-replace/fixture.ts:78-79`).
  */
 function leadingOf(lines: readonly TextLine[], fontSize: number): number {
   const gaps: number[] = [];

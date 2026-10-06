@@ -266,8 +266,7 @@ pnpm dev                    # editor at http://localhost:5173
 ([`tools/hooks/guard.mjs`](tools/hooks/guard.mjs) blocks them), and it copies them out of
 the local pnpm store — **nothing is downloaded from a CDN**.
 
-Other dev servers: `pnpm --filter site dev` (landing, port 5175) and `pnpm dev:spikes`
-(throwaway prototype harness, port 5174, cross-origin isolated).
+Other dev server: `pnpm --filter site dev` (landing, port 5175).
 
 ---
 
@@ -316,9 +315,8 @@ tools/
   vite/hosting.mjs    parses public/_headers for dev + preview
   preview-dist.mjs    production-policy static server
   hooks/guard.mjs     pre-commit / pre-push tree guard (+ biome check on staged files)
-  spikes/             throwaway prototypes and browser harnesses (nothing here ships);
-                      mupdf-fixture.mjs builds and reads their PDFs on MuPDF;
-                      readme-media.mjs records the README clips into docs/media/
+  spikes/             the ci:behavior checks and their MuPDF fixture builders, and
+                      readme-media.mjs, which records the README clips (nothing ships)
 docs/media/     the README's feature clips (GIF)
 e2e/            Playwright specs: shell and shortcut help, document, tool marks and the
                 selection editing, editor stability (scroll, layout, rotate, typed text,
@@ -482,4 +480,6 @@ state.
 `F11`). Those documents are **not** part of this tree, so those identifiers cannot be
 resolved from the repository; the comments that carry them are self-contained, but the
 numbering has no local index. `architecture.md` records the design rules they describe in
-prose rather than by number.
+prose rather than by number. Likewise, a comment that cites an **archived spike** points at
+a Phase 0 prototype or probe that measured the behaviour the code relies on; those were
+removed before the public release and are not in this tree.

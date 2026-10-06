@@ -7,7 +7,7 @@
  * touches the DOM: the caller fetches the bytes (from `FontCandidate.filePath`,
  * which is the served path under `public/`) and hands them to `metricsFor`.
  *
- * Two measured constraints shape this module (`tools/spikes/text-replace/NOTES.md`):
+ * Two measured constraints shape this module (archived spike `text-replace/NOTES.md`):
  *   - a font read back from a saved file answers `encodeCharacter(char) === 0` for
  *     **every** character (round-2 variant A), so the original programme is never
  *     reused: each edit round embeds a fresh one. Matching is therefore about the
@@ -69,7 +69,7 @@ export const DEFAULT_FONT_CANDIDATES: readonly FontCandidate[] = [NOTO_SANS_REGU
 export const FALLBACK_FONT_CANDIDATE: FontCandidate = NOTO_SANS_REGULAR;
 
 /** `ABCDEF+NotoSans` — the six-uppercase-letter prefix of an embedded subset
- *  (`tools/spikes/text-replace/NOTES.md` case a: the fixture's `Arial` becomes
+ *  (archived spike `text-replace/NOTES.md` case a: the fixture's `Arial` becomes
  *  `SPMIZR+Arial`, 560,660 B → 27,518 B). */
 const SUBSET_PREFIX = /^[A-Z]{6}\+/;
 

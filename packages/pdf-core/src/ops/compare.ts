@@ -26,7 +26,7 @@
  *
  * **The raster surface is injected.** `compress.ts` may call `document.createElement`
  * because it is a main-thread writer, but this module is also the engine half of the
- * comparison probe (`tools/spikes/compare-probe.mts`) and must run in Node, where no
+ * comparison probe (archived spike `compare-probe.mts`) and must run in Node, where no
  * canvas exists. The caller therefore supplies `createCanvas`, and the page's pixels
  * are read back through `getImageData` — the same call `compress.ts` already makes.
  */
@@ -571,7 +571,7 @@ export async function compareText(
 /**
  * The 2D surface this module needs: exactly what `renderPage` writes into and what
  * `getImageData` reads back. A DOM canvas satisfies it structurally; a Node caller
- * supplies its own (`tools/spikes/compare-probe.mts`).
+ * supplies its own (archived spike `compare-probe.mts`).
  */
 export interface CompareCanvasPixels {
   getImageData(

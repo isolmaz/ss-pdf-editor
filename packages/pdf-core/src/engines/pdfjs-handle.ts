@@ -249,7 +249,7 @@ export async function openWithPdfjs(
     // main thread, which converts it with `convertRGBToRGBA` **in JavaScript** — a
     // measured ~170 ms per 1240x1754 page, i.e. 16 s of main-thread work inside a 19.7 s
     // scroll of a 130-page image-heavy document, and 45 % of all JS time
-    // (`tools/spikes/measure-scroll.mjs --profile`, `WORKLOG.md §4`). With it on, the
+    // (archived spike `measure-scroll.mjs --profile`, `WORKLOG.md §4`). With it on, the
     // images arrive as bitmaps and the main thread only blits them.
     isOffscreenCanvasSupported: true,
     // Seeded before the document exists, so a restored annotation layer is part

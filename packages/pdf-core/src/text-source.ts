@@ -197,7 +197,7 @@ function readGeometry(doc: PDFDocument, pageIndex: number): { box: PageBox; rota
 
 /**
  * `preserve-whitespace` — the flag every MuPDF text read in this repo uses
- * (`tools/spikes/text-replace/textmodel.ts`, `ops/redact.ts`, `ops/text-edit.ts`). It
+ * (archived spike `text-replace/textmodel.ts`, `ops/redact.ts`, `ops/text-edit.ts`). It
  * keeps the characters MuPDF would otherwise fold into gaps, so the model can measure
  * word gaps from glyph origins instead of guessing them, and it drops nothing the page
  * actually drew. The installed build (mupdf 1.28.1) accepts the string verbatim.

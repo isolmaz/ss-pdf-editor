@@ -12,7 +12,7 @@
  * not-editable set rather than to this module.
  *
  * The measurement is the spike's: greedy breaking over the font's own advances
- * (`tools/spikes/text-replace/replace.ts:203-212` wraps on
+ * (archived spike `text-replace/replace.ts:203-212` wraps on
  * `font.advanceGlyph(gid, 0) * size`), with the placement derived from the lines being
  * replaced (`replace.ts:74-95`: leading from the baselines, the block's widest line as
  * the wrap width). The spike's own `advanceScale` calibration came out at 0.9993
@@ -39,7 +39,7 @@ const ENGINE = 'pdf-text-engine';
  * fraction of the font size. 1.2 em is the classic single-spaced default
  * (ascender + descender + lineGap) and the only size-independent choice; the spike
  * passed its fixture's own leading in instead (`replace.ts:83-91`'s `fallbackLeading`,
- * 18 pt at the 11 pt body size, `tools/spikes/text-replace/fixture.ts:78-79`) because
+ * 18 pt at the 11 pt body size, archived spike `text-replace/fixture.ts:78-79`) because
  * the harness knew the fixture — a model of an arbitrary document does not.
  */
 export const DEFAULT_LEADING_RATIO = 1.2;

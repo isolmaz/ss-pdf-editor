@@ -1410,9 +1410,10 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Cross-engine acceptance | `pnpm ci:behavior`: the Phase 3 sentence end to end in a real browser, the Phase 4 text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
-The spikes under `tools/spikes/` are the throwaway half: prototype apps
-(`journal-undo`, `save-paths`, `text-replace`, `redaction`, `sign`, `large-file`), the
-fixture builders those use, and the probes a source comment cites as the measurement behind
-a decision. Three of them are wired into `ci:behavior`; nothing there ships. Probes that no
-script, test, document or source comment referenced were removed (2026-09-28); git history
-keeps them.
+`tools/spikes/` keeps only what still runs: the three `ci:behavior` checks
+(`phase3-check.mjs`, `phase4-check.mjs`, `sign-check.mts`), the fixture builders they use
+(`mupdf-fixture.mjs`, `make-phase4-fixture.mjs`, `node-mupdf-hook.mjs`) and the README clip
+recorder (`readme-media.mjs`, `readme-demo-pdf.mjs`). Nothing there ships. The Phase 0
+prototype apps and one-off probes were removed before the public release; a source comment
+that says **archived spike** cites one of them as the measurement behind a decision, and
+those notes stay in the maintainer's archived development repository.

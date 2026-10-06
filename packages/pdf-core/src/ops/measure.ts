@@ -38,7 +38,7 @@
  *   | 180      | `x2 − X`     | `H − Y`      |
  *   | 270      | `Y`          | `x2 − X`     |
  *
- * and `tools/spikes/measure-probe.mts` checks every row against that transform
+ * and archived spike `measure-probe.mts` checks every row against that transform
  * for an **offset** box (`/MediaBox [20 30 420 630]`), which is the case where a
  * flip about `page.getSize().height` — instead of about the box's own top — is
  * silently off by the box origin.

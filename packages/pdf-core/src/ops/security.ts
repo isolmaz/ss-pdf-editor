@@ -7,7 +7,7 @@
  * is a single-maintainer MEMFS CLI wrapper with no API surface, which is exactly
  * the dependency the plan refuses to audit. MuPDF already writes AES-256 with a
  * permission bitmask and was proven end-to-end in Phase 0 spike #1
- * (`tools/spikes/save-paths/branches.ts`: `encrypt=aes-256,user-password=…`).
+ * (archived spike `save-paths/branches.ts`: `encrypt=aes-256,user-password=…`).
  *
  * Rule 9 of `PLAN.md §3.3` still holds and is enforced here: output protection
  * is never silently downgraded — a re-protected document must open with the same

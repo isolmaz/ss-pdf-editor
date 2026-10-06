@@ -12,7 +12,6 @@
   "scripts": {
     "prepare": "node tools/hooks/install.mjs",
     "dev": "pnpm --filter web dev",
-    "dev:spikes": "pnpm --filter spikes dev",
     "build": "pnpm --filter site build && pnpm --filter web build",
     "preview": "node tools/preview-dist.mjs",
     "typecheck": "tsc -b",

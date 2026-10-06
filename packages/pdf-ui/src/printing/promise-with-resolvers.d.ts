@@ -7,7 +7,7 @@
  * callback: the alternative is the `new Promise((resolve, reject) => …)`
  * executor form, which the repository's rules keep out of product code. The
  * declaration is local to this folder rather than a shared compiler change,
- * exactly as `tools/spikes/**` does it.
+ * exactly as archived spike `**` does it.
  */
 interface PromiseConstructor {
   withResolvers<T>(): {

@@ -489,7 +489,7 @@ export function PagesPanel({
               <div
                 role="option"
                 data-page-option={page}
-                // The browser verification scripts (`tools/spikes/verify-thumbnails.mjs`)
+                // The browser verification scripts (archived spike `verify-thumbnails.mjs`)
                 // select thumbnails by this attribute; it stays a stable hook.
                 data-thumb={page}
                 aria-selected={isSelected}

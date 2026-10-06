@@ -1547,7 +1547,7 @@ export function App({ store }: AppProps) {
    * submit, so one edit arrived as **six identical writes** — six working versions, six
    * journal entries and six inventory reloads — and that churn is what a real press cannot
    * survive: measured, the same click that deletes two pages on a quiet panel does nothing
-   * after a fill (`tools/spikes/phase3-pages-probe.mts`, `WORKLOG.md §4`). The operation is
+   * after a fill (archived spike `phase3-pages-probe.mts`, `WORKLOG.md §4`). The operation is
    * the same one the dialog uses; only a no-op is skipped.
    */
   const fillField = useCallback(

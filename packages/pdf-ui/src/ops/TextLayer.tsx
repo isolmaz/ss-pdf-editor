@@ -5,7 +5,7 @@
  * which is the engine that already answers block → line → character with quads and
  * already knows the page's `/Rotate`; segmenting pdf.js's flat text items into
  * blocks would mean inventing the gap thresholds the spike deliberately did not
- * need (`tools/spikes/text-replace/NOTES.md`). The model is then built by the pure
+ * need (archived spike `text-replace/NOTES.md`). The model is then built by the pure
  * `pdf-text-engine` package, so what this layer paints and what the writer erases
  * come from one source of truth.
  *

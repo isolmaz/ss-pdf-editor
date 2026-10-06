@@ -6,7 +6,7 @@
  * implementation erases instead: MuPDF redaction annotations over the marked
  * rectangles, `applyRedactions`, then a full (`garbage`) write.
  *
- * Measured behaviour this file depends on (`tools/spikes/redaction/NOTES.md`):
+ * Measured behaviour this file depends on (archived spike `redaction/NOTES.md`):
  * redaction is **glyph-level** — the glyph run inside the box goes, the
  * surrounding text of the same line stays; `canBeSavedIncrementally()` turns
  * false, so the produced bytes must be a full rewrite and the router must never
@@ -18,7 +18,7 @@
  * offset — no y-flip anywhere. It is also the space `page.search()` and
  * `toStructuredText()` report in, which is what makes the verification below a
  * direct comparison; the page's own `/Rotate` is part of it (measured in
- * `tools/spikes/text-replace/NOTES.md`: an annotation rect stored in PDF user
+ * archived spike `text-replace/NOTES.md`: an annotation rect stored in PDF user
  * space is accepted silently and removes **nothing**).
  */
 
@@ -81,7 +81,7 @@ const CONTENT_INFO_KEYS = [
  * a rule that runs through a redacted box would otherwise reveal where the covered
  * content started and ended. `REDACT_LINE_ART_NONE` (0) is the text-replacement
  * setting, where the box must survive — a different operation with a different
- * contract (`tools/spikes/text-replace/NOTES.md`, case c).
+ * contract (archived spike `text-replace/NOTES.md`, case c).
  */
 const LINE_ART_METHOD_REMOVE_IF_TOUCHED = 2;
 

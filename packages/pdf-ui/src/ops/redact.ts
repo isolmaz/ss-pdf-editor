@@ -25,7 +25,7 @@ import type { OperationDialogSpec } from '../dialogs/types';
 
 /**
  * The `imageMethod` values are MuPDF's own redaction constants, measured in spike
- * #4 (`tools/spikes/redaction/NOTES.md`: `applRedactions(..., REDACT_IMAGE_*)`):
+ * #4 (archived spike `redaction/NOTES.md`: `applRedactions(..., REDACT_IMAGE_*)`):
  * `0` leaves images alone, `1` removes a whole image the mark touches, `2` clears
  * only the pixels inside the box.
  */

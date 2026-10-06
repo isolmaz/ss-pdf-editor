@@ -40,10 +40,3 @@ Thumbs.db
 .vscode/*
 !.vscode/settings.json
 *.log
-
-# Generated spike fixtures (Node-built, throwaway - PLAN.md 9/K21); never committed
-tools/spikes/**/fixture*.pdf
-tools/spikes/**/fixture*.json
-
-# Throwaway screenshots written by local probes; never committed
-tools/spikes/*.png

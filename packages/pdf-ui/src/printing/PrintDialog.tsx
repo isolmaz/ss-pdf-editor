@@ -22,7 +22,7 @@ import { type PrintProducedFile, type PrintScale, usePrinting } from './usePrint
  *
  *  - **Yazdır** prepares the selected pages and hands them to the browser's own
  *    print dialog. It prints what the viewer shows, one page per sheet — the path
- *    `tools/spikes/browser-check-slices.mjs` verifies, and the reason the
+ *    archived spike `browser-check-slices.mjs` verifies, and the reason the
  *    imposition choices below are marked as belonging to the produced file
  *    (`print.imposeHint`) instead of pretending to change it.
  *  - **Yazdırılacak PDF'i üret** runs `buildPrintDocument` over the same pages and

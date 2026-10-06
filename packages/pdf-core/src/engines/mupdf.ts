@@ -196,7 +196,7 @@ export function rectToPageSpace(
  * The full-rewrite save option string.
  *
  * `garbage=compact,compress,clean` is the string measured in
- * `tools/spikes/redaction/NOTES.md §2`: it is the only option set that leaves a
+ * the archived spike `redaction/NOTES.md §2`: it is the only option set that leaves a
  * **single revision** in the output (`/Prev` 0, one `startxref`), drops the object
  * that held the erased content stream, and renumbers the survivors (page-1 content
  * object 6 → 10 in a 2-page fixture). `incremental` is never an option here: after
@@ -280,7 +280,7 @@ export function openPdf(mupdf: Mupdf, bytes: Uint8Array): PDFDocument {
 /**
  * `saveToBuffer` hands back a **wasm-owned** buffer: copy the bytes out and free
  * the buffer, otherwise the emscripten heap keeps the whole output until the
- * document is destroyed (spike pattern, `tools/spikes/redaction/engine.ts`).
+ * document is destroyed (spike pattern, archived spike `redaction/engine.ts`).
  *
  * The option argument is a string (`'encrypt=…,permissions=…'`,
  * `MUPDF_FULL_SAVE_OPTIONS`, `'incremental'`); the object form exists only because
@@ -300,7 +300,7 @@ const LATIN1_CHUNK = 0x8000;
 
 /**
  * Raw bytes as a latin1 ("binary") string — the shape object-level audits need
- * (`tools/spikes/redaction/audit.ts`): a needle can then be counted with plain
+ * (archived spike `redaction/audit.ts`): a needle can then be counted with plain
  * `indexOf` across dictionary text, hex strings and undecoded streams without
  * decoding the file as UTF-8 (a PDF is binary; UTF-8 decoding would mangle bytes
  * and hide occurrences).

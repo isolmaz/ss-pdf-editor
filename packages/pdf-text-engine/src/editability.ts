@@ -9,7 +9,7 @@
  * The extractor reports a font *name*, not an embedding flag, and no font programme
  * is readable in a useful way anyway: the spike measured that a font read back from a
  * saved file answers glyph id 0 for **every** character, so the original programme is
- * never reused and every edit round embeds a fresh one (`tools/spikes/text-replace/NOTES.md`,
+ * never reused and every edit round embeds a fresh one (archived spike `text-replace/NOTES.md`,
  * round-2 variant A). Editability therefore asks the only question that has an
  * answer: *can we reproduce this block's face, or does the block need a substitute?*
  *
@@ -21,7 +21,7 @@
  *      draws horizontal lines only, so a rotated block would be re-written at the
  *      wrong angle — and the spike solved rotation by carrying a direction vector,
  *      which the writer's request type does not have
- *      (`tools/spikes/text-replace/replace.ts:74-95`, `placement.dir`).
+ *      (archived spike `text-replace/replace.ts:74-95`, `placement.dir`).
  *   3. `skewed` → **not-editable**. A slightly rotated baseline cannot be reproduced
  *      horizontally, and a "small" skew is exactly what a user notices as damage.
  *   4. `type3` → **not-editable**. Type3 text is vector artwork with a font-like

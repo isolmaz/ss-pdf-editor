@@ -25,7 +25,7 @@ import './print.css';
  *    than as a file.
  *
  * The two are deliberately separate: `start` keeps printing exactly what the
- * viewer shows (`tools/spikes/browser-check-slices.mjs` verifies that path), and
+ * viewer shows (archived spike `browser-check-slices.mjs` verifies that path), and
  * the imposition settings belong to the produced file, which the dialog says.
  */
 

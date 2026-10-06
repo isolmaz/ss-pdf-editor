@@ -23,7 +23,7 @@
  *    `RedactionLayer` make;
  *  - app space → the screen with `appToDisplayPoint` × the page's own CSS scale,
  *    which is the pair the core verified against pdf.js's `PageViewport` matrix
- *    for all four rotations (`tools/spikes/measure-probe.mts`).
+ *    for all four rotations (archived spike `measure-probe.mts`).
  *
  * The overlay therefore stays correct at every zoom level and on a `/Rotate 90`
  * page. `AnnotationLayer`'s own `pageProjection` places marks in page points

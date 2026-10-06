@@ -12,7 +12,7 @@
  * The engine never emits *rotated page space*: the spike measured that MuPDF
  * **annotation** geometry lives in rotated page space while content streams live in
  * unrotated user space, and that mixing the two fails silently (text survives,
- * nothing is removed — `tools/spikes/text-replace/NOTES.md`, "The exact APIs
+ * nothing is removed — archived spike `text-replace/NOTES.md`, "The exact APIs
  * called"). The conversion lives in exactly one place: pdf-core's writer
  * (`applyTextEdit`). Everything here is unrotated and top-left.
  *
@@ -32,7 +32,7 @@ export interface GlyphBox {
   readonly rect: Rect;
   /** Measured advance along the line direction, in points: this glyph's origin to
    *  the next one; for the last glyph of a line, the along-direction extent of its
-   *  own box (`tools/spikes/text-replace/textmodel.ts:107-114` measured the same
+   *  own box (archived spike `text-replace/textmodel.ts:107-114` measured the same
    *  quantity for a whole line: first char's left edge → last char's right edge). */
   readonly advance: number;
 }
@@ -101,7 +101,7 @@ export type LineOrientation = 'horizontal' | 'reversed' | 'vertical' | 'skewed';
 
 /**
  * One glyph as the extractor reports it. MuPDF's `StructuredText.walk` gives
- * exactly this set per character (`tools/spikes/text-replace/textmodel.ts:88-101`):
+ * exactly this set per character (archived spike `text-replace/textmodel.ts:88-101`):
  * the character, the baseline origin, the size, the quad and the font name.
  */
 export interface CharInput {
@@ -244,7 +244,7 @@ export interface FontMatch {
   /** A different programme from the block's original ink is required. Note that a
    *  re-render always embeds a fresh font programme even when `substituted` is
    *  false, because a font read back from the file answers glyph id 0 for every
-   *  character (`tools/spikes/text-replace/NOTES.md`, round-2 variant A). */
+   *  character (archived spike `text-replace/NOTES.md`, round-2 variant A). */
   readonly substituted: boolean;
   /** True when the original font's family/weight/italic was reproduced exactly. */
   readonly exact: boolean;

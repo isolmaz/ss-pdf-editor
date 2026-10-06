@@ -8,7 +8,7 @@
  * redacted document anywhere, so it is built to be read — a check that found nothing
  * reports that it found nothing, in the same shape as a check that found something.
  *
- * **The recipe, measured in `tools/spikes/redaction/audit.ts`.** The bytes are read as
+ * **The recipe, measured in archived spike `redaction/audit.ts`.** The bytes are read as
  * a latin1 string (`hexStringToLatin1`, `engines/mupdf.ts`) and then scanned with plain
  * `indexOf`/regex passes. That is the point of latin1: one byte is one character, so a
  * needle is found inside dictionary text, inside hex strings and inside undecoded
@@ -27,7 +27,7 @@
  * present (that is not caution for its own sake: reading references out of a compressed
  * object stream is impossible here, and the naive check invented three orphans on a
  * perfectly ordinary four-object fixture). The spike's object-level pass
- * (`tools/spikes/redaction/audit.ts:205-263`: `newIndirect(n).readStream()` per object)
+ * (archived spike `redaction/audit.ts:205-263`: `newIndirect(n).readStream()` per object)
  * is the layer that sees inside; it needs the engine in the loop, which this scan
  * deliberately does not.
  *

@@ -22,6 +22,7 @@
  * exits, so the same generator produces both sides of that operation.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
@@ -171,7 +172,7 @@ if (replacePath !== null) {
   );
   console.log(`replace image written: ${resolve(replacePath)}`);
 } else {
-  const out = resolve(readArg('--out', join(ROOT, 'tools', 'spikes', 'diag', 'phase4-fixture.pdf')));
+  const out = resolve(readArg('--out', join(tmpdir(), 'phase4-fixture.pdf')));
   const built = buildFixture(out);
   console.log(`phase 4 fixture: ${built}`);
 }

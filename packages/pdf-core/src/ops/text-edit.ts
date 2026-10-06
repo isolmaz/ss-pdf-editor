@@ -9,7 +9,7 @@
  *      content stream; nothing is painted over them. `black_boxes = false` is the
  *      measured difference between "the content is gone" and "the content is
  *      covered by a bar that advertises the edit and cannot be lifted"
- *      (`tools/spikes/text-replace/NOTES.md`).
+ *      (archived spike `text-replace/NOTES.md`).
  *   2. **insert** (4e) — MuPDF embeds the fonts, draws the replacement lines at
  *      their baselines in one new content stream per page and rewrites the file.
  *   3. **verify** (4f) — the produced bytes are re-opened with **pdf.js**, the

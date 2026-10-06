@@ -6,7 +6,7 @@
  *
  *   - **erase** — one rect per line of the block, widened by `ERASE_PAD_PT`, merged
  *     where they actually overlap. The spike erased a single padded box around the
- *     whole block (`tools/spikes/text-replace/main.ts:293` and `:581` both call
+ *     whole block (archived spike `text-replace/main.ts:293` and `:581` both call
  *     `pad(box, 1.5)`), and its case c quantified the risk of a wide region: a
  *     region edge that reaches a rule's edge pixels changes 14 px of 1,440 in the
  *     band while the rule itself survives (`NOTES.md`, case c). Per-line rects are
@@ -44,7 +44,7 @@ const ENGINE = 'pdf-text-engine';
 
 /**
  * Erase padding, in points, on each side of a line's ink box. The spike's harness
- * used 1.5 pt (`tools/spikes/text-replace/main.ts:293`) on a *block* box; a line's
+ * used 1.5 pt (archived spike `text-replace/main.ts:293`) on a *block* box; a line's
  * own ink box already excludes the inter-line gaps that made the block box generous,
  * so 1 pt is the smallest pad that still covers the antialiasing fringe of the
  * outermost glyph edge (2 px at the spike's 2x render scale) — and staying minimal is
