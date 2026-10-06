@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 /**
  * Local preview of the assembled `dist/` under the **production header policy**.
  *
@@ -83,7 +83,12 @@ createServer((req, res) => {
   }
   res.statusCode = 200;
   res.setHeader('Content-Type', MIME[extname(file)] ?? 'application/octet-stream');
-  res.end(readFileSync(file));
+  res.setHeader('Content-Length', statSync(file).size);
+  // Streamed, not read whole: a synchronous read of a 30 MB engine blocks every other
+  // request, and a parallel e2e run then waits seconds for a 4 KB `sw.js`.
+  createReadStream(file)
+    .on('error', () => res.destroy())
+    .pipe(res);
 }).listen(port, () => {
   console.log(`preview-dist: ${distRoot} on http://localhost:${port}`);
   const policy = headersFor(sections, '/editor/');

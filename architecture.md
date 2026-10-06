@@ -1237,9 +1237,7 @@ shows.
 
 ---
 
-## 11. Deliberate limits and unreachable code
-
-### 11.1 Deliberate limits
+## 11. Deliberate limits
 
 - **Signing** is PAdES B-B: no RFC 3161 timestamp, no revocation data, no policy
   processing, and trust only from user-imported roots.
@@ -1251,14 +1249,6 @@ shows.
   marked not editable or substituted, in the UI, before the user types.
 - **`adbe.pkcs7.sha1` and `ETSI.RFC3161`** signatures are reported `unchecked`, because
   their digest relation differs from the detached-CMS one this build verifies.
-
-### 11.2 Unreachable code
-
-The view-history stack (`packages/pdf-ui/src/tools/history.ts` and `useViewHistory.ts`) is
-in the same position for a different reason: the hook is constructed in `App.tsx` but its
-return value is discarded (`const _history = useViewHistory(...)`), so no surface offers
-step back / step forward. The algebra and its DOM sampling are implemented and tested by
-construction, but the capability is not reachable from the UI today.
 
 ---
 

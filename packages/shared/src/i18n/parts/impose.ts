@@ -29,17 +29,12 @@ export const imposePart = {
   'impose.orientation.landscape': 'Yatay',
   'impose.gutter': 'Kenar payı (mm)',
   'impose.margins': 'Kenar boşlukları (mm)',
-  'impose.bleed': 'Taşma payı (mm)',
   'impose.cropMarks': 'Kesim işaretleri',
   'impose.rotateContent': 'İçeriği sayfaya göre döndür',
   'impose.rotateContentHint':
     'Yatay sayfaları hücreye sığdırmak için 90° döndürür; kapatılırsa sayfa küçültülerek yerleştirilir.',
   'impose.rows': 'Satır',
   'impose.columns': 'Sütun',
-  'impose.scale': 'Ölçek',
   'impose.preview': '{sheets} yaprak, yaprakta {perSheet} sayfa',
   'impose.done': '{sheets} yaprak üretildi.',
-  'impose.padded': 'Forma için {count} boş sayfa eklendi.',
-  'impose.printName': 'Yazdırma adı',
-  'impose.titleFromDoc': 'Dosya adını belge başlığından öner',
 } as const;

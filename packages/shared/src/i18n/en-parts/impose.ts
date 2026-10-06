@@ -25,17 +25,12 @@ export const imposePart = {
   'impose.orientation.landscape': 'Landscape',
   'impose.gutter': 'Gutter margin (mm)',
   'impose.margins': 'Sheet margins (mm)',
-  'impose.bleed': 'Bleed margin (mm)',
   'impose.cropMarks': 'Crop marks',
   'impose.rotateContent': 'Rotate content to fit sheet',
   'impose.rotateContentHint':
     'Rotates landscape pages 90° to fit cell; if disabled, pages are scaled down to fit without rotation.',
   'impose.rows': 'Rows',
   'impose.columns': 'Columns',
-  'impose.scale': 'Scale',
   'impose.preview': '{sheets} sheet(s), {perSheet} page(s) per sheet',
   'impose.done': '{sheets} sheet(s) produced.',
-  'impose.padded': 'Added {count} blank page(s) to complete signature booklet.',
-  'impose.printName': 'Print job name',
-  'impose.titleFromDoc': 'Suggest filename from document title',
 } as const;

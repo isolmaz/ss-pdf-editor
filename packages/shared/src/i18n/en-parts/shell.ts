@@ -1,7 +1,6 @@
 export const shellPart = {
   'tools.all': 'ALL TOOLS',
   'toolbar.select': 'Selection Tool',
-  'toolbar.highlight': 'Highlight',
   'toolbar.text': 'Edit Text',
   'toolbar.shape': 'Draw Shape (Rectangle)',
   'toolbar.comment': 'Add comment / Note',
@@ -34,13 +33,7 @@ export const shellPart = {
   'shell.shortcuts.actualSize': 'Actual size (100%)',
   'shell.shortcuts.firstPage': 'First page',
   'shell.shortcuts.lastPage': 'Last page',
-  'shell.about.title': 'About',
-  'shell.about.locality':
-    'Document content is processed locally on your device. The browser version makes zero network requests; core features work fully offline once packages are downloaded.',
-  'shell.about.engines': 'Engines used',
   'shell.about.offline': 'Offline status',
-  'shell.about.offline.ready': 'ready',
-  'shell.about.offline.missing': 'missing',
   'shell.about.prepare': 'Prepare for offline use',
   'shell.about.source': 'Source code (AGPL-3.0)',
 
@@ -64,23 +57,16 @@ export const shellPart = {
   'panel.history.empty': 'No operation history for this document.',
   'panel.history.undoable': '{count} step(s) can be undone',
   'panel.history.redoable': '{count} step(s) can be redone',
-  'panel.history.apply': 'Apply',
   'panel.toolSettings': 'Tool settings',
   'panel.toolSettings.none': 'No active tool.',
   'panel.redaction': 'Redaction',
-  'panel.tools': 'Tools',
   'panel.pages.selection': 'Selection: {count} page(s)',
-  'panel.pages.current': 'Current page {page}',
 
   'progress.label': 'Operation progress',
-  'progress.idle': 'Ready',
   'progress.cancel': 'Cancel',
   'progress.pages': '{done}/{total} page(s)',
 
-  'status.noDocument': 'No document',
-  'status.saved': 'Saved',
   'status.dirty': 'Unsaved changes',
-  'status.workingVersion': 'Working version: {label}',
 
   /* Offline readiness (`offline.ts`): what the worker answers, said as it is. */
   'offline.unavailable': 'Offline status could not be read: no service worker is running in this window.',
@@ -110,7 +96,6 @@ export const shellPart = {
   'tool.hint.redact': 'Drag over the area to remove; Apply removes it permanently.',
   'tool.redact.pending': '{count} area(s) marked',
   'tool.redact.apply': 'Apply redaction',
-  'shell.moreActions': 'More actions',
   'settings.open': 'Settings',
   'settings.title': 'Settings',
   'settings.intro': 'Preferences stay on this device; your documents are never sent anywhere.',

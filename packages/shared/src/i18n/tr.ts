@@ -66,8 +66,6 @@ export const tr = {
   ...shellPart,
   ...stampPart,
   ...verifyPart,
-  'app.name': 'SsPdfEditor',
-  'app.tagline': 'Belgeler cihazınızda işlenir — hiçbir şey yüklenmez.',
 
   'open.pdfFilter': 'PDF belgesi',
   'open.progress': 'Belge açılıyor…',
@@ -83,7 +81,6 @@ export const tr = {
   'inspection.failed': 'Belge bilgileri okunamadı. Kaydetme ve dışa aktarma durduruldu; yeniden deneyin.',
   'inspection.retry': 'Yeniden incele',
   'save.done': 'Kaydedildi: {name}',
-  'save.needsHandle': 'Bu belge yerinde kaydetme için açılmadı. Dışa aktar ile yeni bir dosya yazın.',
   'export.explained': 'Yerinde kaydetme yok: belge yeni bir dosya olarak indirildi.',
   'panel.pages': 'Sayfalar',
   'panel.outline': 'İçindekiler',
@@ -109,8 +106,6 @@ export const tr = {
   'theme.light': 'Açık Tema',
   'theme.dark': 'Koyu Tema',
   'theme.system': 'Sistem Teması',
-  'theme.toggle': 'Temayı Değiştir',
-  'theme.select': 'Tema',
   'theme.cycle.title': '{current} ({next} moduna geç)',
   'theme.cycle.aria': '{current} tema',
   'setting.theme.light': 'Açık Tema',
@@ -142,9 +137,7 @@ export const tr = {
   'shell.commandPaletteShort': 'Komut ara',
   'shell.backToDocument': 'Belgeye Dön',
   'shell.homeTagline': '— Belgeniz cihazınızdan ayrılmaz, %100 yerel ve güvenli.',
-  'shell.status.pages': 'sayfa',
   'shell.status.memory': 'Bellek',
-  'shell.status.viewingOnly': 'Görüntüleme modu',
   'shell.deviceTier.desktop': 'Masaüstü limitleri',
   'shell.deviceTier.mobile': 'Mobil limitleri',
   'shell.deviceTier.desktopHint':
@@ -154,21 +147,9 @@ export const tr = {
   'nav.controls': 'Sayfa ve görünüm denetimleri',
   'shell.save': 'Kaydet',
   'shell.export': 'Dışa aktar',
-  'shell.sourceCode': 'Kaynak kodu',
 
-  'tab.untitled': 'Adsız',
   'tab.dirty': 'Kaydedilmemiş değişiklikler',
-  'tab.saved': 'Kaydedildi',
 
-  'empty.title': 'Bir PDF açın',
-  'empty.subtitle': 'Dosyayı buraya bırakın veya cihazınızdan seçin.',
-  'empty.openButton': 'PDF seç',
-  'empty.recentTitle': 'Son belgeler',
-  'empty.recentEmpty': 'Henüz belge açılmadı.',
-  'empty.hint': 'Her şeyi Ctrl+K ile arayın',
-
-  'viewer.loading': 'Belge yükleniyor…',
-  'viewer.pagesRegion': 'Belge sayfaları',
   'viewer.rendering': 'Sayfalar hazırlanıyor…',
   'viewer.find.label': 'Belgede ara',
   'viewer.find.placeholder': 'Ara…',
@@ -286,12 +267,7 @@ export const tr = {
   'tools.magnifier': 'Büyüteç',
   'tools.present': 'Sunum modu',
   'tools.presentExit': 'Sunumdan çık',
-  'tools.back': 'Geri',
-  'tools.forward': 'İleri',
-  'action.delete': 'Sil',
   'lang.select': 'Dil',
-  'lang.tr': 'Türkçe',
-  'lang.en': 'English',
 
   // Tools Rail
   'tools.backToAll': 'Tüm Araçlara Dön',
@@ -371,7 +347,6 @@ export const tr = {
 
   // Toolbars & Nav
   'toolbar.hand': 'El / Kaydırma Aracı',
-  'toolbar.comments': 'Yorumlar Paneli',
 
   // Home Screen
   'home.discover': 'Keşfet',

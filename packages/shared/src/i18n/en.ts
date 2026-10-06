@@ -64,14 +64,10 @@ export const en: Record<MessageKey, string> = {
   ...stampPart,
   ...verifyPart,
 
-  'app.name': 'SsPdfEditor',
-  'app.tagline': 'Documents are processed on your device — nothing is uploaded.',
-
   'open.progress': 'Opening the document…',
   'open.pdfFilter': 'PDF document',
   'open.pickerFailed': 'The file picker could not open; drag the file in instead.',
   'save.done': 'Saved: {name}',
-  'save.needsHandle': 'This document was not opened for in-place saving. Use Export to write a new file.',
   'export.explained': 'No in-place saving here: the document was downloaded as a new file.',
   'panel.pages': 'Pages',
   'panel.outline': 'Outline',
@@ -98,8 +94,6 @@ export const en: Record<MessageKey, string> = {
   'theme.light': 'Light Theme',
   'theme.dark': 'Dark Theme',
   'theme.system': 'System Theme',
-  'theme.toggle': 'Toggle Theme',
-  'theme.select': 'Theme',
   'theme.cycle.title': '{current} (switch to {next})',
   'theme.cycle.aria': '{current} theme',
   'setting.theme.light': 'Light Theme',
@@ -131,9 +125,7 @@ export const en: Record<MessageKey, string> = {
   'shell.commandPaletteShort': 'Search',
   'shell.backToDocument': 'Back to document',
   'shell.homeTagline': '— Your document never leaves your device, 100% local and secure.',
-  'shell.status.pages': 'pages',
   'shell.status.memory': 'Memory',
-  'shell.status.viewingOnly': 'Viewing mode',
   'shell.deviceTier.desktop': 'Desktop limits',
   'shell.deviceTier.mobile': 'Mobile limits',
   'shell.deviceTier.desktopHint':
@@ -143,21 +135,9 @@ export const en: Record<MessageKey, string> = {
   'nav.controls': 'Page and view controls',
   'shell.save': 'Save',
   'shell.export': 'Export',
-  'shell.sourceCode': 'Source code',
 
-  'tab.untitled': 'Untitled',
   'tab.dirty': 'Unsaved changes',
-  'tab.saved': 'Saved',
 
-  'empty.title': 'Open a PDF',
-  'empty.subtitle': 'Drop a file here or pick one from your device.',
-  'empty.openButton': 'Choose PDF',
-  'empty.recentTitle': 'Recent documents',
-  'empty.recentEmpty': 'No document opened yet.',
-  'empty.hint': 'Search everything with Ctrl+K',
-
-  'viewer.loading': 'Loading document…',
-  'viewer.pagesRegion': 'Document pages',
   'viewer.rendering': 'Preparing pages…',
   'viewer.find.label': 'Find in document',
   'viewer.find.placeholder': 'Find…',
@@ -274,9 +254,6 @@ export const en: Record<MessageKey, string> = {
   'tools.magnifier': 'Magnifier',
   'tools.present': 'Presentation mode',
   'tools.presentExit': 'Exit presentation',
-  'tools.back': 'Back',
-  'tools.forward': 'Forward',
-  'action.delete': 'Delete',
   'close.title': 'Close "{name}"?',
   'close.body': 'You have unsaved changes. Do you want to save before closing?',
   'close.exportHint': 'This document has no file handle. Export to download a copy, or close without saving.',
@@ -286,8 +263,6 @@ export const en: Record<MessageKey, string> = {
   'inspection.failed': 'Inspection failed: {error}',
   'inspection.retry': 'Retry inspection',
   'lang.select': 'Language',
-  'lang.tr': 'Türkçe',
-  'lang.en': 'English',
 
   // Tools Rail
   'tools.backToAll': 'Back to All Tools',
@@ -367,7 +342,6 @@ export const en: Record<MessageKey, string> = {
 
   // Toolbars & Nav
   'toolbar.hand': 'Hand / Pan Tool',
-  'toolbar.comments': 'Comments Panel',
 
   // Home Screen
   'home.discover': 'Discover',

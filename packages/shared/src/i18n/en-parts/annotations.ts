@@ -7,7 +7,6 @@ export const annotationsPart = {
   'ann.kind.shapes': 'Shape',
   'ann.kind.note': 'Note',
   'panel.comments': 'Comments',
-  'panel.comments.empty': 'No comments in this document.',
   'ann.filter': 'Filter comment type',
   'ann.filter.all': 'All',
   'ann.count': '{count} comment(s) displayed; {pending} pending save.',

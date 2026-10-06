@@ -1,6 +1,6 @@
 /**
- * The reader's tool overlays (reading mode, magnifier, snapshot, presentation,
- * view history). Their own import path for the same reason as the shell surface:
+ * The reader's tool overlays (reading mode, magnifier, snapshot, presentation).
+ * Their own import path for the same reason as the shell surface:
  * the root barrel is not reducible by a bundler.
  *
  * The mark tools live here too — `MarkInteractionLayer` plus the `MarkTarget`
@@ -27,4 +27,3 @@ export {
   type ToolPropertiesProps,
 } from './ToolProperties';
 export { usePresentation } from './usePresentation';
-export { useViewHistory } from './useViewHistory';

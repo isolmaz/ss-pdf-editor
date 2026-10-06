@@ -5,14 +5,11 @@ export const ocrPart = {
   'ocr.languagesHint': 'Each language downloads a separate package; multiple languages slow recognition.',
   'ocr.language.en': 'English',
   'ocr.language.tr': 'Turkish',
-  'ocr.language.missing': 'Language package not downloaded: {lang}',
   'ocr.quality': 'Quality',
   'ocr.quality.fast': 'Fast',
   'ocr.quality.best': 'High quality',
   'ocr.dpi': 'Resolution (DPI)',
   'ocr.dpiHint': '150–300 supported.',
-  'ocr.desktopOnly': 'OCR is recommended on desktop; multi-page documents may be slow.',
-  'ocr.textPresent': 'Text already present on page ({count} page(s)); write mode',
   'ocr.textPresent.mode': 'Existing text',
   'ocr.textPresentModeHint':
     'What to do on pages that already have text layers; if "skip" is chosen, these pages are listed in report.',
@@ -22,7 +19,4 @@ export const ocrPart = {
   'ocr.running': 'Recognizing page {done}/{total}',
   'ocr.done': 'Text layer added to {count} page(s).',
   'ocr.empty': 'No text found on any page.',
-  'ocr.lowConfidence': 'Low confidence page: {page}',
-  'ocr.pageFailed': 'Page {page} could not be recognized: {reason}',
-  'ocr.rotateHandled': 'Page rotations handled once.',
 } as const;

@@ -23,7 +23,6 @@ export const annotationsPart = {
 
   // The comment panel.
   'panel.comments': 'Notlar',
-  'panel.comments.empty': 'Bu belgede not yok.',
   'ann.filter': 'Not türü süzgeci',
   'ann.filter.all': 'Tümü',
   'ann.count': '{count} not görüntüleniyor; {pending} tanesi henüz kaydedilmedi.',

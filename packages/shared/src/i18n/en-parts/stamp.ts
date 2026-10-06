@@ -24,14 +24,10 @@ export const stampPart = {
   'stamp.differentFirst': 'Different first page',
   'stamp.firstTemplate': 'First page format',
   'stamp.firstTemplateHint': 'Applied only to page 1; cannot be empty.',
-  'stamp.includeDate': 'Include date',
-  'stamp.includeFile': 'Include file name',
   'stamp.bates.title': 'Bates numbering',
   'stamp.bates.prefix': 'Prefix',
   'stamp.bates.digits': 'Number of digits',
   'stamp.done': 'Stamp added to {count} page(s).',
-  'stamp.rotateAware': 'Page rotations taken into account.',
-  'stamp.emptyText': 'Stamp text cannot be empty.',
   'watermark.title': 'Watermark',
   'watermark.intro':
     'Watermark is placed over page content; text remains selectable and document is rewritten (not incremental).',
@@ -52,6 +48,5 @@ export const stampPart = {
   'watermark.tileSpacingHint': 'Distance between tiles (mm).',
   'watermark.noPrint': 'Hide when printing (NoPrint)',
   'watermark.done': 'Watermark added to {count} page(s).',
-  'watermark.needText': 'Watermark text is required.',
   'watermark.defaultText': 'DRAFT',
 } as const;
