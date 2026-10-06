@@ -462,3 +462,18 @@ test('thumbnails follow the page: a turn of an already-turned page, an insert, a
   await openAnother(page, 'wide.pdf', labelledPdf('Wide', 6, { size: [842, 595] }));
   for (const index of [0, 5]) await expectThumbnailMatchesPage(page, index);
 });
+
+test('find: the count belongs to the document it was found in', async ({ page }) => {
+  await open(page, 'four.pdf', labelledPdf('Leaf', 4));
+  await page.keyboard.press('Control+f');
+  const box = page.getByRole('textbox', { name: 'Find in document' });
+  await box.fill('Leaf');
+  await box.press('Enter');
+  await expect(page.getByText('1 of 4 matches')).toBeVisible({ timeout: 30_000 });
+
+  await openAnother(page, 'two.pdf', labelledPdf('Leaf', 2));
+  // The first document's count is not shown over the second one.
+  await expect(page.getByText(/of 4 matches/)).toHaveCount(0);
+  await box.press('Enter');
+  await expect(page.getByText('1 of 2 matches')).toBeVisible({ timeout: 30_000 });
+});
