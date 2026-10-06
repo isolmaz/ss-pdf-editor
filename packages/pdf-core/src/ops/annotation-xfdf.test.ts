@@ -163,11 +163,13 @@ describe('XFDF export of the file`s own annotations', () => {
           rect: [10, 10, 100, 50],
           vertices: [100, 10, 10, 50],
         }),
+        file('18R', { subtype: 'Link', rect: [10, 10, 60, 30] }),
       ],
     });
-    // Comments: highlight, note, line. The reply and the state are not comments; the stamp is counted.
+    // Comments: highlight, note, line. The reply and the state are not comments; the stamp,
+    // the widget and the link are counted as left out, the popup (part of its comment) is not.
     expect(out.count).toBe(3);
-    expect(out.skipped).toBe(1);
+    expect(out.skipped).toBe(3);
     const xml = decode(out.bytes);
     expect(xml).toContain('coords="10,700,110,700,10,680,110,680"');
     expect(xml).toContain('start="100,10"');

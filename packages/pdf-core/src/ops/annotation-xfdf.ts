@@ -91,7 +91,10 @@ export interface XfdfExport {
   readonly bytes: Uint8Array;
   /** Comments written (replies and states not counted). */
   readonly count: number;
-  /** Annotations that are not comments the format can carry (stamps, links, widgets…). */
+  /**
+   * Annotations that are not comments the format can carry (stamps, links, widgets…). A
+   * comment's popup is part of the comment and is not counted.
+   */
   readonly skipped: number;
 }
 
@@ -337,8 +340,8 @@ function existingElement(annotation: ExistingAnnotation, parentName: string | un
 
 /**
  * The review as XFDF: the file's comments (with their threads) first, then the
- * session's marks (with theirs). Popups, widgets, links and stamps are not comments
- * XFDF can carry here and are counted in `skipped`.
+ * session's marks (with theirs). Widgets, links and stamps are not comments XFDF can
+ * carry here and are counted in `skipped`; a popup is part of its comment, not counted.
  */
 export function serializeXfdf(input: XfdfExportInput): XfdfExport {
   const parts: string[] = [];
@@ -346,7 +349,9 @@ export function serializeXfdf(input: XfdfExportInput): XfdfExport {
   let skipped = 0;
   const { records } = commentThreads(input.existing);
   for (const annotation of input.existing) {
-    if (annotation.subtype === 'Popup' || annotation.subtype === 'Widget' || annotation.subtype === 'Link') {
+    if (annotation.subtype === 'Popup') continue;
+    if (annotation.subtype === 'Widget' || annotation.subtype === 'Link') {
+      skipped += 1;
       continue;
     }
     const parent = records.has(annotation.id) ? annotation.inReplyTo : undefined;
