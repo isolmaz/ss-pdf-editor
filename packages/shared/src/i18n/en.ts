@@ -35,6 +35,7 @@ import { sigValidatePart } from './en-parts/sigvalidate';
 import { stampPart } from './en-parts/stamp';
 import { texteditPart } from './en-parts/textedit';
 import { verifyPart } from './en-parts/verify';
+import { xfaPart } from './en-parts/xfa';
 import type { MessageKey } from './tr';
 
 /**
@@ -79,6 +80,7 @@ export const en: Record<MessageKey, string> = {
   ...stampPart,
   ...verifyPart,
   ...sigValidatePart,
+  ...xfaPart,
 
   'open.progress': 'Opening the document…',
   'open.pdfFilter': 'PDF document',

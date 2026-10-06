@@ -48,6 +48,9 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'new-document': async () => (await import('./start')).newDocumentDialog,
   'merge-files': async () => (await import('./start')).mergeFilesDialog,
   'convert-to-pdf': async () => (await import('./convert')).convertDialog,
+  'xfa-remove': async () => (await import('./xfa')).xfaRemoveDialog,
+  'xfa-data': async () => (await import('./xfa')).xfaDataDialog,
+  'xfa-flatten': async () => (await import('./xfa')).xfaFlattenDialog,
 };
 
 /**

@@ -34,3 +34,4 @@ export { SignatureDialog, type SignatureDialogProps } from './SignatureDialog';
 export { SignatureWarningDialog, type SignatureWarningDialogProps } from './SignatureWarningDialog';
 export { StartDialog, type StartDialogProps } from './StartDialog';
 export type { OperationRunContext } from './useOperationRun';
+export { XfaFormDialog, type XfaFormDialogProps } from './XfaFormDialog';

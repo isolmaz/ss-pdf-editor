@@ -53,7 +53,7 @@ import type { PageMoveAction } from 'pdf-ui';
 import { type MarkRemovalRequest, normalizePendingMarks } from './annotation-interaction';
 // The annotation-removal writer loads on its first call (`lazy-ops.ts`): neither the
 // barrel nor a static module import may put it in the shell's first paint.
-import { removePdfAnnotations } from './lazy-ops';
+import { removePdfAnnotations, syncXfaDatasets } from './lazy-ops';
 import type { SaveStepDescription } from './save-plan';
 
 export interface PendingOverlays {
@@ -108,6 +108,15 @@ export async function materializeBase(
       : produced.bytes;
   if (engineDirty)
     executedSteps?.push({ id: 'pdfjs.saveDocument', engine: 'pdfjs', note: 'pending engine values' });
+  if (engineDirty) {
+    // A static XFA form keeps its data apart from the widgets pdf.js just wrote: bring the
+    // data in step (a document without XFA comes back as the same bytes, untouched).
+    const synced = await syncXfaDatasets(bytes);
+    if (synced.bytes !== bytes) {
+      bytes = synced.bytes;
+      executedSteps?.push({ id: 'xfa.datasets', engine: 'mupdf', note: 'static XFA data kept in step' });
+    }
+  }
   // Recovered snapshots may retain measurements already present in their bytes.
   // Normalize here, not only in the shell's current inventory: dialogs, page actions
   // and background materialization all use this same boundary.
@@ -706,6 +715,18 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     steps: ['form.calculate'],
     mayChange: ['formFieldValues'],
     why: 'calculated values are written into the fields',
+  },
+
+  /* — XFA: the data packet, and the form that leaves it — */
+  {
+    steps: ['xfa.datasets', 'xfa.remove', 'xfa.export'],
+    mayChange: [],
+    why: 'the XFA packets are none of the twelve facts: writing the datasets, dropping the XFA entry or reading the data leaves the pages, the AcroForm fields and their values exactly as they were',
+  },
+  {
+    steps: ['xfa.flatten'],
+    mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox'],
+    why: 'the XFA flatten draws the laid-out form as pictures into a brand-new document; nothing of the placeholder page survives by construction',
   },
 
   /* — content writers — */

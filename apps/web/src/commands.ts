@@ -65,6 +65,8 @@ export interface CommandHost {
   readonly rename: () => void;
   readonly closeTab: () => void;
   readonly openDialog: (id: string) => void;
+  /** Fill a dynamic XFA form in pdf.js's XFA renderer (`pdf-ui/dialogs/XfaFormDialog.tsx`). */
+  readonly openXfaForm?: () => void;
   /**
    * The keyboard shortcut list. Help is not a document operation — it answers with no
    * tab open and in either mode, and there are no bytes to freeze — so it is its own
@@ -933,6 +935,38 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       disabled: noDocument,
       run: dialog('form-data'),
+    },
+    {
+      id: 'tools.xfa-fill',
+      labelKey: 'xfa.cmd.fill',
+      group: 'tools',
+      disabled: noDocument,
+      keywords: ['xfa', 'dynamic form', 'livecycle', 'dinamik form', 'doldur', 'fill'],
+      run: () => host.openXfaForm?.(),
+    },
+    {
+      id: 'tools.xfa-remove',
+      labelKey: 'xfa.cmd.remove',
+      group: 'tools',
+      disabled: noEdit,
+      keywords: ['xfa', 'acroform', 'static form', 'statik form', 'kaldir', 'remove'],
+      run: dialog('xfa-remove'),
+    },
+    {
+      id: 'tools.xfa-flatten',
+      labelKey: 'xfa.cmd.flatten',
+      group: 'tools',
+      disabled: noDocument,
+      keywords: ['xfa', 'flatten', 'dynamic form', 'duzlestir', 'donustur', 'normal pdf'],
+      run: dialog('xfa-flatten'),
+    },
+    {
+      id: 'tools.xfa-data',
+      labelKey: 'xfa.cmd.data',
+      group: 'tools',
+      disabled: noDocument,
+      keywords: ['xfa', 'data', 'xml', 'datasets', 'import', 'export', 'veri'],
+      run: dialog('xfa-data'),
     },
     {
       id: 'tools.redaction-audit',

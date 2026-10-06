@@ -116,7 +116,7 @@ grown it past the budget.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (29 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (34 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
 | `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -976,6 +976,97 @@ the camera is allowed for the app's own origin only; microphone and the rest sta
 the aspect estimate against a synthetic pinhole camera at known angles. The limits are in the
 README's "Honest limits".
 
+### 5.10 XFA forms
+
+A PDF form can carry **XFA** in `/AcroForm /XFA`: an array of `(name) stream` pairs
+(`preamble`, `config`, `template`, `datasets`, `postamble`) or one stream holding the whole
+XDP. The template says how the form looks and behaves; `datasets/xfa:data` is the form's
+data. An XFA-aware reader draws the **data**, not the AcroForm widgets, so the two have to be
+kept in step. Neither engine runs XFA: MuPDF ignores it, and pdf.js can lay a template out
+(`enableXfa`, `page.getXfa()`, `XfaLayer`) but runs no scripts.
+
+**What was found out first** (probes against two hand-built files, one static and one
+dynamic, and a real browser):
+
+- Before this part the editor opened both silently: a static form showed its AcroForm, a
+  dynamic one showed the "Please wait…" page, and `flattenForm` refused any XFA document.
+- pdf.js decides the kind exactly as `describeXfa` does: XFA plus AcroForm fields is static
+  (not `isPureXfa`, drawn from the PDF), XFA with no fields is dynamic (`isPureXfa`, its page
+  list is the template's). Its own save patches static datasets by field *name*
+  (`writeXFADataForAcroform`) and writes dynamic ones from the annotation storage.
+- The industry answer for a static form is either to sync the data (SetaPDF-FormFiller) or to
+  drop the XFA (iText `removeXfaForm`, PDFBox flatten); a viewer that is not XFA-aware shows the
+  AcroForm, one that is shows the data. The editor does **both, by the user's choice**: every
+  write keeps the data in step, and *Remove XFA* is one dialog away.
+
+**Files.**
+
+| File | Role |
+|---|---|
+| `ops/xfa-data.ts` | Pure XML (xmldom): the binding of AcroForm names to data nodes through the template, the sync plan, the date picture, data import and export markup. DOM-free, Node-testable. |
+| `ops/xfa.ts` | MuPDF packet I/O: read both layouts, write `datasets` (create it when missing), remove the XFA, `syncXfaInDocument`. Imported by `forms.ts` **lazily** (`import('./xfa')` only when the form has `/XFA`), so the XML parser stays out of the entry chunk. |
+| `ops/xfa-form.ts` | The operations: `inspectXfa`, `syncXfaDatasets`, `removeXfa`, `exportXfaData`, `importXfaData`, `finishXfaFill`. |
+| `ops/xfa-flatten.ts` | `buildFlattenedXfa`: pictures to a PDF, the OCR text-layer writer over them, read-back. |
+| `pdf-ui/src/dialogs/XfaFormDialog.tsx` | The XFA viewer dialog (pdf.js `PDFViewer` over its own `enableXfa` document). |
+| `pdf-ui/src/ops/xfa-raster.ts` | The browser half of the flatten: XFA HTML to pictures and word boxes. |
+| `pdf-ui/src/ops/xfa.ts` | The three declarative dialogs `xfa-remove`, `xfa-data`, `xfa-flatten`. |
+
+**Static forms.** The binding is XFA's *normal* data binding. An AcroForm field name is a SOM
+path (`form1[0].#subform[0].Name[0]`); named subforms create data groups, unnamed subforms,
+areas and page areas do not, and `[n]` is the occurrence among same-named siblings, so the
+node is `form1/Name`. Where the template resolves the field, its items give a check box's on
+and off values and its `<format><picture>` says what the widget shows; a plain
+`date{DD/MM/YYYY}` picture is reversed to the ISO date the data stores. A field with
+`bind match="none"|"global"`, a `dataRef`, a numeric or text picture, or whose data node is a
+group is **skipped and counted**, never guessed. A radio group is one data node that the
+chosen button decides. Three writers keep the data current, all through the same plan:
+
+1. `fillFormFields` (the form panel, FDF/JSON import, calculations) syncs the fields it wrote
+   — `xfa.datasets` is added to its steps and `xfa.note.synced`/`notSynced` to its notes;
+2. `materializeBase` runs `syncXfaDatasets` over the bytes pdf.js produced for inline widget
+   edits (`lazy-ops.ts`; a document without XFA comes back as the same array, unwritten);
+3. `importXfaData` replaces the data and fills the widgets from it.
+
+`flattenForm` now accepts a static form (the XFA is removed because it would redraw every
+field from its data) and refuses a dynamic one with `xfa-dynamic`.
+
+**Dynamic forms.** The main viewer is untouched: it never opens a document with `enableXfa`,
+because pdf.js then reports the template's page list and the page model, MuPDF and the save
+verification would disagree about how many pages there are. The XFA viewer is a dialog that
+opens the frozen working bytes in **its own** pdf.js document with the renderer on. Typing
+writes into that document's annotation storage; *Save to document* asks pdf.js for
+`saveDocument()` (an incremental update that rewrites `datasets`) and `finishXfaFill` checks it
+before the host applies it as a working version: the file opens, the page count and every
+packet other than `datasets` are unchanged, and the number of data values that moved is
+reported (none moved: nothing is applied). *Export data* reads the same bytes. *Flatten* opens
+a third document with the renderer on, renders each page's `getXfa()` tree with `XfaLayer`
+off-screen, rasterises it through an SVG `foreignObject` with the CSS the viewer uses and
+Liberation Sans (pdf.js's standard-font data, embedded) for the form's sans faces, measures the
+words from the live layout and writes pictures plus the OCR layer's invisible text. The result
+is read back (pages, sizes, a sample word in the text layer) and opens in a new tab.
+
+**Declared steps** (`OPERATION_TABLE`): `xfa.datasets`, `xfa.remove`, `xfa.export` change none
+of the twelve facts; `xfa.flatten` builds a new document.
+
+**Verified** with two hand-built files (the repository has no public XFA sample, and pdf.js's
+test PDFs are not shipped): a static form with text, check box, list and multi-line fields, and
+a dynamic form with text, number, check box, list and multi-line fields.
+
+- Static: an inline widget edit, a form-panel edit and a data import each reach the `datasets`
+  (read back with MuPDF); the single-stream layout and a form with no `datasets` packet work;
+  *Remove XFA* leaves no `/XFA` and the same fields and values.
+- Dynamic: filled in the XFA dialog, saved, exported, reopened **in a fresh page** — the typed
+  values are in the form; a datasets packet that did not exist is created by pdf.js and passes
+  `finishXfaFill`; the flatten opens as a normal one-page PDF showing the typed values.
+
+**Limits.** No script runs. The binding is normal binding only; the skipped cases are listed
+above and in the README. pdf.js's renderer decides what draws (a form that needs scripts for
+its layout draws as stored). The flatten is a picture: its resolution is fixed at 108, 144 or
+216 dpi, and its fonts are the browser's. A real-world Designer file was **not** tested — only
+files built to the XFA 3.3 schema; the first one with an unusual binding will show up in the
+report's `notSynced` count. The sync costs one extra MuPDF open per version for a document with
+pending inline edits (the form inventory already opens one).
+
 ---
 
 ## 6. `pdf-text-engine` — the text model
@@ -1167,7 +1258,7 @@ and the panel used to do exactly that right after handing over its result, so ev
 applied from the panel was aborted before it reached the document
 (`e2e/editor-stability.spec.ts` fails with that call reinstated).
 
-`ops/index.ts` registers **32** dialog ids against lazy `import()` loaders, so a
+`ops/index.ts` registers **35** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
@@ -1678,6 +1769,9 @@ shows.
 - **Find and replace** skips matches in text that is not editable and table cells with no
   room, and reports both. A paragraph laid out again has no hyphenation of its own, and a
   line-end hyphen before a lower-case letter is always read as hyphenation.
+- **XFA** scripts never run; a static form's data is synced by normal binding only, and
+  what it cannot bind is counted in the report; a flattened dynamic form is pictures plus an
+  invisible text layer (§5.10).
 - **`adbe.pkcs7.sha1`** signatures are reported `unchecked`, because their digest relation
   differs from the detached-CMS one this build verifies.
 
