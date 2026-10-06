@@ -54,9 +54,12 @@ function IconButton({
   onClick,
   disabled,
   pressed,
+  mirrored = false,
 }: {
   readonly label: string;
   readonly icon: Icon;
+  /** A direction glyph (previous/next) that turns over in a right-to-left UI. */
+  readonly mirrored?: boolean;
   readonly onClick: () => void;
   readonly disabled?: boolean;
   readonly pressed?: boolean;
@@ -71,7 +74,7 @@ function IconButton({
         onClick={onClick}
         className={`${ICON_BUTTON} ${pressed === true ? PRESSED : ''}`}
       >
-        <Glyph size={14} aria-hidden="true" />
+        <Glyph size={14} className={mirrored ? 'rtl:-scale-x-100' : undefined} aria-hidden="true" />
       </button>
     </Tooltip>
   );
@@ -99,6 +102,7 @@ export function PageNavigation({
       <IconButton
         label={label('nav.prevPage')}
         icon={CaretLeft}
+        mirrored
         disabled={currentPage <= 0}
         onClick={() => onGoToPage(currentPage - 1)}
       />
@@ -129,6 +133,7 @@ export function PageNavigation({
       <IconButton
         label={label('nav.nextPage')}
         icon={CaretRight}
+        mirrored
         disabled={currentPage >= pageCount - 1}
         onClick={() => onGoToPage(currentPage + 1)}
       />

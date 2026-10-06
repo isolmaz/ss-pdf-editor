@@ -197,14 +197,14 @@ export default function HomeToolGrid({
           <MagnifyingGlass
             size={14}
             aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-kumo-subtle"
+            className="pointer-events-none absolute top-1/2 start-2.5 -translate-y-1/2 text-kumo-subtle"
           />
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t('home.tools.search')}
-            className="w-full rounded-md border border-kumo-line bg-kumo-base py-1.5 pr-2 pl-8 text-xs text-kumo-default placeholder:text-kumo-subtle focus:border-kumo-focus focus:outline-none"
+            className="w-full rounded-md border border-kumo-line bg-kumo-base py-1.5 pe-2 ps-8 text-xs text-kumo-default placeholder:text-kumo-subtle focus:border-kumo-focus focus:outline-none"
           />
         </label>
       </div>
@@ -228,7 +228,7 @@ export default function HomeToolGrid({
                       type="button"
                       disabled={tool.disabled}
                       onClick={() => onRun(tool.id)}
-                      className="group flex h-full w-full items-start gap-3 rounded-lg border border-kumo-line bg-kumo-base p-3 text-left transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      className="group flex h-full w-full items-start gap-3 rounded-lg border border-kumo-line bg-kumo-base p-3 text-start transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent">
                         <ToolIcon size={18} weight="duotone" aria-hidden="true" />

@@ -24,7 +24,7 @@
 .pdf-tools-snapshot {
   position: fixed;
   z-index: 30;
-  left: 0.75rem;
+  inset-inline-start: 0.75rem;
   top: calc(var(--spacing-pdf-topbar) + var(--spacing-pdf-tabstrip) + 0.75rem);
 }
 
@@ -51,6 +51,6 @@
 .pdf-tools-magnifier {
   position: fixed;
   z-index: 40;
-  right: 0.75rem;
+  inset-inline-end: 0.75rem;
   bottom: calc(var(--spacing-pdf-statusbar) + 0.75rem);
 }

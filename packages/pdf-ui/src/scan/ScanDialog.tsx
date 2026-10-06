@@ -600,7 +600,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                   disabled={selectedIndex <= 0}
                   onClick={() => move(selected.id, -1)}
                 >
-                  <ArrowLeft size={15} aria-hidden="true" />
+                  <ArrowLeft size={15} className="rtl:-scale-x-100" aria-hidden="true" />
                 </Button>
                 <Button
                   variant="outline"
@@ -608,7 +608,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                   disabled={selectedIndex >= pages.length - 1}
                   onClick={() => move(selected.id, 1)}
                 >
-                  <ArrowRight size={15} aria-hidden="true" />
+                  <ArrowRight size={15} className="rtl:-scale-x-100" aria-hidden="true" />
                 </Button>
                 <Button
                   variant="outline"
@@ -656,7 +656,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                     className={`relative rounded-md border-2 p-0.5 ${page.id === selected?.id ? 'border-pdf-accent' : 'border-kumo-line'}`}
                   >
                     <PageThumb page={page} t={t} index={index} />
-                    <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1 text-[10px] text-white">
+                    <span className="absolute bottom-1 start-1 rounded bg-black/65 px-1 text-[10px] text-white">
                       {index + 1}
                     </span>
                   </button>

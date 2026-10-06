@@ -884,7 +884,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
           </Dialog.Description>
         </div>
 
-        <div className="overflow-y-auto min-h-0 flex-1 pr-1 flex flex-col gap-3">
+        <div className="overflow-y-auto min-h-0 flex-1 pe-1 flex flex-col gap-3">
           <section className="flex flex-col gap-2 border border-kumo-line p-2">
             <h3 className="text-xs font-semibold text-kumo-strong">{text_('batch.queue')}</h3>
             <p className="text-xs text-kumo-subtle">{text_('batch.queue.hint')}</p>
@@ -962,7 +962,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
                   }}
                 />
                 {enabled[kind] === true ? (
-                  <div className="pl-4">
+                  <div className="ps-4">
                     <FieldList
                       t={t}
                       fields={STEP_FIELDS[kind]}

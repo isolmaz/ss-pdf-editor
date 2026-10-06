@@ -153,7 +153,8 @@ function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, onNotice }:
           <Button
             shape="square"
             variant="ghost"
-            icon={CaretLeft}
+            // Earlier pages lie to the reading start: the caret turns over in a right-to-left UI.
+            icon={<CaretLeft className="rtl:-scale-x-100" />}
             disabled={pageNumber === 0}
             aria-label={t('panel.goToPage', { page: previousPage })}
             title={t('panel.goToPage', { page: previousPage })}
@@ -163,7 +164,7 @@ function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, onNotice }:
           <Button
             shape="square"
             variant="ghost"
-            icon={CaretRight}
+            icon={<CaretRight className="rtl:-scale-x-100" />}
             aria-label={t('panel.goToPage', { page: nextPage })}
             title={t('panel.goToPage', { page: nextPage })}
             onClick={() => onPageChange(pageNumber + 1)}

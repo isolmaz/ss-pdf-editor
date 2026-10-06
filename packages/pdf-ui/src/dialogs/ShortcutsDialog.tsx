@@ -69,7 +69,7 @@ export function ShortcutsDialog({ t, open, groups, onClose }: ShortcutsDialogPro
         <Dialog.Description className="text-xs text-kumo-subtle">
           {t('shell.shortcuts.hint')}
         </Dialog.Description>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pe-1">
           {groups.map((section) => (
             <section key={section.group} className="flex flex-col gap-1.5">
               <h3 className="text-[11px] font-medium tracking-wide text-kumo-subtle uppercase">

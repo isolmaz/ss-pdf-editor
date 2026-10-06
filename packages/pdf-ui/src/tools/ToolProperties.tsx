@@ -258,7 +258,7 @@ export function ToolProperties({
   return (
     <fieldset className={PANEL_CLASS} aria-label={t('panel.toolSettings')} disabled={disabled}>
       {hint === undefined || selectedCount > 0 ? null : (
-        <span className="pr-1 text-kumo-subtle">{t(hint)}</span>
+        <span className="pe-1 text-kumo-subtle">{t(hint)}</span>
       )}
 
       {markup && onTool !== undefined ? (

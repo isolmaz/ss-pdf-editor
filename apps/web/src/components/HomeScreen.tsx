@@ -133,7 +133,7 @@ function StartCard({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="group flex h-full flex-col rounded-lg border border-kumo-line bg-kumo-base p-4 text-left transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      className="group flex h-full flex-col rounded-lg border border-kumo-line bg-kumo-base p-4 text-start transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
     >
       <span className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-105">
         {icon}
@@ -331,14 +331,14 @@ export function HomeScreen({
                     <MagnifyingGlass
                       size={13}
                       aria-hidden="true"
-                      className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-kumo-subtle"
+                      className="pointer-events-none absolute top-1/2 start-2 -translate-y-1/2 text-kumo-subtle"
                     />
                     <input
                       type="search"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
                       placeholder={t('home.recent.search')}
-                      className="w-44 rounded-md border border-kumo-line bg-kumo-base py-1 pr-2 pl-7 text-xs placeholder:text-kumo-subtle focus:border-kumo-focus focus:outline-none"
+                      className="w-44 rounded-md border border-kumo-line bg-kumo-base py-1 pe-2 ps-7 text-xs placeholder:text-kumo-subtle focus:border-kumo-focus focus:outline-none"
                     />
                   </label>
                   <label className="flex items-center gap-1 text-xs text-kumo-subtle">
@@ -404,25 +404,25 @@ export function HomeScreen({
                 </div>
               ) : (
                 <div className="mt-3 overflow-x-auto">
-                  <table className="w-full text-left text-xs text-kumo-default">
+                  <table className="w-full text-start text-xs text-kumo-default">
                     <thead>
                       <tr className="border-b border-kumo-line text-[11px] font-medium tracking-wider text-kumo-subtle uppercase">
-                        <th scope="col" className="w-8 py-2.5 pr-2 pl-2">
+                        <th scope="col" className="w-8 py-2.5 pe-2 ps-2">
                           <span className="sr-only">{t('home.star')}</span>
                         </th>
                         <th scope="col" className="px-3 py-2.5 font-semibold">
                           {t('home.colName')}
                         </th>
-                        <th scope="col" className="hidden px-3 py-2.5 text-right font-semibold sm:table-cell">
+                        <th scope="col" className="hidden px-3 py-2.5 text-end font-semibold sm:table-cell">
                           {t('home.colPages')}
                         </th>
                         <th scope="col" className="px-3 py-2.5 font-semibold">
                           {t('home.colLastOpened')}
                         </th>
-                        <th scope="col" className="hidden px-3 py-2.5 text-right font-semibold sm:table-cell">
+                        <th scope="col" className="hidden px-3 py-2.5 text-end font-semibold sm:table-cell">
                           {t('home.colSize')}
                         </th>
-                        <th scope="col" className="w-10 py-2.5 pr-2 pl-3 text-right">
+                        <th scope="col" className="w-10 py-2.5 pe-2 ps-3 text-end">
                           <span className="sr-only">{t('home.colActions')}</span>
                         </th>
                       </tr>
@@ -430,7 +430,7 @@ export function HomeScreen({
                     <tbody className="divide-y divide-kumo-line/40">
                       {displayedItems.map((item) => (
                         <tr key={item.id} className="group transition-colors hover:bg-kumo-base/80">
-                          <td className="py-2 pr-2 pl-2 text-center">
+                          <td className="py-2 pe-2 ps-2 text-center">
                             <button
                               type="button"
                               aria-pressed={item.starred === true}
@@ -451,7 +451,7 @@ export function HomeScreen({
                               disabled={busy}
                               aria-label={t('home.openRecent', { name: item.name })}
                               onClick={() => onSelectRecent(item)}
-                              className="flex max-w-full items-center gap-2 rounded text-left hover:underline focus-visible:outline-1 focus-visible:outline-kumo-focus disabled:opacity-50"
+                              className="flex max-w-full items-center gap-2 rounded text-start hover:underline focus-visible:outline-1 focus-visible:outline-kumo-focus disabled:opacity-50"
                             >
                               <FilePdf size={18} className="shrink-0 text-pdf-accent" aria-hidden="true" />
                               <span className="max-w-[18rem] truncate">{item.name}</span>
@@ -462,7 +462,7 @@ export function HomeScreen({
                               ) : null}
                             </button>
                           </td>
-                          <td className="hidden px-3 py-2 text-right text-kumo-subtle tabular-nums sm:table-cell">
+                          <td className="hidden px-3 py-2 text-end text-kumo-subtle tabular-nums sm:table-cell">
                             {item.pageCount === undefined ? '—' : item.pageCount.toLocaleString(locale)}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-kumo-subtle">
@@ -470,10 +470,10 @@ export function HomeScreen({
                               {formatOpened(item.openedAt, locale)}
                             </time>
                           </td>
-                          <td className="hidden px-3 py-2 text-right whitespace-nowrap text-kumo-subtle tabular-nums sm:table-cell">
+                          <td className="hidden px-3 py-2 text-end whitespace-nowrap text-kumo-subtle tabular-nums sm:table-cell">
                             {formatBytes(item.sizeBytes, locale)}
                           </td>
-                          <td className="py-2 pr-2 pl-3 text-right">
+                          <td className="py-2 pe-2 ps-3 text-end">
                             {/* Visible on touch screens and to the keyboard; on a pointer
                                 device it fades in with the row. */}
                             <button

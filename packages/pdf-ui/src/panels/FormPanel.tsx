@@ -170,7 +170,7 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
                     }
                     onSelect?.(field.name);
                   }}
-                  className="flex w-full items-center gap-1.5 text-left"
+                  className="flex w-full items-center gap-1.5 text-start"
                 >
                   <span className="min-w-0 flex-1 truncate text-xs text-kumo-default">{field.name}</span>
                   {field.readOnly ? (
@@ -249,7 +249,7 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
                       onClick={() =>
                         setDrafts((current) => ({ ...current, [field.name]: valueText(field.value) }))
                       }
-                      className="mt-0.5 w-full truncate rounded-sm border border-kumo-line px-1 py-0.5 text-left text-[11px] text-kumo-default hover:bg-kumo-base"
+                      className="mt-0.5 w-full truncate rounded-sm border border-kumo-line px-1 py-0.5 text-start text-[11px] text-kumo-default hover:bg-kumo-base"
                     >
                       {valueText(field.value).length === 0 ? t('form.field.empty') : valueText(field.value)}
                     </button>

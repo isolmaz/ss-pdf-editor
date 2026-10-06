@@ -415,12 +415,16 @@ export function PdfUaView({
                             type="button"
                             aria-expanded={expanded}
                             onClick={() => toggle(rule.id)}
-                            className="flex w-full items-start gap-1.5 rounded-sm px-1.5 py-1 text-left hover:bg-kumo-recessed"
+                            className="flex w-full items-start gap-1.5 rounded-sm px-1.5 py-1 text-start hover:bg-kumo-recessed"
                           >
                             {expanded ? (
                               <CaretDown size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
                             ) : (
-                              <CaretRight size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                              <CaretRight
+                                size={12}
+                                className="mt-0.5 shrink-0 rtl:-scale-x-100"
+                                aria-hidden="true"
+                              />
                             )}
                             <span className="min-w-0 flex-1 text-xs break-words text-kumo-default">
                               {t(ruleKey.name(rule.id))}

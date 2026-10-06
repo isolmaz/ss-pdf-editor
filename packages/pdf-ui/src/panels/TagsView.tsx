@@ -557,7 +557,7 @@ function TaggedEditor({
             <option value="all">{t(key('tags.scope.all'))}</option>
           </select>
         </label>
-        <div className="ml-auto flex items-center gap-0.5" role="toolbar" aria-label={t(key('tags.toolbar'))}>
+        <div className="ms-auto flex items-center gap-0.5" role="toolbar" aria-label={t(key('tags.toolbar'))}>
           <IconButton
             label={t(key('tags.up'))}
             disabled={!canEdit || single === null || !canMove(single, -1)}
@@ -661,7 +661,7 @@ function TaggedEditor({
                 }
               }}
               style={{ paddingLeft: `${String(depth * 12 + 2)}px` }}
-              className={`flex items-center gap-1 rounded-sm py-0.5 pr-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-kumo-focus ${
+              className={`flex items-center gap-1 rounded-sm py-0.5 pe-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-kumo-focus ${
                 isSelected ? 'bg-pdf-accent/15 text-kumo-strong' : 'text-kumo-default hover:bg-kumo-recessed'
               } ${drop === 'into' ? 'ring-1 ring-pdf-accent' : ''} ${drop === 'before' ? 'border-t-2 border-pdf-accent' : ''} ${
                 drop === 'after' ? 'border-b-2 border-pdf-accent' : ''
@@ -684,7 +684,7 @@ function TaggedEditor({
                   className="flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-kumo-recessed"
                 >
                   {isCollapsed ? (
-                    <CaretRight size={10} aria-hidden="true" />
+                    <CaretRight size={10} className="rtl:-scale-x-100" aria-hidden="true" />
                   ) : (
                     <CaretDown size={10} aria-hidden="true" />
                   )}
@@ -693,7 +693,7 @@ function TaggedEditor({
                 <span className="size-4 shrink-0" aria-hidden="true" />
               )}
               <span
-                className={`w-4 shrink-0 text-right text-[10px] tabular-nums ${number === undefined ? 'text-transparent' : 'text-kumo-subtle'}`}
+                className={`w-4 shrink-0 text-end text-[10px] tabular-nums ${number === undefined ? 'text-transparent' : 'text-kumo-subtle'}`}
                 aria-hidden="true"
               >
                 {number ?? 0}
@@ -1230,7 +1230,7 @@ function UntaggedEditor({
                   } ${dropOn === row.id ? 'border-t-2 border-pdf-accent' : ''}`}
                 >
                   <div className="flex items-center gap-1">
-                    <span className="w-4 shrink-0 text-right text-[10px] text-kumo-subtle tabular-nums">
+                    <span className="w-4 shrink-0 text-end text-[10px] text-kumo-subtle tabular-nums">
                       {row.number ?? '–'}
                     </span>
                     <button
@@ -1242,7 +1242,7 @@ function UntaggedEditor({
                       }}
                       onClick={() => readingOrderStore.setSelected([row.id])}
                       aria-pressed={isSelected}
-                      className="min-w-0 flex-1 truncate rounded-sm text-left text-xs text-kumo-default"
+                      className="min-w-0 flex-1 truncate rounded-sm text-start text-xs text-kumo-default"
                     >
                       {row.candidate?.kind === 'figure'
                         ? t(key('tags.untagged.figure'))
@@ -1284,7 +1284,7 @@ function UntaggedEditor({
                     />
                   </div>
                   {row.candidate?.kind === 'figure' && row.role === 'Figure' ? (
-                    <label className="flex items-center gap-1 pl-5">
+                    <label className="flex items-center gap-1 ps-5">
                       <span className="sr-only">{t(key('tags.alt.label'))}</span>
                       <input
                         value={state.alts[row.id] ?? ''}

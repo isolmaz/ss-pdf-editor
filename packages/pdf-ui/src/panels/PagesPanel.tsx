@@ -517,7 +517,7 @@ export function PagesPanel({
               >
                 {/* Floating quick-action pill on hover (Image #2) */}
                 {editing ? (
-                  <div className="pointer-events-none absolute right-1.5 top-1.5 z-20 hidden group-hover:flex group-focus-within:flex flex-col items-center gap-0.5 rounded-md border border-kumo-line/80 bg-kumo-base/95 p-0.5 shadow-md backdrop-blur-xs">
+                  <div className="pointer-events-none absolute end-1.5 top-1.5 z-20 hidden group-hover:flex group-focus-within:flex flex-col items-center gap-0.5 rounded-md border border-kumo-line/80 bg-kumo-base/95 p-0.5 shadow-md backdrop-blur-xs">
                     <button
                       type="button"
                       title={t('context.rotateCW')}

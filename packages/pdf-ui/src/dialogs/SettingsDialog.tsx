@@ -110,7 +110,7 @@ export function SettingsDialog({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pe-1">
           <Section title={t('settings.section.appearance')}>
             <Row label={t('settings.language')}>
               <LanguageSelector t={t} variant="segmented" />
@@ -145,7 +145,7 @@ export function SettingsDialog({
                       />
                       {t(option.label)}
                     </span>
-                    <span className="pl-5 text-[11px] text-kumo-subtle">{t(option.hint)}</span>
+                    <span className="ps-5 text-[11px] text-kumo-subtle">{t(option.hint)}</span>
                   </label>
                 );
               })}

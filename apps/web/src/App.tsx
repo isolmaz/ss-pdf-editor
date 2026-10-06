@@ -5218,7 +5218,7 @@ export function App({ store }: AppProps) {
         ) : (
           <div className="flex h-full">
             {leftDock ? (
-              <div className={compactViewport ? 'absolute inset-y-0 left-0 z-40 max-w-full' : 'contents'}>
+              <div className={compactViewport ? 'absolute inset-y-0 start-0 z-40 max-w-full' : 'contents'}>
                 <DocumentPanel
                   onToggle={() => setLeftDock(false)}
                   document={activeHandle}
@@ -5259,9 +5259,9 @@ export function App({ store }: AppProps) {
                   title={t('nav.togglePages')}
                   aria-label={t('nav.togglePages')}
                   onClick={() => setLeftDock(true)}
-                  className="absolute left-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-r-md border border-l-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
+                  className="absolute start-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-e-md border border-s-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
                 >
-                  <CaretRight size={12} weight="bold" />
+                  <CaretRight size={12} weight="bold" className="rtl:-scale-x-100" />
                 </button>
               ) : null}
 
@@ -5272,9 +5272,9 @@ export function App({ store }: AppProps) {
                   title={t('tools.all')}
                   aria-label={t('tools.all')}
                   onClick={() => setRightDock(true)}
-                  className="absolute right-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-l-md border border-r-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
+                  className="absolute end-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-s-md border border-e-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
                 >
-                  <CaretLeft size={12} weight="bold" />
+                  <CaretLeft size={12} weight="bold" className="rtl:-scale-x-100" />
                 </button>
               ) : null}
 
@@ -5465,7 +5465,7 @@ export function App({ store }: AppProps) {
               />
             </div>
             {rightDock ? (
-              <div className={compactViewport ? 'absolute inset-y-0 right-0 z-40 max-w-full' : 'contents'}>
+              <div className={compactViewport ? 'absolute inset-y-0 end-0 z-40 max-w-full' : 'contents'}>
                 <Dock
                   t={t}
                   side="right"

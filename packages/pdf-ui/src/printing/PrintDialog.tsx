@@ -173,7 +173,7 @@ export function PrintDialog({ t, viewer, open, onClose, onNotice, onProduced }: 
         <Dialog.Title className="text-sm font-semibold text-kumo-strong">{t('print.title')}</Dialog.Title>n{' '}
         {/* The choices scroll, the buttons do not: on a window shorter than the form the
             Print button used to sit below the viewport with no way to reach it. */}
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pe-1">
           <Radio.Group<RangeChoice>
             legend={t('print.range')}
             value={range}

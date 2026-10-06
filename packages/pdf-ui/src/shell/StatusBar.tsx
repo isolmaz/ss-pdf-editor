@@ -129,7 +129,8 @@ export function StatusBar({
           title={`${t('shell.status.memory')}: ${formatMemoryBytes(memoryUsage.usedBytes)} / ${formatMemoryBytes(memoryUsage.budgetBytes)} (%${memPercent})`}
         >
           <Cpu size={12} aria-hidden="true" className="shrink-0 text-kumo-subtle" />
-          <span className="tabular-nums font-mono text-[11px] text-kumo-subtle">
+          {/* A measurement reads left to right in every interface direction. */}
+          <span dir="ltr" className="tabular-nums font-mono text-[11px] text-kumo-subtle">
             {formatMemoryBytes(memoryUsage.usedBytes)} / {formatMemoryBytes(memoryUsage.budgetBytes)}
           </span>
           <div className="h-1.5 w-10 overflow-hidden rounded-full border border-kumo-line bg-kumo-recessed">
@@ -165,7 +166,7 @@ export function StatusBar({
       )}
       {/* The claim takes the remaining width and truncates rather than pushing the bar
           wider than the viewport; `title` keeps the full sentence reachable. */}
-      <span className="ml-auto min-w-0 truncate" title={t('viewer.privacyNote')}>
+      <span className="ms-auto min-w-0 truncate" title={t('viewer.privacyNote')}>
         {t('viewer.privacyNote')}
       </span>
     </footer>
