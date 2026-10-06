@@ -128,6 +128,32 @@ describe('writeFreeTextAnnotations', () => {
     }
   });
 
+  it('saves only the glyphs it drew: the font program is a small subset, and the words still extract', async () => {
+    const outcome = await writeFreeTextAnnotations(await blankPdf(), [mark()], {
+      signal: new AbortController().signal,
+    });
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument(outcome.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      const dict = doc.findPage(0).get('Annots').resolve().get(0).resolve();
+      const fonts = dict.get('AP').get('N').resolve().get('Resources').get('Font').resolve();
+      const programs: number[] = [];
+      fonts.forEach((font) => {
+        const descendant = font.resolve().get('DescendantFonts').resolve().get(0).resolve();
+        programs.push(descendant.get('FontDescriptor').resolve().get('FontFile2').readStream().getLength());
+      });
+      expect(programs).toHaveLength(1);
+      // The full Noto Sans is over 600 KB; twenty-odd letters need a small fraction of it.
+      expect(programs[0]).toBeLessThan(60_000);
+      expect(outcome.bytes.byteLength).toBeLessThan(120_000);
+    } finally {
+      doc.destroy();
+    }
+    // The glyphs the subset kept are the ones the text uses: the words are still painted.
+    expect((await inkOf(outcome.bytes)).count).toBeGreaterThan(100);
+  });
+
   /** What a reader paints for page 1 at 1 px per point: the bounds of the non-white pixels and the strongest red. */
   async function inkOf(bytes: Uint8Array) {
     const mupdf = await import('mupdf');
