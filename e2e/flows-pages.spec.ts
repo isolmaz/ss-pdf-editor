@@ -283,6 +283,9 @@ test('drag and drop: a dropped PDF opens, a dropped non-PDF is refused, and a se
   page,
 }) => {
   await page.goto('/editor/');
+  // The drop target is the shell itself: a drop sent before it has rendered lands on the
+  // bare page and is never seen.
+  await expect(page.locator('input[type="file"][accept*="application/pdf"]').first()).toBeAttached();
   await dropFiles(page, [
     // Not a PDF and not a format the converter takes (a `.txt` would become a PDF).
     { name: 'notes.bin', type: 'application/octet-stream', bytes: new TextEncoder().encode('hello') },
