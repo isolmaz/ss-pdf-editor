@@ -988,8 +988,10 @@ them into the first paint.
   four point pairs (Gaussian elimination), and `estimatePageAspect`.
 - `scan-detect.ts` — `detectPage`. The picture is reduced to 400 px, grayscale, a 5×5
   Gaussian, Sobel gradients, non-maximum suppression and hysteresis. Each edge pixel votes in a
-  Hough accumulator only for lines whose normal is within 4° of its gradient; the twelve
-  strongest separated lines, plus the four edges of the frame (a page that runs out of the
+  Hough accumulator only for lines whose normal is within 6° of its gradient, and a peak is
+  read over three neighbouring distance bins (a side whose distance falls between two bins, or
+  whose gradient the 400 px reduction jitters — a page turned 45°, a hard-edged one — split its
+  votes and fell under the floor at 4° and one bin); the twelve strongest separated lines, plus the four edges of the frame (a page that runs out of the
   picture), are combined four at a time as two pairs of opposite sides. A candidate must be
   convex with angles of 45–135° and cover at least 12 % of the picture, and is scored by the
   geometric mean of how much of each side lies on an edge of the right direction, squared, times
