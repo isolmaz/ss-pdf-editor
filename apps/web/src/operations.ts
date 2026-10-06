@@ -798,9 +798,9 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'loading, serialising and adding the producer line change none of the twelve facts',
   },
   {
-    steps: ['render', 'scan', 'text', 'inspect', 'measure', 'extract-text'],
+    steps: ['render', 'scan', 'text', 'text.find', 'inspect', 'measure', 'extract-text'],
     mayChange: [],
-    why: 'a read-back pass (render, scan, text walk, inspection, measure, text export) changes nothing',
+    why: 'a read-back pass (render, scan, text walk, the find-and-replace search, inspection, measure, text export) changes nothing',
   },
   {
     steps: ['verify', 'pdfjs:verify', 'authenticate'],

@@ -83,6 +83,8 @@ export interface ShellShortcuts {
   readonly toggleRightDock: () => void;
   readonly reading: () => void;
   readonly documentProperties: () => void;
+  /** Opens find and replace; `false` when no editable document is open. */
+  readonly findReplace?: () => boolean;
   /** Deletes the common layer's whole selection; `false` when there is nothing to delete. */
   readonly deleteSelection?: () => boolean;
   /** Selects every mark of the common selection; `false` unless the select tool can answer. */
@@ -216,6 +218,15 @@ export const SHELL_SHORTCUTS: readonly ShellShortcut[] = [
     labelKey: 'ann.selectAll',
     chords: [{ key: 'a', accel: true }],
     run: (shortcuts) => shortcuts.selectAllMarks?.() ?? false,
+  },
+  {
+    // `Ctrl+H`, the find-and-replace chord of every word processor; `Ctrl+F` stays the
+    // viewer's find bar.
+    id: 'edit.find-replace',
+    group: 'edit',
+    labelKey: 'cmd.findReplace.label',
+    chords: [{ key: 'h', accel: true }],
+    run: (shortcuts) => shortcuts.findReplace?.() ?? false,
   },
 
   // View

@@ -53,9 +53,17 @@
  * resolves elsewhere is refused here rather than becoming a third-party request.
  */
 
-import type { PDFPage as MupdfPage, PDFAnnotation, Quad, Rect } from 'mupdf';
+import type { PDFPage as MupdfPage, PDFAnnotation, PDFObject, Quad, Rect } from 'mupdf';
 import { ToolError, toToolError } from 'pdf-shared';
 import type { TextEditErase, TextEditInsert, TextEditInsertLine, TextEditRequest } from 'pdf-text-engine';
+import {
+  DOCUMENT_FONT_PREFIX,
+  type DocumentFont,
+  encodes,
+  findFont,
+  pageFonts,
+  showText,
+} from '../engines/doc-fonts';
 import {
   loadMupdf,
   MUPDF_FULL_SAVE_OPTIONS,
@@ -432,6 +440,11 @@ async function eraseStage(
           });
         }
 
+        // The document's own fonts the new lines are drawn with, found *before* the
+        // erase: removing the last text that used a font can drop it from the page's
+        // resources, and the compacting save would then drop the font itself.
+        const kept = keptFonts(page.getObject(), work.lines);
+
         // `black_boxes = false`: the erase is a content operation, not a painted
         // rectangle. Images stay (`REDACT_IMAGE_NONE` — spike case d kept a
         // 460 x 200 image pixel-identical) and so does line art
@@ -443,6 +456,12 @@ async function eraseStage(
           mupdf.PDFPage.REDACT_LINE_ART_NONE,
           mupdf.PDFPage.REDACT_TEXT_REMOVE,
         );
+        const after = kept.length === 0 ? [] : pageFonts(page.getObject(), { forms: false });
+        for (const font of kept) {
+          if (!after.some((candidate) => font.names.some((name) => candidate.names.includes(name)))) {
+            addPageResource(doc, page.getObject(), 'Font', 'TEKeep', font.ref);
+          }
+        }
       } finally {
         page.destroy();
       }
@@ -472,8 +491,36 @@ async function eraseStage(
   return { bytes: produced, pageCount, boxes, erased, rectCount };
 }
 
-/** A face a line can be drawn with: embedded from bytes, or a standard-14 face. */
-type LineFace = EmbeddedFace | StandardFace;
+/** One of the document's own fonts, drawn with the codes it already uses. */
+interface DocumentFace {
+  readonly ref: PDFObject;
+  readonly name: string;
+  readonly font: DocumentFont;
+}
+
+/** A face a line can be drawn with: embedded from bytes, a standard-14 face, or the document's own. */
+type LineFace = EmbeddedFace | StandardFace | DocumentFace;
+
+/** The show operator for `text` in `face`. */
+function show(face: LineFace, text: string): string {
+  return 'font' in face ? showText(face.font, text) : `${face.encode(text)} Tj`;
+}
+
+/** The document fonts `lines` name (`doc:<name>`), as the page refers to them now. */
+function keptFonts(page: PDFObject, lines: readonly TextEditInsertLine[]): readonly DocumentFont[] {
+  const names = new Set(
+    lines
+      .filter((line) => line.fontId.startsWith(DOCUMENT_FONT_PREFIX))
+      .map((line) => line.fontId.slice(DOCUMENT_FONT_PREFIX.length)),
+  );
+  if (names.size === 0) return [];
+  // Page-level fonts only: see `pageFonts` on resolving forms in a document that is
+  // about to be redacted.
+  const fonts = pageFonts(page, { forms: false });
+  return [...names]
+    .map((name) => findFont(fonts, name))
+    .filter((font): font is DocumentFont => font !== null);
+}
 
 /**
  * Insert stage (`4e`): embed, draw, write.
@@ -522,6 +569,8 @@ async function writeStage(
         const [red, green, blue] = hexColour(line.color);
         const font = await lineFont(
           opened,
+          page,
+          work.pageIndex,
           line,
           fontUrls,
           fonts,
@@ -547,7 +596,7 @@ async function writeStage(
           if (placement.text === '') continue;
           const origin = topLeftToUserPoint(box, placement.x, line.y);
           operators.push(
-            `q BT ${num(red)} ${num(green)} ${num(blue)} rg /${key} ${num(size)} Tf 1 0 0 1 ${num(origin.x)} ${num(origin.y)} Tm ${font.encode(placement.text)} Tj ET Q`,
+            `q BT ${num(red)} ${num(green)} ${num(blue)} rg /${key} ${num(size)} Tf 1 0 0 1 ${num(origin.x)} ${num(origin.y)} Tm ${show(font, placement.text)} ET Q`,
           );
         }
         if (words !== null) justifiedLines += 1;
@@ -592,6 +641,8 @@ async function writeStage(
  * one read back from the document (a subset has no cmap: spike #3 variant A).
  *
  * Resolution order, and the report carries whatever the fallback cost:
+ *   0. the id is `doc:<name>` → the page's own font of that name, when it has a code
+ *      for every character of the line (`engines/doc-fonts.ts`); nothing is embedded;
  *   1. the id is in `request.fonts` → fetch that file (same origin) and embed it;
  *   2. the id names a standard face and this line's text is WinAnsi-encodable → that
  *      standard face (nothing is embedded; the text stays searchable);
@@ -602,6 +653,8 @@ async function writeStage(
  */
 async function lineFont(
   opened: WritableDocument,
+  page: PDFObject,
+  pageIndex: number,
   line: TextEditInsertLine,
   fontUrls: Readonly<Record<string, string>>,
   fonts: Map<string, LineFace>,
@@ -611,6 +664,22 @@ async function lineFont(
 ): Promise<LineFace> {
   const { mupdf, doc } = opened;
   const requested = line.fontId;
+  if (requested.startsWith(DOCUMENT_FONT_PREFIX)) {
+    const name = requested.slice(DOCUMENT_FONT_PREFIX.length);
+    const key = `doc:${pageIndex}:${name}`;
+    let face = fonts.get(key);
+    if (face === undefined) {
+      const font = findFont(pageFonts(page), name);
+      if (font !== null) {
+        face = { ref: font.ref, name: font.names[0] ?? name, font };
+        fonts.set(key, face);
+      }
+    }
+    const text = line.words?.map((word) => word.text).join(' ') ?? line.text;
+    if (face !== undefined && 'font' in face && encodes(face.font, text)) return face;
+    substitutions.add(name);
+    return notoFace(opened, fonts, embeddedFonts);
+  }
   const url = typeof fontUrls[requested] === 'string' ? fontUrls[requested] : undefined;
   if (url !== undefined) {
     const cached = fonts.get(`file:${requested}`);
@@ -639,9 +708,18 @@ async function lineFont(
   } else {
     substitutions.add(requested);
   }
+  return notoFace(opened, fonts, embeddedFonts);
+}
+
+/** Noto Sans from the pinned asset, embedded once per document. */
+async function notoFace(
+  opened: WritableDocument,
+  fonts: Map<string, LineFace>,
+  embeddedFonts: Set<string>,
+): Promise<LineFace> {
   const cached = fonts.get('noto');
   if (cached !== undefined) return cached;
-  const noto = embedFontFile(mupdf, doc, NOTO_NAME, await notoSansBytes());
+  const noto = embedFontFile(opened.mupdf, opened.doc, NOTO_NAME, await notoSansBytes());
   fonts.set('noto', noto);
   embeddedFonts.add(noto.name);
   return noto;
@@ -696,11 +774,12 @@ async function verifyPages(
          * verification on every successful edit (measured: the dialog reported
          * `page 0: text still starts inside an erased rectangle: “ÜSKÜDAR şubesi …”`).
          */
-        const ours = (work?.lines ?? []).map((line) => ({
-          text: searchableText(line.text),
-          x: line.x,
-          y: line.y,
-        }));
+        // A justified line is drawn word by word, and a reader may report each word as
+        // an item of its own: every word placement is ours too.
+        const ours = (work?.lines ?? []).flatMap((line) => [
+          { text: searchableText(line.text), x: line.x, y: line.y },
+          ...(line.words ?? []).map((word) => ({ text: searchableText(word.text), x: word.x, y: line.y })),
+        ]);
         for (const item of content.items) {
           if (item.text.trim() === '') continue;
           if (!userRects.some((rect) => insideRect(item.x, item.y, rect))) continue;
@@ -724,12 +803,19 @@ async function verifyPages(
       // needle that also occurred elsewhere on the page may survive once: only the
       // occurrence inside the rectangles had to disappear, so the count is what is
       // compared in that case.
+      // The lines this operation drew are subtracted first: a replacement that
+      // contains the old text (`2024` → `2024–2025`) puts the needle back on purpose.
       const before = searchableText(page.before);
+      const drawn = (work?.lines ?? []).map((line) => searchableText(line.text));
       for (const needle of page.covered) {
         const wanted = searchableText(needle);
         if (wanted === '') continue;
         const occurrencesBefore = countOccurrences(before, wanted);
-        const occurrencesAfter = countOccurrences(text, wanted);
+        const occurrencesAfter = Math.max(
+          0,
+          countOccurrences(text, wanted) -
+            drawn.reduce((sum, line) => sum + countOccurrences(line, wanted), 0),
+        );
         if (occurrencesAfter === 0 || (occurrencesBefore > 1 && occurrencesAfter < occurrencesBefore)) {
           removed.push(needle);
         } else {

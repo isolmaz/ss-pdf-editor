@@ -485,6 +485,11 @@ function winAnsiByte(codePoint: number): number | null {
   return WIN_ANSI_HIGH.get(codePoint) ?? null;
 }
 
+/** Whether WinAnsiEncoding has a code for every character of the text. */
+export function canEncodeWinAnsi(value: string): boolean {
+  return [...value].every((character) => winAnsiByte(character.codePointAt(0) ?? 0) !== null);
+}
+
 /** A standard-14 text face, drawn through WinAnsiEncoding; nothing is embedded. */
 export interface StandardFace {
   readonly ref: PDFObject;
@@ -506,8 +511,7 @@ export function standardFace(mupdf: Mupdf, doc: PDFDocument, name: string): Stan
   return {
     ref,
     name,
-    canEncode: (value) =>
-      [...value].every((character) => winAnsiByte(character.codePointAt(0) ?? 0) !== null),
+    canEncode: canEncodeWinAnsi,
     encode(value) {
       let hex = '';
       for (const character of value) {

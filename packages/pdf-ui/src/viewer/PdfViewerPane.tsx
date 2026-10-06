@@ -144,6 +144,8 @@ export interface PdfViewerPaneProps {
   /** The pane no longer uses this handle, including its retained painted predecessor. */
   readonly onDocumentReleased?: (document: PdfDocumentHandle) => void;
   readonly onCurrentPageChange?: (pageIndex: number) => void;
+  /** Present when the document can be edited: the find bar offers find and replace with its query. */
+  readonly onReplace?: (query: string) => void;
   /** Fires whenever pdf.js changes the scale (zoom buttons, fit, resize). */
   readonly onScaleChange?: (scale: number) => void;
   /**
@@ -279,6 +281,7 @@ export function PdfViewerPane({
   onModifiedChange,
   overlay,
   onLayoutChange,
+  onReplace,
 }: PdfViewerPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   /** The overlay host: inside the scroll container, sized to the laid-out pages. */
@@ -1132,6 +1135,15 @@ export function PdfViewerPane({
           >
             ↓
           </button>
+          {onReplace === undefined ? null : (
+            <button
+              type="button"
+              onClick={() => onReplace(find.query)}
+              className="h-6 rounded-sm px-2 text-xs text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+            >
+              {t('findReplace.fromFindBar')}
+            </button>
+          )}
           <button
             type="button"
             aria-label={t('viewer.find.close')}

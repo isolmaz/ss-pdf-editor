@@ -10,6 +10,9 @@ export const errorsPart = {
   'error.selection-empty.hint': 'Select one or more pages from the Pages panel.',
   'error.no-text.message': 'The selected pages hold no readable text.',
   'error.no-text.hint': 'The pages look scanned; run OCR first and try again.',
+  'error.no-match.message': 'The search text was not found on the selected pages.',
+  'error.no-match.hint':
+    'Check the spelling, or turn off match case and whole word and try again. Scanned pages need OCR first.',
   'error.password-policy.message': 'Operation halted by password policy.',
   'error.password-policy.hint': 'Cannot encrypt without an open password.',
 } as const;
