@@ -19,7 +19,7 @@ import {
   markerFor,
   markerTargets,
   readAnnotations,
-  retagTextMarkup,
+  settleEngineMarks,
 } from './annotations';
 
 const pdfjs = await loadPdfjs();
@@ -64,27 +64,31 @@ async function annotationsOf(bytes: Uint8Array): Promise<readonly ExistingAnnota
 }
 
 /**
- * Per annotation with a comment (`Subtype|marker line`): whether it carries a normal
- * appearance stream, and its `/CA` (pdf.js does not report opacity for every kind).
+ * Per annotation this app named (`Subtype|marker`): whether it carries a normal appearance
+ * stream, its `/CA` (pdf.js does not report opacity for every kind) and its `/Contents`.
  */
-async function appearances(bytes: Uint8Array): Promise<Record<string, { ap: boolean; ca: number | null }>> {
+async function appearances(
+  bytes: Uint8Array,
+): Promise<Record<string, { ap: boolean; ca: number | null; contents: string | null }>> {
   const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
   if (doc === null) throw new Error('not a PDF');
   try {
-    const found: Record<string, { ap: boolean; ca: number | null }> = {};
+    const found: Record<string, { ap: boolean; ca: number | null; contents: string | null }> = {};
     for (let page = 0; page < doc.countPages(); page += 1) {
       const annots = doc.findPage(page).get('Annots');
       if (annots.isNull()) continue;
       const array = annots.resolve();
       for (let index = 0; index < array.length; index += 1) {
         const dict = array.get(index).resolve();
-        const contents = dict.get('Contents');
-        if (contents.isNull()) continue;
+        const name = dict.get('NM');
+        if (name.isNull()) continue;
         const ap = dict.get('AP');
         const ca = dict.get('CA');
-        found[`${dict.get('Subtype').asName()}|${contents.asString().split('\n')[0]}`] = {
+        const contents = dict.get('Contents');
+        found[`${dict.get('Subtype').asName()}|${name.asString()}`] = {
           ap: !ap.isNull() && ap.resolve().get('N').isStream(),
           ca: ca.isNull() ? null : ca.asNumber(),
+          contents: contents.isNull() ? null : contents.asString(),
         };
       }
     }
@@ -106,10 +110,12 @@ describe('writeShapeAnnotations', () => {
     expect(out.written).toEqual(shapes.map((shape) => markerFor(shape.id)));
 
     const read = await annotationsOf(out.bytes);
-    const byMarker = (id: string) => read.find((entry) => entry.contents.startsWith(markerFor(id)));
+    const byMarker = (id: string) => read.find((entry) => entry.marker === id);
     // Page space is top-left; the file is bottom-left, padded by half the stroke.
     expect(byMarker('sq')).toMatchObject({ subtype: 'Square', rect: [39, 339, 201, 441], color: '#ff0000' });
-    expect(byMarker('sq')?.contents).toContain('Şişli notu');
+    // The comment is the author's words alone: the marker is the annotation's `/NM`, and
+    // `/Contents` is what every other reader prints.
+    expect(byMarker('sq')?.contents).toBe('Şişli notu');
     expect(byMarker('ci')).toMatchObject({ subtype: 'Circle', color: '#0000ff' });
     // pdf.js reports a line's coordinates normalised, so only the span is checked here.
     expect(byMarker('li')).toMatchObject({ subtype: 'Line', vertices: [50, 100, 300, 150] });
@@ -118,6 +124,12 @@ describe('writeShapeAnnotations', () => {
     const drawn = Object.values(await appearances(out.bytes));
     expect(drawn.map((entry) => entry.ap)).toEqual([true, true, true, true]);
     expect(drawn.map((entry) => entry.ca)).toEqual([0.5, 0.5, 0.5, 0.5]);
+    expect(drawn.map((entry) => entry.contents)).toEqual([
+      'Şişli notu',
+      'Şişli notu',
+      'Şişli notu',
+      'Şişli notu',
+    ]);
   });
 
   it('paints each shape with its own outline, stroke width and colour, and keeps a line in drag order', async () => {
@@ -286,31 +298,36 @@ async function engineWritten(): Promise<Uint8Array> {
   });
 }
 
-describe('retagTextMarkup', () => {
+describe('settleEngineMarks', () => {
   it('turns each session highlight into its own kind and leaves the popup and the rest alone', async () => {
     const marks = [
       mark({ id: 'u1', kind: 'underline', quads: [[40, 60, 200, 90]] }),
       mark({ id: 's1', kind: 'strikeout', quads: [[40, 120, 200, 150]] }),
       mark({ id: 'q1', kind: 'squiggly', quads: [[40, 180, 200, 210]] }),
     ];
-    const out = await retagTextMarkup(await engineWritten(), marks, run);
+    const out = await settleEngineMarks(await engineWritten(), marks, run);
     expect(out.retagged).toHaveLength(3);
     const subtypes = (await annotationsOf(out.bytes)).map((entry) => entry.subtype).sort();
     expect(subtypes).toEqual(['Highlight', 'Popup', 'Squiggly', 'StrikeOut', 'Underline']);
     const drawn = await appearances(out.bytes);
     expect(drawn[`Underline|${markerFor('u1')}`]?.ap).toBe(true);
     expect(drawn[`Squiggly|${markerFor('q1')}`]?.ap).toBe(true);
+    // The engine could only tag the comment with the marker; settled, the marker is the
+    // name and the comment — the mark's and its popup's — is the author's words alone.
+    expect(drawn[`Underline|${markerFor('u1')}`]?.contents).toBe('Şişli notu');
+    const comments = (await annotationsOf(out.bytes)).map((entry) => entry.contents);
+    expect(comments.some((text) => text.includes('pdf-editor-ann:'))).toBe(false);
   });
 });
 
-describe('retagTextMarkup appearance', () => {
+describe('settleEngineMarks appearance', () => {
   it('draws an underline at the baseline, a strike through the middle and a zigzag, each in its colour', async () => {
     const marks = [
       mark({ id: 'u1', kind: 'underline', quads: [[40, 60, 200, 90]], color: '#ff0000' }),
       mark({ id: 's1', kind: 'strikeout', quads: [[40, 120, 200, 150]], color: '#0000ff' }),
       mark({ id: 'q1', kind: 'squiggly', quads: [[40, 180, 200, 210]], color: '#00aa00', thickness: 4 }),
     ];
-    const out = await retagTextMarkup(await engineWritten(), marks, run);
+    const out = await settleEngineMarks(await engineWritten(), marks, run);
     const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
     try {
       const pixmap = doc.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
@@ -357,9 +374,7 @@ describe('markerTargets', () => {
       run,
     );
     const read = await annotationsOf(bytes);
-    const highlight = read.find(
-      (entry) => entry.subtype === 'Highlight' && entry.contents.startsWith(markerFor('u1')),
-    );
+    const highlight = read.find((entry) => entry.subtype === 'Highlight' && entry.marker === 'u1');
     // `s1` is on page 1, not page 2: a marker is only looked for on the page it names.
     expect(found).toEqual([{ pageIndex: 0, id: highlight?.id, markId: 'u1' }]);
   });

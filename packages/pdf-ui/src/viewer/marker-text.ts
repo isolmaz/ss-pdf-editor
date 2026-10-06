@@ -1,12 +1,11 @@
 /**
  * The app's identity marker, kept out of what pdf.js shows.
  *
- * Every annotation this app writes carries `pdf-editor-ann:<id>` at the head of its
- * `/Contents` (`markerFor` in `pdf-core/ops/annotations.ts`): it is how a re-read finds
- * the mark again. pdf.js renders `/Contents` verbatim into the hover popup it builds for
- * a markup annotation, so the reader saw an opaque id above their own words. The file
- * keeps the marker; the page shows `commentText`, the same reading the comments panel
- * uses.
+ * This app names its annotations `pdf-editor-ann:<id>` (`/NM`). Files written before the
+ * name carried it have the marker at the head of `/Contents` instead, and pdf.js renders
+ * `/Contents` verbatim into the hover popup it builds for a markup annotation, so the
+ * reader saw an opaque id above their own words. The page shows `commentText`, the same
+ * reading `readAnnotations` gives the comments panel.
  *
  * pdf.js builds a popup when it is first shown, long after the annotation layer was
  * rendered, so the popups are watched for rather than patched once.

@@ -186,7 +186,9 @@ export async function addImageStamp(
         T: text(doc, request.author),
         M: text(doc, now),
         CreationDate: text(doc, now),
-        Contents: text(doc, label.length > 0 ? `${markerFor(request.id)} ${label}` : markerFor(request.id)),
+        // The marker names the stamp; `/Contents` carries only the label a reader shows.
+        NM: text(doc, markerFor(request.id)),
+        ...(label.length > 0 ? { Contents: text(doc, label) } : {}),
         AP: { N: appearance },
       });
       annotsOf(doc, page, true)?.push(dict);

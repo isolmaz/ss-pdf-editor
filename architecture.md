@@ -344,7 +344,7 @@ had to stay green. The moves, and the defects they fixed on the way:
 - moving and turning persisted annotations (`ops/annotation-transform.ts`), steps
   `load` / `annotations.transform` / `save` / `verify`;
 - the session annotation writers the engine cannot finish: underline/strikeout/squiggly
-  retag and marker resolution (`ops/annotations.ts`), shapes and marker strokes
+  settle step (marker into `/NM`, subtype retag) and marker resolution (`ops/annotations.ts`), shapes and marker strokes
   (`ops/annotation-shapes.ts`) and typed text (`ops/annotation-freetext.ts`). They append
   to `/Annots` only; pdf-lib's `addAnnot` also rewrapped the page's content in `q`/`Q`;
 - measurement annotations (`ops/measure.ts`), whose `/M` is now a PDF date (the pdf-lib
@@ -364,7 +364,7 @@ had to stay green. The moves, and the defects they fixed on the way:
   `/Stamp` whose `/AP /N` form draws the PNG (alpha kept as a soft mask) or JPEG over
   `BBox [0 0 w h]`. On a turned page the form carries the counter-turn as its `/Matrix`
   and the `/Rect` extents are swapped, so the picture stands upright on screen. `/Name` is
-  `SsSignature`, `SsInitials` or `SsImage`, and `/Contents` holds the marker plus the kind.
+  `SsSignature`, `SsInitials` or `SsImage`, `/NM` is the marker and `/Contents` the kind.
   Resizing (`resizeImageStamp`, step `annotations.resize`) writes `/Rect` only — readers
   scale the appearance to it — and refuses anything that is not a `/Stamp`, whose geometry
   lives in more keys than the rectangle;
@@ -542,7 +542,7 @@ file's own `/Text` note.
 the engine's `FREETEXT` writer uses a WinAnsi base font with no `ş ğ ı İ`, so the `freetext`
 kind is written through MuPDF with the embedded Noto Sans in its `/AP`. `planFreeTextLayout()` (pure) wraps the text inside the box — breaking a
 word wider than the box between characters rather than letting the reader clip it — and the
-writer re-opens its output and requires every mark back as a `/FreeText` with its marker and
+writer re-opens its output and requires every mark back as a `/FreeText` named by its marker and
 an appearance, or throws `verification-failed`. It reports the `annotations.freetext` step,
 which `OPERATION_TABLE`'s `annotations.*` entry declares. On a page with its own `/Rotate`
 the overlay stores the box unturned about the centre the user typed at and carries the
@@ -1540,11 +1540,14 @@ at its final size (a signature 160 pt wide, initials 60 pt, an image at 0.75 pt 
 never more than 60 % of the page), clamped inside the page, and a click on a page surface
 answers the page, the centre in app space and the upright size. Escape cancels it.
 
-pdf.js renders `/Contents` verbatim into the hover popup of a markup annotation, and every
-annotation this app writes carries its `pdf-editor-ann:<id>` marker there. `viewer/marker-text.ts`
-watches the scroll container with a `MutationObserver` and rewrites popup text through
-`commentText` — the reading the comments panel already used — so the file keeps the marker
-and the page never shows it.
+Every annotation this app writes is named `pdf-editor-ann:<id>` (`/NM`), and its
+`/Contents` — what every reader prints — holds the author's words alone. The engine (pdf.js)
+cannot write `/NM`, so its marks carry the marker at the head of `/Contents` for one step and
+`settleEngineMarks` moves it into the name before the file leaves; `readAnnotations` reads the
+names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`.
+Files written before the name carried it still have the marker in `/Contents`: `markerOf` and
+`commentText` read that too, and `viewer/marker-text.ts` watches the scroll container with a
+`MutationObserver` and rewrites such popup text through `commentText`, so the page never shows it.
 
 New annotation gestures are controlled by `AnnotationLayer`; pdf.js editor creation is
 disabled. Text selection remains native. Pen/marker gestures store one continuous point
@@ -1912,8 +1915,8 @@ Two rules make that list trustworthy:
 - **Namespaced keys.** `markTargetKey()` is `family:id`, except for the file's own
   annotations, where it is `existing:<pageIndex>:<id>`: a PDF annotation id is unique per
   page, and it must never be able to collide with a session mark's `crypto.randomUUID()`.
-- **One entry per mark, whichever side it is on.** Our own writer stamps
-  `pdf-editor-ann:<id>` into the annotation's `/Contents` (`ops/annotations.ts`), so a file
+- **One entry per mark, whichever side it is on.** Our own writer names the annotation
+  `pdf-editor-ann:<id>` (`/NM`, read back as `ExistingAnnotation.marker`), so a file
   annotation carrying that marker *is* the session mark with the same id: the persisted entry
   is listed — deleting it is what removes bytes — and the pending copy is dropped, so the
   count the strip shows and what deletion removes are the same number.
@@ -2297,7 +2300,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 
 | Layer | Mechanism |
 |---|---|
-| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, save router, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, retagged text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
+| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, save router, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, settled (renamed and retagged) text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
 | Model integrity | `tools/audit/typecheck-model.cjs` re-runs the root compiler options over `pdf-model`, `pdf-shared`, `pdf-text-engine` and `apps/web/src/drafts.ts` with paths mapped to source, so a regression that makes the model depend on the app fails even if the bundler would resolve it. The gate runs it as its own step |
 | Mark selection and editing | `mark-interaction.test.ts` (projection, hit tests, identity), `annotation-remove.test.ts` (deletion and refusal), `annotation-transform.test.ts` (geometry and independent MuPDF raster readback), `annotations.test.ts` (recovered engine records), and history/save cases in `apps/web/src/operations.test.ts` |
 | Parity features | One `*.test.ts` beside each module, against bytes re-read by MuPDF or pdf.js: comment replies and review states (`annotation-review`, `annotation-threads`), XFDF/FDF/JSON round trips with Turkish text, font subsets (`mupdf-write`), the locale registry and the Phosphor weight plugin; find and replace, the glyph-less font, Office and text conversion (a damaged part becomes a loss note), Office export and page layout; CRLs, RFC 3161 timestamps and the signature evidence (`signature-revocation.fixtures.ts` builds the PKI); form-field detection and XFA (`xfa-data`, `xfa-form`, `xfa-flatten`); the scan geometry, detector (every turn, antialiased and hard-edged), warp and filters; sanitize per category; one real Ghostscript PDF/A-2b run checked by `checkPdfA`, the PDF/UA rules and the structure editor (`ua.fixtures.ts`); and `useShortcuts.test.ts`, which refuses a chord two rows share |

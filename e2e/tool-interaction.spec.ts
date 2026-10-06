@@ -1189,6 +1189,12 @@ test.describe('a note written by the note tool', () => {
         annotation.subtype === 'Text' && annotation.contents.includes('Note that must survive the file'),
     );
     expect(writtenNote).toBeDefined();
+    // `/Contents` is what every reader prints: the words alone, never this app's
+    // `pdf-editor-ann:<id>` identity, which is the annotation's name.
+    expect(writtenNote?.contents).toBe('Note that must survive the file');
+    expect(
+      written.annotations.filter((annotation) => annotation.contents.includes('pdf-editor-ann:')),
+    ).toEqual([]);
     const [left = 0, bottom = 0, right = 0, top = 0] = writtenNote?.rect ?? [];
     expect(
       await inkWithin(produced, writtenNote?.pageIndex ?? 0, [left, bottom, right, top]),

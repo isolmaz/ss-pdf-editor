@@ -44,7 +44,7 @@ import {
   transformPoint,
 } from 'pdf-core/ops/annotation-transform';
 import type { AnnotationMark, ExistingAnnotation } from 'pdf-core/ops/annotations';
-import { annotationKindKey, markerId } from 'pdf-core/ops/annotations';
+import { annotationKindKey } from 'pdf-core/ops/annotations';
 import type { MeasureMark } from 'pdf-core/ops/measure';
 import type { RedactRect } from 'pdf-core/ops/redact';
 import type { MessageKey } from 'pdf-shared';
@@ -101,9 +101,9 @@ function isDeletableAnnotation(annotation: ExistingAnnotation): boolean {
 /**
  * Every session mark id the file already carries.
  *
- * Read from the one marker convention our writers share: `markerFor` stamps
- * `pdf-editor-ann:<id>` into `/Contents` for text marks, shapes and measurements
- * alike (`ops/annotations.ts`, `ops/annotation-shapes.ts`, `ops/measure.ts`), so one
+ * Read from the one marker convention our writers share: `markerFor` names every
+ * annotation we write `pdf-editor-ann:<id>` (`/NM`; older files carry it in `/Contents`),
+ * text marks, shapes and measurements alike (`ExistingAnnotation.marker`), so one
  * read of the file's annotations names a persisted copy of any of those families. A
  * mark whose id is in this set has bytes; it is not pending any more.
  *
@@ -115,8 +115,7 @@ function isDeletableAnnotation(annotation: ExistingAnnotation): boolean {
 function persistedMarkIds(existing: readonly ExistingAnnotation[]): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const annotation of existing) {
-    const marker = markerId(annotation.contents);
-    if (marker !== null) ids.add(marker);
+    if (annotation.marker !== null) ids.add(annotation.marker);
   }
   return ids;
 }
@@ -348,8 +347,8 @@ export function buildMarkTargets(input: MarkTargetInput): readonly MarkTarget[] 
   const targets: MarkTarget[] = [];
 
   /**
-   * Our own marks as the file carries them: the writers stamp
-   * `pdf-editor-ann:<id>` into `/Contents` (`markerFor`), so a file annotation
+   * Our own marks as the file carries them: the writers name them
+   * `pdf-editor-ann:<id>` (`markerFor`, read back as `ExistingAnnotation.marker`), so a file annotation
    * carrying that marker *is* the session mark of the same id. The pair is listed once
    * — as the persisted entry, because that is the one whose deletion removes bytes —
    * and the pending copy is dropped below, the same reading `normalizePendingMarks`

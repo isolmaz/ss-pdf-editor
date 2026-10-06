@@ -32,14 +32,13 @@ import {
   pageObjects,
   pdfDate,
   readName,
-  readText,
   resolved,
   saveRewrite,
   subsetEmbeddedFaces,
   text,
   visibleBox,
 } from '../engines/mupdf-write';
-import { type AnnotationMark, contentsFor, hexToRgb, markerFor, markerId } from './annotations';
+import { type AnnotationMark, hexToRgb, markerFor, markerOf } from './annotations';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 /** The size a new text box starts at, in points. */
@@ -219,7 +218,10 @@ export async function writeFreeTextAnnotations(
           CA: opacity,
           T: text(doc, mark.author),
           M: text(doc, pdfDate(new Date(mark.createdAt))),
-          Contents: text(doc, contentsFor(mark)),
+          // The typed words, and the marker as the annotation's name: `/Contents` is what
+          // every reader prints.
+          NM: text(doc, markerFor(mark.id)),
+          Contents: text(doc, mark.contents.trim()),
           AP: { N: appearance },
         });
         annotsOf(doc, page, true)?.push(dict);
@@ -270,7 +272,7 @@ async function verifyFreeText(
       for (let position = 0; position < annots.length; position += 1) {
         const dict = resolved(annots.get(position));
         if (dict === null || !dict.isDictionary() || readName(dict.get('Subtype')) !== 'FreeText') continue;
-        const id = markerId(readText(dict.get('Contents')) ?? '');
+        const id = markerOf(dict);
         const appearance = resolved(dict.get('AP'));
         // A stream is recognised on its reference (`engines/mupdf-write.ts`).
         if (id === null || appearance === null || !appearance.get('N').isStream()) continue;

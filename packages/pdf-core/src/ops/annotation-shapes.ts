@@ -48,7 +48,6 @@ import {
   type AnnotationWriteHandle,
   annotationIdsOf,
   boxesOf,
-  contentsFor,
   type ExistingAnnotation,
   hexToRgb,
   isStrokedHighlight,
@@ -57,7 +56,7 @@ import {
   markerTargets,
   markRect,
   OWNED_KINDS,
-  retagTextMarkup,
+  settleEngineMarks,
   writeAnnotations,
 } from './annotations';
 import {
@@ -348,7 +347,10 @@ function commonFields(doc: PDFDocument, page: PDFObject, mark: AnnotationMark): 
     Border: [0, 0, 0],
     T: text(doc, mark.author),
     M: text(doc, pdfDate(new Date(mark.createdAt))),
-    Contents: text(doc, contentsFor(mark)),
+    // The marker is the annotation's name; `/Contents` is what every reader prints, so it
+    // holds the author's words and nothing else.
+    NM: text(doc, markerFor(mark.id)),
+    ...(mark.contents.trim() === '' ? {} : { Contents: text(doc, mark.contents.trim()) }),
   };
 }
 
@@ -687,8 +689,9 @@ function markerAppearance(
  *  1. **Engine step** — text markup and ink go into the document through
  *     `saveDocument()`, which writes the dictionaries and their appearance
  *     streams and keeps the file incremental.
- *  2. **Subtype step** — underline / strikeout / squiggly are the same geometry
- *     under a different `/Subtype`, and the engine only writes `/Highlight`.
+ *  2. **Settle step** — the engine's marks get their marker as `/NM` (it can only put
+ *     it in `/Contents`), and underline / strikeout / squiggly, the same geometry
+ *     under a different `/Subtype`, are retagged: the engine only writes `/Highlight`.
  *  3. **Shape step** — squares, circles and lines have no engine writer at all.
  *  4. **Marker step** — a highlight painted as a stroke (the marker) is built
  *     here too, because the engine fills polygons and would paint the stroke's
@@ -777,10 +780,10 @@ export async function writeAnnotationsToFile(
     steps.push(...written.report.steps);
     notes.push(...written.report.notes);
 
-    const retagged = await retagTextMarkup(bytes, engineMarks, context);
-    bytes = retagged.bytes;
-    steps.push(...retagged.report.steps);
-    notes.push(...retagged.report.notes);
+    const settled = await settleEngineMarks(bytes, engineMarks, context);
+    bytes = settled.bytes;
+    steps.push(...settled.report.steps);
+    notes.push(...settled.report.notes);
   } else {
     bytes = await handle.saveDocument();
   }

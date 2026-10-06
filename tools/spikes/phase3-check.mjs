@@ -782,8 +782,13 @@ try {
     }
     if (!found.some((annotation) => annotation.contents.includes('Ada Lovelace notu')))
       throw new Error('comment body lost');
-    if (!found.some((annotation) => annotation.contents.startsWith('pdf-editor-ann:'))) {
+    if (!found.some((annotation) => annotation.name.startsWith('pdf-editor-ann:'))) {
       throw new Error('no pdf-editor-ann marker in the exported annotations');
+    }
+    // The marker is the annotation's name; a comment that still carries it shows every
+    // other reader an opaque id ahead of the words.
+    if (found.some((annotation) => annotation.contents.includes('pdf-editor-ann:'))) {
+      throw new Error('a pdf-editor-ann marker leaked into /Contents');
     }
     const pageCount = reopened.pageCount;
     if (pageCount !== FIXTURE_PAGES - 1) {

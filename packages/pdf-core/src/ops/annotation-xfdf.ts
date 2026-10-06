@@ -43,7 +43,6 @@ import {
   boxesOf,
   type CommentReply,
   type CommentReview,
-  commentText,
   type ExistingAnnotation,
   type MarkBox,
   markQuadPoints,
@@ -333,7 +332,7 @@ function existingElement(annotation: ExistingAnnotation, parentName: string | un
   return render({
     element,
     attributes,
-    contents: commentText(annotation.contents),
+    contents: annotation.contents,
     ...(inner === undefined ? {} : { inner }),
   });
 }

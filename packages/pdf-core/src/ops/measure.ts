@@ -870,6 +870,7 @@ export async function writeMeasureAnnotations(
           T: text(doc, mark.author),
           // A PDF date, as `/M` requires; the pdf-lib writer stored the ISO string.
           M: text(doc, pdfDate(new Date(mark.createdAt))),
+          NM: text(doc, markerFor(mark.id)),
           Contents: text(doc, contentsFor(mark, measurement)),
           AP: { N: appearance },
           Measure: {
@@ -1071,15 +1072,15 @@ function flatPoints(points: readonly MeasurePoint[]): number[] {
 }
 
 /**
- * `/Contents`: our marker first (what makes a re-read tell this app's annotations
- * from the document's own), then the measurement, then the user's note. A reader
- * shows the whole string, which is the point — the measurement belongs to the
- * annotation, not only to the session that made it.
+ * `/Contents`: the measurement, then the user's note. A reader shows the whole string,
+ * which is the point — the measurement belongs to the annotation, not only to the
+ * session that made it. The marker that tells this app's annotations from the
+ * document's own is the annotation's name (`/NM`), which readers do not print.
  */
 function contentsFor(mark: MeasureMark, measurement: Measurement): string {
   const body = mark.contents.trim();
   const value = formatMeasurement(measurement, mark.scale);
-  return `${markerFor(mark.id)} ${value}${body === '' ? '' : ` ${body}`}`;
+  return `${value}${body === '' ? '' : ` ${body}`}`;
 }
 
 /**
