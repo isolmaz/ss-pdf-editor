@@ -379,8 +379,11 @@ The limits are defined once, in
   - It says so, and when object streams are present it skips the orphan-object verdict.
 - **Deleting marks.** Only annotations are deleted, never page content. A deletion rewrites
   the file and can be undone. It is not a forensic scrub.
-- **Typed text.** Each save that adds typed text embeds the full Noto Sans font (about
-  630 KB), without subsetting. A reader that ignores `/AP` falls back to Helvetica.
+- **Typed text.** A reader that ignores `/AP` falls back to Helvetica.
+- **Embedded fonts.** Typed text, headers and footers, the OCR text layer and edited text
+  embed only the glyphs they draw (about 40 KB of Noto Sans instead of 629 KB). The
+  document's own fonts are left as they are. The font that form fields type with is
+  embedded whole, so a reader can type any character into a field later.
 - **XFDF.** Appearance streams and rich-text styling do not travel: rich text is read as
   plain text, and a rotated mark is exported as it was drawn, unrotated. A private
   `Marked` check mark is shown but not written or imported. Stamps, links and form fields

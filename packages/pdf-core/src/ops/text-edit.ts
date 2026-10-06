@@ -89,6 +89,7 @@ import {
   type StandardFace,
   saveRewrite,
   standardFace,
+  subsetEmbeddedFaces,
   type WritableDocument,
 } from '../engines/mupdf-write';
 import { notoSansBytes } from '../engines/noto';
@@ -620,6 +621,12 @@ async function writeStage(
       done: lineCount,
       total,
     });
+    // The shipped faces this write embedded carry only the glyphs it drew.
+    subsetEmbeddedFaces(
+      opened.mupdf,
+      doc,
+      [...fonts.values()].filter((face): face is EmbeddedFace => 'usedGlyphs' in face),
+    );
     return {
       bytes: saveRewrite(doc, 'text-edit/write'),
       embeddedFonts: [...embeddedFonts],
