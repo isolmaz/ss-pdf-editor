@@ -50,6 +50,8 @@ function host(overrides: Partial<CommandHost> = {}): CommandHost {
     showShortcuts: noop,
     openSettings: noop,
     openBatch: noop,
+    openSignature: noop,
+    addImage: noop,
     measure: noop,
     measureMode: null,
     showRightTab: noop,

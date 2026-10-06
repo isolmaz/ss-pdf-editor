@@ -448,6 +448,11 @@ export function buildMarkTargets(input: MarkTargetInput): readonly MarkTarget[] 
         ? {}
         : { paths: strokes.map((stroke) => pdfStrokeToApp(stroke, top)) }),
       ...(annotation.thickness === undefined ? {} : { strokeWidth: annotation.thickness }),
+      // A stamp's `/Rect` is all of its geometry (`resizeImageStamp`); with no box the
+      // viewer can place, there is nothing to hang a handle on.
+      ...(annotation.subtype === 'Stamp' && top !== null && annotation.rect !== null
+        ? { resizable: true }
+        : {}),
       label: input.labelFor('existing', kindLabel[0], kindLabel[1]),
     });
   }

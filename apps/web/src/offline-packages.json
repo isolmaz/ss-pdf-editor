@@ -25,7 +25,11 @@
       "/fonts/space-grotesk/space-grotesk-latin-400-normal.woff2",
       "/fonts/space-grotesk/space-grotesk-latin-ext-400-normal.woff2",
       "/fonts/dm-sans/dm-sans-latin-400-normal.woff2",
-      "/fonts/dm-sans/dm-sans-latin-ext-400-normal.woff2"
+      "/fonts/dm-sans/dm-sans-latin-ext-400-normal.woff2",
+      "/fonts/handwriting/dancing-script-latin-400-normal.woff2",
+      "/fonts/handwriting/dancing-script-latin-ext-400-normal.woff2",
+      "/fonts/handwriting/great-vibes-latin-400-normal.woff2",
+      "/fonts/handwriting/great-vibes-latin-ext-400-normal.woff2"
     ]
   }
 }

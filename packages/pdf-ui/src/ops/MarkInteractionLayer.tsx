@@ -56,6 +56,15 @@
  *
  * Keyboard stays where it was: `useShortcuts.ts` owns every binding, and this
  * layer registers no key listener of its own.
+ *
+ * ## Resizing a picture
+ *
+ * A single selected mark the shell calls `resizable` (a placed picture or signature)
+ * gets four corner handles. Dragging one scales the box about the opposite corner with
+ * the picture's aspect kept, previews it as a dashed outline, and commits one `onResize`
+ * at pointer-up. The handles are buttons, so the keyboard reaches them too: the arrow
+ * keys grow (→, ↑) or shrink (←, ↓) the box by a twentieth per press, about the same
+ * opposite corner.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -95,6 +104,13 @@ export interface MarkInteractionLayerProps {
    * could not commit.
    */
   readonly onMove?: (keys: readonly string[], dx: number, dy: number) => void;
+  /**
+   * One call per completed resize of a `resizable` mark, with its new box in page space.
+   * Absent means no handles are offered.
+   */
+  readonly onResize?: (key: string, rect: MarkRect) => void;
+  /** Already translated: the handles' accessible name. */
+  readonly resizeLabel?: string;
 }
 
 /** A click's own slop, in screen pixels: turned into page points by the page's scale. */
@@ -112,6 +128,70 @@ const TEXT_RUN = '.textLayer span';
  * it is a position, not a mark, and the paper under it has to stay readable.
  */
 const PREVIEW_BOX_CLASS = 'absolute border border-dashed border-pdf-accent/70';
+
+/** The smallest side a resized picture keeps, in page points. */
+const MIN_RESIZE_SIDE = 8;
+/** One arrow-key press scales a picture by this fraction of its size. */
+const KEY_RESIZE_STEP = 0.05;
+
+/** The four corners a handle can hold, as which edges of the box it sits on. */
+const CORNERS = [
+  { id: 'nw', right: false, bottom: false, cursor: 'nwse-resize' },
+  { id: 'ne', right: true, bottom: false, cursor: 'nesw-resize' },
+  { id: 'sw', right: false, bottom: true, cursor: 'nesw-resize' },
+  { id: 'se', right: true, bottom: true, cursor: 'nwse-resize' },
+] as const;
+
+type ScreenBox = {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+};
+
+/**
+ * A box scaled about a fixed corner: `anchor` stays where it is, and the box reaches
+ * toward `toward` by `scale` of its original extents, aspect kept, never smaller than
+ * {@link MIN_RESIZE_SIDE} on its short side.
+ */
+export function scaledBox(bounds: MarkRect, anchor: MarkPoint, toward: MarkPoint, scale: number): MarkRect {
+  const width = bounds[2] - bounds[0];
+  const height = bounds[3] - bounds[1];
+  const least = MIN_RESIZE_SIDE / Math.max(Math.min(width, height), 0.001);
+  const factor = Math.max(scale, least);
+  const x = anchor.x + Math.sign(toward.x - anchor.x || 1) * width * factor;
+  const y = anchor.y + Math.sign(toward.y - anchor.y || 1) * height * factor;
+  return [
+    pagePoints(Math.min(anchor.x, x)),
+    pagePoints(Math.min(anchor.y, y)),
+    pagePoints(Math.max(anchor.x, x)),
+    pagePoints(Math.max(anchor.y, y)),
+  ];
+}
+
+/** The page-space corner a screen corner of the box shows, and the one opposite it. */
+function cornerPair(
+  frame: MarkPageFrame,
+  placed: ScreenBox,
+  corner: (typeof CORNERS)[number],
+): { readonly held: MarkPoint; readonly anchor: MarkPoint } {
+  const heldX = placed.left + (corner.right ? placed.width : 0);
+  const heldY = placed.top + (corner.bottom ? placed.height : 0);
+  const anchorX = placed.left + (corner.right ? 0 : placed.width);
+  const anchorY = placed.top + (corner.bottom ? 0 : placed.height);
+  return { held: frame.toPage(heldX, heldY), anchor: frame.toPage(anchorX, anchorY) };
+}
+
+interface ResizeGesture {
+  readonly pointerId: number;
+  readonly key: string;
+  readonly frame: MarkPageFrame;
+  readonly bounds: MarkRect;
+  readonly anchor: MarkPoint;
+  /** The corner under the pointer at the press, in page space. */
+  readonly held: MarkPoint;
+  rect: MarkRect | null;
+}
 
 /**
  * `caretPositionFromPoint` is the standard (`Document.caretPositionFromPoint`);
@@ -230,11 +310,14 @@ export function MarkInteractionLayer({
   disabled = false,
   onSelectionChange,
   onMove,
+  onResize,
+  resizeLabel,
 }: MarkInteractionLayerProps) {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const marqueeRef = useRef<HTMLSpanElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  const resizeRef = useRef<ResizeGesture | null>(null);
   /**
    * The click a handled press on a link owns. It is component state rather than
    * effect state on purpose: moving a persisted link makes the shell busy, which
@@ -279,7 +362,7 @@ export function MarkInteractionLayer({
    * retires a preview standing on its own.
    */
   useEffect(() => {
-    if (gestureRef.current?.kind === 'move') return;
+    if (gestureRef.current?.kind === 'move' || resizeRef.current !== null) return;
     previewRef.current?.replaceChildren();
   });
 
@@ -619,6 +702,36 @@ export function MarkInteractionLayer({
   };
   const selection = new Set(selectedKeys);
 
+  /** The one picture the handles hold: a single selected `resizable` mark, while selecting. */
+  const resizing =
+    mode === 'select' && !disabled && onResize !== undefined && selectedKeys.length === 1
+      ? (targets.find((target) => target.key === selectedKeys[0] && target.resizable === true) ?? null)
+      : null;
+  const resizeFrame = resizing === null ? null : frameFor(resizing.pageIndex);
+  const resizeBounds = resizing === null ? null : targetBounds(resizing);
+  const resizePlaced =
+    resizeFrame === null || resizeBounds === null ? null : resizeFrame.toScreenBox(resizeBounds);
+
+  /** The dashed outline of the box a resize would commit. */
+  const paintResize = (frame: MarkPageFrame, rect: MarkRect): void => {
+    const node = previewRef.current;
+    if (node === null) return;
+    const box = frame.toScreenBox(rect);
+    let outline = node.firstElementChild;
+    if (!(outline instanceof HTMLElement) || node.childElementCount !== 1) {
+      node.replaceChildren();
+      const created = document.createElement('span');
+      created.className = PREVIEW_BOX_CLASS;
+      created.setAttribute('aria-hidden', 'true');
+      outline = node.appendChild(created);
+    }
+    if (!(outline instanceof HTMLElement)) return;
+    outline.style.left = `${box.left - 1}px`;
+    outline.style.top = `${box.top - 1}px`;
+    outline.style.width = `${Math.max(box.width, 2)}px`;
+    outline.style.height = `${Math.max(box.height, 2)}px`;
+  };
+
   return (
     <div ref={layerRef} className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
       {/* Redaction intents are drawn whenever they exist, tools or no tools: the
@@ -674,6 +787,81 @@ export function MarkInteractionLayer({
           />
         );
       })}
+
+      {/* A single selected picture's corner handles: drag to resize, or focus one and
+          use the arrow keys. They are the only part of this layer that takes the
+          pointer, and they sit outside the page surfaces, so the window listeners
+          above leave their presses alone. */}
+      {resizing !== null && resizeFrame !== null && resizeBounds !== null && resizePlaced !== null
+        ? CORNERS.map((corner) => (
+            <button
+              key={corner.id}
+              type="button"
+              aria-label={resizeLabel}
+              data-mark-resize={corner.id}
+              className="pointer-events-auto absolute size-3 touch-none rounded-xs border-2 border-pdf-accent bg-kumo-base focus-visible:outline-2 focus-visible:outline-kumo-focus"
+              style={{
+                left: resizePlaced.left + (corner.right ? resizePlaced.width : 0) - 6,
+                top: resizePlaced.top + (corner.bottom ? resizePlaced.height : 0) - 6,
+                cursor: corner.cursor,
+              }}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                const { held, anchor } = cornerPair(resizeFrame, resizePlaced, corner);
+                resizeRef.current = {
+                  pointerId: event.pointerId,
+                  key: resizing.key,
+                  frame: resizeFrame,
+                  bounds: resizeBounds,
+                  anchor,
+                  held,
+                  rect: null,
+                };
+              }}
+              onPointerMove={(event) => {
+                const gesture = resizeRef.current;
+                if (gesture === null || gesture.pointerId !== event.pointerId) return;
+                const container = viewer.containerRect();
+                const point = gesture.frame.toPage(event.clientX - container.x, event.clientY - container.y);
+                const width = gesture.bounds[2] - gesture.bounds[0];
+                const height = gesture.bounds[3] - gesture.bounds[1];
+                const scale = Math.max(
+                  Math.abs(point.x - gesture.anchor.x) / Math.max(width, 0.001),
+                  Math.abs(point.y - gesture.anchor.y) / Math.max(height, 0.001),
+                );
+                gesture.rect = scaledBox(gesture.bounds, gesture.anchor, gesture.held, scale);
+                paintResize(gesture.frame, gesture.rect);
+              }}
+              onPointerUp={(event) => {
+                const gesture = resizeRef.current;
+                if (gesture === null || gesture.pointerId !== event.pointerId) return;
+                resizeRef.current = null;
+                if (gesture.rect === null) {
+                  previewRef.current?.replaceChildren();
+                  return;
+                }
+                onResize?.(gesture.key, gesture.rect);
+              }}
+              onPointerCancel={() => {
+                resizeRef.current = null;
+                previewRef.current?.replaceChildren();
+              }}
+              onKeyDown={(event) => {
+                const grow = event.key === 'ArrowRight' || event.key === 'ArrowUp';
+                const shrink = event.key === 'ArrowLeft' || event.key === 'ArrowDown';
+                if (!grow && !shrink) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const { held, anchor } = cornerPair(resizeFrame, resizePlaced, corner);
+                const scale = grow ? 1 + KEY_RESIZE_STEP : 1 - KEY_RESIZE_STEP;
+                onResize?.(resizing.key, scaledBox(resizeBounds, anchor, held, scale));
+              }}
+            />
+          ))
+        : null}
 
       {/* The move's own preview, and the rubber band. React renders the containers
           once and never touches their children or `style` again: the marquee's
