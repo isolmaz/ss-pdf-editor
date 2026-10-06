@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from 'playwright/test';
-import { expect, test } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { makeSignerContainer, readSignature, SIGNER } from './signer-fixture';
+import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
 
 /**

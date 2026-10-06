@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Download, Page } from 'playwright/test';
-import { test as base, expect } from 'playwright/test';
 import { useAdvancedMode, useLanguage } from './settings';
+import { expect, test } from './test';
 import { authoredToolFixturePdf, readProducedEntry, readProducedPdf, toolFixturePdf } from './tool-fixture';
 
 /**
@@ -11,22 +11,6 @@ import { authoredToolFixturePdf, readProducedEntry, readProducedPdf, toolFixture
  * switches. Fixtures are made in the test (Chromium's own `page.pdf()` for flat and
  * tagged documents) and every test fails on a console error or an uncaught exception.
  */
-
-/** Every test ends by asserting the page logged no error: a flow that "works" while the console burns is not working. */
-const test = base.extend<{ consoleErrors: string[] }>({
-  consoleErrors: [
-    async ({ page }, use) => {
-      const errors: string[] = [];
-      page.on('console', (message) => {
-        if (message.type() === 'error') errors.push(`console: ${message.text()}`);
-      });
-      page.on('pageerror', (error) => errors.push(`exception: ${error.message}`));
-      await use(errors);
-      expect(errors, 'console errors and uncaught exceptions').toEqual([]);
-    },
-    { auto: true },
-  ],
-});
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
