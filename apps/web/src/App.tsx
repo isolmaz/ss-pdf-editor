@@ -3591,7 +3591,11 @@ export function App({ store }: AppProps) {
         if (first === undefined) return;
         if (kind === 'new-tab') {
           await openProducedTab(first.name, first.bytes, controller.signal);
-          setNotice(t('op.result.opened', { name: first.name }));
+          setNotice(
+            result.noticeKey === undefined
+              ? t('op.result.opened', { name: first.name })
+              : t(result.noticeKey, result.noticeParams ?? {}),
+          );
           close();
           return;
         }

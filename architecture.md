@@ -1280,7 +1280,8 @@ an invoice.
 
 `ops/pdfa.ts` (`convertToPdfA`) converts to PDF/A-1b, 2b or 3b; `ops/pdfa-check.ts`
 (`checkPdfA`) says whether a file claims PDF/A and which rules it breaks. The dialog `pdfa`
-(`pdf-ui/ops/pdfa.ts`, result opens in a new tab) and the dock panel `PdfAPanel` use them.
+(`pdf-ui/ops/pdfa.ts`, result opens in a new tab announced by its own `pdfa.done` /
+`pdfa.doneAlready` notice) and the dock panel `PdfAPanel` use them.
 
 **Why Ghostscript.** Producing PDF/A rewrites colour, fonts and structure; it is not a flag.
 MuPDF cannot convert colours on write, cannot embed a font the file does not carry and cannot
@@ -1538,9 +1539,11 @@ Every capability the menus can run is described by exactly one `OperationDialogS
 noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
 `checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
-`fieldErrors()` from `dialogs/fields.tsx`. A field marked `advanced` is rendered in one
-closed "advanced options" section after the essential fields (it opens itself while one of
-its fields is invalid); short controls — number, colour, select — share a row two by two
+`fieldErrors()` from `dialogs/fields.tsx`. A run's `noticeKey` is the sentence the shell
+shows whatever the result kind (replace, new tab, download); without one it says what
+happened to the file. A field marked `advanced` is rendered in one closed "advanced
+options" section after the essential fields (it opens itself while one of its fields is
+invalid); short controls — number, colour, select — share a row two by two
 once the form's container is wider than 28 rem (a container query, because the same list
 renders in the panel and in a modal). A select shows its option's **label** in the trigger
 (`renderValue`): Kumo's trigger prints the raw value otherwise, and a stamp position read
