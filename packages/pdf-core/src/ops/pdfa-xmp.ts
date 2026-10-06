@@ -151,11 +151,16 @@ export function parseXmp(bytes: Uint8Array): XmpPacket {
     properties: new Map(),
   };
   let failed = false;
-  let document: Document;
+  // xmldom returns `undefined` for an empty string rather than a document.
+  let document: Document | undefined;
   try {
     const parser = new DOMParser({
       errorHandler: {
-        warning: () => undefined,
+        // xmldom reports a closing tag that does not match its opening tag only as a warning
+        // ("unclosed xml attribute") and goes on; a packet that triggers one is not well-formed.
+        warning: () => {
+          failed = true;
+        },
         error: () => {
           failed = true;
         },
@@ -168,7 +173,7 @@ export function parseXmp(bytes: Uint8Array): XmpPacket {
   } catch {
     return broken;
   }
-  const root = document.documentElement;
+  const root = document?.documentElement;
   if (failed || root === null || root === undefined) return broken;
 
   const descriptions: Element[] = [];
