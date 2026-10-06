@@ -64,6 +64,12 @@ export interface MarkTarget {
   readonly paths?: readonly (readonly number[])[];
   /** Stroke width in points, for the marks that paint a line. */
   readonly strokeWidth?: number;
+  /**
+   * The mark's box is its whole geometry, so a new box is a new size: a file's `/Stamp`
+   * (a placed picture or signature), whose appearance a reader scales to its `/Rect`.
+   * The common layer offers corner handles only for these.
+   */
+  readonly resizable?: boolean;
   /** Already translated by the shell. */
   readonly label: string;
 }

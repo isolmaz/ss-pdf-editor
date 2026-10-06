@@ -52,6 +52,42 @@
         }
       ]
     },
+    "handwriting": {
+      "packages": [
+        {
+          "name": "@fontsource/dancing-script",
+          "version": "5.3.0",
+          "license": "OFL-1.1"
+        },
+        {
+          "name": "@fontsource/great-vibes",
+          "version": "5.3.0",
+          "license": "OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/handwriting/dancing-script-latin-400-normal.woff2",
+          "bytes": 23816,
+          "sha256": "570e4265bbcb453353ce2fdf63d179332d8daa92691d567547b8a383f3b46c3b"
+        },
+        {
+          "path": "fonts/handwriting/dancing-script-latin-ext-400-normal.woff2",
+          "bytes": 13564,
+          "sha256": "f199ffcda75ec6da953ec8ed8477438f0b46236a052ee1e91a85a46001cc8810"
+        },
+        {
+          "path": "fonts/handwriting/great-vibes-latin-400-normal.woff2",
+          "bytes": 42800,
+          "sha256": "c59dc73d29daf142ef2431f455d21464172374aa750d793a79d608735db2d856"
+        },
+        {
+          "path": "fonts/handwriting/great-vibes-latin-ext-400-normal.woff2",
+          "bytes": 66480,
+          "sha256": "b63469c752efac950ef0497a345e3823d70211b70f60d61887066a87bc3b62f3"
+        }
+      ]
+    },
     "mupdf": {
       "packages": [
         {

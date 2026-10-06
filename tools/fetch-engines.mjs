@@ -124,6 +124,31 @@ const ENGINES = [
     ],
   },
   {
+    id: 'handwriting',
+    package: '@fontsource/dancing-script',
+    target: 'fonts/handwriting',
+    // The faces a typed signature is drawn in (OFL-1.1). The signature is rendered to an
+    // image in the browser and only that image reaches the file, so these are display
+    // faces, never embedded. Turkish letters come from the `latin-ext` subsets.
+    entries: [
+      { from: 'files/dancing-script-latin-400-normal.woff2', to: 'dancing-script-latin-400-normal.woff2' },
+      {
+        from: 'files/dancing-script-latin-ext-400-normal.woff2',
+        to: 'dancing-script-latin-ext-400-normal.woff2',
+      },
+      {
+        package: '@fontsource/great-vibes',
+        from: 'files/great-vibes-latin-400-normal.woff2',
+        to: 'great-vibes-latin-400-normal.woff2',
+      },
+      {
+        package: '@fontsource/great-vibes',
+        from: 'files/great-vibes-latin-ext-400-normal.woff2',
+        to: 'great-vibes-latin-ext-400-normal.woff2',
+      },
+    ],
+  },
+  {
     id: 'noto',
     package: '@expo-google-fonts/noto-sans',
     target: 'fonts/noto',

@@ -48,7 +48,9 @@ export type CanvasToolId =
   | 'measure'
   | 'link'
   | 'text'
-  | 'freetext';
+  | 'freetext'
+  /** A signature, initials or an image waiting for the click that places it. */
+  | 'stamp';
 
 /** The shape kinds the shape tool draws; the writer maps each to its own appearance. */
 export type CanvasShapeKind = 'square' | 'circle' | 'line';
@@ -116,6 +118,7 @@ const TOOL_HINTS: Readonly<Partial<Record<CanvasToolId, MessageKey>>> = {
   note: 'tool.hint.note',
   link: 'tool.hint.link',
   redact: 'tool.hint.redact',
+  stamp: 'tool.hint.stamp',
 };
 
 /** Stroke width bounds, in page points. */
@@ -213,6 +216,8 @@ const TOOL_STYLES: Record<CanvasToolId, ToolStyleSpec> = {
   text: NO_STYLE,
   // Typed text has its own colour and size (below), not the marker's style.
   freetext: { color: false, opacity: false, thickness: false, author: true, shape: false },
+  // The picture is the style: its colours were chosen in the signature dialog.
+  stamp: NO_STYLE,
 };
 
 export function ToolProperties({

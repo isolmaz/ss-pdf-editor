@@ -25,6 +25,7 @@ import { propsPart } from './en-parts/props';
 import { redactPart } from './en-parts/redact';
 import { securityPart } from './en-parts/security';
 import { shellPart } from './en-parts/shell';
+import { signaturePart } from './en-parts/signature';
 import { stampPart } from './en-parts/stamp';
 import { texteditPart } from './en-parts/textedit';
 import { verifyPart } from './en-parts/verify';
@@ -63,6 +64,7 @@ export const en: Record<MessageKey, string> = {
   ...redactPart,
   ...securityPart,
   ...shellPart,
+  ...signaturePart,
   ...stampPart,
   ...verifyPart,
 

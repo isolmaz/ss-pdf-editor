@@ -100,6 +100,7 @@ import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
 import type { FieldValue, MeasureReading } from 'pdf-ui';
+import type { SavedSignature, StampSource } from 'pdf-ui/dialog';
 import {
   type CanvasShapeKind,
   type CanvasToolId,
@@ -109,6 +110,8 @@ import {
   markTargetKey,
   ReadingPane,
   SnapshotMenu,
+  type StampPlacement,
+  StampPlacementLayer,
   selectionBoxes,
   ToolProperties,
   usePresentation,
@@ -167,10 +170,12 @@ import { compressionPresets } from './export-presets';
 import { MODE_CHANGE_EVENT, readStoredMode, storeMode } from './interface-mode';
 import {
   addAttachments,
+  addImageStamp,
   applyLayerWrite,
   auditRedactedDocument,
   listPdfFonts,
   removeAttachments,
+  resizeImageStamp,
 } from './lazy-ops';
 import { auditNotice, engineValuesNotices, failureNotices, noticeLine, verificationNotices } from './notices';
 import {
@@ -206,6 +211,7 @@ import {
   type SaveExecutionPlan,
   type SaveStepDescription,
 } from './save-plan';
+import { forgetSignature, loadSavedSignatures, rememberSignature } from './signature-store';
 import { SHELL_SHORTCUT_GROUPS, useShellShortcuts } from './useShortcuts';
 import { createVaultChannel, type VaultChannel } from './vault-channel';
 
@@ -333,6 +339,11 @@ const BatchDialog = lazy(async () => {
 const StartDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.StartDialog };
+});
+/** The simple-signature dialog: draw, type or photograph a signature (`SignatureDialog`). */
+const SignatureDialog = lazy(async () => {
+  const module = await import('pdf-ui/dialog');
+  return { default: module.SignatureDialog };
 });
 /**
  * The comparison and accessibility panels read the working bytes and (for the
@@ -515,6 +526,24 @@ export function App({ store }: AppProps) {
    * route (rail, strip, menu, palette, context menu).
    */
   const [markupTool, setMarkupTool] = useState<MarkupTool>('highlight');
+  /**
+   * The picture the `stamp` tool places with the next click on a page — a signature,
+   * initials or an image — and whether the signature dialog is open. Remembered
+   * signatures are opt-in and stay in this browser (`signature-store.ts`).
+   */
+  const [pendingStamp, setPendingStamp] = useState<StampSource | null>(null);
+  const [signatureOpen, setSignatureOpen] = useState(false);
+  const [savedSignatures, setSavedSignatures] = useState<readonly SavedSignature[]>(() =>
+    loadSavedSignatures(),
+  );
+  /** The image picker the "add an image" command opens. */
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  /** A stamp just written: selected as soon as the re-read inventory lists it. */
+  const selectAfterWrite = useRef<string | null>(null);
+  // The picture belongs to the armed tool: any other tool, from any route, drops it.
+  useEffect(() => {
+    if (canvasTool !== 'stamp') setPendingStamp(null);
+  }, [canvasTool]);
   useEffect(() => {
     if (isMarkupTool(canvasTool)) setMarkupTool(canvasTool);
   }, [canvasTool]);
@@ -3650,6 +3679,195 @@ export function App({ store }: AppProps) {
   );
 
   /**
+   * One write into a file annotation that is not a geometry edit of the selection: a
+   * placed picture, a resized one. The same boundary as `transformTargets` — engine
+   * values checkpointed, the version checked after every `await`, pending marks kept
+   * out of the bytes and handed back as the remaining overlays — so the stamp is one
+   * journal step that undo takes back whole.
+   */
+  const writeFileAnnotation = useCallback(
+    (
+      label: { readonly key: MessageKey; readonly params?: Record<string, string | number> },
+      write: (
+        base: Uint8Array,
+        signal: AbortSignal,
+      ) => Promise<OperationOutcome & { readonly annotationId?: string }>,
+      done: string,
+      selectOnPage?: number,
+    ): boolean => {
+      const tab = store.active;
+      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      if (tab === null || handle === null) return false;
+      if (busyRef.current || cancelRef.current !== null || !canEditRef.current) {
+        refuseBusy();
+        return false;
+      }
+      const controller = new AbortController();
+      cancelRef.current = controller;
+      setBusy(true);
+      void (async () => {
+        try {
+          await checkpointEngineValues();
+          const fresh = store.active;
+          if (
+            controller.signal.aborted ||
+            fresh?.id !== tab.id ||
+            fresh.working.produced?.id !== tab.working.produced?.id
+          )
+            return;
+          const before = editableOverlays(fresh);
+          const context = contextFor(fresh, handle);
+          const executedSteps: SaveStepDescription[] = [];
+          const base = await materializeBase(context, { signal: controller.signal }, executedSteps, {
+            ...before,
+            annotations: [],
+            measures: [],
+          });
+          const outcome = await write(base, controller.signal);
+          const next = await applyProducedBytes(
+            context,
+            outcome.bytes,
+            outcome.report.pageCount,
+            label,
+            outcome.report.engine,
+            [...executedSteps.map((step) => step.id), ...outcome.report.steps],
+            { signal: controller.signal },
+            before,
+          );
+          setHandle(fresh.id, next);
+          if (outcome.annotationId !== undefined && selectOnPage !== undefined) {
+            selectAfterWrite.current = markTargetKey('existing', outcome.annotationId, selectOnPage);
+          }
+          setNotice(done);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
+          setNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
+        } finally {
+          if (cancelRef.current === controller) {
+            cancelRef.current = null;
+            setBusy(false);
+          }
+        }
+      })();
+      return true;
+    },
+    [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setBusy, setHandle, store, t],
+  );
+
+  /** What a picture is called in the notices and in the comment list readers show. */
+  const stampKind = useCallback(
+    (role: StampSource['role']) =>
+      t(
+        role === 'signature'
+          ? 'sig.role.signature'
+          : role === 'initials'
+            ? 'sig.role.initials'
+            : 'img.add.label',
+      ),
+    [t],
+  );
+
+  /** The click that places the armed picture: one `/Stamp`, one journal step, then selected. */
+  const placeStamp = useCallback(
+    (placement: StampPlacement) => {
+      const source = pendingStamp;
+      if (source === null) return;
+      const kind = stampKind(source.role);
+      const started = writeFileAnnotation(
+        { key: 'sig.placed', params: { kind } },
+        (base, signal) =>
+          addImageStamp(
+            base,
+            {
+              id: crypto.randomUUID(),
+              pageIndex: placement.pageIndex,
+              center: placement.center,
+              width: placement.width,
+              height: placement.height,
+              image: source.bytes,
+              role: source.role,
+              label: kind,
+              author: annotationAuthor,
+            },
+            { signal },
+          ),
+        t('sig.placed', { kind }),
+        placement.pageIndex,
+      );
+      if (started) setCanvasTool('select');
+    },
+    [annotationAuthor, pendingStamp, stampKind, t, writeFileAnnotation],
+  );
+
+  /** A corner handle's drop: the stamp's `/Rect` becomes the new box, nothing else changes. */
+  const resizeStamp = useCallback(
+    (key: string, rect: readonly [number, number, number, number]) => {
+      const target = markTargetsRef.current.find((candidate) => candidate.key === key);
+      if (target === undefined || target.family !== 'existing' || target.resizable !== true) {
+        setNotice(t('stamp.notResizable'));
+        return;
+      }
+      writeFileAnnotation(
+        { key: 'stamp.resize' },
+        (base, signal) =>
+          resizeImageStamp(base, { pageIndex: target.pageIndex, id: target.id, rect }, { signal }),
+        t('stamp.resized'),
+      );
+    },
+    [t, writeFileAnnotation],
+  );
+
+  /** Arm the `stamp` tool with a picture; the next click on a page places it. */
+  const armStamp = useCallback(
+    (source: StampSource) => {
+      setPendingStamp(source);
+      setCanvasTool('stamp');
+      setNotice(t('sig.placing'));
+    },
+    [t],
+  );
+
+  const openSignature = useCallback(() => {
+    if (store.active === null) return;
+    if (busyRef.current || !canEditRef.current) {
+      refuseBusy();
+      return;
+    }
+    setSignatureOpen(true);
+  }, [refuseBusy, store]);
+
+  const pickImage = useCallback(() => {
+    if (store.active === null) return;
+    if (busyRef.current || !canEditRef.current) {
+      refuseBusy();
+      return;
+    }
+    imageInputRef.current?.click();
+  }, [refuseBusy, store]);
+
+  const onImagePicked = useCallback(
+    async (file: File) => {
+      const { imageFromFile } = await import('pdf-ui/dialog');
+      const source = await imageFromFile(file);
+      if (source === null) {
+        setNotice(t('img.add.failed', { name: file.name }));
+        return;
+      }
+      armStamp(source);
+    },
+    [armStamp, t],
+  );
+
+  /** The stamp a write just added is selected once the re-read inventory lists it. */
+  useEffect(() => {
+    const key = selectAfterWrite.current;
+    if (key === null || !markTargets.some((target) => target.key === key)) return;
+    selectAfterWrite.current = null;
+    setSelectedKeys([key]);
+  }, [markTargets]);
+
+  /**
    * `Delete` acts on the **whole** common selection — every family at once, and on the
    * marks the user can see rather than on whichever list happens to be first.
    *
@@ -3950,6 +4168,8 @@ export function App({ store }: AppProps) {
         exportDocument: () => void exportActive(),
         print: () => setPrintOpen(true),
         openBatch: () => setBatchOpen(true),
+        openSignature,
+        addImage: pickImage,
         measure: (mode) => {
           // The ruler's own sub-mode; `null` puts the tool away. It is the same one
           // canonical value the rail and the palette write, so stopping the ruler from
@@ -4052,6 +4272,8 @@ export function App({ store }: AppProps) {
       sweepVault,
       mode,
       useAdvancedMode,
+      pickImage,
+      openSignature,
     ],
   );
 
@@ -4616,6 +4838,17 @@ export function App({ store }: AppProps) {
                           disabled={!canEdit || existingAnnotations === null}
                           onSelectionChange={setSelectedKeys}
                           onMove={(keys, dx, dy) => void transformTargets(keys, { dx, dy, rotation: 0 })}
+                          onResize={resizeStamp}
+                          resizeLabel={t('stamp.resize')}
+                        />
+                      ) : null}
+                      {viewer !== null && canEdit && canvasTool === 'stamp' && pendingStamp !== null ? (
+                        <StampPlacementLayer
+                          viewer={viewer}
+                          source={pendingStamp}
+                          hint={t('sig.placing')}
+                          onPlace={placeStamp}
+                          onCancel={() => setCanvasTool('select')}
                         />
                       ) : null}
                       {/*
@@ -5137,6 +5370,46 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       ) : null}
+      {signatureOpen ? (
+        <Suspense fallback={null}>
+          <SignatureDialog
+            t={t}
+            saved={savedSignatures}
+            // A sensitive session stores nothing, a signature picture included.
+            canRemember={activeTab?.sensitive !== true}
+            onClose={() => setSignatureOpen(false)}
+            onForget={(id) => setSavedSignatures(forgetSignature(id))}
+            onPlace={(source, remember) => {
+              if (remember && source.role !== 'image' && activeTab?.sensitive !== true) {
+                setSavedSignatures(
+                  rememberSignature({
+                    id: crypto.randomUUID(),
+                    role: source.role,
+                    dataUrl: source.dataUrl,
+                    width: source.pixelWidth,
+                    height: source.pixelHeight,
+                  }),
+                );
+              }
+              setSignatureOpen(false);
+              armStamp(source);
+            }}
+          />
+        </Suspense>
+      ) : null}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file !== undefined) void onImagePicked(file);
+        }}
+      />
       {signatureWarning === null ? null : (
         <Suspense fallback={null}>
           <SignatureWarningDialog

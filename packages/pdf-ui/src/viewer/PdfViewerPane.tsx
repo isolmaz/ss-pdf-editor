@@ -3,6 +3,7 @@ import { decodeEngineValues, type EngineValuesDraft, encodeEngineValues } from '
 import type { Translator } from 'pdf-shared';
 import type { EventBus, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { hideEditorMarkers } from './marker-text';
 
 /**
  * The reader half of the shell: pdf.js's own `PDFViewer` stack
@@ -444,6 +445,12 @@ export function PdfViewerPane({
     },
     [handTool],
   );
+
+  // The popups pdf.js builds show `/Contents`; our identity marker stays in the file only.
+  useEffect(() => {
+    const container = containerRef.current;
+    return container === null ? undefined : hideEditorMarkers(container);
+  }, []);
 
   useEffect(() => {
     if (!isPanning) return undefined;
