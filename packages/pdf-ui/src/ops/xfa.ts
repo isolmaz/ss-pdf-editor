@@ -82,7 +82,7 @@ export const xfaDataDialog: OperationDialogSpec = {
     }
     const file = Array.isArray(params.file) ? (params.file[0] as File | undefined) : undefined;
     if (file === undefined) {
-      throw new ToolError('selection-empty', { engine: 'ui', engineMessage: 'no XFA data file chosen' });
+      throw new ToolError('input-missing', { engine: 'ui', engineMessage: 'no XFA data file chosen' });
     }
     const imported = await importXfaData(context.bytes, new Uint8Array(await file.arrayBuffer()), {
       signal: context.signal,

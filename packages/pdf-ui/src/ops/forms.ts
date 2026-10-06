@@ -487,7 +487,7 @@ export const formDataDialog: OperationDialogSpec = {
 
     const file = Array.isArray(params.file) ? (params.file[0] as File | undefined) : undefined;
     if (file === undefined) {
-      throw new ToolError('selection-empty', { engine: 'ui', engineMessage: 'no form-data file chosen' });
+      throw new ToolError('input-missing', { engine: 'ui', engineMessage: 'no form-data file chosen' });
     }
     const data = new Uint8Array(await file.arrayBuffer());
     const imported = await importFormData(context.bytes, data, format, {

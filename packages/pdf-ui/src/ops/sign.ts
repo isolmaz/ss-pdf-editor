@@ -78,7 +78,7 @@ async function identityFrom(params: Readonly<Record<string, unknown>>, context: 
   const files = (params.file ?? []) as readonly File[];
   const container = files[0];
   if (container === undefined) {
-    throw new ToolError('selection-empty', { engine: 'ui', engineMessage: 'no PKCS#12 file was chosen' });
+    throw new ToolError('input-missing', { engine: 'ui', engineMessage: 'no PKCS#12 file was chosen' });
   }
   const bytes = new Uint8Array(await container.arrayBuffer());
   // The password is read here and dropped with this call: a wrong one is the container's

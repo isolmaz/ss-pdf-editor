@@ -577,7 +577,7 @@ export async function runBatch(
     });
   }
   if (items.length === 0) {
-    throw new ToolError('selection-empty', {
+    throw new ToolError('input-missing', {
       engine: 'model',
       engineMessage: 'no file was queued',
     });

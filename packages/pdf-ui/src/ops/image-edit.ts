@@ -334,7 +334,7 @@ export const imageEditDialog: OperationDialogSpec = {
     if (action === 'replace') {
       const picked = Array.isArray(params.file) ? (params.file[0] as File | undefined) : undefined;
       if (picked === undefined) {
-        throw new ToolError('selection-empty', { engine: 'ui', engineMessage: 'no image file was picked' });
+        throw new ToolError('input-missing', { engine: 'ui', engineMessage: 'no image file was picked' });
       }
       data = new Uint8Array(await picked.arrayBuffer());
       // The picked file goes to the engine as it is: re-encoding it here would silently

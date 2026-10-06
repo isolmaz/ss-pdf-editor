@@ -433,7 +433,7 @@ export async function buildInsertedPages(
 
     case 'image': {
       if (source.files.length === 0) {
-        throw new ToolError('selection-empty', {
+        throw new ToolError('input-missing', {
           engine: 'model',
           engineMessage: 'no images were handed in',
         });

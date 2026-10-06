@@ -58,7 +58,7 @@ export async function scanPagesToPdf(
 ): Promise<OperationOutcome> {
   throwIfAborted(context.signal);
   if (options.pages.length === 0) {
-    throw new ToolError('selection-empty', {
+    throw new ToolError('input-missing', {
       engine: 'model',
       engineMessage: 'no scanned page was handed in',
     });

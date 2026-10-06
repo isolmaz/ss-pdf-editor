@@ -22,6 +22,7 @@ export const TOOL_ERROR_CODES = [
   'range-invalid',
   'value-out-of-range',
   'selection-empty',
+  'input-missing',
   'no-text',
   'no-match',
   'no-xfa',
