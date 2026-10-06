@@ -110,6 +110,17 @@ interface language's catalogue before the first render. `main.tsx` imports from
 entry chunk from 366.7 to 280.9 KiB (gzip level 9, 2026-10-06), after the parity work had
 grown it past the budget.
 
+The entry chunk is not all of the first paint: the `modulepreload` links the build adds for
+it (Kumo's and base-ui's shared chunks, the MuPDF glue) download with it. Measured as the
+entry plus every preload, gzip level 9: `main` 392.2 KiB, this branch 337.7 KiB before the
+next step and 313.3 KiB after it. That step moved the readers and writers the shell calls
+only on an action — form read and fill (`fieldValueText`, which the panel needs on every
+render, moved to `ops/form-value.ts`), signature verification, the protection check, the
+image list, composition, the session-annotation writer and the comment data formats —
+behind `lazy-ops.ts` or a dynamic `import()`, taking the entry chunk from 243.7 to 219.2
+KiB. The rest is the editor shell, which loads with the home screen, and the shared UI
+chunks; it is still over the 250 KiB budget the README states.
+
 ---
 
 ## 3. `pdf-shared` — the vocabulary

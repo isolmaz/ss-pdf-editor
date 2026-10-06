@@ -55,3 +55,27 @@ export const syncXfaDatasets: Lazy<typeof import('pdf-core/ops/xfa-form').syncXf
 
 export const inspectXfa: Lazy<typeof import('pdf-core/ops/xfa-form').inspectXfa> = async (...args) =>
   (await import('pdf-core/ops/xfa-form')).inspectXfa(...args);
+
+export const verifySignatures: Lazy<typeof import('pdf-core/ops/signature-status').verifySignatures> = async (
+  ...args
+) => (await import('pdf-core/ops/signature-status')).verifySignatures(...args);
+
+export const inspectProtection: Lazy<typeof import('pdf-core/ops/security').inspectProtection> = async (
+  ...args
+) => (await import('pdf-core/ops/security')).inspectProtection(...args);
+
+export const listPdfImages: Lazy<typeof import('pdf-core/ops/image-edit').listPdfImages> = async (...args) =>
+  (await import('pdf-core/ops/image-edit')).listPdfImages(...args);
+
+export const readFormFields: Lazy<typeof import('pdf-core/ops/forms').readFormFields> = async (...args) =>
+  (await import('pdf-core/ops/forms')).readFormFields(...args);
+
+export const fillFormFields: Lazy<typeof import('pdf-core/ops/forms').fillFormFields> = async (...args) =>
+  (await import('pdf-core/ops/forms')).fillFormFields(...args);
+
+export const composeDocument: Lazy<typeof import('pdf-core/ops/compose').composeDocument> = async (...args) =>
+  (await import('pdf-core/ops/compose')).composeDocument(...args);
+
+export const writeAnnotationsToFile: Lazy<
+  typeof import('pdf-core/ops/annotation-shapes').writeAnnotationsToFile
+> = async (...args) => (await import('pdf-core/ops/annotation-shapes')).writeAnnotationsToFile(...args);

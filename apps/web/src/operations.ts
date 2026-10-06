@@ -25,7 +25,6 @@
 import {
   type AnnotationMark,
   type ComposeSource,
-  composeDocument,
   type OperationContext,
   type OperationOutcome,
   type OperationProgress,
@@ -33,10 +32,10 @@ import {
   openWithPdfjs,
   type PdfDocumentHandle,
   readAnnotations,
-  writeAnnotationsToFile,
 } from 'pdf-core';
 import type { PdfOutlineEntry } from 'pdf-core/engines/pdfjs-handle';
-import { type FormFieldInfo, fieldValueText, readFormFields } from 'pdf-core/ops/forms';
+import { fieldValueText } from 'pdf-core/ops/form-value';
+import type { FormFieldInfo } from 'pdf-core/ops/forms';
 import { type MeasureMark, writeMeasureAnnotations } from 'pdf-core/ops/measure';
 import type { RedactRect } from 'pdf-core/ops/redact';
 import { readPageText } from 'pdf-core/text-source';
@@ -53,7 +52,13 @@ import type { PageMoveAction } from 'pdf-ui';
 import { type MarkRemovalRequest, normalizePendingMarks } from './annotation-interaction';
 // The annotation-removal writer loads on its first call (`lazy-ops.ts`): neither the
 // barrel nor a static module import may put it in the shell's first paint.
-import { removePdfAnnotations, syncXfaDatasets } from './lazy-ops';
+import {
+  composeDocument,
+  readFormFields,
+  removePdfAnnotations,
+  syncXfaDatasets,
+  writeAnnotationsToFile,
+} from './lazy-ops';
 import type { SaveStepDescription } from './save-plan';
 
 export interface PendingOverlays {
