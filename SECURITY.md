@@ -12,8 +12,9 @@ the files it writes, for example:
 
 ## Reporting
 
-Please **do not open a public issue** for a vulnerability. Email
-**info@isolmaz.com** with a description, the steps to reproduce, and a sample file if one
+Please **do not open a public issue** for a vulnerability. Report it privately through
+GitHub's [private vulnerability reporting](https://github.com/isolmaz/ss-pdf-editor/security/advisories/new),
+or email **info@isolmaz.com**, with a description, the steps to reproduce, and a sample file if one
 is needed (strip anything confidential from it first). You will get an acknowledgement
 within a few days, and a fix or a stated decision as soon as the issue is understood.
 
