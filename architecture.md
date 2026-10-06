@@ -1202,7 +1202,10 @@ the report says the pages were not compared.
 **Said plainly:** there is no "embedded search index" category (Acrobat's location is not
 publicly specified; whatever it is stored as falls under files, private data or unused
 objects); 3D and RichMedia scripts are reported, not edited; a signature does not survive the
-rewrite and the report says so; an XFA form carrying `<script` is dropped whole.
+rewrite and the report says so; an XFA form carrying `<script` is dropped whole, except a
+dynamic one (no AcroForm fields besides signatures): its page is only the placeholder, so a
+run that would drop its XFA is refused with `xfa-dynamic` before anything is written, as
+removing or flattening one is.
 ### 5.12 Form field detection
 
 `ops/form-detect.ts` finds the places a flat page asks to be written in and offers them as

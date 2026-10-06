@@ -301,6 +301,8 @@ nothing leaving the browser.
     scripts inside 3D and rich media are reported but not edited, hidden-layer content that
     cannot be cut out exactly stays and is reported, and a digital signature does not
     survive.
+  - A dynamic XFA form keeps its content only in the XFA, so a run that would remove the XFA
+    (scripts, or form fields) is refused; flatten the XFA form to a normal PDF first.
 - **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
   encrypted copy is downloaded, not applied to the open document.
 - **Simple signatures and images.** Draw a signature, type your name in one of two

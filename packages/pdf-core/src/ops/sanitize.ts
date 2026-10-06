@@ -73,7 +73,7 @@ import {
   saveRewrite,
   type WritableDocument,
 } from '../engines/mupdf-write';
-import { type FormFieldKind, flattenForm, readFormFields } from './forms';
+import { type FormFieldKind, flattenForm, readFormFields, xfaSnapshotsOf } from './forms';
 import {
   arrayUnder,
   catalogOf,
@@ -277,6 +277,14 @@ function xfaScripts(form: PDFObject): { readonly packets: number; readonly prese
     }
   }
   return { packets, present: true };
+}
+
+/** A form that is flattened or removed has no use for its XML; one with scripts goes whole. */
+function dropsXfa(
+  xfa: { readonly packets: number; readonly present: boolean },
+  options: SanitizeOptions,
+): boolean {
+  return xfa.present && ((options.javascript && xfa.packets > 0) || options.forms !== 'keep');
 }
 
 /**
@@ -495,8 +503,7 @@ function sweep(
   if (form !== null) {
     const xfa = xfaScripts(form);
     if (options.javascript) tally.javascript += xfa.packets;
-    // A form that is flattened or removed has no use for its XML; one with scripts goes whole.
-    if (xfa.present && ((options.javascript && xfa.packets > 0) || options.forms !== 'keep')) {
+    if (dropsXfa(xfa, options)) {
       xfaDropped = true;
       if (mutate) form.delete('XFA');
     }
@@ -746,6 +753,30 @@ async function sweepInput(
   }
 }
 
+/**
+ * A dynamic XFA form has no AcroForm fields: its content lives only in the XFA, and the page is
+ * the "Please wait…" placeholder. A run that would drop the XFA is refused, as removing or
+ * flattening one is (`xfa-dynamic`), instead of returning the placeholder as a clean file.
+ */
+async function refuseDynamicXfa(bytes: Uint8Array, options: SanitizeOptions): Promise<void> {
+  const { doc } = await openForWrite(bytes);
+  try {
+    const form = dictionaryUnder(catalogOf(doc), 'AcroForm');
+    if (form === null || !dropsXfa(xfaScripts(form), options)) return;
+    if (xfaSnapshotsOf(doc).every((field) => field.kind === 'signature')) {
+      throw new ToolError('xfa-dynamic', {
+        engine: 'mupdf',
+        engineMessage: 'sanitize: dropping the XFA of a dynamic form would leave only its placeholder page',
+      });
+    }
+  } catch (error) {
+    if (error instanceof ToolError) throw error;
+    throw mapMupdfError(error, 'sanitize.xfa');
+  } finally {
+    doc.destroy();
+  }
+}
+
 /** An XFA form cannot be flattened (the writer refuses it): its XML is dropped first. */
 async function withoutXfa(bytes: Uint8Array): Promise<Uint8Array> {
   const opened = await openForWrite(bytes);
@@ -781,6 +812,8 @@ export async function sanitizeDocument(
   const selected = selectedCategories(options);
   const steps: string[] = ['load'];
   const notes: OperationNote[] = [];
+
+  await refuseDynamicXfa(bytes, options);
 
   // ---- forms to flatten go first: the writer works on the document as it came ------------
   let working = bytes;

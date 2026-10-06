@@ -504,6 +504,42 @@ describe('sanitizeDocument', () => {
     });
   });
 
+  it('refuses to drop the XFA of a dynamic form, whose page is only a placeholder, and keeps it otherwise', async () => {
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 200, 200], 0, {}, '0 0 1 rg 20 90 160 20 re f'));
+    const xfa = doc.newArray();
+    xfa.push(doc.newString('template'));
+    xfa.push(
+      doc.addStream(
+        '<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/"><subform name="form1">' +
+          '<field name="Name"/><event activity="initialize"><script>this.rawValue = "x";</script></event>' +
+          '</subform></template>',
+        doc.newDictionary(),
+      ),
+    );
+    const root = doc.getTrailer().get('Root');
+    root.put('AcroForm', doc.addObject({ Fields: [], XFA: xfa }));
+    root.put('NeedsRendering', true);
+    const dynamic = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+
+    // Scripts on (the default): dropping the XFA would leave the placeholder and nothing else.
+    await expect(sanitizeDocument(dynamic, { ...NONE, javascript: true }, run)).rejects.toMatchObject({
+      code: 'xfa-dynamic',
+    });
+    await expect(sanitizeDocument(dynamic, { ...NONE, forms: 'remove' }, run)).rejects.toMatchObject({
+      code: 'xfa-dynamic',
+    });
+    // A run that keeps the XFA goes ahead and leaves it in place.
+    const kept = await sanitizeDocument(dynamic, { ...NONE, thumbnails: true }, run);
+    const out = open(kept.bytes);
+    try {
+      expect(out.getTrailer().get('Root').get('AcroForm').get('XFA').isNull()).toBe(false);
+    } finally {
+      out.destroy();
+    }
+  });
+
   it('removes form fields on request and leaves the rest of the page', async () => {
     const out = await sanitizeDocument(input, { ...NONE, forms: 'remove' }, run);
     const doc = open(out.bytes);
