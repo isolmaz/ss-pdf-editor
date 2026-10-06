@@ -940,7 +940,7 @@ path in and out of the document, and the wiring between `pdf-model`, `pdf-core` 
 | `vault-channel.ts` | Cross-window vault coordination |
 | `offline.ts` | Capability manifests and readiness |
 | `commands.ts`, `interface-mode.ts`, `useShortcuts.ts` | The command registry, the simple/advanced filter and the keyboard bindings |
-| `recent.ts`, `serviceWorkerUpdate.ts` | Idle-time recent list and the update banner |
+| `recent.ts`, `recent-handles.ts`, `serviceWorkerUpdate.ts` | The recent list, the file handles behind it (§8.1) and the update banner |
 | `components/HomeScreen.tsx`, `components/HomeToolGrid.tsx` | The home screen: start actions, the recent list and the tool grid laid out from the command registry (§8.1) |
 
 ### 8.1 The open path
@@ -979,6 +979,22 @@ disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
 cancelled picker (the File System Access `AbortError` or the plain input's `cancel` event)
 drops the pending command, so it cannot run on a document opened later for another reason.
+
+**Recent entries reopen their file.** Chromium hands a `FileSystemFileHandle` for a file picked
+with `showOpenFilePicker` or dropped (`DataTransferItem.getAsFileSystemHandle`), and
+`recent-handles.ts` keeps it in IndexedDB under the tab id — a reference to the file, never
+its bytes, and none for a sensitive session. A recent entry then reopens the file itself: the
+browser asks for read permission again on that click (`requestPermission` needs the gesture),
+a refusal is reported and taken as the answer, and a file that has moved or gone is reported
+before the picker is offered. A tab restored from a draft gets its handle back, so it can still
+Save over its file rather than only Export. Handles whose entry has left the list are pruned
+after the startup restore, which is the one reader that needs them. A reopened file keeps its
+star: `addRecentDocument` used to drop it when the entry it replaced was starred.
+
+Playwright's bundled Chromium (153) kills an off-the-record page that deserialises a file
+handle from IndexedDB; Chrome 154 and Edge 154 in the same off-the-record context do not
+(measured with `channel: 'chrome'` / `'msedge'`). The e2e suite stores no handle (it opens
+files through the input, never the picker), so it never reaches that read.
 
 Page actions from the status bar and the context menu act on the page panel's selection, or
 on the page on screen when nothing is selected; before, they required a selection and
@@ -1374,7 +1390,10 @@ computed geometry — plus COOP/COEP on `/editor/*`, immutable caching on `/engi
 production. The style relaxation is not script: no inline `<script>` and no `eval` path
 exists in the build. The one dev-only relaxation appends `'unsafe-inline'` to `script-src`
 because `@vitejs/plugin-react`'s refresh preamble needs it — and says so in the log. Preview
-and production stay strict.
+and production stay strict. The same plugin serves `public/` at the root in dev, and also
+under `/editor/`: the dev server rewrites `index.html`'s root-absolute URLs to the base, and
+`/editor/theme-boot.js` used to get the SPA's HTML back, so the theme bootstrap never ran in
+dev (the build leaves those URLs alone).
 
 `tools/preview-dist.mjs` serves the assembled `dist/` under the same parsed policy, which
 is what both the browser harnesses and the Playwright suite run against.

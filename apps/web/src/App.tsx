@@ -197,7 +197,8 @@ import {
   verifyForWrite,
   type WriteVerification,
 } from './operations';
-import { addRecentDocument } from './recent';
+import { addRecentDocument, loadRecentDocuments } from './recent';
+import { getRecentHandle, pruneRecentHandles, putRecentHandle, reopenFromHandle } from './recent-handles';
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
@@ -1657,12 +1658,16 @@ export function App({ store }: AppProps) {
             return;
           }
           const activeBeforeRestore = store.getSnapshot().activeId;
+          // The handle the document was opened from, if one was kept (`recent-handles.ts`):
+          // without it a restored tab could only Export, never Save over its file.
+          const fileHandle = await getRecentHandle(draft.id);
           const tab = store.openDocument({
             id: draft.id,
             name: draft.name,
             bytes,
             sha256,
             pageCount: draft.sourcePageCount ?? draft.pageCount,
+            ...(fileHandle === null ? {} : { handle: fileHandle }),
           });
           handles.current.set(tab.id, handle);
           store.restoreHistory(tab.id, draft, snapshots);
@@ -1693,6 +1698,8 @@ export function App({ store }: AppProps) {
       } else if (!disposed && restored > 0 && inventory.unreadable.length === 0) {
         setNotice(tRef.current('draft.restored', { count: restored }));
       }
+      // Handles whose recent entry is gone are forgotten — after the restore, which reads them.
+      if (!disposed) await pruneRecentHandles(new Set(loadRecentDocuments().map((item) => item.id)));
     })();
     return () => {
       disposed = true;
@@ -1800,7 +1807,11 @@ export function App({ store }: AppProps) {
         setShowHomeScreen(false);
         const encrypted = (await handle.raw.getPermissions()) !== null;
         if (encrypted) store.setSensitive(tab.id, true);
-        else await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+        else {
+          await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+          // A reference to the file, never its bytes; a sensitive session keeps none.
+          if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
+        }
         setCurrentPage(0);
         setZoomState(1);
         setSelectedPages([]);
@@ -1859,8 +1870,15 @@ export function App({ store }: AppProps) {
    * own tab, one after the other, because an open holds the busy gate until it settles.
    */
   const openFilesFromSurface = useCallback(
-    async (files: readonly File[]): Promise<void> => {
-      for (const file of files) await openFromSurface(file);
+    async (
+      files: readonly File[],
+      fileHandles: readonly (FileSystemFileHandle | null)[] = [],
+    ): Promise<void> => {
+      for (const file of files) {
+        // Paired by name, not position: the drop's item list and file list are separate.
+        const handle = fileHandles.find((item) => item?.name === file.name) ?? undefined;
+        await openFromSurface(file, handle);
+      }
     },
     [openFromSurface],
   );
@@ -4140,7 +4158,22 @@ export function App({ store }: AppProps) {
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
-        void openFilesFromSurface(Array.from(event.dataTransfer.files));
+        // Chromium hands a dropped file's handle too, which is what lets it be saved in place
+        // and reopened from the recent list. It must be asked for inside the event.
+        const pending = Array.from(event.dataTransfer.items)
+          .filter((item) => item.kind === 'file')
+          .map((item) => item.getAsFileSystemHandle?.().catch(() => null) ?? Promise.resolve(null));
+        const files = Array.from(event.dataTransfer.files);
+        void Promise.all(pending).then((found) =>
+          openFilesFromSurface(
+            files,
+            found.map((item) =>
+              typeof FileSystemFileHandle !== 'undefined' && item instanceof FileSystemFileHandle
+                ? item
+                : null,
+            ),
+          ),
+        );
       }}
     >
       <UpdateBanner t={t} />
@@ -4364,6 +4397,23 @@ export function App({ store }: AppProps) {
                 store.setActive(matched.id);
                 setShowHomeScreen(false);
                 return;
+              }
+              // The file the entry was opened from, reopened directly (Chromium keeps the
+              // handle; the browser asks for permission again on this click).
+              const stored = await getRecentHandle(item.id);
+              if (stored !== null) {
+                const reopened = await reopenFromHandle(stored);
+                if (reopened.kind === 'file') {
+                  await openFromSurface(reopened.file, reopened.handle);
+                  return;
+                }
+                setNotice(
+                  t(reopened.kind === 'denied' ? 'home.reopen.denied' : 'home.reopen.missing', {
+                    name: item.name,
+                  }),
+                );
+                // A refused permission is the user's answer; the picker would ask again.
+                if (reopened.kind === 'denied') return;
               }
               try {
                 const drafts = await draftStorage.readDrafts();

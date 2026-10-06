@@ -101,15 +101,26 @@ function applyHeaders(sections, relaxDevCsp) {
   };
 }
 
-/** Serve `<repo>/public/**` at the URL root (dev): `/engines/**`, `/robots.txt`, … */
+/**
+ * Serve `<repo>/public/**` at the URL root (dev): `/engines/**`, `/robots.txt`, …
+ *
+ * Also under the editor's base: the dev server rewrites the root-absolute URLs of
+ * `index.html` (`/theme-boot.js`, `/favicon.svg`, the font preloads) to `/editor/…`, where
+ * the SPA fallback answered with HTML — so the theme bootstrap never ran in dev. The build
+ * leaves those URLs alone and the assembled `dist/` serves them at the root.
+ */
 function servePublicDir(publicDir) {
   return (req, res, next) => {
     if (!req.url) return next();
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     const relative = normalize(pathname).replace(/^([/\\])+/, '');
     if (relative.includes('..')) return next();
-    const file = join(publicDir, relative);
-    if (!existsSync(file) || !statSync(file).isFile()) return next();
+    const candidates = [relative];
+    if (/^editor[/\\]/.test(relative)) candidates.push(relative.replace(/^editor[/\\]/, ''));
+    const file = candidates
+      .map((item) => join(publicDir, item))
+      .find((item) => existsSync(item) && statSync(item).isFile());
+    if (file === undefined) return next();
     res.setHeader('Content-Type', MIME[extname(file)] ?? 'application/octet-stream');
     createReadStream(file).pipe(res);
   };

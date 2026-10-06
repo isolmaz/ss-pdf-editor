@@ -96,7 +96,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Reading mode.** The page is shown as a text column. Read-aloud uses only speech voices
   installed on the device.
 - **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
-  reopens a document by its identity, never by its file name.
+  reopens a document by its identity, never by its file name. In Chromium-based browsers it
+  reopens the file itself (the browser asks for permission again); elsewhere it asks you to
+  choose the file.
 - **The document never moves under you.** Marks, selections, measurements and staged
   redactions scroll and zoom with their page. Tools, progress and notices never shift
   the page.
@@ -228,6 +230,9 @@ These describe how the build works; they are not promises.
 - **The service worker caches static assets only.** It never stores document bytes.
 - **Drafts stay local.** Unsaved work is kept in the origin-private file system (OPFS).
   - A **sensitive session** saves nothing; any document opened with a password starts one.
+  - The recent list keeps the file name, size and page count in `localStorage`. In
+    Chromium it also keeps a *handle* to the file in IndexedDB — a reference the browser
+    asks permission for again, never the file's bytes. A sensitive session keeps no handle.
   - Cleanup refuses to delete anything when it cannot fully read which drafts are in use.
 - **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
   the UI never claims that it does.

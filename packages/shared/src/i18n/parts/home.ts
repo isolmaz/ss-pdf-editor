@@ -89,6 +89,9 @@ export const homePart = {
   'home.colSize': 'Boyut',
   'home.colActions': 'İşlemler',
   'home.badge.open': 'Açık',
+  'home.reopen.denied': 'Dosyayı açma izni verilmedi: {name}.',
+  'home.reopen.missing':
+    'Dosya artık bulunamıyor; taşınmış, yeniden adlandırılmış ya da silinmiş olabilir: {name}. Dosyayı yeniden seçin.',
   'home.openRecent': '{name} belgesini aç',
   'home.removeFromList': 'Listeden kaldır',
   'home.star': 'Yıldızla',

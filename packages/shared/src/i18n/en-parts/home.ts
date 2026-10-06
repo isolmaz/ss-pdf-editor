@@ -84,6 +84,9 @@ export const homePart = {
   'home.colSize': 'Size',
   'home.colActions': 'Actions',
   'home.badge.open': 'Open',
+  'home.reopen.denied': 'Permission to open the file was not given: {name}.',
+  'home.reopen.missing':
+    'The file can no longer be found; it may have been moved, renamed or deleted: {name}. Choose the file again.',
   'home.openRecent': 'Open {name}',
   'home.removeFromList': 'Remove from list',
   'home.star': 'Star',
