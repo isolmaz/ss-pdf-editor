@@ -797,6 +797,21 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     mayChange: ['pageContent', 'textContent'],
     why: 'an alternative text is written onto the image object it describes',
   },
+  {
+    steps: ['tags', 'tags.*'],
+    mayChange: [],
+    why: 'the structure editor rewrites /StructTreeRoot, the ParentTree and the marked-content wrappers (BDC/EMC) of the content streams; nothing it writes is drawn, selectable text or a page-geometry fact, and its own read-back compares the tree and the marked-content operator counts',
+  },
+  {
+    steps: ['ua'],
+    mayChange: ['annotations'],
+    why: 'the PDF/UA quick fixes write the catalogue (title, language, viewer preferences, mark info), page /Tabs, and the /Contents of a link or the /TU of a field; an annotation text is the only fact of the twelve they touch',
+  },
+  {
+    steps: ['ua.*'],
+    mayChange: [],
+    why: 'artifact-wrapping of decoration paths and the PDF/UA identifier in the XMP packet add marked-content wrappers and a metadata property; neither is drawn content, text or geometry',
+  },
 
   /* — the sanitiser: one step per category it was asked for — */
   {

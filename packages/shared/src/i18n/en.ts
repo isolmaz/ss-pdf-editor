@@ -36,6 +36,7 @@ import { signaturePart } from './en-parts/signature';
 import { sigValidatePart } from './en-parts/sigvalidate';
 import { stampPart } from './en-parts/stamp';
 import { texteditPart } from './en-parts/textedit';
+import { uatagsPart } from './en-parts/uatags';
 import { verifyPart } from './en-parts/verify';
 import { xfaPart } from './en-parts/xfa';
 import type { MessageKey } from './tr';
@@ -82,6 +83,7 @@ export const en: Record<MessageKey, string> = {
   ...sanitizePart,
   ...formDetectPart,
   ...stampPart,
+  ...uatagsPart,
   ...verifyPart,
   ...sigValidatePart,
   ...xfaPart,

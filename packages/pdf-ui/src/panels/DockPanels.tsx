@@ -19,4 +19,6 @@ export { ComparePanel, type ComparePanelProps } from './ComparePanel';
 export { FormDetectPanel, type FormDetectPanelProps, type FormDetectPhase } from './FormDetectPanel';
 export { FormPanel, type FormPanelProps } from './FormPanel';
 export { PropertiesPanel, type PropertiesPanelProps } from './PropertiesPanel';
+export { ReadingOrderLayer, type ReadingOrderLayerProps } from './ReadingOrderLayer';
 export { RedactionAuditPanel, type RedactionAuditPanelProps } from './RedactionAuditPanel';
+export { type AccessibilityView, readingOrderStore, useReadingOrder } from './reading-order-store';

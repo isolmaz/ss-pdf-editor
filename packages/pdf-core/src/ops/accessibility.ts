@@ -75,6 +75,7 @@ import {
 } from '../engines/mupdf-write';
 import { readPageText } from '../text-source';
 import { PRODUCER_LINE } from './metadata';
+import { EDITOR_ROLES } from './struct-roles';
 import {
   note,
   type OperationContext,
@@ -313,6 +314,27 @@ export interface TagDocumentOptions {
   readonly language?: string;
   /** See {@link PageTextReader}. Absent → MuPDF through the adapter. */
   readonly pageText?: PageTextReader;
+  /**
+   * What the reading-order editor decided for an untagged file: the order of the
+   * elements in the tree, the role of each block and the alt text of each figure.
+   * Without a plan the order is the content stream's and the roles are the size-based
+   * guess, exactly as before.
+   */
+  readonly plan?: TagPlan;
+}
+
+/** One page of a {@link TagPlan}; ids are the `TagCandidate` ids of that page. */
+export interface TagPlanPage {
+  /** Candidate ids in the order their elements go in the tree; the unlisted follow in content order. */
+  readonly order?: readonly string[];
+  /** A role per candidate id; `Artifact` marks the content as decorative and writes no element. */
+  readonly roles?: Readonly<Record<string, string>>;
+  /** `/Alt` per figure id. */
+  readonly alts?: Readonly<Record<string, string>>;
+}
+
+export interface TagPlan {
+  readonly pages: Readonly<Record<number, TagPlanPage>>;
 }
 
 /** An alt text for an image XObject, or a tooltip for a form field. */
@@ -362,15 +384,15 @@ const HEADING_BOLD_RATIO = 1.2;
 const MAX_HEADING_LEVELS = 6;
 
 /** Nesting depth of `Do`-reached form XObjects the image inventory descends into. */
-const FORM_DEPTH_LIMIT = 3;
+export const FORM_DEPTH_LIMIT = 3;
 /** Elements the structure-tree walk visits before it stops and says so. */
 const STRUCT_WALK_LIMIT = 4000;
 /** AcroForm fields the walk visits (a `/Kids` cycle cannot run forever). */
-const FIELD_WALK_LIMIT = 3000;
+export const FIELD_WALK_LIMIT = 3000;
 /** Distinct image XObjects the check lists. */
 const IMAGE_LIMIT = 2000;
 /** Detail rows one check lists before it summarises the rest. */
-const FINDING_ROW_LIMIT = 40;
+export const FINDING_ROW_LIMIT = 40;
 /** Structure elements `tagDocument` writes before it stops tagging further pages. */
 const TAG_ELEMENT_LIMIT = 5000;
 /** Instructions a page's content stream may hold before the scan is refused as absurd. */
@@ -395,7 +417,7 @@ const OTHER: Operand = { kind: 'other' };
  * the operator when it has none) and `end` is one past the operator — the range the
  * writer copies when it splices marked-content operators in.
  */
-interface Instruction {
+export interface Instruction {
   readonly operator: string;
   readonly operands: readonly Operand[];
   readonly start: number;
@@ -512,7 +534,7 @@ function decodeNameEscapes(name: string): string {
  * inline image) — the caller then reports the page as unreadable instead of guessing,
  * because a wrong instruction boundary would put a `BDC` in the middle of a string.
  */
-function readInstructions(buffer: Uint8Array): readonly Instruction[] | null {
+export function readInstructions(buffer: Uint8Array): readonly Instruction[] | null {
   const instructions: Instruction[] = [];
   let operands: Operand[] = [];
   let cursor = 0;
@@ -605,7 +627,7 @@ export type { Instruction as ContentInstruction, Operand as ContentOperand };
 export { readInstructions as readContentInstructions };
 
 /** The first `count` operands when every one of them is a number, otherwise `null`. */
-function numbersOf(instruction: Instruction, count: number): readonly number[] | null {
+export function numbersOf(instruction: Instruction, count: number): readonly number[] | null {
   if (instruction.operands.length < count) return null;
   const values: number[] = [];
   for (let index = 0; index < count; index += 1) {
@@ -621,12 +643,12 @@ function numbersOf(instruction: Instruction, count: number): readonly number[] |
  * ------------------------------------------------------------------ */
 
 /** `[a b c d e f]` in PDF's row-vector convention (§8.3.3). */
-type Matrix = readonly [number, number, number, number, number, number];
+export type Matrix = readonly [number, number, number, number, number, number];
 
-const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
 /** `m1` applied first, then `m2` — the composition `cm`/`Td`/`Tm` all use. */
-function concatMatrix(m1: Matrix, m2: Matrix): Matrix {
+export function concatMatrix(m1: Matrix, m2: Matrix): Matrix {
   return [
     m1[0] * m2[0] + m1[1] * m2[2],
     m1[0] * m2[1] + m1[1] * m2[3],
@@ -637,12 +659,16 @@ function concatMatrix(m1: Matrix, m2: Matrix): Matrix {
   ];
 }
 
-function transformPoint(matrix: Matrix, x: number, y: number): { readonly x: number; readonly y: number } {
+export function transformPoint(
+  matrix: Matrix,
+  x: number,
+  y: number,
+): { readonly x: number; readonly y: number } {
   return { x: matrix[0] * x + matrix[2] * y + matrix[4], y: matrix[1] * x + matrix[3] * y + matrix[5] };
 }
 
 /** One text-showing operator, at the point its text matrix puts it (user space). */
-interface ShowOp {
+export interface ShowOp {
   readonly index: number;
   readonly x: number;
   readonly y: number;
@@ -652,12 +678,12 @@ interface ShowOp {
 }
 
 /** One `Do` operator, with the resource name it draws. */
-interface DrawOp {
+export interface DrawOp {
   readonly index: number;
   readonly name: string;
 }
 
-interface ContentScan {
+export interface ContentScan {
   readonly bytes: Uint8Array;
   readonly instructions: readonly Instruction[];
   readonly shows: readonly ShowOp[];
@@ -789,7 +815,7 @@ function walkContent(instructions: readonly Instruction[]): {
  * ------------------------------------------------------------------ */
 
 /** The stream bytes, decoded; `null` when the filter chain is one this reader cannot run. */
-function decodeStream(stream: PDFObject): Uint8Array | null {
+export function decodeStream(stream: PDFObject): Uint8Array | null {
   if (!stream.isStream()) return null;
   try {
     const buffer = stream.readStream();
@@ -811,7 +837,7 @@ function decodeStream(stream: PDFObject): Uint8Array | null {
  * a reader does with an array of content streams (§7.8.2): introducing a whitespace byte
  * between them cannot change the token stream.
  */
-function pageContent(page: PDFObject): { readonly bytes: Uint8Array } | null {
+export function pageContent(page: PDFObject): { readonly bytes: Uint8Array } | null {
   const contents = page.get('Contents');
   if (contents.isNull()) return { bytes: new Uint8Array(0) };
   const target = contents.isStream() ? null : resolved(contents);
@@ -831,7 +857,7 @@ function pageContent(page: PDFObject): { readonly bytes: Uint8Array } | null {
   return { bytes: concatBytes(parts) };
 }
 
-function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
+export function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
   let total = 0;
   for (const part of parts) total += part.byteLength;
   const out = new Uint8Array(total);
@@ -843,11 +869,11 @@ function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
   return out;
 }
 
-type PageScan =
+export type PageScan =
   | { readonly ok: true; readonly scan: ContentScan }
   | { readonly ok: false; readonly reason: 'decode' | 'malformed' };
 
-function scanPage(page: PDFObject): PageScan {
+export function scanPage(page: PDFObject): PageScan {
   const content = pageContent(page);
   if (content === null) return { ok: false, reason: 'decode' };
   const instructions = readInstructions(content.bytes);
@@ -869,7 +895,7 @@ function scanPage(page: PDFObject): PageScan {
  * and keeping every glyph of every page of a large document alive for the second pass
  * would cost more than the tagging itself.
  */
-interface BlockRegion {
+export interface BlockRegion {
   readonly id: string;
   /** Model space (`pdf-text-engine/src/types.ts`): user-space x, y down from the box top. */
   readonly rect: Rect;
@@ -877,9 +903,11 @@ interface BlockRegion {
   readonly bold: boolean;
   /** Characters the block holds — the weight the body-size vote uses. */
   readonly characters: number;
+  /** The block's text, lines joined by a space — what the reading-order editor labels it with. */
+  readonly text: string;
 }
 
-function toRegions(input: PageTextInput): readonly BlockRegion[] {
+export function toRegions(input: PageTextInput): readonly BlockRegion[] {
   const page = buildTextPage(input);
   return page.blocks.map((block) => ({
     id: block.id,
@@ -887,11 +915,12 @@ function toRegions(input: PageTextInput): readonly BlockRegion[] {
     fontSize: block.style.fontSize,
     bold: block.style.bold,
     characters: block.text.length,
+    text: block.text.replace(/\s+/g, ' ').trim(),
   }));
 }
 
 /** The page box the model's coordinates are relative to (`CropBox`, per `readPageText`). */
-interface Box {
+export interface Box {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -910,9 +939,11 @@ interface BlockMatch {
   readonly first: number;
   readonly last: number;
   readonly count: number;
+  /** The instruction index of every show the block owns, ascending. */
+  readonly shows: readonly number[];
 }
 
-interface MatchResult {
+export interface MatchResult {
   readonly matches: readonly BlockMatch[];
   /** Shows that landed on some block (sum of `count`). */
   readonly matched: number;
@@ -929,8 +960,12 @@ interface MatchResult {
  * range if it overlaps another — a tagged range must not cut through another range's
  * text.
  */
-function matchBlocks(shows: readonly ShowOp[], regions: readonly BlockRegion[], box: Box): MatchResult {
-  const owned = new Map<number, { first: number; last: number; count: number }>();
+export function matchBlocks(
+  shows: readonly ShowOp[],
+  regions: readonly BlockRegion[],
+  box: Box,
+): MatchResult {
+  const owned = new Map<number, { first: number; last: number; count: number; shows: number[] }>();
   let matched = 0;
   let unmatched = 0;
   let ambiguous = 0;
@@ -960,16 +995,24 @@ function matchBlocks(shows: readonly ShowOp[], regions: readonly BlockRegion[], 
     if (ties > 1) ambiguous += 1;
     matched += 1;
     const entry = owned.get(best);
-    if (entry === undefined) owned.set(best, { first: show.index, last: show.index, count: 1 });
-    else {
+    if (entry === undefined) {
+      owned.set(best, { first: show.index, last: show.index, count: 1, shows: [show.index] });
+    } else {
       entry.last = show.index;
       entry.count += 1;
+      entry.shows.push(show.index);
     }
   }
 
   const matches: BlockMatch[] = [];
   for (const [blockIndex, entry] of owned) {
-    matches.push({ blockIndex, first: entry.first, last: entry.last, count: entry.count });
+    matches.push({
+      blockIndex,
+      first: entry.first,
+      last: entry.last,
+      count: entry.count,
+      shows: entry.shows,
+    });
   }
   matches.sort((left, right) => left.first - right.first);
   return { matches, matched, unmatched, ambiguous };
@@ -1029,35 +1072,132 @@ function headingRoles(
  * Tagging: marked content
  * ------------------------------------------------------------------ */
 
-interface Claim {
+export interface Claim {
   /** Instruction index the `BDC` goes in front of. */
   readonly first: number;
   /** Instruction index the `EMC` goes after. */
   readonly last: number;
+  /** The structure type, or `Artifact` for content that gets no element. */
   readonly role: string;
+  /** The candidate id: the text model's block id (`b3`) or `f<instruction>` for a figure. */
   readonly blockId: string;
   /** `/Alt` for a figure, copied from the XObject when it has one. */
   readonly alt: string | null;
+  /** The marked-content id; `-1` for an artifact, which has none. */
   readonly mcid: number;
 }
 
 /**
- * Splice `/P <</MCID n>> BDC … EMC` into the page's own bytes at instruction boundaries.
+ * Where a marked-content sequence may open and close. Two nesting rules hold for `BDC … EMC`
+ * (ISO 32000-1 §14.6, and what PDF/UA validators flag): a sequence must not straddle two
+ * text objects (`BT … ET`), and must not straddle a graphics-state level (`q … Q`). One
+ * sequence *inside* a text object is fine — several blocks often share one. The scan records,
+ * for every position (the point before an instruction), which text object it is in and how
+ * deep the `q` stack is, so a claim can be widened to the nearest range that opens and
+ * closes at the same level.
+ */
+export interface Nesting {
+  /** `object[p]`: the text object the position before instruction `p` is inside, `-1` outside. Length `n + 1`. */
+  readonly object: readonly number[];
+  /** `depth[p]`: the `q` depth before instruction `p`. Length `n + 1`. */
+  readonly depth: readonly number[];
+}
+
+export function nestingOf(instructions: readonly Instruction[]): Nesting {
+  const object: number[] = [-1];
+  const depth: number[] = [0];
+  let current = -1;
+  let next = 0;
+  let level = 0;
+  for (const instruction of instructions) {
+    if (instruction.operator === 'BT') {
+      current = next;
+      next += 1;
+    } else if (instruction.operator === 'ET') current = -1;
+    else if (instruction.operator === 'q') level += 1;
+    else if (instruction.operator === 'Q' && level > 0) level -= 1;
+    object.push(current);
+    depth.push(level);
+  }
+  return { object, depth };
+}
+
+/**
+ * The smallest range containing `[first, last]` that a marked-content sequence can wrap
+ * without straddling two text objects or a `q` level; `null` when no such range exists in
+ * the stream (an unbalanced `q`, a text object that never ends).
+ */
+export function expandToNesting(
+  instructions: readonly Instruction[],
+  nesting: Nesting,
+  first: number,
+  last: number,
+): { readonly first: number; readonly last: number } | null {
+  let a = first;
+  let b = last;
+  const count = instructions.length;
+  for (let round = 0; round < 64; round += 1) {
+    let changed = false;
+    const startObject = nesting.object[a] as number;
+    const endObject = nesting.object[b + 1] as number;
+    if (startObject !== endObject) {
+      if (startObject !== -1) {
+        let cursor = a;
+        while (cursor > 0 && (instructions[cursor] as Instruction).operator !== 'BT') cursor -= 1;
+        if ((instructions[cursor] as Instruction).operator !== 'BT') return null;
+        a = cursor;
+      }
+      if (endObject !== -1) {
+        let cursor = b + 1;
+        while (cursor < count && (instructions[cursor] as Instruction).operator !== 'ET') cursor += 1;
+        if (cursor >= count) return null;
+        b = cursor;
+      }
+      changed = true;
+    }
+    let lowest = nesting.depth[a] as number;
+    for (let position = a; position <= b + 1; position += 1) {
+      lowest = Math.min(lowest, nesting.depth[position] as number);
+    }
+    if ((nesting.depth[a] as number) > lowest) {
+      let cursor = a;
+      while (cursor > 0 && (nesting.depth[cursor] as number) !== lowest) cursor -= 1;
+      if ((nesting.depth[cursor] as number) !== lowest) return null;
+      a = cursor;
+      changed = true;
+    }
+    if ((nesting.depth[b + 1] as number) > (nesting.depth[a] as number)) {
+      let cursor = b + 1;
+      while (cursor < count && (nesting.depth[cursor + 1] as number) > (nesting.depth[a] as number)) {
+        cursor += 1;
+      }
+      if (cursor >= count) return null;
+      b = cursor;
+      changed = true;
+    }
+    if (!changed) return { first: a, last: b };
+  }
+  return null;
+}
+
+/**
+ * Splice `/P <</MCID n>> BDC … EMC` (or `/Artifact BMC … EMC`) into the page's own bytes at
+ * instruction boundaries.
  *
  * The original bytes are copied verbatim between the insertions — a content stream holds
  * strings, hex strings and inline image data whose re-serialisation could change meaning,
  * and there is no reason to rewrite what is already correct. Only the claims handed in
  * are inserted; the caller has already made sure they do not overlap.
  */
-function spliceMarkedContent(
+export function spliceMarkedContent(
   scan: ContentScan,
   claims: readonly Claim[],
 ): { readonly bytes: Uint8Array; readonly open: number; readonly close: number } {
-  const opens = new Map<number, number>();
-  const closes = new Map<number, number>();
+  const opens = new Map<number, Claim>();
+  const closes = new Set<number>();
   for (const claim of claims) {
-    opens.set(claim.first, claim.mcid);
-    closes.set(claim.last, claim.mcid);
+    opens.set(claim.first, claim);
+    closes.add(claim.last);
   }
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
@@ -1065,7 +1205,13 @@ function spliceMarkedContent(
   for (let index = 0; index < scan.instructions.length; index += 1) {
     const instruction = scan.instructions[index] as Instruction;
     const open = opens.get(index);
-    if (open !== undefined) chunks.push(encoder.encode(`\n/P <</MCID ${String(open)}>> BDC\n`));
+    if (open !== undefined) {
+      chunks.push(
+        encoder.encode(
+          open.role === 'Artifact' ? '\n/Artifact BMC\n' : `\n/P <</MCID ${String(open.mcid)}>> BDC\n`,
+        ),
+      );
+    }
     chunks.push(scan.bytes.subarray(cursor, instruction.start));
     chunks.push(scan.bytes.subarray(instruction.start, instruction.end));
     cursor = instruction.end;
@@ -1081,7 +1227,8 @@ function spliceMarkedContent(
 
 interface TaggedElement {
   readonly role: string;
-  readonly mcid: number;
+  /** The marked-content ids the element owns on the page; more than one when its text spans several text objects. */
+  readonly mcids: readonly number[];
   readonly alt: string | null;
 }
 
@@ -1089,7 +1236,12 @@ interface TaggedPage {
   readonly pageIndex: number;
   /** The page dictionary's indirect reference, which every `/Pg` names. */
   readonly pageRef: PDFObject;
+  /** The elements in tree order (the plan's, or content order). */
   readonly elements: readonly TaggedElement[];
+  /** Marked-content operators the page's stream had before the splice, to verify the delta. */
+  readonly before: { readonly opens: number; readonly closes: number };
+  /** Sequences the splice added; `artifacts` of them are `/Artifact BMC`. */
+  readonly added: { readonly total: number; readonly artifacts: number };
 }
 
 interface StructureWriteResult {
@@ -1127,11 +1279,11 @@ function writeStructure(doc: PDFDocument, pages: readonly TaggedPage[]): Structu
         S: element.role,
         P: documentElement,
         Pg: page.pageRef,
-        K: [{ Type: 'MCR', Pg: page.pageRef, MCID: element.mcid }],
+        K: element.mcids.map((mcid) => ({ Type: 'MCR', Pg: page.pageRef, MCID: mcid })),
       });
       if (element.alt !== null) dict.put('Alt', text(doc, element.alt));
       documentElement.get('K').push(dict);
-      parents[element.mcid] = dict;
+      for (const mcid of element.mcids) parents[mcid] = dict;
       counts.set(element.role, (counts.get(element.role) ?? 0) + 1);
       elements += 1;
     }
@@ -1164,27 +1316,27 @@ function writeStructure(doc: PDFDocument, pages: readonly TaggedPage[]): Structu
  * than as present-and-unreadable: it is not a fact the user can act on, and pretending a
  * value exists would send them looking for text no reader shows.
  */
-function textOf(value: PDFObject | null | undefined): string | null {
+export function textOf(value: PDFObject | null | undefined): string | null {
   const decoded = readText(value)?.trim() ?? '';
   return decoded === '' ? null : decoded;
 }
 
 /** The dictionary an entry resolves to (a stream's dictionary included), or `null`. */
-function dictOf(value: PDFObject | null | undefined): PDFObject | null {
+export function dictOf(value: PDFObject | null | undefined): PDFObject | null {
   const object = resolved(value);
   return object?.isDictionary() === true ? object : null;
 }
 
-function nameOf(value: PDFObject | null | undefined): string | null {
+export function nameOf(value: PDFObject | null | undefined): string | null {
   return readName(value);
 }
 
-function intOf(dict: PDFObject | null, key: string): number | null {
+export function intOf(dict: PDFObject | null, key: string): number | null {
   const value = dict === null ? null : resolved(dict.get(key));
   return value?.isNumber() === true ? value.asNumber() : null;
 }
 
-function catalogOf(doc: PDFDocument): PDFObject {
+export function catalogOf(doc: PDFDocument): PDFObject {
   const catalog = resolved(doc.getTrailer().get('Root'));
   if (catalog === null) {
     throw new ToolError('corrupt-document', { engine: 'mupdf', engineMessage: 'the document has no /Root' });
@@ -1193,12 +1345,12 @@ function catalogOf(doc: PDFDocument): PDFObject {
 }
 
 /** `N 0 R` for an indirect entry, `?` when the file gives none. */
-function refName(entry: PDFObject): string {
+export function refName(entry: PDFObject): string {
   return entry.isIndirect() ? `${entry.asIndirect()} 0 R` : '?';
 }
 
 /** Page object number → 0-based page index. */
-function pageNumbers(pages: readonly PDFObject[]): Map<number, number> {
+export function pageNumbers(pages: readonly PDFObject[]): Map<number, number> {
   const map = new Map<number, number>();
   for (const [index, page] of pages.entries()) {
     if (page.isIndirect()) map.set(page.asIndirect(), index);
@@ -1606,7 +1758,7 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
  * reads it through `readMetadata`, this op already holds the opened document and does
  * not pay for a second parse of the file.
  */
-function readXmpPacket(catalog: PDFObject): string | null {
+export function readXmpPacket(catalog: PDFObject): string | null {
   const decoded = decodeStream(catalog.get('Metadata'));
   return decoded === null ? null : new TextDecoder().decode(decoded);
 }
@@ -1648,7 +1800,7 @@ function walkStructure(
 }
 
 /** Every AcroForm field, by fully qualified name, with the page its widget sits on. */
-function readFields(
+export function readFields(
   catalog: PDFObject,
   pageRefs: ReadonlyMap<number, number>,
   context: OperationContext,
@@ -1713,7 +1865,7 @@ function widgetPage(
  * ------------------------------------------------------------------ */
 
 /** One page's tagging plan: what goes into the structure tree, and where. */
-interface PagePlan {
+export interface PagePlan {
   readonly pageIndex: number;
   readonly pageRef: PDFObject;
   readonly regions: readonly BlockRegion[];
@@ -1749,23 +1901,32 @@ export async function tagDocument(
   }
 }
 
-async function tagOpened(
+/** The result of reading every page's text and placing it in its content stream. */
+export interface PlannedPages {
+  readonly plans: readonly PagePlan[];
+  /** Heading size → role, from the whole document's text. */
+  readonly roles: ReadonlyMap<number, string>;
+  /** The body font size the heading guess was measured against. */
+  readonly body: number;
+  /** Why pages were left out, as the warnings the tagger reports. */
+  readonly notes: readonly OperationNote[];
+}
+
+/**
+ * Passes one and two of tagging, shared by the writer and by the reading-order editor's
+ * read of an untagged file: the text model of every page, then each page's text-showing
+ * operators matched to its blocks. A page whose text cannot be related to its content
+ * honestly is left out and **named in the notes** — it is never given an invented block.
+ */
+export async function planPages(
   doc: PDFDocument,
   bytes: Uint8Array,
   context: OperationContext,
-  options: TagDocumentOptions,
-): Promise<OperationOutcome> {
+  readPage: PageTextReader,
+): Promise<PlannedPages> {
   const notes: OperationNote[] = [];
-  const steps: string[] = ['load'];
   const pages = pageObjects(doc);
   const pageCount = pages.length;
-  const catalog = catalogOf(doc);
-
-  if (!catalog.get('StructTreeRoot').isNull()) {
-    refuse('the document already has a structure tree; merging two is not implemented', 'bytes');
-  }
-
-  const readPage = options.pageText ?? readPageText;
   const span = pageCount + 2;
 
   /* ---- pass 1: the text model of every page (no content streams retained) ---- */
@@ -1857,6 +2018,29 @@ async function tagOpened(
       break;
     }
   }
+  return { plans, roles, body, notes };
+}
+
+async function tagOpened(
+  doc: PDFDocument,
+  bytes: Uint8Array,
+  context: OperationContext,
+  options: TagDocumentOptions,
+): Promise<OperationOutcome> {
+  const notes: OperationNote[] = [];
+  const steps: string[] = ['load'];
+  const pages = pageObjects(doc);
+  const pageCount = pages.length;
+  const catalog = catalogOf(doc);
+
+  if (!catalog.get('StructTreeRoot').isNull()) {
+    refuse('the document already has a structure tree; merging two is not implemented', 'bytes');
+  }
+
+  const planned = await planPages(doc, bytes, context, options.pageText ?? readPageText);
+  const { plans, roles, body } = planned;
+  notes.push(...planned.notes);
+  const span = pageCount + 2;
 
   /* ---- splice: marked content first, structure tree second ---- */
   const tagged: TaggedPage[] = [];
@@ -1864,7 +2048,8 @@ async function tagOpened(
   let figuresWithoutAlt = 0;
   let headingsWritten = 0;
   for (const plan of plans) {
-    const claims = claimsFor(plan, roles);
+    const pagePlan = options.plan?.pages[plan.pageIndex];
+    const claims = claimsFor(plan, roles, pagePlan);
     if (claims.claims.length === 0) {
       if (plan.regions.length > 0) {
         notes.push(
@@ -1889,7 +2074,16 @@ async function tagOpened(
     tagged.push({
       pageIndex: plan.pageIndex,
       pageRef: plan.pageRef,
-      elements: claims.claims.map((claim) => ({ role: claim.role, mcid: claim.mcid, alt: claim.alt })),
+      elements: treeOrder(claims.claims, pagePlan).map((group) => ({
+        role: group.role,
+        mcids: group.mcids,
+        alt: group.alt,
+      })),
+      before: markedContentCounts(plan.scan.instructions),
+      added: {
+        total: claims.claims.length,
+        artifacts: claims.claims.filter((claim) => claim.role === 'Artifact').length,
+      },
     });
   }
 
@@ -1988,12 +2182,12 @@ async function tagOpened(
 }
 
 /** `throwIfAborted`'s error, recognised so a page read is never re-labelled as a fault. */
-function isAbort(error: unknown): error is Error {
+export function isAbort(error: unknown): error is Error {
   return error instanceof Error && error.name === 'AbortError';
 }
 
 /** The image `Do` operators of one page, with the alt text their XObject already carries. */
-function figureClaims(
+export function figureClaims(
   page: PDFObject,
   scan: ContentScan,
 ): readonly { readonly index: number; readonly role: string; readonly alt: string | null }[] {
@@ -2001,18 +2195,30 @@ function figureClaims(
   const xobjects = resources === null ? null : dictOf(resources.get('XObject'));
   if (xobjects === null) return [];
   const claims: { index: number; role: string; alt: string | null }[] = [];
-  const seen = new Set<string>();
+  // Every drawing of an image is a figure, the same picture drawn twice included: an
+  // unmarked `Do` is content a reader would meet outside the tree.
   for (const draw of scan.draws) {
     const entry = xobjects.get(draw.name);
     if (entry.isNull() || !entry.isStream()) continue;
     const dict = resolved(entry);
     if (dict === null || nameOf(dict.get('Subtype')) !== 'Image') continue;
-    const key = entry.isIndirect() ? refName(entry) : draw.name;
-    if (seen.has(key)) continue;
-    seen.add(key);
     claims.push({ index: draw.index, role: 'Figure', alt: textOf(dict.get('Alt')) });
   }
   return claims;
+}
+
+/** Whether any instruction in `[from, to]` is a show that another block owns. */
+function hasOtherOwner(
+  owner: ReadonlyMap<number, number>,
+  blockIndex: number,
+  from: number,
+  to: number,
+): boolean {
+  for (let index = from; index <= to; index += 1) {
+    const other = owner.get(index);
+    if (other !== undefined && other !== blockIndex) return true;
+  }
+  return false;
 }
 
 /**
@@ -2021,40 +2227,134 @@ function figureClaims(
  * two `/P` elements cannot both own the same `Tj`, and cutting one in half would make
  * the tree describe content it does not cover. The dropped count is reported.
  */
-function claimsFor(
+export function claimsFor(
   plan: PagePlan,
   roles: ReadonlyMap<number, string>,
+  pagePlan?: TagPlanPage,
 ): { readonly claims: readonly Claim[]; readonly skipped: number } {
+  const nesting = nestingOf(plan.scan.instructions);
+  const planned = (id: string, fallback: string): string => {
+    const wanted = pagePlan?.roles?.[id];
+    return wanted !== undefined && (wanted === 'Artifact' || EDITOR_ROLES.includes(wanted))
+      ? wanted
+      : fallback;
+  };
   const candidates: { first: number; last: number; role: string; blockId: string; alt: string | null }[] = [];
+  let skipped = 0;
+  const widen = (first: number, last: number) =>
+    expandToNesting(plan.scan.instructions, nesting, first, last);
+  const owner = new Map<number, number>();
+  for (const match of plan.matched.matches) {
+    for (const show of match.shows) owner.set(show, match.blockIndex);
+  }
   for (const match of plan.matched.matches) {
     const region = plan.regions[match.blockIndex];
     if (region === undefined) continue;
-    const role = roles.get(Math.round(region.fontSize)) ?? 'P';
-    candidates.push({ first: match.first, last: match.last, role, blockId: region.id, alt: null });
+    const role = planned(region.id, roles.get(Math.round(region.fontSize)) ?? 'P');
+    // A block's shows are grouped into sequences that stay inside one text object and one
+    // `q` level, with none of another block's text between them. A block that spans several
+    // text objects (a list drawn item by item, a paragraph around an image) becomes several
+    // sequences that all belong to one element, never one sequence stretched over them.
+    const segments: { first: number; last: number }[] = [];
+    for (const show of match.shows) {
+      const current = segments[segments.length - 1];
+      if (
+        current !== undefined &&
+        (nesting.object[current.first] as number) !== -1 &&
+        nesting.object[current.first] === nesting.object[show + 1] &&
+        nesting.depth[current.first] === nesting.depth[show + 1] &&
+        !hasOtherOwner(owner, match.blockIndex, current.last + 1, show - 1)
+      ) {
+        current.last = show;
+      } else {
+        segments.push({ first: show, last: show });
+      }
+    }
+    for (const segment of segments) {
+      const range = widen(segment.first, segment.last);
+      if (range === null) {
+        skipped += 1;
+        continue;
+      }
+      candidates.push({ ...range, role, blockId: region.id, alt: null });
+    }
   }
   for (const figure of plan.draws) {
+    const range = widen(figure.index, figure.index);
+    if (range === null) {
+      skipped += 1;
+      continue;
+    }
+    const id = `f${String(figure.index)}`;
     candidates.push({
-      first: figure.index,
-      last: figure.index,
-      role: figure.role,
-      blockId: '',
-      alt: figure.alt,
+      ...range,
+      role: planned(id, figure.role),
+      blockId: id,
+      alt: pagePlan?.alts?.[id]?.trim() || figure.alt,
     });
   }
   candidates.sort((left, right) => left.first - right.first || left.last - right.last);
 
+  // A page whose stream already carries marked-content ids (an untagged file that lost its
+  // tree, say) must not get a second claim on the same number.
+  let base = 0;
+  for (const found of latin1(plan.scan.bytes).matchAll(/\/MCID\s+(\d+)/g)) {
+    base = Math.max(base, Number(found[1]) + 1);
+  }
+
   const claims: Claim[] = [];
-  let skipped = 0;
   let cursor = -1;
+  let next = base;
   for (const candidate of candidates) {
     if (candidate.first <= cursor) {
       skipped += 1;
       continue;
     }
-    claims.push({ ...candidate, mcid: claims.length });
+    const artifact = candidate.role === 'Artifact';
+    claims.push({ ...candidate, mcid: artifact ? -1 : next });
+    if (!artifact) next += 1;
     cursor = candidate.last;
   }
   return { claims, skipped };
+}
+
+/**
+ * The claims of a page in the order their elements go in the tree: the plan's `order`
+ * first, then every claim it did not mention, in content order. Artifacts have no element.
+ */
+export function treeOrder(claims: readonly Claim[], pagePlan?: TagPlanPage): readonly ElementClaims[] {
+  // One element per block: the claims of a block that spans several text objects share it.
+  const groups = new Map<string, ElementClaims>();
+  for (const claim of claims) {
+    if (claim.role === 'Artifact') continue;
+    const group = groups.get(claim.blockId);
+    if (group === undefined) {
+      groups.set(claim.blockId, {
+        role: claim.role,
+        blockId: claim.blockId,
+        alt: claim.alt,
+        mcids: [claim.mcid],
+      });
+    } else group.mcids.push(claim.mcid);
+  }
+  const wanted = pagePlan?.order ?? [];
+  const ordered: ElementClaims[] = [];
+  for (const id of wanted) {
+    const group = groups.get(id);
+    if (group === undefined) continue;
+    ordered.push(group);
+    groups.delete(id);
+  }
+  for (const group of groups.values()) ordered.push(group);
+  return ordered;
+}
+
+/** One element's claims: the marked-content ids it owns on a page, in content order. */
+export interface ElementClaims {
+  readonly role: string;
+  readonly blockId: string;
+  readonly alt: string | null;
+  readonly mcids: number[];
 }
 
 /**
@@ -2107,24 +2407,38 @@ async function verifyTagged(
           engineMessage: `page ${page.pageIndex + 1} content is unreadable after the write`,
         });
       }
+      const instructions = readInstructions(content.bytes);
+      if (instructions === null) {
+        throw new ToolError('verification-failed', {
+          engine: 'mupdf',
+          engineMessage: `page ${page.pageIndex + 1} content cannot be tokenized after the write`,
+        });
+      }
       const text = latin1(content.bytes);
       const found = new Set<number>();
       for (const match of text.matchAll(/\/P <<\/MCID (\d+)>> BDC/g)) {
         found.add(Number(match[1]));
       }
-      const closes = text.match(/\bEMC\b/g)?.length ?? 0;
-      if (closes !== found.size) {
+      // The splice added exactly the sequences it claims to have added and left the stream
+      // balanced. They are counted as operators, so a page that already carried marked
+      // content of its own (optional content, artifacts) verifies as well.
+      const after = markedContentCounts(instructions);
+      const opened = after.opens - page.before.opens;
+      const closed = after.closes - page.before.closes;
+      if (opened !== page.added.total || closed !== page.added.total) {
         throw new ToolError('verification-failed', {
           engine: 'mupdf',
-          engineMessage: `page ${page.pageIndex + 1} has ${found.size} marked-content starts and ${closes} ends`,
+          engineMessage: `page ${page.pageIndex + 1} gained ${opened} marked-content starts and ${closed} ends, expected ${page.added.total}`,
         });
       }
       for (const element of page.elements) {
-        if (!found.has(element.mcid)) {
-          throw new ToolError('verification-failed', {
-            engine: 'mupdf',
-            engineMessage: `page ${page.pageIndex + 1} structure points at /MCID ${element.mcid}, which is not in its content stream`,
-          });
+        for (const mcid of element.mcids) {
+          if (!found.has(mcid)) {
+            throw new ToolError('verification-failed', {
+              engine: 'mupdf',
+              engineMessage: `page ${page.pageIndex + 1} structure points at /MCID ${mcid}, which is not in its content stream`,
+            });
+          }
         }
       }
     }
@@ -2133,8 +2447,22 @@ async function verifyTagged(
   }
 }
 
+/** `BMC`/`BDC` and `EMC` operators of a stream: the counts the splice is verified by. */
+export function markedContentCounts(instructions: readonly Instruction[]): {
+  readonly opens: number;
+  readonly closes: number;
+} {
+  let opens = 0;
+  let closes = 0;
+  for (const instruction of instructions) {
+    if (instruction.operator === 'BMC' || instruction.operator === 'BDC') opens += 1;
+    else if (instruction.operator === 'EMC') closes += 1;
+  }
+  return { opens, closes };
+}
+
 /** One byte is one character: the notation a content stream is written in (§7.2). */
-function latin1(bytes: Uint8Array): string {
+export function latin1(bytes: Uint8Array): string {
   let text = '';
   const chunk = 8192;
   for (let offset = 0; offset < bytes.length; offset += chunk) {
@@ -2323,7 +2651,7 @@ function drawnPages(pages: readonly PDFObject[], pageIndex: number, name: string
 }
 
 /** A form field by fully qualified name, anywhere in the AcroForm tree. */
-function findField(catalog: PDFObject, name: string): PDFObject | null {
+export function findField(catalog: PDFObject, name: string): PDFObject | null {
   const acro = dictOf(catalog.get('AcroForm'));
   const fields = acro === null ? null : resolved(acro.get('Fields'));
   if (fields?.isArray() !== true) return null;
