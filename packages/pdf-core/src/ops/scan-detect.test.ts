@@ -28,11 +28,10 @@ function inside(polygon: readonly Point[], x: number, y: number): boolean {
  * `paper` inside the quad, `desk` outside, edges antialiased (4 x 4 coverage) as a camera's
  * are, plus a deterministic grain so it is not a flat fill. A hard-edged staircase is not
  * what a photograph looks like: its edge pixels split between two Hough distance bins and a
- * tilted side can fall below the detector's vote floor, so a synthetic page is antialiased.
+ * tilted side used to fall below the detector's vote floor; `grid = 1` draws one on purpose.
  */
-function drawPage(width: number, height: number, quad: Quad, paper = 225, desk = 35): RasterImage {
+function drawPage(width: number, height: number, quad: Quad, paper = 225, desk = 35, grid = 4): RasterImage {
   const data = new Uint8ClampedArray(width * height * 4);
-  const grid = 4;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       let covered = 0;
@@ -93,6 +92,36 @@ describe('detectPage', () => {
     if (found === null) return;
     // Working scale is one third: a corner is good to a pixel there, so to about 3 here.
     expectCorners(found.quad, wanted, 6);
+  });
+
+  it('finds a sheet at any turn, antialiased or hard-edged (votes split between bins)', () => {
+    /** A 240 x 220 sheet turned `degrees` about the picture's centre. */
+    const turned = (degrees: number): Quad => {
+      const r = (degrees * Math.PI) / 180;
+      return [
+        [-120, -110],
+        [120, -110],
+        [120, 110],
+        [-120, 110],
+      ].map(([x, y]) => ({
+        x: 240 + (x as number) * Math.cos(r) - (y as number) * Math.sin(r),
+        y: 180 + (x as number) * Math.sin(r) + (y as number) * Math.cos(r),
+      })) as unknown as Quad;
+    };
+    // 45° failed in both drawings, and 5°, 40° and 80° hard-edged, before the peak was
+    // read over three distance bins and the vote spread widened to 6°.
+    for (const degrees of [5, 40, 45, 80]) {
+      for (const grid of [4, 1]) {
+        const wanted = turned(degrees);
+        const found = detectPage(drawPage(480, 360, wanted, 225, 35, grid));
+        expect(found, `${degrees}° grid ${grid}`).not.toBeNull();
+        if (found === null) continue;
+        for (const corner of wanted) {
+          const nearest = Math.min(...found.quad.map((point) => distance(point, corner)));
+          expect(nearest, `${degrees}° grid ${grid}`).toBeLessThan(3);
+        }
+      }
+    }
   });
 
   it('offers nothing for a picture with no page in it', () => {

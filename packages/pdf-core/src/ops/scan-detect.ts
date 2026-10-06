@@ -254,7 +254,7 @@ interface Line {
 
 const THETA_BINS = 180;
 /** Edge pixels vote for normals within this many bins either side of their gradient. */
-const VOTE_SPREAD = 4;
+const VOTE_SPREAD = 6;
 const MAX_LINES = 12;
 
 /** Hough accumulator with the gradient-direction restriction, and its strongest separated peaks. */
@@ -287,18 +287,32 @@ function houghLines(map: EdgeMap): Line[] {
   const minimum = Math.max(18, Math.round(Math.min(width, height) * 0.22));
   const lines: Line[] = [];
   for (let found = 0; found < MAX_LINES; found += 1) {
+    // A peak is read over three neighbouring distance bins: an edge whose distance falls
+    // between two bins (a side at most angles, a staircase edge, one at 45°) splits its
+    // votes between them, and a single-bin maximum then fell under the floor and the side
+    // was never offered.
     let best = 0;
     let bestIndex = -1;
-    for (let index = 0; index < accumulator.length; index += 1) {
-      const value = accumulator[index] as number;
-      if (value > best) {
-        best = value;
-        bestIndex = index;
+    for (let row = 0; row < THETA_BINS; row += 1) {
+      const start = row * rhoBins;
+      for (let column = 1; column < rhoBins - 1; column += 1) {
+        const index = start + column;
+        const value =
+          (accumulator[index - 1] as number) +
+          (accumulator[index] as number) +
+          (accumulator[index + 1] as number);
+        if (value > best) {
+          best = value;
+          bestIndex = index;
+        }
       }
     }
     if (best < minimum || bestIndex < 0) break;
     const bin = Math.floor(bestIndex / rhoBins);
-    const rho = (bestIndex % rhoBins) - diagonal;
+    const before = accumulator[bestIndex - 1] as number;
+    const after = accumulator[bestIndex + 1] as number;
+    // The vote-weighted centre of the window, so a split peak lands between its bins.
+    const rho = (bestIndex % rhoBins) - diagonal + (after - before) / best;
     lines.push({ theta: (bin * Math.PI) / THETA_BINS, rho, votes: best, frame: false });
     // Suppress the neighbourhood, across the 0 / 180° seam as well.
     const reach = Math.max(6, Math.round(Math.min(width, height) * 0.03));
