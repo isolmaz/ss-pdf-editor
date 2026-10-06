@@ -615,3 +615,51 @@ export function labelledPdf(
   source += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R >>\nstartxref\n${source.indexOf('xref\n')}\n%%EOF\n`;
   return new Uint8Array([...source].map((character) => character.charCodeAt(0)));
 }
+
+/**
+ * A one-page document carrying a sticky note (`/Text`, icon "Note") of its own, written by
+ * the pinned MuPDF: the annotation every reader draws with an icon.
+ */
+export async function textNotePdf(contents: string): Promise<Uint8Array> {
+  interface MupdfBuffer {
+    asUint8Array(): Uint8Array;
+    destroy(): void;
+  }
+  interface NoteModule {
+    readonly PDFDocument: {
+      openDocument(
+        bytes: Uint8Array,
+        magic: string,
+      ): {
+        loadPage(index: number): {
+          createAnnotation(type: string): {
+            setRect(rect: readonly number[]): void;
+            setContents(text: string): void;
+            setIcon(name: string): void;
+            update(): void;
+          };
+        };
+        saveToBuffer(options: string): MupdfBuffer;
+        destroy(): void;
+      };
+    };
+  }
+  // The root does not declare `mupdf`; it is resolved from the workspace that does.
+  const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as NoteModule;
+  const doc = mupdf.PDFDocument.openDocument(labelledPdf('Noted', 1), 'application/pdf');
+  try {
+    const note = doc.loadPage(0).createAnnotation('Text');
+    note.setRect([400, 600, 420, 620]);
+    note.setContents(contents);
+    note.setIcon('Note');
+    note.update();
+    const buffer = doc.saveToBuffer('');
+    try {
+      return new Uint8Array(buffer.asUint8Array());
+    } finally {
+      buffer.destroy();
+    }
+  } finally {
+    doc.destroy();
+  }
+}

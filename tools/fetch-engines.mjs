@@ -96,6 +96,20 @@ const ENGINES = [
       { from: 'cmaps', to: 'cmaps' },
       { from: 'standard_fonts', to: 'standard_fonts' },
       { from: 'wasm', to: 'wasm' },
+      // The icon of a `/Text` note (and its kin) that carries no appearance of its own: the
+      // annotation layer requests `annotation-<name>.svg` from `imageResourcesPath`, and a
+      // missing file showed as a broken image over the page.
+      { from: 'web/images/annotation-check.svg', to: 'images/annotation-check.svg' },
+      { from: 'web/images/annotation-comment.svg', to: 'images/annotation-comment.svg' },
+      { from: 'web/images/annotation-help.svg', to: 'images/annotation-help.svg' },
+      { from: 'web/images/annotation-insert.svg', to: 'images/annotation-insert.svg' },
+      { from: 'web/images/annotation-key.svg', to: 'images/annotation-key.svg' },
+      { from: 'web/images/annotation-newparagraph.svg', to: 'images/annotation-newparagraph.svg' },
+      { from: 'web/images/annotation-noicon.svg', to: 'images/annotation-noicon.svg' },
+      { from: 'web/images/annotation-note.svg', to: 'images/annotation-note.svg' },
+      { from: 'web/images/annotation-paperclip.svg', to: 'images/annotation-paperclip.svg' },
+      { from: 'web/images/annotation-paragraph.svg', to: 'images/annotation-paragraph.svg' },
+      { from: 'web/images/annotation-pushpin.svg', to: 'images/annotation-pushpin.svg' },
     ],
   },
   {

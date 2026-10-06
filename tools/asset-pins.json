@@ -1011,6 +1011,61 @@
           "sha256": "543923bead225732aba30976690ee89095a19628277b5863efecc2c728d5d7bf"
         },
         {
+          "path": "engines/pdfjs/images/annotation-check.svg",
+          "bytes": 415,
+          "sha256": "9a680f1212888ede7dcae6bfc8cafc447babf4ce531271c8d07277b0aedade96"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-comment.svg",
+          "bytes": 883,
+          "sha256": "c58b385b4a0be6de822a3262b8191073d1730f6420368bd9c6d80db7312327ff"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-help.svg",
+          "bytes": 2168,
+          "sha256": "74d9bba0814d12f5ae2715189e1747b7edf5ff6d82c4ca75bae86d717319b6eb"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-insert.svg",
+          "bytes": 408,
+          "sha256": "b2153e2c88c62179029ea9876d463216529ecf581b77d52c971a2cdf3d3166c6"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-key.svg",
+          "bytes": 1452,
+          "sha256": "5772b8dd158b0f02bb2be689bb680f4903d84e202cb29a3dc0560af53134c6ba"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-newparagraph.svg",
+          "bytes": 426,
+          "sha256": "a583cca122263d94c3eebfefe83c965a1b305b9c84e5aa3c5ba10527941db7db"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-noicon.svg",
+          "bytes": 158,
+          "sha256": "76399e70d311834d11ab2d6239118b36847d79a78d7655b1f839d51c811304cf"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-note.svg",
+          "bytes": 1041,
+          "sha256": "11a75c9f233dd3e5e3500edcdd733358394f28395337616e8b0430694bf0dba1"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-paperclip.svg",
+          "bytes": 552,
+          "sha256": "0213c8baed4f8c497881ffed0e49abb309291d51725aaf1a0a757174b4999368"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-paragraph.svg",
+          "bytes": 1143,
+          "sha256": "efbcd2a6cfb4581dad74a1c09ad43cf2b8245611e5b19c966317da948f2bcb7c"
+        },
+        {
+          "path": "engines/pdfjs/images/annotation-pushpin.svg",
+          "bytes": 1375,
+          "sha256": "22197186d18445959e5fe5577d8e34440b31d87c811daf47318078310c0c5530"
+        },
+        {
           "path": "engines/pdfjs/pdf.worker.min.mjs",
           "bytes": 1265413,
           "sha256": "8ab0e5e30031b4a06ecfddd5ae9562f0227f830ee7ec9ed1a968b134243d2386"

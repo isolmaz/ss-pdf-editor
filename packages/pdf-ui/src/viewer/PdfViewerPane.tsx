@@ -1,4 +1,4 @@
-import { type PdfDocumentHandle, pdfOptionalContentConfig } from 'pdf-core';
+import { PDFJS_ASSETS, type PdfDocumentHandle, pdfOptionalContentConfig } from 'pdf-core';
 import { decodeEngineValues, type EngineValuesDraft, encodeEngineValues } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import type { EventBus, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
@@ -563,6 +563,9 @@ export function PdfViewerPane({
         // themselves (`ops/AnnotationLayer.tsx`), so none of it is wanted.
         annotationMode: ANNOTATION_MODE_ENABLE_FORMS,
         annotationEditorMode: ANNOTATION_EDITOR_DISABLE,
+        // A file's `/Text` note is drawn with pdf.js's own icon; the default path is
+        // relative to the page and answered 404 with the editor's HTML.
+        imageResourcesPath: PDFJS_ASSETS.images,
         // Cap a page's backing store. pdf.js scales by `devicePixelRatio` and only
         // stops at 16 Mpx (≈64 MB per canvas); on a DPR-1.5 display that is ~4.7 Mpx per
         // letter page and 16 s of main-thread painting inside a 19.7 s scroll of a

@@ -99,6 +99,8 @@ declare module 'pdfjs-dist/web/pdf_viewer.mjs' {
      * budget (measured: 16 s of main-thread painting in a 19.7 s scroll).
      */
     maxCanvasPixels?: number;
+    /** Directory (trailing `/`) the annotation layer loads `annotation-<name>.svg` icons from. */
+    imageResourcesPath?: string;
   }
 
   export class PDFViewer {

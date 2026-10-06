@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
 import { expect, test } from 'playwright/test';
 import { useAdvancedMode } from './settings';
-import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { readProducedPageTexts, readProducedPdf, textNotePdf, toolFixturePdf } from './tool-fixture';
 
 /**
  * Editor flows end to end: errors, navigation, page operations, search, forms,
@@ -210,4 +210,22 @@ test('closing an edited document asks first, and the recent list names its contr
   await expect(row.getByRole('button', { name: 'Star', exact: true })).toBeVisible();
   await row.getByRole('button', { name: 'Remove from list' }).click();
   await expect(row).toBeHidden();
+});
+
+test("a file's own sticky note is drawn with its icon, not a broken image", async ({ page }) => {
+  // pdf.js lays `annotation-<icon>.svg` over every /Text note from its image path; the
+  // default path was relative to the page and the request came back 404 with HTML.
+  const icons: { url: string; status: number }[] = [];
+  page.on('response', (response) => {
+    if (/annotation-[a-z]+\.svg/.test(response.url()))
+      icons.push({ url: response.url(), status: response.status() });
+  });
+  await open(page, 'noted.pdf', await textNotePdf('A note the file already had'));
+  const icon = page.locator('.annotationLayer .textAnnotation img').first();
+  await expect(icon).toBeAttached({ timeout: 15_000 });
+  await expect
+    .poll(() => icon.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0))
+    .toBe(true);
+  expect(icons.length).toBeGreaterThan(0);
+  expect(icons.every((entry) => entry.status === 200)).toBe(true);
 });

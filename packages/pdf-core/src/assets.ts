@@ -18,6 +18,8 @@ export const PDFJS_ASSETS = {
   standardFonts: `${ENGINE_BASE_URL}/pdfjs/standard_fonts/`,
   /** openjpeg/qcms WASM used for JPEG2000 and ICC colour handling. */
   wasm: `${ENGINE_BASE_URL}/pdfjs/wasm/`,
+  /** The annotation layer's note icons (`annotation-<name>.svg`), for a note without `/AP`. */
+  images: `${ENGINE_BASE_URL}/pdfjs/images/`,
 } as const;
 
 export const MUPDF_ASSETS = {
