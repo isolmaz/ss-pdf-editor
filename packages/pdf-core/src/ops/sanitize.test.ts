@@ -439,6 +439,14 @@ describe('sanitizeDocument', () => {
       left: 0,
     });
     expect(external.report.notes.some((entry) => entry.key === 'op.note.sanitize.pictureChanges')).toBe(true);
+
+    // Both: a link left with no action at all is a dead rectangle, so the script links go too.
+    const both = await sanitizeDocument(bytes, { ...NONE, javascript: true, links: true }, run);
+    const rest = survivors(both.bytes);
+    expect(rest.js).toBeUndefined();
+    expect(rest.launch).toBeUndefined();
+    expect(rest.goto).toBe('GoTo');
+    expect(rest.gotochain).toBe('GoTo');
   });
 
   it('returns a clean file as it came, saying so, and refuses an aborted run', async () => {

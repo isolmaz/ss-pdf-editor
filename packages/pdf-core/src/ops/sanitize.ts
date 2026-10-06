@@ -29,7 +29,8 @@
  *  An action that goes takes its whole `/Next` chain with it; one that stays has the doomed
  *  actions cut out of its chain. A Link annotation whose *external* action went and that has no
  *  other destination is removed with it (a dead rectangle with a border is not "sanitised");
- *  one whose *script* went stays, so the page does not change.
+ *  one whose *script* went stays, so the page does not change — unless external links are
+ *  being removed in the same run, when that dead rectangle goes for the same reason.
  *
  * **What goes with each category**
  *  - scripts: the actions above; `/Names /JavaScript`; XFA packets that contain `<script`
