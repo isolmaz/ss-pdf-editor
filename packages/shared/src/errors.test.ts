@@ -46,6 +46,20 @@ describe('ToolError contract', () => {
     expect(isToolError({ code: 'internal' })).toBe(false);
   });
 
+  it('names a chunk the browser could not fetch as offline, not as an internal failure', () => {
+    for (const message of [
+      'Failed to fetch dynamically imported module: http://localhost/editor/assets/pdf-1.js',
+      'error loading dynamically imported module: http://localhost/editor/assets/pdf-1.js',
+      'Importing a module script failed.',
+      'Unable to preload CSS for /editor/assets/PrintDialog-1.css',
+    ]) {
+      const error = toToolError(new TypeError(message), 'pdfjs');
+      expect(error.code, message).toBe('asset-offline');
+      expect(error.details.engineMessage).toBe(message);
+    }
+    expect(toToolError(new TypeError('Failed to fetch'), 'pdfjs').code).toBe('internal');
+  });
+
   it('names the message and the hint of every code separately, after the code', () => {
     for (const code of TOOL_ERROR_CODES) {
       const error = new ToolError(code, { engine: 'test' });
