@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@bentopdf/gs-wasm':
+        specifier: 0.1.1
+        version: 0.1.1
       '@biomejs/biome':
         specifier: 2.5.13
         version: 2.5.13
@@ -319,6 +322,9 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@bentopdf/gs-wasm@0.1.1':
+    resolution: {integrity: sha512-EAliG+AxKLf46lOoDreddjOQtyTZGekJ2KRUXjygMFeg8vimOX44QKpim+t3HGHn0eXKbtsItcdN7qcjMSiuYQ==}
 
   '@biomejs/biome@2.5.13':
     resolution: {integrity: sha512-+SEC/mFk1a+5mvUANZgbZTaiZXs1nj4iMhL/PHiqDT5TPUEPFIlliEtkKKZB4N862yylHC3UI+/Sj2I0HJEqhA==}
@@ -981,6 +987,9 @@ packages:
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+
+  '@types/emscripten@1.41.6':
+    resolution: {integrity: sha512-uN+9i8bFT5CUcZfyIEYDrSueACEyKGbUs5kC/72DGlZZoinh84sJfVV0i8UOJD1asdzkvLPBRrKs41kZ8MdEXg==}
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
@@ -1775,6 +1784,10 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
+  '@bentopdf/gs-wasm@0.1.1':
+    dependencies:
+      '@types/emscripten': 1.41.6
+
   '@biomejs/biome@2.5.13':
     optionalDependencies:
       '@biomejs/cli-darwin-arm64': 2.5.13
@@ -2230,6 +2243,8 @@ snapshots:
       assertion-error: 2.0.1
 
   '@types/deep-eql@4.0.2': {}
+
+  '@types/emscripten@1.41.6': {}
 
   '@types/estree@1.0.9': {}
 

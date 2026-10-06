@@ -397,6 +397,10 @@ const AccessibilityPanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
   return { default: module.AccessibilityPanel };
 });
+const PdfAPanel = lazy(async () => {
+  const module = await import('pdf-ui/panels');
+  return { default: module.PdfAPanel };
+});
 /**
  * The reading-order boxes belong to the accessibility tags view; they draw what that view
  * published to its store (same module instance as the panel, one chunk) and nothing else.
@@ -5479,6 +5483,7 @@ export function App({ store }: AppProps) {
                     { id: 'redaction-audit', label: 'audit.title' },
                     { id: 'compare', label: 'panel.compare' },
                     { id: 'accessibility', label: 'panel.accessibility' },
+                    { id: 'pdfa', label: 'panel.pdfa' },
                   ]}
                   activeId={rightTab}
                   onSelect={setRightTab}
@@ -5697,6 +5702,22 @@ export function App({ store }: AppProps) {
                         onWritten={(outcome) => void applyAccessibility(outcome)}
                         onTagged={(outcome) => void applyAccessibility(outcome)}
                         onAltWritten={(outcome) => void applyAccessibility(outcome)}
+                        onNotice={setNotice}
+                      />
+                    </Suspense>
+                  ) : rightTab === 'pdfa' ? (
+                    <Suspense
+                      fallback={
+                        <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
+                          {t('panel.pdfa')}
+                        </p>
+                      }
+                    >
+                      <PdfAPanel
+                        key={activeTab.working.id}
+                        t={t}
+                        read={currentBytes}
+                        onConvert={() => openDialog('pdfa')}
                         onNotice={setNotice}
                       />
                     </Suspense>

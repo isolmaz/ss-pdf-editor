@@ -50,6 +50,8 @@ export const TOOL_ERROR_CODES = [
   'ocr-language-missing',
   'voice-unavailable',
   'permission-denied',
+  'pdfa-failed',
+  'pdfa-not-compliant',
   'internal',
 ] as const;
 

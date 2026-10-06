@@ -14,6 +14,7 @@
  */
 
 import {
+  Archive,
   ArrowsIn,
   Broom,
   Camera,
@@ -114,6 +115,7 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'tools.export-text', category: 'convert', icon: FileText, descriptionKey: 'home.tool.exportText' },
   { id: 'tools.export-office', category: 'convert', icon: FileDoc, descriptionKey: 'home.tool.exportOffice' },
   { id: 'tools.xfa-flatten', category: 'convert', icon: FileCode, descriptionKey: 'home.tool.xfa' },
+  { id: 'tools.pdfa', category: 'convert', icon: Archive, descriptionKey: 'home.tool.pdfa' },
   { id: 'tools.signature-simple', category: 'sign', icon: Signature, descriptionKey: 'home.tool.signature' },
   { id: 'tools.sign', category: 'sign', icon: Certificate, descriptionKey: 'home.tool.sign' },
   { id: 'tools.form-fields', category: 'sign', icon: Textbox, descriptionKey: 'home.tool.formFields' },

@@ -18,13 +18,21 @@
 
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { vi } from 'vitest';
 
 const coreRequire = createRequire(new URL('./packages/pdf-core/package.json', import.meta.url));
 const mupdfUrl = pathToFileURL(coreRequire.resolve('mupdf')).href;
 // pdf.js insists on a trailing `/`; Node's `fs` accepts forward slashes on Windows too.
 const pdfjsDir = dirname(coreRequire.resolve('pdfjs-dist/package.json')).replaceAll('\\', '/');
+
+// Ghostscript is a fetched engine (`public/engines/ghostscript`, `pnpm fetch:engines`): the
+// emscripten loader is imported by file URL and its wasm read by path, as Node does.
+const ghostscriptDir = new URL('./public/engines/ghostscript/', import.meta.url);
+const ghostscriptAssets = {
+  js: new URL('gs.js', ghostscriptDir).href,
+  wasm: fileURLToPath(new URL('gs.wasm', ghostscriptDir)),
+};
 
 vi.mock('./packages/pdf-core/src/engines/mupdf.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./packages/pdf-core/src/engines/mupdf.ts')>();
@@ -41,6 +49,7 @@ vi.mock('./packages/pdf-core/src/assets.ts', async (importOriginal) => {
       standardFonts: `${pdfjsDir}/standard_fonts/`,
       wasm: `${pdfjsDir}/wasm/`,
     },
+    GHOSTSCRIPT_ASSETS: ghostscriptAssets,
   };
 });
 

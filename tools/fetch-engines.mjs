@@ -109,6 +109,21 @@ const ENGINES = [
     ],
   },
   {
+    id: 'ghostscript',
+    package: '@bentopdf/gs-wasm',
+    target: 'engines/ghostscript',
+    // PDF/A conversion (`pdf-core/ops/pdfa.ts`): Ghostscript 10.06.0 built for WebAssembly, AGPL-3.0
+    // (the package ships its build scripts as the corresponding source). It runs in a module worker
+    // (`engines/ghostscript-worker.ts`) that imports `gs.js` from our own origin; `gs.js` finds
+    // `gs.wasm` next to itself. The sRGB profile and the PDF/A definition the conversion needs are
+    // not separate assets: the profile is read from Ghostscript's own ROM at run time and the
+    // definition is written by the worker.
+    entries: [
+      { from: 'assets/gs.js', to: 'gs.js' },
+      { from: 'assets/gs.wasm', to: 'gs.wasm' },
+    ],
+  },
+  {
     id: 'space-grotesk',
     package: '@fontsource/space-grotesk',
     target: 'fonts/space-grotesk',
