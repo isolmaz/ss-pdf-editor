@@ -1,240 +1,219 @@
 # SsPdfEditor
 
-A PDF editor that runs entirely in the browser. Documents are opened from the device,
-edited in the tab and written back to the device — there is no server-side processing, no
-account, no subscription and no telemetry. The deployed build is a static asset tree; the
-only server involved is one that hands files back.
+**A free PDF editor that runs entirely in your browser.** Your files never leave your
+device: no upload, no account, no subscription, no tracking.
 
-- **Product name:** SsPdfEditor
-- **Published surface:** <https://pdf.isolmaz.com/> (landing) and `/editor/` (the app)
-- **Licence:** AGPL-3.0-or-later (see [`LICENSE`](LICENSE))
-- **Source:** <https://github.com/isolmaz/ss-pdf-editor> (the editor's Help menu links to it)
-- **Security reports:** see [`SECURITY.md`](SECURITY.md); contributions: [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- **Author:** isolmaz `<info@isolmaz.com>`
+**[Open the editor](https://pdf.isolmaz.com/editor/)** · [Website](https://pdf.isolmaz.com/) · [Report a bug](https://github.com/isolmaz/ss-pdf-editor/issues/new/choose) · [Architecture](architecture.md)
 
-This file is the operator's view: what the product does, how to run it, and what its
-limits are. The internal design — module boundaries, the write pipeline, the coordinate
-spaces, the verification contract — is in [`architecture.md`](architecture.md).
-
----
-
-## See it in action
-
-Recorded from the built app with a sample document (`tools/spikes/readme-media.mjs`
-regenerates every clip).
+- 🔒 **Private.** Every engine (pdf.js, MuPDF, Tesseract) runs in the tab. The server only
+  hands out static files.
+- ✍️ **Full editor.** You can annotate, fill forms, edit text, organise pages, redact, encrypt,
+  sign, run OCR, compare documents and run batches.
+- ✅ **Honest results.** Every write is re-opened and checked. Redaction removes content
+  instead of covering it.
+- 📴 **Works offline.** It installs as a PWA, in Turkish and English, with light and dark
+  themes.
 
 | | |
 | --- | --- |
-| **Open, navigate, zoom.** Pages, thumbnails and zoom; nothing is uploaded. <br> ![Opening a PDF and moving through its pages](docs/media/open-and-navigate.gif) | **Mark up.** Highlight text, draw shapes and freehand, add text; every mark is a real PDF annotation. <br> ![Highlighting, drawing and adding text](docs/media/annotate.gif) |
-| **Organise pages.** Rotate a page from its thumbnail, drag pages into a new order, undo any step. <br> ![Rotating and reordering pages](docs/media/pages.gif) | **Fill and sign.** Type into form fields and sign with a PKCS#12 identity (PAdES B-B) with a visible stamp. <br> ![Filling a field and signing the document](docs/media/fill-and-sign.gif) |
-| **Redact for real.** Marked content is removed from the file, then verified gone, not just covered. <br> ![Redacting a line of text](docs/media/redact.gif) | **Every tool, one keystroke away.** `Ctrl+K` finds any command; export to PDF, compressed PDF, images or text. <br> ![The command palette and the export dialog](docs/media/palette-and-export.gif) |
+| **Open, navigate, zoom** <br> ![Opening a PDF and moving through its pages](docs/media/open-and-navigate.gif) | **Mark up** <br> ![Highlighting, drawing and adding text](docs/media/annotate.gif) |
+| **Organise pages** <br> ![Rotating and reordering pages](docs/media/pages.gif) | **Fill and sign** <br> ![Filling a field and signing the document](docs/media/fill-and-sign.gif) |
+| **Redact for real** <br> ![Redacting a line of text](docs/media/redact.gif) | **Command palette and export** <br> ![The command palette and the export dialog](docs/media/palette-and-export.gif) |
+
+## Features
+
+| Area | What you can do |
+| --- | --- |
+| **Read** | Continuous scroll, search, thumbnails, outline, tabs, recent files, single-page / book / presentation modes, magnifier, snapshot to PNG, reading mode with read-aloud, password-protected files (read-only) |
+| **Annotate** | Highlight, underline, strike-out, squiggly, ink, shapes, notes, stamps, typed text (Turkish-safe), links; select, move, rotate and delete any mark, including the file's own |
+| **Forms** | Fill, create fields, set flags, flatten, simple calculations, FDF/JSON import and export |
+| **Measure** | Distance, perimeter and area with scale, grid and snapping, written as real PDF annotations |
+| **Pages** | Insert, delete, duplicate, reorder (drag), rotate, extract, split, replace, merge; page boxes and auto-crop; page labels; N-up, booklet, poster and duplex printing |
+| **Text** | Edit text in place with reflow, export text (plain or Markdown), export pages as images and build a PDF from images |
+| **Structure** | Edit the outline, add and remove attachments, edit layers (OCG), properties and XMP metadata, header/footer, Bates numbering, watermark |
+| **Security** | True redaction with an object-level audit, AES-256 encryption with permissions, remove a password, PAdES signing from a PKCS#12 file, signature verification against your own trust roots |
+| **Tools** | OCR (Turkish and English), accessibility check and tagging, alt text, text and pixel comparison, batch processing, compression |
+| **Workflow** | `Ctrl+K` command palette, undo/redo history, local drafts, Save over the original (Chromium) or Export a copy, simple and advanced interface modes |
+
+## Quick start
+
+You need **Node ≥ 26** and **pnpm 9.15.9**.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm fetch:engines --sync   # copies the pinned engines from the pnpm store (no CDN)
+pnpm dev                    # http://localhost:5173
+```
 
 ---
 
-## Table of contents
+## Contents
 
-1. [See it in action](#see-it-in-action)
-2. [What it does](#what-it-does)
-3. [Privacy and security posture](#privacy-and-security-posture)
-4. [Document limits](#document-limits)
-5. [Getting started](#getting-started)
-6. [Command reference](#command-reference)
-7. [Repository layout](#repository-layout)
-8. [Quality gates](#quality-gates)
-9. [Build, assemble, deploy](#build-assemble-deploy)
-10. [Offline use](#offline-use)
-11. [Honest limits and known gaps](#honest-limits-and-known-gaps)
-12. [License](#license)
+1. [Features in detail](#features-in-detail)
+2. [Privacy and security](#privacy-and-security)
+3. [Document limits](#document-limits)
+4. [Honest limits](#honest-limits)
+5. [Development](#development)
+6. [Quality gates](#quality-gates)
+7. [Build and deploy](#build-and-deploy)
+8. [Offline use](#offline-use)
+9. [Contributing](#contributing)
+10. [License](#license)
 
 ---
 
-## What it does
+## Features in detail
 
-The editor is organised around three ideas: **read**, **edit**, **prove it worked**. Every
-capability below is implemented in this repository and reachable from the UI (menu bar,
-`Ctrl+K` command palette, the tool rail, docks or the home screen).
+Every capability below is implemented in this repository. You can reach each one from the
+UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home screen.
 
 ### Reading and navigation
 
-- Continuous virtualised scrolling, text selection and search with match highlighting,
-  driven by pdf.js's own viewer stack.
-- Single-page, book and full-screen presentation modes; magnifier lens; a snapshot tool
-  that composes visible pages into one PNG.
-- Reading mode: the page as a text column, with read-aloud through locally installed
-  speech voices only.
-- Page thumbnails, outline and document tabs, plus an idle-time recent-files list (a recent
-  entry reopens the document it names, matched by identity, never by file name).
-- **The document never moves under the reader.** Marks, selection frames, measurements and
-  staged redactions live inside the viewer's scroll content, so they scroll and zoom with the
-  page. Arming a tool, an operation's progress and its notice never shift the page: the tool
-  strip has a fixed height, and progress and notices float over the document. A narrowed
-  window re-fits a "fit width" page. Until a document's first page has painted, the viewer
-  shows that it is preparing the pages and keeps the marks hidden.
-- **Password-protected files open.** The editor asks for the open password (a wrong one is
-  refused on the spot) and opens the document read-only: it can be read, searched and
-  printed. "Create unlocked copy" makes an unprotected copy in a new tab to edit; the
-  original file stays protected. The password is held in memory for the session only.
-- Keyboard shortcut help from the Help menu or `Ctrl+K` palette, available in Turkish
-  and English even before opening a document. The list is the binding table itself, so a
-  chord that is printed is a chord that runs — and the tool buttons carry no invented
-  single-letter shortcuts.
+- **Viewer.** pdf.js's own viewer stack drives continuous virtualised scrolling, text
+  selection and search with match highlighting.
+- **View modes.** You get single-page, book and full-screen presentation modes, a
+  magnifier lens, and a snapshot tool that combines the visible pages into one PNG.
+- **Reading mode.** The page is shown as a text column. Read-aloud uses only speech voices
+  installed on the device.
+- **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
+  reopens a document by its identity, never by its file name.
+- **The document never moves under you.** Marks, selections, measurements and staged
+  redactions scroll and zoom with their page. Tools, progress and notices never shift
+  the page.
+- **Password-protected files.** The editor asks for the password and opens the file
+  read-only. "Create unlocked copy" opens an editable copy in a new tab, and the password
+  is kept in memory only.
+- **Shortcut list.** It is available in both languages from Help or `Ctrl+K`, even with no
+  document open. The list is the binding table itself, so every chord it prints works.
 
 ### Annotating, forms, measuring
 
-- Highlight (selected text or continuous freehand strokes), ink, notes, stamps, underline,
-  strike-out, squiggly and geometric shapes.
-- **Add text:** click on a page and type. The text is written into the file as a `/FreeText`
-  annotation drawn with the embedded Noto Sans, so Turkish letters survive in every reader;
-  on a rotated page the text stays upright the way it was typed. Its colour and size are
-  its own, separate from the marker's style.
-- **One armed tool at a time, every tool on the rail.** The rail beside the document shows
-  every canvas tool — select, hand, edit text, add text, text markup, ink, shapes, note,
-  link, measure, redact — and the rail, the menus, the `Ctrl+K` palette, the context menu and
-  the keyboard all read and write the same value. The four text-markup looks (highlight,
-  underline, strike-out, squiggly) share one rail button; the tool strip picks the look.
-  Text selected before a markup tool is armed is marked at once — "select, right-click,
-  Highlight" marks the selection — and "Redact" in the context menu turns the selection into
-  staged redaction areas.
-- **One selection surface for every mark on the page**: session annotations, measurements,
-  staged redactions and annotations already in the file. Click a mark, drag a marquee or
-  use `Ctrl+A`; then delete, rotate 90°, drag to move or nudge by 5 pt. Each edit is undoable.
-  Saved links can be selected without being followed; the hand tool still follows them.
-- The standalone eraser is removed. Selection deletes **whole marks**, never page text,
-  images, form widgets or popup windows. Secure content removal remains redaction.
-- Marker colour, opacity, thickness and author are controlled by the app. Multiply blending
-  keeps text readable while drawing and after release; freehand strokes stay continuous
-  on export. Pen and marker remain armed for the next stroke.
-- The tool strip occupies its own fixed-height row above the canvas and opens with one
-  sentence saying what the pointer does now. Selection shows delete, rotate, move and clear
-  controls; the measure tool shows its scale, grid and snapping; redaction shows the staged
-  area count and the explicit Apply; other tools show only properties they actually support.
-- Pending-mark edits and undo/redo retain the page canvas. Byte rewrites retain the old
-  painted view until the replacement paints, preserving page, zoom, scroll and form values.
-- Page and view controls (previous/next, page number, zoom, fit width, rotate, page panel,
-  reading mode, presentation) sit in the status bar, not over the page. "Rotate" and the
-  context menu's page actions act on the pages selected in the page panel, or on the page on
-  screen when none is selected.
-- Below 1024 px both docks start collapsed and can be reopened as overlaid panels, so the
-  canvas gets the width and the tools stay one click away; the rail buttons and the icons
-  that need one carry a real tooltip (`role="tooltip"`), not a title attribute.
-- **Every operation opens the same way:** in the tools panel beside the document, in two
-  numbered steps — settings, then *Preview* runs the operation and shows its report, and
-  the report's own button applies it (or opens / downloads the result). "Close" discards a
-  result. Rarely changed settings sit in a closed "Advanced options" section; modal windows
-  are kept for decisions that block (password, unsaved changes, signature warning, export
-  choice, print, settings).
-- **Settings** (the gear in the header, or `Ctrl+K` → Settings): language, theme, the simple
-  or advanced interface mode (each described), the sensitive session, draft storage and
-  cleanup, offline preparation and the shortcut list.
-- **Save and Export are different.** *Save* writes over the file you opened (Chromium,
-  opened through the file picker); for a document with no file behind it the same button
-  reads *Save as…* and asks where to write. *Export* always downloads a copy and leaves the
-  open file alone. A browser without the File System Access API (Firefox, Safari) offers
-  Export only.
-- Comments panel listing both session marks and annotations already in the file.
-- Form filling with an AcroForm inventory; field creation, flags, flattening and simple
-  calculations; form data import/export as FDF or JSON (an export downloads the data file and
-  leaves the document alone).
-- Measurement tools (distance, perimeter, area) with scale, unit, grid and snapping; the
-  measurements are written into the file as real PDF annotations.
+- **Markup.** Highlight (selected text or freehand), ink, notes, stamps, underline,
+  strike-out, squiggly and geometric shapes are all available.
+- **Add text.** Click and type. The text is written as a `/FreeText` annotation with
+  embedded Noto Sans, so Turkish letters survive in every reader. It stays upright on
+  rotated pages.
+- **One tool rail.** The rail holds every canvas tool: select, hand, edit text, add text,
+  markup, ink, shapes, note, link, measure and redact.
+  - The rail, menus, palette, context menu and keyboard all share one armed tool.
+  - Text you selected before arming a markup tool is marked at once.
+- **One selection for every mark.** This covers session marks, measurements, staged
+  redactions and annotations already in the file.
+  - Select by clicking, with a marquee or with `Ctrl+A`.
+  - Then delete, rotate 90°, drag, or nudge by 5 pt. Every edit can be undone.
+  - Selection deletes whole marks only, never page content. To remove page content
+    securely, use redaction.
+- **Style.** The app sets colour, opacity, thickness and author. Multiply blending keeps
+  text readable, and freehand strokes stay continuous in the exported file.
+- **Operations in two steps.** Every operation opens in the tools panel. First you set it
+  up, then *Preview* runs it and shows a report. The report's own button applies the
+  result. Pop-up windows are used only for decisions that block, such as a password,
+  unsaved changes, a signature warning, export, print or settings.
+- **Save versus Export.** *Save* writes over the file you opened; this needs Chromium
+  and its File System Access API. *Export* always downloads a copy. Firefox and Safari
+  offer Export only.
+- **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
+  flatten them and add simple calculations. Form data can be imported or exported as FDF
+  or JSON; exporting downloads only the data file.
+- **Measurement.** Measure distance, perimeter and area with a scale, units, a grid and
+  snapping. The results are written as real PDF annotations.
+- **Small screens.** Below 1024 px both docks start collapsed and reopen as overlays.
 
 ### Pages and structure
 
-- Insert, delete, duplicate, reorder, rotate, extract, split, replace and merge — page
-  composition goes through pdf.js `extractPages` so outlines, AcroForm fields and page
-  labels travel with the pages.
-- Page boxes (Media/Crop/Trim/Bleed/Art), including auto-crop from ink bounds.
-- Page labels (roman/decimal/prefix styles), outline editing, link annotations with a URI
-  allow-list, embedded file attachments.
-- N-up / booklet / poster imposition and a duplex print-sheet builder.
-- Compression in two modes: structural re-save, or image rasterisation with honest
-  size reporting (growth is reported as growth, not as a gain).
+- **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
+  and merge.
+  - Composition goes through pdf.js `extractPages`, so outlines, form fields and page
+    labels travel with the pages.
+- **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
+  the box from the ink bounds.
+- **Structure.**
+  - Page labels.
+  - Outline editing.
+  - Links, limited by a URI allow-list.
+  - Attachments.
+  - Layers (OCG).
+  - Header and footer, Bates numbering and watermarks.
+- **Printing.** N-up, booklet and poster imposition, plus a duplex print-sheet builder.
+- **Compression.** There are two modes: a structural re-save, or rasterising the images.
+  If the file grows, the report says so.
 
 ### Text
 
-- Text editing with block-local reflow in the original page (`pdf-text-engine`): pick a
-  text block, retype it, and the tool erases the original glyph run and draws the
-  replacement in the same box. The block boxes follow zoom, scroll and page rotation, and
-  word boundaries come from the spaces the page reports as well as from glyph gaps (italic
-  glyph boxes overlap across a space, which once glued a paragraph's words together). Editability is measured per block first, so a block that
-  cannot be reproduced faithfully is marked **not editable** rather than silently damaged.
-- Text export (plain text or Markdown) and image export/import (images → PDF, PDF → images).
+- **Text editing with reflow.** Pick a text block and retype it. The editor removes the
+  original glyphs and draws the new text in the same box.
+  - Editability is measured per block first.
+  - A block that cannot be reproduced faithfully is marked **not editable**.
+- **Export and import.** Export text as plain text or Markdown. Export pages as images, or
+  build a PDF from images.
 
 ### Redaction, security, signing
 
-- **True redaction:** marks become MuPDF redaction annotations, `applyRedactions` removes
-  the glyphs from the content stream, and the file is rewritten (`garbage=compact,
-  compress,clean`). Nothing is painted over; the produced bytes are re-opened and checked
-  glyph by glyph before they are handed back. An object-level audit then reports residual
-  terms, earlier revisions and structural leftovers. A staged mark is drawn on the page and
-  stays an **intent** until Apply is run explicitly — a save with marks still staged is
-  refused rather than quietly dropping them through.
-- AES-256 encryption and permission bits, with the output re-opened and verified
-  afterwards. Security **downloads** the encrypted copy: a protected file is read-only in the
-  editor, so it is never applied to the document being edited.
-- PAdES B-B signing from a PKCS#12 identity, with a four-part verdict (integrity, trust,
-  revocation, coverage) and verification against certificates the user imported.
+- **True redaction.**
+  - Marks become MuPDF redaction annotations, and `applyRedactions` removes the glyphs.
+  - The file is then rewritten with `garbage=compact,compress,clean`, and the output is
+    re-checked glyph by glyph.
+  - An object-level audit reports any remaining terms, earlier revisions and leftover
+    structure.
+  - A staged mark stays an intent until you apply it. Saving while marks are still staged
+    is refused.
+- **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
+  encrypted copy is downloaded, not applied to the open document.
+- **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
+  - The verdict has four separate parts: integrity, trust, revocation and coverage.
+  - Trust is checked only against certificates you imported.
 
 ### OCR, accessibility, comparison, batch
 
-- OCR (Turkish and English) that writes an invisible, selectable text layer with a real
-  `/ToUnicode` map; scanned pages can be detected first, and pages that already carry text
-  are skipped by default.
-- Accessibility: a facts-only check (no score, no conformance claim), a real tagged-PDF
-  writer that splices marked content into the page streams and verifies the result, and
-  `/Alt` + `/TU` writers for image and field descriptions.
-- Document comparison, text-level and pixel-level, with the method always named.
-- Batch processing of many files against one ordered rule set, with per-item reporting.
+- **OCR.** Turkish and English recognition adds an invisible, selectable text layer with a
+  real `/ToUnicode` map. Pages that already have text are skipped by default.
+- **Accessibility.**
+  - The check reports facts only: no score and no conformance claim.
+  - A tagged-PDF writer adds structure tags to the file and verifies the result.
+  - `/Alt` and `/TU` writers set descriptions for images and form fields.
+- **Comparison.** Compare two documents by text or by pixels; the report always says which
+  method it used.
+- **Batch.** Run one ordered set of steps over many files, with a report for each file.
 
 ---
 
-## Privacy and security posture
+## Privacy and security
 
-These are properties of the build, not promises:
+These describe how the build works; they are not promises.
 
-- **No document bytes leave the device.** Files are read with the File System Access API
-  (or a file input), processed in the tab, and written back with a save picker or a
-  download. There is no upload path and no server API — the deployed Worker serves static
-  files only.
-- **No third-party requests.** Every engine (pdf.js, MuPDF, Tesseract, fonts) is served
-  from this origin under `/engines/**` and `/fonts/**`, pinned by SHA-256 in
-  [`tools/asset-pins.json`](tools/asset-pins.json). Tesseract's worker, core and language
-  paths are passed explicitly precisely so its CDN defaults are never used. The
-  `Content-Security-Policy` in [`public/_headers`](public/_headers) sets
-  `connect-src 'self'`, so a stray network call is a policy violation, not just a bug.
-- **A strict CSP in production, from one source of truth.** [`public/_headers`](public/_headers)
-  carries `default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval'` (no
-  `'unsafe-inline'`, no `'unsafe-eval'`), `style-src 'self' 'unsafe-inline'` — the one
-  relaxation, and it is for styles only: the overlays position marks with a computed inline
-  `style` attribute — plus `object-src 'none'`, `base-uri 'none'`, `form-action 'none'` and
-  `frame-ancestors 'none'`. The same file drives the Vite dev server and the local
-  preview server, so development runs under the production policy rather than a relaxed
-  substitute (the dev server appends `'unsafe-inline'` to `script-src` alone, for the React
-  refresh preamble, and says so in its log). Every response also carries `nosniff`,
-  `Referrer-Policy: no-referrer`, a deny-all `Permissions-Policy` and
-  `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`, so other hosts on
-  the domain are unaffected).
-- **Cross-origin isolation is declared, not assumed.** `/editor/*` gets
-  `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`
-  from the header file; the Playwright suite drives the built distribution under exactly
-  those headers.
-- **The service worker caches static assets only.** It refuses non-`GET` requests and
-  anything outside `/editor/`, `/engines/`, `/fonts/` and a few root files. Document bytes
-  are never written to `CacheStorage`.
-- **Drafts are local and scoped.** Unsaved work is persisted in the origin-private file
-  system (OPFS). A **sensitive session** (any document opened with a password) opts out of
-  persistence entirely, and vault cleanup refuses to delete anything when the reference
-  inventory cannot be read completely — orphan bytes cost space, deleted live bytes cost a
-  document.
-- **Deleting a draft is logical, not forensic.** Removing entries from OPFS does not
-  overwrite the underlying bytes, and it cannot reach a copy the user downloaded. The UI
-  does not describe it as secure erasure.
+- **No document bytes leave the device.** There is no upload path and no server API. The
+  deployed Worker serves static files only.
+- **No third-party requests.**
+  - Every engine and font is served from this origin, pinned by SHA-256 in
+    [`tools/asset-pins.json`](tools/asset-pins.json).
+  - The CSP sets `connect-src 'self'`.
+- **A strict CSP from one source of truth.** [`public/_headers`](public/_headers) sets:
+  - `default-src 'self'`;
+  - `script-src 'self' 'wasm-unsafe-eval'`, with no `'unsafe-inline'` and no `'unsafe-eval'`;
+  - `style-src 'self' 'unsafe-inline'`, the only relaxation, needed because marks are
+    positioned with inline styles;
+  - `object-src 'none'`, `base-uri 'none'`, `form-action 'none'` and
+    `frame-ancestors 'none'`;
+  - `nosniff`, `Referrer-Policy: no-referrer`, a deny-all `Permissions-Policy` and HSTS.
+
+  The dev and preview servers apply the same file. The dev server adds only
+  `'unsafe-inline'` for scripts, for React refresh, and logs that it does.
+- **Cross-origin isolation.** `/editor/*` is served with
+  `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`.
+  The e2e suite runs under exactly these headers.
+- **The service worker caches static assets only.** It never stores document bytes.
+- **Drafts stay local.** Unsaved work is kept in the origin-private file system (OPFS).
+  - A **sensitive session** saves nothing; any document opened with a password starts one.
+  - Cleanup refuses to delete anything when it cannot fully read which drafts are in use.
+- **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
+  the UI never claims that it does.
 
 ---
 
 ## Document limits
 
-Two tiers, defined once in [`packages/shared/src/limits.ts`](packages/shared/src/limits.ts):
+The limits are defined once, in
+[`packages/shared/src/limits.ts`](packages/shared/src/limits.ts):
 
 | | Desktop | Mobile |
 |---|---|---|
@@ -243,247 +222,184 @@ Two tiers, defined once in [`packages/shared/src/limits.ts`](packages/shared/src
 | Viewing-only above | — | 300 pages / 64 MB |
 | Render cache | 512 MB | 128 MB |
 
-Above the viewing-only threshold the document still opens and renders, but editing is
-disabled and the UI says why. Build budgets live beside them: ≤ 250 KiB gzip for the
-first-paint JavaScript, ≤ 60 KiB for the landing page, ≤ 25 MiB per asset.
-
-Undo history is bounded by a snapshot budget of `max(3 × file size, 64 MB)` with at least
-the two newest versions always kept. A step whose bytes have been evicted is reported as
-**unavailable** in the history panel rather than replayed onto the wrong base.
-
----
-
-## Getting started
-
-Requirements: **Node ≥ 26** and **pnpm 9.15.9** (both pinned — `.nvmrc`, `packageManager`).
-
-```bash
-pnpm install --frozen-lockfile
-pnpm fetch:engines --sync   # copies the pinned engine binaries into public/engines + public/fonts
-pnpm dev                    # editor at http://localhost:5173
-```
-
-`pnpm fetch:engines` is not optional on a fresh clone: engine binaries are never committed
-([`tools/hooks/guard.mjs`](tools/hooks/guard.mjs) blocks them), and it copies them out of
-the local pnpm store — **nothing is downloaded from a CDN**.
-
-Other dev server: `pnpm --filter site dev` (landing, port 5175).
+- **Viewing-only.** Above this threshold the document still opens and renders, but editing
+  is disabled and the UI says why.
+- **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
+  newest versions are always kept, and an evicted step is shown as **unavailable**.
+- **Build budgets.**
+  - ≤ 250 KiB gzip for the first-paint JavaScript.
+  - ≤ 60 KiB for the landing page.
+  - ≤ 25 MiB per asset.
 
 ---
 
-## Command reference
+## Honest limits
+
+- **Signing.**
+  - Only PAdES B-B is supported: no RFC 3161 timestamp, and no revocation check, since
+    there is no network. Revocation is therefore always reported `indeterminate`.
+  - An empty trust store reports `not-checked`.
+  - RFC 5280 policy processing is not implemented.
+  - Supported keys are RSA PKCS#1 v1.5 and ECDSA P-256/384/521, with SHA-256/384/512.
+- **Accessibility.**
+  - There is no PDF/UA claim.
+  - The check does not evaluate reading order, tables, lists, contrast, font embedding or
+    alt-text quality.
+  - A document that already has a structure tree is not re-tagged.
+- **Redaction audit.**
+  - The audit scans raw bytes, so it cannot see inside compressed streams or object
+    streams.
+  - It says so, and when object streams are present it skips the orphan-object verdict.
+- **Deleting marks.** Only annotations are deleted, never page content. A deletion rewrites
+  the file and can be undone. It is not a forensic scrub.
+- **Typed text.** Each save that adds typed text embeds the full Noto Sans font (about
+  630 KB), without subsetting. A reader that ignores `/AP` falls back to Helvetica.
+- **Protected documents.** These are read-only. To edit one, make an explicit unlocked copy.
+- **Text editing.** Only horizontal text is editable. Vertical text, skewed baselines and
+  Type3 text are not. Unknown fonts are re-rendered in a substitute font, and the UI says
+  so.
+- **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
+  malformed journal makes the whole draft unreadable on purpose.
+- **Early engine spikes.** Some code comments mention a measurement from an *early engine
+  spike*. That prototype was removed before the public release, and each comment states
+  what was measured.
+
+---
+
+## Development
+
+### Commands
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Vite dev server for the editor |
-| `pnpm build` | Builds the landing (`apps/site/dist`) then the editor (`apps/web/dist`) |
-| `pnpm assemble:dist` | Composes the deployable `dist/` from the two builds, `public/`, the pinned engines, generated offline manifest, notices and licence texts |
-| `pnpm preview` | Serves the assembled `dist/` under the production header policy (port 4178) |
-| `pnpm typecheck` | `tsc -b` over the whole workspace |
-| `pnpm lint` / `pnpm check` / `pnpm format` | Biome lint / lint+format check / format write |
+| `pnpm dev` | Vite dev server for the editor (`pnpm --filter site dev` for the landing, port 5175) |
+| `pnpm build` | Builds the landing (`apps/site/dist`), then the editor (`apps/web/dist`) |
+| `pnpm assemble:dist` | Composes the deployable `dist/` |
+| `pnpm preview` | Serves `dist/` under the production headers (port 4178) |
+| `pnpm typecheck` | `tsc -b` over the workspace |
+| `pnpm lint` / `check` / `format` | Biome: lint / lint and format check / format write |
 | `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions |
-| `pnpm e2e` | Playwright against the **assembled** `dist/` (Chromium); build first with `pnpm build && pnpm assemble:dist`. `e2e/flows-document.spec.ts`, `e2e/flows-pages.spec.ts`, `e2e/flows-modes.spec.ts` and `e2e/flows-commands.spec.ts` hold the editor flow tests (the last needs the `openssl` command line, which makes the signing identity) |
-| `pnpm measure:model` | Journal/snapshot measurement run (not a gate) |
-| `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and verifies/rewrites the pin table |
-| `pnpm verify:assets` | Re-hashes every pinned file and fails on any difference |
+| `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`) |
+| `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
+| `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
+| `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
-| `pnpm audit:regressions` | The source-level regression harness on its own |
-| `pnpm audit:model-types` | Strict re-typecheck of the DOM-free modules |
-| `pnpm ci:verify` | The full repository gate (see below) |
-| `pnpm ci:full` | `ci:verify` plus the three browser/behaviour harnesses |
-| `pnpm worker:deploy[:dry]` | `assemble:dist` then `wrangler deploy` (pinned 4.135.0) |
+| `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
+| `pnpm ci:verify` / `ci:full` | The full local gate / the same plus the behaviour harnesses |
+| `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
 
----
+Engine binaries are never committed, and the pre-commit hook blocks them. On a fresh
+clone, `pnpm fetch:engines --sync` is therefore required.
 
-## Repository layout
+### Repository layout
 
 ```
 apps/
-  web/          the editor PWA (Vite base /editor/) — the shell, its state and its paths
-  site/         the landing and legal pages (static HTML, six pages, TR + EN)
+  web/          the editor PWA (served at /editor/)
+  site/         landing and legal pages (static HTML, TR + EN)
 packages/
-  shared/       error contract, limits, i18n catalogue (tr complete, en mirror)
-  model/        session store, operation journal, drafts, vault policy, save router
+  shared/       error contract, limits, i18n (Turkish and English)
+  model/        session store, operation journal, drafts, save router
   core/         engine adapters (pdf.js, MuPDF, Tesseract) and every operation
-  text-engine/  text model, editability measurement, block-local reflow, font catalogue
-  ui/           React surfaces: viewer, docks, panels, dialogs, overlays, mark tools, printing
-public/         _headers, sw.js, theme boot, 404, manifest, robots/sitemap, engines, fonts
-tools/
-  assemble-dist.mjs   build the deployable dist/
-  fetch-engines.mjs   copy + pin engine binaries (also hosts the verify implementation)
-  check-licenses.mjs  licence audit
-  audit/              regression harness, non-vacuity gate, model typecheck
-  vite/hosting.mjs    parses public/_headers for dev + preview
-  preview-dist.mjs    production-policy static server
-  hooks/guard.mjs     pre-commit / pre-push tree guard (+ biome check on staged files)
-  spikes/             the ci:behavior checks and their MuPDF fixture builders, and
-                      readme-media.mjs, which records the README clips (nothing ships)
-docs/media/     the README's feature clips (GIF)
-e2e/            Playwright specs: shell and shortcut help, document, tool marks and the
-                selection editing, editor stability (scroll, layout, rotate, typed text,
-                protected files), offline, two windows, OCR; the editor flows
-                (`flows-document`, `flows-pages`, `flows-modes` for modes and signing,
-                `flows-commands` for the other menu-bar commands); and the marketing site
-                (`site.spec.ts`: link/anchor/language/SEO integrity, language switch,
-                CTA, 404, theme boot, CSP-clean resources, phone layout)
-.github/        issue and pull request templates (no workflows: the gates run locally)
+  text-engine/  text model, editability, reflow, fonts
+  ui/           React surfaces: viewer, panels, dialogs, tools, printing
+public/         _headers, sw.js, 404, manifest, robots/sitemap
+tools/          dist assembly, engine pins, licence audit, regression harness,
+                git hooks, behaviour checks (spikes/), README clip recorder
+e2e/            Playwright specs for the editor flows and the site
+docs/media/     the README clips
+.github/        issue and pull request templates (no workflows)
 ```
-
-`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md` cover contributing, conduct and
-private vulnerability reporting.
 
 ---
 
 ## Quality gates
 
-`pnpm ci:verify` runs, in order: `install --frozen-lockfile` → `typecheck` → `check` (lint + format) →
-`unit` → `audit:model-types` → `build` → `fetch:engines --sync` → `verify:assets` →
-`check:licenses` → `assemble:dist`.
+All gates run locally; the repository has no GitHub Actions workflow.
 
-`pnpm ci:full` adds `ci:behavior`: two browser harnesses and a signing harness:
-
-- `tools/spikes/phase3-check.mjs` — the acceptance sentence end to end
-  (open → search → highlight → comment → fill a form → delete 2 pages, add 1 →
-  header/footer → save → reopen) against the assembled distribution.
-- `tools/spikes/phase4-check.mjs` — a text-edit round trip that re-reads the produced
-  bytes.
-- `tools/spikes/sign-check.mts` — signing with an OpenSSL identity through the product's
-  own import/sign/verify path, including a one-byte tamper case that must break the
-  verdict.
-
-The browser harnesses exercise the default simple mode and switch through the UI before
-advanced operations. Missing Chromium fails with installation instructions. To target an
-already-running server, set `VERIFY_ORIGIN` explicitly; the harnesses do not silently reuse it.
-
-`pnpm unit` is a gate, not a report: after Vitest it runs
-[`tools/audit/require-tests.mjs`](tools/audit/require-tests.mjs) (an empty run fails) and
-[`tools/audit/regressions.cjs`](tools/audit/regressions.cjs) — browser-free checks over the
-real sources, including save-path semantics, draft validation, service-worker behaviour and
-vault garbage collection. It prints how many checks it ran; read that number.
-
-The gates are local and they are the whole gate — the repository has no GitHub Actions
-workflow: `pnpm ci:verify`, then `pnpm ci:full` when
-a change touches an engine path, both before committing. Publisher of record is Cloudflare:
-the build pipeline validates the same command (`pnpm ci:verify`) and its configured deploy
-command runs `pnpm run worker:deploy` — the same one available by hand — so a push is the
-point at which a change becomes live, and the deployed surface is verified after it.
-
-A save is verified rather than assumed, and the app says so before it offers one: Save and
-Export stay disabled until the inspection that describes the **current** version has
-answered, and a write then compares the produced bytes with the document on screen over
-twelve declared facts. A fact this build cannot check is reported `unverified` or
-`degraded` — never folded into a blanket "verified", and a fact that broke when the
-operation had not declared it throws instead of writing.
+- **`pnpm ci:verify`** runs these steps in order:
+  1. `install --frozen-lockfile`
+  2. `typecheck`
+  3. `check`
+  4. `unit`
+  5. `audit:model-types`
+  6. `build`
+  7. `fetch:engines --sync`
+  8. `verify:assets`
+  9. `check:licenses`
+  10. `assemble:dist`
+- **`pnpm ci:full`** adds `ci:behavior`:
+  - `tools/spikes/phase3-check.mjs` runs the acceptance sentence end to end in a real
+    browser. That sentence is: open, search, highlight, comment, fill a form, delete two
+    pages and add one, add a header and footer, save, reopen.
+  - `tools/spikes/phase4-check.mjs` runs a text-edit round trip and reads the produced
+    bytes back.
+  - `tools/spikes/sign-check.mts` signs with an OpenSSL identity, including a one-byte
+    tamper case that must break the verdict.
+- **`pnpm unit`** is a gate, not a report:
+  - [`require-tests.mjs`](tools/audit/require-tests.mjs) fails the run if no tests were
+    found.
+  - [`regressions.cjs`](tools/audit/regressions.cjs) runs browser-free checks over the
+    real sources.
+- **Saves are verified.**
+  - Save and Export stay disabled until the inspection of the current version has
+    answered.
+  - Each write is checked against twelve declared facts.
+  - A fact that cannot be checked is reported `unverified` or `degraded`, never folded into
+    "verified".
 
 ---
 
-## Build, assemble, deploy
+## Build and deploy
 
 `pnpm assemble:dist` produces exactly what is uploaded:
 
 | Source | Lands at |
 |---|---|
-| `apps/site/dist` | `dist/` root (landing at `/`, legal pages, `/en/`) |
+| `apps/site/dist` | `dist/` root (landing, legal pages, `/en/`) |
 | `apps/web/dist` | `dist/editor/` |
-| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `robots.txt`, `sitemap.xml`, `manifest.webmanifest`, `theme-boot.js`, `engines/**`, `fonts/**`) |
+| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, manifest, `engines/**`, `fonts/**`) |
 
-It also writes `dist/offline-manifest.json`, stamps `dist/sw.js` (a missing
-`__CACHE_VERSION__` placeholder is a hard failure — the build refuses to ship an
-unversioned worker), and copies `LICENSE` together with the bundled licence texts into
-`dist/licenses/`. `LICENSE` is the one required root file: a missing one aborts the
-assemble step. Missing licence texts from the installed packages are a hard failure too —
-every third-party obligation the distribution carries travels as those texts, indexed by
-`dist/licenses/INDEX.json`. The step also reads the editor's source maps and fails when
-a bundled npm package has no licence entry.
+The same step also does the following:
+
+- writes `dist/offline-manifest.json`;
+- stamps the service-worker version;
+- copies `LICENSE` and every bundled licence text into `dist/licenses/`, indexed by
+  `INDEX.json`.
+
+A missing licence or version placeholder stops the build.
 
 Deployment is a Cloudflare Worker that serves `dist/` as static assets
-([`wrangler.jsonc`](wrangler.jsonc)) — no Functions, no SSR, no database, and the request
-path never executes application JavaScript. `compatibility_date` is pinned,
-`/gizlilik` and `/kosullar` resolve without the extension, and unknown paths get the
-styled Turkish 404 page. The assembled `dist/_headers` travels with the upload, so the CSP
-and the `/editor/*` COOP/COEP pair are enforced by the host rather than by a dashboard
-setting.
+([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
 ```bash
 pnpm build && pnpm assemble:dist
 pnpm worker:deploy          # npx --yes wrangler@4.135.0 deploy
-pnpm worker:deploy:dry      # same, --dry-run
+pnpm worker:deploy:dry      # same, with --dry-run
 ```
-
-Cloudflare's build pipeline runs the validation command against the pushed commit and then
-the deploy command above; the same deploy is available by hand. Either way the live surface
-— <https://pdf.isolmaz.com/> and `/editor/` — is checked after the push: the changed path is
-exercised against the deployed build, and a failure there is reported as a failure rather
-than assumed away because the local gate was green.
 
 ---
 
 ## Offline use
 
-`public/sw.js` is scoped to `/editor/` and caches static assets only. Capability
-readiness is a **set-containment** test over the exact paths each engine fetches
-([`apps/web/src/offline-packages.json`](apps/web/src/offline-packages.json)): a
-half-downloaded language pack reports `missing` with the absent paths named, rather than
-"ready". The cache name carries a release identity derived from the pin table, so an
-immutable-cached engine can never be served under a different shell build; a new release
-never reads the previous release's cache.
-
-Precaching happens only when the user asks for it (Settings → Offline use, or the offline
-commands in the palette), and an interrupted preparation is reported with the paths that
-failed. It fetches what core editing needs: the shell, pdf.js, MuPDF (every writer runs on
-it) and the fonts. The OCR engine and its
-language data are not part of it.
+- **Scope.** `public/sw.js` is scoped to `/editor/` and caches static assets only.
+- **On request only.** Precaching runs only when you ask for it, in Settings → Offline use.
+  It covers the shell, pdf.js, MuPDF and the fonts. OCR is not included.
+- **Readiness.** It is checked path by path. A half-downloaded pack is reported as
+  `missing`, with the missing paths named.
+- **Release isolation.** The cache name carries a release identity, so a new release never
+  reads an older cache.
 
 ---
 
-## Honest limits and known gaps
+## Contributing
 
-**Signing.** PAdES B-B only: a detached CMS signature, no RFC 3161 timestamp, and **no
-revocation checking** — the revocation field is always `indeterminate` because there is
-no network to consult an OCSP responder or CRL, by design. Trust comes only from
-certificates the user imported; an empty trust store reports `not-checked`, never
-`untrusted`. Certificate chain validation does not implement RFC 5280 policy processing.
-Signing supports RSA PKCS#1 v1.5 and ECDSA (P-256/384/521) with SHA-256/384/512 from a
-PKCS#12 container.
+Issues and pull requests are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as described
+in [`SECURITY.md`](SECURITY.md). For the internal design, see
+[`architecture.md`](architecture.md).
 
-**Accessibility.** The check reports facts, not a score, and makes no PDF/UA conformance
-claim. It does not evaluate reading order, tables, lists, contrast, font embedding or
-whether an alt text is any good — and `unchecked` is a real state, not a pass. Tagging a
-document that already has a structure tree is refused rather than merged.
-
-**Redaction audit.** The post-redaction audit scans raw bytes, so it cannot see inside
-deflated streams or object streams. It says so, and it suppresses the orphan-object
-verdict entirely when object streams are present instead of implying a clean file.
-
-**Deleting marks.** Selection deletes annotations, not page content: text
-and images inside a page's content stream are not annotations, so removing them is
-redaction's job. A removal rewrites the document (the incremental fast path ends there) and
-is undoable like any other operation — and it is not a forensic scrub, because the bytes the
-user opened remain wherever they came from.
-
-**Typed text.** Each save that adds typed text embeds the full Noto Sans program (about
-630 KB) once for that write (MuPDF's `addFont`, Identity-H with a `/ToUnicode` CMap); the
-face is not subset. A reader that regenerates a `/FreeText` appearance from `/DA`
-instead of drawing its `/AP` falls back to Helvetica. `/Contents` carries the session
-marker ahead of the text, the same identity convention every mark this app writes uses.
-
-**Protected documents.** A password-protected file opens read-only. Every writer re-opens
-the bytes it edits, and rewriting a protected file would mean silently dropping or
-re-applying its protection, so editing starts from an explicit unlocked copy.
-
-**Text editing.** Only horizontal text in a shipped font is editable. Vertical or reversed
-lines, skewed baselines and Type3 text are marked not editable; a base-14 or unknown
-embedded font is editable but re-rendered in a substitute face, and the UI says which.
-
-**Versioned drafts.** Drafts carry a schema version. A draft written by an older schema is
-skipped by the restore path rather than misread — and a malformed journal makes the whole
-draft unreadable on purpose, because silently dropping one entry would shift every later
-state.
-
-**Early engine spikes.** A source comment that says a behaviour was measured in an
-**early engine spike** refers to a prototype or probe that was removed before the public
-release; the comment itself states what was measured, and `architecture.md` records the
-design rules in prose.
+---
 
 ## License
 
@@ -497,8 +413,6 @@ hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied 
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [`LICENSE`](LICENSE) for the full
 text.
 
-AGPL-3.0-or-later is required because the assembled distribution ships MuPDF
-(`dist/engines/mupdf/**`), which is licensed AGPL-3.0-or-later. The build copies every
-bundled licence text into `dist/licenses/`, and `dist/licenses/INDEX.json` names the package
-each one came from. The editor's **Help → Source code (AGPL-3.0)** command links to this
-repository, as section 13 of the licence asks of a network service.
+The project must use AGPL-3.0-or-later because the distribution ships MuPDF, which is
+licensed AGPL-3.0-or-later. The editor's **Help → Source code (AGPL-3.0)** command links
+to this repository, as section 13 of the licence requires.
