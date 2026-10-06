@@ -1,5 +1,17 @@
 /**
- * The accessibility surface: a check the user runs, the report it
+ * The accessibility surface, in three views behind one tab strip:
+ *
+ *   - **Report** — the quick check, the tag write and the alt-text list (this file);
+ *   - **PDF/UA** — the Matterhorn-style conformance check with its explanations and quick
+ *     fixes (`PdfUaView`);
+ *   - **Tags** — the structure tree / reading-order editor (`TagsView`), whose numbered boxes
+ *     are drawn over the pages by `ReadingOrderLayer`.
+ *
+ * The open view lives in `readingOrderStore`, not in component state: the panel is re-mounted
+ * for every revision of the document, and a view kept in state would jump back to the report
+ * after each edit the user applied.
+ *
+ * What follows describes the report view: a check the user runs, the report it
  * produces, the tag write, and the alt-text list for the images the check found.
  *
  * ## Three different things, three different places
@@ -48,12 +60,22 @@ import { toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PanelLoading, PanelMessage } from './PanelParts';
+import { PdfUaView, type WrittenOutcome } from './PdfUaView';
+import { type AccessibilityView, readingOrderStore, useReadingOrder } from './reading-order-store';
+import { TagsView } from './TagsView';
 
 /** See the header: the seam that stands in for `parts/a11y.ts` until it is merged. */
 const key = (value: string): MessageKey => value as MessageKey;
 
 export interface AccessibilityPanelProps {
   readonly t: Translator;
+  /** 0-based page the viewer shows (the tags view lists that page's elements). */
+  readonly currentPage?: number;
+  /** False while a lock or a read-only file forbids writing. */
+  readonly canEdit?: boolean;
+  readonly onGoToPage?: (pageIndex: number) => void;
+  /** Bytes produced by the PDF/UA fixes and the tags editor. */
+  readonly onWritten?: (outcome: WrittenOutcome) => void;
   /**
    * The current working bytes, from the host's own route (`workingBytes`,
    * `apps/web/src/operations.ts`). A function, never a captured copy: the check must read
@@ -67,14 +89,8 @@ export interface AccessibilityPanelProps {
    */
   readonly language?: string;
   /** Hand produced bytes to the host, which journals them and routes the save. */
-  readonly onTagged?: (outcome: {
-    readonly bytes: Uint8Array;
-    readonly notes: readonly OperationNote[];
-  }) => void;
-  readonly onAltWritten?: (outcome: {
-    readonly bytes: Uint8Array;
-    readonly notes: readonly OperationNote[];
-  }) => void;
+  readonly onTagged?: (outcome: WrittenOutcome) => void;
+  readonly onAltWritten?: (outcome: WrittenOutcome) => void;
   /** The shell's notice line; receives already-translated text. */
   readonly onNotice?: (message: string) => void;
 }
@@ -101,14 +117,12 @@ const GROUP: readonly {
   { state: 'ok', label: key('panel.a11y.group.ok'), tone: 'text-kumo-subtle' },
 ];
 
-export function AccessibilityPanel({
-  t,
-  read,
-  language,
-  onTagged,
-  onAltWritten,
-  onNotice,
-}: AccessibilityPanelProps) {
+type ReportViewProps = Pick<
+  AccessibilityPanelProps,
+  't' | 'read' | 'language' | 'onTagged' | 'onAltWritten' | 'onNotice'
+>;
+
+function AccessibilityReportView({ t, read, language, onTagged, onAltWritten, onNotice }: ReportViewProps) {
   const [state, setState] = useState<PanelState>(INITIAL);
   const [drafts, setDrafts] = useState<Readonly<Record<string, string>>>({});
   const alive = useRef(true);
@@ -124,11 +138,7 @@ export function AccessibilityPanel({
 
   const run = useCallback(
     async (
-      work: (
-        context: OperationContext,
-      ) => Promise<
-        { readonly bytes: Uint8Array; readonly notes: readonly OperationNote[] } | AccessibilityReport
-      >,
+      work: (context: OperationContext) => Promise<WrittenOutcome | AccessibilityReport>,
       kind: 'check' | 'tag' | 'alt',
     ) => {
       const controller = new AbortController();
@@ -167,7 +177,7 @@ export function AccessibilityPanel({
         const outcome = await tagDocument(await read(context), context, {
           ...(language === undefined ? {} : { language }),
         });
-        return { bytes: outcome.bytes, notes: outcome.report.notes };
+        return { bytes: outcome.bytes, notes: outcome.report.notes, steps: outcome.report.steps };
       }, 'tag'),
     [language, read, run],
   );
@@ -180,7 +190,7 @@ export function AccessibilityPanel({
           [{ kind: 'image', pageIndex: target.pageIndex, name: target.name, alt }],
           context,
         );
-        return { bytes: outcome.bytes, notes: outcome.report.notes };
+        return { bytes: outcome.bytes, notes: outcome.report.notes, steps: outcome.report.steps };
       }, 'alt'),
     [read, run],
   );
@@ -337,6 +347,108 @@ export function AccessibilityPanel({
               )}
             </section>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const VIEWS: readonly { readonly id: AccessibilityView; readonly label: MessageKey }[] = [
+  { id: 'report', label: key('a11y.view.report') },
+  { id: 'ua', label: key('a11y.view.ua') },
+  { id: 'tags', label: key('a11y.view.tags') },
+];
+
+export function AccessibilityPanel(props: AccessibilityPanelProps) {
+  const { t, read, language, currentPage = 0, canEdit = true, onGoToPage, onWritten, onNotice } = props;
+  const { view } = useReadingOrder();
+
+  // Leaving the tags view takes its boxes off the pages.
+  useEffect(() => {
+    if (view !== 'tags') readingOrderStore.clear();
+  }, [view]);
+  useEffect(() => () => readingOrderStore.clear(), []);
+
+  const tabs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const onTabKey = (event: React.KeyboardEvent, index: number) => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    const next = VIEWS[(index + step + VIEWS.length) % VIEWS.length];
+    if (next === undefined) return;
+    readingOrderStore.setView(next.id);
+    tabs.current[next.id]?.focus();
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-a11y-view={view}>
+      <div
+        role="tablist"
+        aria-label={t(key('panel.a11y'))}
+        className="flex shrink-0 border-b border-kumo-line"
+      >
+        {VIEWS.map((entry, index) => (
+          <button
+            key={entry.id}
+            ref={(node) => {
+              tabs.current[entry.id] = node;
+            }}
+            type="button"
+            role="tab"
+            id={`a11y-tab-${entry.id}`}
+            aria-selected={view === entry.id}
+            aria-controls="a11y-view"
+            tabIndex={view === entry.id ? 0 : -1}
+            data-a11y-tab={entry.id}
+            onClick={() => readingOrderStore.setView(entry.id)}
+            onKeyDown={(event) => onTabKey(event, index)}
+            className={`flex-1 border-b-2 px-2 py-1.5 text-xs font-medium ${
+              view === entry.id
+                ? 'border-pdf-accent text-kumo-strong'
+                : 'border-transparent text-kumo-subtle hover:text-kumo-default'
+            }`}
+          >
+            {t(entry.label)}
+          </button>
+        ))}
+      </div>
+      <div
+        id="a11y-view"
+        role="tabpanel"
+        aria-labelledby={`a11y-tab-${view}`}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        {view === 'ua' ? (
+          <PdfUaView
+            t={t}
+            read={read}
+            {...(language === undefined ? {} : { language })}
+            canEdit={canEdit}
+            {...(onGoToPage === undefined ? {} : { onGoToPage })}
+            onOpenElement={(elementKey, pageIndex) => readingOrderStore.focusElement(elementKey, pageIndex)}
+            {...(onWritten === undefined ? {} : { onWritten })}
+            {...(onNotice === undefined ? {} : { onNotice })}
+          />
+        ) : view === 'tags' ? (
+          <TagsView
+            t={t}
+            read={read}
+            {...(language === undefined ? {} : { language })}
+            currentPage={currentPage}
+            canEdit={canEdit}
+            {...(onGoToPage === undefined ? {} : { onGoToPage })}
+            {...(onWritten === undefined ? {} : { onWritten })}
+            {...(onNotice === undefined ? {} : { onNotice })}
+          />
+        ) : (
+          <AccessibilityReportView
+            t={t}
+            read={read}
+            {...(language === undefined ? {} : { language })}
+            {...(props.onTagged === undefined ? {} : { onTagged: props.onTagged })}
+            {...(props.onAltWritten === undefined ? {} : { onAltWritten: props.onAltWritten })}
+            {...(onNotice === undefined ? {} : { onNotice })}
+          />
         )}
       </div>
     </div>

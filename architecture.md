@@ -440,7 +440,9 @@ had to stay green. The moves, and the defects they fixed on the way:
   resolves the served engine URL to the installed package;
 - accessibility (`ops/accessibility.ts`): the check, the tagger (marked content spliced into
   the page's own decoded bytes, the structure tree written with MuPDF) and the alt-text
-  writer; images and pages are identified by object number.
+  writer; images and pages are identified by object number. The structure model and editor
+  (`ops/structure*.ts`) and the PDF/UA check and fixes (`ops/pdfua.ts`) read and write the
+  same way and re-open their own output.
 
 `openForWrite` refuses a document that needs a password (`encrypted-unsupported`), as pdf-lib
 did; one encrypted with an owner password only now opens and keeps its encryption on save.
@@ -753,7 +755,65 @@ deliberately not a score:
   document that already has a `/StructTreeRoot` is refused rather than merged.
 - `setImageAlt()` writes `/Alt` on the image XObject and `/TU` on form fields; an empty
   alt text is refused, because decorative content would belong in an `/Artifact`, which
-  this module does not write.
+  the tags editor below writes.
+
+`tagDocument()` places each block's shows into marked-content sequences that stay inside
+one text object and one `q` level (`nestingOf`, `expandToNesting`); a block spread over
+several text objects becomes several sequences with one element owning all their MCIDs
+(`treeOrder` groups claims by block). A `plan` option (`TagPlan`: per-page order, roles and
+figure alt text) lets the reading-order editor tag an untagged file in the order and with
+the types the user chose; every drawing of an image is a figure.
+
+**PDF/UA and the tags editor.** Six modules and three panel views.
+
+- `ops/struct-roles.ts` — the standard structure types, the types the editor offers
+  (`EDITOR_ROLES`) and `resolveRole` through `/RoleMap`.
+- `ops/structure-model.ts` — `readStructureModel` reads `/StructTreeRoot` into a pure model
+  (elements, MCID / MCR / OBJR kids, `/Alt`, table attributes, role map, bounded by
+  `STRUCT_NODE_LIMIT`). `StructEdit` (`move`, `role`, `alt`, `scope`, `group`, `unwrap`,
+  `artifact`) is applied by the pure `applyStructureEdits`; `structureSignature` is the
+  read-back fingerprint. A refused edit throws `StructEditError` with a stable `reason`.
+- `ops/content-scan.ts` — a content-stream scan that records marked-content spans, paint
+  operators (text, path, image, form) and their coverage (`tagged | artifact | conflict |
+  unmarked`), shared by the checker and the editor.
+- `ops/structure.ts` — `readStructure`, `readPageLayout` (the box and text of each MCID on a
+  page, from the stream and MuPDF's structured text), `readTagCandidates` (the blocks of an
+  untagged page, from the same planner `tagDocument` uses) and `editStructure`, which
+  applies a draft of edits through the MuPDF object API (`/StructTreeRoot`, `/K`, `/P`,
+  `/ParentTree`, BDC/EMC rewriting for artifacts) and then **re-reads the file**: the
+  signature of the tree must equal what `applyStructureEdits` predicted and no artifacted
+  MCID may remain marked. Steps: `load`, `tags`, `tags.artifact`, `producer`, `save`,
+  `verify`.
+- `ops/ua-xmp.ts` — textual edits of the XMP packet (`dc:title`, `pdfuaid:part`) that
+  leave every other byte of the packet alone.
+- `ops/pdfua.ts` — `checkPdfUa` and `fixPdfUa`. The 34 rules (`UA_RULES`) each carry a
+  Matterhorn checkpoint group and an ISO 14289-1 clause, and end `pass | fail | manual | na
+  | unchecked`: `unchecked` means the file could not be examined for that rule (no tree,
+  a tree over `STRUCT_NODE_LIMIT`, an unreadable page), never a pass. Rules that only a
+  person can decide (reading order, alt-text quality, contrast, language of passages) are
+  `manual`. Colour contrast is explicitly not measured. `fixPdfUa` writes the title (XMP
+  and Info), `/Lang`, `DisplayDocTitle`, `MarkInfo`, page `/Tabs /S`, `/Contents` of a link,
+  `/TU` of a field, `/Artifact` wrappers for unmarked drawn paths (`artifactPathsOnPage`)
+  and `Link`/`Form`/`Annot` elements with `OBJR` plus `/StructParent` and the `ParentTree`
+  entry (`tagAnnotations`; a parent tree that is not a flat `Nums` array is left alone).
+  Every fix is read back. `mark-pdfua` writes `pdfuaid:part = 1` only after re-checking the
+  saved result of the other fixes and finding every automated rule passing; otherwise it is
+  refused with a count. Steps: `ua`, `ua.artifact`, `ua.id` (declared in
+  `apps/web/src/operations.ts`; `tags` and `tags.*` likewise).
+
+The panel (`panels/AccessibilityPanel.tsx`) has three views behind one tab strip — Report
+(the older check, tag button and alt list), PDF/UA (`PdfUaView.tsx`) and Tags
+(`TagsView.tsx`). The open view and the selection live in `panels/reading-order-store.ts`,
+an external store (`useSyncExternalStore`), because the panel is re-mounted for every
+revision of the document and the overlay lives three components away. The overlay
+(`ReadingOrderLayer.tsx`) is mounted in the viewer's `overlay` slot while the accessibility
+tab is open and draws numbered boxes from the store, mapping `/Rotate` itself; it reads no
+file. `TagsView` keeps the user's work as a list of `StructEdit`s (the tree on screen is
+`applyStructureEdits(base, edits)`, the same function the writer verifies against) and
+writes once on **Apply**; for an untagged file it shows the content order and applies
+`tagDocument({ plan })` plus the artifact fix. The Dock's `wide` prop gives the tab a
+wider panel. Produced bytes go to the shell through `applyAccessibility` like every other
+result, with the writer's real step ids.
 
 ### 5.6 Encryption, batch and compare
 
@@ -1875,9 +1935,15 @@ shows.
   timestamps reads only what is on the device: indirect, standalone delta and partitioned CRLs are
   `unknown`, the invalidity date is not used, a document timestamp does not vouch for the
   signatures before it, and a timestamp's TSA is trusted only through an imported root.
-- **Accessibility** reports facts, not conformance, and does not evaluate reading order,
-  tables, lists, contrast, font embedding or alt-text quality. Existing structure trees are
-  refused rather than merged.
+- **Accessibility.** The PDF/UA check is automated and modelled on the Matterhorn Protocol;
+  it cannot prove conformance. Reading order, alt-text quality and changes of language are
+  left to a person, colour contrast is not measured, and `pdfuaid:part` is written only when
+  every automated rule passes. `tagDocument` still refuses a file that already has a
+  structure tree (the Tags view edits one), orders an untagged page's content as it is
+  drawn and guesses headings from font size. The tags editor cannot artifact an element
+  that holds a link, field or annotation or whose content is inside a form XObject, does
+  not edit per-element `/Lang`, and the annotation fix leaves a parent tree that is not a
+  flat `Nums` array alone.
 - **The redaction audit** cannot see inside deflated or object streams and says so.
 - **Text editing** handles horizontal text in a shipped face only; everything else is
   marked not editable or substituted, in the UI, before the user types.

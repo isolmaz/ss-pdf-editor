@@ -44,6 +44,7 @@ import { signaturePart } from './parts/signature';
 import { sigValidatePart } from './parts/sigvalidate';
 import { stampPart } from './parts/stamp';
 import { texteditPart } from './parts/textedit';
+import { uatagsPart } from './parts/uatags';
 import { verifyPart } from './parts/verify';
 import { xfaPart } from './parts/xfa';
 
@@ -85,6 +86,7 @@ export const tr = {
   ...sanitizePart,
   ...formDetectPart,
   ...stampPart,
+  ...uatagsPart,
   ...verifyPart,
   ...sigValidatePart,
   ...xfaPart,
