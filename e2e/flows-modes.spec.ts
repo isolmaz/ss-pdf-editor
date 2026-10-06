@@ -153,10 +153,9 @@ async function deployableOrigin(upstream: string): Promise<{
   };
 }
 
-test('a new release raises the update banner; Refresh activates its worker and reloads the page', async ({
-  page,
-  baseURL,
-}) => {
+test('a new release raises the update banner; Refresh activates its worker and reloads the page', {
+  tag: '@service-worker',
+}, async ({ page, baseURL }) => {
   const site = await deployableOrigin(baseURL ?? 'http://localhost:4178');
   try {
     await page.goto(`${site.origin}/editor/`);

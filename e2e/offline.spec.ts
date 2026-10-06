@@ -11,7 +11,7 @@ import { expect, test } from './test';
  * detail. If the offline reload cannot be made reliable in an environment, that has to be
  * reported — not silenced by dropping the assertion.
  */
-test.describe('offline shell', () => {
+test.describe('offline shell', { tag: '@service-worker' }, () => {
   test('the worker controls the page and the versioned cache matches the manifest', async ({ page }) => {
     await page.goto('/editor/');
     await expect(page.getByText('SsPdfEditor')).toBeVisible();
