@@ -77,6 +77,8 @@ export interface PaintOp {
   readonly name: string | null;
   /** Text origin through the text matrix and the CTM (user space), for `text`. */
   readonly origin: { readonly x: number; readonly y: number } | null;
+  /** The current transformation matrix at the operator, for `text`. */
+  readonly ctm?: Matrix;
   /** The size in force (`Tf`), `0` when the stream never set one. */
   readonly fontSize: number;
   /** The painted box, or `null` when this scanner cannot bound it (`sh`, text). */
@@ -314,6 +316,7 @@ export function scanContent(
           span: current(),
           name: null,
           origin: { x: point.x, y: point.y },
+          ctm,
           fontSize,
           bbox: null,
         });

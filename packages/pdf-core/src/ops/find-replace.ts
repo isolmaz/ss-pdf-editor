@@ -1411,7 +1411,14 @@ export function planFindReplace(
             const result = placeLine(page, block, lineIndex, lineMatches, query.replace, fonts, faces);
             if (result !== null) {
               placements.push(result);
-              moved += 1;
+              // Closing the gap a shorter replacement leaves is not a failure to fit: only
+              // a line whose new text would not stand in its old room is reported as moved.
+              const standsInPlace = lineMatches.every(
+                (glyphs) =>
+                  placeInPlace(page, block, glyphs, query.replace, fonts, faces, MIN_INLINE_SCALE)?.shrunk ===
+                  0,
+              );
+              if (!standsInPlace) moved += 1;
               continue;
             }
           }

@@ -126,6 +126,39 @@ describe('findReplace', () => {
     expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.findReplace.replaced');
   });
 
+  it('keeps stream reading order and reports no overflow when a shorter word replaces a longer one', async () => {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+    const lines = [1, 2, 3].map((k) => `Line ${k} of Page 1 - the quick brown fox jumps`);
+    const content = [
+      `BT /F 18 Tf 1 0 0 1 72 740 Tm (Title of the page) Tj ET`,
+      ...lines.map((text, index) => `BT /F 12 Tf 1 0 0 1 72 ${700 - index * 24} Tm (${text}) Tj ET`),
+    ].join('\n');
+    doc.insertPage(0, doc.addPage([0, 0, 612, 792], 0, { Font: { F: helvetica } }, content));
+    const input = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+    doc.destroy();
+
+    const out = await findReplace(input, query({ find: 'quick', replace: 'slow' }), run);
+    expect(out.replaced).toBe(3);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.findReplace.moved');
+
+    // Stream order, as PDFium and screen readers read it: no sorting by geometry here.
+    const reread = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
+    try {
+      const streamText = reread
+        .loadPage(0)
+        .toStructuredText('preserve-whitespace')
+        .asText()
+        .replace(/\s+/g, '');
+      expect(streamText).toBe(
+        `Titleofthepage${lines.map((text) => text.replace('quick', 'slow').replace(/\s+/g, '')).join('')}`,
+      );
+    } finally {
+      reread.destroy();
+    }
+  });
+
   it('verifies a replacement that contains the old text: 2024 becomes 2024–2025 once per match', async () => {
     const input = await page([
       { text: 'Dönem 2024 raporu', y: 330 },

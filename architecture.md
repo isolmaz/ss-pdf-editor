@@ -1004,6 +1004,16 @@ character's fill colour from MuPDF's text walk, and a block's colour is the one 
 glyphs use. pdf.js's page-dominant colour is the fallback for a block MuPDF reported none
 for; reading that one colour for every block turned a red heading black when it was edited.
 
+**Reading order.** The writer draws each line where it stands in the content stream, not
+after it (`drawInReadingOrder` in `ops/text-edit.ts`): a drawn run that shares a baseline
+with a run the page keeps is spliced in right after that run's text object (before it, when
+nothing stands to its left), inside `q … Q` with the inverse of the matrix in force there and
+a reset text state. Extractors, search and screen readers follow the stream, and a shorter
+word used to come back as every line's head first and all the moved rests at the end of the
+page. Text with no run to follow, or a page whose content cannot be read, is drawn in one
+stream after the page's own. A line that only closed the gap a shorter word left is not
+counted as "did not fit in place".
+
 **Verification.** The writer's checks apply, with two corrections this operation needed: a
 replacement that contains the old text (`2024` → `2024–2025`) is not "erased text still
 present" — the lines the operation drew are subtracted before the count — and text drawn word
