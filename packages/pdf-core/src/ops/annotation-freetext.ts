@@ -19,9 +19,9 @@
  *   written annotation has to be found again by its marker as a `/FreeText` with an
  *   appearance, or the write is `verification-failed`.
  *
- * Deliberate limit: the whole Noto program is embedded once per write (MuPDF's save
- * offers no subsetting for it), so a save that adds text grows the file by the font's
- * size. A document that never gets typed text never pays it.
+ * The face is embedded once per write and cut to the glyphs the boxes draw before the
+ * save (`subsetEmbeddedFaces`), so a save that adds a few words grows the file by tens of
+ * kilobytes, not by the whole 629 KB program.
  */
 
 import { ToolError } from 'pdf-shared';
@@ -36,6 +36,7 @@ import {
   readText,
   resolved,
   saveRewrite,
+  subsetEmbeddedFaces,
   text,
   visibleBox,
 } from '../engines/mupdf-write';
@@ -229,6 +230,7 @@ export async function writeFreeTextAnnotations(
       if (error instanceof Error && error.name === 'AbortError') throw error;
       throw mapMupdfError(error, 'annotations.freetext');
     }
+    subsetEmbeddedFaces(mupdf, doc, [font]);
     saved = saveRewrite(doc, 'annotations.freetext');
   } finally {
     doc.destroy();

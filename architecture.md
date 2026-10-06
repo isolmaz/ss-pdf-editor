@@ -417,7 +417,8 @@ had to stay green. The moves, and the defects they fixed on the way:
   Tesseract's own copy of that font sits in its wasm data, which the build split at zero runs,
   so it could not be lifted out whole;
 - the text-edit insert half (`ops/text-edit.ts`), steps `load` / `text.font` / `text.draw` /
-  `save` after MuPDF's erase: a file font or Noto is embedded whole (`embedFontFile`), a
+  `save` after MuPDF's erase: a file font or Noto is embedded (`embedFontFile`) and cut to
+  the glyphs drawn before the save (`subsetEmbeddedFaces`, below), a
   standard-14 face is drawn through WinAnsiEncoding (`standardFace`) only when WinAnsi can
   spell the line, and a `doc:<name>` face is the page's own font (`engines/doc-fonts.ts`,
   §5.8); and the page geometry of the text source (`text-source.ts`);
@@ -441,6 +442,20 @@ attachments; plus a reader for what an exported file carries) — no workspace d
 pdf-lib any more, and the lockfile has none. `@pdf-lib/fontkit`, the font parser the text
 model measured with, is gone too (2026-10-04): glyph lookups and advances come from MuPDF's
 `Font` over the same bytes, and the four header numbers from `readFontHeader` (§6).
+
+**Font subsets.** `embedFontFile` embeds a whole program (Noto Sans is 629 KB) and records
+every glyph id its `encode` hands out. Before saving, the typed-text, stamp, OCR and text-edit
+writers call `subsetEmbeddedFaces`, which replaces each face's `/FontFile2` with a subset of
+those glyphs and gives the face a tagged name (`ABCDEF+NotoSans`). MuPDF's `subsetFonts`
+subsets a whole document, and run on the real one it also cut and renamed the fonts the
+document came with. A form's `/DR` font would then lose the glyphs a reader types a new
+value with. So the face is grafted into a scratch document whose one page draws exactly the
+recorded glyphs, that document is subset, and the program is copied back. Glyph ids are
+kept (Identity-H draws by id), so nothing already drawn changes. This was checked by
+rendering each writer's output against the same file with the whole program put back: no
+pixel differed, and pdf.js extracted the same text. The form writer's `/NotoForm` stays
+whole on purpose. A face that cannot be subset keeps its whole program, because the subset
+is a saving, never a condition of the write.
 
 Two binding rules every MuPDF writer relies on are written down in `engines/mupdf-write.ts`:
 a plain JS string becomes a PDF *name* (text goes through `newString`), and a missing key is
