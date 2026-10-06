@@ -419,7 +419,10 @@ export function FieldList({
             size="sm"
             label={label}
             description={hint}
-            error={error}
+            // An unpicked choice is not an error while there is something to pick from: the
+            // "nothing to select" message belongs to a list that was read and came back
+            // empty. The form stays invalid (no confirm) until a value is chosen.
+            error={(choices?.[field.id] ?? []).length === 0 ? error : undefined}
             value={String(values[field.id] ?? field.defaultValue)}
             // Kumo's trigger prints the raw value unless it is told the label.
             renderValue={(value) =>

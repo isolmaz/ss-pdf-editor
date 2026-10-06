@@ -356,7 +356,9 @@ had to stay green. The moves, and the defects they fixed on the way:
   replacement is written into the object the page already names (`writeObject` +
   `writeRawStream`), and an ICC-based grey or RGB image now reads as grey or RGB samples —
   MuPDF tags device RGB with an sRGB profile, so without that an image replaced once could not
-  be cropped or rotated again;
+  be cropped or rotated again. A replacement picture with alpha keeps it as the `/SMask` MuPDF
+  produced for it; only the old picture's mask is dropped (it used to drop both, so a
+  transparent PNG came out on a black ground);
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
 - a placed picture — a drawn, typed or photographed signature, initials, or an image

@@ -487,7 +487,11 @@ export async function applyImageEdit(
       // its encoded bytes (the filter the dictionary names stays theirs).
       const encoded = takeBytes(produced.readRawStream());
       const dictionary = doc.newDictionary();
+      // The picture's own alpha arrives as an `/SMask` on the produced image: it is the new
+      // picture's, so it stays; only the OLD object's mask is dropped.
+      let ownMask = false;
       produced.resolve().forEach((value, key) => {
+        if (key === 'SMask' || key === 'Mask') ownMask = true;
         if (key !== 'Length') dictionary.put(key, value);
       });
       target.ref.writeObject(dictionary);
@@ -495,7 +499,7 @@ export async function applyImageEdit(
       doc.deleteObject(produced);
 
       const after = target.ref.resolve();
-      if (dropMask) {
+      if (dropMask && !ownMask) {
         for (const key of ['SMask', 'Mask']) {
           if (!after.get(key).isNull()) {
             after.delete(key);
@@ -503,7 +507,7 @@ export async function applyImageEdit(
           }
         }
         // The old mask described the old pixels; `garbage` collects its object on save.
-      } else if (oldMask !== undefined) {
+      } else if (oldMask !== undefined && !ownMask) {
         notes.push(note('warning', 'op.note.image.maskKept', { name: replacement.name }));
       }
       replaced.push({

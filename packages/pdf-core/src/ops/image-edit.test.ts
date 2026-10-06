@@ -185,6 +185,36 @@ describe('image editing', () => {
     if (again.kind === 'raw') expect(Array.from(again.rgba.slice(0, 4))).toEqual([0, 255, 0, 255]);
   });
 
+  it('keeps the replacement picture’s alpha as an /SMask so transparent pixels stay transparent', async () => {
+    const mupdf = await import('mupdf');
+    const input = await fixture();
+    // 4×2 black picture, left half fully transparent, right half opaque.
+    const rgba = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 4, 2], true);
+    const pixels = rgba.getPixels();
+    for (let at = 0; at < pixels.length; at += 4) {
+      const column = (at / 4) % 4;
+      pixels.set([0, 0, 0, column < 2 ? 0 : 255], at);
+    }
+    const out = await applyImageEdit(
+      input,
+      { replacements: [{ pageIndex: 0, name: 'Flat', data: new Uint8Array(rgba.asPNG()), format: 'png' }] },
+      run,
+    );
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      const xobjects = doc.findPage(0).get('Resources').get('XObject');
+      const image = xobjects.get('Flat');
+      expect(image.get('SMask').isNull()).toBe(false);
+      expect(image.get('SMask').get('ColorSpace').asName()).toBe('DeviceGray');
+    } finally {
+      doc.destroy();
+    }
+    // Image spans x 110…190: transparent left half shows the white page, right half is black.
+    expect(await rgbAt(out.bytes, 0, 120, 50)).toEqual([255, 255, 255]);
+    expect(await rgbAt(out.bytes, 0, 180, 50)).toEqual([0, 0, 0]);
+  });
+
   it('refuses bytes that are not the claimed format and leaves a missing name untouched', async () => {
     const input = await fixture();
     await expect(
