@@ -394,7 +394,10 @@ had to stay green. The moves, and the defects they fixed on the way:
     catalog's `/Lang`. The package is written by hand and read back with mammoth, whose
     word count must equal the words written.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
-    is reopened and its cells counted. CSV rows are read back through `parseCsv`.
+    is reopened and its cells counted. CSV rows are read back through `parseCsv`. A CSV text
+    cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,
+    tab or carriage return, and not a number by `cellNumber`) is written with a leading `'`
+    (CWE-1236); XLSX needs no such guard, since its text cells are `inlineStr`.
   - **mupdf.js 1.28.1 defect.** Device callbacks get their `Shade` and `Image` in wrappers
     that take no reference but are registered with the class finalizer. Under forced
     garbage collection the engine asserted (`remove non-existent hash entry`) and the next

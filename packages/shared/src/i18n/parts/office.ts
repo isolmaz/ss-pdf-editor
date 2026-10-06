@@ -39,6 +39,8 @@ export const officePart = {
   'op.note.exportOffice.numbers':
     '{count} hücre sayı olarak yazıldı. Tek anlamlı olmayan değerler (ör. 1.234: bin mi, bir virgül iki yüz otuz dört mü) metin olarak bırakıldı.',
   'op.note.exportOffice.csvRows': '{tables} tablodan {rows} satır yazıldı.',
+  'op.note.exportOffice.csvFormulas':
+    "{count} hücre =, +, - veya @ ile başlıyordu ve bir tablolama programında formül olarak çalışırdı; metin olarak açılmaları için başlarına ' eklendi.",
   'op.note.exportOffice.outsideText':
     'Tablo içeren sayfalarda tabloların dışındaki metin (başlıklar, açıklamalar) aktarılmadı.',
   'op.note.exportOffice.unruled':

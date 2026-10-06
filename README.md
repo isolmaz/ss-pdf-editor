@@ -241,7 +241,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
     thousand, or one point two three four?), and so does `007`.
   - **CSV:** the same tables in one UTF-8 file, with the comma or semicolon that Excel
-    expects in your region.
+    expects in your region. A text cell that starts with `=`, `+`, `-` or `@` would run as a
+    formula when the file is opened, so it is written with a leading `'` (negative numbers
+    are left alone), and the report counts them.
   - The file is read back before it is offered (Word with mammoth, an independent reader),
     and the report says what was approximated.
 

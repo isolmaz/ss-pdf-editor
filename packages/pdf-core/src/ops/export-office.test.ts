@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { docxToHtml, xlsxToHtml } from './convert-ooxml';
 import { parseCsv } from './convert-text';
 import { cellNumber, exportOffice, wordFontName } from './export-office';
-import { fixturePage, reportPage, TABLE_ROWS } from './layout-fixtures';
+import { fixturePage, gridOperators, reportPage, TABLE_ROWS, TABLE_XS, TABLE_YS } from './layout-fixtures';
 
 const run = { signal: new AbortController().signal };
 const options = { pages: [0], baseName: 'rapor.pdf' } as const;
@@ -95,6 +95,31 @@ describe('exportOffice', () => {
     const commaText = new TextDecoder('utf-8', { ignoreBOM: true }).decode(comma.file.bytes);
     expect(commaText).toBe('﻿Ürün,Adet,Fiyat\r\nElma,3,"12,5"\r\nÇay,5,8\r\n');
     expect(parseCsv(commaText.slice(1), ',')[1]).toEqual(['Elma', '3', '12,5']);
+  });
+
+  it('opens a cell a spreadsheet would run as a formula as text, and leaves negative numbers alone', async () => {
+    const rows = [
+      ['Ad', 'Hücre', 'Fark'],
+      ['A', '=1+2', '-7'],
+      ['B', '@SUM(A1)', '+5'],
+    ];
+    const page = await fixturePage(
+      rows.flatMap((row, rowIndex) =>
+        row.map((text, column) => ({
+          text,
+          x: (TABLE_XS[column] ?? 0) + 8,
+          y: (TABLE_YS[rowIndex] ?? 0) - 20,
+          size: 10,
+        })),
+      ),
+      gridOperators(TABLE_XS, TABLE_YS),
+    );
+    const { file, notes } = await exportOffice(page, { ...options, format: 'csv', csvDelimiter: ';' }, run);
+    const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(file.bytes);
+    expect(text).toBe("\uFEFFAd;Hücre;Fark\r\nA;'=1+2;-7\r\nB;'@SUM(A1);'+5\r\n");
+    expect(notes.find((entry) => entry.key === 'op.note.exportOffice.csvFormulas')?.params).toMatchObject({
+      count: 3,
+    });
   });
 
   it('reads a numeral as a number only when it reads one way', () => {

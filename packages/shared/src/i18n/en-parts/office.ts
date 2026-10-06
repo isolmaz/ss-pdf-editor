@@ -36,6 +36,8 @@ export const officePart = {
   'op.note.exportOffice.numbers':
     '{count} cells were written as numbers. Values that read two ways (1.234: a thousand, or one point two three four?) were left as text.',
   'op.note.exportOffice.csvRows': '{rows} rows were written from {tables} tables.',
+  'op.note.exportOffice.csvFormulas':
+    "{count} cells began with =, +, - or @ and would run as formulas in a spreadsheet; they start with ' so they open as text.",
   'op.note.exportOffice.outsideText':
     'On pages with tables, the text outside the tables (titles, captions) was not exported.',
   'op.note.exportOffice.unruled':
