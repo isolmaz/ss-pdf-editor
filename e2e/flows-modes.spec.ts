@@ -60,7 +60,7 @@ test('the status bar shows no zoom once the document is closed', async ({ page }
 
 test('reading mode shows the page text, pages with the keyboard and closes with Escape', async ({ page }) => {
   await open(page, 'read.pdf', toolFixturePdf());
-  await page.keyboard.press('Control+h');
+  await page.keyboard.press('F9');
   const pane = page.getByRole('region', { name: 'Reading mode' });
   await expect(pane).toBeVisible();
   await expect(pane.getByText('Page 1', { exact: true })).toBeVisible();
