@@ -65,6 +65,33 @@ interface PaintedBlock {
   readonly selection: TextBlockSelection;
 }
 
+/**
+ * A model rect → the same rect on the page as displayed (`u` right, `v` down from the
+ * turned page's top-left corner, points): the forward turn of the one `toUserX` /
+ * `toUserY` in `pdf-core/text-source.ts` undo, against the same unrotated page box.
+ */
+export function displayedBox(
+  rect: readonly [number, number, number, number],
+  box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  rotation: number,
+): readonly [number, number, number, number] {
+  const corner = (x: number, y: number): readonly [number, number] => {
+    switch (rotation) {
+      case 90:
+        return [box.y + box.height - y, x - box.x];
+      case 180:
+        return [box.x + box.width - x, box.y + box.height - y];
+      case 270:
+        return [y - box.y, box.x + box.width - x];
+      default:
+        return [x - box.x, y - box.y];
+    }
+  };
+  const [u0, v0] = corner(rect[0], rect[1]);
+  const [u1, v1] = corner(rect[2], rect[3]);
+  return [Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1)];
+}
+
 /** One translation of a message key without the `t()` shape, for `data-*` and titles. */
 function reasonKeyFor(reason: string): string {
   return `textedit.reason.${reason}`;
@@ -165,21 +192,26 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
    * The blocks are placed **at render**, against the page as it is laid out now. They
    * used to be placed once, when the page's text arrived: a zoom, a resize or a scroll
    * afterwards left every box where the page had been, so a click on a paragraph
-   * opened the one that used to be there. Both the model and the page rect describe
-   * the page as it is displayed, so the mapping is one scale per axis plus the page's
-   * offset in the scrolled content.
+   * opened the one that used to be there. The model is the *unrotated* page
+   * (`text-source.ts`); the page on screen is turned by its `/Rotate`, so each box is
+   * turned the same way (`displayedBox`) before it is scaled onto the page rect —
+   * scaled straight across, the boxes of a turned page sat where its text would be
+   * without the turn.
    */
   const page = viewer.pageRect(pageIndex);
+  const view = viewer.pageGeometry(pageIndex);
   const container = viewer.containerRect();
   const place = (rect: PaintedBlock['rect']) => {
-    if (page === null || modelSize === null) return null;
-    const scaleX = page.width / Math.max(1, modelSize.width);
-    const scaleY = page.height / Math.max(1, modelSize.height);
+    if (page === null || view === null || modelSize === null) return null;
+    const box = { x: view.x, y: view.y, width: modelSize.width, height: modelSize.height };
+    const shown = displayedBox(rect, box, view.rotation);
+    const quarter = view.rotation === 90 || view.rotation === 270;
+    const scale = page.width / Math.max(1, quarter ? box.height : box.width);
     return {
-      left: page.x - container.x + rect[0] * scaleX,
-      top: page.y - container.y + rect[1] * scaleY,
-      width: Math.max(1, (rect[2] - rect[0]) * scaleX),
-      height: Math.max(1, (rect[3] - rect[1]) * scaleY),
+      left: page.x - container.x + shown[0] * scale,
+      top: page.y - container.y + shown[1] * scale,
+      width: Math.max(1, (shown[2] - shown[0]) * scale),
+      height: Math.max(1, (shown[3] - shown[1]) * scale),
     };
   };
 
