@@ -59,7 +59,9 @@ export function escapeHtml(value: string): string {
 function parseXml(text: string, path: string): Document {
   let failure: string | null = null;
   const parser = new DOMParser({
-    onError: (level: string, message: string) => {
+    // xmldom 0.8 reads `errorHandler`; an `onError` key is ignored. Only a fatal error
+    // stops the conversion: a producer's quirk is a warning and the part still reads.
+    errorHandler: (level: string, message: string) => {
       if (level === 'fatalError') failure = message;
     },
   } as never);
