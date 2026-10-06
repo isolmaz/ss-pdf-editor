@@ -278,7 +278,7 @@ the same certificate twice is one entry.
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
-| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction |
+| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
 | `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
@@ -340,6 +340,41 @@ had to stay green. The moves, and the defects they fixed on the way:
   `https:` and `mailto:` dropped and counted), and the result is reopened and its page
   count compared. `ops/convert-formats.ts` holds the extension table with no dependencies,
   so the shell can recognise a convertible file without loading the converters;
+- PDF → Word, Excel and CSV (`ops/export-office.ts`, steps `office.read` / `office.tables` /
+  `office.write` / `verify`). A download: nothing is written to the document. The ideas are
+  pdf2docx's (MIT; none of its code), the table modes Tabula's. `ops/page-layout.ts` reads a
+  page as layout. Characters with font, size, weight and colour come from the
+  structured-text walker. Pictures are drawn through their own transform into a transparent
+  pixmap: `Image.toPixmap()` gave raw samples, so an `/SMask` picture became a grey box with
+  black corners, and the draw device did not apply the mask either, so `softMasked` folds it
+  into the alpha. Ruling lines and drawn marks come from one pass of a JS `Device`.
+  - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
+    paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
+    ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
+    rule between two cells merges them). Tables without rules come from runs of rows that
+    each hold two or more pieces of text, their columns being the gaps that run through
+    every row ("stream"). Prose set in columns is told apart by its long pieces.
+  - **Drawings.** Curves, polygons that are not rectangles, shadings and pictures seed
+    regions that grow over every mark they touch. A region holding a line of prose is left
+    to the text, and so is one crossing a table or covering most of the page. The region is
+    rendered at 144 dpi as one picture, labels included, and its text leaves the flow. Above
+    2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
+  - **Word.** Each page is a section with the page's size, orientation and margins. Blocks
+    are cut into paragraphs where a line ends short, a gap opens, the size changes or a
+    bullet starts. A hyphen that breaks a word before a lower-case letter is removed.
+    Paragraphs of several lines that start a third of the way across are a second column,
+    and alignment and indents are measured in a paragraph's own column. Sizes at least
+    1.3× the body size (1.15× when bold) become `Heading1`–`3` by rank. `w:lang` is the
+    catalog's `/Lang`. The package is written by hand and read back with mammoth, whose
+    word count must equal the words written.
+  - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
+    is reopened and its cells counted. CSV rows are read back through `parseCsv`.
+  - **mupdf.js 1.28.1 defect.** Device callbacks get their `Shade` and `Image` in wrappers
+    that take no reference but are registered with the class finalizer. Under forced
+    garbage collection the engine asserted (`remove non-existent hash entry`) and the next
+    render failed (`Unexpected mesh type 0`). `borrowed()` takes those wrappers off the
+    finalizer. Paths, stroke states and text are kept by the binding and need nothing, and
+    the walker's fonts and images were measured sound;
 - images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`), where two
   pdf-lib-era defects are fixed: EXIF orientations 6 and 8 were turned the wrong way (an
   upright phone photo came out upside down) and `contain`/`cover` squashed a turned photo into
@@ -880,7 +915,7 @@ and the panel used to do exactly that right after handing over its result, so ev
 applied from the panel was aborted before it reached the document
 (`e2e/editor-stability.spec.ts` fails with that call reinstated).
 
-`ops/index.ts` registers **30** dialog ids against lazy `import()` loaders, so a
+`ops/index.ts` registers **31** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.

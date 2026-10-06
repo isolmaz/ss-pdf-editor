@@ -8,6 +8,8 @@ export const errorsPart = {
   'error.value-out-of-range.hint': 'Enter a value between the minimum and maximum allowed limits.',
   'error.selection-empty.message': 'Select pages first.',
   'error.selection-empty.hint': 'Select one or more pages from the Pages panel.',
+  'error.no-text.message': 'The selected pages hold no readable text.',
+  'error.no-text.hint': 'The pages look scanned; run OCR first and try again.',
   'error.password-policy.message': 'Operation halted by password policy.',
   'error.password-policy.hint': 'Cannot encrypt without an open password.',
 } as const;

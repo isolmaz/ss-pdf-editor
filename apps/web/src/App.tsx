@@ -3098,9 +3098,10 @@ export function App({ store }: AppProps) {
 
   const handleExportWithOptions = useCallback(
     (options: {
-      kind: 'pdf' | 'compressed' | 'images' | 'text';
+      kind: 'pdf' | 'compressed' | 'images' | 'text' | 'office';
       compressionLevel?: string;
       imageFormat?: string;
+      officeFormat?: 'docx' | 'xlsx' | 'csv';
     }) => {
       if (options.kind === 'pdf') {
         void exportActive();
@@ -3113,6 +3114,8 @@ export function App({ store }: AppProps) {
         openDialog('export-images', { format: options.imageFormat === 'jpg' ? 'jpeg' : 'png' });
       } else if (options.kind === 'text') {
         openDialog('export-text');
+      } else if (options.kind === 'office') {
+        openDialog('export-office', { format: options.officeFormat ?? 'docx' });
       }
     },
     [exportActive, openDialog],

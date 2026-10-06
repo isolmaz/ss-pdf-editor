@@ -22,6 +22,7 @@ export const TOOL_ERROR_CODES = [
   'range-invalid',
   'value-out-of-range',
   'selection-empty',
+  'no-text',
   'password-policy',
   'encrypted-unsupported',
   'corrupt-document',
