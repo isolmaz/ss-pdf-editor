@@ -1,19 +1,42 @@
-import { en } from './en';
-import { type MessageKey, tr } from './tr';
+import { type Locale, localeInfo } from './locales';
+import type { MessageKey } from './tr';
 
-export type Locale = 'tr' | 'en';
-
-export type { MessageKey };
+export type { LocaleInfo } from './locales';
+export { isLocale, LOCALE_IDS, LOCALES, localeInfo, matchLocale } from './locales';
+export type { Locale, MessageKey };
 
 export const DEFAULT_LOCALE: Locale = 'tr';
 
 /**
  * A locale supplies the keys it maintains. Turkish is the complete locale;
- * every other locale is a scaffold and falls back to `tr` per key.
+ * every other locale falls back per key (`LocaleInfo.fallback`, then Turkish).
  */
 export type Dictionary = Partial<Record<MessageKey, string>>;
 
-const DICTIONARIES: Record<Locale, Dictionary> = { tr, en };
+/**
+ * The dictionaries in memory. Each is its own chunk; `loadLocale` adds one before the
+ * interface uses its language — the shell awaits the first before its first render.
+ */
+const DICTIONARIES = new Map<string, Dictionary>();
+
+/** Fetch a registered locale's dictionary (and its fallback's) so `createTranslator` has it. */
+export async function loadLocale(locale: Locale): Promise<void> {
+  const chain: string[] = [];
+  for (let id: string | undefined = locale; id !== undefined && !chain.includes(id); ) {
+    chain.push(id);
+    id = localeInfo(id)?.fallback;
+  }
+  for (const id of chain) {
+    if (DICTIONARIES.has(id)) continue;
+    const info = localeInfo(id);
+    if (info !== undefined) DICTIONARIES.set(id, await info.load());
+  }
+}
+
+/** Whether a locale's dictionary is in memory, so switching to it needs no load. */
+export function isLocaleLoaded(locale: Locale): boolean {
+  return DICTIONARIES.has(locale);
+}
 
 export interface Translator {
   (key: MessageKey, params?: Readonly<Record<string, string | number>>): string;
@@ -23,13 +46,43 @@ export interface Translator {
 const PARAM = /\{(\w+)\}/g;
 
 /**
- * Turkish-first translator. `en` is a scaffold: a key missing there
- * falls back to Turkish so a half-translated locale can never render blank UI.
+ * The dictionaries a key is looked up in, in order: the locale's own, its fallbacks',
+ * and Turkish last. A locale whose dictionary is not loaded yet contributes nothing, so
+ * the interface shows the fallback's words until `loadLocale` has finished.
+ */
+function lookupChain(locale: Locale): readonly Dictionary[] {
+  const chain: Dictionary[] = [];
+  const seen = new Set<string>();
+  for (
+    let id: string | undefined = locale;
+    id !== undefined && !seen.has(id);
+    id = localeInfo(id)?.fallback
+  ) {
+    seen.add(id);
+    const dictionary = DICTIONARIES.get(id);
+    if (dictionary !== undefined) chain.push(dictionary);
+  }
+  const turkish = DICTIONARIES.get('tr');
+  if (!seen.has('tr') && turkish !== undefined) chain.push(turkish);
+  return chain;
+}
+
+/**
+ * The translator for a locale: its own words, a missing key from its fallback, and
+ * Turkish last when it is loaded, so a half-translated locale can never render a blank
+ * label. A key no loaded dictionary has comes back as the key itself.
  */
 export function createTranslator(locale: Locale = DEFAULT_LOCALE): Translator {
-  const dictionary = DICTIONARIES[locale];
+  const chain = lookupChain(locale);
   const translate = (key: MessageKey, params?: Readonly<Record<string, string | number>>): string => {
-    const template = dictionary[key] ?? tr[key];
+    let template: string = key;
+    for (const dictionary of chain) {
+      const value = dictionary[key];
+      if (value !== undefined) {
+        template = value;
+        break;
+      }
+    }
     if (params === undefined) return template;
     return template.replace(PARAM, (match, name: string) => {
       const value = params[name];
