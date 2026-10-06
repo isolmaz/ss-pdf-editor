@@ -514,7 +514,7 @@ The limits are defined once, in
   - The XFA renderer is pdf.js's: a form that relies on features it does not implement
     (scripts, some layouts, barcodes) draws incompletely.
   - Only two hand-built XFA 3.3 files were tested, no real-world form; see
-    `architecture.md` §5.9.
+    `architecture.md` §5.10.
 - **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
   malformed journal makes the whole draft unreadable on purpose.
 - **Early engine spikes.** Some code comments mention a measurement from an *early engine
