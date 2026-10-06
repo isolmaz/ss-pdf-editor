@@ -31,6 +31,8 @@ export const convertPart = {
     'Tablolar {rows} satır ve {columns} sütunla sınırlandı; {cells} hücre dışarıda kaldı.',
   'op.note.convert.pptxApproximate':
     'Her slayt kendi boyutunda bir sayfa oldu; metinleri, tabloları ve görselleri okuma sırasıyla aktarıldı. Slayt tasarımı (konumlar, arka planlar, temalar) birebir korunmaz.',
+  'op.note.convert.xmlDamaged':
+    'Dosyanın bazı bölümleri hasarlı ({parts}); okunabilen kısım dönüştürüldü, içerik eksik olabilir.',
   'op.note.convert.imagesSkipped':
     '{count} görsel, desteklenmeyen biçimde (EMF, WMF, SVG gibi) olduğu için aktarılamadı.',
   'op.note.convert.csvTruncated': 'Tablo {rows} satırla sınırlandı; dosyada {total} satır vardı.',

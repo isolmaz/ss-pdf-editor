@@ -2,7 +2,7 @@
  * The Office readers on minimal packages built in the test: the structure each format
  * promises (headings, table cells, one table per sheet, one page-sized part per slide),
  * Turkish text that survives the XML round trip, and a damaged part that is reported as
- * `corrupt-document` rather than read as an empty file.
+ * `corrupt-document` (unreadable) or as a loss note (repaired) rather than read as an empty file.
  */
 
 import JSZip from 'jszip';
@@ -57,6 +57,22 @@ describe('convert-ooxml', () => {
     broken.file('xl/worksheets/sheet1.xml', '<worksheet xmlns="x');
     const bytes = await broken.generateAsync({ type: 'uint8array' });
     await expect(xlsxToHtml(bytes, 'broken.xlsx')).rejects.toMatchObject({ code: 'corrupt-document' });
+  });
+
+  it('converts a sheet cut off mid-row but reports the damaged part as a loss', async () => {
+    const whole = await xlsxToHtml(await xlsx(), 'a.xlsx');
+    expect(whole.notes.some((item) => item.key === 'op.note.convert.xmlDamaged')).toBe(false);
+    const cut = await xlsxToHtml(
+      await xlsx({
+        sheet: `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+          <row r="1"><c r="A1" t="inlineStr"><is><t>Yarım</t></is></c></row><row r="2"></worksheet>`,
+      }),
+      'cut.xlsx',
+    );
+    expect(cut.parts[0]?.html).toContain('<td>Yarım</td>');
+    const loss = cut.notes.find((item) => item.key === 'op.note.convert.xmlDamaged');
+    expect(loss?.kind).toBe('lost');
+    expect(loss?.params).toEqual({ parts: 'xl/worksheets/sheet1.xml' });
   });
 
   it('says a zip without the format main part is the wrong kind of file, and escapes HTML', async () => {
