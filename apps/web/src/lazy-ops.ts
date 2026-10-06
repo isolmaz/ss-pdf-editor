@@ -35,3 +35,10 @@ export const auditRedactedDocument: Lazy<
 
 export const listPdfFonts: Lazy<typeof import('pdf-core/ops/pdf-fonts').listPdfFonts> = async (...args) =>
   (await import('pdf-core/ops/pdf-fonts')).listPdfFonts(...args);
+
+export const addImageStamp: Lazy<typeof import('pdf-core/ops/image-stamp').addImageStamp> = async (...args) =>
+  (await import('pdf-core/ops/image-stamp')).addImageStamp(...args);
+
+export const resizeImageStamp: Lazy<typeof import('pdf-core/ops/image-stamp').resizeImageStamp> = async (
+  ...args
+) => (await import('pdf-core/ops/image-stamp')).resizeImageStamp(...args);

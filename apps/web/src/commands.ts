@@ -79,6 +79,13 @@ export interface CommandHost {
    * on the open document, so it has its own host callback rather than a dialog id.
    */
   readonly openBatch: () => void;
+  /**
+   * The simple signature: draw, type or photograph one, then click where it goes. It is a
+   * picture on the page (a `/Stamp`), not the certificate signing `tools.sign` opens.
+   */
+  readonly openSignature: () => void;
+  /** Pick an image file and click where it goes on the page. */
+  readonly addImage: () => void;
   /** Arm the ruler in one of its three modes (`ops/measure.ts`). */
   readonly measure: (mode: 'distance' | 'perimeter' | 'area' | null) => void;
   /** Which measure mode is armed, for the menu's check mark. */
@@ -205,6 +212,8 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'tools.shapes',
   'tools.ink',
   'tools.sign',
+  'tools.signature-simple',
+  'tools.image-add',
   'tools.form-fields',
   'tools.link',
   'tools.numbering',
@@ -820,6 +829,23 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabled: noDocument,
       keywords: ['sign', 'imza', 'pades', 'pkcs12', 'p12', 'sertifika'],
       run: dialog('sign'),
+    },
+    {
+      id: 'tools.signature-simple',
+      labelKey: 'sig.command',
+      group: 'tools',
+      disabled: noEdit,
+      checked: host.activeTool === 'stamp',
+      keywords: ['signature', 'imza', 'paraf', 'initials', 'ciz', 'draw', 'e-imza'],
+      run: host.openSignature,
+    },
+    {
+      id: 'tools.image-add',
+      labelKey: 'img.add.title',
+      group: 'tools',
+      disabled: noEdit,
+      keywords: ['image', 'picture', 'logo', 'gorsel', 'resim', 'fotograf', 'ekle'],
+      run: host.addImage,
     },
     {
       id: 'tools.link',

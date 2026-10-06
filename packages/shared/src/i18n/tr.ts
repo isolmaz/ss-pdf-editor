@@ -33,6 +33,7 @@ import { propsPart } from './parts/props';
 import { redactPart } from './parts/redact';
 import { securityPart } from './parts/security';
 import { shellPart } from './parts/shell';
+import { signaturePart } from './parts/signature';
 import { stampPart } from './parts/stamp';
 import { texteditPart } from './parts/textedit';
 import { verifyPart } from './parts/verify';
@@ -66,6 +67,7 @@ export const tr = {
   ...redactPart,
   ...securityPart,
   ...shellPart,
+  ...signaturePart,
   ...stampPart,
   ...verifyPart,
 

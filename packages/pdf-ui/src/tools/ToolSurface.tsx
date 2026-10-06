@@ -4,7 +4,7 @@
  * the root barrel is not reducible by a bundler.
  *
  * The mark tools live here too — `MarkInteractionLayer` plus the `MarkTarget`
- * contract it consumes — because selection, the marquee and the move are one
+ * contract it consumes, and `StampPlacementLayer`, the click that places a picture — because selection, the marquee and the move are one
  * surface shared by every mark family, and the shell codes against exactly this
  * import (`pdf-ui/tools`). `ToolProperties` is re-exported from the same path so
  * there is one specifier for a tool's controls and its surface.
@@ -16,7 +16,13 @@ export {
   type MarkInteractionLayerProps,
   type MarkInteractionMode,
 } from '../ops/MarkInteractionLayer';
-export { type MarkFamily, type MarkTarget, markTargetKey } from '../ops/mark-interaction';
+export { type MarkFamily, type MarkRect, type MarkTarget, markTargetKey } from '../ops/mark-interaction';
+export {
+  type StampPlacement,
+  StampPlacementLayer,
+  type StampPlacementLayerProps,
+  type StampPlacementSource,
+} from '../ops/StampPlacementLayer';
 export { ReadingPane, type ReadingPaneProps } from '../reading/ReadingPane';
 export { Magnifier, type MagnifierProps } from './Magnifier';
 export { SnapshotMenu, type SnapshotMenuProps } from './SnapshotMenu';

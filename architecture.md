@@ -279,7 +279,7 @@ the same certificate twice is one entry.
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
 | `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction |
-| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
+| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 
@@ -318,6 +318,15 @@ had to stay green. The moves, and the defects they fixed on the way:
   be cropped or rotated again;
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
+- a placed picture — a drawn, typed or photographed signature, initials, or an image
+  (`ops/image-stamp.ts`, steps `load` / `annotations.stamp` / `save` / `verify`): one
+  `/Stamp` whose `/AP /N` form draws the PNG (alpha kept as a soft mask) or JPEG over
+  `BBox [0 0 w h]`. On a turned page the form carries the counter-turn as its `/Matrix`
+  and the `/Rect` extents are swapped, so the picture stands upright on screen. `/Name` is
+  `SsSignature`, `SsInitials` or `SsImage`, and `/Contents` holds the marker plus the kind.
+  Resizing (`resizeImageStamp`, step `annotations.resize`) writes `/Rect` only — readers
+  scale the appearance to it — and refuses anything that is not a `/Stamp`, whose geometry
+  lives in more keys than the rectangle;
 - images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`), where two
   pdf-lib-era defects are fixed: EXIF orientations 6 and 8 were turned the wrong way (an
   upright phone photo came out upside down) and `contain`/`cover` squashed a turned photo into
@@ -787,7 +796,22 @@ unclickable. A press becomes the mark tools' only when it is over a page, off ev
 control (`PROTECTED_TARGETS`) and — in select mode — where the browser reports no text at all
 (`caretPositionFromPoint`/`caretRangeFromPoint`, then the `.textLayer span` under the point).
 The same layer draws selection outlines, staged redactions, the marquee and movement
-previews in a `pointer-events-none` overlay.
+previews in a `pointer-events-none` overlay. A single selected target the shell marks
+`resizable` (a file `/Stamp`) also gets four corner buttons — the only part of the layer that
+takes the pointer, and outside the page surfaces, so the window listeners leave their presses
+alone. A drag scales the box about the opposite corner with its aspect kept and commits one
+`onResize`; the arrow keys on a focused handle grow or shrink it by 5 %.
+
+`StampPlacementLayer` arms one picture: a translucent copy follows the pointer over the pages
+at its final size (a signature 160 pt wide, initials 60 pt, an image at 0.75 pt per pixel,
+never more than 60 % of the page), clamped inside the page, and a click on a page surface
+answers the page, the centre in app space and the upright size. Escape cancels it.
+
+pdf.js renders `/Contents` verbatim into the hover popup of a markup annotation, and every
+annotation this app writes carries its `pdf-editor-ann:<id>` marker there. `viewer/marker-text.ts`
+watches the scroll container with a `MutationObserver` and rewrites popup text through
+`commentText` — the reading the comments panel already used — so the file keeps the marker
+and the page never shows it.
 
 New annotation gestures are controlled by `AnnotationLayer`; pdf.js editor creation is
 disabled. Text selection remains native. Pen/marker gestures store one continuous point
@@ -880,8 +904,9 @@ a thrown `ToolError` to translated message + hint text.
 
 **The armed tool is one value.** `CanvasToolId` (`tools/ToolProperties.tsx`) is the union of
 everything a canvas gesture can be — `select`, `hand`, `highlight`, `underline`, `strikeout`,
-`squiggly`, `ink`, `shapes`, `note`, `redact`, `measure`, `link`, `text`, `freetext` — and the
-shell holds exactly one at a time. The tool rail (`apps/web/src/components/ToolRail.tsx`) is a
+`squiggly`, `ink`, `shapes`, `note`, `redact`, `measure`, `link`, `text`, `freetext`, `stamp`
+— and the shell holds exactly one at a time. `stamp` is armed only with a picture to place
+(the signature dialog or the image picker) and any other tool drops that picture. The tool rail (`apps/web/src/components/ToolRail.tsx`) is a
 column **in the layout** beside the document and shows every one of them; the four
 text-markup looks share one button that is pressed for any of them and arms the look used
 last. It floated over the sheet before, covered page text below 1024 px, and offered seven
@@ -1179,6 +1204,19 @@ retain a quarter-turn value until export; JSON/FDF interchange preserves it. A m
 selection remains one journal step. MuPDF raster regressions verify actual rotated pixels
 and continuous marker strokes, rather than merely checking stored rectangles.
 
+Placing and resizing a picture go through `writeFileAnnotation()`, which shares this
+boundary: engine values checkpointed, the version re-checked after every `await`, pending
+marks kept out of the base and handed back as the remaining overlays, and one journal step
+that undo takes back whole. A placed stamp is selected as soon as the re-read inventory lists
+it, so its handles are there at once. The simple-signature dialog (`pdf-ui/dialogs/SignatureDialog.tsx`)
+draws on a canvas with speed-weighted quadratic strokes, renders a typed name in one of two
+pinned handwriting faces (Dancing Script and Great Vibes, latin and latin-ext), or turns a
+photo's paper transparent by luminance (`ops/stamp-source.ts`); everything is trimmed to its
+ink and leaves as one PNG. A remembered signature is opt-in and stays in this browser's
+`localStorage` (`apps/web/src/signature-store.ts`, six entries at most); a sensitive session
+does not offer it. The dialog states that
+the picture is not a certified signature.
+
 Form fields, widgets and popups are **not** deletion targets: `isDeletableAnnotation()` drops
 pdf.js's `Widget` (20) and `Popup` (16) types before a target is even built, and the writer
 refuses a `/Widget` that arrives anyway. A saved link **is** a target — a persisted `/Link` is
@@ -1344,9 +1382,10 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
 
-Inventory: 227 pinned files across six groups — `mupdf` (3), `pdfjs` (200: worker,
+Inventory: 231 pinned files across seven groups — `mupdf` (3), `pdfjs` (200: worker,
 cmaps, standard fonts, wasm), `tesseract` (8: worker, core `.wasm.js` + `.wasm`, `fast` and
-`best` language data), `space-grotesk` (6), `dm-sans` (8) and `noto` (2).
+`best` language data), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
+Dancing Script and Great Vibes, latin and latin-ext, for typed signatures).
 
 `tools/verify-assets.mjs` is the verification half of the pair: it re-hashes every pinned
 file and fails on any difference, never writing. `tools/hooks/guard.mjs` (pre-commit and

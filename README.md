@@ -40,12 +40,12 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | | |
 | --- | --- |
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
-| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · move, rotate and delete any mark |
+| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark |
 | 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
-| 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · PAdES signing · signature verification |
+| 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification |
 | 🧰 **Tools** | OCR (TR/EN) · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
@@ -185,6 +185,19 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     is refused.
 - **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
   encrypted copy is downloaded, not applied to the open document.
+- **Simple signatures and images.** Draw a signature, type your name in one of two
+  handwriting faces, or take it from a photo of a signature on paper (the paper is made
+  transparent). Choose signature or initials and black, blue or navy ink, then click where
+  it goes on the page.
+  - It is written into the file at once as a `/Stamp` annotation with an image
+    appearance, as one step that undo takes back. It stays upright on turned pages.
+  - **Add an image** places a PNG, JPEG, WebP, GIF or BMP the same way; transparency is
+    kept, and a JPEG that needs no turn or shrink keeps its own bytes.
+  - Select a placed picture to move or turn it, or resize it from a corner handle (or the
+    arrow keys on a focused handle). Resizing changes only `/Rect`; the image is not
+    re-encoded.
+  - **Remember on this device** is off by default. When ticked, the picture stays in this
+    browser's local storage only, and every saved entry can be deleted from the dialog.
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - Trust is checked only against certificates you imported.
@@ -233,6 +246,9 @@ These describe how the build works; they are not promises.
   - The recent list keeps the file name, size and page count in `localStorage`. In
     Chromium it also keeps a *handle* to the file in IndexedDB — a reference the browser
     asks permission for again, never the file's bytes. A sensitive session keeps no handle.
+  - A signature picture is kept only when you tick **Remember on this device**: in
+    `localStorage`, at most six, each deletable from the signature dialog. A sensitive
+    session does not offer it.
   - Cleanup refuses to delete anything when it cannot fully read which drafts are in use.
 - **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
   the UI never claims that it does.
@@ -264,6 +280,9 @@ The limits are defined once, in
 
 ## Honest limits
 
+- **Simple signatures.** A drawn, typed or photographed signature is a picture on the page,
+  not a certified digital signature: it proves nothing about who signed or whether the
+  document changed afterwards. The dialog says so; use certificate signing for that.
 - **Signing.**
   - Only PAdES B-B is supported: no RFC 3161 timestamp, and no revocation check, since
     there is no network. Revocation is therefore always reported `indeterminate`.

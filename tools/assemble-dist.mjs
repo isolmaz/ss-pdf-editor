@@ -112,6 +112,8 @@ const LICENCE_SOURCES = [
   ['tesseract.js-core', 'tesseract.js-core/LICENSE'],
   ['@fontsource/space-grotesk', '@fontsource/space-grotesk/LICENSE'],
   ['@fontsource/dm-sans', '@fontsource/dm-sans/LICENSE'],
+  ['@fontsource/dancing-script', '@fontsource/dancing-script/LICENSE'],
+  ['@fontsource/great-vibes', '@fontsource/great-vibes/LICENSE'],
   ['@expo-google-fonts/noto-sans', '@expo-google-fonts/noto-sans/LICENSE'],
   ['@expo-google-fonts/noto-sans (font)', '@expo-google-fonts/noto-sans/LICENSE_FONT'],
   ['pdfjs-dist', 'pdfjs-dist/LICENSE'],
