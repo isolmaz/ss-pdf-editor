@@ -80,17 +80,19 @@ export async function buildFlattenedXfa(
     doc.destroy();
   }
 
+  // The layer writer takes boxes in the unit viewport (one unit per point) and sizes each
+  // word's glyphs and advance from the box itself, so the picture's pixels become points here.
   const layers: OcrLayerPage[] = pages.map((page, pageIndex) => ({
     pageIndex,
     words: page.words.map((word) => ({
       text: word.text,
-      x0: word.x0,
-      y0: word.y0,
-      x1: word.x1,
-      y1: word.y1,
+      x0: word.x0 / page.scale,
+      y0: word.y0 / page.scale,
+      x1: word.x1 / page.scale,
+      y1: word.y1 / page.scale,
       confidence: 100,
     })),
-    toPdfPoint: (x, y) => [x / page.scale, page.heightPt - y / page.scale] as const,
+    toPdfPoint: (x, y) => [x, page.heightPt - y] as const,
   }));
   const withText = pages.some((page) => page.words.length > 0)
     ? await writeOcrLayer(bytes, layers, context)

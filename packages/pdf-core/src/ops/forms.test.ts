@@ -252,6 +252,77 @@ describe('forms', () => {
     ).rejects.toMatchObject({ code: 'range-invalid' });
   });
 
+  it('writes the creation options a detected form uses: plain, comb, multiline, rects, rotation, signature', async () => {
+    const out = await createFormFields(
+      await formFixture(),
+      [
+        { kind: 'text', name: 'cerceveli', pageIndex: 0, rect: [20, 300, 100, 20] },
+        { kind: 'text', name: 'sade', pageIndex: 0, rect: [20, 270, 100, 20], plain: true },
+        { kind: 'text', name: 'tarama', pageIndex: 0, rect: [20, 240, 100, 20], plain: true, rotation: 90 },
+        { kind: 'text', name: 'donuk', pageIndex: 0, rect: [20, 210, 100, 20], rotation: 270 },
+        { kind: 'text', name: 'tc', pageIndex: 0, rect: [20, 180, 110, 14], plain: true, comb: 11 },
+        { kind: 'text', name: 'not', pageIndex: 0, rect: [20, 120, 100, 50], plain: true, multiline: true },
+        {
+          kind: 'radio',
+          name: 'secenek',
+          pageIndex: 0,
+          rect: [200, 300, 60, 12],
+          options: ['a', 'b'],
+          plain: true,
+          optionRects: [
+            [200, 300, 10, 10],
+            [260, 302, 10, 10],
+          ],
+        },
+        { kind: 'signature', name: 'imza', pageIndex: 0, rect: [200, 200, 120, 30], plain: true },
+      ],
+      run,
+    );
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      // Every widget dictionary by field name (a radio group's kids by their parent's).
+      const dicts = new Map<string, import('mupdf').PDFObject[]>();
+      const annots = doc.findPage(0).get('Annots').resolve();
+      for (let at = 0; at < annots.length; at += 1) {
+        const dict = annots.get(at).resolve();
+        const owner = dict.get('Parent').isNull() ? dict : dict.get('Parent').resolve();
+        const name = owner.get('T').asString();
+        dicts.set(name, [...(dicts.get(name) ?? []), dict]);
+      }
+      const only = (name: string) => dicts.get(name)?.[0] as import('mupdf').PDFObject;
+
+      // A framed field carries its border and background; a plain one carries none.
+      expect(only('cerceveli').get('MK').get('BC').length).toBe(3);
+      expect(only('cerceveli').get('BS').get('W').asNumber()).toBe(1);
+      expect(only('sade').get('MK').isNull()).toBe(true);
+      expect(only('sade').get('BS').isNull()).toBe(true);
+      // Rotation is `/MK /R` on a plain field and joins the frame on a framed one.
+      expect(only('tarama').get('MK').get('R').asNumber()).toBe(90);
+      expect(only('tarama').get('MK').get('BC').isNull()).toBe(true);
+      expect(only('donuk').get('MK').get('R').asNumber()).toBe(270);
+      expect(only('donuk').get('MK').get('BC').length).toBe(3);
+      // Comb: the comb flag (bit 25) and the cell count as /MaxLen; multiline is bit 13.
+      expect(only('tc').get('MaxLen').asNumber()).toBe(11);
+      expect(only('tc').get('Ff').asNumber() & (1 << 24)).not.toBe(0);
+      expect(only('not').get('Ff').asNumber() & (1 << 12)).not.toBe(0);
+      expect(only('not').get('Ff').asNumber() & (1 << 24)).toBe(0);
+      expect(only('sade').get('Ff').asNumber() & ((1 << 12) | (1 << 24))).toBe(0);
+      // Option rectangles are used as given (x, y, x + w, y + h), one widget per option.
+      expect(dicts.get('secenek')?.map((dict) => dict.get('Rect').asJS())).toEqual([
+        [200, 300, 210, 310],
+        [260, 302, 270, 312],
+      ]);
+      expect(only('imza').get('FT').asName()).toBe('Sig');
+    } finally {
+      doc.destroy();
+    }
+    const fields = await readFormFields(out.bytes);
+    expect(fields.find((field) => field.name === 'imza')?.kind).toBe('signature');
+    expect(fields.find((field) => field.name === 'tc')).toMatchObject({ kind: 'text', maxLength: 11 });
+  });
+
   it('locks a field and flattens fields into page content', async () => {
     const locked = await setFieldFlags(await formFixture(), ['ad'], { readOnly: true, required: false }, run);
     expect((await readFormFields(locked.bytes)).find((field) => field.name === 'ad')).toMatchObject({
