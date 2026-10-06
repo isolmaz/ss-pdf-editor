@@ -25,3 +25,22 @@ interface OpenFilePickerOptions {
 }
 
 declare function showOpenFilePicker(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
+
+/**
+ * Permission on a handle kept across sessions (`recent-handles.ts`). Declared optional: the
+ * methods are WICG, not DOM, and a browser that lacks them is treated as having granted the
+ * read the user just picked.
+ */
+interface FileSystemHandlePermissionDescriptor {
+  readonly mode?: 'read' | 'readwrite';
+}
+
+interface FileSystemHandle {
+  queryPermission?(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
+  requestPermission?(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
+}
+
+/** A dropped file's handle (Chromium): what lets a dropped document be saved in place. */
+interface DataTransferItem {
+  getAsFileSystemHandle?(): Promise<FileSystemHandle | null>;
+}

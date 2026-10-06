@@ -685,7 +685,13 @@ async function main() {
     let previous;
     let cleanup;
     let reads = 0;
+    const pruned = [];
     const bindings = {
+      // The effect forgets the file handles of recent entries that are gone, after the restore.
+      loadRecentDocuments: () => [{ id: 'kept' }],
+      pruneRecentHandles: async (keep) => {
+        pruned.push([...keep]);
+      },
       draftStorage: {
         readDraftInventory: async () => {
           reads += 1;
@@ -714,6 +720,7 @@ async function main() {
     await tick();
     cleanup?.();
     assert.equal(reads, 1);
+    assert.deepEqual(pruned, [['kept']]);
   });
   await check('a single unreadable OPFS draft does not stop other draft recovery', async () => {
     const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');

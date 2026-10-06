@@ -11,6 +11,7 @@ import { enginesPart } from './en-parts/engines';
 import { errorsPart } from './en-parts/errors';
 import { filePart } from './en-parts/file';
 import { formsPart } from './en-parts/forms';
+import { homePart } from './en-parts/home';
 import { imposePart } from './en-parts/impose';
 import { measurePart } from './en-parts/measure';
 import { ocrPart } from './en-parts/ocr';
@@ -52,6 +53,7 @@ export const en: Record<MessageKey, string> = {
   ...enginesPart,
   ...errorsPart,
   ...filePart,
+  ...homePart,
   ...imposePart,
   ...ocrPart,
   ...optimizePart,
@@ -343,38 +345,6 @@ export const en: Record<MessageKey, string> = {
   // Toolbars & Nav
   'toolbar.hand': 'Hand / Pan Tool',
 
-  // Home Screen
-  'home.discover': 'Discover',
-  'home.tools': 'Tools',
-  'home.allTools': 'All tools (Ctrl+K)',
-  'home.editCardTitle': 'Edit text & images',
-  'home.editCardDesc': 'Change text, images and page layout directly on the PDF.',
-  'home.signCardTitle': 'Fill & sign',
-  'home.signCardDesc': 'Fill form fields, add visual stamps or apply legal PAdES digital signatures.',
-  'home.exportCardTitle': 'Export PDF',
-  'home.exportCardDesc': 'Convert your document to high-resolution images, Markdown or plain text.',
-  'home.combineCardTitle': 'Combine files',
-  'home.combineCardDesc': 'Merge multiple PDFs while preserving page structure, forms and outlines.',
-  'home.dropzoneTitle': 'Drop PDF file here',
-  'home.dropzoneDesc': 'or select from your device',
-  'home.recentTab': 'Recent Documents',
-  'home.starredTab': 'Starred',
-  'home.clearList': 'Clear list',
-  'home.noRecent': 'No recent documents found.',
-  'home.noStarred': 'No starred documents yet.',
-  'home.privacyNotice':
-    'Opened PDF documents are stored safely in local device storage. Files are never uploaded to remote servers.',
-  'home.colName': 'Document Name',
-  'home.colActions': 'Actions',
-  'home.colPrivacy': 'Privacy & Access',
-  'home.colLastOpened': 'Last Opened',
-  'home.colSize': 'Size',
-  'home.localDevice': 'Local Device',
-  'home.chooseOrDrop': 'Choose file or drag here →',
-  'home.chooseFiles': 'Choose files →',
-  'home.removeFromList': 'Remove from list',
-  'home.star': 'Star',
-  'home.unstar': 'Remove star',
   'update.available': 'A new update is available. Refresh to apply changes.',
   'update.refresh': 'Refresh',
 };

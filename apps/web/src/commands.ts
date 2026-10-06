@@ -160,6 +160,9 @@ export interface CommandHost {
  */
 const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   // File: the verbs every reader has.
+  'file.new',
+  'file.merge',
+  'file.create-images',
   'file.save',
   'file.export',
   'file.print',
@@ -234,6 +237,17 @@ export const SIMPLE_MODE_RAIL_GROUPS: readonly string[] = ['pages', 'export', 's
  */
 export const SIMPLE_MODE_DOCK_TABS: readonly DocumentPanelTab[] = ['pages', 'outline', 'search'];
 
+/**
+ * Commands that start a document instead of acting on the open one: they run with no
+ * document, so the home screen runs them straight away rather than asking for a file.
+ */
+export const STANDALONE_COMMAND_IDS: ReadonlySet<string> = new Set([
+  'file.new',
+  'file.merge',
+  'file.create-images',
+  'file.batch',
+]);
+
 /** Whether a command is offered in the given mode. */
 export function isCommandVisible(command: Command, mode: InterfaceMode): boolean {
   return mode === 'advanced' || SIMPLE_MODE_COMMANDS.has(command.id);
@@ -260,11 +274,26 @@ export function buildCommands(host: CommandHost): readonly Command[] {
 
   const file: Command[] = [
     {
+      id: 'file.new',
+      labelKey: 'start.blank.title',
+      group: 'file',
+      // Enabled without a document: it starts one.
+      keywords: ['new', 'blank', 'empty', 'yeni', 'bos', 'belge'],
+      run: dialog('new-document'),
+    },
+    {
       id: 'file.open',
       labelKey: 'shell.open',
       group: 'file',
       shortcut: shortcutHint('file.open'),
       run: host.openFile,
+    },
+    {
+      id: 'file.merge',
+      labelKey: 'start.merge.title',
+      group: 'file',
+      keywords: ['merge', 'combine', 'join', 'birlestir', 'birlestirme'],
+      run: dialog('merge-files'),
     },
     {
       id: 'file.save',
@@ -301,6 +330,8 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       id: 'file.create-images',
       labelKey: 'file.createImages.title',
       group: 'file',
+      // Standalone: it opens its result as a new tab whether or not a document is open.
+      keywords: ['image', 'photo', 'jpg', 'png', 'gorsel', 'resim', 'fotograf'],
       run: dialog('images-to-pdf'),
     },
     {

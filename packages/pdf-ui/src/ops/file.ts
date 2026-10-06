@@ -162,6 +162,7 @@ export const imagesToPdfDialog: OperationDialogSpec = {
   introKey: 'file.createImages.intro',
   confirmKey: 'op.result.newTab',
   resultKind: 'new-tab',
+  standalone: true,
   fields: [
     {
       id: 'images',

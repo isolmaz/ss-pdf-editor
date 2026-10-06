@@ -620,6 +620,11 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'composeDocument adds a requested quarter turn to the /Rotate of the composed pages',
   },
   {
+    steps: ['create.blank'],
+    mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox'],
+    why: 'create.ts makes a brand-new document of empty pages; nothing of a source exists to keep',
+  },
+  {
     steps: ['images.create'],
     mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox'],
     why: 'images.ts creates a brand-new document; nothing of the source survives by construction',

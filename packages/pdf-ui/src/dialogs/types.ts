@@ -209,6 +209,13 @@ export interface OperationDialogSpec {
    * `new-tab` opens it beside the current one, `download` writes files.
    */
   readonly resultKind: DialogResultKind;
+  /**
+   * The operation starts a document instead of changing one: it runs with no document open,
+   * its context carries no bytes, and its result opens in a new tab. The shell hosts it in a
+   * modal over the home screen or the editor (`StartDialog`), never in the tools panel of a
+   * tab it does not belong to.
+   */
+  readonly standalone?: boolean;
   /** Irreversible content loss: run shows a blocking confirmation. */
   readonly destructive?: boolean;
   /** Page identities/coordinates change without a pending-mark mapping. Refuse before running. */

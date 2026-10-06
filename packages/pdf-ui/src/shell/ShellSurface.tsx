@@ -52,7 +52,7 @@ export type {
   OpRunResult,
 } from '../dialogs/types';
 export type { OperationRunContext } from '../dialogs/useOperationRun';
-export { DIALOG_IDS, dialogById, hasDialog } from '../ops';
+export { DIALOG_IDS, dialogById, hasDialog, isStandaloneDialog } from '../ops';
 export {
   AnnotationLayer,
   type AnnotationLayerProps,

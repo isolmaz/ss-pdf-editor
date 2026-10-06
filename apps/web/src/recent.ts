@@ -47,6 +47,12 @@ export function addRecentDocument(
   doc: Omit<RecentDocumentItem, 'openedAt'> & { openedAt?: number },
 ): RecentDocumentItem[] {
   const current = loadRecentDocuments();
+  /**
+   * The entry this opening replaces — the same tab, or an earlier opening of a file with this
+   * name. Its star belongs to the document the user starred, so it carries over: a reopened
+   * file used to come back unstarred.
+   */
+  const replaced = current.filter((item) => item.id === doc.id || item.name === doc.name);
   const filtered = current.filter((item) => item.id !== doc.id && item.name !== doc.name);
   const updated: RecentDocumentItem[] = [
     {
@@ -55,7 +61,7 @@ export function addRecentDocument(
       sizeBytes: doc.sizeBytes,
       openedAt: doc.openedAt ?? Date.now(),
       pageCount: doc.pageCount,
-      starred: doc.starred ?? false,
+      starred: doc.starred ?? replaced.some((item) => item.starred === true),
     },
     ...filtered,
   ].slice(0, MAX_RECENT_ITEMS);

@@ -43,7 +43,20 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'link-add': async () => (await import('./link-add')).linkAddDialog,
   'image-edit': async () => (await import('./image-edit')).imageEditDialog,
   sign: async () => (await import('./sign')).signDialog,
+  'new-document': async () => (await import('./start')).newDocumentDialog,
+  'merge-files': async () => (await import('./start')).mergeFilesDialog,
 };
+
+/**
+ * The dialogs that start a document instead of changing one (`OperationDialogSpec.standalone`).
+ * Known synchronously, before the spec loads, because the shell decides from the id alone
+ * whether an opening needs a document at all.
+ */
+const STANDALONE: ReadonlySet<string> = new Set(['images-to-pdf', 'new-document', 'merge-files']);
+
+export function isStandaloneDialog(id: string): boolean {
+  return STANDALONE.has(id);
+}
 
 /** Dialog ids the menus and the palette can open, for tests and documentation. */
 export const DIALOG_IDS: readonly string[] = Object.keys(LOADERS);

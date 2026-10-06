@@ -24,4 +24,5 @@ export {
   type ShortcutsDialogRow,
 } from './ShortcutsDialog';
 export { SignatureWarningDialog, type SignatureWarningDialogProps } from './SignatureWarningDialog';
+export { StartDialog, type StartDialogProps } from './StartDialog';
 export type { OperationRunContext } from './useOperationRun';

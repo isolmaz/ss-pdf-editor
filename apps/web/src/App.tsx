@@ -129,6 +129,7 @@ import {
   dialogById,
   HistoryPanel,
   hasDialog,
+  isStandaloneDialog,
   MenuBar,
   RedactionLayer,
   RedactionPanel,
@@ -152,6 +153,7 @@ import {
   type InterfaceMode,
   SIMPLE_MODE_DOCK_TABS,
   SIMPLE_MODE_RAIL_GROUPS,
+  STANDALONE_COMMAND_IDS,
   visibleCommands,
 } from './commands';
 import { ActivityOverlay } from './components/ActivityOverlay';
@@ -195,7 +197,8 @@ import {
   verifyForWrite,
   type WriteVerification,
 } from './operations';
-import { addRecentDocument } from './recent';
+import { addRecentDocument, loadRecentDocuments } from './recent';
+import { getRecentHandle, pruneRecentHandles, putRecentHandle, reopenFromHandle } from './recent-handles';
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
@@ -322,6 +325,14 @@ const CommandPalette = lazy(async () => {
 const BatchDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.BatchDialog };
+});
+/**
+ * The modal host of an operation that starts a document (blank, images, merge): it runs
+ * with no document open, so it cannot live in a tab's tools panel.
+ */
+const StartDialog = lazy(async () => {
+  const module = await import('pdf-ui/dialog');
+  return { default: module.StartDialog };
 });
 /**
  * The comparison and accessibility panels read the working bytes and (for the
@@ -461,10 +472,12 @@ export function App({ store }: AppProps) {
   const shortcutsTrigger = useRef<HTMLElement | null>(null);
   const [showHomeScreen, setShowHomeScreen] = useState(true);
   /**
-   * What a home-screen card promised to do once its document is open ("edit", "sign",
-   * "export"). The cards used to record it in a header "mode" nothing ever read.
+   * The command a home-screen tool promised to run once its document is open: the tool was
+   * picked first and the file asked for after, so the command waits for the tab.
    */
-  const pendingHomeAction = useRef<'edit' | 'sign' | 'export' | 'combine' | null>(null);
+  const pendingHomeCommand = useRef<string | null>(null);
+  /** The standalone operation shown in its modal (`StartDialog`), or `null`. */
+  const [startSpec, setStartSpec] = useState<OperationDialogSpec | null>(null);
   /** A file is being read and parsed: the overlay says so until its tab exists. */
   const [opening, setOpening] = useState(false);
   /**
@@ -1645,12 +1658,16 @@ export function App({ store }: AppProps) {
             return;
           }
           const activeBeforeRestore = store.getSnapshot().activeId;
+          // The handle the document was opened from, if one was kept (`recent-handles.ts`):
+          // without it a restored tab could only Export, never Save over its file.
+          const fileHandle = await getRecentHandle(draft.id);
           const tab = store.openDocument({
             id: draft.id,
             name: draft.name,
             bytes,
             sha256,
             pageCount: draft.sourcePageCount ?? draft.pageCount,
+            ...(fileHandle === null ? {} : { handle: fileHandle }),
           });
           handles.current.set(tab.id, handle);
           store.restoreHistory(tab.id, draft, snapshots);
@@ -1681,6 +1698,8 @@ export function App({ store }: AppProps) {
       } else if (!disposed && restored > 0 && inventory.unreadable.length === 0) {
         setNotice(tRef.current('draft.restored', { count: restored }));
       }
+      // Handles whose recent entry is gone are forgotten — after the restore, which reads them.
+      if (!disposed) await pruneRecentHandles(new Set(loadRecentDocuments().map((item) => item.id)));
     })();
     return () => {
       disposed = true;
@@ -1788,7 +1807,11 @@ export function App({ store }: AppProps) {
         setShowHomeScreen(false);
         const encrypted = (await handle.raw.getPermissions()) !== null;
         if (encrypted) store.setSensitive(tab.id, true);
-        else await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+        else {
+          await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+          // A reference to the file, never its bytes; a sensitive session keeps none.
+          if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
+        }
         setCurrentPage(0);
         setZoomState(1);
         setSelectedPages([]);
@@ -1812,7 +1835,7 @@ export function App({ store }: AppProps) {
           });
           return;
         }
-        pendingHomeAction.current = null;
+        pendingHomeCommand.current = null;
         setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setOpening(false);
@@ -1843,6 +1866,24 @@ export function App({ store }: AppProps) {
   );
 
   /**
+   * Several files at once (a drop, a multi-file pick on the home screen): each opens in its
+   * own tab, one after the other, because an open holds the busy gate until it settles.
+   */
+  const openFilesFromSurface = useCallback(
+    async (
+      files: readonly File[],
+      fileHandles: readonly (FileSystemFileHandle | null)[] = [],
+    ): Promise<void> => {
+      for (const file of files) {
+        // Paired by name, not position: the drop's item list and file list are separate.
+        const handle = fileHandles.find((item) => item?.name === file.name) ?? undefined;
+        await openFromSurface(file, handle);
+      }
+    },
+    [openFromSurface],
+  );
+
+  /**
    * Open with the File System Access picker when it exists: the returned
    * handle is what makes in-place **Save** possible later. Without it the shell
    * keeps its file-input path and Save stays disabled in favour of Export — the
@@ -1864,7 +1905,11 @@ export function App({ store }: AppProps) {
       // A cancelled picker is a user decision, not an error worth a banner — and only a
       // *picker* failure gets the picker's sentence: an open that failed has its own
       // message and hint, which `openFromSurface` reports.
-      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        // A tool picked first must not run on whatever document is opened later.
+        pendingHomeCommand.current = null;
+        return;
+      }
       setNotice(t('open.pickerFailed'));
       return;
     }
@@ -2719,9 +2764,32 @@ export function App({ store }: AppProps) {
    * frozen bytes, so a form value typed a second earlier cannot be lost between
    * opening the panel and pressing Apply.
    */
+  /**
+   * Open an operation that starts a document (`isStandaloneDialog`). It needs no tab and
+   * freezes no bytes, so it skips everything `openDialog` does for a document and only
+   * loads its spec; `StartDialog` hosts it and `handleStartResult` opens its result.
+   */
+  const openStart = useCallback(
+    (id: string) => {
+      if (busyRef.current) {
+        refuseBusy();
+        return;
+      }
+      setNotice(null);
+      void dialogById(id).then((spec) => {
+        if (spec !== undefined) setStartSpec(spec);
+      });
+    },
+    [refuseBusy],
+  );
+
   const openDialog = useCallback(
     (id: string, presets?: Readonly<Record<string, FieldValue>>) => {
       if (!hasDialog(id)) return;
+      if (isStandaloneDialog(id)) {
+        openStart(id);
+        return;
+      }
       // The tab and its handle are read at call time, like every other entry
       // point: a control one render old must not freeze the previous handle.
       const tab = store.active;
@@ -2798,7 +2866,7 @@ export function App({ store }: AppProps) {
     },
     // `existingAnnotations` and the takeover are part of the call: the dialog host
     // freezes the same working bytes a save writes, marks included.
-    [contextFor, setBusy, store, t, refuseBusy],
+    [contextFor, openStart, setBusy, store, t, refuseBusy],
   );
 
   /**
@@ -2930,38 +2998,6 @@ export function App({ store }: AppProps) {
       selectedText: selection,
     });
   }, []);
-
-  const handleHomeAction = useCallback(
-    (action: 'edit' | 'sign' | 'export' | 'combine') => {
-      /**
-       * Merging needs a document to merge *into*: the dialog host refuses to open
-       * without one (`openDialog`), and `add-document` is the capability that adds
-       * another file's pages to the open document (`mergeDocuments`). With nothing
-       * open, the card starts the way the other three do — it asks for a document
-       * first, and the merge dialog opens on it as soon as it has loaded.
-       */
-      if (action === 'combine' && store.active !== null) {
-        openDialog('add-document');
-        return;
-      }
-      // The card's own task runs once its document has opened (the effect below).
-      pendingHomeAction.current = action;
-      fileInput.current?.click();
-    },
-    [openDialog, store],
-  );
-
-  useEffect(() => {
-    const action = pendingHomeAction.current;
-    // The open that triggered the card is still holding the busy gate until it settles:
-    // a dialog asked for before then is refused as "another operation is running".
-    if (action === null || viewer === null || activeHandle === null || busy) return;
-    pendingHomeAction.current = null;
-    if (action === 'sign') openDialog('sign');
-    else if (action === 'export') setExportModalOpen(true);
-    else if (action === 'combine') openDialog('add-document');
-    else if (canEditRef.current) setCanvasTool('text');
-  }, [viewer, activeHandle, busy, openDialog]);
 
   /**
    * The frozen input a dialog runs against. `signal` and `onProgress` are absent
@@ -3199,6 +3235,52 @@ export function App({ store }: AppProps) {
       t,
       refuseBusy,
     ],
+  );
+
+  /**
+   * The result of a standalone operation: it has no document to replace, so it either
+   * downloads or opens as a new tab, and the modal closes once that has happened.
+   */
+  const handleStartResult = useCallback(
+    async (result: OpRunResult) => {
+      const spec = startSpec;
+      if (spec === null) return;
+      const first = result.files[0];
+      if ((result.deliver ?? spec.resultKind) === 'download') {
+        downloadFiles(result.files);
+        setNotice(t('op.result.downloaded', { name: first?.name ?? '' }));
+        setStartSpec(null);
+        return;
+      }
+      if (first === undefined) return;
+      if (busyRef.current || cancelRef.current !== null) {
+        refuseBusy();
+        return;
+      }
+      const controller = new AbortController();
+      cancelRef.current = controller;
+      setBusy(true);
+      try {
+        await openProducedTab(first.name, first.bytes, controller.signal);
+        setStartSpec(null);
+        setNotice(t('op.result.opened', { name: first.name }));
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
+      } finally {
+        if (cancelRef.current === controller) {
+          cancelRef.current = null;
+          setBusy(false);
+        }
+      }
+    },
+    [openProducedTab, refuseBusy, setBusy, startSpec, t],
+  );
+
+  /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
+  const startContext: OperationRunContext = useMemo(
+    () => ({ bytes: new Uint8Array(0), pageCount: 0, name: '', currentPage: 0, selectedPages: [], t }),
+    [t],
   );
 
   /**
@@ -3973,6 +4055,53 @@ export function App({ store }: AppProps) {
     ],
   );
 
+  /**
+   * A tool picked on the home screen. A standalone command (blank document, images,
+   * merge, batch) runs at once; with a document open the command runs on it; with none,
+   * the file is asked for first and the command waits for its tab (the effect below).
+   */
+  const runHomeCommand = useCallback(
+    (commandId: string) => {
+      const command = commands.find((item) => item.id === commandId);
+      if (command === undefined) return;
+      if (STANDALONE_COMMAND_IDS.has(commandId)) {
+        command.run();
+        return;
+      }
+      if (activeTab !== null && activeHandle !== null) {
+        if (command.disabled === true) return;
+        setShowHomeScreen(false);
+        command.run();
+        return;
+      }
+      pendingHomeCommand.current = commandId;
+      void openViaPicker();
+    },
+    [activeHandle, activeTab, commands, openViaPicker],
+  );
+
+  useEffect(() => {
+    const pending = pendingHomeCommand.current;
+    // The open that brought the document is still holding the busy gate until it settles:
+    // a dialog asked for before then is refused as "another operation is running".
+    if (pending === null || viewer === null || activeHandle === null || busy) return;
+    pendingHomeCommand.current = null;
+    const command = commands.find((item) => item.id === pending);
+    if (command !== undefined && command.disabled !== true) command.run();
+  }, [viewer, activeHandle, busy, commands]);
+
+  // The plain file input's own "cancel" (no File System Access picker): the tool picked
+  // first is dropped, so it cannot run on a document opened later for another reason.
+  useEffect(() => {
+    const input = fileInput.current;
+    if (input === null) return undefined;
+    const clear = () => {
+      pendingHomeCommand.current = null;
+    };
+    input.addEventListener('cancel', clear);
+    return () => input.removeEventListener('cancel', clear);
+  }, []);
+
   useShellShortcuts(
     useMemo(
       () => ({
@@ -4020,6 +4149,7 @@ export function App({ store }: AppProps) {
   );
 
   const isHome = activeTab === null || activeHandle === null || showHomeScreen;
+  const openTabIds = useMemo(() => new Set(session.tabs.map((tab) => tab.id)), [session.tabs]);
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the shell is a file drop target; the keyboard-equivalent path is the Open button (Ctrl+O).
@@ -4028,8 +4158,22 @@ export function App({ store }: AppProps) {
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
-        const file = event.dataTransfer.files.item(0);
-        if (file !== null) void openFromSurface(file);
+        // Chromium hands a dropped file's handle too, which is what lets it be saved in place
+        // and reopened from the recent list. It must be asked for inside the event.
+        const pending = Array.from(event.dataTransfer.items)
+          .filter((item) => item.kind === 'file')
+          .map((item) => item.getAsFileSystemHandle?.().catch(() => null) ?? Promise.resolve(null));
+        const files = Array.from(event.dataTransfer.files);
+        void Promise.all(pending).then((found) =>
+          openFilesFromSurface(
+            files,
+            found.map((item) =>
+              typeof FileSystemFileHandle !== 'undefined' && item instanceof FileSystemFileHandle
+                ? item
+                : null,
+            ),
+          ),
+        );
       }}
     >
       <UpdateBanner t={t} />
@@ -4227,10 +4371,22 @@ export function App({ store }: AppProps) {
         {isHome ? (
           <HomeScreen
             t={t}
-            onOpenFile={(file) => {
-              if (file) void openFromSurface(file);
-              else void openViaPicker();
+            onOpenFiles={(files) => void openFilesFromSurface(files)}
+            onOpenPicker={() => void openViaPicker()}
+            onStart={(action) => {
+              if (action === 'batch') setBatchOpen(true);
+              else
+                openStart(
+                  action === 'blank' ? 'new-document' : action === 'images' ? 'images-to-pdf' : 'merge-files',
+                );
             }}
+            // The grid is the discovery surface named 'all tools': it lists every tool in either
+            // mode (the simple mode filters the menus and the palette, it never disables).
+            commands={commands}
+            standaloneCommands={STANDALONE_COMMAND_IDS}
+            onRunCommand={runHomeCommand}
+            activeDocumentName={activeTab === null ? null : activeTab.name}
+            openIds={openTabIds}
             onSelectRecent={async (item) => {
               const matched = store
                 .getSnapshot()
@@ -4241,6 +4397,23 @@ export function App({ store }: AppProps) {
                 store.setActive(matched.id);
                 setShowHomeScreen(false);
                 return;
+              }
+              // The file the entry was opened from, reopened directly (Chromium keeps the
+              // handle; the browser asks for permission again on this click).
+              const stored = await getRecentHandle(item.id);
+              if (stored !== null) {
+                const reopened = await reopenFromHandle(stored);
+                if (reopened.kind === 'file') {
+                  await openFromSurface(reopened.file, reopened.handle);
+                  return;
+                }
+                setNotice(
+                  t(reopened.kind === 'denied' ? 'home.reopen.denied' : 'home.reopen.missing', {
+                    name: item.name,
+                  }),
+                );
+                // A refused permission is the user's answer; the picker would ask again.
+                if (reopened.kind === 'denied') return;
               }
               try {
                 const drafts = await draftStorage.readDrafts();
@@ -4270,7 +4443,6 @@ export function App({ store }: AppProps) {
               }
               void openViaPicker();
             }}
-            onOpenAction={handleHomeAction}
             onOpenPalette={() => setPaletteOpen(true)}
             busy={busy}
           />
@@ -4805,6 +4977,17 @@ export function App({ store }: AppProps) {
             mounted unconditionally still fetches immediately. The `open` prop stays
             as it was, so the dialog's own open/close contract is unchanged.
           */}
+        {startSpec === null ? null : (
+          <Suspense fallback={null}>
+            <StartDialog
+              t={t}
+              spec={startSpec}
+              context={startContext}
+              onClose={() => setStartSpec(null)}
+              onResult={(result) => void handleStartResult(result)}
+            />
+          </Suspense>
+        )}
         {batchOpen ? (
           <Suspense fallback={null}>
             <BatchDialog
@@ -4882,7 +5065,7 @@ export function App({ store }: AppProps) {
             name={passwordPrompt.file.name}
             incorrect={passwordPrompt.incorrect}
             onCancel={() => {
-              pendingHomeAction.current = null;
+              pendingHomeCommand.current = null;
               setPasswordPrompt(null);
             }}
             onSubmit={(password) => {

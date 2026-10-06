@@ -19,6 +19,7 @@ import { enginesPart } from './parts/engines';
 import { errorsPart } from './parts/errors';
 import { filePart } from './parts/file';
 import { formsPart } from './parts/forms';
+import { homePart } from './parts/home';
 import { imposePart } from './parts/impose';
 import { measurePart } from './parts/measure';
 import { ocrPart } from './parts/ocr';
@@ -55,6 +56,7 @@ export const tr = {
   ...enginesPart,
   ...errorsPart,
   ...filePart,
+  ...homePart,
   ...imposePart,
   ...ocrPart,
   ...optimizePart,
@@ -347,42 +349,6 @@ export const tr = {
 
   // Toolbars & Nav
   'toolbar.hand': 'El / Kaydırma Aracı',
-
-  // Home Screen
-  'home.discover': 'Keşfet',
-  'home.tools': 'Araçlar',
-  'home.allTools': 'Tüm araçlar (Ctrl+K)',
-  'home.editCardTitle': 'Metin ve görselleri düzenle',
-  'home.editCardDesc': 'Metinleri, görselleri ve sayfa yerleşimlerini doğrudan belgenin üzerinde değiştirin.',
-  'home.signCardTitle': 'Doldur ve imzala',
-  'home.signCardDesc':
-    'Form alanlarını doldurun, görsel damga ekleyin veya yasal PAdES dijital imzanızı atın.',
-  'home.exportCardTitle': 'PDF dışa aktar',
-  'home.exportCardDesc':
-    'Belgenizi yüksek çözünürlüklü görsellere (PNG/JPEG), Markdown veya düz metne dönüştürün.',
-  'home.combineCardTitle': 'Dosyaları birleştir',
-  'home.combineCardDesc':
-    'Birden fazla PDF belgesini sayfa yapısını, formlarını ve anahattını koruyarak birleştirin.',
-  'home.dropzoneTitle': 'PDF dosyasını buraya bırakın',
-  'home.dropzoneDesc': 'veya cihazınızdan seçin',
-  'home.recentTab': 'Son Kullanılanlar',
-  'home.starredTab': 'Yıldızlı',
-  'home.clearList': 'Listeyi temizle',
-  'home.noRecent': 'Son kullanılan belge bulunmuyor.',
-  'home.noStarred': 'Henüz yıldızlanan bir belge yok.',
-  'home.privacyNotice':
-    'Açtığınız PDF belgeleri tarayıcınızın yerel belleğinde güvenle tutulur. Hiçbir belge dış sunuculara yüklenmez.',
-  'home.colName': 'Belge Adı',
-  'home.colActions': 'İşlem',
-  'home.colPrivacy': 'Gizlilik & Paylaşım',
-  'home.colLastOpened': 'Son Açılma',
-  'home.colSize': 'Boyut',
-  'home.localDevice': 'Yerel Cihaz',
-  'home.removeFromList': 'Listeden kaldır',
-  'home.star': 'Yıldızla',
-  'home.unstar': 'Yıldızı kaldır',
-  'home.chooseOrDrop': 'Dosya seçin veya sürükleyin →',
-  'home.chooseFiles': 'Dosyaları seçin →',
 
   'update.available': 'Yeni bir güncelleme mevcut. Değişiklikleri uygulamak için yenileyin.',
   'update.refresh': 'Yenile',
