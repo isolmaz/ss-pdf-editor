@@ -1301,11 +1301,13 @@ Nothing loads until a conversion runs: `ghostscript.ts` starts a module worker
 `worker.format: 'es'` in `vite.config.ts`), the worker imports `gs.js` by URL behind a
 `vite-ignore` marker (the same runtime-URL rule as MuPDF) and the document travels by transfer.
 The worker is terminated when the run ends, and an abort terminates it at once. The CSP is
-unchanged (`worker-src 'self' blob:`, `'wasm-unsafe-eval'`). A file that cannot be fetched is
-`asset-missing`; running out of memory is `out-of-memory`; anything else the engine throws is
-`pdfa-failed`. `public/sw.js` caches `/engines/*` on first use, so the converter works offline
-after one run (measured in the built app with the network switched off), but it is **not** in
-the "prepare offline" manifest (15.5 MB).
+unchanged (`worker-src 'self' blob:`, `'wasm-unsafe-eval'`). A loader, worker or wasm the
+browser cannot fetch is `asset-offline` (`ghostscriptFailure`; the readiness screen does not
+list this engine, so the hint says to connect and reload, not to download it there); running
+out of memory is `out-of-memory`; anything else the engine throws is `pdfa-failed`.
+`public/sw.js` caches `/engines/*` on first use, so the converter works offline after one run
+(measured in the built app with the network switched off), but it is **not** in the "prepare
+offline" manifest (15.5 MB).
 
 **The output intent without a shipped profile.** A PDF/A file needs an `/OutputIntents` entry
 with an ICC profile (veraPDF 6.2.4.3 otherwise). `ghostscript-run.ts` runs a short PostScript

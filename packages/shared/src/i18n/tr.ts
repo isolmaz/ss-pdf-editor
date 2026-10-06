@@ -247,8 +247,7 @@ export const tr = {
   'error.permission-denied.message': 'Dosya erişim izni verilmedi.',
   'error.permission-denied.hint': 'İzin verin veya Dışa aktar ile indirin.',
   'error.pdfa-failed.message': 'PDF/A dönüştürücü çalışamadı.',
-  'error.pdfa-failed.hint':
-    'Dosyayı yeniden deneyin; sürerse çevrimdışı hazırlık ekranından motor paketini yeniden indirin.',
+  'error.pdfa-failed.hint': 'Dosyayı yeniden deneyin; sürerse sayfayı yenileyip bir kez daha deneyin.',
   'error.pdfa-not-compliant.message': 'Dosya PDF/A kurallarına uygun hale getirilemedi.',
   'error.pdfa-not-compliant.hint':
     'Denetim sonucundaki ihlallere bakın; başka bir PDF/A düzeyini deneyebilirsiniz.',

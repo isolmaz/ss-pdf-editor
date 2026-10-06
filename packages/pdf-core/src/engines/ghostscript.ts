@@ -7,9 +7,12 @@
  * between runs. Without `Worker` (Node: the unit suite and the behaviour checks) the same
  * runner executes in-thread against the same assets.
  *
- * A file that is missing, unreadable or hashes wrong surfaces as `asset-missing` (the offline
- * readiness screen can fetch it again); a conversion that fails on a document is
- * `pdfa-failed`; running out of memory is `out-of-memory`.
+ * A loader, worker or wasm the browser cannot fetch (offline, or absent from this deployment;
+ * the two look the same here) surfaces as `asset-offline`, the code a lazy chunk the browser
+ * cannot fetch gets: the engine is fetched on first use and is not in the offline readiness
+ * manifest, so connecting and reloading is the one instruction that leads anywhere. A
+ * conversion that fails on a document is `pdfa-failed`; running out of memory is
+ * `out-of-memory`.
  */
 
 import { ToolError } from 'pdf-shared';
@@ -33,9 +36,10 @@ function abortError(): Error {
   return error;
 }
 
-function failure(stage: 'load' | 'run', message: string): ToolError {
+/** The error a failed conversion is reported as, by the stage it failed in. */
+export function ghostscriptFailure(stage: 'load' | 'run', message: string): ToolError {
   if (stage === 'load')
-    return new ToolError('asset-missing', { engine: 'ghostscript', engineMessage: message });
+    return new ToolError('asset-offline', { engine: 'ghostscript', engineMessage: message });
   if (OUT_OF_MEMORY.test(message)) {
     return new ToolError('out-of-memory', { engine: 'ghostscript', engineMessage: message });
   }
@@ -72,7 +76,7 @@ async function runInThread(request: PdfaRunRequest, options: GhostscriptRunOptio
       options.onPage,
     );
   } catch (error) {
-    throw failure(stage, error instanceof Error ? error.message : String(error));
+    throw ghostscriptFailure(stage, error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -91,11 +95,11 @@ function runInWorker(request: PdfaRunRequest, options: GhostscriptRunOptions): P
       const message = event.data;
       if (message.type === 'page') options.onPage?.(message.page, message.total);
       else if (message.type === 'done') finish(() => resolve(message.result));
-      else finish(() => reject(failure(message.stage, message.message)));
+      else finish(() => reject(ghostscriptFailure(message.stage, message.message)));
     };
     worker.onerror = (event) => {
       // A worker that cannot start at all (its script or an import failed to load).
-      finish(() => reject(failure('load', event.message || 'the worker failed to start')));
+      finish(() => reject(ghostscriptFailure('load', event.message || 'the worker failed to start')));
     };
 
     const message: GhostscriptWorkerRequest = {
