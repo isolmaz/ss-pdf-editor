@@ -695,7 +695,7 @@ All gates run locally; the repository has no GitHub Actions workflow.
 |---|---|
 | `apps/site/dist` | `dist/` root (landing, legal pages, `/en/`) |
 | `apps/web/dist` | `dist/editor/` |
-| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, manifest, `engines/**`, `fonts/**`) |
+| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `engines/**`, `fonts/**`) |
 
 The same step also does the following:
 
