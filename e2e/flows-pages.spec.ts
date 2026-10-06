@@ -315,7 +315,8 @@ test('drag and drop: a dropped PDF opens, a dropped non-PDF is refused, and a se
 }) => {
   await page.goto('/editor/');
   await dropFiles(page, [
-    { name: 'notes.txt', type: 'text/plain', bytes: new TextEncoder().encode('hello') },
+    // Not a PDF and not a format the converter takes (a `.txt` would become a PDF).
+    { name: 'notes.bin', type: 'application/octet-stream', bytes: new TextEncoder().encode('hello') },
   ]);
   await expect(notice(page, 'The document looks damaged')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.pdfViewer')).toHaveCount(0);

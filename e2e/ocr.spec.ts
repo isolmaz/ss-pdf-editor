@@ -36,7 +36,7 @@ async function pagesOf(path: string): Promise<number> {
 /** Open a fixture through the home screen's file input and wait for the page count. */
 async function openFixture(page: Page, path: string, pages: number): Promise<void> {
   await page.goto('/editor/');
-  await page.locator('input[type="file"][accept="application/pdf"]').setInputFiles(path);
+  await page.locator('input[type="file"][accept*="application/pdf"]').first().setInputFiles(path);
   await expect(page.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 120_000 });
   await expect(page.getByText(`/ ${pages}`, { exact: true }).first()).toBeVisible({ timeout: 120_000 });
 }

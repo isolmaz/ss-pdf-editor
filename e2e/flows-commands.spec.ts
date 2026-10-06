@@ -67,7 +67,9 @@ async function openForm(page: Page, command: string, region: string) {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
   await page.keyboard.press('Enter');
-  const form = page.getByRole('region', { name: region });
+  // An operation opens in the tools panel; a command that starts a new document (images to
+  // PDF) opens as a dialog of its own.
+  const form = page.getByRole('region', { name: region }).or(page.getByRole('dialog', { name: region }));
   await expect(form).toBeVisible({ timeout: 30_000 });
   const words = await form.evaluate((element) => {
     const fields = [...element.querySelectorAll<HTMLInputElement>('input, textarea')].map((e) => e.value);
@@ -561,16 +563,27 @@ test('underline, strikeout and squiggly: each look reaches the file over the tex
   }
 });
 
-test('home "Combine files" card: asks for a document, then offers the merge on it', async ({ page }) => {
+test('home "Merge PDFs" tile: two chosen files become one new document, in the order chosen', async ({
+  page,
+}) => {
   await page.goto('/editor/');
-  const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /Combine files/ }).click();
-  await (await chooser).setFiles(pdfFile('first.pdf', labelledPdf('First', 2)));
-  const form = page.getByRole('region', { name: 'Add / Import Document' });
-  await expect(form).toBeVisible({ timeout: 30_000 });
-  await form.locator('input[type="file"]').setInputFiles(pdfFile('second.pdf', labelledPdf('Second', 1)));
-  await form.getByRole('radio', { name: 'At end of document' }).check();
-  await applyForm(form);
+  await page.getByRole('button', { name: /^Merge PDFs/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Merge PDFs' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await dialog
+    .locator('input[type="file"]')
+    .setInputFiles([
+      pdfFile('first.pdf', labelledPdf('First', 2)),
+      pdfFile('second.pdf', labelledPdf('Second', 1)),
+    ]);
+  // The first press merges and reports; the result step's own press opens the new tab.
+  const confirm = dialog.getByRole('button', { name: 'Open in new tab', exact: true });
+  await confirm.click();
+  await expect(dialog.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await confirm.click();
+  await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   const texts = await readProducedPageTexts(await exported(page, 'combined.pdf'));
   expect(texts.map((text) => text.trim())).toEqual(['First 1', 'First 2', 'Second 1']);
 });

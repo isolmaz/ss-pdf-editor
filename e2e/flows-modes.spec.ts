@@ -54,7 +54,8 @@ test('the status bar shows no zoom once the document is closed', async ({ page }
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Close tab');
   await page.getByRole('option').filter({ hasText: 'Close tab' }).first().click();
-  await expect(page.getByRole('button', { name: 'Recent Documents' })).toBeVisible();
+  // The home screen is back: its start tabs, with no document open.
+  await expect(page.getByRole('tablist', { name: 'Start something new' })).toBeVisible();
   await expect(bar).not.toContainText('%');
 });
 

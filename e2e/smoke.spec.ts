@@ -35,25 +35,25 @@ test.describe('editor shell', () => {
     // The product title names the window (`App.tsx`) and the home header renders it too.
     await expect(page).toHaveTitle('SsPdfEditor');
     await expect(page.getByText('SsPdfEditor')).toBeVisible();
-    // The home screen's own controls: the Discover/Tools tabs and the shell's Open button.
-    await expect(page.getByRole('button', { name: 'Discover' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Tools', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Open' })).toBeVisible();
+    // The home screen's own controls: the Start / All tools tabs and the shell's Open button.
+    await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'All tools', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
   });
 
   test('the language switcher changes visible copy between Turkish and English', async ({ page }) => {
     await page.goto('/editor/');
 
-    await expect(page.getByRole('button', { name: 'Discover' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible();
 
     // The language lives in the settings dialog, reached from the home screen's gear.
     await useLanguage(page, 'Türkçe');
-    await expect(page.getByRole('button', { name: 'Keşfet' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Discover' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Başlangıç', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Start', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('tr');
 
     await useLanguage(page, 'English');
-    await expect(page.getByRole('button', { name: 'Discover' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
   });
 
@@ -81,9 +81,9 @@ test.describe('editor shell', () => {
     // "nothing open" is the home surface itself: its own controls are up, no viewer
     // pane is mounted (`PdfViewerPane`'s `.pdfViewer`), and the status bar reports no
     // page rather than a page number.
-    await expect(page.getByRole('button', { name: 'Discover' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Tools', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Open' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'All tools', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
     await expect(page.locator('.pdfViewer')).toHaveCount(0);
     // No document: the page and the zoom both read as a dash.
     await expect(page.getByRole('contentinfo').getByText('—', { exact: true })).toHaveCount(2);
@@ -107,7 +107,7 @@ test.describe('editor shell', () => {
     // ...and hands focus back into the shell instead of dropping it on `<body>`: the
     // palette's search field is gone by now, so this is the shell's own fallback
     // (`closeShortcuts`), the home screen's first control.
-    await expect(page.getByRole('button', { name: 'Discover' })).toBeFocused();
+    await expect(page.locator('main button').first()).toBeFocused();
 
     // And a printed chord really is a binding: Ctrl+K, listed above, opens the palette.
     await page.keyboard.press('Control+k');
@@ -117,7 +117,7 @@ test.describe('editor shell', () => {
     // The same help in the other language, through the switcher a user would reach for:
     // the palette command and the dialog's own title follow the interface language.
     await useLanguage(page, 'Türkçe');
-    await expect(page.getByRole('button', { name: 'Keşfet' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Başlangıç', exact: true })).toBeVisible();
 
     await runPaletteCommand(page, 'Klavye kısayolları');
 
@@ -127,6 +127,6 @@ test.describe('editor shell', () => {
 
     await page.keyboard.press('Escape');
     await expect(turkishDialog).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Keşfet' })).toBeFocused();
+    await expect(page.locator('main button').first()).toBeFocused();
   });
 });
