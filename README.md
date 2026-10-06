@@ -386,8 +386,9 @@ nothing leaving the browser.
     handed over**: the operation stops and says which rule failed.
   - A file that already claims the chosen level is left as it is only when it passes every
     rule and the checker could read all of it; otherwise it is converted like any other.
-  - The checker covers 20 rule groups (header and trailer, encryption, streams, XMP and the
-    `pdfaid` claim, output intent, device colour, transparency, fonts, images, actions,
+  - The checker covers 20 rule groups (header, trailer, encryption, file structure, streams,
+    XMP metadata, the `pdfaid` claim, XMP extension schemas, XMP against the Info dictionary,
+    output intent, device colour, transparency, fonts, images, graphics state, actions,
     annotations, forms, layers, embedded files). It reports each rule as passed, broken (with
     page and the thing at fault, and the ISO clause) or unchecked, and lists what it never
     looks at. **It is not a full veraPDF validation.** Its rules were calibrated against veraPDF
@@ -459,7 +460,10 @@ The limits are defined once, in
   is disabled and the UI says why.
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
-- **Build budgets.**
+- **Build budgets.** These are targets that are measured by hand. No script or quality gate
+  measures the built output against them; `BUILD_BUDGETS` in `packages/shared/src/limits.ts`
+  only holds the numbers, and `pnpm assemble:dist` only prints the sizes of what it
+  assembles.
   - ≤ 250 KiB gzip for the first-paint JavaScript. Not met yet: measured 2026-10-06 the
     entry chunk is 219 KiB, but with the UI chunks it preloads the first paint is 313 KiB,
     because the editor shell still loads with the home screen (`architecture.md` §2).
@@ -609,6 +613,7 @@ The limits are defined once, in
 
 | Command | What it does |
 |---|---|
+| `pnpm prepare` | Sets `core.hooksPath` to `.githooks` so the git hooks run; it runs by itself after `pnpm install` |
 | `pnpm dev` | Vite dev server for the editor (`pnpm --filter site dev` for the landing, port 5175) |
 | `pnpm build` | Builds the landing (`apps/site/dist`), then the editor (`apps/web/dist`) |
 | `pnpm assemble:dist` | Composes the deployable `dist/` |
@@ -622,7 +627,8 @@ The limits are defined once, in
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
 | `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
-| `pnpm ci:verify` / `ci:full` | The full local gate / the same plus the behaviour harnesses |
+| `pnpm ci:behavior` | The behaviour harnesses in `tools/spikes/`: the phase 3 and phase 4 browser drivers against the assembled `dist/`, then the signing check (needs `openssl`) |
+| `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
 | `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
 
 Engine binaries are never committed, and the pre-commit hook blocks them. On a fresh
@@ -632,20 +638,21 @@ clone, `pnpm fetch:engines --sync` is therefore required.
 
 ```
 apps/
-  web/          the editor PWA (served at /editor/)
-  site/         landing and legal pages (static HTML, TR + EN)
+  web/              the editor PWA (served at /editor/)
+  site/             landing and legal pages (static HTML, TR + EN)
 packages/
-  shared/       error contract, limits, i18n (Turkish and English)
-  model/        session store, operation journal, drafts, save router
-  core/         engine adapters (pdf.js, MuPDF, Tesseract) and every operation
-  text-engine/  text model, editability, reflow, fonts
-  ui/           React surfaces: viewer, panels, dialogs, tools, printing
-public/         _headers, sw.js, 404, manifest, robots/sitemap
-tools/          dist assembly, engine pins, licence audit, regression harness,
-                git hooks, behaviour checks (spikes/), README clip recorder
-e2e/            Playwright specs for the editor flows and the site
-docs/media/     the README clips
-.github/        issue and pull request templates (no workflows)
+  shared/           error contract, limits, i18n (Turkish and English)
+  pdf-model/        session store, operation journal, drafts, save router
+  pdf-core/         engine adapters (pdf.js, MuPDF, Tesseract) and every operation
+  pdf-text-engine/  text model, editability, reflow, fonts
+  pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
+public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
+                    manifest, robots/sitemap
+tools/              dist assembly, engine pins, licence audit, regression harness,
+                    git hooks, behaviour checks (spikes/), README clip recorder
+e2e/                Playwright specs for the editor flows and the site
+docs/media/         the README clips
+.github/            issue and pull request templates (no workflows)
 ```
 
 ---

@@ -65,9 +65,14 @@ page, the camera picture and the magnifier lens.
 
 ## Repository hygiene
 
-The pre-commit hook (`tools/hooks/guard.mjs`) refuses engine builds, traineddata, wasm and
-font binaries, private keys, env files and any file over 5 MiB: engines and fonts are
-fetched by `pnpm fetch:engines` and pinned in `tools/asset-pins.json`, never committed.
+`pnpm install` installs the git hooks: its `prepare` script runs `tools/hooks/install.mjs`,
+which sets `core.hooksPath` to `.githooks`. Both hooks run `tools/hooks/guard.mjs`.
+
+The pre-commit hook checks the staged files. It refuses engine builds, traineddata, wasm
+and font binaries, private keys and env files, then runs `biome check --staged`. The
+pre-push hook checks every tracked file against the same rules and also refuses any file
+over 5 MiB; the size limit is not checked on commit. Engines and fonts are fetched by
+`pnpm fetch:engines` and pinned in `tools/asset-pins.json`, never committed.
 
 A new dependency must carry a free licence; `pnpm check:licenses` audits every installed
 package and fails on one that is neither free nor recognised.

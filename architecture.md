@@ -16,9 +16,20 @@ Five rules explain most of the decisions in this codebase:
 
 1. **Three engines, one contract.** pdf.js renders and reads, MuPDF writes (every writer,
    §5.1) and also erases and encrypts, Tesseract recognises (a fourth, Ghostscript, exists
-   only to write PDF/A, §5.13). Each is reachable only through an adapter in
-   `packages/pdf-core/src/engines/`; no component, panel or app file imports an engine
-   package directly. Operations are `bytes in → bytes (or files) out` plus a report
+   only to write PDF/A, §5.13). Each is loaded and called only through an adapter in
+   `packages/pdf-core/src/engines/`. Outside that directory the engine packages appear in
+   three ways, and no app file imports one:
+   - `pdf-core` operations import MuPDF and pdf.js **types** for the objects an adapter
+     hands them, and `pdf-core/src/text-source.ts` dynamically imports `pdfjs-dist` for its
+     operator enum, the one runtime import there;
+   - three `pdf-ui` files import pdf.js, because the viewer and the XFA form are drawn by
+     its viewer layer: `viewer/PdfViewerPane.tsx` and `dialogs/XfaFormDialog.tsx` load
+     `pdfjs-dist/web/pdf_viewer.mjs` and its CSS dynamically, and `ops/xfa-raster.ts`
+     imports the `PDFDocumentProxy` type and `XfaLayer` (`pdf-ui` depends on `pdfjs-dist`
+     for this);
+   - no other component or panel imports an engine package.
+
+   Operations are `bytes in → bytes (or files) out` plus a report
    (`packages/pdf-core/src/ops/types.ts`).
 2. **Document state is a data model, not a store library.** Sessions, the operation
    journal, drafts and the save router are plain TypeScript in `pdf-model`, DOM-free and
@@ -78,18 +89,21 @@ at `src/*.ts`, and Vite compiles the TypeScript once, at the app boundary.
 ### Entry points are chosen for bundle shape, not tidiness
 
 `pdf-ui` declares subpath exports (`./ui`, `./viewer`, `./panels`, `./dialog`, `./tools`,
-`./printing`, `./palette`, `./text-edit`, `./tokens.css`) and `apps/web/src/App.tsx`
-imports through them. The root barrel is not tree-shakeable in practice, so importing it
-for a value pulls the whole surface into the first paint. Two concrete consequences are
-recorded in the code:
+`./printing`, `./palette`, `./text-edit`, `./scan`, `./tokens.css`) and
+`apps/web/src/App.tsx` imports through them. The root barrel is not tree-shakeable in
+practice, so importing it for a value pulls the whole surface into the first paint. Two
+concrete consequences are recorded in the code:
 
 - `packages/pdf-ui/src/shell/ShellSurface.tsx` is the `./ui` entry and is **only a re-export
   barrel** — it is the deliberate first-paint import surface, not a component. There is
   no `ShellSurface` component; the shell is `apps/web/src/App.tsx`.
-- `packages/pdf-core/src/ops/index.ts` re-exports every operation **except `./sign`**. Routing
-  signing through the barrel pulled `pkijs` + `asn1js` into the entry chunk (measured:
-  302.66 KiB gzip against a locked ≤ 250 KiB budget); the sign dialog imports
-  `pdf-core/ops/sign` directly so the ASN.1 stack keeps its own chunk.
+- `packages/pdf-core/src/ops/index.ts` re-exports only some of the operation modules; the
+  others (sanitize, PDF/A, structure, XFA, scan, conversion and more) are imported by
+  subpath, as `pdf-core/ops/<name>`, which `pdf-core`'s `./ops/*` export allows. The one
+  omission its code explains is `./sign`: routing signing through the barrel pulled `pkijs`
+  + `asn1js` into the entry chunk (measured: 302.66 KiB gzip against a locked ≤ 250 KiB
+  budget); the sign dialog imports `pdf-core/ops/sign` directly so the ASN.1 stack keeps
+  its own chunk.
 
 Everything heavy is a dynamic `import()`: the pdf.js core, the viewer stack, the dialogs,
 the dock panels, the print surface and the palette are all loaded on demand, and
@@ -1249,11 +1263,13 @@ also avoids the names already in the file). A radio group takes the group's labe
 name and each member's own label as its option; a group left with one member is created as
 a checkbox.
 
-**Scans.** A page whose text is mostly invisible OCR text (more than 55 % of its characters)
-has no drawings, so `rasterRules` renders it at 2x, thresholds it (Otsu) and merges dark
-horizontal runs into rulings that feed the same label rules. It finds underlines and cell
-rules only; boxes, squares and circles are not looked for in pixels. A page with no text at
-all is reported in `needsOcr`, and the panel says to run OCR first.
+**Scans.** A page is a scan when its largest single picture covers at least 55 %
+(`SCAN_SHARE = 0.55`) of the page area. If such a page has text and its own drawing gives
+fewer than 3 horizontal rules, `rasterRules` renders it at 2x, thresholds it (Otsu) and
+merges dark horizontal runs into rulings that feed the same label rules. It finds
+underlines and cell rules only; boxes, squares and circles are not looked for in pixels. A
+scan page with no text at all is reported in `needsOcr`, and the panel says to run OCR
+first.
 
 **The review.** `FormDetectPanel` and `FieldCandidateLayer` hold no document state. The shell
 keeps the detection per document version (`currentDetect` is null when the working id
@@ -1433,8 +1449,12 @@ space.
 `pdf-ui` is a controlled React library: **props and callbacks, no context, no store**. A
 repo-wide search finds no `createContext`/`useContext`. The only module-level state is
 what a preference needs — theme and locale in `localStorage`, the interface mode owned by
-`apps/web/src/interface-mode.ts` and announced on `window` — plus one module-level
-translator (`tools/labels.ts`) for surfaces with fixed prop contracts.
+`apps/web/src/interface-mode.ts` and announced on `window`. There is no module-level
+translator. Text comes from a `t: Translator` prop, and a few surfaces take it as optional
+(`t?: Translator`): `ThemeSelector`, `LanguageSelector`, `ModeSelector` and `ExportDialog` in
+`pdf-ui`, and `UpdateBanner` in `apps/web`. Without `t` they use fallback text of their own
+(Turkish strings in the theme and mode selectors, `Language` as the language selector's
+label, the message key itself in `ExportDialog`).
 
 Document state lives in `pdf-model`; UI state lives in `apps/web/src/App.tsx`; engine
 state lives inside the pdf.js viewer. The **one reverse channel** is the viewer's
