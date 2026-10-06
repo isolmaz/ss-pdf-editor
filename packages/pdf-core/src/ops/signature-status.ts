@@ -1,0 +1,1376 @@
+/**
+ * Signature status (`PLAN.md §5/Phase 3`: "verification status of existing
+ * signatures"; `PLAN.md §6` B20; `PLAN.md §9/K17`) — and the parts a browser with
+ * **no network** can honestly deliver (`K9`): cryptographic integrity over the bytes
+ * the document actually ships, the certificate's own issuer/subject relationship, and
+ * what the `/ByteRange` covers.
+ *
+ * K17 forbids a single "valid" badge, so nothing here returns one: integrity, trust,
+ * revocation evidence and post-signing modification are four separate fields, and
+ * `trust` is `'not-checked'`, `revocation` is always `'indeterminate'` — a local check
+ * that cannot consult a trust store or a CRL/OCSP responder must not imply either.
+ *
+ * Path implemented (ISO 32000-2 keys read, and where):
+ *  - §12.8.1: a signature dictionary carries `/ByteRange` (four integers,
+ *    `[start1 len1 start2 len2]`) and `/Contents` (the CMS blob). The two covered
+ *    ranges are concatenated and hashed **as they lie in the file** — `start2` is the
+ *    end of the gap the `/Contents` value sits in, so the digest covers everything
+ *    except the signature's own bytes (which is what makes the check meaningful).
+ *  - The dictionary is located by scanning the raw file for `/ByteRange` and pairing
+ *    it with the `/Contents` value **whose own offset falls inside that gap**: the
+ *    gap is the one part of the file the ByteRange excludes, which makes the pairing
+ *    self-validating and finds the dictionary without trusting any parser.
+ *  - §12.8.2.1: `/SubFilter` decides whether the `/Contents` blob is a detached CMS
+ *    `SignedData` (`adbe.pkcs7.detached`, `ETSI.CAdES.detached`). The legacy
+ *    `adbe.pkcs7.sha1`, the RFC 3161 timestamp (`ETSI.RFC3161`) and the PKCS#1 shape
+ *    (`adbe.x509.rsa_sha1`) are *not* the same digest relation and are reported
+ *    `unchecked` rather than guessed at.
+ *  - §12.8.1: `/M` (signing date) and the field's name for display.
+ *  - §7.5.6 / §7.5.8.4: the revision chain. `startxref` at the end of the file gives
+ *    the newest cross-reference section; each one's trailer `/Prev` gives the previous
+ *    one. The signature's revision is the newest section that starts no later than the
+ *    end of its ByteRange, and `changesAfterSigning` counts the sections after it. When
+ *    the chain cannot be read, the count of `%%EOF` markers after the covered range is
+ *    used instead (each revision ends with one, §7.5.5) — the same number by a
+ *    different measurement, and never a silently smaller one.
+ *
+ * CMS walk (RFC 5652 §5.1, §5.3, §11.2), bounded and dependency-free: `ContentInfo`
+ * SEQUENCE → OID `1.2.840.113549.1.7.2` (signedData) → `[0]` EXPLICIT → `SignedData`
+ * SEQUENCE → its `digestAlgorithms` SET (the hash actually used, so a SHA-1 signature
+ * is hashed with SHA-1 rather than reported as a false `invalid`) → `signerInfos` SET
+ * → per `SignerInfo` the `[0]` signedAttrs → OID `1.2.840.113549.1.9.4`
+ * (messageDigest) → OCTET STRING. The certificate's `issuer` and `subject` are
+ * compared as DER for the self-signed case, and the subject's first CN
+ * (OID `2.5.4.3`) becomes `signer`.
+ *
+ * Everything is bounded: `MAX_SIGNATURES` dictionaries, `MAX_REVISIONS` `startxref`
+ * links, `MAX_ASN1_NODES` ASN.1 nodes, a 64 KiB window for the `/Contents` search, and
+ * a `throwIfAborted` per signature.
+ */
+
+import type { PDFDocument, PDFObject } from 'mupdf';
+import type { MessageKey } from 'pdf-shared';
+import { ToolError } from 'pdf-shared';
+import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
+import { pageObjects, readName, readNumbers, readText, resolved } from '../engines/mupdf-write';
+import type { CertificateValidity, TrustCheck, TrustReason } from '../signature-trust';
+import { throwIfAborted } from './types';
+
+// Consumers of `SignatureVerification` need the reason vocabulary without reaching past
+// this module into the ASN.1-heavy one it is built on.
+export type { TrustReason };
+
+export type SignatureIntegrity = 'valid' | 'invalid' | 'unchecked';
+/**
+ * Where the certificate's trust stands (`K17`).
+ *
+ * `'trusted'` is only reachable through a chain that ends at a certificate the **user**
+ * imported (`signature-trust.ts`); `'untrusted'` means such a chain was attempted and a
+ * check on it actually failed; `'self-signed'` is a fact about the certificate alone;
+ * `'indeterminate'` means a required validation step could not be completed at all —
+ * an unsupported signature algorithm, an unsupported critical extension, a malformed
+ * structure — and is deliberately **not** folded into `'untrusted'`, which would claim
+ * the chain is broken when the truth is that this build cannot finish the check; and
+ * `'not-checked'` is what a document says when no root has been imported at all — an
+ * absence of evidence rather than a verdict.
+ */
+export type SignatureTrust = 'trusted' | 'untrusted' | 'self-signed' | 'indeterminate' | 'not-checked';
+export type SignatureRevocation = 'indeterminate';
+export type SignatureCoverage = 'covers-whole-document' | 'covers-partial' | 'unknown';
+
+export interface SignatureVerification {
+  readonly fieldName: string;
+  /** `adbe.pkcs7.detached` | `ETSI.CAdES.detached` | … */
+  readonly subFilter: string;
+  /** `/Name` from the certificate subject when readable, else `null`. */
+  readonly signer: string | null;
+  /** `/M` as ISO 8601. */
+  readonly signedAt: string | null;
+  readonly integrity: SignatureIntegrity;
+  readonly trust: SignatureTrust;
+  readonly revocation: SignatureRevocation;
+  /** What the ByteRange actually covers, and what lies outside it. */
+  readonly coverage: SignatureCoverage;
+  /** Incremental revisions after the signed one. */
+  readonly changesAfterSigning: number;
+  /** The common names from the signer to the root the chain reached, when it reached one. */
+  readonly trustPath: readonly string[];
+  /** The signer certificate's own window against the machine's clock. */
+  readonly certificateValidity: CertificateValidity;
+  /** `notAfter` of the signer certificate, ISO; `null` when the CMS carried none. */
+  readonly certificateNotAfter: string | null;
+  /** Which check produced the trust verdict, or `null` when the chain was validated. */
+  readonly trustReason: TrustReason | null;
+  /** i18n key explaining the verdict in one sentence, never a bare badge. */
+  readonly reasonKey: MessageKey;
+}
+
+const MAX_SIGNATURES = 64;
+const MAX_REVISIONS = 1024;
+const MAX_ASN1_NODES = 4096;
+/** How far from `/ByteRange` the `/Contents` key may sit (both directions). */
+const CONTENTS_WINDOW = 64 * 1024;
+/** How far the `startxref` scan may reach for a trailer dictionary. */
+const DICT_WINDOW = 64 * 1024;
+
+const BYTE_RANGE_KEY = '/ByteRange';
+const CONTENTS_KEY = '/Contents';
+const STARTXREF_KEY = 'startxref';
+const PREV_KEY = '/Prev';
+const EOF_MARKER = '%%EOF';
+const TRAILER_KEY = 'trailer';
+
+/* ------------------------------------------------------------------ *
+ * ASCII / byte helpers
+ * ------------------------------------------------------------------ */
+
+/** Forward search for an ASCII needle; `-1` when it is not there. */
+function indexOfAscii(bytes: Uint8Array, needle: string, from: number): number {
+  const last = bytes.length - needle.length;
+  for (let at = Math.max(from, 0); at <= last; at += 1) {
+    if (bytes[at] !== needle.charCodeAt(0)) continue;
+    let offset = 1;
+    while (offset < needle.length && bytes[at + offset] === needle.charCodeAt(offset)) offset += 1;
+    if (offset === needle.length) return at;
+  }
+  return -1;
+}
+
+/** Backward search: the highest start index `<= from` that carries the needle. */
+function lastIndexOfAscii(bytes: Uint8Array, needle: string, from: number): number {
+  for (let at = Math.min(from, bytes.length - needle.length); at >= 0; at -= 1) {
+    if (bytes[at] !== needle.charCodeAt(0)) continue;
+    let offset = 1;
+    while (offset < needle.length && bytes[at + offset] === needle.charCodeAt(offset)) offset += 1;
+    if (offset === needle.length) return at;
+  }
+  return -1;
+}
+
+function asciiAt(bytes: Uint8Array, at: number, length: number): string {
+  let text = '';
+  for (let index = 0; index < length && at + index < bytes.length; index += 1) {
+    text += String.fromCharCode(bytes[at + index] ?? 0);
+  }
+  return text;
+}
+
+/** PDF whitespace and delimiters (`ISO 32000-2` §7.2.3). */
+const PDF_WHITESPACE = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
+
+function skipWhitespace(bytes: Uint8Array, at: number): number {
+  let cursor = at;
+  while (cursor < bytes.length && PDF_WHITESPACE.has(bytes[cursor] ?? -1)) cursor += 1;
+  return cursor;
+}
+
+/** One unsigned decimal integer at `at`, or `null` when the token is not one. */
+function readNumber(bytes: Uint8Array, at: number): { readonly value: number; readonly next: number } | null {
+  let cursor = skipWhitespace(bytes, at);
+  let value = 0;
+  let digits = 0;
+  while (cursor < bytes.length) {
+    const digit = (bytes[cursor] ?? -1) - 0x30;
+    if (digit < 0 || digit > 9) break;
+    value = value * 10 + digit;
+    digits += 1;
+    cursor += 1;
+    if (digits > 15) return null;
+  }
+  return digits === 0 || !Number.isSafeInteger(value) ? null : { value, next: cursor };
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) if (left[index] !== right[index]) return false;
+  return true;
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const nibbles: number[] = [];
+  for (const character of hex) {
+    const code = character.charCodeAt(0);
+    const digit =
+      code >= 0x30 && code <= 0x39
+        ? code - 0x30
+        : code >= 0x41 && code <= 0x46
+          ? code - 0x37
+          : code >= 0x61 && code <= 0x66
+            ? code - 0x57
+            : -1;
+    if (digit >= 0) nibbles.push(digit);
+  }
+  const out = new Uint8Array(Math.floor(nibbles.length / 2));
+  for (let index = 0; index + 1 < nibbles.length; index += 2) {
+    out[index / 2] = ((nibbles[index] ?? 0) << 4) | (nibbles[index + 1] ?? 0);
+  }
+  return out;
+}
+
+/** `\ddd`, `\n` and friends — the escapes a literal string may carry (§7.3.4.2). */
+function unescapeLiteral(text: string): Uint8Array {
+  const out: number[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index] ?? '';
+    if (character !== '\\') {
+      out.push(character.charCodeAt(0));
+      continue;
+    }
+    const next = text[index + 1] ?? '';
+    index += 1;
+    const named: Record<string, number> = { n: 0x0a, r: 0x0d, t: 0x09, b: 0x08, f: 0x0c };
+    if (named[next] !== undefined) {
+      out.push(named[next]);
+      continue;
+    }
+    if (next >= '0' && next <= '7') {
+      let octal = next;
+      while (octal.length < 3 && text[index + 1] !== undefined) {
+        const digit = text[index + 1] ?? '';
+        if (digit < '0' || digit > '7') break;
+        octal += digit;
+        index += 1;
+      }
+      out.push(Number.parseInt(octal, 8) & 0xff);
+      continue;
+    }
+    // A line continuation (`\<newline>`) produces nothing at all.
+    if (next !== '\n' && next !== '\r') out.push(next.charCodeAt(0));
+  }
+  return new Uint8Array(out);
+}
+
+/* ------------------------------------------------------------------ *
+ * Raw scan: signature dictionaries in the file's own bytes
+ * ------------------------------------------------------------------ */
+
+type ByteRangeTuple = readonly [number, number, number, number];
+
+interface ContentsValue {
+  readonly bytes: Uint8Array;
+  readonly start: number;
+  readonly end: number;
+}
+
+interface RawSignature {
+  /** Offset of the `/ByteRange` keyword — the dictionary's identity in the file. */
+  readonly at: number;
+  readonly byteRange: ByteRangeTuple;
+  readonly contents: ContentsValue;
+}
+
+function readByteRange(
+  bytes: Uint8Array,
+  from: number,
+): { readonly range: ByteRangeTuple; readonly next: number } | null {
+  let cursor = skipWhitespace(bytes, from);
+  if (bytes[cursor] !== 0x5b) return null;
+  cursor += 1;
+  const values: number[] = [];
+  while (values.length < 4) {
+    const number = readNumber(bytes, cursor);
+    if (number === null) return null;
+    values.push(number.value);
+    cursor = number.next;
+  }
+  const [first, second, third, fourth] = values;
+  if (first === undefined || second === undefined || third === undefined || fourth === undefined) return null;
+  return { range: [first, second, third, fourth], next: cursor };
+}
+
+function readStringValue(bytes: Uint8Array, at: number): ContentsValue | null {
+  const start = skipWhitespace(bytes, at);
+  if (bytes[start] === 0x3c) {
+    const close = indexOfAscii(bytes, '>', start + 1);
+    if (close < 0) return null;
+    return { bytes: hexToBytes(asciiAt(bytes, start + 1, close - start - 1)), start, end: close + 1 };
+  }
+  if (bytes[start] !== 0x28) return null;
+  let depth = 0;
+  for (let cursor = start; cursor < bytes.length; cursor += 1) {
+    const byte = bytes[cursor];
+    if (byte === 0x5c) {
+      cursor += 1;
+      continue;
+    }
+    if (byte === 0x28) depth += 1;
+    else if (byte === 0x29) {
+      depth -= 1;
+      if (depth === 0) {
+        const text = asciiAt(bytes, start + 1, cursor - start - 1);
+        return { bytes: unescapeLiteral(text), start, end: cursor + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The `/Contents` value that sits in the ByteRange's gap. Producers write
+ * `/ByteRange` and `/Contents` in either order, so both directions are tried, and
+ * only a value whose own offsets fall inside the gap is accepted — that is what makes
+ * a match trustworthy without a parser.
+ */
+function findContentsValue(
+  bytes: Uint8Array,
+  keywordAt: number,
+  range: ByteRangeTuple,
+): ContentsValue | null {
+  const gapStart = range[0] + range[1];
+  const gapEnd = range[2];
+  const candidates = [
+    indexOfAscii(bytes, CONTENTS_KEY, keywordAt),
+    lastIndexOfAscii(bytes, CONTENTS_KEY, keywordAt),
+  ];
+  for (const at of candidates) {
+    if (at < 0 || Math.abs(at - keywordAt) > CONTENTS_WINDOW) continue;
+    const value = readStringValue(bytes, at + CONTENTS_KEY.length);
+    if (value === null) continue;
+    if (value.start >= gapStart && value.end <= gapEnd) return value;
+  }
+  return null;
+}
+
+/** Every signature dictionary reachable by scanning, keyed by its `/ByteRange`. */
+function scanRawSignatures(bytes: Uint8Array): readonly RawSignature[] {
+  const found: RawSignature[] = [];
+  let cursor = 0;
+  while (found.length < MAX_SIGNATURES) {
+    const at = indexOfAscii(bytes, BYTE_RANGE_KEY, cursor);
+    if (at < 0) break;
+    cursor = at + BYTE_RANGE_KEY.length;
+    const parsed = readByteRange(bytes, cursor);
+    if (parsed === null) continue;
+    const contents = findContentsValue(bytes, at, parsed.range);
+    if (contents === null) continue;
+    found.push({ at, byteRange: parsed.range, contents });
+  }
+  return found;
+}
+
+/* ------------------------------------------------------------------ *
+ * Revision chain (`startxref` → trailer `/Prev`)
+ * ------------------------------------------------------------------ */
+
+/** The end of the dictionary that starts at `at`, skipping strings and nesting. */
+function dictionaryEnd(bytes: Uint8Array, at: number): number {
+  let depth = 0;
+  let cursor = at;
+  while (cursor < bytes.length && cursor - at < DICT_WINDOW) {
+    const byte = bytes[cursor];
+    if (byte === 0x28) {
+      const close = indexOfAscii(bytes, ')', cursor + 1);
+      if (close < 0) return -1;
+      cursor = close + 1;
+      continue;
+    }
+    if (byte === 0x3c && bytes[cursor + 1] !== 0x3c) {
+      const close = indexOfAscii(bytes, '>', cursor + 1);
+      if (close < 0) return -1;
+      cursor = close + 1;
+      continue;
+    }
+    if (byte === 0x3c && bytes[cursor + 1] === 0x3c) {
+      depth += 1;
+      cursor += 2;
+      continue;
+    }
+    if (byte === 0x3e && bytes[cursor + 1] === 0x3e) {
+      depth -= 1;
+      cursor += 2;
+      if (depth === 0) return cursor;
+      continue;
+    }
+    cursor += 1;
+  }
+  return -1;
+}
+
+/**
+ * The `/Prev` offset of the cross-reference section at `offset`: a table's `trailer`
+ * dictionary, or an xref stream's own dictionary (§7.5.8). `limit` is the start of the
+ * next newer section, so the scan cannot wander into another revision.
+ */
+function previousOffset(bytes: Uint8Array, offset: number, limit: number): number | null {
+  const at = skipWhitespace(bytes, offset);
+  let dictAt: number;
+  if (asciiAt(bytes, at, 4) === 'xref') {
+    const trailer = indexOfAscii(bytes, TRAILER_KEY, at);
+    if (trailer < 0 || trailer >= limit) return null;
+    dictAt = skipWhitespace(bytes, trailer + TRAILER_KEY.length);
+  } else {
+    // `N G obj << … >>`: the number and `obj`, then the dictionary.
+    const object = indexOfAscii(bytes, ' obj', at);
+    if (object < 0 || object >= limit) return null;
+    dictAt = skipWhitespace(bytes, object + 4);
+  }
+  if (bytes[dictAt] !== 0x3c || bytes[dictAt + 1] !== 0x3c) return null;
+  const end = dictionaryEnd(bytes, dictAt);
+  if (end < 0) return null;
+  const prev = indexOfAscii(bytes, PREV_KEY, dictAt);
+  if (prev < 0 || prev >= end) return null;
+  const number = readNumber(bytes, prev + PREV_KEY.length);
+  return number === null ? null : number.value;
+}
+
+/** Cross-reference section offsets, oldest first; empty when the chain is unreadable. */
+function revisionStarts(bytes: Uint8Array): readonly number[] {
+  const lastStartxref = lastIndexOfAscii(bytes, STARTXREF_KEY, bytes.length - 1);
+  if (lastStartxref < 0) return [];
+  const first = readNumber(bytes, lastStartxref + STARTXREF_KEY.length);
+  const starts: number[] = [];
+  const visited = new Set<number>();
+  let offset = first === null ? null : first.value;
+  let limit = bytes.length;
+  while (
+    offset !== null &&
+    offset >= 0 &&
+    offset < bytes.length &&
+    !visited.has(offset) &&
+    starts.length < MAX_REVISIONS
+  ) {
+    visited.add(offset);
+    starts.push(offset);
+    const previous = previousOffset(bytes, offset, limit);
+    limit = offset;
+    offset = previous;
+  }
+  return starts.reverse();
+}
+
+/** `%%EOF` markers after `from` — one per revision a document gained (§7.5.5). */
+function revisionsAfter(bytes: Uint8Array, from: number): number {
+  let count = 0;
+  let cursor = Math.max(from, 0);
+  while (count < MAX_REVISIONS) {
+    const at = indexOfAscii(bytes, EOF_MARKER, cursor);
+    if (at < 0) return count;
+    count += 1;
+    cursor = at + EOF_MARKER.length;
+  }
+  return count;
+}
+
+/* ------------------------------------------------------------------ *
+ * ASN.1 (bounded), CMS and X.509
+ * ------------------------------------------------------------------ */
+
+const TAG_OCTET_STRING = 0x04;
+const _TAG_BIT_STRING = 0x03;
+const TAG_OID = 0x06;
+const TAG_UTF8_STRING = 0x0c;
+const TAG_PRINTABLE_STRING = 0x13;
+const TAG_T61_STRING = 0x14;
+const TAG_IA5_STRING = 0x16;
+const TAG_BMP_STRING = 0x1e;
+const TAG_SEQUENCE = 0x30;
+const TAG_SET = 0x31;
+const TAG_CONTEXT_0 = 0xa0;
+
+const OID_SIGNED_DATA = '1.2.840.113549.1.7.2';
+const OID_MESSAGE_DIGEST = '1.2.840.113549.1.9.4';
+const OID_COMMON_NAME = '2.5.4.3';
+
+/** RFC 5652 §11.2 / PKCS#9, mapped onto the hash names WebCrypto accepts. */
+const DIGEST_ALGORITHMS: Readonly<Record<string, string>> = {
+  '1.3.14.3.2.26': 'SHA-1',
+  '2.16.840.1.101.3.4.2.1': 'SHA-256',
+  '2.16.840.1.101.3.4.2.2': 'SHA-384',
+  '2.16.840.1.101.3.4.2.3': 'SHA-512',
+};
+
+interface Tlv {
+  readonly tag: number;
+  readonly constructed: boolean;
+  readonly start: number;
+  readonly headerLength: number;
+  readonly length: number;
+}
+
+function readTlv(bytes: Uint8Array, at: number): Tlv | null {
+  const tag = bytes[at];
+  if (tag === undefined || (tag & 0x1f) === 0x1f) return null;
+  const first = bytes[at + 1];
+  if (first === undefined) return null;
+  let length = first & 0x7f;
+  let headerLength = 2;
+  if ((first & 0x80) !== 0) {
+    // Indefinite lengths (0x80) are BER and do not occur in the CMS a PDF signer
+    // writes; refusing them keeps the walk bounded.
+    if (length === 0 || length > 4) return null;
+    length = 0;
+    for (let index = 0; index < (first & 0x7f); index += 1) {
+      const byte = bytes[at + 2 + index];
+      if (byte === undefined) return null;
+      length = length * 256 + byte;
+    }
+    headerLength = 2 + (first & 0x7f);
+  }
+  if (at + headerLength + length > bytes.length) return null;
+  return { tag, constructed: (tag & 0x20) !== 0, start: at, headerLength, length };
+}
+
+function contentStart(tlv: Tlv): number {
+  return tlv.start + tlv.headerLength;
+}
+
+function contentBytes(bytes: Uint8Array, tlv: Tlv): Uint8Array {
+  const start = contentStart(tlv);
+  return bytes.subarray(start, start + tlv.length);
+}
+
+/** Direct children of a constructed value, with a shared node budget. */
+function children(bytes: Uint8Array, parent: Tlv, budget: { nodes: number }): readonly Tlv[] {
+  const out: Tlv[] = [];
+  let at = contentStart(parent);
+  const end = at + parent.length;
+  while (at < end && budget.nodes > 0) {
+    const child = readTlv(bytes, at);
+    if (child === null) break;
+    budget.nodes -= 1;
+    out.push(child);
+    at = child.start + child.headerLength + child.length;
+  }
+  return out;
+}
+
+function firstChild(bytes: Uint8Array, parent: Tlv): Tlv | null {
+  const [first] = children(bytes, parent, { nodes: 1 });
+  return first ?? null;
+}
+
+/** `1.2.840.113549.1.7.2`, decoded from the OID's base-128 arcs. */
+function oidText(bytes: Uint8Array, tlv: Tlv): string {
+  const content = contentBytes(bytes, tlv);
+  const first = content[0];
+  if (first === undefined) return '';
+  const arcs: number[] = [Math.floor(first / 40), first % 40];
+  let value = 0;
+  for (let index = 1; index < content.length; index += 1) {
+    const byte = content[index] ?? 0;
+    value = value * 128 + (byte & 0x7f);
+    if ((byte & 0x80) === 0) {
+      arcs.push(value);
+      value = 0;
+    }
+  }
+  return arcs.join('.');
+}
+
+interface CmsCertificate {
+  readonly issuer: Tlv;
+  readonly subject: Tlv;
+  /** The certificate's own DER, header included — what the trust walk parses. */
+  readonly der: Uint8Array;
+  /** `SubjectPublicKeyInfo`, the exact bytes `crypto.subtle.importKey('spki', …)` wants. */
+  readonly spki: Tlv | null;
+  /** The key algorithm inside that SPKI: `rsaEncryption` or `id-ecPublicKey`. */
+  readonly keyAlgorithm: string;
+  /** The named curve of an EC key, when the SPKI names one. */
+  readonly curve: string | null;
+}
+
+interface CmsInfo {
+  readonly messageDigest: Uint8Array | null;
+  readonly digestAlgorithm: string | null;
+  readonly certificate: CmsCertificate | null;
+  /**
+   * The signed attributes **as they are signed** — the `SET OF` form (RFC 5652 §5.4), not
+   * the implicit `[0]` form the structure stores them in — or `null` when the SignerInfo
+   * carries none.
+   */
+  readonly signedAttributes: Uint8Array | null;
+  readonly signature: Uint8Array | null;
+  readonly signatureAlgorithm: string;
+  /** Every other certificate the CMS carried, DER: the candidate chain. */
+  readonly others: readonly Uint8Array[];
+}
+
+const NO_CMS: CmsInfo = {
+  messageDigest: null,
+  digestAlgorithm: null,
+  certificate: null,
+  signedAttributes: null,
+  signature: null,
+  signatureAlgorithm: '',
+  others: [],
+};
+
+/** Who may verify a signature, and with what. */
+const SIGNATURE_ALGORITHMS: Record<string, 'RSASSA-PKCS1-v1_5' | 'ECDSA'> = {
+  '1.2.840.113549.1.1.1': 'RSASSA-PKCS1-v1_5', // rsaEncryption
+  '1.2.840.113549.1.1.11': 'RSASSA-PKCS1-v1_5', // sha256WithRSAEncryption
+  '1.2.840.113549.1.1.12': 'RSASSA-PKCS1-v1_5',
+  '1.2.840.113549.1.1.13': 'RSASSA-PKCS1-v1_5',
+  '1.2.840.10045.4.3.2': 'ECDSA', // ecdsa-with-SHA256
+  '1.2.840.10045.4.3.3': 'ECDSA',
+  '1.2.840.10045.4.3.4': 'ECDSA',
+};
+
+const CURVE_OIDS: Record<string, string> = {
+  '1.2.840.10045.3.1.7': 'P-256',
+  '1.3.132.0.34': 'P-384',
+  '1.3.132.0.35': 'P-521',
+};
+
+/** The empty trust verdict: what a document with no readable CMS reports. */
+const NO_TRUST: TrustCheck = {
+  verdict: 'not-checked',
+  path: [],
+  validity: 'unknown',
+  notAfter: null,
+  reason: null,
+};
+
+interface SignerInfoFacts {
+  readonly messageDigest: Uint8Array | null;
+  readonly signedAttributes: Uint8Array | null;
+  readonly signature: Uint8Array | null;
+  readonly signatureAlgorithm: string;
+}
+
+const NO_SIGNER_INFO: SignerInfoFacts = {
+  messageDigest: null,
+  signedAttributes: null,
+  signature: null,
+  signatureAlgorithm: '',
+};
+
+/**
+ * The first `SignerInfo` that carries signed attributes, and the three things under it
+ * this verdict needs: the `messageDigest` attribute, the attributes' own bytes as they
+ * were signed, and the signature value with the algorithm that made it.
+ */
+function readSignerInfo(bytes: Uint8Array, signedData: Tlv, budget: { nodes: number }): SignerInfoFacts {
+  for (const child of children(bytes, signedData, budget)) {
+    // `digestAlgorithms` and `signerInfos` are both SETs; only the second kind holds
+    // SignerInfos with a `[0]` signedAttrs block, which the loop below requires.
+    if (child.tag !== TAG_SET || !child.constructed) continue;
+    for (const signerInfo of children(bytes, child, budget)) {
+      if (signerInfo.tag !== TAG_SEQUENCE) continue;
+      const parts = children(bytes, signerInfo, budget);
+      const signedAttrs = parts.find((tlv) => tlv.tag === TAG_CONTEXT_0);
+      if (signedAttrs === undefined) continue;
+
+      const messageDigest = readMessageDigest(bytes, signedAttrs, budget);
+      /**
+       * The signed bytes are the attributes with the universal `SET OF` tag: the structure
+       * stores them under an implicit `[0]`, and RFC 5652 §5.4 signs the `SET OF` form.
+       * The header length is the same for both tags, so the first byte is the only change.
+       * (Measured: OpenSSL's `cms -verify` re-encodes the attributes and hashes that.)
+       */
+      const signed = bytes.slice(
+        signedAttrs.start,
+        signedAttrs.start + signedAttrs.headerLength + signedAttrs.length,
+      );
+      if (signed[0] === TAG_CONTEXT_0) signed[0] = TAG_SET;
+
+      // `SignerInfo ::= SEQUENCE { version, sid, digestAlgorithm, [0] signedAttrs,
+      //  signatureAlgorithm, signature }` — the OCTET STRING is the value, and the
+      // AlgorithmIdentifier right after the attributes names the algorithm.
+      const after = parts.slice(parts.indexOf(signedAttrs) + 1);
+      const algorithm = after.find((tlv) => tlv.tag === TAG_SEQUENCE);
+      const algorithmOid = algorithm === undefined ? null : firstChild(bytes, algorithm);
+      const signature = after.find((tlv) => tlv.tag === TAG_OCTET_STRING);
+      return {
+        messageDigest,
+        signedAttributes: signed,
+        signature: signature === undefined ? null : contentBytes(bytes, signature),
+        signatureAlgorithm:
+          algorithmOid === null || algorithmOid.tag !== TAG_OID ? '' : oidText(bytes, algorithmOid),
+      };
+    }
+  }
+  return NO_SIGNER_INFO;
+}
+
+/** The `messageDigest` attribute (`OID 1.2.840.113549.1.9.4`) of a signed-attrs block. */
+function readMessageDigest(
+  bytes: Uint8Array,
+  signedAttrs: Tlv,
+  budget: { nodes: number },
+): Uint8Array | null {
+  for (const attribute of children(bytes, signedAttrs, budget)) {
+    // `Attribute ::= SEQUENCE { attrType OID, attrValues SET OF ANY }` (RFC 5652 §5.3).
+    const [type, values] = children(bytes, attribute, budget);
+    if (type === undefined || values === undefined) continue;
+    if (type.tag !== TAG_OID || oidText(bytes, type) !== OID_MESSAGE_DIGEST) continue;
+    const digest = children(bytes, values, budget).find((tlv) => tlv.tag === TAG_OCTET_STRING);
+    if (digest !== undefined) return contentBytes(bytes, digest);
+  }
+  return null;
+}
+
+/** `SignedData`'s first `certificates` entry, as `issuer` and `subject` TLVs. */
+function readCertificate(
+  bytes: Uint8Array,
+  signedData: Tlv,
+  budget: { nodes: number },
+): CmsInfo['certificate'] {
+  const certificates = children(bytes, signedData, budget).find((child) => child.tag === TAG_CONTEXT_0);
+  if (certificates === undefined) return null;
+  const certificate = firstChild(bytes, certificates);
+  if (certificate === null) return null;
+  const tbs = firstChild(bytes, certificate);
+  if (tbs === null) return null;
+
+  // `TBSCertificate ::= SEQUENCE { [0] version DEFAULT v1, serialNumber, signature,
+  //  issuer, validity, subject, … }` (RFC 5280 §4.1) — the version tag shifts the
+  //  two names by one position.
+  const fields = children(bytes, tbs, budget);
+  const base = fields[0]?.tag === TAG_CONTEXT_0 ? 1 : 0;
+  const issuer = fields[base + 2];
+  const subject = fields[base + 4];
+  // `subjectPublicKeyInfo` follows `subject` (RFC 5280 §4.1): its AlgorithmIdentifier's
+  // first child is the key algorithm, and for an EC key the second is the named curve.
+  const spki = fields[base + 5];
+  if (issuer === undefined || subject === undefined) return null;
+
+  let keyAlgorithm = '';
+  let curve: string | null = null;
+  const spkiFields = spki === undefined ? [] : children(bytes, spki, budget);
+  const spkiAlgorithm = spkiFields[0];
+  const algorithmFields = spkiAlgorithm === undefined ? [] : children(bytes, spkiAlgorithm, budget);
+  const keyOid = algorithmFields[0];
+  if (keyOid !== undefined && keyOid.tag === TAG_OID) {
+    keyAlgorithm = oidText(bytes, keyOid);
+    const parameters = algorithmFields[1];
+    if (parameters !== undefined && parameters.tag === TAG_OID)
+      curve = CURVE_OIDS[oidText(bytes, parameters)] ?? null;
+  }
+  return {
+    issuer,
+    subject,
+    der: tlvBytes(bytes, certificate),
+    spki: spki ?? null,
+    keyAlgorithm,
+    curve,
+  };
+}
+
+/** The first CN of a Name (`RDNSequence`), decoded from the string type it uses. */
+function commonName(bytes: Uint8Array, name: Tlv, budget: { nodes: number }): string | null {
+  for (const set of children(bytes, name, budget)) {
+    if (set.tag !== TAG_SET) continue;
+    for (const attribute of children(bytes, set, budget)) {
+      const [type, value] = children(bytes, attribute, budget);
+      if (type === undefined || value === undefined || type.tag !== TAG_OID) continue;
+      if (oidText(bytes, type) !== OID_COMMON_NAME) continue;
+      const content = contentBytes(bytes, value);
+      if (value.tag === TAG_UTF8_STRING) return new TextDecoder('utf-8').decode(content);
+      if (value.tag === TAG_BMP_STRING) return new TextDecoder('utf-16be').decode(content);
+      if (
+        value.tag === TAG_PRINTABLE_STRING ||
+        value.tag === TAG_IA5_STRING ||
+        value.tag === TAG_T61_STRING
+      ) {
+        return asciiAt(content, 0, content.length);
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+/** The CMS `SignedData` facts this check needs, or {@link NO_CMS}. */
+function readCms(der: Uint8Array): CmsInfo {
+  const budget = { nodes: MAX_ASN1_NODES };
+  const contentInfo = readTlv(der, 0);
+  if (contentInfo === null || contentInfo.tag !== TAG_SEQUENCE) return NO_CMS;
+
+  const fields = children(der, contentInfo, budget);
+  const type = fields[0];
+  const wrapper = fields[1];
+  if (type === undefined || wrapper === undefined || type.tag !== TAG_OID) return NO_CMS;
+  if (oidText(der, type) !== OID_SIGNED_DATA) return NO_CMS;
+  if (wrapper.tag !== TAG_CONTEXT_0) return NO_CMS;
+
+  const signedData = firstChild(der, wrapper);
+  if (signedData === null || signedData.tag !== TAG_SEQUENCE) return NO_CMS;
+  const signedFields = children(der, signedData, budget);
+  // `digestAlgorithms ::= SET OF AlgorithmIdentifier` is the first SET of the three
+  // (`§5.1` field order); `AlgorithmIdentifier.algorithm` is its first child.
+  const algorithms = signedFields.find((child) => child.tag === TAG_SET);
+  const identifier = algorithms === undefined ? null : firstChild(der, algorithms);
+  const algorithm = identifier === null ? null : firstChild(der, identifier);
+  const digestOid = algorithm === null ? '' : oidText(der, algorithm);
+
+  const certificate = readCertificate(der, signedData, budget);
+  const signer = readSignerInfo(der, signedData, budget);
+  // Every certificate after the signer's own is a chain candidate; the walk decides which
+  // of them actually signs which.
+  const others: Uint8Array[] = [];
+  const certificates = children(der, signedData, budget).find((child) => child.tag === TAG_CONTEXT_0);
+  if (certificates !== undefined) {
+    for (const entry of children(der, certificates, budget)) {
+      const bytesOf = tlvBytes(der, entry);
+      if (certificate !== null && bytesOf.length === certificate.der.length) {
+        let same = true;
+        for (let index = 0; index < bytesOf.length && same; index += 1)
+          same = bytesOf[index] === certificate.der[index];
+        if (same) continue;
+      }
+      // Only certificate-shaped entries: `CertificateChoices` also allows the attribute
+      // certificate and "other" forms, and those are not chain candidates.
+      if (entry.tag === TAG_SEQUENCE) others.push(bytesOf);
+    }
+  }
+  return {
+    messageDigest: signer.messageDigest,
+    digestAlgorithm: DIGEST_ALGORITHMS[digestOid] ?? null,
+    certificate,
+    signedAttributes: signer.signedAttributes,
+    signature: signer.signature,
+    signatureAlgorithm: signer.signatureAlgorithm,
+    others,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * The document side: signature fields and what they carry
+ * ------------------------------------------------------------------ */
+
+/** One signature field, read out of the document before it is closed. */
+interface SignatureField {
+  readonly name: string;
+  /** `/Contents` as bytes; `null` when it is not a string. */
+  readonly contents: Uint8Array | null;
+  /** `/ByteRange` as the object graph has it; the raw scan is what makes it trustworthy. */
+  readonly byteRange: ByteRangeTuple | null;
+  readonly subFilter: string | null;
+  /** `/M`, the text as written. */
+  readonly signedAt: string | null;
+}
+
+function textOf(object: PDFObject | null | undefined): string | null {
+  const text = readText(object);
+  return text === null || text === '' ? null : text;
+}
+
+/** The `/V` of a field or widget, when it is a signature dictionary. */
+function signatureValue(dict: PDFObject): PDFObject | null {
+  const value = resolved(dict.get('V'));
+  // `/ByteRange` is the one key every signature dictionary carries (§12.8.1) and no
+  // ordinary field value does; it is the cheapest honest test for "this is a signature".
+  return value?.isDictionary() === true && !value.get('ByteRange').isNull() ? value : null;
+}
+
+/** What a signature dictionary carries, as plain values. */
+function readSignature(name: string, dictionary: PDFObject): SignatureField {
+  const range = readNumbers(dictionary.get('ByteRange'));
+  const [first, second, third, fourth] = range;
+  const contents = resolved(dictionary.get('Contents'));
+  return {
+    name,
+    contents: contents?.isString() === true ? new Uint8Array(contents.asByteString()) : null,
+    byteRange:
+      range.length === 4 &&
+      first !== undefined &&
+      second !== undefined &&
+      third !== undefined &&
+      fourth !== undefined
+        ? [first, second, third, fourth]
+        : null,
+    subFilter: readName(dictionary.get('SubFilter')) ?? textOf(dictionary.get('SubFilter')),
+    signedAt: textOf(dictionary.get('M')),
+  };
+}
+
+/** A key that tells one signature dictionary from another: its object number, or itself. */
+function identityOf(entry: PDFObject, value: PDFObject): number | PDFObject {
+  const reference = entry.get('V');
+  return reference.isIndirect() ? reference.asIndirect() : value;
+}
+
+function walkField(
+  object: PDFObject,
+  prefix: string,
+  collected: SignatureField[],
+  seen: Set<number | PDFObject>,
+  depth: number,
+): void {
+  const dict = resolved(object);
+  if (dict === null || !dict.isDictionary() || depth > 32) return;
+
+  const own = textOf(dict.get('T'));
+  const name = own === null ? prefix : prefix === '' ? own : `${prefix}.${own}`;
+
+  const kids = resolved(dict.get('Kids'));
+  if (kids?.isArray() === true) {
+    for (let index = 0; index < kids.length && collected.length < MAX_SIGNATURES; index += 1) {
+      walkField(kids.get(index), name, collected, seen, depth + 1);
+    }
+  }
+
+  const value = signatureValue(dict);
+  if (value === null) return;
+  const key = identityOf(dict, value);
+  if (seen.has(key)) return;
+  seen.add(key);
+  collected.push(readSignature(name, value));
+}
+
+/**
+ * Signature fields of the document, by qualified field name: the `/AcroForm /Fields`
+ * tree first, then any widget annotation whose `/V` no field claimed (a producer that
+ * keeps the widget outside `/Fields` still ships a signature a reader must show).
+ */
+function collectSignatureFields(
+  doc: PDFDocument,
+  signal: AbortSignal | undefined,
+): readonly SignatureField[] {
+  const collected: SignatureField[] = [];
+  const seen = new Set<number | PDFObject>();
+
+  const catalog = resolved(doc.getTrailer().get('Root'));
+  const acroForm = catalog === null ? null : resolved(catalog.get('AcroForm'));
+  const roots = acroForm === null ? null : resolved(acroForm.get('Fields'));
+  if (roots?.isArray() === true) {
+    for (let index = 0; index < roots.length && collected.length < MAX_SIGNATURES; index += 1) {
+      walkField(roots.get(index), '', collected, seen, 0);
+    }
+  }
+
+  for (const page of pageObjects(doc)) {
+    if (collected.length >= MAX_SIGNATURES) break;
+    if (signal !== undefined) throwIfAborted(signal);
+    const annots = resolved(page.get('Annots'));
+    if (annots?.isArray() !== true) continue;
+    for (let index = 0; index < annots.length; index += 1) {
+      const annot = resolved(annots.get(index));
+      if (annot === null || !annot.isDictionary()) continue;
+      const value = signatureValue(annot);
+      if (value === null) continue;
+      const key = identityOf(annot, value);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push(readSignature(textOf(annot.get('T')) ?? '', value));
+    }
+  }
+  return collected;
+}
+
+/** Whether the raw bytes carry a `/ByteRange` key at all: without one, nothing is signed. */
+function mentionsByteRange(bytes: Uint8Array): boolean {
+  const needle = [0x2f, 0x42, 0x79, 0x74, 0x65, 0x52, 0x61, 0x6e, 0x67, 0x65]; // "/ByteRange"
+  outer: for (let at = 0; at + needle.length <= bytes.length; at += 1) {
+    for (let step = 0; step < needle.length; step += 1) {
+      if (bytes[at + step] !== needle[step]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+const PDF_DATE = /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?([Z+-])?(\d{2})?'?(\d{2})?'?/;
+
+/** `/M` (`D:YYYYMMDDHHmmSS+hh'mm'`) → ISO 8601; an unreadable value stays `null`. */
+function isoFromPdfDate(value: string | null): string | null {
+  if (value === null) return null;
+  const match = PDF_DATE.exec(value.trim());
+  if (match === null) return null;
+  const [
+    ,
+    year,
+    month = '01',
+    day = '01',
+    hour = '00',
+    minute = '00',
+    second = '00',
+    sign,
+    tzHour,
+    tzMinute,
+  ] = match;
+  const zone = sign === 'Z' || sign === undefined ? 'Z' : `${sign}${tzHour ?? '00'}:${tzMinute ?? '00'}`;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${zone}`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Verdict
+ * ------------------------------------------------------------------ */
+
+interface SigningFacts {
+  readonly subFilter: string;
+  readonly signedAt: string | null;
+  readonly signer: string | null;
+  readonly selfSigned: boolean;
+  readonly messageDigest: Uint8Array | null;
+  readonly digestAlgorithm: string | null;
+  readonly signedAttributes: Uint8Array | null;
+  readonly signature: Uint8Array | null;
+  readonly signatureAlgorithm: string;
+  readonly signerKey: {
+    readonly spki: Uint8Array;
+    readonly algorithm: string;
+    readonly curve: string | null;
+  } | null;
+  /** The chain walk against the imported roots; `NO_TRUST` when it could not be run. */
+  readonly trust: TrustCheck;
+  /** Whether the caller supplied any roots at all: without one there is no verdict to give. */
+  readonly hasRoots: boolean;
+}
+
+/**
+ * The signature value itself, against the signer certificate's public key.
+ *
+ * The digest comparison alone is not integrity: an attacker who edits the file can
+ * recompute the `messageDigest` attribute to match — that attribute is *inside* the blob
+ * they are editing — while the signature over it stays what it was. Only verifying the
+ * signature with the public key closes that hole, and it is the half this verifier was
+ * missing (the OpenSSL check in `tools/spikes/sign-check.mts` is what exposed it).
+ */
+function ecdsaSignatureBytes(der: Uint8Array, curve: string): Uint8Array | null {
+  const sizes: Readonly<Record<string, number>> = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
+  const size = sizes[curve];
+  const sequence = readTlv(der, 0);
+  if (
+    size === undefined ||
+    sequence?.tag !== TAG_SEQUENCE ||
+    sequence.headerLength + sequence.length !== der.length
+  )
+    return null;
+  const parts = children(der, sequence, { nodes: 3 });
+  if (parts.length !== 2) return null;
+  const raw = new Uint8Array(size * 2);
+  for (const [index, part] of parts.entries()) {
+    if (part.tag !== 0x02 || part.start + part.headerLength + part.length > der.length) return null;
+    let scalar = contentBytes(der, part);
+    const first = scalar[0];
+    if (first === undefined || (first & 0x80) !== 0) return null;
+    if (first === 0 && scalar.length > 1) {
+      if (((scalar[1] ?? 0) & 0x80) === 0) return null;
+      scalar = scalar.subarray(1);
+    }
+    if (scalar.length > size || scalar.every((byte) => byte === 0)) return null;
+    raw.set(scalar, (index + 1) * size - scalar.length);
+  }
+  return raw;
+}
+
+async function verifySignatureValue(
+  subtle: SubtleCrypto,
+  facts: SigningFacts,
+): Promise<'valid' | 'invalid' | 'unsupported'> {
+  const { signedAttributes, signature, signatureAlgorithm, signerKey, digestAlgorithm } = facts;
+  if (
+    signedAttributes === null ||
+    signature === null ||
+    signerKey === null ||
+    digestAlgorithm === null ||
+    signerKey.spki.length === 0
+  ) {
+    return 'unsupported';
+  }
+  const kind = SIGNATURE_ALGORITHMS[signatureAlgorithm];
+  if (kind === undefined) return 'unsupported';
+  if (kind === 'ECDSA' && signerKey.curve === null) return 'unsupported';
+  if (signerKey.algorithm !== (kind === 'ECDSA' ? '1.2.840.10045.2.1' : '1.2.840.113549.1.1.1')) {
+    // The algorithm the SignerInfo names and the key the certificate carries disagree:
+    // nothing here can verify that pairing, so the verdict stays unchecked rather than
+    // claiming a mismatch.
+    return 'unsupported';
+  }
+
+  const signatureBytes =
+    kind === 'ECDSA' ? ecdsaSignatureBytes(signature, signerKey.curve as string) : signature;
+  if (signatureBytes === null) return 'invalid';
+
+  try {
+    const key =
+      kind === 'ECDSA'
+        ? await subtle.importKey(
+            'spki',
+            signerKey.spki as unknown as ArrayBuffer,
+            { name: 'ECDSA', namedCurve: signerKey.curve as string },
+            false,
+            ['verify'],
+          )
+        : await subtle.importKey(
+            'spki',
+            signerKey.spki as unknown as ArrayBuffer,
+            { name: 'RSASSA-PKCS1-v1_5', hash: digestAlgorithm },
+            false,
+            ['verify'],
+          );
+    const ok =
+      kind === 'ECDSA'
+        ? await subtle.verify(
+            { name: 'ECDSA', hash: digestAlgorithm },
+            key,
+            signatureBytes as unknown as ArrayBuffer,
+            signedAttributes as unknown as ArrayBuffer,
+          )
+        : await subtle.verify(
+            { name: 'RSASSA-PKCS1-v1_5' },
+            key,
+            signatureBytes as unknown as ArrayBuffer,
+            signedAttributes as unknown as ArrayBuffer,
+          );
+    return ok ? 'valid' : 'invalid';
+  } catch {
+    // An algorithm this context cannot provide is an absence of evidence, not evidence of
+    // tampering — the same rule the digest follows.
+    return 'unsupported';
+  }
+}
+
+function verdictKey(integrity: SignatureIntegrity, cause: string | null): MessageKey {
+  if (integrity === 'valid') return 'props.sig.reason.valid';
+  if (integrity === 'invalid') return 'props.sig.reason.invalid';
+  if (cause === 'layout') return 'props.sig.reason.unchecked.layout';
+  if (cause === 'subfilter') return 'props.sig.reason.unchecked.subFilter';
+  if (cause === 'digest') return 'props.sig.reason.unchecked.digest';
+  if (cause === 'webcrypto') return 'props.sig.reason.unchecked.webCrypto';
+  return 'props.sig.reason.unchecked.der';
+}
+
+/** The detached CMS subfilters whose `/Contents` is a `SignedData` over the byte range. */
+const DETACHED_SUBFILTERS = new Set(['adbe.pkcs7.detached', 'ETSI.CAdES.detached']);
+
+/** The DER of one TLV, header included — how `issuer` and `subject` are compared. */
+function tlvBytes(der: Uint8Array, tlv: Tlv): Uint8Array {
+  return der.subarray(tlv.start, tlv.start + tlv.headerLength + tlv.length);
+}
+
+/** The four ByteRange integers are identical — the object graph's and the file's. */
+function sameRange(left: ByteRangeTuple, right: ByteRangeTuple): boolean {
+  return left[0] === right[0] && left[1] === right[1] && left[2] === right[2] && left[3] === right[3];
+}
+
+/**
+ * One signature's verdict. The digest is computed over the bytes **the file ships**,
+ * never over a re-serialised document: a signature that does not match the bytes on
+ * disk is `invalid` even when the object graph still looks intact.
+ */
+async function verifyOne(
+  bytes: Uint8Array,
+  field: SignatureField,
+  facts: SigningFacts,
+  raw: RawSignature | null,
+  revisions: readonly number[],
+): Promise<SignatureVerification> {
+  /**
+   * The trust column, decided from the chain and the imported roots. A self-signed
+   * certificate is named as such because the certificate itself says so; anything else
+   * needs a root to compare against, and with none imported the honest answer is
+   * `not-checked` — never `untrusted`, which would be a claim this build cannot support.
+   */
+  const trust: SignatureTrust =
+    facts.trust.verdict === 'trusted'
+      ? 'trusted'
+      : facts.trust.verdict === 'indeterminate'
+        ? 'indeterminate'
+        : facts.selfSigned
+          ? 'self-signed'
+          : facts.hasRoots
+            ? 'untrusted'
+            : 'not-checked';
+  const base = {
+    fieldName: field.name,
+    subFilter: facts.subFilter,
+    signer: facts.signer,
+    signedAt: facts.signedAt,
+    trust,
+    revocation: 'indeterminate' as SignatureRevocation,
+    trustPath: facts.trust.path,
+    certificateValidity: facts.trust.validity,
+    certificateNotAfter: facts.trust.notAfter,
+    trustReason: facts.trust.reason,
+  };
+
+  // Coverage and the revision count come from the raw layout, so they are reported even
+  // when the cryptographic verdict cannot be reached: "the signature does not cover what
+  // it should" is a different fact from "the digest did not match" (`K17`).
+  const coverage: SignatureCoverage = raw === null ? 'unknown' : coverageOf(bytes, raw.byteRange);
+  const signedRevisions = raw === null ? 0 : changesAfterSigning(bytes, raw.byteRange, revisions);
+  const unchecked = (cause: string): SignatureVerification => ({
+    ...base,
+    integrity: 'unchecked',
+    coverage,
+    changesAfterSigning: signedRevisions,
+    reasonKey: verdictKey('unchecked', cause),
+  });
+
+  if (!DETACHED_SUBFILTERS.has(facts.subFilter)) return unchecked('subfilter');
+  if (raw === null) return unchecked('layout');
+  if (facts.messageDigest === null) return unchecked('der');
+  if (facts.digestAlgorithm === null) return unchecked('digest');
+
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === undefined) return unchecked('webcrypto');
+
+  const [start1, length1, start2, length2] = raw.byteRange;
+  if (start1 + length1 > bytes.length || start2 + length2 > bytes.length) {
+    return unchecked('layout');
+  }
+
+  // WebCrypto digests one buffer, so the two covered ranges are joined once.
+  const covered = new Uint8Array(length1 + length2);
+  covered.set(bytes.subarray(start1, start1 + length1), 0);
+  covered.set(bytes.subarray(start2, start2 + length2), length1);
+
+  let computed: Uint8Array;
+  try {
+    computed = new Uint8Array(await subtle.digest(facts.digestAlgorithm, covered));
+  } catch {
+    // An algorithm the context cannot provide (an old build without SHA-384, say) is
+    // an absence of evidence, not evidence of tampering.
+    return unchecked('digest');
+  }
+
+  let integrity: SignatureIntegrity = bytesEqual(computed, facts.messageDigest) ? 'valid' : 'invalid';
+  if (integrity === 'valid') {
+    const signature = await verifySignatureValue(subtle, facts);
+    if (signature === 'invalid') integrity = 'invalid';
+    if (signature === 'unsupported') return unchecked('webcrypto');
+  }
+  return {
+    ...base,
+    integrity,
+    coverage,
+    changesAfterSigning: signedRevisions,
+    reasonKey: verdictKey(integrity, null),
+  };
+}
+
+/** What the ByteRange covers (§12.8.1), and what lies outside it. */
+function coverageOf(bytes: Uint8Array, range: ByteRangeTuple): SignatureCoverage {
+  const [start1, length1, start2, length2] = range;
+  if (length1 < 0 || length2 < 0 || start1 + length1 > start2) return 'unknown';
+  const end = start2 + length2;
+  if (end > bytes.length) return 'unknown';
+  // Anything before the first range, or after the last one, is not covered by the
+  // signature: that is exactly "partial coverage", whatever wrote those bytes.
+  if (start1 !== 0 || end < bytes.length) return 'covers-partial';
+  return 'covers-whole-document';
+}
+
+/**
+ * Revisions after the signature's own. The chain answers it directly; when it cannot
+ * be read, `%%EOF` markers after the covered range answer the same question (§7.5.5).
+ */
+function changesAfterSigning(bytes: Uint8Array, range: ByteRangeTuple, revisions: readonly number[]): number {
+  const end = range[2] + range[3];
+  const signed = revisions.filter((start) => start <= end).length;
+  if (revisions.length > 0) return Math.max(revisions.length - signed, 0);
+  return end < bytes.length ? revisionsAfter(bytes, end) : 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Entry point
+ * ------------------------------------------------------------------ */
+
+/**
+ * The document's signatures, each with its four separate states. A document without a
+ * signature field is an empty list, not an error.
+ */
+export interface VerifySignaturesOptions {
+  /**
+   * Certificates the user imported (`pdf-model/trust-roots`). An empty list is a valid
+   * call: it produces `not-checked` trust, which is the truth about a document whose
+   * chain nobody has vouched for.
+   */
+  readonly roots?: readonly Uint8Array[];
+  /** The clock, so a check can pin “expired” to a date instead of to today. */
+  readonly now?: Date;
+}
+
+export async function verifySignatures(
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+  options: VerifySignaturesOptions = {},
+): Promise<readonly SignatureVerification[]> {
+  // Every document is asked for its verdicts as soon as it opens: a file whose bytes
+  // never name a `/ByteRange` carries no signature a range could cover, and it is
+  // answered without loading an engine at all. (A signature dictionary inside a
+  // compressed object stream could not cover its own bytes either.)
+  if (!mentionsByteRange(bytes)) return [];
+
+  const mupdf = await loadMupdf();
+  const doc = openPdf(mupdf, bytes);
+  let fields: readonly SignatureField[];
+  try {
+    if (doc.needsPassword()) {
+      throw new ToolError('encrypted-unsupported', {
+        engine: 'mupdf',
+        engineMessage: 'verify signatures: the document needs a password to be read',
+      });
+    }
+    fields = collectSignatureFields(doc, signal);
+  } catch (error) {
+    // `throwIfAborted` raises a plain `Error` named `AbortError`; mapping it would turn
+    // a cancellation into a failure the caller has to report.
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    throw mapMupdfError(error, 'verify signatures');
+  } finally {
+    doc.destroy();
+  }
+  if (fields.length === 0) return [];
+
+  const raw = scanRawSignatures(bytes);
+  const revisions = revisionStarts(bytes);
+  const results: SignatureVerification[] = [];
+
+  for (const field of fields) {
+    if (signal !== undefined) throwIfAborted(signal);
+
+    const contents = field.contents;
+    const cms = contents === null ? NO_CMS : readCms(contents);
+    const certificate = contents === null ? null : cms.certificate;
+    const range = field.byteRange;
+    // A raw entry is only accepted when the four numbers are identical to the object
+    // graph's: a dictionary that arrived inside an object stream carries numbers for a
+    // file this scan never saw, and hashing those ranges would be nonsense.
+    const match = range === null ? undefined : raw.find((entry) => sameRange(entry.byteRange, range));
+    // The chain walk runs on the certificates the CMS carried, against the imported
+    // roots: a verdict about trust is only meaningful when both sides exist.
+    /**
+     * `signature-trust` carries pkijs and asn1js, and this module is on the **first paint**
+     * (the shell asks for the document's verdicts as soon as a document opens). Loading it
+     * here keeps ~900 kB of ASN.1 machinery out of the entry chunk — measured: a static
+     * import put the entry at 302.66 KiB gzip against a locked ≤ 250 KiB budget.
+     */
+    const trust =
+      contents === null
+        ? NO_TRUST
+        : await (await import('../signature-trust')).checkTrust({
+            signer: certificate?.der ?? new Uint8Array(),
+            chain: cms.others,
+            roots: options.roots ?? [],
+            now: options.now,
+          });
+    const facts: SigningFacts = {
+      subFilter: field.subFilter ?? '',
+      signedAt: isoFromPdfDate(field.signedAt),
+      signer:
+        contents === null || certificate === null
+          ? null
+          : commonName(contents, certificate.subject, { nodes: MAX_ASN1_NODES }),
+      // `issuer == subject` is the whole of the claim: a locally self-signed
+      // certificate. Whether the signature under it verifies is a trust question this
+      // build cannot answer (`K17`, no trust store, no network).
+      selfSigned:
+        contents !== null &&
+        certificate !== null &&
+        bytesEqual(tlvBytes(contents, certificate.issuer), tlvBytes(contents, certificate.subject)),
+      messageDigest: cms.messageDigest,
+      digestAlgorithm: cms.digestAlgorithm,
+      signedAttributes: cms.signedAttributes,
+      signature: cms.signature,
+      signatureAlgorithm: cms.signatureAlgorithm,
+      signerKey:
+        contents === null || cms.certificate?.spki == null
+          ? null
+          : {
+              spki: tlvBytes(contents, cms.certificate.spki),
+              algorithm: cms.certificate.keyAlgorithm,
+              curve: cms.certificate.curve,
+            },
+      trust,
+      hasRoots: (options.roots ?? []).length > 0,
+    };
+
+    results.push(await verifyOne(bytes, field, facts, match ?? null, revisions));
+  }
+  return results;
+}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://pdf.isolmaz.com/</loc>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/" />
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://pdf.isolmaz.com/en/</loc>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/" />
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://pdf.isolmaz.com/editor/</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://pdf.isolmaz.com/gizlilik</loc>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/gizlilik" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/privacy" />
+    <changefreq>yearly</changefreq>
+  </url>
+  <url>
+    <loc>https://pdf.isolmaz.com/en/privacy</loc>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/gizlilik" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/privacy" />
+    <changefreq>yearly</changefreq>
+  </url>
+  <url>
+    <loc>https://pdf.isolmaz.com/kosullar</loc>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/kosullar" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/terms" />
+    <changefreq>yearly</changefreq>
+  </url>
+  <url>
+    <loc>https://pdf.isolmaz.com/en/terms</loc>
+    <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/kosullar" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/terms" />
+    <changefreq>yearly</changefreq>
+  </url>
+</urlset>

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SsPdfEditor</title>
+    <meta
+      name="description"
+      content="Tarayıcıda çalışan, tamamen yerel PDF düzenleyici. Belgeler cihazınızdan ayrılmaz; hesap, abonelik ve telemetri yoktur."
+    />
+    <link rel="canonical" href="https://pdf.isolmaz.com/editor/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- No-flash theme bootstrap: same-origin classic script so CSP keeps
+         script-src 'self' without 'unsafe-inline' (PLAN.md §3.7, §4.4). -->
+    <!-- UI typeface: same-origin pinned font assets, preloaded so the shell does not
+         flash a fallback face (font-src 'self' in the CSP covers them). -->
+    <link rel="preload" href="/fonts/space-grotesk/space-grotesk-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/space-grotesk/space-grotesk-latin-ext-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/dm-sans/dm-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/dm-sans/dm-sans-latin-ext-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <script src="/theme-boot.js"></script>
+  </head>
+  <body class="bg-kumo-canvas">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

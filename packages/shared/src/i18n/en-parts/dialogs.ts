@@ -1,0 +1,15 @@
+export const dialogsPart = {
+  'dialog.confirm.continue': 'Continue',
+  'dialog.field.numberRange': 'This value must be between {min} and {max}.',
+  'dialog.field.chooseFile': 'Choose file',
+  'dialog.field.chooseFiles': 'Choose files',
+  'dialog.field.noFile': 'No file chosen yet',
+  'dialog.field.filesChosen': '{count} files chosen',
+  'dialog.advanced': 'Advanced options ({count})',
+  'dialog.step.settings': 'Settings',
+  'dialog.step.review': 'Review and apply',
+  'dialog.step.result': 'Result',
+  'dialog.result.changed': 'Changes',
+  'dialog.result.warnings': 'Warnings',
+  'dialog.redactMark.page': 'Page {page}',
+} as const;

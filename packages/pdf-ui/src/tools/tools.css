@@ -1,0 +1,57 @@
+/**
+ * Tool surfaces that need layout Tailwind expresses poorly, plus the one place
+ * this layer must beat pdf.js's own class: a full-screen viewer container
+ * (`PLAN.md §5/Phase 1`).
+ *
+ * Colours, type and spacing still come from the token layer (`K24`); only
+ * geometry, stacking and the fullscreen box live here. Imported by the modules
+ * that own the rules, so mounting a tool brings its styles with it.
+ */
+
+/* Presentation mode (`usePresentation`): the viewer's scroll container goes full
+   screen, which is what puts the toolbar, dock and status bar off screen. The
+   `:fullscreen` selector outranks the pane's `absolute inset-0` classes, so the
+   page becomes the only thing on the display. */
+.pdfPresentationMode:fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Snapshot panel (`SnapshotMenu`): hangs under the shell's top bar, beside the
+   viewer toolbar. Fixed, because where the shell mounts it must not decide where
+   it lands. */
+.pdf-tools-snapshot {
+  position: fixed;
+  z-index: 30;
+  left: 0.75rem;
+  top: calc(var(--spacing-pdf-topbar) + var(--spacing-pdf-tabstrip) + 0.75rem);
+}
+
+/* The capture is a tall column of pages: keep it inside the panel while it
+   scales down, and let the intrinsic ratio decide the other dimension. */
+.pdf-tools-snapshot-preview {
+  max-width: 100%;
+  max-height: 55vh;
+  width: auto;
+  height: auto;
+}
+
+/* Magnifier lens (`Magnifier`): anchored at the viewport origin and centred on
+   the pointer by `transform`, so following the pointer never re-lays out. */
+.pdf-tools-lens {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  border-radius: 50%;
+}
+
+/* Magnifier controls: clear of the status bar the shell renders at the bottom. */
+.pdf-tools-magnifier {
+  position: fixed;
+  z-index: 40;
+  right: 0.75rem;
+  bottom: calc(var(--spacing-pdf-statusbar) + 0.75rem);
+}

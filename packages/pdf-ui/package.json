@@ -1,0 +1,39 @@
+{
+  "name": "pdf-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css",
+    "./ui": "./src/shell/ShellSurface.tsx",
+    "./viewer": "./src/viewer/PdfViewerPane.tsx",
+    "./panels": "./src/panels/DockPanels.tsx",
+    "./dialog": "./src/dialogs/DialogSurface.tsx",
+    "./tools": "./src/tools/ToolSurface.tsx",
+    "./printing": "./src/printing/PrintSurface.tsx",
+    "./palette": "./src/commands/PaletteSurface.tsx",
+    "./text-edit": "./src/ops/TextEditSurface.tsx"
+  },
+  "dependencies": {
+    "@cloudflare/kumo": "2.13.2",
+    "@phosphor-icons/react": "2.1.10",
+    "pdf-core": "workspace:*",
+    "pdf-model": "workspace:*",
+    "pdf-shared": "workspace:*",
+    "pdf-text-engine": "workspace:*",
+    "pdfjs-dist": "6.3.289"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/space-grotesk": "5.3.0"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "license": "AGPL-3.0-or-later"
+}

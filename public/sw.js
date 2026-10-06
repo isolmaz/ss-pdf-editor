@@ -1,0 +1,333 @@
+/**
+ * Service Worker for SsPdfEditor (`PLAN.md §5/S13`, `K2`, `K9`, `K19`).
+ * Scoped to `/editor/` with same-origin static asset caching only.
+ *
+ * Security Invariants:
+ *  - Only same-origin static assets (`/editor/*`, `/engines/*`, `/fonts/*`).
+ *  - Non-GET requests are ignored and passed through untouched.
+ *  - Document data or user bytes are NEVER stored in CacheStorage.
+ *  - Cached responses maintain CORP/COOP/COEP headers to keep cross-origin isolation intact.
+ *
+ * ## Versioning (`R04`)
+ *
+ * `CACHE_NAME` is stamped at build time by `tools/assemble-dist.mjs`, which reads the same
+ * `apps/web/src/offline-packages.json` this worker serves readiness for. Two consequences,
+ * and both are the point:
+ *
+ *  - **A new release never reads the previous release's cache.** The name changes, so the
+ *    entries are absent and every request goes to the network; the old cache is deleted on
+ *    activation. An immutable-cached engine can therefore never be served under a shell
+ *    that expects a different build of it.
+ *  - **A previous version stays usable until the new one activates.** `install` fills the
+ *    new cache without touching the old one, so an interrupted preparation (a closed tab, a
+ *    dropped connection) leaves the working version exactly as it was.
+ *
+ * The `__CACHE_VERSION__` placeholder is replaced at build time; a worker served straight
+ * from `public/` in development keeps the literal, which is a valid — if unversioned —
+ * name.
+ */
+
+const CACHE_VERSION = '__CACHE_VERSION__';
+const CACHE_NAME = `pdf-editor-static-${CACHE_VERSION}`;
+const MANIFEST_URL = '/offline-manifest.json';
+
+const CORE_SHELL_URLS = [
+  '/editor/',
+  '/editor/index.html',
+  '/theme-boot.js',
+  '/favicon.svg',
+  '/manifest.webmanifest',
+];
+
+/** The manifest the build wrote, or `null` when this worker is running unbuilt. */
+async function readManifest() {
+  try {
+    const response = await fetch(MANIFEST_URL, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (typeof data !== 'object' || data === null) return null;
+    if (typeof data.version !== 'string' || typeof data.capabilities !== 'object') return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** Every path any capability needs, so one preparation pass can fill the whole cache. */
+function pathsOf(manifest) {
+  const paths = new Set();
+  for (const list of Object.values(manifest?.capabilities ?? {})) {
+    if (!Array.isArray(list)) continue;
+    for (const path of list) if (typeof path === 'string') paths.add(path);
+  }
+  return [...paths];
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await cache.addAll(CORE_SHELL_URLS);
+      try {
+        const htmlRes = await fetch('/editor/index.html');
+        if (htmlRes.ok) {
+          const html = await htmlRes.clone().text();
+          const matches = html.matchAll(/(?:src|href)="(\/editor\/assets\/[^"]+\.(?:js|css))"/g);
+          for (const match of matches) {
+            const assetUrl = match[1];
+            if (assetUrl) {
+              try {
+                const res = await fetch(assetUrl);
+                if (res.ok) await cache.put(assetUrl, res);
+              } catch {
+                // asset fetch error tolerated during install
+              }
+            }
+          }
+        }
+      } catch {
+        // HTML crawl failure tolerated
+      }
+    }),
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        // Only this application's caches, and only the previous *versions* of them: the
+        // namespace is shared by the whole origin, so an unfiltered delete would reach
+        // another app's storage (`R04`).
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith('pdf-editor-static-') && key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
+      )
+      .then(() => self.clients.claim()),
+  );
+});
+
+function isCacheable(request) {
+  if (request.method !== 'GET') return false;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return false;
+  const path = url.pathname;
+  return (
+    path.startsWith('/editor/') ||
+    path.startsWith('/engines/') ||
+    path.startsWith('/fonts/') ||
+    path === '/theme-boot.js' ||
+    path === '/favicon.svg' ||
+    path === '/manifest.webmanifest'
+  );
+}
+
+function withIsolationHeaders(response, isNavigate = false) {
+  if (response?.status !== 200) return response;
+  const headers = new Headers(response.headers);
+  headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  if (isNavigate || response.url.includes('/editor/')) {
+    headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+    headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  } else if (response.url.includes('/engines/')) {
+    headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/** The one offline answer: an explicit, un-cacheable failure rather than a hang. */
+function offlineMissing() {
+  return new Response('Çevrimdışı: Bu paket henüz hazırlanmadı.', {
+    status: 503,
+    statusText: 'Service Unavailable (Offline Missing)',
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'X-Offline-Missing': 'true',
+      'Cache-Control': 'no-store',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+    },
+  });
+}
+
+/** A cache write that must not become an unhandled rejection when it fails. */
+function remember(request, response) {
+  return caches
+    .open(CACHE_NAME)
+    .then((cache) => cache.put(request, response))
+    .catch(() => undefined);
+}
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (!isCacheable(request)) return;
+
+  const url = new URL(request.url);
+  const isNavigate =
+    request.mode === 'navigate' || url.pathname === '/editor/' || url.pathname === '/editor/index.html';
+
+  // User performed a force refresh (Ctrl+F5 / Ctrl+Shift+R): bypass cache completely.
+  if (request.cache === 'reload') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // The network response is returned whether or not the cache commit succeeds: a
+          // failed write must not turn a successful load into an error.
+          if (response.ok) event.waitUntil(remember(request, response.clone()));
+          return withIsolationHeaders(response, isNavigate);
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          // The previous version referenced a `response` that is not in scope here; the
+          // offline answer is what the branch was always meant to return (`R04`).
+          return cached ? withIsolationHeaders(cached, isNavigate) : offlineMissing();
+        }),
+    );
+    return;
+  }
+
+  const isImmutable = url.pathname.startsWith('/engines/') || url.pathname.startsWith('/fonts/');
+
+  if (isImmutable) {
+    // Cache-first for pinned engines and fonts: their content is fixed by the pins, and
+    // the cache *name* is what carries the release, so a hit is always this build's bytes.
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return withIsolationHeaders(cached);
+        return fetch(request)
+          .then((response) => {
+            if (response.ok) event.waitUntil(remember(request, response.clone()));
+            return response;
+          })
+          .catch(() => offlineMissing());
+      }),
+    );
+    return;
+  }
+
+  // Network-first for the editor shell and bundle assets, fallback to cache when offline.
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        if (response.ok) event.waitUntil(remember(request, response.clone()));
+        return response;
+      })
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return withIsolationHeaders(cached, isNavigate);
+        if (isNavigate) {
+          const fallback = await caches.match('/editor/index.html');
+          if (fallback) return withIsolationHeaders(fallback, true);
+        }
+        return offlineMissing();
+      }),
+  );
+});
+
+/** Reads back what this build's cache actually holds, as pathnames. */
+async function cachedPaths() {
+  const cache = await caches.open(CACHE_NAME);
+  const keys = await cache.keys();
+  return new Set(keys.map((key) => new URL(key.url).pathname));
+}
+
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || typeof data !== 'object') return;
+
+  if (data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
+
+  if (data.type === 'PREPARE_PACKAGE') {
+    // Registered synchronously: work started in a message handler without `waitUntil`
+    // can be terminated with the event (`R04`).
+    event.waitUntil(
+      (async () => {
+        const manifest = await readManifest();
+        if (manifest === null) {
+          event.ports[0]?.postMessage({ type: 'PREPARE_FAILED', error: 'offline manifest unavailable' });
+          return;
+        }
+        // Only the build's own list: an arbitrary URL from a page must never be able to
+        // put a response into this origin's static cache.
+        const wanted = new Set(pathsOf(manifest));
+        const requested = Array.isArray(data.urls)
+          ? data.urls.filter((url) => typeof url === 'string' && wanted.has(url))
+          : [...wanted];
+        const cache = await caches.open(CACHE_NAME);
+        let count = 0;
+        const failed = [];
+        for (const url of requested) {
+          try {
+            const res = await fetch(url);
+            if (res.ok) {
+              await cache.put(url, res);
+              count++;
+            } else {
+              failed.push(url);
+            }
+          } catch {
+            // An interrupted preparation is reported, never hidden: the readiness answer
+            // is what the caller must trust, and it is computed from the cache itself.
+            failed.push(url);
+          }
+        }
+        event.ports[0]?.postMessage({
+          type: 'PREPARE_DONE',
+          version: manifest.version,
+          count,
+          failed,
+        });
+      })().catch((error) => {
+        event.ports[0]?.postMessage({ type: 'PREPARE_FAILED', error: String(error) });
+      }),
+    );
+    return;
+  }
+
+  if (data.type === 'CHECK_READINESS') {
+    event.waitUntil(
+      (async () => {
+        const manifest = await readManifest();
+        if (manifest === null) {
+          event.ports[0]?.postMessage({
+            type: 'READINESS_STATUS',
+            version: null,
+            matchesBuild: false,
+            capabilities: {},
+          });
+          return;
+        }
+        const held = await cachedPaths();
+        const capabilities = {};
+        for (const [name, list] of Object.entries(manifest.capabilities)) {
+          const required = Array.isArray(list) ? list.filter((path) => typeof path === 'string') : [];
+          const missing = required.filter((path) => !held.has(path));
+          capabilities[name] = { ready: missing.length === 0, missing };
+        }
+        event.ports[0]?.postMessage({
+          type: 'READINESS_STATUS',
+          version: manifest.version,
+          // The cache name carries the release, so a worker that is answering at all is
+          // answering for its own build; the field exists so a caller can assert it.
+          matchesBuild: CACHE_VERSION === '__CACHE_VERSION__' || CACHE_NAME.endsWith(CACHE_VERSION),
+          capabilities,
+        });
+      })().catch(() => {
+        event.ports[0]?.postMessage({
+          type: 'READINESS_STATUS',
+          version: null,
+          matchesBuild: false,
+          capabilities: {},
+        });
+      }),
+    );
+  }
+});

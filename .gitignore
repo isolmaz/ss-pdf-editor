@@ -1,0 +1,49 @@
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# engines, fonts and heavy binaries are fetched by script, never committed
+public/engines/
+public/fonts/
+
+# generated test/report output only — reference images and visual-regression
+# baselines are deliberately NOT ignored (they must be committed)
+playwright-report/
+test-results/
+
+# End-to-end fixtures supplied by the maintainer: real documents, too large to commit.
+# `test.pdf` is a 139-page scan with no text layer (the OCR engine path); `test1..3.pdf`
+# carry text (the OCR skip guard). `e2e/ocr.spec.ts` skips itself with a stated reason
+# when a fixture is absent, so a missing file never reads as a passing OCR test.
+test.pdf
+test1.pdf
+test2.pdf
+test3.pdf
+
+# env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# os / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+*.log
+
+# Generated spike fixtures (Node-built, throwaway - PLAN.md 9/K21); never committed
+tools/spikes/**/fixture*.pdf
+tools/spikes/**/fixture*.json
+
+# Throwaway screenshots written by local probes; never committed
+tools/spikes/*.png

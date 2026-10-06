@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SsPdfEditor — %100 Yerel, %100 Ücretsiz Tarayıcı Tabanlı PDF Düzenleyici</title>
+    <meta
+      name="description"
+      content="Belgeleriniz cihazınızdan ayrılmaz: %100 yerel ve %100 ücretsiz PDF okuma, açıklama, form doldurma, vektörel redaksiyon ve imzalama."
+    />
+    <link rel="canonical" href="https://pdf.isolmaz.com/" />
+    <link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
+    <link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://pdf.isolmaz.com/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-ext-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-500-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-ext-500-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-600-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-ext-600-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script src="/theme-boot.js"></script>
+    <link rel="stylesheet" href="/src/site.css" />
+  </head>
+  <body class="min-h-screen bg-kumo-canvas text-kumo-default antialiased">
+    <!-- Skip link for accessibility -->
+    <a
+      href="#ana-icerik"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-kumo-base focus:px-4 focus:py-2 focus:text-xs focus:font-semibold focus:text-kumo-strong focus:shadow-md focus:ring-2 focus:ring-kumo-focus"
+    >
+      Ana içeriğe atla
+    </a>
+
+    <!-- Top Navigation Header -->
+    <header class="sticky top-0 z-40 border-b border-kumo-line bg-kumo-base/95 backdrop-blur-sm">
+      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <a href="/" class="flex items-center gap-2.5 text-kumo-strong" aria-label="SsPdfEditor Ana Sayfa">
+          <svg
+            class="size-6 text-kumo-strong"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="9" y1="13" x2="15" y2="13" />
+            <line x1="9" y1="17" x2="13" y2="17" />
+          </svg>
+          <span class="text-base font-semibold tracking-tight text-kumo-strong">SsPdfEditor</span>
+        </a>
+
+        <nav class="hidden items-center gap-6 text-sm font-medium text-kumo-subtle md:flex" aria-label="Ana Gezinti">
+          <a class="transition-colors hover:text-kumo-strong" href="#ozellikler">Özellikler</a>
+          <a class="transition-colors hover:text-kumo-strong" href="#karsilastirma">Karşılaştırma</a>
+          <a class="transition-colors hover:text-kumo-strong" href="#gizlilik">Gizlilik Güvencesi</a>
+          <a class="transition-colors hover:text-kumo-strong" href="#sss">SSS</a>
+        </nav>
+
+                <div class="flex items-center gap-3">
+          <!-- Language Selector -->
+          <div class="flex items-center rounded-md border border-kumo-line bg-kumo-base p-0.5 text-xs font-medium text-kumo-subtle">
+            <span class="rounded px-2 py-1 bg-pdf-accent text-pdf-on-accent font-semibold">TR</span>
+            <a href="/en/" hreflang="en" lang="en" class="rounded px-2 py-1 hover:text-kumo-strong transition-colors" title="Switch to English">EN</a>
+          </div>
+          <a class="btn-primary" href="/editor/">
+            <span>Düzenleyiciyi Aç</span>
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="ana-icerik" class="mx-auto max-w-6xl px-4 sm:px-6">
+      <!-- Section: Hero -->
+      <section class="flex flex-col items-center py-16 text-center sm:py-24">
+        <h1 class="max-w-3xl text-balance text-4xl font-semibold tracking-tight text-kumo-strong sm:text-5xl leading-[1.35] sm:leading-[1.35]">
+          PDF belgeleriniz cihazınızdan ayrılmadan okunur, düzenlenir ve imzalanır.
+        </h1>
+
+        <p class="mt-6 max-w-[62ch] text-balance text-base leading-relaxed text-kumo-subtle">
+          Acrobat sınıfı okuma, açıklama, form doldurma, sayfa yönetimi ve kalıcı redaksiyon. Dosya yükleme yok,
+          abonelik yok, hesap açmak yok. <strong>Tamamen yerel, sınırsız ve özgür.</strong>
+        </p>
+
+        <!-- Action Row -->
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <a class="btn-primary" href="/editor/">
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span>PDF Düzenleyiciyi Başlat</span>
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </a>
+          <a class="btn-secondary" href="#karsilastirma">
+            <span>Program Karşılaştırması</span>
+            <svg
+              class="size-4 text-kumo-subtle"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </a>
+        </div>
+
+        <!-- 3 Highlights Cards in Hero -->
+        <div class="mt-14 grid w-full gap-5 sm:grid-cols-3 text-left">
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-5">
+            <div class="flex items-center gap-2.5 text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span class="font-semibold text-sm">%100 LOKAL GÜVENCE</span>
+            </div>
+            <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
+              Belgelerinizin tek bir baytı dahi internete gönderilmez. Tüm işlemler doğrudan tarayıcınızın kendi bellek
+              alanında çalışır.
+            </p>
+          </div>
+
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-5">
+            <div class="flex items-center gap-2.5 text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span class="font-semibold text-sm">%100 ÜCRETSİZ & SINIRSIZ</span>
+            </div>
+            <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
+              Aylık abonelik, sayfa başı kota, gizli ödeme veya üyelik zorunluluğu yoktur. İstediğiniz kadar dosyayı
+              özgürce düzenleyin.
+            </p>
+          </div>
+
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-5">
+            <div class="flex items-center gap-2.5 text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+              </svg>
+              <span class="font-semibold text-sm">ÇEVRİMDIŞI ÇALIŞMA</span>
+            </div>
+            <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
+              Uygulama açıldıktan sonra internetiniz kopsa bile kesintisiz çalışır. Uçakta veya seyahatte dosyalarınızı
+              güvenle işleyin.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 1: TÜM ANA ÖZELLİKLER (6 Comprehensive Domains) -->
+      <section id="ozellikler" class="border-t border-kumo-line py-16 sm:py-20">
+        <div class="max-w-[60ch]">
+          <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+            Acrobat sınıfı tüm temel yetenekler
+          </h2>
+          <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
+            Okuma, sayfa düzenleme, form doldurma ve güvenlik araçları tek bir yerel arayüzde entegre edilmiştir.
+          </p>
+        </div>
+
+        <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <!-- Card 1: Okuma -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Gelişmiş Okuma & İnceleme</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Kesintisiz tek ve çift sayfa kitap görünümü</li>
+              <li>· Tam metin arama ve yer imleri (outline) gezintisi</li>
+              <li>· Yüksek çözünürlüklü büyüteç ve anlık görüntü aracı</li>
+              <li>· Yerel cihaz sesleriyle sesli okuma</li>
+            </ul>
+          </div>
+
+          <!-- Card 2: Sayfa İşlemleri -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Kapsamlı Sayfa Yönetimi</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Sayfaları birleştirme (merge) ve bölme (split)</li>
+              <li>· Sayfa ayıklama (extract) ve gereksiz sayfaları silme</li>
+              <li>· 90° ve 180° kayıpsız sayfa döndürme</li>
+              <li>· Sürükle-bırak ile yeniden sıralama ve N-up dizgi</li>
+            </ul>
+          </div>
+
+          <!-- Card 3: Formlar -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <path d="M9 15h6" />
+                <path d="M9 11h6" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Etkileşimli Form Doldurma</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· AcroForm metin kutuları, radyo düğmeleri, onay kutuları</li>
+              <li>· Açılır menüler ve form veri alanları</li>
+              <li>· Form alanlarını PDF içerisine kalıcı düzleştirme</li>
+              <li>· Form verisi içe ve dışa aktarımı</li>
+            </ul>
+          </div>
+
+          <!-- Card 4: Açıklama -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                <path d="M2 2l7.586 7.586" />
+                <circle cx="11" cy="11" r="2" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Açıklama, Not & Çizim</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Metin vurgulama (highlight), altı ve üstü çizili işaretleme</li>
+              <li>· Yapışkan notlar ve yorum ekleme</li>
+              <li>· Serbest el çizim kalemi ve silgi</li>
+              <li>· Mimari ve teknik çizimler için mesafe/alan ölçümü</li>
+            </ul>
+          </div>
+
+          <!-- Card 5: Redaksiyon -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 6L6 18" />
+                <path d="M6 6l12 12" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Kalıcı Vektörel Redaksiyon</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Yüzeysel siyah kutu boyaması DEĞİLDİR</li>
+              <li>· Metin operatörlerini ve glifleri PDF akışından siler</li>
+              <li>· Gizli bilgileri fiziksel olarak yok eder</li>
+              <li>· Meta veri ve görünmez katman temizliği</li>
+            </ul>
+          </div>
+
+          <!-- Card 6: İmza & Şifre -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Dijital İmza & Şifreleme</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· PAdES B-B standardında yerel dijital imza ekleme</li>
+              <li>· RSA ve ECDSA sertifika zinciri doğrulama</li>
+              <li>· Standart AES parola şifreleme ve yetkilendirme</li>
+              <li>· Şifreli belgelerin kilidini yerel olarak açma</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: ÜCRETLİ PDF PROGRAMLARIYLA 3'LÜ KARŞILAŞTIRMA (Clean check/cross format) -->
+      <section id="karsilastirma" class="border-t border-kumo-line py-16 sm:py-20">
+        <div class="max-w-[50ch]">
+          <div class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-kumo-strong mb-2">
+            <span>KARŞILAŞTIRMA MATRİSİ</span>
+          </div>
+          <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+            Ücretli PDF programları ile karşılaştırın
+          </h2>
+          <p class="mt-3 text-base leading-relaxed text-kumo-subtle max-w-[48ch]">
+            Bizde var, onlarda yok: Temel farklar, özellikler ve planlanan geliştirmeler.
+          </p>
+        </div>
+
+        <div class="mt-10 overflow-x-auto">
+          <table class="w-full min-w-[640px] border-collapse text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-kumo-line bg-kumo-tint text-kumo-strong">
+                <th class="p-3.5 font-semibold">Özellik / Kriter</th>
+                <th class="p-3.5 font-bold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  SsPdfEditor (%100 Yerel)
+                </th>
+                <th class="p-3.5 font-semibold text-kumo-subtle text-center">Adobe Acrobat Pro</th>
+                <th class="p-3.5 font-semibold text-kumo-subtle text-center">Smallpdf Pro</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-kumo-line text-kumo-default">
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">%100 Yerel (0 Bayt Ağ Aktarımı)</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Var (Cihazda)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Yok (Buluta yükler)</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Yok (Sunucuya yükler)</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">%100 Ücretsiz & Sınırsız</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Ücretsiz
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ ~750 TL / ay</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ ~350 TL / ay</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">İnternetsiz Çevrimdışı Çalışma</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Tam yetenek
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ İnternet zorunlu</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Çalışmaz</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Hesap & Kayıt Zorunluluğu Yok</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Kayıt yok
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Üyelik + Kart şart</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Üyelik şart</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Kalıcı Vektörel Redaksiyon</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Var (Veri silme)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var (Pro pakette)</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Yok (Yüzeysel boyama)</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">AcroForm Doldurma & Düzleştirme</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Var
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Kısıtlı</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Sayfa Birleştirme / Bölme / Sıralama</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Var (Sınırsız)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var (Kota sınırlı)</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">PAdES B-B Yerel Dijital İmza</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Var
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Yok</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Paragraf Bazlı Metin Düzenleme</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ (Yakında)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Yok</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">İki Belgeyi Karşılaştırma (Diff)</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ (Yakında)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Yok</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Toplu İşlem Kuyruğu (Batch)</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ (Yakında)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Var</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Kota sınırlı</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section 3: GİZLİLİK GÜVENCESİ (Integrated Single Page Section) -->
+      <section id="gizlilik" class="border-t border-kumo-line py-16 sm:py-20">
+        <div class="rounded-2xl border border-kumo-line bg-kumo-tint/40 p-8 sm:p-12">
+          <div class="max-w-[60ch]">
+            <div class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-kumo-strong mb-2">
+              <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span>GİZLİLİK VE GÜVENLİK GÜVENCESİ</span>
+            </div>
+
+            <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+              Belgeleriniz sadece sizin cihazınızda yaşar
+            </h2>
+
+            <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
+              SsPdfEditor, kullanıcı gizliliğini temel alan %100 yerel bir tarayıcı aracıdır.
+            </p>
+          </div>
+
+          <div class="mt-8 grid gap-4 sm:grid-cols-2">
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">0 Bayt Ağ Aktarımı:</strong>
+                <span class="text-kumo-subtle"> Dosyalarınız hiçbir uzak sunucuya aktarılmaz, kopyalanmaz veya saklanmaz.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Hesap veya Kayıt Yok:</strong>
+                <span class="text-kumo-subtle"> E-posta adresi vermenize, hesap açmanıza veya giriş yapmanıza gerek yoktur.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Doğrudan Diske Kayıt:</strong>
+                <span class="text-kumo-subtle"> Belgelerinizi doğrudan bilgisayarınızdaki orijinal dosyaya yazabilir veya indirebilirsiniz.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Geçici Bellek Temizliği:</strong>
+                <span class="text-kumo-subtle"> Sekmeyi kapattığınızda çalışma belleği işletim sisteminiz tarafından derhal temizlenir.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: SSS (CENTERED Accordion) -->
+      <section id="sss" class="border-t border-kumo-line py-16 sm:py-20 text-center">
+        <div class="mx-auto max-w-[60ch]">
+          <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+            Sıkça sorulan sorular
+          </h2>
+          <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
+            SsPdfEditor hakkında merak edilen temel soruların yanıtları.
+          </p>
+        </div>
+
+        <div class="mx-auto mt-10 space-y-3 max-w-[65ch] text-left">
+          <!-- FAQ 1 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Dosyalarım gerçekten hiçbir sunucuya yüklenmiyor mu?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Evet. Tarayıcınızın Ağ (Network) sekmesini açıp kontrol edebilirsiniz. Bir PDF açtığınızda veya kaydettiğinizde
+              dışarıya tek bir bayt veri bile aktarılmaz. Tüm işlemler tamamen kendi bilgisayarınızın donanımında gerçekleşir.
+            </div>
+          </details>
+
+          <!-- FAQ 2 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>İnternet bağlantım olmadan nasıl çalışabilirim?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Uygulama ilk açılışta gerekli çalışma paketlerini tarayıcı önbelleğinize kaydeder. Ardından bilgisayarınızı
+              uçak moduna alsanız dahi tüm düzenleme, birleştirme, imzalama ve okuma araçlarını internetsiz kullanabilirsiniz.
+            </div>
+          </details>
+
+          <!-- FAQ 3 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Bu hizmet neden %100 ücretsiz?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Tüm belge işleme gücü kullanıcının kendi cihazı tarafından karşılandığı için sunucu tarafında pahalı bulut
+              işlemci maliyeti yoktur. Bu sayede hiçbir abonelik ücretine veya kısıtlamaya ihtiyaç duyulmaz.
+            </div>
+          </details>
+
+          <!-- FAQ 4 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Düzenlediğim dosyayı nasıl kaydederim?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Chrome veya Edge gibi masaüstü tarayıcılarda doğrudan orijinal dosyanızın üzerine kaydedebilirsiniz (Kaydet).
+              Firefox veya Safari'de ise tek tıkla düzenlenmiş yeni dosya olarak indirebilirsiniz (Dışa Aktar).
+            </div>
+          </details>
+
+          <!-- FAQ 5 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Hangi dosya ve sayfa boyutları destekleniyor?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Standart tüm PDF belgeleri desteklenir. Bilgisayarınızın belleğine bağlı olarak yüzlerce sayfalık büyük
+              sözleşmeleri, teknik projeleri ve taranmış evrakları rahatlıkla açıp işleyebilirsiniz.
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 5: Final CTA -->
+      <section class="border-t border-kumo-line py-16 text-center sm:py-20">
+        <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+          Belgenizle hemen çalışmaya başlayın
+        </h2>
+        <p class="mx-auto mt-3 max-w-[60ch] text-sm leading-relaxed text-kumo-subtle">
+          Kayıt olmadan, beklemeden, %100 yerel ve ücretsiz olarak saniyeler içinde açın.
+        </p>
+        <div class="mt-6 flex justify-center">
+          <a class="btn-primary" href="/editor/">
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span>PDF Düzenleyiciyi Başlat</span>
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer with Atmospheric Night Background Image (QRall-style Column Layout) -->
+    <footer
+      class="w-full relative overflow-hidden bg-black text-white"
+      style="background: #000000 url('/footer_bg.jpg') no-repeat center bottom; background-size: cover;"
+    >
+      <div class="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 pt-16 pb-80 sm:pb-96 md:pb-[380px]">
+        <!-- Top Columns Section -->
+        <div class="grid grid-cols-2 gap-8 md:grid-cols-6 lg:gap-12 pb-12">
+          <!-- Brand & About (Span 2 cols) -->
+          <div class="col-span-2 space-y-4">
+            <div class="flex items-center gap-2.5">
+              <span class="flex size-8 items-center justify-center rounded-lg bg-white/10 text-white">
+                <svg
+                  class="size-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                  <line x1="9" y1="17" x2="13" y2="17" />
+                </svg>
+              </span>
+              <span class="text-base font-semibold tracking-tight text-white">SsPdfEditor</span>
+            </div>
+
+            <p class="text-xs leading-relaxed text-white/70 max-w-sm">
+              Tarayıcı tabanlı, %100 yerel ve açık standartlı PDF düzenleyici. Belgeleriniz sunucuya yüklenmez, cihazınızdan asla ayrılmaz.
+            </p>
+
+            <div class="flex items-center gap-3 pt-2">
+              <a
+                href="https://github.com/isolmaz/ss-pdf-editor"
+                target="_blank"
+                rel="noreferrer"
+                class="flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                aria-label="GitHub"
+              >
+                <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    clip-rule="evenodd"
+                    d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                  />
+                </svg>
+              </a>
+              <a
+                href="mailto:iletisim@isolmaz.com"
+                class="flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                aria-label="E-posta"
+              >
+                <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+              </a>
+            </div>
+          </div>
+
+          <!-- Column 1: Özellikler -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Özellikler</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li><a class="transition-colors hover:text-white" href="#ozellikler">Sayfa Düzenleme</a></li>
+              <li><a class="transition-colors hover:text-white" href="#ozellikler">Form Doldurma & İmza</a></li>
+              <li><a class="transition-colors hover:text-white" href="#ozellikler">Kalıcı Redaksiyon</a></li>
+              <li><a class="transition-colors hover:text-white" href="#ozellikler">OCR & Metin Tanıma</a></li>
+            </ul>
+          </div>
+
+          <!-- Column 2: Kaynaklar -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Kaynaklar</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li><a class="transition-colors hover:text-white" href="#gizlilik">%100 Yerel Mimari</a></li>
+              <li><a class="transition-colors hover:text-white" href="#karsilastirma">Karşılaştırma</a></li>
+              <li><a class="transition-colors hover:text-white" href="/editor/">Web Uygulaması</a></li>
+              <li><a class="transition-colors hover:text-white" href="#sss">SSS</a></li>
+            </ul>
+          </div>
+
+          <!-- Column 3: Kurumsal -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Kurumsal</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li><a class="transition-colors hover:text-white" href="/gizlilik">Gizlilik Politikası</a></li>
+              <li><a class="transition-colors hover:text-white" href="/kosullar">Kullanıcı Sözleşmesi</a></li>
+              <li><a class="transition-colors hover:text-white" href="#gizlilik">Sıfır Veri Taahhüdü</a></li>
+              <li><a class="transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">İletişim</a></li>
+            </ul>
+          </div>
+
+          <!-- Column 4: İletişim -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">İletişim</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li>İstanbul, Türkiye</li>
+              <li><a class="font-mono transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">iletisim@isolmaz.com</a></li>
+              <li class="text-white/80 font-medium">Çevrimdışı Çalışır</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Hairline Divider -->
+        <div class="border-t border-white/10 pt-6">
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
+            <p>© 2026 SsPdfEditor. Tüm hakları saklıdır.</p>
+            <div class="flex flex-wrap items-center gap-6">
+              <a class="transition-colors hover:text-white/90" href="/gizlilik">Gizlilik Politikası</a>
+              <a class="transition-colors hover:text-white/90" href="/kosullar">Kullanıcı Sözleşmesi</a>
+              <a class="transition-colors hover:text-white/90" href="#gizlilik">KVKK / Yerel Güvence</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

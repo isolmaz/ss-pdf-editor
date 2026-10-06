@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="SsPdfEditor">
+  <!-- Placeholder mark: a page with a folded corner. Regenerated with the real
+       mark at the M3 name decision (PLAN.md §4.7, P2). -->
+  <rect width="32" height="32" rx="7" fill="#1f4d8f" />
+  <path d="M11 7h7l4 4v14a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" fill="#fff" />
+  <path d="M18 7l4 4h-4V7Z" fill="#b9cdf0" />
+  <path d="M12.5 15h7M12.5 18h5" stroke="#1f4d8f" stroke-width="1.6" stroke-linecap="round" />
+</svg>

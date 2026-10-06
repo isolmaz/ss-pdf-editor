@@ -1,0 +1,19 @@
+{
+  "name": "SsPdfEditor",
+  "short_name": "SsPdfEditor",
+  "description": "Tarayıcıda çalışan, tamamen yerel PDF okuyucu ve düzenleyici.",
+  "lang": "tr",
+  "start_url": "/editor/",
+  "scope": "/editor/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

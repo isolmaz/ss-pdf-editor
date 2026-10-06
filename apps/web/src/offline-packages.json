@@ -1,0 +1,31 @@
+{
+  "generatedBy": "apps/web/src/offline.ts (canonical) — read by tools/assemble-dist.mjs",
+  "note": "Every path here is a same-origin static asset the engine adapters fetch. A capability is ready only when the cache holds every path in its list; see offline.ts for why a substring check is not a check.",
+  "capabilities": {
+    "core": ["/editor/", "/editor/index.html", "/theme-boot.js", "/favicon.svg", "/manifest.webmanifest"],
+    "pdfjs": [
+      "/engines/pdfjs/pdf.worker.mjs",
+      "/engines/pdfjs/wasm/openjpeg.wasm",
+      "/engines/pdfjs/wasm/qcms_bg.wasm",
+      "/engines/pdfjs/standard_fonts/FoxitSerif.pfb",
+      "/engines/pdfjs/cmaps/Adobe-Japan1-UCS2.bcmap"
+    ],
+    "mupdf": ["/engines/mupdf/mupdf-wasm.wasm", "/engines/mupdf/mupdf-wasm.js", "/engines/mupdf/mupdf.js"],
+    "tesseract": [
+      "/engines/tesseract/tesseract.esm.min.js",
+      "/engines/tesseract/worker.min.js",
+      "/engines/tesseract/tesseract-core-simd-lstm.wasm.js",
+      "/engines/tesseract/tesseract-core-simd-lstm.wasm",
+      "/engines/tesseract/lang/fast/tur.traineddata.gz",
+      "/engines/tesseract/lang/fast/eng.traineddata.gz"
+    ],
+    "fonts": [
+      "/fonts/noto/NotoSans-Regular.ttf",
+      "/fonts/noto/NotoSans-SemiBold.ttf",
+      "/fonts/space-grotesk/space-grotesk-latin-400-normal.woff2",
+      "/fonts/space-grotesk/space-grotesk-latin-ext-400-normal.woff2",
+      "/fonts/dm-sans/dm-sans-latin-400-normal.woff2",
+      "/fonts/dm-sans/dm-sans-latin-ext-400-normal.woff2"
+    ]
+  }
+}

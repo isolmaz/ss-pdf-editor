@@ -1,0 +1,3 @@
+#!/bin/sh
+# Pre-push guard — see tools/hooks/guard.mjs (tracked tree + size limits).
+exec node "$(git rev-parse --show-toplevel)/tools/hooks/guard.mjs" tracked

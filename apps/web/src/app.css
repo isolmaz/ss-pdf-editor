@@ -1,0 +1,10 @@
+/* Kumo's theme tokens must be registered before Tailwind's own theme. */
+@import "@cloudflare/kumo/styles/tailwind";
+@import "tailwindcss";
+@import "pdf-ui/tokens.css";
+
+/* Our own sources — Tailwind v4 does not scan node_modules or sibling
+   packages unless told to (K24: Kumo's classes live in its dist). */
+@source "./";
+@source "../../../packages/pdf-ui/src";
+@source "../../../packages/pdf-ui/node_modules/@cloudflare/kumo/dist";

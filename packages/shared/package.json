@@ -1,0 +1,11 @@
+{
+  "name": "pdf-shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "sideEffects": false,
+  "license": "AGPL-3.0-or-later"
+}

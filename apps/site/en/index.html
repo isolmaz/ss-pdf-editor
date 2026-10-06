@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SsPdfEditor — 100% Local, 100% Free In-Browser PDF Editor</title>
+    <meta
+      name="description"
+      content="Documents never leave your device: 100% local and 100% free PDF viewing, annotation, form filling, true vector redaction and digital signing."
+    />
+    <link rel="canonical" href="https://pdf.isolmaz.com/en/" />
+    <link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
+    <link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://pdf.isolmaz.com/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-ext-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-500-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-ext-500-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-600-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/space-grotesk/space-grotesk-latin-ext-600-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script src="/theme-boot.js"></script>
+    <link rel="stylesheet" href="/src/site.css" />
+  </head>
+  <body class="min-h-screen bg-kumo-canvas text-kumo-default antialiased">
+    <!-- Skip link for accessibility -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-kumo-base focus:px-4 focus:py-2 focus:text-xs focus:font-semibold focus:text-kumo-strong focus:shadow-md focus:ring-2 focus:ring-kumo-focus"
+    >
+      Skip to main content
+    </a>
+
+    <!-- Top Navigation Header -->
+    <header class="sticky top-0 z-40 border-b border-kumo-line bg-kumo-base/95 backdrop-blur-sm">
+      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <a href="/en/" class="flex items-center gap-2.5 text-kumo-strong" aria-label="SsPdfEditor Home">
+          <svg
+            class="size-6 text-kumo-strong"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="9" y1="13" x2="15" y2="13" />
+            <line x1="9" y1="17" x2="13" y2="17" />
+          </svg>
+          <span class="text-base font-semibold tracking-tight text-kumo-strong">SsPdfEditor</span>
+        </a>
+
+        <nav class="hidden items-center gap-6 text-sm font-medium text-kumo-subtle md:flex" aria-label="Main navigation">
+          <a class="transition-colors hover:text-kumo-strong" href="#features">Features</a>
+          <a class="transition-colors hover:text-kumo-strong" href="#comparison">Comparison</a>
+          <a class="transition-colors hover:text-kumo-strong" href="#privacy">Privacy Guarantee</a>
+          <a class="transition-colors hover:text-kumo-strong" href="#faq">FAQ</a>
+        </nav>
+
+                <div class="flex items-center gap-3">
+          <!-- Language Selector -->
+          <div class="flex items-center rounded-md border border-kumo-line bg-kumo-base p-0.5 text-xs font-medium text-kumo-subtle">
+            <a href="/" hreflang="tr" lang="tr" class="rounded px-2 py-1 hover:text-kumo-strong transition-colors" title="Türkçe">TR</a>
+            <span class="rounded px-2 py-1 bg-pdf-accent text-pdf-on-accent font-semibold" aria-current="true">EN</span>
+          </div>
+          <a class="btn-primary" href="/editor/">
+            <span>Open Editor</span>
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content" class="mx-auto max-w-6xl px-4 sm:px-6">
+      <!-- Section: Hero -->
+      <section class="flex flex-col items-center py-16 text-center sm:py-24">
+        <h1 class="max-w-3xl text-balance text-4xl font-semibold tracking-tight text-kumo-strong sm:text-5xl leading-[1.35] sm:leading-[1.35]">
+          Your PDFs are read, edited and signed without ever leaving your device.
+        </h1>
+
+        <p class="mt-6 max-w-[62ch] text-balance text-base leading-relaxed text-kumo-subtle">
+          Acrobat-class reading, annotation, form filling, page management and permanent redaction. No uploads, no subscription, no account. <strong>Fully local, unlimited and free.</strong>
+        </p>
+
+        <!-- Action Row -->
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <a class="btn-primary" href="/editor/">
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span>Launch the PDF Editor</span>
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </a>
+          <a class="btn-secondary" href="#comparison">
+            <span>Compare with other tools</span>
+            <svg
+              class="size-4 text-kumo-subtle"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </a>
+        </div>
+
+        <!-- 3 Highlights Cards in Hero -->
+        <div class="mt-14 grid w-full gap-5 sm:grid-cols-3 text-left">
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-5">
+            <div class="flex items-center gap-2.5 text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span class="font-semibold text-sm">100% LOCAL GUARANTEE</span>
+            </div>
+            <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
+              Not a single byte of your documents is sent over the internet. Everything runs directly in your browser's own memory.
+            </p>
+          </div>
+
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-5">
+            <div class="flex items-center gap-2.5 text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span class="font-semibold text-sm">100% FREE & UNLIMITED</span>
+            </div>
+            <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
+              No monthly subscription, per-page quota, hidden payment or mandatory membership. Edit as many files as you like.
+            </p>
+          </div>
+
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-5">
+            <div class="flex items-center gap-2.5 text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+              </svg>
+              <span class="font-semibold text-sm">WORKS OFFLINE</span>
+            </div>
+            <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
+              Once the app has loaded it keeps working even if your connection drops. Handle your files safely on a plane or while travelling.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 1: TÜM ANA ÖZELLİKLER (6 Comprehensive Domains) -->
+      <section id="features" class="border-t border-kumo-line py-16 sm:py-20">
+        <div class="max-w-[60ch]">
+          <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+            All the core Acrobat-class capabilities
+          </h2>
+          <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
+            Reading, page editing, form filling and security tools are integrated in a single local interface.
+          </p>
+        </div>
+
+        <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <!-- Card 1: Okuma -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Advanced Reading & Review</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Continuous single-page and two-page book view</li>
+              <li>· Full-text search and bookmark (outline) navigation</li>
+              <li>· High-resolution magnifier and snapshot tool</li>
+              <li>· Read-aloud with your device's local voices</li>
+            </ul>
+          </div>
+
+          <!-- Card 2: Sayfa İşlemleri -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Comprehensive Page Management</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Merge and split pages</li>
+              <li>· Extract pages and delete the ones you do not need</li>
+              <li>· Lossless 90° and 180° page rotation</li>
+              <li>· Drag-and-drop reordering and N-up layout</li>
+            </ul>
+          </div>
+
+          <!-- Card 3: Formlar -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <path d="M9 15h6" />
+                <path d="M9 11h6" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Interactive Form Filling</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· AcroForm text fields, radio buttons and checkboxes</li>
+              <li>· Drop-down lists and form data fields</li>
+              <li>· Permanently flatten form fields into the PDF</li>
+              <li>· Import and export form data</li>
+            </ul>
+          </div>
+
+          <!-- Card 4: Açıklama -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                <path d="M2 2l7.586 7.586" />
+                <circle cx="11" cy="11" r="2" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Annotation, Notes & Drawing</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Text highlight, underline and strikethrough markup</li>
+              <li>· Sticky notes and comments</li>
+              <li>· Freehand pen and eraser</li>
+              <li>· Distance and area measurement for architectural and technical drawings</li>
+            </ul>
+          </div>
+
+          <!-- Card 5: Redaksiyon -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 6L6 18" />
+                <path d="M6 6l12 12" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Permanent Vector Redaction</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· NOT a superficial black-box overlay</li>
+              <li>· Removes text operators and glyphs from the PDF stream</li>
+              <li>· Physically destroys the hidden information</li>
+              <li>· Metadata and invisible-layer cleanup</li>
+            </ul>
+          </div>
+
+          <!-- Card 6: İmza & Şifre -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Digital Signing & Encryption</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Local digital signing to the PAdES B-B standard</li>
+              <li>· RSA and ECDSA certificate chain verification</li>
+              <li>· Standard AES password encryption and authorization</li>
+              <li>· Unlock encrypted documents locally</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: ÜCRETLİ PDF PROGRAMLARIYLA 3'LÜ KARŞILAŞTIRMA (Clean check/cross format) -->
+      <section id="comparison" class="border-t border-kumo-line py-16 sm:py-20">
+        <div class="max-w-[50ch]">
+          <div class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-kumo-strong mb-2">
+            <span>COMPARISON MATRIX</span>
+          </div>
+          <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+            Compare with paid PDF programs
+          </h2>
+          <p class="mt-3 text-base leading-relaxed text-kumo-subtle max-w-[48ch]">
+            We have it, they do not: key differences, features and planned improvements.
+          </p>
+        </div>
+
+        <div class="mt-10 overflow-x-auto">
+          <table class="w-full min-w-[640px] border-collapse text-left text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-kumo-line bg-kumo-tint text-kumo-strong">
+                <th class="p-3.5 font-semibold">Feature / Criterion</th>
+                <th class="p-3.5 font-bold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  SsPdfEditor (100% Local)
+                </th>
+                <th class="p-3.5 font-semibold text-kumo-subtle text-center">Adobe Acrobat Pro</th>
+                <th class="p-3.5 font-semibold text-kumo-subtle text-center">Smallpdf Pro</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-kumo-line text-kumo-default">
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">100% Local (0 Bytes Network Transfer)</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Yes (On-device)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ No (Uploads to the cloud)</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ No (Uploads to a server)</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">100% Free & Unlimited</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Free
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ ~750 TRY / month</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ ~350 TRY / month</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Full Offline Operation</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Full capability
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Internet required</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Does not work</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">No Account or Sign-up Required</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ No sign-up
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Membership + card required</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Membership required</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Permanent Vector Redaction</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Yes (Data removal)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes (Pro plan)</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ No (Superficial overlay)</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">AcroForm Filling & Flattening</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Yes
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Limited</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Page Merge / Split / Reorder</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Yes (Unlimited)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes (Quota-limited)</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">PAdES B-B Local Digital Signature</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ Yes
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ No</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Paragraph-level Text Editing</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ (Coming soon)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ No</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Two-document Comparison (Diff)</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ (Coming soon)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ No</td>
+              </tr>
+              <tr>
+                <td class="p-3.5 font-medium text-kumo-strong">Batch Processing Queue</td>
+                <td class="p-3.5 font-semibold text-kumo-strong bg-kumo-base border-x border-kumo-line text-center">
+                  ✓ (Coming soon)
+                </td>
+                <td class="p-3.5 text-kumo-subtle text-center">✓ Yes</td>
+                <td class="p-3.5 text-kumo-subtle text-center">✕ Quota-limited</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section 3: GİZLİLİK GÜVENCESİ (Integrated Single Page Section) -->
+      <section id="privacy" class="border-t border-kumo-line py-16 sm:py-20">
+        <div class="rounded-2xl border border-kumo-line bg-kumo-tint/40 p-8 sm:p-12">
+          <div class="max-w-[60ch]">
+            <div class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-kumo-strong mb-2">
+              <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span>PRIVACY AND SECURITY GUARANTEE</span>
+            </div>
+
+            <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+              Your documents live only on your device
+            </h2>
+
+            <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
+              SsPdfEditor is a 100% local browser tool built around user privacy.
+            </p>
+          </div>
+
+          <div class="mt-8 grid gap-4 sm:grid-cols-2">
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">0 Bytes Network Transfer:</strong>
+                <span class="text-kumo-subtle"> Your files are never transferred, copied or stored on any remote server.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">No Account or Sign-up:</strong>
+                <span class="text-kumo-subtle"> You do not need to provide an email address, create an account or sign in.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Save Straight to Disk:</strong>
+                <span class="text-kumo-subtle"> You can write your documents directly back to the original file on your computer, or download them.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Temporary Memory Cleanup:</strong>
+                <span class="text-kumo-subtle"> When you close the tab, the working memory is released immediately by your operating system.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: FAQ (CENTERED Accordion) -->
+      <section id="faq" class="border-t border-kumo-line py-16 sm:py-20 text-center">
+        <div class="mx-auto max-w-[60ch]">
+          <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+            Frequently asked questions
+          </h2>
+          <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
+            Answers to the most common questions about SsPdfEditor.
+          </p>
+        </div>
+
+        <div class="mx-auto mt-10 space-y-3 max-w-[65ch] text-left">
+          <!-- FAQ 1 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Are my files really not uploaded to any server?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Yes. You can check by opening your browser's Network tab. When you open or save a PDF, not a single byte of data is sent out. Everything happens entirely on your own computer's hardware.
+            </div>
+          </details>
+
+          <!-- FAQ 2 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>How can I work without an internet connection?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              On first launch the app saves the files it needs to your browser cache. After that, even in airplane mode, you can use all the editing, merging, signing and reading tools offline.
+            </div>
+          </details>
+
+          <!-- FAQ 3 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Why is this service 100% free?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Because all document processing runs on the user's own device, there is no expensive server-side cloud compute cost. That is why no subscription fee or restriction is needed.
+            </div>
+          </details>
+
+          <!-- FAQ 4 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>How do I save the file I edited?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              In desktop browsers such as Chrome or Edge you can save directly over your original file (Save). In Firefox or Safari you can download the edited result as a new file with one click (Export).
+            </div>
+          </details>
+
+          <!-- FAQ 5 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Which file and page sizes are supported?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              All standard PDF documents are supported. Depending on your computer's memory, you can comfortably open and process large contracts, technical drawings and scanned paperwork running to hundreds of pages.
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- Section 5: Final CTA -->
+      <section class="border-t border-kumo-line py-16 text-center sm:py-20">
+        <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
+          Start working on your document right now
+        </h2>
+        <p class="mx-auto mt-3 max-w-[60ch] text-sm leading-relaxed text-kumo-subtle">
+          Open it in seconds: no sign-up, no waiting, 100% local and free.
+        </p>
+        <div class="mt-6 flex justify-center">
+          <a class="btn-primary" href="/editor/">
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span>Launch the PDF Editor</span>
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer with Atmospheric Night Background Image (QRall-style Column Layout) -->
+    <footer
+      class="w-full relative overflow-hidden bg-black text-white"
+      style="background: #000000 url('/footer_bg.jpg') no-repeat center bottom; background-size: cover;"
+    >
+      <div class="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 pt-16 pb-80 sm:pb-96 md:pb-[380px]">
+        <!-- Top Columns Section -->
+        <div class="grid grid-cols-2 gap-8 md:grid-cols-6 lg:gap-12 pb-12">
+          <!-- Brand & About (Span 2 cols) -->
+          <div class="col-span-2 space-y-4">
+            <div class="flex items-center gap-2.5">
+              <span class="flex size-8 items-center justify-center rounded-lg bg-white/10 text-white">
+                <svg
+                  class="size-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                  <line x1="9" y1="17" x2="13" y2="17" />
+                </svg>
+              </span>
+              <span class="text-base font-semibold tracking-tight text-white">SsPdfEditor</span>
+            </div>
+
+            <p class="text-xs leading-relaxed text-white/70 max-w-sm">
+              A browser-based, 100% local PDF editor built on open standards. Your documents are never uploaded to a server and never leave your device.
+            </p>
+
+            <div class="flex items-center gap-3 pt-2">
+              <a
+                href="https://github.com/isolmaz/ss-pdf-editor"
+                target="_blank"
+                rel="noreferrer"
+                class="flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                aria-label="GitHub"
+              >
+                <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    clip-rule="evenodd"
+                    d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                  />
+                </svg>
+              </a>
+              <a
+                href="mailto:iletisim@isolmaz.com"
+                class="flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                aria-label="Email"
+              >
+                <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+              </a>
+            </div>
+          </div>
+
+          <!-- Column 1: Features -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Features</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li><a class="transition-colors hover:text-white" href="#features">Page Editing</a></li>
+              <li><a class="transition-colors hover:text-white" href="#features">Form Filling & Signing</a></li>
+              <li><a class="transition-colors hover:text-white" href="#features">Permanent Redaction</a></li>
+              <li><a class="transition-colors hover:text-white" href="#features">OCR & Text Recognition</a></li>
+            </ul>
+          </div>
+
+          <!-- Column 2: Resources -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Resources</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li><a class="transition-colors hover:text-white" href="#privacy">100% Local Architecture</a></li>
+              <li><a class="transition-colors hover:text-white" href="#comparison">Comparison</a></li>
+              <li><a class="transition-colors hover:text-white" href="/editor/">Web App</a></li>
+              <li><a class="transition-colors hover:text-white" href="#faq">FAQ</a></li>
+            </ul>
+          </div>
+
+          <!-- Column 3: Company & Legal -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Company & Legal</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li><a class="transition-colors hover:text-white" href="/en/privacy">Privacy Policy</a></li>
+              <li><a class="transition-colors hover:text-white" href="/en/terms">Terms of Service</a></li>
+              <li><a class="transition-colors hover:text-white" href="#privacy">Zero Data Commitment</a></li>
+              <li><a class="transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">Contact</a></li>
+            </ul>
+          </div>
+
+          <!-- Column 4: Contact -->
+          <div class="space-y-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Contact</h2>
+            <ul class="space-y-2 text-xs text-white/70">
+              <li>Istanbul, Turkey</li>
+              <li><a class="font-mono transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">iletisim@isolmaz.com</a></li>
+              <li class="text-white/80 font-medium">Works Offline</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Hairline Divider -->
+        <div class="border-t border-white/10 pt-6">
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
+            <p>© 2026 SsPdfEditor. All rights reserved.</p>
+            <div class="flex flex-wrap items-center gap-6">
+              <a class="transition-colors hover:text-white/90" href="/en/privacy">Privacy Policy</a>
+              <a class="transition-colors hover:text-white/90" href="/en/terms">Terms of Service</a>
+              <a class="transition-colors hover:text-white/90" href="#privacy">Local Privacy Guarantee</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

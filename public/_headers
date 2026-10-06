@@ -1,0 +1,51 @@
+# Forbid host-injected analytics without weakening the browser CSP.
+/*
+  Cache-Control: no-transform
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; manifest-src 'self'; media-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), idle-detection=()
+  Cross-Origin-Resource-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/gizlilik
+  Cache-Control: public, max-age=0, must-revalidate
+
+/kosullar
+  Cache-Control: public, max-age=0, must-revalidate
+
+/en/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/en/privacy
+  Cache-Control: public, max-age=0, must-revalidate
+
+/en/terms
+  Cache-Control: public, max-age=0, must-revalidate
+
+/editor
+  Cache-Control: public, max-age=0, must-revalidate
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+/editor/*
+  Cache-Control: public, max-age=0, must-revalidate
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+/engines/*
+  Cache-Control: public, max-age=31536000, immutable
+  Cross-Origin-Embedder-Policy: require-corp
+
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+  Service-Worker-Allowed: /editor/
+
+# The offline identity (`R04`): the version the worker compares its cache against. It
+# must never be served stale — a cached manifest from a previous release would make a new
+# shell believe the old engine bytes are its own.
+/offline-manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate

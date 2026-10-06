@@ -1,0 +1,45 @@
+/**
+ * Imposition: N-up, booklet and poster (`REPORT.md §3` A16) plus print extras (A18).
+ */
+
+export const imposePart = {
+  'impose.title': 'Sayfa düzeni (N-up / kitapçık)',
+  'impose.intro':
+    'Sayfalar yeni yapraklara yerleştirilir; sayfa içeriği vektör kalır. Yerleştirme bağlantıları, açıklamaları, form alanlarını ve içindekileri yapraklara taşımaz.',
+  'impose.mode': 'Düzen',
+  'impose.mode.nup': 'N-up',
+  'impose.mode.booklet': 'Kitapçık (forma)',
+  'impose.mode.poster': 'Poster (büyüt ve böl)',
+  'impose.perSheet': 'Sayfa başına',
+  'impose.perSheet.2': '2',
+  'impose.perSheet.4': '4',
+  'impose.perSheet.6': '6',
+  'impose.perSheet.8': '8',
+  'impose.perSheet.9': '9',
+  'impose.perSheet.16': '16',
+  'impose.overlap': 'Örtüşme (mm)',
+  'impose.overlapHint': 'Komşu poster parçalarının üst üste binen payı.',
+  'impose.paper': 'Kâğıt',
+  'impose.paper.a4': 'A4',
+  'impose.paper.a3': 'A3',
+  'impose.paper.letter': 'Letter',
+  'impose.orientation': 'Yön',
+  'impose.orientation.auto': 'Otomatik',
+  'impose.orientation.portrait': 'Dikey',
+  'impose.orientation.landscape': 'Yatay',
+  'impose.gutter': 'Kenar payı (mm)',
+  'impose.margins': 'Kenar boşlukları (mm)',
+  'impose.bleed': 'Taşma payı (mm)',
+  'impose.cropMarks': 'Kesim işaretleri',
+  'impose.rotateContent': 'İçeriği sayfaya göre döndür',
+  'impose.rotateContentHint':
+    'Yatay sayfaları hücreye sığdırmak için 90° döndürür; kapatılırsa sayfa küçültülerek yerleştirilir.',
+  'impose.rows': 'Satır',
+  'impose.columns': 'Sütun',
+  'impose.scale': 'Ölçek',
+  'impose.preview': '{sheets} yaprak, yaprakta {perSheet} sayfa',
+  'impose.done': '{sheets} yaprak üretildi.',
+  'impose.padded': 'Forma için {count} boş sayfa eklendi.',
+  'impose.printName': 'Yazdırma adı',
+  'impose.titleFromDoc': 'Dosya adını belge başlığından öner',
+} as const;

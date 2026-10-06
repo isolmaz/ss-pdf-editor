@@ -1,0 +1,22 @@
+{
+  "name": "spikes",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway Phase 0 prototypes (PLAN.md §9/K21). Nothing here ships.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "mupdf": "1.28.1",
+    "pdf-core": "workspace:*",
+    "pdf-model": "workspace:*",
+    "pdf-shared": "workspace:*",
+    "pdfjs-dist": "6.3.289"
+  },
+  "devDependencies": {
+    "vite": "8.3.0"
+  }
+}

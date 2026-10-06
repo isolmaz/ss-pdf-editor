@@ -1,0 +1,120 @@
+:root {
+  color-scheme: light dark;
+  --line: color-mix(in oklab, currentColor 20%, transparent);
+  --muted: color-mix(in oklab, currentColor 60%, transparent);
+  --good: #1a7f37;
+  --bad: #b3261e;
+  --warn: #8a6100;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 24px clamp(16px, 4vw, 48px) 64px;
+  font:
+    14px / 1.5 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+h2 {
+  margin: 32px 0 8px;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+p.sub,
+p.note {
+  margin: 0 0 8px;
+  color: var(--muted);
+  max-width: 100ch;
+}
+
+#phase {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: inline-block;
+}
+
+#phase[data-phase="error"] {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 5px 10px 5px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+tbody th {
+  text-transform: none;
+  font-size: 13px;
+  color: inherit;
+  white-space: nowrap;
+}
+
+tr.total td,
+tr.total th {
+  font-weight: 600;
+}
+
+.pass {
+  color: var(--good);
+}
+
+.fail {
+  color: var(--bad);
+}
+
+.miss {
+  color: var(--warn);
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.92em;
+}
+
+pre {
+  overflow: auto;
+  max-height: 40vh;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+#summary-text {
+  font-size: 15px;
+}

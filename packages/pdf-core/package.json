@@ -1,0 +1,23 @@
+{
+  "name": "pdf-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts",
+    "./ops/*": "./src/ops/*.ts",
+    "./engines/*": "./src/engines/*.ts"
+  },
+  "dependencies": {
+    "asn1js": "3",
+    "mupdf": "1.28.1",
+    "pdf-shared": "workspace:*",
+    "pdf-text-engine": "workspace:*",
+    "pdfjs-dist": "6.3.289",
+    "pkijs": "3",
+    "tesseract.js": "6.0.1"
+  },
+  "sideEffects": false,
+  "license": "AGPL-3.0-or-later"
+}

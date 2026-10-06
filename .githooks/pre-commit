@@ -1,0 +1,3 @@
+#!/bin/sh
+# Pre-commit guard (tree hygiene + biome check on staged files) — see tools/hooks/guard.mjs.
+exec node "$(git rev-parse --show-toplevel)/tools/hooks/guard.mjs" staged

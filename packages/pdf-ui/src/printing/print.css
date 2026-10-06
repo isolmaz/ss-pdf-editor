@@ -1,0 +1,64 @@
+/*
+ * The printed sheet (`PLAN.md §5/Phase 1`: "printing with page range and scale").
+ *
+ * `usePrinting` rasterises the selected pages into `.pdf-print-root` and hands
+ * the result to `window.print()`; this file decides what reaches the paper — the
+ * shell, its dialogs and the viewer are hidden, one sheet is one page, and the
+ * images carry no border and no shadow. Class names are prefixed `pdf-print-` so
+ * nothing here can be mistaken for a Kumo component style.
+ *
+ * Semantic-token discipline (`K24`) applies to the app's chrome; paper has no
+ * theme, so the sheet declares no colours at all and the page's own raster —
+ * which already paints white — is what shows.
+ */
+
+/* The paper is the sheet: A4 portrait, no printer margin, nothing to scale. */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+/* On screen the sheets only exist so the print engine has something to print. */
+.pdf-print-root {
+  display: none;
+}
+
+@media print {
+  /* Nothing but the sheets reaches the paper. Kumo portals the dialog straight
+     into <body>, and `#root` holds the whole application. The id selector and
+     Tailwind's utilities outrank this rule, so the override is deliberate. */
+  body > *:not(.pdf-print-root) {
+    /* biome-ignore lint/complexity/noImportantStyles: hiding the whole application is the point of a print stylesheet, and #root outspecifies `body > *`. */
+    display: none !important;
+  }
+
+  .pdf-print-root {
+    display: block;
+  }
+
+  /* One page per sheet, and never a sheet split across two. */
+  .pdf-print-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 210mm;
+    height: 297mm;
+    break-after: page;
+    break-inside: avoid;
+  }
+
+  /* The break after the last sheet would be printed as a blank page. */
+  .pdf-print-page:last-child {
+    break-after: auto;
+  }
+
+  /* "Fit to page": the raster keeps the page's aspect ratio, the sheet box does
+     the scaling. "Actual size" pins the image's own size inline instead. */
+  .pdf-print-page > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border: 0;
+    box-shadow: none;
+  }
+}

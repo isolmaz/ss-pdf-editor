@@ -1,0 +1,10 @@
+# Normalize line endings for a Windows/macOS/Linux-friendly repo
+* text=auto eol=lf
+
+# Binaries
+*.png binary
+*.jpg binary
+*.pdf binary
+*.wasm binary
+*.woff2 binary
+*.traineddata binary

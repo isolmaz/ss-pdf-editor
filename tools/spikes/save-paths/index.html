@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spike #1 — multi-engine save paths</title>
+    <link rel="stylesheet" href="./spike.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Phase 0 · spike #1 — multi-engine save paths</h1>
+      <p class="meta" id="env">loading engines…</p>
+      <div class="controls">
+        <button id="run" type="button">Run all branches</button>
+        <span id="progress" class="progress" role="status" aria-live="polite"></span>
+      </div>
+    </header>
+    <main>
+      <table id="results">
+        <thead>
+          <tr>
+            <th scope="col">Branch</th>
+            <th scope="col">In</th>
+            <th scope="col">Out</th>
+            <th scope="col">Δ</th>
+            <th scope="col">ms</th>
+            <th scope="col">Mem before</th>
+            <th scope="col">Mem after</th>
+            <th scope="col">Incremental</th>
+            <th scope="col">Checks</th>
+            <th scope="col">Verdict</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <pre id="detail" hidden></pre>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
