@@ -588,6 +588,36 @@ test('home "Merge PDFs" tile: two chosen files become one new document, in the o
   expect(texts.map((text) => text.trim())).toEqual(['First 1', 'First 2', 'Second 1']);
 });
 
+test('home "All tools" tile: a tool whose file cannot be opened does not run on the next document', async ({
+  page,
+}) => {
+  // The file picker answers with a Word 97 file, which is neither opened nor converted.
+  await page.addInitScript(() => {
+    const letter = { kind: 'file', name: 'letter.doc', getFile: async () => new File(['DOC'], 'letter.doc') };
+    Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: async () => [letter] });
+  });
+  await page.goto('/editor/');
+  await page.getByRole('tab', { name: 'All tools', exact: true }).click();
+  await page.getByRole('button', { name: /^Save as PDF\/A/ }).click();
+  await expect(page.getByText('DOC files cannot be converted.', { exact: false })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // A PDF opened afterwards for another reason opens as itself, with no PDF/A form over it.
+  await page
+    .locator('input[type="file"][accept*="application/pdf"]')
+    .first()
+    .setInputFiles(pdfFile('later.pdf', toolFixturePdf()));
+  await expect(page.locator(CANVAS).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Opening the document…')).toHaveCount(0, { timeout: 30_000 });
+  // A tool still waiting would run as soon as the open settles.
+  await page.waitForTimeout(2_000);
+  await expect(page.getByRole('region', { name: 'Save as PDF/A' })).toHaveCount(0);
+  // The control: asked for on purpose, the same form does show in that place.
+  await useAdvancedMode(page);
+  await openForm(page, 'Save as PDF/A', 'Save as PDF/A');
+});
+
 test('export options: the compression level chosen in the dialog fills the Optimize form', async ({
   page,
 }) => {

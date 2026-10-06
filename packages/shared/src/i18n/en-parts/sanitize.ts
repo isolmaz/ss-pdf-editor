@@ -71,6 +71,8 @@ export const sanitizePart = {
     'Appearance verified: {pages} pages were drawn pixel for pixel the same before and after.',
   'op.note.sanitize.pictureChanges':
     'The pages were not compared before and after, because part of the selection changes what they show (comments, form fields, links, file attachment icons).',
+  'op.note.sanitize.revisionsDropped':
+    'The file held {count} revisions. It was rewritten as one, so nothing an earlier revision still contained is left in it.',
   'op.note.sanitize.nothing':
     'None of the selected categories held anything to remove; the file was not changed.',
 } as const;

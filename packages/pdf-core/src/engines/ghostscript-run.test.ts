@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { ghostscriptFailure } from './ghostscript';
 import {
   collectWarnings,
   ghostscriptArguments,
@@ -90,5 +91,24 @@ describe('ghostscript-run', () => {
       { text: 'stray line without a prefix', count: 1 },
     ]);
     expect(collectWarnings([])).toEqual([]);
+  });
+});
+
+describe('ghostscriptFailure', () => {
+  // The engine is not in the offline readiness manifest, so a load failure must not send the
+  // user there: it is the "connect and reload" error a lazy chunk the browser cannot fetch gets.
+  it('reports an engine that cannot be loaded as offline, whatever the browser said', () => {
+    for (const message of [
+      'Failed to fetch dynamically imported module: /engines/ghostscript/gs.js',
+      'the worker failed to start',
+      'wasm streaming compile failed: TypeError: Failed to fetch',
+    ]) {
+      expect(ghostscriptFailure('load', message).code, message).toBe('asset-offline');
+    }
+  });
+
+  it('tells a conversion that runs out of memory from one that fails on the document', () => {
+    expect(ghostscriptFailure('run', 'Cannot enlarge memory arrays').code).toBe('out-of-memory');
+    expect(ghostscriptFailure('run', 'gs exited with code 1').code).toBe('pdfa-failed');
   });
 });

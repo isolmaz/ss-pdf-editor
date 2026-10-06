@@ -464,6 +464,82 @@ describe('sanitizeDocument', () => {
     await expect(sanitizeDocument(input, ALL, { signal: controller.signal })).rejects.toThrow();
   });
 
+  it('rewrites a file whose earlier revision still holds an attachment a later update freed', async () => {
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 200, 200], 0, {}, ''));
+    const payload = doc.addStream('FREEDPAYLOAD', { Type: 'EmbeddedFile' });
+    const spec = doc.addObject({ Type: 'Filespec', F: doc.newString('old.txt'), EF: { F: payload } });
+    doc
+      .getTrailer()
+      .get('Root')
+      .put('Names', { EmbeddedFiles: { Names: [doc.newString('old.txt'), spec] } });
+    const first = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    const specNumber = spec.asIndirect();
+    const payloadNumber = payload.asIndirect();
+    doc.destroy();
+    // A later editor removed the attachment by an incremental update that freed its objects.
+    const update = open(first);
+    update.getTrailer().get('Root').delete('Names');
+    update.deleteObject(specNumber);
+    update.deleteObject(payloadNumber);
+    const input = new Uint8Array(update.saveToBuffer('incremental').asUint8Array());
+    update.destroy();
+    const before = open(input);
+    expect(before.countVersions()).toBe(2);
+    before.destroy();
+    expect(haystack(input)).toContain('FREEDPAYLOAD');
+
+    // The latest revision holds no attachment, but the file still does.
+    const out = await sanitizeDocument(input, { ...NONE, files: true }, run);
+    expect(out.bytes).not.toBe(input);
+    expect(out.report.incremental).toBe(false);
+    expect(haystack(out.bytes)).not.toContain('FREEDPAYLOAD');
+    const after = open(out.bytes);
+    expect(after.countVersions()).toBe(1);
+    after.destroy();
+    expect(
+      out.report.notes.find((entry) => entry.key === 'op.note.sanitize.revisionsDropped')?.params,
+    ).toEqual({
+      count: 2,
+    });
+  });
+
+  it('refuses to drop the XFA of a dynamic form, whose page is only a placeholder, and keeps it otherwise', async () => {
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 200, 200], 0, {}, '0 0 1 rg 20 90 160 20 re f'));
+    const xfa = doc.newArray();
+    xfa.push(doc.newString('template'));
+    xfa.push(
+      doc.addStream(
+        '<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/"><subform name="form1">' +
+          '<field name="Name"/><event activity="initialize"><script>this.rawValue = "x";</script></event>' +
+          '</subform></template>',
+        doc.newDictionary(),
+      ),
+    );
+    const root = doc.getTrailer().get('Root');
+    root.put('AcroForm', doc.addObject({ Fields: [], XFA: xfa }));
+    root.put('NeedsRendering', true);
+    const dynamic = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+
+    // Scripts on (the default): dropping the XFA would leave the placeholder and nothing else.
+    await expect(sanitizeDocument(dynamic, { ...NONE, javascript: true }, run)).rejects.toMatchObject({
+      code: 'xfa-dynamic',
+    });
+    await expect(sanitizeDocument(dynamic, { ...NONE, forms: 'remove' }, run)).rejects.toMatchObject({
+      code: 'xfa-dynamic',
+    });
+    // A run that keeps the XFA goes ahead and leaves it in place.
+    const kept = await sanitizeDocument(dynamic, { ...NONE, thumbnails: true }, run);
+    const out = open(kept.bytes);
+    try {
+      expect(out.getTrailer().get('Root').get('AcroForm').get('XFA').isNull()).toBe(false);
+    } finally {
+      out.destroy();
+    }
+  });
+
   it('removes form fields on request and leaves the rest of the page', async () => {
     const out = await sanitizeDocument(input, { ...NONE, forms: 'remove' }, run);
     const doc = open(out.bytes);

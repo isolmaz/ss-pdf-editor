@@ -277,6 +277,8 @@ test('PDF/A: saving as PDF/A-2b opens a new tab whose own check says PDF/A-2b wi
   await expect(page.getByRole('button', { name: 'archive-pdfa-2b.pdf', exact: true })).toBeVisible({
     timeout: 60_000,
   });
+  // The converter's own sentence, not the generic "opened in a new tab".
+  await expect(page.getByText('The PDF/A file is ready: archive-pdfa-2b.pdf')).toBeVisible();
   await page.getByRole('tab', { name: 'PDF/A', exact: true }).click();
   await page.getByRole('button', { name: 'Check', exact: true }).click();
   await expect(

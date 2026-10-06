@@ -35,6 +35,7 @@ import {
   removeRecentDocument,
   toggleStarRecentDocument,
 } from '../recent';
+import { deleteRecentHandle, pruneRecentHandles } from '../recent-handles';
 
 const HomeToolGrid = lazy(() => import('./HomeToolGrid'));
 
@@ -361,6 +362,8 @@ export function HomeScreen({
                         className="rounded-md bg-kumo-danger px-2 py-0.5 font-medium text-white hover:opacity-90"
                         onClick={() => {
                           setRecentItems(clearRecentDocuments());
+                          // The handles that would reopen those files go with the entries.
+                          void pruneRecentHandles(new Set());
                           setConfirmClear(false);
                         }}
                       >
@@ -479,7 +482,10 @@ export function HomeScreen({
                             <button
                               type="button"
                               aria-label={`${t('home.removeFromList')}: ${item.name}`}
-                              onClick={() => setRecentItems(removeRecentDocument(item.id))}
+                              onClick={() => {
+                                setRecentItems(removeRecentDocument(item.id));
+                                void deleteRecentHandle(item.id);
+                              }}
                               className="rounded p-1 text-kumo-subtle transition-opacity hover:bg-kumo-recessed hover:text-kumo-danger focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
                             >
                               <Trash size={14} />

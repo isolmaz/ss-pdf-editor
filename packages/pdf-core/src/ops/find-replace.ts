@@ -29,13 +29,14 @@
  *
  * **Faces.** The best face is the page's own font (`engines/doc-fonts.ts`): drawn with
  * it, the new text looks exactly like the old. It is used when the font has a code for
- * every character *and* the document already draws each of those characters with it —
- * a subset holds only the glyphs its producer used, and a glyph the page shows is one the
- * file has. Otherwise the replacement uses Noto Sans when the old text was Noto Sans, a
- * standard face of the same family, weight and slant (Helvetica, Times, Courier) when
- * WinAnsi can spell it, and Noto Sans after that. A substitute is sized so that it
- * would draw the old text as wide as the old font did (within ±15 %), which keeps its
- * visual size close. A standard face is supplied by the reader rather than embedded,
+ * every character *and* that font object already draws each of those characters — a
+ * subset holds only the glyphs its producer used, and a glyph the page shows is one the
+ * file has. The proof is kept per font object, not per name: two subsets can share a
+ * tagged name after a merge. Otherwise the replacement uses Noto Sans when the old text
+ * was Noto Sans, a standard face of the same family, weight and slant (Helvetica, Times,
+ * Courier) when WinAnsi can spell it, and Noto Sans after that. A substitute is sized so
+ * that it would draw the old text as wide as the old font did (within ±15 %), which keeps
+ * its visual size close. A standard face is supplied by the reader rather than embedded,
  * and the report says so.
  */
 
@@ -106,8 +107,8 @@ export interface FindReplaceOutcome extends OperationOutcome {
 /** The faces new text can be drawn with beyond the catalogue, and every face's widths. */
 export interface FaceSource {
   /**
-   * `doc:<name>` when the page's own font `fontName` can draw `text` with glyphs the
-   * document already draws with it; `null` otherwise.
+   * `doc:<name>` when the page's own font `fontName` can draw `text` with glyphs that font
+   * object already draws; `null` otherwise.
    */
   own(pageIndex: number, fontName: string, text: string): string | null;
   /** Reflow metrics of the page's own font, under the same condition as {@link own}. */
@@ -318,6 +319,21 @@ async function documentFaces(
     }
     return found;
   };
+  // What each font *object* has drawn, not each font name: subset tags are unique only within
+  // the file that made them, so a merge can put two subsets with different glyphs under one
+  // name. A font shared by several pages is one object, and its glyphs count on all of them.
+  const objectKeys = new Map<string, string>();
+  const fontKey = (pageIndex: number, fontName: string): string => {
+    const lookup = `${pageIndex}\u0000${fontName}`;
+    let key = objectKeys.get(lookup);
+    if (key === undefined) {
+      const ref = findFont(fontsOf(pageIndex), fontName)?.ref;
+      // A direct font dictionary belongs to the page that holds it.
+      key = ref?.isIndirect() === true ? `obj:${ref.asIndirect()}` : `page:${lookup}`;
+      objectKeys.set(lookup, key);
+    }
+    return key;
+  };
   const drawn = new Map<string, Set<number>>();
   for (const model of models) {
     for (const block of model.blocks) {
@@ -325,10 +341,11 @@ async function documentFaces(
         for (const word of line.words) {
           for (const glyph of word.glyphs) {
             if (glyph.fontName === undefined) continue;
-            let points = drawn.get(glyph.fontName);
+            const key = fontKey(model.pageIndex, glyph.fontName);
+            let points = drawn.get(key);
             if (points === undefined) {
               points = new Set();
-              drawn.set(glyph.fontName, points);
+              drawn.set(key, points);
             }
             for (const character of glyph.ch) points.add(character.codePointAt(0) ?? 0);
           }
@@ -339,7 +356,7 @@ async function documentFaces(
   const usable = (pageIndex: number, fontName: string, text: string): DocumentFont | null => {
     const font = findFont(fontsOf(pageIndex), fontName);
     if (font === null || !encodes(font, text)) return null;
-    const points = drawn.get(fontName);
+    const points = drawn.get(fontKey(pageIndex, fontName));
     for (const character of text) {
       if (character.trim() !== '' && points?.has(character.codePointAt(0) ?? 0) !== true) return null;
     }
@@ -352,7 +369,7 @@ async function documentFaces(
     ownMetrics: (pageIndex, fontName, text) => {
       const font = usable(pageIndex, fontName, text);
       if (font === null) return null;
-      const points = drawn.get(fontName);
+      const points = drawn.get(fontKey(pageIndex, fontName));
       return {
         unitsPerEm: 1000,
         glyphAdvance: (point) => measureText(font, String.fromCodePoint(point), 1000),

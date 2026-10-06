@@ -59,6 +59,7 @@ function loader(mocks = {}) {
 const load = loader();
 const model = load('pdf-model');
 const appNotices = load(path.join(ROOT, 'apps/web/src/notices.ts'));
+const recentHandles = load(path.join(ROOT, 'apps/web/src/recent-handles.ts'));
 const { ToolError } = load('pdf-shared');
 const appPath = path.join(ROOT, 'apps/web/src/App.tsx');
 const appSource = ts.createSourceFile(
@@ -118,15 +119,34 @@ function validDraft() {
     now: 1,
   });
 }
-function fakeFile(initial = [1, 2, 3]) {
+/**
+ * A file handle. `permission` is what `queryPermission` answers (a handle read back from
+ * IndexedDB says `prompt`), `asked` what the user answers when asked; without write access
+ * the browser refuses to read or write, as Chromium does.
+ */
+function fakeFile(initial = [1, 2, 3], { permission = 'granted', asked = 'granted' } = {}) {
   let bytes = new Uint8Array(initial);
-  const calls = { opened: 0, written: 0, closed: 0, aborted: 0 };
+  const calls = { opened: 0, written: 0, closed: 0, aborted: 0, requests: 0 };
+  let state = permission;
+  const refuse = () => {
+    if (state !== 'granted') throw new DOMException('no access', 'NotAllowedError');
+  };
   const file = {
     name: 'selected.pdf',
+    async queryPermission() {
+      return state;
+    },
+    async requestPermission() {
+      calls.requests += 1;
+      state = asked;
+      return state;
+    },
     async getFile() {
+      refuse();
       return new Blob([bytes]);
     },
     async createWritable() {
+      refuse();
       calls.opened += 1;
       let pending;
       return {
@@ -186,6 +206,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
     },
     t: (key) => key,
     sha256Hex: model.sha256Hex,
+    ensureWriteAccess: recentHandles.ensureWriteAccess,
     downloadFiles: (files) => downloads.push(...files),
     // The save path words its notices with the app's own helpers; binding the real
     // functions keeps the harness honest about what the user would read.
@@ -313,6 +334,55 @@ async function main() {
     assert.equal(h.store.active.dirty, true);
     assert.ok(h.notices.some((notice) => String(notice).includes('conflict')));
   });
+  await check(
+    'an in-place save over a handle read back from storage asks for write access first',
+    async () => {
+      const target = fakeFile([1, 2, 3], { permission: 'prompt' });
+      const h = await saveHarness({ target });
+      assert.equal(await h.run(), true);
+      assert.equal(target.calls.requests, 1);
+      assert.deepEqual([...target.bytes()], [4, 5, 6]);
+      // Granted once, it is not asked again.
+      h.store.setOverlays(h.tab.id, { annotations: ['again'] }, 'ann.engineEdit');
+      assert.equal(await h.run(), true);
+      assert.equal(target.calls.requests, 1);
+    },
+  );
+  await check('a refused write permission writes nothing and says why', async () => {
+    const target = fakeFile([1, 2, 3], { permission: 'prompt', asked: 'denied' });
+    const h = await saveHarness({ target });
+    assert.equal(await h.run(), false);
+    assert.equal(target.calls.opened, 0);
+    assert.deepEqual([...target.bytes()], [1, 2, 3]);
+    assert.equal(h.store.active.dirty, true);
+    assert.ok(h.notices.some((notice) => String(notice).includes('error.permission-denied.message')));
+  });
+  await check(
+    'marking a document sensitive, or purging it, forgets the handle that reopens its file',
+    async () => {
+      for (const name of ['toggleSensitiveSession', 'purgeActiveDocument']) {
+        const store = new model.SessionStore();
+        const tab = store.openDocument(documentInput());
+        const forgotten = [];
+        const bindings = {
+          activeTab: tab,
+          store,
+          channel: { runExclusive: (work) => work() },
+          draftWrites: { current: Promise.resolve() },
+          forgetTabDraft: async () => [],
+          deleteRecentHandle: async (id) => {
+            forgotten.push(id);
+          },
+          setNotice: () => {},
+          t: (key) => key,
+          ToolError,
+        };
+        await callback(name, bindings)();
+        await bindings.draftWrites.current;
+        assert.deepEqual(forgotten, [tab.id], name);
+      }
+    },
+  );
   await check('a failed Save As does not attach an unwritten destination', async () => {
     const target = fakeFile([]);
     const h = await saveHarness({ picker: async () => target.file, prepare: async () => null, saveAs: true });

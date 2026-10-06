@@ -73,7 +73,7 @@ import {
   saveRewrite,
   type WritableDocument,
 } from '../engines/mupdf-write';
-import { type FormFieldKind, flattenForm, readFormFields } from './forms';
+import { type FormFieldKind, flattenForm, readFormFields, xfaSnapshotsOf } from './forms';
 import {
   arrayUnder,
   catalogOf,
@@ -277,6 +277,14 @@ function xfaScripts(form: PDFObject): { readonly packets: number; readonly prese
     }
   }
   return { packets, present: true };
+}
+
+/** A form that is flattened or removed has no use for its XML; one with scripts goes whole. */
+function dropsXfa(
+  xfa: { readonly packets: number; readonly present: boolean },
+  options: SanitizeOptions,
+): boolean {
+  return xfa.present && ((options.javascript && xfa.packets > 0) || options.forms !== 'keep');
 }
 
 /**
@@ -495,8 +503,7 @@ function sweep(
   if (form !== null) {
     const xfa = xfaScripts(form);
     if (options.javascript) tally.javascript += xfa.packets;
-    // A form that is flattened or removed has no use for its XML; one with scripts goes whole.
-    if (xfa.present && ((options.javascript && xfa.packets > 0) || options.forms !== 'keep')) {
+    if (dropsXfa(xfa, options)) {
       xfaDropped = true;
       if (mutate) form.delete('XFA');
     }
@@ -746,6 +753,30 @@ async function sweepInput(
   }
 }
 
+/**
+ * A dynamic XFA form has no AcroForm fields: its content lives only in the XFA, and the page is
+ * the "Please wait…" placeholder. A run that would drop the XFA is refused, as removing or
+ * flattening one is (`xfa-dynamic`), instead of returning the placeholder as a clean file.
+ */
+async function refuseDynamicXfa(bytes: Uint8Array, options: SanitizeOptions): Promise<void> {
+  const { doc } = await openForWrite(bytes);
+  try {
+    const form = dictionaryUnder(catalogOf(doc), 'AcroForm');
+    if (form === null || !dropsXfa(xfaScripts(form), options)) return;
+    if (xfaSnapshotsOf(doc).every((field) => field.kind === 'signature')) {
+      throw new ToolError('xfa-dynamic', {
+        engine: 'mupdf',
+        engineMessage: 'sanitize: dropping the XFA of a dynamic form would leave only its placeholder page',
+      });
+    }
+  } catch (error) {
+    if (error instanceof ToolError) throw error;
+    throw mapMupdfError(error, 'sanitize.xfa');
+  } finally {
+    doc.destroy();
+  }
+}
+
 /** An XFA form cannot be flattened (the writer refuses it): its XML is dropped first. */
 async function withoutXfa(bytes: Uint8Array): Promise<Uint8Array> {
   const opened = await openForWrite(bytes);
@@ -782,6 +813,8 @@ export async function sanitizeDocument(
   const steps: string[] = ['load'];
   const notes: OperationNote[] = [];
 
+  await refuseDynamicXfa(bytes, options);
+
   // ---- forms to flatten go first: the writer works on the document as it came ------------
   let working = bytes;
   let formFieldsBefore = 0;
@@ -800,10 +833,12 @@ export async function sanitizeDocument(
   let out: Uint8Array;
   let found: SweepResult;
   let pageCount: number;
+  let inputRevisions: number;
   try {
     try {
       found = sweep(doc, options, true, context.signal);
       pageCount = doc.countPages();
+      inputRevisions = doc.countVersions();
       // A file whose page tree MuPDF could not recover would come out as an empty shell.
       if (pageCount === 0) {
         throw new ToolError('corrupt-document', {
@@ -817,12 +852,15 @@ export async function sanitizeDocument(
     }
     throwIfAborted(context.signal);
 
-    // Nothing selected is present and nothing was unused: the file goes back as it is.
+    // Nothing selected is present and nothing was unused: the file goes back as it is. The sweep
+    // sees only the latest revision, so a file with earlier ones is always rewritten: an update
+    // that freed an attachment or a script leaves its bytes in the revision before it.
     const present =
       selected.some((category) => removableOf(found, category) > 0) ||
       found.unused > 0 ||
       found.xfaDropped ||
-      (options.forms !== 'keep' && (formFieldsBefore > 0 || working !== bytes));
+      (options.forms !== 'keep' && (formFieldsBefore > 0 || working !== bytes)) ||
+      inputRevisions > 1;
     if (!present) {
       return nothingFound(bytes, selected, found, pageCount, steps);
     }
@@ -937,6 +975,8 @@ export async function sanitizeDocument(
       ? note('changed', 'op.note.sanitize.removed.unused', { found: original.unused })
       : note('preserved', 'op.note.sanitize.none.unused'),
   );
+  if (inputRevisions > 1)
+    notes.push(note('changed', 'op.note.sanitize.revisionsDropped', { count: inputRevisions }));
   notes.push(...warnings(original, options, compared, pictureChanges, after));
   notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
   steps.push('producer', 'save', 'verify');
@@ -985,7 +1025,7 @@ function nothingFound(
       inputBytes: bytes.byteLength,
       outputBytes: bytes.byteLength,
       pageCount,
-      // Nothing was written: the file keeps whatever revisions it had.
+      // Nothing was written, and the file has a single revision (an earlier one forces a rewrite).
       incremental: true,
     },
   };

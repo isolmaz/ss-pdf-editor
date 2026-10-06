@@ -85,7 +85,8 @@ export type SignatureIntegrity = 'valid' | 'invalid' | 'unchecked';
 export type SignatureTrust = 'trusted' | 'untrusted' | 'self-signed' | 'indeterminate' | 'not-checked';
 /**
  * What lists already on the device say about the signer's certificate and the ones above it:
- * `'not-revoked'` (cleared by a verified list), `'revoked'`, `'revoked-after-signing'` (only
+ * `'not-revoked'` (cleared by a verified list), `'not-revoked-outdated'` (cleared, but by a list
+ * too old to rule out a revocation), `'revoked'`, `'revoked-after-signing'` (only
  * ever for a **trusted** timestamp that predates the revocation), or `'indeterminate'` — no
  * verified list speaks for at least one certificate. Per-certificate detail is
  * `SignatureVerification.revocationChecks`.

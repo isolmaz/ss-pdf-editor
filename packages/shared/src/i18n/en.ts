@@ -235,8 +235,7 @@ export const en: Record<MessageKey, string> = {
   'error.permission-denied.message': 'File access was denied.',
   'error.permission-denied.hint': 'Grant permission or use Export to download.',
   'error.pdfa-failed.message': 'The PDF/A converter could not run.',
-  'error.pdfa-failed.hint':
-    'Try the file again; if it keeps failing, download the engine package again from the offline readiness screen.',
+  'error.pdfa-failed.hint': 'Try the file again; if it keeps failing, reload the page and try once more.',
   'error.pdfa-not-compliant.message': 'The file could not be made PDF/A compliant.',
   'error.pdfa-not-compliant.hint': 'See the violations in the check result; another PDF/A level may work.',
   'error.internal.message': 'Something unexpected went wrong.',

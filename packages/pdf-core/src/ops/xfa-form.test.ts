@@ -255,6 +255,17 @@ describe('xfa operations', () => {
     expect(again.bytes).toBe(synced.bytes);
   });
 
+  it('appends the datasets sync as a revision, so the bytes before it, and a signature over them, stay', async () => {
+    const stale = await editWidgets(await xfaPdf({ kind: 'static' }), { 'Name[0]': 'Yeni Değer' });
+    const revisions = await withPdf(stale, (doc) => doc.countVersions());
+    const synced = await syncXfaDatasets(stale);
+    expect(synced.changed).toBeGreaterThan(0);
+    expect(synced.bytes.length).toBeGreaterThan(stale.length);
+    expect(synced.bytes.subarray(0, stale.length)).toEqual(stale);
+    expect(await withPdf(synced.bytes, (doc) => doc.countVersions())).toBe(revisions + 1);
+    expect((await xfaTexts(synced.bytes)).datasets).toContain('<Name>Yeni Değer</Name>');
+  });
+
   it('syncs only the fields a fill touched, and a form-panel fill reaches the datasets', async () => {
     for (const layout of ['array', 'stream'] as const) {
       const bytes = await xfaPdf({ kind: 'static', layout });

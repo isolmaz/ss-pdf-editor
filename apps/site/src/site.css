@@ -5,7 +5,6 @@
 @import "pdf-ui/tokens.css";
 
 @source "./";
-@source "../../packages/pdf-ui/node_modules/@cloudflare/kumo/dist";
 
 /* Themed browser surfaces (craft-floor: selection, focus ring, scrollbar) */
 ::selection {

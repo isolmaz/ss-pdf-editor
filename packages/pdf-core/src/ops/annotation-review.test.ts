@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import type { PDFObject } from 'mupdf';
 import { describe, expect, it } from 'vitest';
+import { loadMupdf, openPdf } from '../engines/mupdf';
 import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
 import { writeCommentReview } from './annotation-review';
 import { commentThreads } from './annotation-threads';
@@ -117,8 +118,11 @@ describe('writeCommentReview', () => {
       const state = named('s1');
       expect(state.get('IRT').asIndirect()).toBe(parent.asIndirect());
       expect(state.get('F').asNumber()).toBe(30);
-      expect(state.get('State').asName()).toBe('Accepted');
-      expect(state.get('StateModel').asName()).toBe('Review');
+      // Text strings, as ISO 32000-1 Table 172 defines them, not names.
+      expect(state.get('State').isString()).toBe(true);
+      expect(state.get('State').asString()).toBe('Accepted');
+      expect(state.get('StateModel').isString()).toBe(true);
+      expect(state.get('StateModel').asString()).toBe('Review');
       expect(state.get('Contents').asString()).toBe('Accepted set by Mehmet');
     } finally {
       doc.destroy();
@@ -146,6 +150,39 @@ describe('writeCommentReview', () => {
     const thread = threads.get(note);
     expect(thread?.replies.map((item) => item.annotation.contents)).toEqual(['Tamam']);
     expect(thread?.review).toMatchObject({ state: 'Rejected', author: 'Mehmet' });
+  });
+
+  it('still reads a state record an older file wrote with names as the comment review', async () => {
+    const { bytes, note } = await fixture();
+    const doc = openPdf(await loadMupdf(), bytes);
+    let legacy: Uint8Array;
+    try {
+      const page = doc.findPage(0);
+      const annots = page.get('Annots');
+      annots.push(
+        doc.addObject({
+          Type: 'Annot',
+          Subtype: 'Text',
+          P: page,
+          IRT: annots.get(0),
+          Rect: [100, 304, 120, 324],
+          F: 30,
+          NM: doc.newString('old'),
+          T: doc.newString('Mehmet'),
+          State: 'Completed',
+          StateModel: 'Review',
+        }),
+      );
+      legacy = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    } finally {
+      doc.destroy();
+    }
+    const existing = await annotationsOf(legacy);
+    expect(existing.find((entry) => entry.state === 'Completed')).toMatchObject({
+      inReplyTo: note,
+      stateModel: 'Review',
+    });
+    expect(commentThreads(existing).threads.get(note)?.review).toMatchObject({ state: 'Completed' });
   });
 
   it('refuses a comment that is not on the page, and a popup, link or widget as the parent', async () => {

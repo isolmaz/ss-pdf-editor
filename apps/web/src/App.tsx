@@ -225,7 +225,14 @@ import {
   type WriteVerification,
 } from './operations';
 import { addRecentDocument, loadRecentDocuments } from './recent';
-import { getRecentHandle, pruneRecentHandles, putRecentHandle, reopenFromHandle } from './recent-handles';
+import {
+  deleteRecentHandle,
+  ensureWriteAccess,
+  getRecentHandle,
+  pruneRecentHandles,
+  putRecentHandle,
+  reopenFromHandle,
+} from './recent-handles';
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
@@ -1146,7 +1153,10 @@ export function App({ store }: AppProps) {
     }
     try {
       await channel.runExclusive(async () => {
-        const queued = draftWrites.current.then(() => forgetTabDraft(activeTab.id));
+        const queued = draftWrites.current.then(async () => {
+          await deleteRecentHandle(activeTab.id);
+          return forgetTabDraft(activeTab.id);
+        });
         draftWrites.current = queued.catch(() => undefined);
         const removed = await queued;
         if (removed === null) setNotice(t('vault.incomplete'));
@@ -1272,11 +1282,15 @@ export function App({ store }: AppProps) {
       setNotice(t('redact.sensitive.off'));
       return;
     }
-    // Turning the opt-out **on** is also the moment the stored copies go: leaving them
-    // behind would make the toggle a label rather than a decision.
+    // Turning the opt-out **on** is also the moment the stored copies go, and the handle that
+    // would reopen the file: leaving them behind would make the toggle a label rather than a
+    // decision.
     setNotice(t('redact.sensitive.on'));
     draftWrites.current = draftWrites.current
-      .then(() => forgetTabDraft(activeTab.id))
+      .then(async () => {
+        await deleteRecentHandle(activeTab.id);
+        return forgetTabDraft(activeTab.id);
+      })
       .then((removed) => {
         if (removed === null) setNotice(t('vault.incomplete'));
       })
@@ -1979,6 +1993,9 @@ export function App({ store }: AppProps) {
     async (file: File, fileHandle?: FileSystemFileHandle, password?: string) => {
       setNotice(null);
       if (busyRef.current) {
+        // A tool picked on the home screen waits for this document; an open refused never
+        // brings it, so the tool must not run on whatever is opened next.
+        pendingHomeCommand.current = null;
         refuseBusy();
         return;
       }
@@ -2091,12 +2108,15 @@ export function App({ store }: AppProps) {
           }
           const kind = unsupportedDocumentKind(file.name);
           if (kind !== null) {
+            // No document comes of this file, so a tool picked for it is dropped.
+            pendingHomeCommand.current = null;
             setNotice(t('convert.unsupported', { kind }));
             return;
           }
         }
         await openFile(file, handle);
       } catch (error) {
+        pendingHomeCommand.current = null;
         setNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
       }
     },
@@ -2154,6 +2174,7 @@ export function App({ store }: AppProps) {
         pendingHomeCommand.current = null;
         return;
       }
+      pendingHomeCommand.current = null;
       setNotice(t('open.pickerFailed'));
       return;
     }
@@ -2216,6 +2237,7 @@ export function App({ store }: AppProps) {
       if (format === null && !isImageName(file.name)) return;
       setNotice(null);
       if (busyRef.current || cancelRef.current !== null) {
+        pendingHomeCommand.current = null;
         refuseBusy();
         return;
       }
@@ -2259,6 +2281,7 @@ export function App({ store }: AppProps) {
           .map((item) => t(item.key, item.params));
         setNotice([t('convert.opened', { format: formatLabel(format) }), ...caveats].join(' '));
       } catch (error) {
+        pendingHomeCommand.current = null;
         if (controller.signal.aborted) return;
         setNotice(noticeLine(failureNotices(error, 'error.unsupported-format.message'), t));
       } finally {
@@ -2770,6 +2793,11 @@ export function App({ store }: AppProps) {
       setBusy(true);
       try {
         let target = tab.source.handle;
+        // A handle read back from IndexedDB (a restored draft, a reopened recent entry) has
+        // no write access until the user grants it: asked here, the first await of the click.
+        if (target !== undefined && !(await ensureWriteAccess(target))) {
+          throw new ToolError('permission-denied', { engine: 'model' });
+        }
         if (target === undefined && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
           try {
             const suggestedName = tab.name.toLowerCase().endsWith('.pdf') ? tab.name : `${tab.name}.pdf`;
@@ -3563,7 +3591,11 @@ export function App({ store }: AppProps) {
         if (first === undefined) return;
         if (kind === 'new-tab') {
           await openProducedTab(first.name, first.bytes, controller.signal);
-          setNotice(t('op.result.opened', { name: first.name }));
+          setNotice(
+            result.noticeKey === undefined
+              ? t('op.result.opened', { name: first.name })
+              : t(result.noticeKey, result.noticeParams ?? {}),
+          );
           close();
           return;
         }

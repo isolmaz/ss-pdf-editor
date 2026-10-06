@@ -83,6 +83,42 @@ describe('convertToPdfA', () => {
     expect(again.report.steps).toEqual(['pdfa.check']);
   });
 
+  it('converts a file that claims the part but could not be fully checked, instead of calling it compliant', async () => {
+    const compliant = (await convertToPdfA(await source(), { part: 2 }, run)).bytes;
+    // A second content stream MuPDF cannot decode (a predictor row width that overflows),
+    // appended incrementally so the PDF/A claim and metadata stay as they were.
+    const mupdf = await loadMupdf();
+    const doc = openPdf(mupdf, compliant);
+    let damaged: Uint8Array;
+    try {
+      const page = doc.findPage(0);
+      const unreadable = doc.addRawStream(new Uint8Array([0x78, 0x9c, 3, 0, 0, 0, 0, 1]), {});
+      unreadable.put('Filter', doc.newName('FlateDecode'));
+      const parms = doc.newDictionary();
+      parms.put('Predictor', 12);
+      parms.put('Columns', 2147483647);
+      parms.put('Colors', 32);
+      parms.put('BitsPerComponent', 16);
+      unreadable.put('DecodeParms', parms);
+      const contents = doc.newArray();
+      contents.push(page.get('Contents'));
+      contents.push(unreadable);
+      page.put('Contents', contents);
+      damaged = new Uint8Array(doc.saveToBuffer('incremental').asUint8Array());
+    } finally {
+      doc.destroy();
+    }
+
+    const check = await checkPdfA(damaged);
+    expect(check).toMatchObject({ verdict: 'claims-and-meets', violations: 0, targetFromClaim: true });
+    expect(check.unchecked).toEqual(expect.arrayContaining(['fonts', 'device-colour']));
+
+    const outcome = await convertToPdfA(damaged, { part: 2 }, run);
+    expect(outcome.converted).toBe(true);
+    expect(outcome.report.steps).toEqual(['pdfa.prepare', 'pdfa.convert', 'pdfa.verify']);
+    expect(outcome.report.notes.map((entry) => entry.key)).not.toContain('op.note.pdfa.alreadyCompliant');
+  });
+
   it('refuses a file that needs a password before the engine starts', async () => {
     const locked = await source('encrypt=aes-128,owner-password=o,user-password=u');
     await expect(convertToPdfA(locked, { part: 2 }, run)).rejects.toMatchObject({

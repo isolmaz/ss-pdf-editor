@@ -217,12 +217,15 @@ export async function convertToPdfA(
   const source = await checkPdfA(bytes, {}, context.signal);
 
   // A file that already meets the part is returned as it is: Ghostscript rewrites everything,
-  // and a rewrite of a compliant file can only lose things (signatures, tags).
+  // and a rewrite of a compliant file can only lose things (signatures, tags). "Meets" is the
+  // same test the converted output must pass: no violation and no rule left unchecked (a content
+  // stream that cannot be read, a file past the content budget).
   if (
     source.verdict === 'claims-and-meets' &&
     source.targetFromClaim &&
     source.target.part === part &&
-    source.violations === 0
+    source.violations === 0 &&
+    source.unchecked.length === 0
   ) {
     return {
       bytes,

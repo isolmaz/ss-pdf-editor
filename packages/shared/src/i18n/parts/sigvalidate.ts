@@ -6,6 +6,8 @@
 
 export const sigValidatePart = {
   'props.sig.revocation.notRevoked': 'İptal edilmemiş',
+  'props.sig.revocation.notRevokedOutdated':
+    'İptal listesinde yok, ancak listeler bunu dışlamak için fazla eski',
   'props.sig.revocation.revoked': 'İptal edilmiş',
   'props.sig.revocation.revokedAfter': 'İmzadan sonra iptal edilmiş',
   'props.sig.revocation.partial': 'Kısmen denetlendi: iptal edilmiş yok, bazı sertifikalar için liste yok',

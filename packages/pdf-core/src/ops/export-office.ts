@@ -1226,11 +1226,29 @@ async function verifyXlsx(bytes: Uint8Array, sheets: number, cells: number): Pro
   }
 }
 
-function csvField(text: string, delimiter: CsvDelimiter): string {
-  return /["\r\n]/.test(text) || text.includes(delimiter) ? `"${text.replace(/"/g, '""')}"` : text;
+/**
+ * A text cell that a spreadsheet would read as a formula (`=`, `+`, `-`, `@`, or a tab or
+ * carriage return before one): the text comes from the PDF, so `=HYPERLINK(…)` or a DDE call
+ * in a page would run when the CSV is opened (CWE-1236). A number such as `-7` is not one.
+ */
+export function csvFormulaLike(text: string): boolean {
+  return /^[=+\-@\t\r]/.test(text) && cellNumber(text) === null;
 }
 
-function writeCsv(sheets: readonly Sheet[], delimiter: CsvDelimiter): { bytes: Uint8Array; rows: number } {
+/** The cell as written: a formula-like text gets a leading `'`, the mark Excel and LibreOffice read as "text". */
+function csvField(text: string, delimiter: CsvDelimiter): string {
+  const value = csvFormulaLike(text) ? `'${text}` : text;
+  return /["\r\n]/.test(value) || value.includes(delimiter) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function writeCsv(
+  sheets: readonly Sheet[],
+  delimiter: CsvDelimiter,
+): { bytes: Uint8Array; rows: number; guarded: number } {
+  const guarded = sheets.reduce(
+    (sum, sheet) => sum + sheet.rows.reduce((count, row) => count + row.filter(csvFormulaLike).length, 0),
+    0,
+  );
   const blocks = sheets.map((sheet) =>
     sheet.rows.map((row) => row.map((cell) => csvField(cell, delimiter)).join(delimiter)).join('\r\n'),
   );
@@ -1244,7 +1262,7 @@ function writeCsv(sheets: readonly Sheet[], delimiter: CsvDelimiter): { bytes: U
       engineMessage: `csv read-back found ${parsed.length} rows, ${expected} were written`,
     });
   }
-  return { bytes: new TextEncoder().encode(`﻿${text}`), rows: expected };
+  return { bytes: new TextEncoder().encode(`﻿${text}`), rows: expected, guarded };
 }
 
 /* ------------------------------------------------------------------ *
@@ -1356,6 +1374,8 @@ export async function exportOffice(
       notes.push(
         note('changed', 'op.note.exportOffice.csvRows', { rows: written.rows, tables: sheets.length }),
       );
+      if (written.guarded > 0)
+        notes.push(note('changed', 'op.note.exportOffice.csvFormulas', { count: written.guarded }));
     }
     if (tables > 0) notes.push(note('preserved', 'op.note.exportOffice.tables', { count: tables }));
     if (streams > 0) notes.push(note('warning', 'op.note.exportOffice.streamTables', { count: streams }));

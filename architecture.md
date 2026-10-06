@@ -241,7 +241,9 @@ flowchart TD
 Contract points the router returns and the report shows:
 
 - `incremental` is true **only** for the single pdf.js `saveDocument` path on an
-  unencrypted input. Any other writer ends the fast path and says `incremental: false`.
+  unencrypted input, including the static-XFA datasets sync that follows it, which MuPDF
+  appends as one more revision (`saveIncremental`). Any other writer ends the fast path and
+  says `incremental: false`.
 - `rewritesStructure` is true for redaction, writer steps and page composition — those
   normalise object numbering, compression and XMP.
 - `reprotects` is true when the input was encrypted and the user did not ask for
@@ -394,7 +396,10 @@ had to stay green. The moves, and the defects they fixed on the way:
     catalog's `/Lang`. The package is written by hand and read back with mammoth, whose
     word count must equal the words written.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
-    is reopened and its cells counted. CSV rows are read back through `parseCsv`.
+    is reopened and its cells counted. CSV rows are read back through `parseCsv`. A CSV text
+    cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,
+    tab or carriage return, and not a number by `cellNumber`) is written with a leading `'`
+    (CWE-1236); XLSX needs no such guard, since its text cells are `inlineStr`.
   - **mupdf.js 1.28.1 defect.** Device callbacks get their `Shade` and `Image` in wrappers
     that take no reference but are registered with the class finalizer. Under forced
     garbage collection the engine asserted (`remove non-existent hash entry`) and the next
@@ -613,7 +618,7 @@ The verdict has four independent fields, never one badge:
 |---|---|
 | `integrity` | `valid` / `invalid` / `unchecked` |
 | `trust` | `trusted` / `untrusted` / `self-signed` / `indeterminate` / `not-checked` |
-| `revocation` | `not-revoked` / `revoked` / `revoked-after-signing` / `partial` / `indeterminate` — from lists already on the device only (§5.3.1); `indeterminate` when none speaks for any certificate |
+| `revocation` | `not-revoked` / `not-revoked-outdated` / `revoked` / `revoked-after-signing` / `partial` / `indeterminate` — from lists already on the device only (§5.3.1); `indeterminate` when none speaks for any certificate |
 | `coverage` | `covers-whole-document` / `covers-partial` / `unknown`, computed from the ByteRange |
 
 plus `changesAfterSigning`, derived from the `startxref`/`/Prev` revision chain.
@@ -659,7 +664,12 @@ but not including a self-signed root, are checked.
   name). A `good` carries `coversValidationTime` (was the list issued at or after the signature?)
   and `stale` (past its `nextUpdate` today). A lasting revocation outranks everything; otherwise
   the newest statement decides. The summary is `partial` when nothing is revoked, something was
-  cleared and something has no list (typically the CA above the signer).
+  cleared and something has no list (typically the CA above the signer). When every certificate
+  was cleared, the summary is `not-revoked` only if each list speaks for the validation time:
+  a list issued before it, or a `stale` list while the validation time is not a trusted
+  timestamp, makes it `not-revoked-outdated` (a warning, not a pass). The signer's own claimed
+  time can be back-dated to sit before an old list that still names nothing, so only a
+  current list proves anything then.
 - **Before or after the signature.** A revocation is compared with the *validation time*. It is
   called `revoked-after-signing` — harmless to the signature — only when that time is a trusted
   timestamp; the signer's own `signingTime`/`/M` can be back-dated and never earns the excuse.
@@ -937,11 +947,13 @@ one word. Whole-word mode refuses a letter, digit or mark on either side.
    nowhere is drawn down to 60 % or left alone (`noRoom`).
 
 **Faces.** A replacement uses the page's own font when it has a code for every character
-**and** the document already draws each of them with that font — a subset holds only the
-glyphs its producer used, and a glyph on the page is proof the file has it. Otherwise Noto
-Sans when the old text was Noto Sans, a standard face of the same family, weight and slant
-when WinAnsi can spell it, and Noto Sans after that. A substitute is sized so that it would
-draw the old text as wide as the old font did, within ±15 %.
+**and** that font object already draws each of them — a subset holds only the glyphs its
+producer used, and a glyph on the page is proof the file has it. The proof is kept per font
+object, not per name: subset tags are unique only within the file that made them, so a merge
+can put two subsets with different glyphs under one name. Otherwise Noto Sans when the old
+text was Noto Sans, a standard face of the same family, weight and slant when WinAnsi can
+spell it, and Noto Sans after that. A substitute is sized so that it would draw the old text
+as wide as the old font did, within ±15 %.
 
 **The document's own fonts** (`engines/doc-fonts.ts`). A font is usable when new codes can
 be found for it: a `/ToUnicode` CMap inverted (single-code-point entries), or a simple font's
@@ -1101,7 +1113,9 @@ chosen button decides. Three writers keep the data current, all through the same
 1. `fillFormFields` (the form panel, FDF/JSON import, calculations) syncs the fields it wrote
    — `xfa.datasets` is added to its steps and `xfa.note.synced`/`notSynced` to its notes;
 2. `materializeBase` runs `syncXfaDatasets` over the bytes pdf.js produced for inline widget
-   edits (`lazy-ops.ts`; a document without XFA comes back as the same array, unwritten);
+   edits (`lazy-ops.ts`; a document without XFA comes back as the same array, unwritten).
+   The sync is appended as an incremental update (`saveIncremental`; a rewrite only when
+   MuPDF cannot append), so the bytes pdf.js kept, and a signature over them, stay intact;
 3. `importXfaData` replaces the data and fills the widgets from it.
 
 `flattenForm` now accepts a static form (the XFA is removed because it would redraw every
@@ -1158,7 +1172,11 @@ category finds, and removes it when `mutate` is set. The operation runs it mutat
 input, saves with `garbage=compact,compress`, **re-opens the output and runs the same sweep
 read-only**: every selected category must count zero, or the operation throws
 `verification-failed`. `found`, `removed` and `left` in the report are measured, never assumed,
-and a counter and a remover cannot disagree because they are one function.
+and a counter and a remover cannot disagree because they are one function. The sweep sees only
+the latest revision, so the input goes back unchanged ("nothing found") only when it has one:
+a file with earlier revisions is always rewritten, since an incremental update that freed an
+attachment or a script leaves its bytes in the revision before it (`revisionsDropped` note),
+and the output must have a single revision.
 
 **Actions are decided per type** (ISO 32000-1 §12.6.4), wherever one hangs (`/A`, `/PA`,
 `/AA`, `/OpenAction`, and each `/Next` chain). JavaScript, Launch, ImportData, SubmitForm,
@@ -1190,7 +1208,10 @@ the report says the pages were not compared.
 **Said plainly:** there is no "embedded search index" category (Acrobat's location is not
 publicly specified; whatever it is stored as falls under files, private data or unused
 objects); 3D and RichMedia scripts are reported, not edited; a signature does not survive the
-rewrite and the report says so; an XFA form carrying `<script` is dropped whole.
+rewrite and the report says so; an XFA form carrying `<script` is dropped whole, except a
+dynamic one (no AcroForm fields besides signatures): its page is only the placeholder, so a
+run that would drop its XFA is refused with `xfa-dynamic` before anything is written, as
+removing or flattening one is.
 ### 5.12 Form field detection
 
 `ops/form-detect.ts` finds the places a flat page asks to be written in and offers them as
@@ -1259,7 +1280,8 @@ an invoice.
 
 `ops/pdfa.ts` (`convertToPdfA`) converts to PDF/A-1b, 2b or 3b; `ops/pdfa-check.ts`
 (`checkPdfA`) says whether a file claims PDF/A and which rules it breaks. The dialog `pdfa`
-(`pdf-ui/ops/pdfa.ts`, result opens in a new tab) and the dock panel `PdfAPanel` use them.
+(`pdf-ui/ops/pdfa.ts`, result opens in a new tab announced by its own `pdfa.done` /
+`pdfa.doneAlready` notice) and the dock panel `PdfAPanel` use them.
 
 **Why Ghostscript.** Producing PDF/A rewrites colour, fonts and structure; it is not a flag.
 MuPDF cannot convert colours on write, cannot embed a font the file does not carry and cannot
@@ -1280,11 +1302,13 @@ Nothing loads until a conversion runs: `ghostscript.ts` starts a module worker
 `worker.format: 'es'` in `vite.config.ts`), the worker imports `gs.js` by URL behind a
 `vite-ignore` marker (the same runtime-URL rule as MuPDF) and the document travels by transfer.
 The worker is terminated when the run ends, and an abort terminates it at once. The CSP is
-unchanged (`worker-src 'self' blob:`, `'wasm-unsafe-eval'`). A file that cannot be fetched is
-`asset-missing`; running out of memory is `out-of-memory`; anything else the engine throws is
-`pdfa-failed`. `public/sw.js` caches `/engines/*` on first use, so the converter works offline
-after one run (measured in the built app with the network switched off), but it is **not** in
-the "prepare offline" manifest (15.5 MB).
+unchanged (`worker-src 'self' blob:`, `'wasm-unsafe-eval'`). A loader, worker or wasm the
+browser cannot fetch is `asset-offline` (`ghostscriptFailure`; the readiness screen does not
+list this engine, so the hint says to connect and reload, not to download it there); running
+out of memory is `out-of-memory`; anything else the engine throws is `pdfa-failed`.
+`public/sw.js` caches `/engines/*` on first use, so the converter works offline after one run
+(measured in the built app with the network switched off), but it is **not** in the "prepare
+offline" manifest (15.5 MB).
 
 **The output intent without a shipped profile.** A PDF/A file needs an `/OutputIntents` entry
 with an ICC profile (veraPDF 6.2.4.3 otherwise). `ghostscript-run.ts` runs a short PostScript
@@ -1294,10 +1318,12 @@ title, author, subject, keywords, creator and dates (`/DOCINFO`) and `/Lang`. Th
 one the engine converts with, so the intent describes the colours it produced. The Producer
 cannot be set: Ghostscript writes `GPL Ghostscript 10.06.0`, and the report says so.
 
-**Pipeline.** (1) `checkPdfA` on the input; a file that already claims the part and breaks no
-rule is returned as it is (`incremental: true`). (2) `prepareForPdfA` (`ops/pdfa-prepare.ts`).
-(3) Ghostscript with `-dPDFA=N -dPDFACompatibilityPolicy=1 -sColorConversionStrategy=RGB
--dAutoRotatePages=/None -dUseCropBox` and no downsampling. (4) `checkPdfA(output, { part })`:
+**Pipeline.** (1) `checkPdfA` on the input; a file that already claims the part, breaks no
+rule and leaves no rule unchecked (the same bar as step 4) is returned as it is
+(`incremental: true`); a file whose content could not all be read is converted.
+(2) `prepareForPdfA` (`ops/pdfa-prepare.ts`). (3) Ghostscript with `-dPDFA=N
+-dPDFACompatibilityPolicy=1 -sColorConversionStrategy=RGB -dAutoRotatePages=/None
+-dUseCropBox` and no downsampling. (4) `checkPdfA(output, { part })`:
 **a file that breaks a rule, or any rule that could not run, throws `pdfa-not-compliant`** and
 no bytes are offered. (5) Read-back: page count equal; the share of the input's words the output
 still extracts on up to 12 sampled pages (`wordRecall`, warning under 90 %); a 360 px grey render
@@ -1513,9 +1539,11 @@ Every capability the menus can run is described by exactly one `OperationDialogS
 noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
 `checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
-`fieldErrors()` from `dialogs/fields.tsx`. A field marked `advanced` is rendered in one
-closed "advanced options" section after the essential fields (it opens itself while one of
-its fields is invalid); short controls — number, colour, select — share a row two by two
+`fieldErrors()` from `dialogs/fields.tsx`. A run's `noticeKey` is the sentence the shell
+shows whatever the result kind (replace, new tab, download); without one it says what
+happened to the file. A field marked `advanced` is rendered in one closed "advanced
+options" section after the essential fields (it opens itself while one of its fields is
+invalid); short controls — number, colour, select — share a row two by two
 once the form's container is wider than 28 rem (a container query, because the same list
 renders in the panel and in a modal). A select shows its option's **label** in the trigger
 (`renderValue`): Kumo's trigger prints the raw value otherwise, and a stamp position read
@@ -1678,26 +1706,36 @@ after the other (`openFilesFromSurface`), because an open holds the busy gate un
 **The home screen** (`components/HomeScreen.tsx`) has two tabs that both act. *Start* holds
 the ways to begin — open, a blank document, a PDF from images, merging several PDFs, a batch
 run — and the recent list (search, sort, star, page count, an "open" badge for entries that
-are a tab right now; removing an entry or clearing the list never touches a file, and the
-clear asks first). *All tools* (`components/HomeToolGrid.tsx`, loaded with the tab) lays the
-command registry out by task: each tile is a command id, its title is the command's label and
-pressing it runs the command, so the grid cannot drift from the menus or the palette. It lists
+are a tab right now; removing an entry or clearing the list never touches a file, it forgets
+the entry's stored handle at once, and the clear asks first). *All tools*
+(`components/HomeToolGrid.tsx`, loaded with the tab) lays the command registry out by task:
+each tile is a command id, its title is the command's label and pressing it runs the
+command, so the grid cannot drift from the menus or the palette. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never
 disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
 cancelled picker (the File System Access `AbortError` or the plain input's `cancel` event)
 drops the pending command, so it cannot run on a document opened later for another reason.
+So does every other way the pick ends without a document: a picker failure, a file kind
+refused as unsupported, an open or a conversion refused as busy or failing, and a cancelled
+password prompt.
 
 **Recent entries reopen their file.** Chromium hands a `FileSystemFileHandle` for a file picked
 with `showOpenFilePicker` or dropped (`DataTransferItem.getAsFileSystemHandle`), and
 `recent-handles.ts` keeps it in IndexedDB under the tab id — a reference to the file, never
-its bytes, and none for a sensitive session. A recent entry then reopens the file itself: the
+its bytes, and none for a sensitive session: turning a session sensitive, or purging the
+document, deletes the stored handle with its drafts (`deleteRecentHandle`), since a handle
+that reopens the file is something saved. A recent entry then reopens the file itself: the
 browser asks for read permission again on that click (`requestPermission` needs the gesture),
 a refusal is reported and taken as the answer, and a file that has moved or gone is reported
 before the picker is offered. A tab restored from a draft gets its handle back, so it can still
-Save over its file rather than only Export. Handles whose entry has left the list are pruned
-after the startup restore, which is the one reader that needs them. A reopened file keeps its
-star: `addRecentDocument` used to drop it when the entry it replaced was starred.
+Save over its file rather than only Export. A handle read back this way holds no write access
+(a reopened entry asked for `read` only), so `saveActive` asks for `readwrite`
+(`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
+up the gesture; a refusal is `permission-denied`, and nothing is written. Handles whose entry
+has left the list are pruned after the startup restore, which is the one reader that needs
+them. A reopened file keeps its star: `addRecentDocument` used to drop it when the entry it
+replaced was starred.
 
 Playwright's bundled Chromium (153) kills an off-the-record page that deserialises a file
 handle from IndexedDB; Chrome 154 and Edge 154 in the same off-the-record context do not
@@ -1873,8 +1911,10 @@ review state on itself (`AnnotationMark.replies`, `.review`), and `writeAnnotati
 writes them once `markerTargets` has resolved the reference the mark was given. A reply to a
 file comment is written at once through `writeFileAnnotation`, as one journal step. The
 writer refuses a parent that is not on its page or is a popup, widget or link, and reads
-every record back by `/NM`, `/IRT` and `/State`. pdf.js reports `/State` and `/StateModel`
-as name objects (`{ name }`), which `readAnnotations` unwraps.
+every record back by `/NM`, `/IRT` and `/State`. `/State` and `/StateModel` are written as
+text strings (ISO 32000-1 Table 172; a bare JS string would become a name). pdf.js passes
+them through as strings, or as name objects (`{ name }`) for a file that wrote names, and
+`readAnnotations` unwraps both.
 
 **XFDF** (`ops/annotation-xfdf.ts`, loaded on demand) exports the file's comments
 (`readAnnotations`) and the session's marks together, each with its thread, in PDF user
@@ -1930,9 +1970,12 @@ it, so its handles are there at once. The simple-signature dialog (`pdf-ui/dialo
 draws on a canvas with speed-weighted quadratic strokes, renders a typed name in one of two
 pinned handwriting faces (Dancing Script and Great Vibes, latin and latin-ext), or turns a
 photo's paper transparent by luminance (`ops/stamp-source.ts`); everything is trimmed to its
-ink and leaves as one PNG. A remembered signature is opt-in and stays in this browser's
-`localStorage` (`apps/web/src/signature-store.ts`, six entries at most); a sensitive session
-does not offer it. The dialog states that
+ink and leaves as one PNG. An added picture (`imageFromFile`) keeps a JPEG's own bytes
+unless it must shrink or its EXIF orientation turns it (`jpegIsTurned`); an EXIF block whose
+offsets point past its bytes counts as turned, so the picture is re-encoded from what the
+browser decoded rather than lost to a `RangeError`. A remembered signature is opt-in and
+stays in this browser's `localStorage` (`apps/web/src/signature-store.ts`, six entries at
+most); a sensitive session does not offer it. The dialog states that
 the picture is not a certified signature.
 
 Form fields, widgets and popups are **not** deletion targets: `isDeletableAnnotation()` drops

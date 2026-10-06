@@ -88,7 +88,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   document, builds a PDF from images, merges several PDFs in the order you choose or starts
   a batch run, and lists recent documents with search, sorting and stars. *All tools* lays
   every tool out by task; pick a tool first and the editor asks for the file when the tool
-  needs one.
+  needs one. A file that does not open drops the tool, so it never runs on a later document.
 - **Viewer.** pdf.js's own viewer stack drives continuous virtualised scrolling, text
   selection and search with match highlighting.
 - **View modes.** You get single-page, book and full-screen presentation modes, a
@@ -97,8 +97,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   installed on the device.
 - **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
   reopens a document by its identity, never by its file name. In Chromium-based browsers it
-  reopens the file itself (the browser asks for permission again); elsewhere it asks you to
-  choose the file.
+  reopens the file itself (the browser asks for permission again, and once more for write
+  access the first time you save over it); elsewhere it asks you to choose the file.
 - **The document never moves under you.** Marks, selections, measurements and staged
   redactions scroll and zoom with their page. Tools, progress and notices never shift
   the page.
@@ -129,9 +129,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   text readable, and freehand strokes stay continuous in the exported file.
 - **Comment threads.** In the Notes panel every comment can be answered and given a review
   status (Accepted, Rejected, Cancelled, Completed), as in Acrobat.
-  - A reply is a real PDF reply (`/IRT`) and a status is a real `/State` record, so Acrobat,
-    Foxit and other readers show the same thread. Replies and statuses already in a file
-    are listed under their comment.
+  - A reply is a real PDF reply (`/IRT`) and a status is a real `/State` record (text
+    strings, as the PDF standard defines them), so Acrobat, Foxit and other readers show
+    the same thread. Replies and statuses already in a file are listed under their comment.
   - A comment already in the file gets the reply at once, as one undoable step. A comment
     not saved yet keeps it until the comment itself is written.
   - Deleting a comment deletes its replies and statuses with it.
@@ -160,8 +160,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   its AcroForm. The editor says so in a notice under the tool strip, and what it does
   depends on the kind of form:
   - *Static* XFA (the widgets are in the PDF): filled like any form, and every write also
-    updates the XFA data, so Acrobat shows the same values. *Remove XFA* keeps only the
-    AcroForm.
+    updates the XFA data, so Acrobat shows the same values. Filling in place appends that
+    update to the file instead of rewriting it, so a signature the form already carries
+    keeps covering what it signed. *Remove XFA* keeps only the AcroForm.
   - *Dynamic* XFA (the PDF page is only a "Please wait…" placeholder): *Fill XFA form*
     draws it with pdf.js's XFA renderer in its own window, saves what you typed into the
     form's data, and can export that data as XML. *Flatten to a normal PDF* writes the
@@ -208,9 +209,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     wider or narrower, the rest of the line moves along; text after a tab stop keeps its
     place. A match across a line break, or one that does not fit its line, lays the
     paragraph out again, and every other word keeps its own font, size and colour.
-  - It uses the document's own font whenever the page already draws every character the
-    new text needs with it. Otherwise it uses a close standard font (Helvetica, Times,
-    Courier) or Noto Sans, sized to match, and the report names the font.
+  - It uses the document's own font whenever that font already draws every character the
+    new text needs (in a merged file, the copy of the font the page itself uses). Otherwise
+    it uses a close standard font (Helvetica, Times, Courier) or Noto Sans, sized to match,
+    and the report names the font.
   - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
     readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`.
 - **Export and import.** Export text as plain text or Markdown. Export pages as images, or
@@ -241,7 +243,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
     thousand, or one point two three four?), and so does `007`.
   - **CSV:** the same tables in one UTF-8 file, with the comma or semicolon that Excel
-    expects in your region.
+    expects in your region. A text cell that starts with `=`, `+`, `-` or `@` would run as a
+    formula when the file is opened, so it is written with a leading `'` (negative numbers
+    are left alone), and the report counts them.
   - The file is read back before it is offered (Word with mammoth, an independent reader),
     and the report says what was approximated.
 
@@ -290,12 +294,17 @@ nothing leaving the browser.
     and form fields (flatten or remove; off by default).
   - The report lists what was found and removed per category. The output is re-read and each
     chosen category must count zero, or nothing is returned.
+  - A file with earlier revisions (incremental saves) is always rewritten as one, even when
+    the latest revision holds nothing to remove: an earlier one can still contain what a
+    later save deleted.
   - When the selection does not change the picture, up to 40 pages are rendered before and
     after and must match pixel for pixel.
   - Limits: no "embedded search index" category (its place in the file is not specified),
     scripts inside 3D and rich media are reported but not edited, hidden-layer content that
     cannot be cut out exactly stays and is reported, and a digital signature does not
     survive.
+  - A dynamic XFA form keeps its content only in the XFA, so a run that would remove the XFA
+    (scripts, or form fields) is refused; flatten the XFA form to a normal PDF first.
 - **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
   encrypted copy is downloaded, not applied to the open document.
 - **Simple signatures and images.** Draw a signature, type your name in one of two
@@ -318,7 +327,10 @@ nothing leaving the browser.
     the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
     the CRLs and OCSP responses stored in the PDF (the `/DSS` and the signature's own
     revocation archive). Each certificate in the chain is reported not revoked, revoked (with
-    date and reason, and whether that is before or after the signature) or unknown.
+    date and reason, and whether that is before or after the signature) or unknown. A list
+    issued before the signature, or one past its next-update date when no trusted timestamp
+    fixes the signing time, cannot rule out a revocation: the summary then says the lists are
+    too old instead of "not revoked".
   - RFC 3161 timestamps are verified offline, both a signature's own timestamp and
     document timestamps (`ETSI.RFC3161`): the hash it covers, its signature, the authority's
     time-stamping certificate and, with a root you imported, its chain. A timestamp from an
@@ -370,6 +382,8 @@ nothing leaving the browser.
     and 3b.
   - Before the result is offered, the checker runs on it. **A file that breaks a rule is never
     handed over**: the operation stops and says which rule failed.
+  - A file that already claims the chosen level is left as it is only when it passes every
+    rule and the checker could read all of it; otherwise it is converted like any other.
   - The checker covers 20 rule groups (header and trailer, encryption, streams, XMP and the
     `pdfaid` claim, output intent, device colour, transparency, fonts, images, actions,
     annotations, forms, layers, embedded files). It reports each rule as passed, broken (with
@@ -401,7 +415,9 @@ These describe how the build works; they are not promises.
     positioned with inline styles;
   - `object-src 'none'`, `base-uri 'none'`, `form-action 'none'` and
     `frame-ancestors 'none'`;
-  - `nosniff`, `Referrer-Policy: no-referrer`, a deny-all `Permissions-Policy` and HSTS.
+  - `nosniff`, `Referrer-Policy: no-referrer`, HSTS, and a `Permissions-Policy` that turns
+    off the microphone, location, payment and device APIs and allows the camera to this
+    origin only (`camera=(self)`, for the document scanner).
 
   The dev and preview servers apply the same file. The dev server adds only
   `'unsafe-inline'` for scripts, for React refresh, and logs that it does.
@@ -413,7 +429,9 @@ These describe how the build works; they are not promises.
   - A **sensitive session** saves nothing; any document opened with a password starts one.
   - The recent list keeps the file name, size and page count in `localStorage`. In
     Chromium it also keeps a *handle* to the file in IndexedDB — a reference the browser
-    asks permission for again, never the file's bytes. A sensitive session keeps no handle.
+    asks permission for again, never the file's bytes. A sensitive session keeps no handle:
+    marking a document sensitive, or purging it, forgets its handle, and so do removing an
+    entry and clearing the list.
   - A signature picture is kept only when you tick **Remember on this device**: in
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.

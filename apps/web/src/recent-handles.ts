@@ -9,7 +9,8 @@
  * (`recent.ts`).
  *
  * Kept out of a sensitive session (a password-protected document): its tab saves nothing,
- * and a handle that reopens it is something saved.
+ * and a handle that reopens it is something saved. Marking a document sensitive or purging
+ * it forgets its handle; removing an entry or clearing the list forgets theirs at once.
  *
  * Every call tolerates a missing or failing IndexedDB (private windows, Firefox/Safari
  * without the API): the recent entry then falls back to the file picker, as it always did.
@@ -69,6 +70,11 @@ export async function getRecentHandle(id: string): Promise<FileSystemFileHandle 
   return typeof FileSystemFileHandle !== 'undefined' && value instanceof FileSystemFileHandle ? value : null;
 }
 
+/** Forget one entry's handle: its document turned sensitive or was purged from this device. */
+export async function deleteRecentHandle(id: string): Promise<void> {
+  await withStore('readwrite', (store) => store.delete(id));
+}
+
 /** Forget every handle whose recent entry is gone (removed, cleared or pushed off the list). */
 export async function pruneRecentHandles(keep: ReadonlySet<string>): Promise<void> {
   const keys = await withStore('readonly', (store) => store.getAllKeys());
@@ -78,6 +84,21 @@ export async function pruneRecentHandles(keep: ReadonlySet<string>): Promise<voi
       await withStore('readwrite', (store) => store.delete(key));
     }
   }
+}
+
+/**
+ * Whether an in-place Save may write over `handle`, asking the user once when the browser
+ * says `prompt`. A handle read back from IndexedDB holds no write access yet: one restored
+ * with a draft, and one a recent entry reopened (which asks for `read` only). Must be the
+ * first await of the click that saves: `requestPermission` needs that gesture, and the
+ * preparation that follows would use it up. A browser without the permission calls has
+ * already granted what the picker gave.
+ */
+export async function ensureWriteAccess(handle: FileSystemFileHandle): Promise<boolean> {
+  const descriptor = { mode: 'readwrite' } as const;
+  let state = (await handle.queryPermission?.(descriptor)) ?? 'granted';
+  if (state === 'prompt') state = (await handle.requestPermission?.(descriptor)) ?? 'denied';
+  return state === 'granted';
 }
 
 export type HandleReopen =

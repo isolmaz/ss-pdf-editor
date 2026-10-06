@@ -26,7 +26,7 @@
 import type { PDFDocument } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
-import { openForWrite, saveRewrite, type WritableDocument } from '../engines/mupdf-write';
+import { openForWrite, saveIncremental, saveRewrite, type WritableDocument } from '../engines/mupdf-write';
 import { fillFormFields, readFormFields, xfaSnapshotsOf } from './forms';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 import {
@@ -93,7 +93,9 @@ export async function syncXfaDatasets(
     if (readXfaPackets(doc) === null) return { bytes, changed: 0, skipped: [] };
     const plan = syncXfaInDocument(doc, xfaSnapshotsOf(doc));
     if (plan === null || plan.xml === null) return { bytes, changed: 0, skipped: plan?.skipped ?? [] };
-    return { bytes: saveRewrite(doc, 'xfa.sync'), changed: plan.changed.length, skipped: plan.skipped };
+    // Appended, not rewritten: the bytes before it (pdf.js's own incremental save) may carry a
+    // signature, and a rewrite would leave nothing for it to cover.
+    return { bytes: saveIncremental(doc, 'xfa.sync'), changed: plan.changed.length, skipped: plan.skipped };
   });
 }
 

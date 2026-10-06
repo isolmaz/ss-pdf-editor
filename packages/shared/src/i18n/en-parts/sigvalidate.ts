@@ -6,6 +6,8 @@
 
 export const sigValidatePart = {
   'props.sig.revocation.notRevoked': 'Not revoked',
+  'props.sig.revocation.notRevokedOutdated':
+    'Not listed as revoked, but the lists are too old to rule it out',
   'props.sig.revocation.revoked': 'Revoked',
   'props.sig.revocation.revokedAfter': 'Revoked after signing',
   'props.sig.revocation.partial': 'Partly checked: none revoked, no list for some certificates',
