@@ -7,6 +7,7 @@
 
 import { createTranslator } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
+import { PRODUCER_LINE } from '../engines/mupdf-write';
 import { buildPrintDocument, imposeDocument } from './impose';
 
 const run = { signal: new AbortController().signal };
@@ -95,7 +96,12 @@ describe('imposeDocument', () => {
     expect(labels(result[1] ?? { words: [] })).toEqual(['P3']);
     // Every report line reads as a sentence: the producer note once printed `{producer}`.
     const say = createTranslator();
-    for (const entry of out.report.notes) expect(say(entry.key, entry.params)).not.toMatch(/\{[a-zA-Z]+\}/);
+    const lines = out.report.notes.map((entry) => say(entry.key, entry.params));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(line).not.toMatch(/\{[a-zA-Z]+\}/);
+    const producer = out.report.notes.findIndex((entry) => entry.key === 'op.note.metadata.producerKept');
+    expect(producer).toBeGreaterThanOrEqual(0);
+    expect(lines[producer]).toContain(PRODUCER_LINE);
   });
 
   it('orders a booklet so the folded sheets read 1…N', async () => {

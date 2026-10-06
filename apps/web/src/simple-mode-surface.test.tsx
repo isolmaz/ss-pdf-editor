@@ -17,11 +17,15 @@ const t = Object.assign((key: string) => key, { locale: 'en' as const }) as neve
 
 const GROUPS = ['pages', 'export', 'sign', 'security', 'stamp'] as const;
 
+/** A group's header is the rail's one disclosure button: the label it opens and closes. */
+const GROUP_TITLE = /<button[^>]*aria-expanded="(?:true|false)"[^>]*><span[^>]*>([^<]*)<\/span>/g;
+
+/** The group headings the rail renders, in order, read from the markup (not substring-searched). */
 function shownGroups(visibleGroups?: readonly string[]): string[] {
   const markup = renderToStaticMarkup(
     <ToolsRailPanel t={t} {...(visibleGroups === undefined ? {} : { visibleGroups })} />,
   );
-  return GROUPS.filter((group) => markup.includes(`tools.group.${group}`));
+  return [...markup.matchAll(GROUP_TITLE)].map((match) => (match[1] ?? '').replace(/^tools\.group\./, ''));
 }
 
 describe('the tools rail in the simple mode', () => {

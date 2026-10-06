@@ -33,6 +33,18 @@ describe('parseXmp', () => {
     );
     expect(attributes.claim).toEqual({ part: '1', conformance: 'A' });
     expect(attributes.undescribedNamespaces).toEqual([]);
+
+    // A custom namespace declared and used only as an attribute is still a namespace in use.
+    const custom = parseXmp(
+      encode(
+        wrap(
+          'xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="1" xmlns:acme="http://acme.example/ns/" acme:Flag="1"',
+          '',
+        ),
+      ),
+    );
+    expect(custom.claim).toEqual({ part: '1', conformance: null });
+    expect(custom.undescribedNamespaces).toEqual(['http://acme.example/ns/']);
   });
 
   it('collects text and list properties and tolerates a byte-order mark', () => {

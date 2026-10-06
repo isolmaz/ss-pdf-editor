@@ -135,6 +135,8 @@ describe('accessibility', () => {
         const written = elements
           .filter((element) => element.page === pageIndex)
           .map((element) => element.mcid);
+        // Page 0 holds H1, P and a figure; page 1 a P and a figure (see the roles above).
+        expect(written).toHaveLength(pageIndex === 0 ? 3 : 2);
         // Every MCR points at a marked-content sequence the page really has, and the page has no other.
         expect([...started].sort()).toEqual([...written].sort());
         // The parent tree is indexed by MCID and hands back the element that owns it.

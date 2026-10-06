@@ -40,7 +40,7 @@ describe('convertToPdf', () => {
     const pdf = await read(out.bytes);
     expect(out.format).toBe('txt');
     expect(out.report.pageCount).toBe(pdf.pages.length);
-    expect(pdf.pages.length).toBeGreaterThan(0);
+    expect(pdf.pages).toHaveLength(1);
     expect(pdf.pages[0]?.size).toEqual([595, 842]);
     expect(pdf.pages[0]?.text).toContain('Çalışma notları');
     expect(pdf.pages[0]?.text).toContain('İkinci satır ığ');
