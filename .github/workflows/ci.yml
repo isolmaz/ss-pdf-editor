@@ -30,14 +30,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      # The same steps as `pnpm ci:verify` (see package.json), split so a failure is easy to locate.
+      # The steps of `pnpm ci:verify` (see package.json), split so a failure is easy to locate;
+      # fetch:engines runs before unit because the unit tests need the fetched fonts.
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm check
+      # Fonts and engines are not committed; some unit tests read public/fonts, so fetch before unit.
+      - run: pnpm fetch:engines --sync
       - run: pnpm unit
       - run: pnpm audit:model-types
       - run: pnpm build
-      - run: pnpm fetch:engines --sync
       - run: pnpm verify:assets
       - run: pnpm check:licenses
       - run: pnpm assemble:dist

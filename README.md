@@ -669,10 +669,10 @@ locally. To run the same checks locally, run `pnpm ci:verify`.
   1. `install --frozen-lockfile`
   2. `typecheck`
   3. `check`
-  4. `unit`
-  5. `audit:model-types`
-  6. `build`
-  7. `fetch:engines --sync`
+  4. `fetch:engines --sync` (the unit tests read the fetched fonts from `public/fonts`)
+  5. `unit`
+  6. `audit:model-types`
+  7. `build`
   8. `verify:assets`
   9. `check:licenses`
   10. `assemble:dist`

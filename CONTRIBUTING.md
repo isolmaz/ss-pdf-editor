@@ -29,6 +29,7 @@ the individual commands are:
 ```sh
 pnpm typecheck
 pnpm check                   # Biome lint and format (also run by the pre-commit hook)
+pnpm fetch:engines --sync     # once per fresh clone: the unit tests read the fetched fonts
 pnpm unit                    # Vitest, the non-vacuity guard and the source-level regressions
 pnpm build && pnpm assemble:dist
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
