@@ -898,6 +898,84 @@ present" — the lines the operation drew are subtracted before the count — an
 by word is recognised as the operation's own at each word's position, not only at the line's
 start.
 
+### 5.9 Scanning with the camera
+
+A scan turns photographs into a PDF in four layers, each with one job: pure pixel code in
+`pdf-core/src/ops/scan-*.ts`, the PDF operation (`ops/scan.ts`), the camera and screens in
+`pdf-ui/src/scan/`, and the shell's two doors. Everything heavy is one lazy chunk
+(`ScanDialog`, about 15 KiB gzip with the detector and the warp); the entry chunk carries only
+the dictionary keys (about 3 KiB gzip). The scan modules are deliberately not re-exported by
+`ops/index.ts`: like `ops/sign`, they are imported by their own path so the barrel cannot pull
+them into the first paint.
+
+**Pure pixel code** (RGBA typed arrays, no DOM, runnable in Node):
+
+- `scan-geometry.ts` — corners, ordering by angle round the centroid, the 3×3 homography from
+  four point pairs (Gaussian elimination), and `estimatePageAspect`.
+- `scan-detect.ts` — `detectPage`. The picture is reduced to 400 px, grayscale, a 5×5
+  Gaussian, Sobel gradients, non-maximum suppression and hysteresis. Each edge pixel votes in a
+  Hough accumulator only for lines whose normal is within 4° of its gradient; the twelve
+  strongest separated lines, plus the four edges of the frame (a page that runs out of the
+  picture), are combined four at a time as two pairs of opposite sides. A candidate must be
+  convex with angles of 45–135° and cover at least 12 % of the picture, and is scored by the
+  geometric mean of how much of each side lies on an edge of the right direction, squared, times
+  the square root of its area — so the page's outer border beats the text block inside it and a
+  frame-sized quad that nothing supports. Each side of the winner is refitted by least squares
+  through its supporting edge pixels (a fraction of a pixel; the Hough bin alone would be a few
+  pixels of the photograph). Below a score of 0.2 it returns `null` and the UI offers the inset
+  default.
+- `scan-image.ts` — `warpPage` maps the rectangle onto the corners and samples bilinearly (a
+  box prefilter first when the source is much larger than the output); a quarter turn is a
+  rotation of the corner order, so it costs nothing; the sampled rectangle is pulled 0.4 %
+  inside the outline so a corner a pixel off does not leave a line of desk. The output size
+  comes from the quad's edges **corrected for perspective**: the longer of two parallel edges
+  of a trapezoid is nearer, not wider, so reading the ratio off the edges stretches the page.
+  `estimatePageAspect` is Zhang and He's whiteboard method: with square pixels and the principal
+  point at the picture's centre, the quad alone gives the focal length and then the rectangle's
+  true ratio; with perspective along one axis only the constraint degenerates and a typical
+  lens (0.75 × the long side) is assumed. Filters: grayscale; black and white by an adaptive
+  threshold on an integral image (plus a floor for solid dark blocks); enhanced, which divides
+  by a smooth estimate of the paper's brightness (cell maxima, a wide maximum filter, a box
+  blur) and by the paper's colour measured once, then applies a contrast curve. It is one gain
+  for all channels at a point, because estimating each channel's background separately turned
+  the surroundings of a red stamp cyan.
+
+**The operation** (`ops/scan.ts`, `scanPagesToPdf`). The straightened JPEGs are composed by
+`imagesToPdf`, which gained one option, `fitLongSidePt`, so a `fit` page is A4-sized on its
+long side instead of the picture's pixel size in points. The scan contract on top: a picture
+the embedder skipped (`imagesToPdf` reports it as a warning and carries on) fails here, because
+a missing page is a lost scan, and the output is read back with pdf.js: the page count must
+match and every page must have the proportions asked for. Steps: `scan.compose` (declared in
+`OPERATION_TABLE` as a new document, like `images.create`), then `images.create`,
+`images.embed`, `save`.
+
+**The camera and the screens.** `useCamera` maps `getUserMedia`'s exceptions to six problems
+(denied, none, in use, insecure, unsupported, failed), asks for 4096 px and the rear camera, and
+takes a still with `ImageCapture.takePhoto` only when the camera's photo size is more than 1.25×
+its video (otherwise the video frame). The preview outline reruns the detector on a 400 px copy
+of the frame a few times a second and smooths the corners; the stream stops when the camera
+screen is left. A page keeps the photograph as a `Blob`, a 1400 px decode for everything on
+screen and its corners as fractions of the picture, so the same outline serves the on-screen
+preview and the full-size decode the PDF is made from, one page at a time. `CornerEditor` draws
+the handles as 44 px targets with pointer capture, a 4× magnifier, arrow-key movement, and a
+red outline (and a disabled "add") for a folded quad.
+
+**Doors.** `ScanDialog` has two modes. `document` (home card, File menu, palette, tool grid:
+command `file.scan`, opened through `openDialog('scan-camera')` because it is not an operation
+dialog) makes the PDF and the shell opens it as a new tab through the same `openProducedTab` the
+other standalone operations use; with the "offer OCR" box ticked the existing OCR dialog opens
+on the new tab afterwards (not a second recogniser). `pages` serves the new `scan` field kind
+of `OperationDialogSpec`: the Insert pages dialog's source "Scan with camera" holds the JPEG
+files the scanner returns and feeds them to the existing image path of `insertPages`.
+
+**Permission.** `public/_headers` sets `Permissions-Policy: camera=(self)` (it was `camera=()`):
+the camera is allowed for the app's own origin only; microphone and the rest stay off.
+
+**Verified** with Chromium's fake camera (`--use-fake-device-for-media-stream
+--use-file-for-fake-video-capture` with a y4m of a photographed page) and with photo files;
+the aspect estimate against a synthetic pinhole camera at known angles. The limits are in the
+README's "Honest limits".
+
 ---
 
 ## 6. `pdf-text-engine` — the text model
@@ -1059,9 +1137,9 @@ duplicating marks already present in the PDF.
 
 Every capability the menus can run is described by exactly one `OperationDialogSpec`
 (`dialogs/types.ts`): `{ id, titleKey, fields, run(params, context) → { files, report,
-noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 14-variant
+noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
-`checkbox`, `checkboxList`, `color`, `image`, `files`, `readOnlyText`), and validation is
+`checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
 `fieldErrors()` from `dialogs/fields.tsx`. A field marked `advanced` is rendered in one
 closed "advanced options" section after the essential fields (it opens itself while one of
 its fields is invalid); short controls — number, colour, select — share a row two by two
@@ -1694,7 +1772,7 @@ dependencies separately so the set that needs those texts stays visible.
 no `'unsafe-inline'` and no `'unsafe-eval'`, and `style-src 'self' 'unsafe-inline'`, the one
 relaxation, which inline `style` attributes need because the overlays position marks with
 computed geometry — plus COOP/COEP on `/editor/*`, immutable caching on `/engines/*` and
-`Service-Worker-Allowed: /editor/` are exercised locally rather than discovered in
+`Service-Worker-Allowed: /editor/` and `Permissions-Policy` (camera for this origin only, for the scanner, §5.9) are exercised locally rather than discovered in
 production. The style relaxation is not script: no inline `<script>` and no `eval` path
 exists in the build. The one dev-only relaxation appends `'unsafe-inline'` to `script-src`
 because `@vitejs/plugin-react`'s refresh preamble needs it — and says so in the log. Preview

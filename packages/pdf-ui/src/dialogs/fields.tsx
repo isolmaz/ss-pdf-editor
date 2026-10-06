@@ -38,8 +38,16 @@ import { Radio } from '@cloudflare/kumo/components/radio';
 import { Select } from '@cloudflare/kumo/components/select';
 import { parsePageRanges } from 'pdf-core/ops/page-ranges';
 import { type Translator, toToolError } from 'pdf-shared';
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useEffect, useId, useRef, useState } from 'react';
+import { Button } from '../components/Button';
 import type { DialogParams, FieldSpec, FieldValue } from './types';
+
+/**
+ * The camera scanner is its own chunk: the detector, the warp and the dialog are needed only
+ * when a scan field's button is pressed, so they stay out of every dialog that merely
+ * declares one.
+ */
+const ScanDialog = lazy(async () => ({ default: (await import('../scan/ScanDialog')).ScanDialog }));
 
 /**
  * A stable React key per picked `File`: the list of a multiple field can be reordered, so
@@ -120,6 +128,7 @@ export function initialParams(fields: readonly FieldSpec[]): DialogParams {
         break;
       case 'image':
       case 'files':
+      case 'scan':
         params[field.id] = [];
         break;
       case 'readOnlyText':
@@ -229,6 +238,8 @@ export function FieldList({
   const fileInputBase = useId();
   /** Last typed range per field, so switching the choice away and back loses nothing. */
   const [rangeDrafts, setRangeDrafts] = useState<Readonly<Record<string, string>>>({});
+  /** The scan field whose scanner is open, if any. */
+  const [scanning, setScanning] = useState<string | null>(null);
   /** Text inputs that can take a token, by field id — a caret needs the element. */
   const textInputs = useRef(new Map<string, HTMLInputElement>());
   /** Where the caret belongs once a token insertion has rendered. */
@@ -648,6 +659,37 @@ export function FieldList({
         );
       }
 
+      case 'scan': {
+        const scanned = Array.isArray(values[field.id]) ? (values[field.id] as readonly File[]) : [];
+        return (
+          <div key={field.id} className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-kumo-default">{label}</span>
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-kumo-line bg-kumo-recessed/40 px-3 py-2 text-xs text-kumo-default">
+              <Button variant="outline" onClick={() => setScanning(field.id)}>
+                {t(scanned.length > 0 ? 'scan.field.more' : 'scan.field.open')}
+              </Button>
+              <span className="min-w-0 flex-1 truncate text-kumo-subtle">
+                {scanned.length === 0
+                  ? t('scan.field.none')
+                  : t('scan.field.count', { count: scanned.length })}
+              </span>
+              {scanned.length === 0 ? null : (
+                <button
+                  type="button"
+                  className="rounded px-1 text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-danger"
+                  aria-label={t('scan.field.clear')}
+                  onClick={() => set(field.id, [])}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {error === undefined ? null : <p className="text-[11px] text-kumo-danger">{error}</p>}
+            {hint === undefined ? null : <p className="text-[11px] text-kumo-subtle">{hint}</p>}
+          </div>
+        );
+      }
+
       case 'readOnlyText':
         return (
           <Input
@@ -697,6 +739,20 @@ export function FieldList({
       <div className="grid grid-cols-2 gap-x-3 gap-y-3">
         {essential.map((field) => cell(field, renderField(field)))}
       </div>
+      {scanning === null ? null : (
+        <Suspense fallback={null}>
+          <ScanDialog
+            t={t}
+            mode="pages"
+            onClose={() => setScanning(null)}
+            onPages={(files) => {
+              const current = values[scanning];
+              set(scanning, [...(Array.isArray(current) ? (current as readonly File[]) : []), ...files]);
+              setScanning(null);
+            }}
+          />
+        </Suspense>
+      )}
       {advanced.length === 0 ? null : (
         <details
           open={advancedError || undefined}

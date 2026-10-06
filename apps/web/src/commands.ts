@@ -171,6 +171,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'file.merge',
   'file.convert',
   'file.create-images',
+  'file.scan',
   'file.save',
   'file.export',
   'file.print',
@@ -259,6 +260,7 @@ export const STANDALONE_COMMAND_IDS: ReadonlySet<string> = new Set([
   'file.merge',
   'file.convert',
   'file.create-images',
+  'file.scan',
   'file.batch',
 ]);
 
@@ -369,6 +371,15 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       // Standalone: it opens its result as a new tab whether or not a document is open.
       keywords: ['image', 'photo', 'jpg', 'png', 'gorsel', 'resim', 'fotograf'],
       run: dialog('images-to-pdf'),
+    },
+    {
+      id: 'file.scan',
+      labelKey: 'scan.command',
+      group: 'file',
+      // Standalone: the photographs become a new PDF tab, with or without a document open.
+      keywords: ['scan', 'camera', 'photo', 'document', 'tara', 'tarama', 'kamera', 'fotograf', 'belge'],
+      // Not an operation dialog: the shell opens the scanner for this id (`App.openDialog`).
+      run: dialog('scan-camera'),
     },
     {
       id: 'file.print',

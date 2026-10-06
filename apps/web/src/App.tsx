@@ -118,6 +118,7 @@ import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
 import type { FieldValue, MeasureReading } from 'pdf-ui';
 import type { SavedSignature, StampSource } from 'pdf-ui/dialog';
+import type { ScannedDocument } from 'pdf-ui/scan';
 import {
   type CanvasShapeKind,
   type CanvasToolId,
@@ -360,6 +361,14 @@ const StartDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.StartDialog };
 });
+/**
+ * The camera scanner: live preview, edge detection, perspective correction and filters
+ * (`pdf-ui/src/scan`). Its own chunk: the detector and the warp are needed only here.
+ */
+const ScanDialog = lazy(async () => {
+  const module = await import('pdf-ui/scan');
+  return { default: module.ScanDialog };
+});
 /** The simple-signature dialog: draw, type or photograph a signature (`SignatureDialog`). */
 const SignatureDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
@@ -470,6 +479,7 @@ export function App({ store }: AppProps) {
   const closeTrigger = useRef<HTMLElement | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [magnifierOn, setMagnifierOn] = useState(false);
@@ -3004,6 +3014,12 @@ export function App({ store }: AppProps) {
 
   const openDialog = useCallback(
     (id: string, presets?: Readonly<Record<string, FieldValue>>) => {
+      // The camera scanner is a modal of its own, not an operation dialog.
+      if (id === 'scan-camera') {
+        setNotice(null);
+        setScanOpen(true);
+        return;
+      }
       if (!hasDialog(id)) return;
       if (isStandaloneDialog(id)) {
         openStart(id);
@@ -3497,6 +3513,41 @@ export function App({ store }: AppProps) {
       }
     },
     [openProducedTab, refuseBusy, setBusy, startSpec, t],
+  );
+
+  /**
+   * The scanner's document: the pages the camera produced, opened as a new tab. With the
+   * "offer OCR" box ticked the OCR dialog opens on the new tab once it exists — the existing
+   * operation, with its own language choice and report, not a second recogniser.
+   */
+  const handleScanDocument = useCallback(
+    async (result: ScannedDocument) => {
+      if (busyRef.current || cancelRef.current !== null) {
+        refuseBusy();
+        return;
+      }
+      const controller = new AbortController();
+      cancelRef.current = controller;
+      setBusy(true);
+      let opened = false;
+      try {
+        await openProducedTab(result.name, result.bytes, controller.signal);
+        opened = true;
+        setScanOpen(false);
+        setNotice(t('scan.opened', { count: result.pageCount, name: result.name }));
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
+      } finally {
+        if (cancelRef.current === controller) {
+          cancelRef.current = null;
+          setBusy(false);
+        }
+      }
+      // After the gate is released: `openDialog` refuses while an operation is running.
+      if (opened && result.offerOcr) window.setTimeout(() => openDialog('ocr'), 0);
+    },
+    [openDialog, openProducedTab, refuseBusy, setBusy, t],
   );
 
   /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
@@ -4872,6 +4923,7 @@ export function App({ store }: AppProps) {
             onOpenPicker={() => void openViaPicker()}
             onStart={(action) => {
               if (action === 'batch') setBatchOpen(true);
+              else if (action === 'scan') setScanOpen(true);
               else
                 openStart(
                   action === 'blank'
@@ -5528,6 +5580,16 @@ export function App({ store }: AppProps) {
             />
           </Suspense>
         )}
+        {scanOpen ? (
+          <Suspense fallback={null}>
+            <ScanDialog
+              t={t}
+              mode="document"
+              onClose={() => setScanOpen(false)}
+              onDocument={handleScanDocument}
+            />
+          </Suspense>
+        ) : null}
         {batchOpen ? (
           <Suspense fallback={null}>
             <BatchDialog

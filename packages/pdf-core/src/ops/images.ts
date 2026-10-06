@@ -51,6 +51,12 @@ export interface ImagesToPdfOptions {
   readonly marginMm: number;
   /** EXIF orientation tag 274 is applied unless this is false. */
   readonly applyExif: boolean;
+  /**
+   * With `pageSize: 'fit'`, scale every page so its long side is this many points (the
+   * aspect ratio stays the image's). Without it a page is the image's pixel size in
+   * points, which makes a 12-megapixel photograph a page of several metres.
+   */
+  readonly fitLongSidePt?: number;
 }
 
 export async function imagesToPdf(
@@ -116,7 +122,12 @@ export async function imagesToPdf(
         continue;
       }
 
-      const [pageWidth, pageHeight] = pageSizeFor(options.pageSize, picture, orientation);
+      const [pageWidth, pageHeight] = pageSizeFor(
+        options.pageSize,
+        picture,
+        orientation,
+        options.fitLongSidePt,
+      );
       const box = drawBox(pageWidth, pageHeight, margin);
       const footprint = placeImage(picture, orientation, box, options.fit);
       const operators = paintOperators(footprint, orientation, options.fit === 'cover' ? box : null);
@@ -352,8 +363,14 @@ function pageSizeFor(
   size: ImagesToPdfOptions['pageSize'],
   picture: { readonly width: number; readonly height: number },
   orientation: number,
+  longSidePt?: number,
 ): readonly [number, number] {
-  if (size === 'fit') return displaySize(picture.width, picture.height, orientation);
+  if (size === 'fit') {
+    const [width, height] = displaySize(picture.width, picture.height, orientation);
+    if (longSidePt === undefined) return [width, height];
+    const factor = longSidePt / Math.max(width, height);
+    return [width * factor, height * factor];
+  }
   return PAGE_SIZES[size];
 }
 
