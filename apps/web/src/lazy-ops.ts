@@ -48,3 +48,10 @@ export const convertToPdf: Lazy<typeof import('pdf-core/ops/convert').convertToP
 
 export const imagesToPdf: Lazy<typeof import('pdf-core/ops/images').imagesToPdf> = async (...args) =>
   (await import('pdf-core/ops/images')).imagesToPdf(...args);
+
+export const syncXfaDatasets: Lazy<typeof import('pdf-core/ops/xfa-form').syncXfaDatasets> = async (
+  ...args
+) => (await import('pdf-core/ops/xfa-form')).syncXfaDatasets(...args);
+
+export const inspectXfa: Lazy<typeof import('pdf-core/ops/xfa-form').inspectXfa> = async (...args) =>
+  (await import('pdf-core/ops/xfa-form')).inspectXfa(...args);

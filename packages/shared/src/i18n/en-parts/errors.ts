@@ -13,6 +13,12 @@ export const errorsPart = {
   'error.no-match.message': 'The search text was not found on the selected pages.',
   'error.no-match.hint':
     'Check the spelling, or turn off match case and whole word and try again. Scanned pages need OCR first.',
+  'error.no-xfa.message': 'This document has no XFA form.',
+  'error.no-xfa.hint': 'This operation only works on PDF forms that contain XFA.',
+  'error.xfa-dynamic.message': 'This is a dynamic XFA form: its content exists only in the XFA template.',
+  'error.xfa-dynamic.hint': 'Open it with “Fill XFA form”, or use “Flatten XFA form to a normal PDF”.',
+  'error.xfa-static.message': 'This is a static XFA form: its pages are already in the PDF.',
+  'error.xfa-static.hint': 'Use “Flatten form fields”, or “Remove XFA” to keep only the AcroForm.',
   'error.password-policy.message': 'Operation halted by password policy.',
   'error.password-policy.hint': 'Cannot encrypt without an open password.',
 } as const;

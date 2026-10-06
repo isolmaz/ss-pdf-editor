@@ -41,7 +41,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | --- | --- |
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
-| 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
+| 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
@@ -143,13 +143,26 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Operations in two steps.** Every operation opens in the tools panel. First you set it
   up, then *Preview* runs it and shows a report. The report's own button applies the
   result. Pop-up windows are used only for decisions that block, such as a password,
-  unsaved changes, a signature warning, export, print or settings.
+  unsaved changes, a signature warning, export, print or settings, plus the XFA form
+  viewer, which needs the room.
 - **Save versus Export.** *Save* writes over the file you opened; this needs Chromium
   and its File System Access API. *Export* always downloads a copy. Firefox and Safari
   offer Export only.
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
   flatten them and add simple calculations. Form data can be imported or exported as FDF
   or JSON; exporting downloads only the data file.
+- **XFA forms.** A PDF form can carry XFA (Adobe's XML form format) next to or instead of
+  its AcroForm. The editor says so in a notice under the tool strip, and what it does
+  depends on the kind of form:
+  - *Static* XFA (the widgets are in the PDF): filled like any form, and every write also
+    updates the XFA data, so Acrobat shows the same values. *Remove XFA* keeps only the
+    AcroForm.
+  - *Dynamic* XFA (the PDF page is only a "Please wait…" placeholder): *Fill XFA form*
+    draws it with pdf.js's XFA renderer in its own window, saves what you typed into the
+    form's data, and can export that data as XML. *Flatten to a normal PDF* writes the
+    laid-out pages as pictures with an invisible text layer.
+  - *XFA data* exports and imports the form's data as the XML file Acrobat's "Export data"
+    writes; in a static form the fields are filled from it too.
 - **Measurement.** Measure distance, perimeter and area with a scale, units, a grid and
   snapping. The results are written as real PDF annotations.
 - **Small screens.** Below 1024 px both docks start collapsed and reopen as overlays.
@@ -459,6 +472,22 @@ The limits are defined once, in
     when a paragraph is laid out again. A compound broken at its own hyphen loses that
     hyphen too.
   - A standard font is not embedded; the reader supplies it.
+- **XFA forms.**
+  - XFA scripts (FormCalc and JavaScript), validations, calculations and dynamic show/hide
+    never run, in the viewer or anywhere else; a field that depends on one shows its stored
+    value. Rows cannot be added to a repeating section.
+  - A static form's fields are mirrored into its XFA data by the template's own binding.
+    A date or number field with a display picture (other than a plain date picture), a field
+    with `bind match="none"`, a global or explicit data reference, and a radio group read
+    back on import, are not mirrored; the report counts them, and they keep their old value
+    in the XFA.
+  - Removing the XFA drops its scripts and any usage rights the file carried.
+  - A flattened dynamic form is pictures plus an invisible text layer, drawn with the
+    browser's fonts rather than the form's, at the resolution picked when it was drawn.
+  - The XFA renderer is pdf.js's: a form that relies on features it does not implement
+    (scripts, some layouts, barcodes) draws incompletely.
+  - Only two hand-built XFA 3.3 files were tested, no real-world form; see
+    `architecture.md` §5.9.
 - **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
   malformed journal makes the whole draft unreadable on purpose.
 - **Early engine spikes.** Some code comments mention a measurement from an *early engine
