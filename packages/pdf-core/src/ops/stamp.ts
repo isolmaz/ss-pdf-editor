@@ -45,6 +45,7 @@ import {
   readText,
   resolved,
   saveRewrite,
+  subsetEmbeddedFaces,
   visibleBox,
 } from '../engines/mupdf-write';
 import {
@@ -634,6 +635,7 @@ async function stampOpened(
   steps.push('stamp');
 
   throwIfAborted(context.signal);
+  if (font !== undefined) subsetEmbeddedFaces(mupdf, doc, [font]);
   const out = saveRewrite(doc, 'stamp');
   steps.push('save');
 

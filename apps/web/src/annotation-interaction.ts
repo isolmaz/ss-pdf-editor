@@ -36,6 +36,7 @@
  * and claims nothing that writer has not verified.
  */
 
+import { commentThreads } from 'pdf-core/ops/annotation-threads';
 import {
   annotationBounds,
   type MarkTransform,
@@ -410,12 +411,16 @@ export function buildMarkTargets(input: MarkTargetInput): readonly MarkTarget[] 
   }
 
   const seen = new Set<string>();
+  // A reply or a review state lives in the comment list, not on the page: it stays a
+  // target (the list removes it by identity) but has no geometry a pointer could meet,
+  // so a click on a comment never lands on the empty square of its reply.
+  const { records } = commentThreads(input.existing);
   for (const annotation of input.existing) {
     if (!isDeletableAnnotation(annotation)) continue;
     const key = markTargetKey('existing', annotation.id, annotation.pageIndex);
     if (seen.has(key)) continue;
     seen.add(key);
-    const top = existingPageTop(annotation, input.pageTop);
+    const top = records.has(annotation.id) ? null : existingPageTop(annotation, input.pageTop);
     const kindLabel: readonly [MessageKey, string | undefined] =
       annotation.kind === null
         ? ['ann.inFile', annotation.subtype]
@@ -458,6 +463,35 @@ export function buildMarkTargets(input: MarkTargetInput): readonly MarkTarget[] 
   }
 
   return targets;
+}
+
+/**
+ * A selection of file comments widened to their threads: removing a comment removes
+ * the replies and review states that answer it, as every reader with threads does. Left
+ * behind, they would be records answering nothing, listed as comments of their own.
+ */
+export function withThreadRecords(
+  keys: readonly string[],
+  existing: readonly ExistingAnnotation[],
+): readonly string[] {
+  const { threads } = commentThreads(existing);
+  if (threads.size === 0) return keys;
+  const byId = new Map(existing.map((annotation) => [annotation.id, annotation] as const));
+  const out = [...keys];
+  const seen = new Set(keys);
+  for (const [rootId, thread] of threads) {
+    const root = byId.get(rootId);
+    if (root === undefined || !seen.has(markTargetKey('existing', root.id, root.pageIndex))) continue;
+    for (const id of thread.records) {
+      const record = byId.get(id);
+      if (record === undefined) continue;
+      const key = markTargetKey('existing', id, record.pageIndex);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(key);
+    }
+  }
+  return out;
 }
 
 /**

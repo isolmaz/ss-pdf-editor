@@ -47,6 +47,7 @@ import {
   openForWrite,
   pageObjects,
   saveRewrite,
+  subsetEmbeddedFaces,
 } from '../engines/mupdf-write';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
 import {
@@ -454,6 +455,7 @@ export async function writeOcrLayer(
       }
       appendPageContent(doc, page, operators.join('\n'));
     }
+    subsetEmbeddedFaces(mupdf, doc, [font]);
     return saveRewrite(doc, 'ocr.layer');
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;

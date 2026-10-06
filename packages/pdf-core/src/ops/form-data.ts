@@ -31,11 +31,26 @@ const FDF_HEADER = '%FDF-1.2';
 // FDF
 // ---------------------------------------------------------------------------
 
-/** PDF string escaping, including the octal form for anything outside ASCII. */
+/**
+ * PDF string escaping. ASCII text is written as it is, with `\`, `(`, `)` and the
+ * control characters escaped. A string with **any** character outside ASCII is written
+ * whole as UTF-16BE behind the `\376\377` BOM, every byte an octal escape: a PDF string
+ * has one encoding from its first byte to its last, and the BOM is what names it.
+ * (Writing only the non-ASCII characters as UTF-16 units inside an otherwise
+ * single-byte string, as this writer used to, read `gö` back as `g\0ö` — in every
+ * reader, this one included.)
+ */
 function escapeFdfString(value: string): string {
+  if (/[^\x20-\x7e\t\n\r]/.test(value)) {
+    const bytes = ['\\376', '\\377'];
+    for (let index = 0; index < value.length; index += 1) {
+      const unit = value.charCodeAt(index);
+      bytes.push(octalByte(unit >> 8), octalByte(unit & 0xff));
+    }
+    return bytes.join('');
+  }
   let out = '';
   for (const char of value) {
-    const code = char.codePointAt(0) ?? 0;
     switch (char) {
       case '\\':
         out += '\\\\';
@@ -56,23 +71,15 @@ function escapeFdfString(value: string): string {
         out += '\\t';
         break;
       default:
-        // A non-ASCII code point is written as UTF-16BE with a BOM so a reader
-        // gets the Turkish characters back rather than bytes it cannot decode.
-        out += code > 0x7e ? utf16BeEscape(char) : char;
+        out += char;
     }
   }
   return out;
 }
 
-function utf16BeEscape(char: string): string {
-  const code = char.codePointAt(0) ?? 0;
-  const units = code > 0xffff ? surrogatePair(code) : [code];
-  const bytes: string[] = [];
-  for (const unit of units) {
-    bytes.push(`\\${(unit >> 8).toString(8).padStart(3, '0')}`);
-    bytes.push(`\\${(unit & 0xff).toString(8).padStart(3, '0')}`);
-  }
-  return bytes.join('');
+/** One byte as a PDF octal escape (`\376`). */
+function octalByte(byte: number): string {
+  return `\\${byte.toString(8).padStart(3, '0')}`;
 }
 
 /** UTF-16 surrogate pair for a code point above the BMP. */

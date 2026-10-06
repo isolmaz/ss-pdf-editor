@@ -8,6 +8,7 @@ import type {
 } from 'pdf-core';
 import { listPdfAttachments, readPdfAttachment } from 'pdf-core/attachments';
 import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
+import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
 // The annotation and form ops are imported by **module**, not through the
 // package barrel: a barrel re-export keeps every operation module in the graph the
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
@@ -19,9 +20,10 @@ import {
   serializeAnnotationsJson,
   toAppSpace,
 } from 'pdf-core/ops/annotation-data';
+import type { ReviewRecordRequest } from 'pdf-core/ops/annotation-review';
 import type { MarkTransform } from 'pdf-core/ops/annotation-transform';
 import { transformPdfAnnotations } from 'pdf-core/ops/annotation-transform';
-import { marksFromEngineEntries, readAnnotations } from 'pdf-core/ops/annotations';
+import { marksFromEngineEntries, type ReviewState, readAnnotations } from 'pdf-core/ops/annotations';
 import {
   CONVERT_ACCEPT,
   CONVERT_PICKER_ACCEPT,
@@ -159,6 +161,7 @@ import {
   planMarkRemoval,
   planMarkTransform,
   removalCount,
+  withThreadRecords,
 } from './annotation-interaction';
 import {
   buildCommands,
@@ -802,6 +805,8 @@ export function App({ store }: AppProps) {
     existingInventory.bytesKey === existingBytesKey
       ? existingInventory.annotations
       : null;
+  const existingAnnotationsRef = useRef(existingAnnotations);
+  existingAnnotationsRef.current = existingAnnotations;
   const editableOverlays = useCallback(
     (tab: SessionTab) => {
       const stored = pendingOverlays(tab);
@@ -2097,22 +2102,58 @@ export function App({ store }: AppProps) {
    * neither travels inside the PDF until a save writes it.
    */
   const exportAnnotationData = useCallback(
-    (format: 'json' | 'fdf') => {
+    async (format: 'json' | 'fdf' | 'xfdf') => {
       const tab = store.active;
       const marks = annotationsRef.current;
       if (tab === null) return;
-      if (marks.length === 0) {
-        setNotice(t('ann.data.empty'));
-        return;
+      let bytes: Uint8Array;
+      let message: string;
+      if (format === 'xfdf') {
+        // XFDF is the whole review: the file's own comments and their threads as well
+        // as the session's marks, so it is loaded only when asked for.
+        const { serializeXfdf } = await import('pdf-core/ops/annotation-xfdf');
+        const exported = serializeXfdf({
+          marks,
+          existing: existingAnnotationsRef.current ?? [],
+          pageTop: (pageIndex) => {
+            const geometry = viewerApi.current?.pageGeometry(pageIndex) ?? null;
+            return geometry === null ? null : geometry.y + geometry.height;
+          },
+          fileName: tab.name,
+        });
+        if (exported.count === 0) {
+          setNotice(t('ann.data.empty'));
+          return;
+        }
+        bytes = exported.bytes;
+        const name = `${tab.name.replace(/\.pdf$/i, '')}-comments.xfdf`;
+        message =
+          exported.skipped === 0
+            ? t('ann.data.xfdfExported', { count: exported.count, name })
+            : `${t('ann.data.xfdfExported', { count: exported.count, name })} ${t('ann.data.xfdfSkipped', { count: exported.skipped })}`;
+      } else {
+        if (marks.length === 0) {
+          setNotice(t('ann.data.empty'));
+          return;
+        }
+        const pageCount = tabPageCount(tab);
+        bytes =
+          format === 'json'
+            ? serializeAnnotationsJson(marks, pageCount)
+            : serializeAnnotationsFdf(marks, pageCount);
+        message = t('ann.data.exported', {
+          count: marks.length,
+          name: `${tab.name.replace(/\.pdf$/i, '')}-comments.${format}`,
+        });
       }
-      const pageCount = tabPageCount(tab);
-      const bytes =
-        format === 'json'
-          ? serializeAnnotationsJson(marks, pageCount)
-          : serializeAnnotationsFdf(marks, pageCount);
       const name = `${tab.name.replace(/\.pdf$/i, '')}-comments.${format}`;
       const blob = new Blob([bytes as unknown as BlobPart], {
-        type: format === 'json' ? 'application/json' : 'application/vnd.fdf',
+        type:
+          format === 'json'
+            ? 'application/json'
+            : format === 'xfdf'
+              ? 'application/vnd.adobe.xfdf'
+              : 'application/vnd.fdf',
       });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -2121,7 +2162,7 @@ export function App({ store }: AppProps) {
       anchor.click();
       // Blob URLs are cleaned up right after the operation.
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      setNotice(t('ann.data.exported', { count: marks.length, name }));
+      setNotice(message);
     },
     [store, t],
   );
@@ -2130,7 +2171,12 @@ export function App({ store }: AppProps) {
     async (file: File) => {
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const parsed = parseAnnotationData(bytes);
+        // XFDF is XML; everything else this reads is JSON or FDF. The XML reader is
+        // loaded only for a file that starts like one.
+        const head = new TextDecoder('utf-8').decode(bytes.slice(0, 64)).trimStart();
+        const parsed: AnnotationDataResult = head.startsWith('<')
+          ? await (await import('pdf-core/ops/annotation-xfdf')).parseXfdf(bytes)
+          : parseAnnotationData(bytes);
         // Acrobat's comments are in PDF user space; the page's own top edge turns them
         // into the app's space. A page the viewer cannot measure is not guessed at: its
         // comments are counted as skipped instead of landing mirrored.
@@ -2174,10 +2220,16 @@ export function App({ store }: AppProps) {
           const id = store.active?.id;
           if (id !== undefined) store.setDirty(id, true);
         }
+        const answers = result.marks.reduce(
+          (sum, mark) => sum + (mark.replies?.length ?? 0) + (mark.review === undefined ? 0 : 1),
+          0,
+        );
         setNotice(
-          result.skipped === 0
-            ? t('ann.data.imported', { count: result.marks.length })
-            : `${t('ann.data.imported', { count: result.marks.length })} ${t('ann.data.importSkipped', { count: result.skipped })}`,
+          [
+            t('ann.data.imported', { count: result.marks.length }),
+            ...(answers === 0 ? [] : [t('ann.data.repliesImported', { count: answers })]),
+            ...(result.skipped === 0 ? [] : [t('ann.data.importSkipped', { count: result.skipped })]),
+          ].join(' '),
         );
       } catch (error) {
         const toolError =
@@ -3577,7 +3629,10 @@ export function App({ store }: AppProps) {
    */
   const removeTargets = useCallback(
     (keys: readonly string[]): boolean => {
-      const request = planMarkRemoval(markTargetsRef.current, keys);
+      const request = planMarkRemoval(
+        markTargetsRef.current,
+        withThreadRecords(keys, existingAnnotationsRef.current ?? []),
+      );
       if (isEmptyRemoval(request)) return false;
       const tab = store.active;
       const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
@@ -3857,6 +3912,80 @@ export function App({ store }: AppProps) {
       return true;
     },
     [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setBusy, setHandle, store, t],
+  );
+
+  /**
+   * A reply or a review state for a comment (`ops/annotation-review.ts`). A mark the
+   * session holds keeps it until the mark itself is written (`writeAnnotationsToFile`);
+   * a comment the file already carries gets it written now, as one journal step that
+   * undo takes back whole.
+   */
+  const answerComment = useCallback(
+    (
+      target: { readonly pending: boolean; readonly id: string; readonly pageIndex: number },
+      answer:
+        | { readonly kind: 'reply'; readonly contents: string }
+        | { readonly kind: 'state'; readonly state: ReviewState },
+    ) => {
+      const createdAt = new Date().toISOString();
+      const author = annotationAuthor;
+      if (target.pending) {
+        setAnnotations((current) =>
+          current.map((mark) => {
+            if (mark.id !== target.id) return mark;
+            if (answer.kind === 'reply') {
+              return {
+                ...mark,
+                replies: [
+                  ...(mark.replies ?? []),
+                  { id: crypto.randomUUID(), author, contents: answer.contents, createdAt },
+                ],
+              };
+            }
+            return { ...mark, review: { state: answer.state, author, at: createdAt } };
+          }),
+        );
+        const id = store.active?.id;
+        if (id !== undefined) store.setDirty(id, true);
+        setNotice(
+          answer.kind === 'reply'
+            ? t('ann.reply.pendingDone')
+            : t('ann.state.by', { state: t(`ann.state.${answer.state}`), author }),
+        );
+        return;
+      }
+      const record: ReviewRecordRequest =
+        answer.kind === 'reply'
+          ? {
+              kind: 'reply',
+              pageIndex: target.pageIndex,
+              parentId: target.id,
+              id: crypto.randomUUID(),
+              author,
+              createdAt,
+              contents: answer.contents,
+            }
+          : {
+              kind: 'state',
+              pageIndex: target.pageIndex,
+              parentId: target.id,
+              id: crypto.randomUUID(),
+              author,
+              createdAt,
+              state: answer.state,
+            };
+      writeFileAnnotation(
+        { key: answer.kind === 'reply' ? 'ann.reply.added' : 'ann.state.changed' },
+        async (base, signal) => {
+          const { writeCommentReview } = await import('pdf-core/ops/annotation-review');
+          return writeCommentReview(base, [record], { signal });
+        },
+        answer.kind === 'reply'
+          ? t('ann.reply.done')
+          : t('ann.state.done', { state: t(`ann.state.${answer.state}`) }),
+      );
+    },
+    [annotationAuthor, setAnnotations, store, t, writeFileAnnotation],
   );
 
   /** What a picture is called in the notices and in the comment list readers show. */
@@ -5108,6 +5237,24 @@ export function App({ store }: AppProps) {
                         }
                         onExportData={(format) => void exportAnnotationData(format)}
                         onImportData={(file) => void importAnnotationData(file)}
+                        onReply={(target, contents) => answerComment(target, { kind: 'reply', contents })}
+                        onSetState={(target, state) => answerComment(target, { kind: 'state', state })}
+                        onRemoveReply={(target, replyId) => {
+                          if (target.pending) {
+                            setAnnotations((current) =>
+                              current.map((mark) =>
+                                mark.id === target.id
+                                  ? {
+                                      ...mark,
+                                      replies: (mark.replies ?? []).filter((reply) => reply.id !== replyId),
+                                    }
+                                  : mark,
+                              ),
+                            );
+                            return;
+                          }
+                          void removeTargets([markTargetKey('existing', replyId, target.pageIndex)]);
+                        }}
                         disabled={!canEdit}
                       />
                     </Suspense>

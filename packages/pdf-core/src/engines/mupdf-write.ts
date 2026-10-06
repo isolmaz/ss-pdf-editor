@@ -381,6 +381,8 @@ export interface EmbeddedFace {
   widthOfTextAtSize(value: string, size: number): number;
   /** Ascender only when `descender` is false; ascender minus descender otherwise. */
   heightAtSize(size: number, options?: { readonly descender?: boolean }): number;
+  /** Every glyph id `encode` has handed out so far — the glyphs a subset must keep. */
+  usedGlyphs(): readonly number[];
 }
 
 /** Embed the pinned Noto Sans (regular or semi-bold) into `doc`. */
@@ -418,6 +420,7 @@ export function embedFontFile(mupdf: Mupdf, doc: PDFDocument, name: string, byte
     );
   }
   const scale = (size: number) => size / metrics.unitsPerEm;
+  const used = new Set<number>();
   return {
     ref,
     name,
@@ -425,10 +428,12 @@ export function embedFontFile(mupdf: Mupdf, doc: PDFDocument, name: string, byte
       let hex = '';
       for (const character of value) {
         const glyph = font.encodeCharacter(character.codePointAt(0) ?? 0);
+        used.add(glyph);
         hex += glyph.toString(16).padStart(4, '0');
       }
       return `<${hex}>`;
     },
+    usedGlyphs: () => [...used],
     covers(value) {
       for (const character of value) {
         if (/\s/.test(character)) continue;
@@ -446,6 +451,72 @@ export function embedFontFile(mupdf: Mupdf, doc: PDFDocument, name: string, byte
       return heightOptions.descender === false ? ascent : ascent - metrics.descender * scale(size);
     },
   };
+}
+
+/**
+ * Replace each face's whole font program with a subset of the glyphs it drew.
+ *
+ * `embedFontFile` embeds the whole file — Noto Sans is 629 KB — and every save that
+ * typed a word carried all of it. MuPDF can subset (`subsetFonts`), but only a whole
+ * document at a time, and that would also cut and rename the fonts the document came
+ * with: a form's `/DR` font would lose the glyphs a reader needs to type a new value.
+ * So the subset is made **elsewhere**: the face is grafted into a scratch document
+ * with one page that draws exactly the glyphs `encode` handed out, MuPDF subsets that
+ * document, and the subset program and its tagged name (`ABCDEF+NotoSans`) are copied
+ * back over this face alone. Glyph ids are kept (Identity-H draws by id), so the
+ * content already written is untouched.
+ *
+ * A face this cannot subset keeps its whole program: the subset is a saving, never a
+ * condition of the write. Returns the bytes of font program saved.
+ */
+export function subsetEmbeddedFaces(mupdf: Mupdf, doc: PDFDocument, faces: readonly EmbeddedFace[]): number {
+  let saved = 0;
+  for (const face of faces) {
+    const descriptor = fontDescriptorOf(face.ref);
+    const program = descriptor === null ? null : descriptor.get('FontFile2');
+    if (descriptor === null || program === null || !program.isStream()) continue;
+    const scratch = new mupdf.PDFDocument();
+    try {
+      const grafted = scratch.graftObject(face.ref);
+      const glyphs = face.usedGlyphs();
+      const shown = glyphs.map((glyph) => glyph.toString(16).padStart(4, '0')).join('');
+      const resources = scratch.newDictionary();
+      const fonts = scratch.newDictionary();
+      fonts.put('F', grafted);
+      resources.put('Font', fonts);
+      scratch.insertPage(-1, scratch.addPage([0, 0, 612, 792], 0, resources, `BT /F 12 Tf <${shown}> Tj ET`));
+      scratch.subsetFonts();
+      const subsetDescriptor = fontDescriptorOf(grafted);
+      const subsetProgram = subsetDescriptor?.get('FontFile2');
+      if (subsetDescriptor === null || subsetProgram === undefined || !subsetProgram.isStream()) continue;
+      const bytes = subsetProgram.readStream().asUint8Array().slice();
+      const before = program.readStream().getLength();
+      if (bytes.byteLength === 0 || bytes.byteLength >= before) continue;
+      descriptor.put('FontFile2', doc.addStream(bytes, { Length1: bytes.byteLength }));
+      const tagged = readName(subsetDescriptor.get('FontName'));
+      if (tagged !== null) {
+        descriptor.put('FontName', doc.newName(tagged));
+        const type0 = resolved(face.ref);
+        type0?.put('BaseFont', doc.newName(tagged));
+        resolved(resolved(type0?.get('DescendantFonts'))?.get(0))?.put('BaseFont', doc.newName(tagged));
+      }
+      saved += before - bytes.byteLength;
+    } catch {
+      // The whole program stays; see above.
+    } finally {
+      scratch.destroy();
+    }
+  }
+  return saved;
+}
+
+/** A Type0 font's descriptor (through its descendant), or a simple font's own. */
+function fontDescriptorOf(font: PDFObject): PDFObject | null {
+  const dict = resolved(font);
+  if (dict === null || !dict.isDictionary()) return null;
+  const descendant = resolved(resolved(dict.get('DescendantFonts'))?.get(0));
+  const descriptor = resolved((descendant ?? dict).get('FontDescriptor'));
+  return descriptor?.isDictionary() === true ? descriptor : null;
 }
 
 /** WinAnsiEncoding's 0x80–0x9F block: the code points it puts there (§D.2). */

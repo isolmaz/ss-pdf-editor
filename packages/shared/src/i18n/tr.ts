@@ -34,6 +34,7 @@ import { phase4Part } from './parts/phase4';
 import { propertiesPart } from './parts/properties';
 import { propsPart } from './parts/props';
 import { redactPart } from './parts/redact';
+import { reviewPart } from './parts/review';
 import { securityPart } from './parts/security';
 import { shellPart } from './parts/shell';
 import { signaturePart } from './parts/signature';
@@ -74,6 +75,7 @@ export const tr = {
   ...convertPart,
   ...officePart,
   ...findReplacePart,
+  ...reviewPart,
   ...stampPart,
   ...verifyPart,
 

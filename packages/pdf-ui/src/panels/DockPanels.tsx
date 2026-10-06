@@ -14,7 +14,7 @@
  */
 
 export { AccessibilityPanel, type AccessibilityPanelProps } from './AccessibilityPanel';
-export { CommentsPanel, type CommentsPanelProps } from './CommentsPanel';
+export { CommentsPanel, type CommentsPanelProps, type ReviewTarget } from './CommentsPanel';
 export { ComparePanel, type ComparePanelProps } from './ComparePanel';
 export { FormPanel, type FormPanelProps } from './FormPanel';
 export { PropertiesPanel, type PropertiesPanelProps } from './PropertiesPanel';

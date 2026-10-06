@@ -26,6 +26,7 @@ import { phase4Part } from './en-parts/phase4';
 import { propertiesPart } from './en-parts/properties';
 import { propsPart } from './en-parts/props';
 import { redactPart } from './en-parts/redact';
+import { reviewPart } from './en-parts/review';
 import { securityPart } from './en-parts/security';
 import { shellPart } from './en-parts/shell';
 import { signaturePart } from './en-parts/signature';
@@ -71,6 +72,7 @@ export const en: Record<MessageKey, string> = {
   ...convertPart,
   ...officePart,
   ...findReplacePart,
+  ...reviewPart,
   ...stampPart,
   ...verifyPart,
 
