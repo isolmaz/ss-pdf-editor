@@ -11,9 +11,10 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import type { PDFDocument } from 'mupdf';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
-import { embedNotoSans } from '../engines/mupdf-write';
+import { embedNotoSans, subsetEmbeddedFaces } from '../engines/mupdf-write';
 import { loadPdfjs } from '../engines/pdfjs-handle';
 import { type FindReplaceOptions, findReplace } from './find-replace';
 
@@ -208,6 +209,60 @@ describe('findReplace', () => {
     const substituted = await findReplace(input, query({ find: 'ürün', replace: 'Ğ' }), run);
     expect(substituted.report.notes.map((entry) => entry.key)).not.toContain('op.note.findReplace.ownFont');
     expect((await read(substituted.bytes)).texts[0]).toBe('Eski Ğ');
+  });
+
+  it('claims the page’s own font only for glyphs that font object drew, even under a shared subset name', async () => {
+    const lines = ['Eski urun', 'Yeni zzz'];
+    /**
+     * Each line on its own page in Noto Sans subset to the glyphs that document drew, and
+     * the subset named `ABCDEE+NotoSans` (as two files from one producer can be).
+     */
+    const subsetPages = async (texts: readonly string[]): Promise<PDFDocument> => {
+      const mupdf = await loadMupdf();
+      const doc = new mupdf.PDFDocument();
+      const face = await embedNotoSans(mupdf, doc);
+      for (const text of texts) {
+        const content = `BT /F 14 Tf 40 330 Td ${face.encode(text)} Tj ET`;
+        doc.insertPage(-1, doc.addPage([0, 0, 500, 400], 0, { Font: { F: face.ref } }, content));
+      }
+      subsetEmbeddedFaces(mupdf, doc, [face]);
+      const type0 = face.ref.resolve();
+      const descendant = type0.get('DescendantFonts').resolve().get(0).resolve();
+      for (const [dict, key] of [
+        [type0, 'BaseFont'],
+        [descendant, 'BaseFont'],
+        [descendant.get('FontDescriptor').resolve(), 'FontName'],
+      ] as const) {
+        dict.put(key, doc.newName('ABCDEE+NotoSans'));
+      }
+      return doc;
+    };
+    const save = (doc: PDFDocument): Uint8Array => {
+      const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+      doc.destroy();
+      return bytes;
+    };
+    // Two files merged: two font objects, two subsets, one name.
+    const merged = new (await loadMupdf()).PDFDocument();
+    for (const text of lines) {
+      const part = await subsetPages([text]);
+      merged.graftPage(-1, part, 0);
+      part.destroy();
+    }
+    const twoSubsets = save(merged);
+    // One file: one font object drawing both pages.
+    const oneFont = save(await subsetPages(lines));
+    const replace = query({ find: 'urun', replace: 'zzz', pages: [0, 1], matchCase: true });
+
+    // Page 2's subset drew `z`; page 1's has no `z`, so a substitute draws the new word.
+    const substituted = await findReplace(twoSubsets, replace, run);
+    expect(substituted.replaced).toBe(1);
+    expect(substituted.report.notes.map((entry) => entry.key)).not.toContain('op.note.findReplace.ownFont');
+    expect((await read(substituted.bytes)).texts[0]).toBe('Eski zzz');
+    // One font object on both pages: what it drew on page 2 is in the program page 1 uses.
+    const shared = await findReplace(oneFont, replace, run);
+    expect(shared.report.notes.map((entry) => entry.key)).toContain('op.note.findReplace.ownFont');
+    expect((await read(shared.bytes)).texts[0]).toBe('Eski zzz');
   });
 
   it('refuses an empty search and a search with no match', async () => {

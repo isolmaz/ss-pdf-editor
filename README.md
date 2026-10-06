@@ -209,9 +209,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     wider or narrower, the rest of the line moves along; text after a tab stop keeps its
     place. A match across a line break, or one that does not fit its line, lays the
     paragraph out again, and every other word keeps its own font, size and colour.
-  - It uses the document's own font whenever the page already draws every character the
-    new text needs with it. Otherwise it uses a close standard font (Helvetica, Times,
-    Courier) or Noto Sans, sized to match, and the report names the font.
+  - It uses the document's own font whenever that font already draws every character the
+    new text needs (in a merged file, the copy of the font the page itself uses). Otherwise
+    it uses a close standard font (Helvetica, Times, Courier) or Noto Sans, sized to match,
+    and the report names the font.
   - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
     readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`.
 - **Export and import.** Export text as plain text or Markdown. Export pages as images, or

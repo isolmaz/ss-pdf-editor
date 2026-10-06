@@ -947,11 +947,13 @@ one word. Whole-word mode refuses a letter, digit or mark on either side.
    nowhere is drawn down to 60 % or left alone (`noRoom`).
 
 **Faces.** A replacement uses the page's own font when it has a code for every character
-**and** the document already draws each of them with that font — a subset holds only the
-glyphs its producer used, and a glyph on the page is proof the file has it. Otherwise Noto
-Sans when the old text was Noto Sans, a standard face of the same family, weight and slant
-when WinAnsi can spell it, and Noto Sans after that. A substitute is sized so that it would
-draw the old text as wide as the old font did, within ±15 %.
+**and** that font object already draws each of them — a subset holds only the glyphs its
+producer used, and a glyph on the page is proof the file has it. The proof is kept per font
+object, not per name: subset tags are unique only within the file that made them, so a merge
+can put two subsets with different glyphs under one name. Otherwise Noto Sans when the old
+text was Noto Sans, a standard face of the same family, weight and slant when WinAnsi can
+spell it, and Noto Sans after that. A substitute is sized so that it would draw the old text
+as wide as the old font did, within ±15 %.
 
 **The document's own fonts** (`engines/doc-fonts.ts`). A font is usable when new codes can
 be found for it: a `/ToUnicode` CMap inverted (single-code-point entries), or a simple font's
