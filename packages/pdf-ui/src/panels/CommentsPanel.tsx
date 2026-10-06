@@ -10,11 +10,22 @@
  * A row is a button: selecting it is what the on-canvas layer outlines, and the
  * click also walks the viewer to the mark's page. The comment body is editable
  * in place — a note that cannot be typed into is not a comment.
+ *
+ * A comment is a thread: its replies are listed under it and its review state beside
+ * it (`ops/annotation-review.ts`). The file's reply and state records are folded into
+ * the comment they answer instead of being listed as comments of their own; a reply to
+ * a comment the file no longer has stays a row, so nothing the file carries is hidden.
  */
 
-import type { AnnotationKind, AnnotationMark, ExistingAnnotation } from 'pdf-core/ops/annotations';
-import { annotationKindKey, commentText } from 'pdf-core/ops/annotations';
-import type { Translator } from 'pdf-shared';
+import { commentThreads } from 'pdf-core/ops/annotation-threads';
+import type {
+  AnnotationKind,
+  AnnotationMark,
+  ExistingAnnotation,
+  ReviewState,
+} from 'pdf-core/ops/annotations';
+import { annotationKindKey, commentText, REVIEW_STATES } from 'pdf-core/ops/annotations';
+import type { MessageKey, Translator } from 'pdf-shared';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { PanelLoading, PanelMessage } from './PanelParts';
 
@@ -30,13 +41,38 @@ export interface CommentsPanelProps {
   readonly onEdit?: (id: string, contents: string) => void;
   readonly onRemove?: (id: string) => void;
   readonly onClear?: () => void;
-  /** Writes the session's marks as a file of their own (`annotation-data.ts`). */
-  readonly onExportData?: (format: 'json' | 'fdf') => void;
+  /**
+   * Writes the review as a file of its own: the session's marks as JSON or FDF
+   * (`annotation-data.ts`), or the file's comments and the session's together as XFDF
+   * (`annotation-xfdf.ts`).
+   */
+  readonly onExportData?: (format: 'json' | 'fdf' | 'xfdf') => void;
   /** Reads a marks file back into the session; the shell owns the file dialog. */
   readonly onImportData?: (file: File) => void;
+  /** Answers a comment: a session mark keeps the reply, a file comment gets it written. */
+  readonly onReply?: (target: ReviewTarget, contents: string) => void;
+  /** Sets a comment's review state, the same way as a reply. */
+  readonly onSetState?: (target: ReviewTarget, state: ReviewState) => void;
+  /** Removes a reply: one the session holds, or one the file carries (by its id). */
+  readonly onRemoveReply?: (target: ReviewTarget, replyId: string) => void;
   readonly disabled?: boolean;
   /** Tool settings slot, supplied by the host (the panel owns no tool state). */
   readonly children?: ReactNode;
+}
+
+/** The comment a reply or a state is for: a session mark, or a file annotation by id. */
+export interface ReviewTarget {
+  readonly pending: boolean;
+  readonly id: string;
+  readonly pageIndex: number;
+}
+
+/** One reply as the panel lists it. */
+interface ReplyRow {
+  readonly id: string;
+  readonly author: string;
+  readonly contents: string;
+  readonly depth: number;
 }
 
 /** One row of the merged inventory. */
@@ -49,6 +85,17 @@ interface CommentRow {
   readonly author: string;
   readonly pending: boolean;
   readonly selectable: boolean;
+  readonly replies: readonly ReplyRow[];
+  /** The newest review state and who set it; `null` when none (or `None`) was set. */
+  readonly review: { readonly state: string; readonly author: string } | null;
+  readonly marked: boolean;
+}
+
+/** The message key of a review state the file may spell in any way. */
+function stateKey(state: string): MessageKey | null {
+  return REVIEW_STATES.includes(state as ReviewState) || state === 'Marked'
+    ? (`ann.state.${state}` as MessageKey)
+    : null;
 }
 
 /**
@@ -79,12 +126,17 @@ export function CommentsPanel({
   onClear,
   onExportData,
   onImportData,
+  onReply,
+  onSetState,
+  onRemoveReply,
   disabled,
   children,
 }: CommentsPanelProps) {
   const [filter, setFilter] = useState<AnnotationKind | 'all'>('all');
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [replying, setReplying] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
 
   const rows = useMemo((): readonly CommentRow[] => {
     const pending: CommentRow[] = marks.map((mark) => ({
@@ -96,23 +148,61 @@ export function CommentsPanel({
       author: mark.author,
       pending: true,
       selectable: true,
+      replies: (mark.replies ?? []).map((reply) => ({
+        id: reply.id,
+        author: reply.author,
+        contents: reply.contents,
+        depth: 1,
+      })),
+      review:
+        mark.review === undefined || mark.review.state === 'None'
+          ? null
+          : { state: mark.review.state, author: mark.review.author },
+      marked: false,
     }));
+    const { threads, records } = commentThreads(existing ?? []);
     const saved: CommentRow[] = (existing ?? [])
-      .filter((annotation) => annotation.kind !== null)
-      .map((annotation) => ({
-        id: annotation.id,
-        pageIndex: annotation.pageIndex,
-        kind: annotation.kind ?? 'note',
-        color: null,
-        contents: commentText(annotation.contents),
-        author: annotation.author,
-        pending: false,
-        selectable: false,
-      }));
+      .filter((annotation) => annotation.kind !== null && !records.has(annotation.id))
+      .map((annotation) => {
+        const thread = threads.get(annotation.id);
+        return {
+          id: annotation.id,
+          pageIndex: annotation.pageIndex,
+          kind: annotation.kind ?? 'note',
+          color: null,
+          contents: commentText(annotation.contents),
+          author: annotation.author,
+          pending: false,
+          selectable: false,
+          replies: (thread?.replies ?? []).map((reply) => ({
+            id: reply.annotation.id,
+            author: reply.annotation.author,
+            contents: commentText(reply.annotation.contents),
+            depth: reply.depth,
+          })),
+          review:
+            thread?.review === null || thread?.review === undefined || thread.review.state === 'None'
+              ? null
+              : { state: thread.review.state, author: thread.review.author },
+          marked: thread?.marked === true,
+        };
+      });
     return [...pending, ...saved].sort((a, b) => a.pageIndex - b.pageIndex);
   }, [existing, marks]);
 
+  const sendReply = useCallback(
+    (row: CommentRow) => {
+      const contents = replyDraft.trim();
+      if (contents === '') return;
+      onReply?.({ pending: row.pending, id: row.id, pageIndex: row.pageIndex }, contents);
+      setReplying(null);
+      setReplyDraft('');
+    },
+    [onReply, replyDraft],
+  );
+
   const visible = filter === 'all' ? rows : rows.filter((row) => row.kind === filter);
+  const fileComments = rows.length - marks.length;
 
   const commitEdit = useCallback(() => {
     if (editing === null) return;
@@ -179,11 +269,20 @@ export function CommentsPanel({
         >
           {t('ann.data.exportFdf')}
         </button>
+        {/* XFDF carries the file's own comments too, so it needs no session mark. */}
+        <button
+          type="button"
+          disabled={disabled === true || (marks.length === 0 && fileComments === 0)}
+          onClick={() => onExportData?.('xfdf')}
+          className="h-6 rounded-sm px-1.5 text-[11px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default disabled:opacity-40"
+        >
+          {t('ann.data.exportXfdf')}
+        </button>
         <label className="ml-auto flex h-6 cursor-pointer items-center rounded-sm px-1.5 text-[11px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default">
           {t('ann.data.import')}
           <input
             type="file"
-            accept="application/json,.json,.fdf"
+            accept="application/json,.json,.fdf,.xfdf,application/vnd.adobe.xfdf"
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -207,7 +306,8 @@ export function CommentsPanel({
           {visible.map((row) => {
             const isEditing = editing === row.id;
             return (
-              <li key={row.id} className="mb-0.5">
+              // A session mark and a file annotation are two id spaces; the key keeps them apart.
+              <li key={`${row.pending ? 'session' : 'file'}:${row.id}`} className="mb-0.5">
                 <div
                   className={`rounded-sm px-1.5 py-1 ${
                     selectedId === row.id
@@ -246,7 +346,7 @@ export function CommentsPanel({
                       {row.author.length === 0 ? '' : ` — ${row.author}`}
                     </span>
                   </button>
-                  <span className="mt-0.5 flex items-center gap-1">
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1">
                     {row.pending ? (
                       <span className="rounded-sm bg-kumo-tint px-1 text-[10px] text-kumo-subtle">
                         {t('ann.pending')}
@@ -264,7 +364,7 @@ export function CommentsPanel({
                           setEditing(isEditing ? null : row.id);
                           setDraft(row.contents);
                         }}
-                        className="rounded-sm px-1 text-[10px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default disabled:opacity-40"
+                        className="whitespace-nowrap rounded-sm px-1 text-[10px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default disabled:opacity-40"
                       >
                         {t(isEditing ? 'ann.editCancel' : 'ann.edit')}
                       </button>
@@ -274,12 +374,157 @@ export function CommentsPanel({
                         type="button"
                         disabled={disabled === true}
                         onClick={() => onRemove(row.id)}
-                        className="rounded-sm px-1 text-[10px] text-kumo-danger hover:bg-kumo-tint disabled:opacity-40"
+                        className="whitespace-nowrap rounded-sm px-1 text-[10px] text-kumo-danger hover:bg-kumo-tint disabled:opacity-40"
                       >
                         {t('ann.remove')}
                       </button>
                     ) : null}
+                    {onReply !== undefined ? (
+                      <button
+                        type="button"
+                        disabled={disabled === true}
+                        aria-expanded={replying === row.id}
+                        onClick={() => {
+                          setReplying(replying === row.id ? null : row.id);
+                          setReplyDraft('');
+                        }}
+                        className="whitespace-nowrap rounded-sm px-1 text-[10px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default disabled:opacity-40"
+                      >
+                        {t('ann.reply')}
+                      </button>
+                    ) : null}
+                    {row.marked ? (
+                      <span className="rounded-sm border border-kumo-line px-1 text-[10px] text-kumo-subtle">
+                        {t('ann.state.Marked')}
+                      </span>
+                    ) : null}
+                    {onSetState !== undefined ? (
+                      <>
+                        <label className="sr-only" htmlFor={`ann-state-${row.id}`}>
+                          {t('ann.state.label')}
+                        </label>
+                        <select
+                          id={`ann-state-${row.id}`}
+                          disabled={disabled === true}
+                          value={row.review?.state ?? 'None'}
+                          title={
+                            row.review === null
+                              ? t('ann.state.label')
+                              : t('ann.state.by', {
+                                  state: t(stateKey(row.review.state) ?? 'ann.state.None'),
+                                  author: row.review.author,
+                                })
+                          }
+                          onChange={(event) =>
+                            onSetState(
+                              { pending: row.pending, id: row.id, pageIndex: row.pageIndex },
+                              event.target.value as ReviewState,
+                            )
+                          }
+                          className="ml-auto h-5 min-w-0 rounded-sm border border-kumo-line bg-kumo-base px-0.5 text-[10px] text-kumo-default disabled:opacity-40"
+                        >
+                          {REVIEW_STATES.map((state) => (
+                            <option key={state} value={state}>
+                              {t(`ann.state.${state}` as MessageKey)}
+                            </option>
+                          ))}
+                          {/* A state the file spells that the picker has no entry for stays visible. */}
+                          {row.review !== null && stateKey(row.review.state) === null ? (
+                            <option value={row.review.state}>{row.review.state}</option>
+                          ) : null}
+                        </select>
+                      </>
+                    ) : row.review !== null ? (
+                      <span className="rounded-sm border border-kumo-line px-1 text-[10px] text-kumo-subtle">
+                        {t(stateKey(row.review.state) ?? 'ann.state.None')}
+                      </span>
+                    ) : null}
                   </span>
+                  {row.replies.length > 0 ? (
+                    <ul
+                      className="mt-1 flex flex-col gap-0.5 border-l border-kumo-line pl-1.5"
+                      aria-label={t('ann.reply.count', { count: row.replies.length })}
+                    >
+                      {row.replies.map((reply) => (
+                        <li
+                          key={reply.id}
+                          className="flex items-start gap-1 text-[11px] text-kumo-default"
+                          style={{ marginLeft: `${(reply.depth - 1) * 8}px` }}
+                        >
+                          <span className="min-w-0 flex-1 break-words">
+                            {reply.author.length === 0 ? null : (
+                              <span className="font-medium text-kumo-subtle">{reply.author}: </span>
+                            )}
+                            {reply.contents}
+                          </span>
+                          {onRemoveReply !== undefined ? (
+                            <button
+                              type="button"
+                              disabled={disabled === true}
+                              aria-label={t('ann.reply.remove')}
+                              title={t('ann.reply.remove')}
+                              onClick={() =>
+                                onRemoveReply(
+                                  { pending: row.pending, id: row.id, pageIndex: row.pageIndex },
+                                  reply.id,
+                                )
+                              }
+                              className="shrink-0 rounded-sm px-1 text-[10px] text-kumo-danger hover:bg-kumo-tint disabled:opacity-40"
+                            >
+                              ×
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {replying === row.id ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        sendReply(row);
+                      }}
+                      className="mt-1 flex flex-col gap-1"
+                    >
+                      <label className="sr-only" htmlFor={`ann-reply-${row.id}`}>
+                        {t('ann.reply.label')}
+                      </label>
+                      <textarea
+                        id={`ann-reply-${row.id}`}
+                        value={replyDraft}
+                        rows={2}
+                        // biome-ignore lint/a11y/noAutofocus: the field opens on the user's own click.
+                        autoFocus
+                        placeholder={t('ann.reply.label')}
+                        onChange={(event) => setReplyDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                            event.preventDefault();
+                            sendReply(row);
+                          } else if (event.key === 'Escape') {
+                            setReplying(null);
+                          }
+                        }}
+                        className="w-full rounded-sm border border-kumo-line bg-kumo-base p-1 text-xs text-kumo-default outline-none focus:ring-1 focus:ring-kumo-focus"
+                      />
+                      <span className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setReplying(null)}
+                          className="h-6 rounded-sm px-1.5 text-[11px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+                        >
+                          {t('ann.reply.cancel')}
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={disabled === true || replyDraft.trim() === ''}
+                          className="h-6 rounded-sm border border-kumo-line px-2 text-[11px] font-medium text-kumo-default hover:bg-kumo-tint disabled:opacity-40"
+                        >
+                          {t('ann.reply.send')}
+                        </button>
+                      </span>
+                    </form>
+                  ) : null}
                 </div>
                 {isEditing ? (
                   <form
