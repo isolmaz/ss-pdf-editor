@@ -15,6 +15,7 @@
 
 import {
   ArrowsIn,
+  Broom,
   Camera,
   Certificate,
   Crop,
@@ -120,6 +121,7 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'tools.redact', category: 'security', icon: Eraser, descriptionKey: 'home.tool.redact' },
   { id: 'tools.security', category: 'security', icon: Lock, descriptionKey: 'home.tool.protect' },
   { id: 'tools.unlock', category: 'security', icon: LockOpen, descriptionKey: 'home.tool.unlock' },
+  { id: 'tools.sanitize', category: 'security', icon: Broom, descriptionKey: 'home.tool.sanitize' },
   { id: 'tools.redaction-audit', category: 'security', icon: ShieldCheck, descriptionKey: 'home.tool.audit' },
   { id: 'tools.optimize', category: 'document', icon: ArrowsIn, descriptionKey: 'home.tool.optimize' },
   { id: 'tools.ocr', category: 'document', icon: Scan, descriptionKey: 'home.tool.ocr' },

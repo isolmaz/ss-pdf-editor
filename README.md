@@ -45,7 +45,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
-| 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
+| 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
 | 🧰 **Tools** | OCR in 27 languages · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
@@ -279,6 +279,18 @@ nothing leaving the browser.
     structure.
   - A staged mark stays an intent until you apply it. Saving while marks are still staged
     is refused.
+- **Sanitize.** One dialog removes what the pages do not show.
+  - Categories: scripts and code-running actions, attached files, metadata, private
+    application data, thumbnails and hidden layers (on by default); external links, comments
+    and form fields (flatten or remove; off by default).
+  - The report lists what was found and removed per category. The output is re-read and each
+    chosen category must count zero, or nothing is returned.
+  - When the selection does not change the picture, up to 40 pages are rendered before and
+    after and must match pixel for pixel.
+  - Limits: no "embedded search index" category (its place in the file is not specified),
+    scripts inside 3D and rich media are reported but not edited, hidden-layer content that
+    cannot be cut out exactly stays and is reported, and a digital signature does not
+    survive.
 - **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
   encrypted copy is downloaded, not applied to the open document.
 - **Simple signatures and images.** Draw a signature, type your name in one of two
