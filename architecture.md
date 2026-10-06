@@ -279,7 +279,7 @@ the same certificate twice is one entry.
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
 | `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction |
-| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
+| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 
@@ -327,6 +327,19 @@ had to stay green. The moves, and the defects they fixed on the way:
   Resizing (`resizeImageStamp`, step `annotations.resize`) writes `/Rect` only — readers
   scale the appearance to it — and refuses anything that is not a `/Stamp`, whose geometry
   lives in more keys than the rectangle;
+- other documents → PDF (`ops/convert.ts`, steps `convert.read` / `convert.layout` /
+  `convert.write` / `save` / `convert.outline` / `convert.links` / `verify`). MuPDF 1.28.1
+  opens DOCX/XLSX/PPTX itself, but only as reflowed text: a sheet lost its labels and grid, a
+  slide became one paragraph and a Word table a list of cells. So each format is first read
+  into HTML — DOCX through mammoth (BSD-2-Clause, `externalFileAccess` off), XLSX and PPTX by
+  `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom`, text and CSV by `ops/convert-text.ts`
+  (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are. Every part is
+  laid out (`Document.style` adds only the `@page` margin, before `layout`) and run through
+  one `DocumentWriter`. The source's outline and links are written afterwards by the
+  existing writers (`applyOutlineEdit`, `applyLinkEdit`, schemes other than `http:`,
+  `https:` and `mailto:` dropped and counted), and the result is reopened and its page
+  count compared. `ops/convert-formats.ts` holds the extension table with no dependencies,
+  so the shell can recognise a convertible file without loading the converters;
 - images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`), where two
   pdf-lib-era defects are fixed: EXIF orientations 6 and 8 were turned the wrong way (an
   upright phone photo came out upside down) and `contain`/`cover` squashed a turned photo into
@@ -867,15 +880,16 @@ and the panel used to do exactly that right after handing over its result, so ev
 applied from the panel was aborted before it reached the document
 (`e2e/editor-stability.spec.ts` fails with that call reinstated).
 
-`ops/index.ts` registers **29** dialog ids against lazy `import()` loaders, so a
+`ops/index.ts` registers **30** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
 
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
 synchronously through `isStandaloneDialog`): a blank document (`new-document`,
-`pdf-core/ops/create.ts`), a PDF from images (`images-to-pdf`) and several PDFs merged into a
-new one (`merge-files`, the first file as the base of `mergeDocuments`). They run with no
+`pdf-core/ops/create.ts`), a PDF from images (`images-to-pdf`), several PDFs merged into a
+new one (`merge-files`, the first file as the base of `mergeDocuments`) and other documents
+converted to PDF (`convert-to-pdf`, several files converted one by one and merged in order). They run with no
 document open, their context carries no bytes, and their one result opens in a new tab. A
 tab's tools panel is frozen against that tab and dismissed when it changes, so these get a
 modal host instead (`dialogs/StartDialog.tsx`, the same `OperationForm` body) and their own
@@ -978,7 +992,12 @@ costs nothing on the path the user waits on. The parsed handle's page count feed
 `checkDocumentLimits()` verdict. Encrypted inputs become **sensitive sessions** and are not
 written to the vault. Four surfaces open a file (picker, drop zone, home screen, hidden
 input) and all four go through one wrapper, so error handling cannot be forgotten at three
-of them.
+of them. That wrapper (`openFromSurface`) also routes files that are not PDFs. A format
+`ops/convert-formats.ts` lists is converted with defaults (the locale's paper, landscape for
+a spreadsheet, 15 mm margin) and opened as a new tab. The conversion's caveats are shown in
+the notice. A picture becomes a page through `imagesToPdf`. DOC, XLS, PPT, OpenDocument
+and RTF get their own sentence instead of "the document looks corrupt". The picker offers
+a second filter with every convertible type.
 
 A `password-required` or `wrong-password` failure is a question, not a failure: the shell
 keeps the file (and its handle) and shows `PasswordDialog`, and the answer re-runs the open

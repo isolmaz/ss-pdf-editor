@@ -43,7 +43,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark |
 | 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
-| 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF |
+| 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification |
 | 🧰 **Tools** | OCR (TR/EN) · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
@@ -172,6 +172,18 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - A block that cannot be reproduced faithfully is marked **not editable**.
 - **Export and import.** Export text as plain text or Markdown. Export pages as images, or
   build a PDF from images.
+- **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are
+  converted in the browser by MuPDF's layout engine. The result is real text you can select
+  and search.
+  - Opening or dropping such a file converts it and opens the PDF in a new tab; a dropped
+    image opens as a PDF page. **File → Convert to PDF** offers the page size, orientation
+    and margin, and joins several files into one PDF in the order you set.
+  - Word goes through mammoth: headings, lists, tables, links and images. Each Excel sheet
+    becomes a table of its used range, and each slide becomes a page of the slide's size
+    with its text, tables and pictures in reading order.
+  - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
+    document become link annotations. The title comes from the file or its name.
+  - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
 
 ### Redaction, security, signing
 
@@ -280,6 +292,14 @@ The limits are defined once, in
 
 ## Honest limits
 
+- **Converting to PDF.**
+  - The conversion keeps a document's content, not its exact look. Page layout, fonts,
+    headers and footers are not reproduced. Neither are slide positions and themes, or
+    spreadsheet formatting, column widths and charts. Formulas show their saved result.
+    Each report says what was approximated.
+  - The old binary DOC, XLS and PPT formats, OpenDocument and RTF are not converted, and the
+    app says so.
+  - An HTML page's stylesheets and images on the internet are not loaded.
 - **Simple signatures.** A drawn, typed or photographed signature is a picture on the page,
   not a certified digital signature: it proves nothing about who signed or whether the
   document changed afterwards. The dialog says so; use certificate signing for that.

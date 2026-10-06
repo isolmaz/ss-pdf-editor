@@ -13,6 +13,7 @@
 import {
   ArrowsMerge,
   CloudArrowUp,
+  FileArrowUp,
   FilePdf,
   FilePlus,
   FolderOpen,
@@ -22,6 +23,7 @@ import {
   Star,
   Trash,
 } from '@phosphor-icons/react';
+import { CONVERT_ACCEPT } from 'pdf-core/ops/convert-formats';
 import type { Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { lazy, type ReactNode, Suspense, useId, useMemo, useState } from 'react';
@@ -35,7 +37,7 @@ import {
 
 const HomeToolGrid = lazy(() => import('./HomeToolGrid'));
 
-export type HomeStartAction = 'blank' | 'images' | 'merge' | 'batch';
+export type HomeStartAction = 'blank' | 'images' | 'merge' | 'batch' | 'convert';
 
 export interface HomeScreenProps {
   readonly t: Translator;
@@ -188,7 +190,7 @@ export function HomeScreen({
       <input
         id={fileInputId}
         type="file"
-        accept="application/pdf,.pdf"
+        accept={`application/pdf,.pdf,${CONVERT_ACCEPT}`}
         multiple
         className="sr-only"
         onChange={(event) => {
@@ -241,10 +243,10 @@ export function HomeScreen({
       ) : (
         <div id={startPanelId} role="tabpanel" className="flex flex-1 flex-col">
           <h2 className="sr-only">{t('home.start.title')}</h2>
-          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label
               htmlFor={fileInputId}
-              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus sm:col-span-2 lg:col-span-1 xl:col-span-1"
+              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus sm:col-span-2 lg:col-span-1 lg:row-span-2"
             >
               <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110">
                 <CloudArrowUp size={24} weight="duotone" aria-hidden="true" />
@@ -264,6 +266,13 @@ export function HomeScreen({
               title={t('home.start.blank.title')}
               description={t('home.start.blank.desc')}
               onClick={() => onStart('blank')}
+              disabled={busy}
+            />
+            <StartCard
+              icon={<FileArrowUp size={20} weight="duotone" />}
+              title={t('home.start.convert.title')}
+              description={t('home.start.convert.desc')}
+              onClick={() => onStart('convert')}
               disabled={busy}
             />
             <StartCard

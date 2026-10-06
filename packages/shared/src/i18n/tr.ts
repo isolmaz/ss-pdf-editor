@@ -13,6 +13,7 @@ import { batchPart } from './parts/batch';
 import { boxesPart } from './parts/boxes';
 import { commonPart } from './parts/common';
 import { comparePart } from './parts/compare';
+import { convertPart } from './parts/convert';
 import { dialogsPart } from './parts/dialogs';
 import { docopsPart } from './parts/docops';
 import { enginesPart } from './parts/engines';
@@ -68,6 +69,7 @@ export const tr = {
   ...securityPart,
   ...shellPart,
   ...signaturePart,
+  ...convertPart,
   ...stampPart,
   ...verifyPart,
 

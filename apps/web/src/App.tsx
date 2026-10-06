@@ -22,6 +22,15 @@ import {
 import type { MarkTransform } from 'pdf-core/ops/annotation-transform';
 import { transformPdfAnnotations } from 'pdf-core/ops/annotation-transform';
 import { marksFromEngineEntries, readAnnotations } from 'pdf-core/ops/annotations';
+import {
+  CONVERT_ACCEPT,
+  CONVERT_PICKER_ACCEPT,
+  convertFormatOf,
+  formatLabel,
+  isImageName,
+  pdfNameFor,
+  unsupportedDocumentKind,
+} from 'pdf-core/ops/convert-formats';
 import { fieldValueText, fillFormFields, readFormFields } from 'pdf-core/ops/forms';
 import { type MeasureMark, type MeasureMode, type MeasureScale, scaleForRatio } from 'pdf-core/ops/measure';
 import type { RedactRect } from 'pdf-core/ops/redact';
@@ -173,6 +182,8 @@ import {
   addImageStamp,
   applyLayerWrite,
   auditRedactedDocument,
+  convertToPdf,
+  imagesToPdf,
   listPdfFonts,
   removeAttachments,
   resizeImageStamp,
@@ -1886,6 +1897,19 @@ export function App({ store }: AppProps) {
   const openFromSurface = useCallback(
     async (file: File, handle?: FileSystemFileHandle): Promise<void> => {
       try {
+        // A Word, Excel, HTML or text file is not refused: it is converted, and the PDF
+        // opens in its own tab (`pdf-core/ops/convert.ts`). A `.pdf` always opens as one.
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          if (convertFormatOf(file.name) !== null || isImageName(file.name)) {
+            await convertAndOpenRef.current(file);
+            return;
+          }
+          const kind = unsupportedDocumentKind(file.name);
+          if (kind !== null) {
+            setNotice(t('convert.unsupported', { kind }));
+            return;
+          }
+        }
         await openFile(file, handle);
       } catch (error) {
         setNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
@@ -1928,7 +1952,13 @@ export function App({ store }: AppProps) {
       [picked] = await showOpenFilePicker({
         multiple: false,
         excludeAcceptAllOption: false,
-        types: [{ description: t('open.pdfFilter'), accept: { 'application/pdf': ['.pdf'] } }],
+        types: [
+          { description: t('open.pdfFilter'), accept: { 'application/pdf': ['.pdf'] } },
+          {
+            description: t('open.anyFilter'),
+            accept: { 'application/pdf': ['.pdf'], ...CONVERT_PICKER_ACCEPT },
+          },
+        ],
       });
     } catch (error) {
       // A cancelled picker is a user decision, not an error worth a banner — and only a
@@ -1987,6 +2017,77 @@ export function App({ store }: AppProps) {
     },
     [draftStorage, store, tier],
   );
+
+  /**
+   * A document in another format, opened: converted in this tab with the defaults (the
+   * locale's paper, portrait — a spreadsheet landscape — and a 15 mm margin), then opened
+   * as a new PDF tab. A picture is placed on a page of the same paper, as "Images to PDF"
+   * would. The conversion's own notes say what it approximated; the File menu's
+   * "Convert to PDF" offers the same conversion with every option.
+   */
+  const convertAndOpen = useCallback(
+    async (file: File): Promise<void> => {
+      const format = convertFormatOf(file.name);
+      if (format === null && !isImageName(file.name)) return;
+      setNotice(null);
+      if (busyRef.current || cancelRef.current !== null) {
+        refuseBusy();
+        return;
+      }
+      const controller = new AbortController();
+      cancelRef.current = controller;
+      setBusy(true);
+      setOpening(true);
+      try {
+        const letter = /^en-(?:US|CA)\b/i.test(navigator.language);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (format === null) {
+          // A picture becomes a page the way "Images to PDF" makes one: on the paper,
+          // contained, its EXIF turn applied.
+          const pictures = await imagesToPdf(
+            {
+              images: [{ name: file.name, bytes }],
+              pageSize: letter ? 'letter' : 'a4',
+              fit: 'contain',
+              marginMm: 0,
+              applyExif: true,
+            },
+            { signal: controller.signal },
+          );
+          await openProducedTab(pdfNameFor(file.name), pictures.bytes, controller.signal);
+          setNotice(t('convert.imageOpened'));
+          return;
+        }
+        const outcome = await convertToPdf(
+          {
+            name: file.name,
+            bytes,
+            pageSize: letter ? 'letter' : 'a4',
+            orientation: format === 'xlsx' || format === 'csv' || format === 'tsv' ? 'landscape' : 'portrait',
+            marginMm: 15,
+          },
+          { signal: controller.signal },
+        );
+        await openProducedTab(pdfNameFor(file.name), outcome.bytes, controller.signal);
+        const caveats = outcome.report.notes
+          .filter((item) => item.key !== 'op.note.convert.done')
+          .map((item) => t(item.key, item.params));
+        setNotice([t('convert.opened', { format: formatLabel(format) }), ...caveats].join(' '));
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setNotice(noticeLine(failureNotices(error, 'error.unsupported-format.message'), t));
+      } finally {
+        setOpening(false);
+        if (cancelRef.current === controller) {
+          cancelRef.current = null;
+          setBusy(false);
+        }
+      }
+    },
+    [openProducedTab, refuseBusy, setBusy, t],
+  );
+  const convertAndOpenRef = useRef(convertAndOpen);
+  convertAndOpenRef.current = convertAndOpen;
 
   /**
    * The review as a file (`annotation-data.ts`). The session's
@@ -4599,7 +4700,13 @@ export function App({ store }: AppProps) {
               if (action === 'batch') setBatchOpen(true);
               else
                 openStart(
-                  action === 'blank' ? 'new-document' : action === 'images' ? 'images-to-pdf' : 'merge-files',
+                  action === 'blank'
+                    ? 'new-document'
+                    : action === 'images'
+                      ? 'images-to-pdf'
+                      : action === 'convert'
+                        ? 'convert-to-pdf'
+                        : 'merge-files',
                 );
             }}
             // The grid is the discovery surface named 'all tools': it lists every tool in either
@@ -5486,7 +5593,7 @@ export function App({ store }: AppProps) {
       <input
         ref={fileInput}
         type="file"
-        accept="application/pdf,.pdf"
+        accept={`application/pdf,.pdf,${CONVERT_ACCEPT}`}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.item(0);
