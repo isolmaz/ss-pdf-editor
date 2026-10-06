@@ -35,6 +35,14 @@ export interface GlyphBox {
    *  own box (an early engine spike measured the same
    *  quantity for a whole line: first char's left edge → last char's right edge). */
   readonly advance: number;
+  /** Baseline start point of the glyph, when the extractor reported one. */
+  readonly origin?: readonly [number, number];
+  /** The glyph's own font size in points. */
+  readonly size?: number;
+  /** The font name the extractor reported for this glyph's run. */
+  readonly fontName?: string;
+  /** `#rrggbb`, lower case: the glyph's own fill colour, when the extractor reported it. */
+  readonly color?: string;
 }
 
 /** A run of glyphs with no word gap inside it. */
@@ -114,6 +122,8 @@ export interface CharInput {
   readonly size: number;
   /** The font name the extractor reported for this run. */
   readonly fontName: string;
+  /** `#rrggbb`, lower case: the fill colour the glyph was drawn with, when known. */
+  readonly color?: string;
 }
 
 export interface LineInput {

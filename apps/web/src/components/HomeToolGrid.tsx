@@ -50,6 +50,7 @@ import {
   ShieldCheck,
   Signature,
   SquaresFour,
+  Swap,
   Tag,
   Textbox,
   TextT,
@@ -81,6 +82,7 @@ const CATEGORY_ORDER: readonly Category[] = ['edit', 'pages', 'convert', 'sign',
 /** Command ids in the order each category shows them. */
 export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'tools.text-edit', category: 'edit', icon: TextT, descriptionKey: 'home.tool.textEdit' },
+  { id: 'edit.find-replace', category: 'edit', icon: Swap, descriptionKey: 'home.tool.findReplace' },
   { id: 'tools.highlight', category: 'edit', icon: Highlighter, descriptionKey: 'home.tool.highlight' },
   { id: 'tools.ink', category: 'edit', icon: Scribble, descriptionKey: 'home.tool.ink' },
   { id: 'tools.shapes', category: 'edit', icon: Shapes, descriptionKey: 'home.tool.shapes' },

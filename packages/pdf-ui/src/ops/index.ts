@@ -21,6 +21,7 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'export-images': async () => (await import('./file')).exportImagesDialog,
   'export-text': async () => (await import('./file')).exportTextDialog,
   'export-office': async () => (await import('./office')).exportOfficeDialog,
+  'find-replace': async () => (await import('./find-replace')).findReplaceDialog,
   'extract-pages': async () => (await import('./pages')).extractPagesDialog,
   split: async () => (await import('./pages')).splitDialog,
   compress: async () => (await import('./optimize')).compressDialog,

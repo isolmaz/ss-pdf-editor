@@ -4458,6 +4458,11 @@ export function App({ store }: AppProps) {
         toggleRightDock: () => setRightDock((value) => !value),
         reading: () => setReading((value) => !value),
         documentProperties: () => openDialog('properties'),
+        findReplace: () => {
+          if (!canEditRef.current) return false;
+          openDialog('find-replace');
+          return true;
+        },
         selectAllMarks,
       }),
       [
@@ -4852,6 +4857,7 @@ export function App({ store }: AppProps) {
                 onScaleChange={handleScaleChange}
                 onModifiedChange={markActiveDirty}
                 onLayoutChange={handleLayoutChange}
+                onReplace={canEdit ? (query) => openDialog('find-replace', { find: query }) : undefined}
                 // The mark layers live inside the viewer's scroll content, so the browser
                 // scrolls them with the pages; outside it they were re-placed only on the
                 // next render and slid over the text while the reader scrolled.

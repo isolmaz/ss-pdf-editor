@@ -104,9 +104,11 @@ interface MeasuredPage {
  * file that has no CropBox, and where they differ, staying with the reader/writer
  * convention is what keeps the geometry in one space.
  *
- * `colors` is a page-level fact repeated for every block index; an **empty** map means
- * no colour was detected and the consumer falls back to black (the UI reports the
- * substitution).
+ * `colors` is per block: the colour most of the block's glyphs were drawn with, as
+ * MuPDF reports it. A block without one gets pdf.js's page-dominant text colour; an
+ * **empty** map means no colour was detected and the consumer falls back to black (the
+ * UI reports the substitution). Reading the page's one dominant colour for every block
+ * turned a red heading black when it was edited.
  */
 export async function readPageText(
   bytes: Uint8Array,
@@ -117,20 +119,10 @@ export async function readPageText(
   const mupdf = await loadMupdf();
   throwIfAborted(context.signal);
   const doc = openPdf(mupdf, bytes);
+  let page: MeasuredPage;
   try {
     const geometry = readGeometry(doc, pageIndex);
-    const page = readMupdfPage(doc, pageIndex, geometry.box, geometry.rotation);
-    throwIfAborted(context.signal);
-    const colors = await readTextColors(bytes, pageIndex, context, page.blocks.length);
-    throwIfAborted(context.signal);
-    return {
-      pageIndex,
-      width: page.box.width,
-      height: page.box.height,
-      rotation: page.rotation,
-      blocks: page.blocks,
-      colors,
-    };
+    page = readMupdfPage(doc, pageIndex, geometry.box, geometry.rotation);
   } finally {
     // A wasm document that is never destroyed keeps its objects in the emscripten heap
     // for the life of the tab, and nothing in the app can see that memory (the other
@@ -138,6 +130,78 @@ export async function readPageText(
     // one release.
     doc.destroy();
   }
+  throwIfAborted(context.signal);
+  const glyphColors = blockColors(page.blocks);
+  // pdf.js is asked only when MuPDF reported no colour for some block; its answer is
+  // one colour for the whole page, so a block MuPDF did colour keeps its own.
+  const colors =
+    Object.keys(glyphColors).length === page.blocks.length
+      ? glyphColors
+      : { ...(await readTextColors(bytes, pageIndex, context, page.blocks.length)), ...glyphColors };
+  throwIfAborted(context.signal);
+  return {
+    pageIndex,
+    width: page.box.width,
+    height: page.box.height,
+    rotation: page.rotation,
+    blocks: page.blocks,
+    colors,
+  };
+}
+
+/**
+ * The text of several pages through **one** MuPDF document, for operations that read a
+ * whole document (find and replace). Colours are the glyphs' own (`blockColors`); a
+ * block MuPDF reported no colour for falls back to black in the model, and pdf.js is
+ * not opened per page.
+ */
+export async function readDocumentText(
+  bytes: Uint8Array,
+  pages: readonly number[],
+  context: OperationContext,
+  onPage?: (done: number, total: number) => void,
+): Promise<readonly PageTextInput[]> {
+  throwIfAborted(context.signal);
+  const mupdf = await loadMupdf();
+  throwIfAborted(context.signal);
+  const doc = openPdf(mupdf, bytes);
+  try {
+    const read: PageTextInput[] = [];
+    for (const pageIndex of pages) {
+      throwIfAborted(context.signal);
+      const geometry = readGeometry(doc, pageIndex);
+      const page = readMupdfPage(doc, pageIndex, geometry.box, geometry.rotation);
+      read.push({
+        pageIndex,
+        width: page.box.width,
+        height: page.box.height,
+        rotation: page.rotation,
+        blocks: page.blocks,
+        colors: blockColors(page.blocks),
+      });
+      onPage?.(read.length, pages.length);
+    }
+    return read;
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** Per block index, the colour most of its glyphs were drawn with; a block whose glyphs carry none is absent. */
+function blockColors(blocks: readonly BlockInput[]): Readonly<Record<number, string>> {
+  const colors: Record<number, string> = {};
+  for (const [index, block] of blocks.entries()) {
+    const counts = new Map<string, number>();
+    for (const line of block.lines) {
+      for (const char of line.chars) {
+        if (char.color === undefined || char.ch.trim() === '') continue;
+        counts.set(char.color, (counts.get(char.color) ?? 0) + 1);
+      }
+    }
+    const color = dominantColor(counts);
+    if (color !== null) colors[index] = color;
+  }
+  return colors;
 }
 
 /**
@@ -158,6 +222,20 @@ function readMupdfPage(doc: PDFDocument, pageIndex: number, box: PageBox, rotati
     if (isAbort(error)) throw error;
     throw mapMupdfError(error, 'readPageText');
   }
+}
+
+/**
+ * A glyph's fill colour as MuPDF reports it (grey, RGB or CMYK components, `0 … 1`)
+ * as `#rrggbb`, converted the way `fillColorOf` converts pdf.js's; `null` when the
+ * walker reported none.
+ */
+function glyphColor(color: readonly number[] | null | undefined): string | null {
+  if (color === null || color === undefined) return null;
+  const [c0 = 0, c1 = 0, c2 = 0, c3 = 0] = color;
+  if (color.length === 1) return hexColor(c0, c0, c0);
+  if (color.length === 3) return hexColor(c0, c1, c2);
+  if (color.length === 4) return hexColor((1 - c0) * (1 - c3), (1 - c1) * (1 - c3), (1 - c2) * (1 - c3));
+  return null;
 }
 
 /** `throwIfAborted`'s error, recognised so the mapping above never rewrites it. */
@@ -232,14 +310,16 @@ function readBlocks(page: MupdfPage, box: PageBox, rotation: Rotation): readonly
       beginLine(bbox) {
         line = { quad: cornersToUserRect(box, rotation, bbox, 2), chars: [] };
       },
-      onChar(ch, origin, font, size, quad) {
+      onChar(ch, origin, font, size, quad, color) {
         if (line === null) return;
+        const fill = glyphColor(color);
         line.chars.push({
           ch,
           quad: cornersToUserRect(box, rotation, quad, 4),
           origin: pointToUser(box, rotation, origin),
           size,
           fontName: font.getName(),
+          ...(fill === null ? {} : { color: fill }),
         });
       },
       endLine() {
@@ -631,7 +711,7 @@ async function fetchFontProgram(path: string): Promise<Uint8Array> {
 }
 
 /** The metric tables and catalogue, fetched once for the session. */
-interface TextFontSet {
+export interface TextFontSet {
   readonly catalog: FontCatalog;
   readonly metrics: Readonly<Record<string, FontMetrics>>;
 }

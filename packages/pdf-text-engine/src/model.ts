@@ -116,6 +116,8 @@ interface PositionedGlyph {
   readonly rect: Rect;
   readonly origin: readonly [number, number];
   readonly size: number;
+  readonly fontName: string;
+  readonly color: string | undefined;
   /** The extractor reported whitespace right before this glyph: a word starts here. */
   readonly breakBefore: boolean;
 }
@@ -259,6 +261,8 @@ function buildLine(source: LineInput): TextLine | null {
       rect: orderRect(char.quad),
       origin: char.origin,
       size: char.size,
+      fontName: char.fontName,
+      color: char.color,
       breakBefore: sawGap,
     });
     sawGap = false;
@@ -293,6 +297,10 @@ function buildLine(source: LineInput): TextLine | null {
           ? alongExtent(glyph.rect, direction)
           : (next.origin[0] - glyph.origin[0]) * direction[0] +
             (next.origin[1] - glyph.origin[1]) * direction[1],
+      origin: glyph.origin,
+      size: glyph.size,
+      fontName: glyph.fontName,
+      ...(glyph.color === undefined ? {} : { color: glyph.color }),
     });
     previous = glyph;
   }
