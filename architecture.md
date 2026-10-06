@@ -1442,7 +1442,12 @@ The pieces, in the order the text-edit pipeline uses them:
    line (padded, capped at half the distance to any neighbouring block so an erase can
    never reach another block's ink, merged where the block's own line boxes overlap), and
    the reflowed lines as `{text, x, y, fontSize, color, fontId, words}` with `y` the
-   **baseline** start and `words` carrying justification.
+   **baseline** start and `words` carrying justification. The reflow box is the block's
+   ink in its **original** face, so `fittedBox()` widens it when the matched face (usually
+   Noto Sans, ~6 % wider than Helvetica) would break a line the reader kept whole: by what
+   the widest hard line needs, away from the side the alignment anchors, within the page,
+   clear of any block beside it and by at most 25 %. Without it, editing one line of a
+   six-line list rewrapped all six.
 
 **Coordinate space is fixed for the whole package**: unrotated PDF user space with a
 top-left origin, unit = point, rects as `[x0, y0, x1, y1]` ascending with `y` measured

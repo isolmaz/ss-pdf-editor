@@ -31,6 +31,7 @@ import { measureLineWidth, reflowBlock } from './reflow';
 import type {
   FontMetrics,
   Rect,
+  TextAlign,
   TextBlock,
   TextEditErase,
   TextEditInsert,
@@ -95,10 +96,20 @@ export function planTextEdit(intent: TextEditIntent, metrics: FontMetrics): Text
   const erase: TextEditErase[] = rects.length === 0 ? [] : [{ pageIndex: page.pageIndex, rects }];
   if (intent.replacement.trim() === '') return { erase, insert: [], fonts: {} };
   const align = intent.options?.align ?? block.align;
+  const box =
+    intent.options?.box ??
+    fittedBox(
+      block,
+      page,
+      intent.replacement,
+      intent.options?.fontSize ?? block.style.fontSize,
+      align,
+      metrics,
+    );
   const reflow = reflowBlock(
     // `align` last: an explicit `undefined` in the caller's options must not undo the
     // block's own alignment.
-    { block, text: intent.replacement, options: { ...intent.options, align } },
+    { block, text: intent.replacement, options: { ...intent.options, box, align } },
     metrics,
   );
   const lines: TextEditInsertLine[] = reflow.lines.map((line) => ({
@@ -121,6 +132,68 @@ export function planTextEdit(intent: TextEditIntent, metrics: FontMetrics): Text
   }));
   const insert: TextEditInsert[] = [{ pageIndex: page.pageIndex, lines }];
   return { erase, insert, fonts: { [font.id]: font.filePath } };
+}
+
+/**
+ * How far a box may widen past the block's own ink, as a share of the widest line that
+ * has to fit: enough for a substitute face (Noto Sans sets Latin text about 6 % wider
+ * than Helvetica), never enough to turn a column into a page-wide line.
+ */
+const MAX_WIDEN_RATIO = 1.25;
+
+/**
+ * The reflow box: the block's own, widened so every line the reader kept on one line
+ * still fits on one line in the face it is redrawn with.
+ *
+ * The block's width is its ink in the **original** face. The replacement is drawn in the
+ * matched face, usually Noto Sans, which is wider; a box of the old width broke every
+ * full line the reader never touched, and a six-line list came back as eleven lines over
+ * the content below it. The box grows by what the widest hard line needs, away from the
+ * side its alignment anchors (right for left and justified text, left for right-aligned,
+ * both for centred), but never past the page edge, never into a block beside it, and
+ * never by more than {@link MAX_WIDEN_RATIO}: past that the text really is longer than
+ * the line, and the block wraps as before. Its height stays free, as the derived box's.
+ *
+ * `null` keeps the derived box: nothing needed widening, or there was no room.
+ */
+function fittedBox(
+  block: TextBlock,
+  page: TextEditIntent['page'],
+  text: string,
+  fontSize: number,
+  align: TextAlign,
+  metrics: FontMetrics,
+): Rect | null {
+  const [x0, y0, x1, y1] = block.rect;
+  const width = x1 - x0;
+  const needed = Math.max(
+    0,
+    ...text
+      .split(/\r\n|\r|\n/)
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter((line) => line !== '')
+      .map((line) => measureLineWidth(line, fontSize, metrics)),
+  );
+  if (needed <= width || needed > width * MAX_WIDEN_RATIO) return null;
+  // The room on each side: the page edge, or the nearest block that shares a band of
+  // this block's height.
+  let leftLimit = 0;
+  let rightLimit = page.width;
+  for (const other of page.blocks) {
+    if (other === block || other.rect[3] <= y0 || other.rect[1] >= y1) continue;
+    if (other.rect[0] >= x1) rightLimit = Math.min(rightLimit, other.rect[0] - ERASE_PAD_PT);
+    if (other.rect[2] <= x0) leftLimit = Math.max(leftLimit, other.rect[2] + ERASE_PAD_PT);
+  }
+  const grow = needed - width;
+  let left = x0;
+  let right = x1;
+  if (align === 'right') left = x0 - grow;
+  else if (align === 'center') {
+    left = x0 - grow / 2;
+    right = x1 + grow / 2;
+  } else right = x1 + grow;
+  if (left < leftLimit || right > rightLimit) return null;
+  return [left, y0, right, Number.POSITIVE_INFINITY];
 }
 
 /** One rect per line of the block: padded, never reaching another block, merged where
