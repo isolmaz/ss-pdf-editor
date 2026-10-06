@@ -464,6 +464,46 @@ describe('sanitizeDocument', () => {
     await expect(sanitizeDocument(input, ALL, { signal: controller.signal })).rejects.toThrow();
   });
 
+  it('rewrites a file whose earlier revision still holds an attachment a later update freed', async () => {
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 200, 200], 0, {}, ''));
+    const payload = doc.addStream('FREEDPAYLOAD', { Type: 'EmbeddedFile' });
+    const spec = doc.addObject({ Type: 'Filespec', F: doc.newString('old.txt'), EF: { F: payload } });
+    doc
+      .getTrailer()
+      .get('Root')
+      .put('Names', { EmbeddedFiles: { Names: [doc.newString('old.txt'), spec] } });
+    const first = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    const specNumber = spec.asIndirect();
+    const payloadNumber = payload.asIndirect();
+    doc.destroy();
+    // A later editor removed the attachment by an incremental update that freed its objects.
+    const update = open(first);
+    update.getTrailer().get('Root').delete('Names');
+    update.deleteObject(specNumber);
+    update.deleteObject(payloadNumber);
+    const input = new Uint8Array(update.saveToBuffer('incremental').asUint8Array());
+    update.destroy();
+    const before = open(input);
+    expect(before.countVersions()).toBe(2);
+    before.destroy();
+    expect(haystack(input)).toContain('FREEDPAYLOAD');
+
+    // The latest revision holds no attachment, but the file still does.
+    const out = await sanitizeDocument(input, { ...NONE, files: true }, run);
+    expect(out.bytes).not.toBe(input);
+    expect(out.report.incremental).toBe(false);
+    expect(haystack(out.bytes)).not.toContain('FREEDPAYLOAD');
+    const after = open(out.bytes);
+    expect(after.countVersions()).toBe(1);
+    after.destroy();
+    expect(
+      out.report.notes.find((entry) => entry.key === 'op.note.sanitize.revisionsDropped')?.params,
+    ).toEqual({
+      count: 2,
+    });
+  });
+
   it('removes form fields on request and leaves the rest of the page', async () => {
     const out = await sanitizeDocument(input, { ...NONE, forms: 'remove' }, run);
     const doc = open(out.bytes);

@@ -70,6 +70,8 @@ export const sanitizePart = {
     'Görünüm doğrulandı: {pages} sayfa, temizlemeden önce ve sonra piksel piksel aynı çizildi.',
   'op.note.sanitize.pictureChanges':
     'Seçimin bir kısmı sayfada görünenleri değiştirdiği için (yorumlar, form alanları, bağlantılar, dosya eki simgeleri) sayfalar önce ve sonra karşılaştırılmadı.',
+  'op.note.sanitize.revisionsDropped':
+    'Dosyada {count} sürüm vardı. Tek sürüm olarak yeniden yazıldı; önceki bir sürümde kalan hiçbir şey artık dosyada yok.',
   'op.note.sanitize.nothing':
     'Seçilen kategorilerin hiçbirinde kaldırılacak bir şey yoktu; dosya değiştirilmedi.',
 } as const;

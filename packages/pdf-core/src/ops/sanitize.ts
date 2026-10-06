@@ -800,10 +800,12 @@ export async function sanitizeDocument(
   let out: Uint8Array;
   let found: SweepResult;
   let pageCount: number;
+  let inputRevisions: number;
   try {
     try {
       found = sweep(doc, options, true, context.signal);
       pageCount = doc.countPages();
+      inputRevisions = doc.countVersions();
       // A file whose page tree MuPDF could not recover would come out as an empty shell.
       if (pageCount === 0) {
         throw new ToolError('corrupt-document', {
@@ -817,12 +819,15 @@ export async function sanitizeDocument(
     }
     throwIfAborted(context.signal);
 
-    // Nothing selected is present and nothing was unused: the file goes back as it is.
+    // Nothing selected is present and nothing was unused: the file goes back as it is. The sweep
+    // sees only the latest revision, so a file with earlier ones is always rewritten: an update
+    // that freed an attachment or a script leaves its bytes in the revision before it.
     const present =
       selected.some((category) => removableOf(found, category) > 0) ||
       found.unused > 0 ||
       found.xfaDropped ||
-      (options.forms !== 'keep' && (formFieldsBefore > 0 || working !== bytes));
+      (options.forms !== 'keep' && (formFieldsBefore > 0 || working !== bytes)) ||
+      inputRevisions > 1;
     if (!present) {
       return nothingFound(bytes, selected, found, pageCount, steps);
     }
@@ -937,6 +942,8 @@ export async function sanitizeDocument(
       ? note('changed', 'op.note.sanitize.removed.unused', { found: original.unused })
       : note('preserved', 'op.note.sanitize.none.unused'),
   );
+  if (inputRevisions > 1)
+    notes.push(note('changed', 'op.note.sanitize.revisionsDropped', { count: inputRevisions }));
   notes.push(...warnings(original, options, compared, pictureChanges, after));
   notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
   steps.push('producer', 'save', 'verify');
@@ -985,7 +992,7 @@ function nothingFound(
       inputBytes: bytes.byteLength,
       outputBytes: bytes.byteLength,
       pageCount,
-      // Nothing was written: the file keeps whatever revisions it had.
+      // Nothing was written, and the file has a single revision (an earlier one forces a rewrite).
       incremental: true,
     },
   };

@@ -292,6 +292,9 @@ nothing leaving the browser.
     and form fields (flatten or remove; off by default).
   - The report lists what was found and removed per category. The output is re-read and each
     chosen category must count zero, or nothing is returned.
+  - A file with earlier revisions (incremental saves) is always rewritten as one, even when
+    the latest revision holds nothing to remove: an earlier one can still contain what a
+    later save deleted.
   - When the selection does not change the picture, up to 40 pages are rendered before and
     after and must match pixel for pixel.
   - Limits: no "embedded search index" category (its place in the file is not specified),

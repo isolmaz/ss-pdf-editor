@@ -1166,7 +1166,11 @@ category finds, and removes it when `mutate` is set. The operation runs it mutat
 input, saves with `garbage=compact,compress`, **re-opens the output and runs the same sweep
 read-only**: every selected category must count zero, or the operation throws
 `verification-failed`. `found`, `removed` and `left` in the report are measured, never assumed,
-and a counter and a remover cannot disagree because they are one function.
+and a counter and a remover cannot disagree because they are one function. The sweep sees only
+the latest revision, so the input goes back unchanged ("nothing found") only when it has one:
+a file with earlier revisions is always rewritten, since an incremental update that freed an
+attachment or a script leaves its bytes in the revision before it (`revisionsDropped` note),
+and the output must have a single revision.
 
 **Actions are decided per type** (ISO 32000-1 §12.6.4), wherever one hangs (`/A`, `/PA`,
 `/AA`, `/OpenAction`, and each `/Next` chain). JavaScript, Launch, ImportData, SubmitForm,
