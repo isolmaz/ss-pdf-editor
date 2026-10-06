@@ -9,6 +9,7 @@
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
 import { writeShapeAnnotations } from './annotation-shapes';
@@ -29,8 +30,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
 const run = { signal: new AbortController().signal };
 
 /** Two 400×500 pages; the second has a CropBox that starts at (50, 50). */
-async function blank(extra?: (doc: import('mupdf').PDFDocument) => void): Promise<Uint8Array> {
-  const mupdf = await import('mupdf');
+async function blank(extra?: (doc: mupdf.PDFDocument) => void): Promise<Uint8Array> {
   const doc = new mupdf.PDFDocument();
   doc.insertPage(-1, doc.addPage([0, 0, 400, 500], 0, {}, ''));
   doc.insertPage(-1, doc.addPage([0, 0, 400, 500], 0, {}, ''));
@@ -68,7 +68,6 @@ async function annotationsOf(bytes: Uint8Array): Promise<readonly ExistingAnnota
  * appearance stream, and its `/CA` (pdf.js does not report opacity for every kind).
  */
 async function appearances(bytes: Uint8Array): Promise<Record<string, { ap: boolean; ca: number | null }>> {
-  const mupdf = await import('mupdf');
   const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
   if (doc === null) throw new Error('not a PDF');
   try {
@@ -144,7 +143,6 @@ describe('writeShapeAnnotations', () => {
       }),
     ];
     const out = await writeShapeAnnotations(await blank(), shapes, run);
-    const mupdf = await import('mupdf');
     const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
     try {
       // The file's own /L is in drag order: from (300, 400) to (50, 350) in top-left page space.
@@ -192,6 +190,40 @@ describe('writeShapeAnnotations', () => {
       expect(at(175, 375)).toEqual(green);
       expect(at(300, 400)).toEqual(green);
       expect(at(175, 340)).toEqual(white);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('paints a translucent shape translucent: the appearance carries the opacity, not only /CA', async () => {
+    // A reader paints the `/AP`; with the alpha only on the annotation's `/CA` a 40 %
+    // rectangle came out of the export as a solid one.
+    const out = await writeShapeAnnotations(
+      await blank(),
+      [
+        mark({
+          id: 'sq',
+          kind: 'shapes',
+          shape: 'square',
+          rect: [40, 60, 200, 160],
+          thickness: 6,
+          opacity: 0.4,
+        }),
+      ],
+      run,
+    );
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
+    try {
+      const pixmap = doc.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
+      const pixels = pixmap.getPixels();
+      const offset = (110 * pixmap.getWidth() + 40) * pixmap.getNumberOfComponents();
+      const [red, green, blue] = [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
+      // Red at 40 % over white: (255, 153, 153), give or take the rasteriser's rounding.
+      expect(red).toBe(255);
+      expect(green).toBeGreaterThan(140);
+      expect(green).toBeLessThan(166);
+      expect(blue).toBeGreaterThan(140);
+      expect(blue).toBeLessThan(166);
     } finally {
       doc.destroy();
     }
@@ -279,7 +311,6 @@ describe('retagTextMarkup appearance', () => {
       mark({ id: 'q1', kind: 'squiggly', quads: [[40, 180, 200, 210]], color: '#00aa00', thickness: 4 }),
     ];
     const out = await retagTextMarkup(await engineWritten(), marks, run);
-    const mupdf = await import('mupdf');
     const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
     try {
       const pixmap = doc.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);

@@ -102,6 +102,7 @@ export const annotationsPart = {
   'op.note.annotate.retagged':
     '{count} notun türü gerçek biçimine çevrildi (altı çizili / üstü çizili / dalgalı).',
   'op.note.annotate.shapes': '{count} şekil açıklaması ve görünüm akışı yazıldı.',
+  'op.note.annotate.notes': '{count} not, simgesiyle birlikte yapışkan not olarak yazıldı.',
   'op.note.annotate.highlights': '{count} vurgu işareti çizgi görünümüyle yazıldı.',
   'op.note.annotate.shapesPerspective':
     'Şekillerin görünümü bizim yazıcımızla üretildi; ölçek ve döndürme farklı okuyucularda birkaç nokta oynayabilir.',

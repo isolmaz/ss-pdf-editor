@@ -24,6 +24,7 @@ import {
   FIXTURE_PAGE,
   FORM_FIELD,
   INTERNAL_LINK,
+  inkWithin,
   PAGE_ONE_LINES,
   PAGE_TWO_LINE,
   readProducedPageTexts,
@@ -1178,14 +1179,20 @@ test.describe('a note written by the note tool', () => {
     await editor.blur();
     await expect(commentRows(page).filter({ hasText: 'Note that must survive the file' })).toHaveCount(1);
 
-    // The note reaches the file as an annotation whose comment is the body the user typed.
+    // The note reaches the file as a sticky note (`/Text`) whose comment is the body the
+    // user typed, and another reader paints it: it used to be an empty `/FreeText` whose
+    // appearance drew nothing, so the note vanished everywhere but in this session.
     const produced = await exportPdf(page, 'note.pdf');
     const written = await readProducedPdf(produced);
     const writtenNote = written.annotations.find(
       (annotation) =>
-        annotation.subtype === 'FreeText' && annotation.contents.includes('Note that must survive the file'),
+        annotation.subtype === 'Text' && annotation.contents.includes('Note that must survive the file'),
     );
     expect(writtenNote).toBeDefined();
+    const [left = 0, bottom = 0, right = 0, top = 0] = writtenNote?.rect ?? [];
+    expect(
+      await inkWithin(produced, writtenNote?.pageIndex ?? 0, [left, bottom, right, top]),
+    ).toBeGreaterThan(0.3);
     // The file's own source note is still there too: a save does not replace the inventory.
     expect(written.annotations.map((annotation) => annotation.contents)).toContain(
       SAVED_MARKS.sourceNote.contents,

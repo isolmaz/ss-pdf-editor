@@ -1,9 +1,8 @@
 /**
  * Text the user types onto a page — the `/FreeText` annotation ("Metin ekle").
  *
- * pdf.js can write a `/FreeText` (`EDITOR_FREETEXT`), and the note mark already uses
- * that path — but only as an **empty** shell, because the engine draws the visible text
- * with a WinAnsi base font that has no `ş ğ ı İ` (`annotations.ts`, `storageEntriesFor`).
+ * pdf.js can write a `/FreeText`, but the engine draws the visible text with a WinAnsi
+ * base font that has no `ş ğ ı İ`.
  * Text the user can read on the page therefore cannot go through the engine: this module
  * writes the dictionary **and** its appearance stream itself, with the pinned Noto Sans
  * embedded, the same font every other writer that draws text uses (`engines/noto.ts`),

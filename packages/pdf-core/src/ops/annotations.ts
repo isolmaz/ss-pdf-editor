@@ -78,7 +78,6 @@ import { note, type OperationContext, type OperationOutcome, throwIfAborted } fr
 
 /** pdf.js `AnnotationEditorType` values that can become new annotations. */
 const EDITOR_HIGHLIGHT = 9;
-const EDITOR_FREETEXT = 3;
 const EDITOR_INK = 15;
 
 /** pdf.js keys every **new** annotation with this prefix (`build/pdf.mjs:55`). */
@@ -541,9 +540,9 @@ export function contentsFor(mark: AnnotationMark): string {
  * Storage entries for one mark.
  *
  * Text marks produce one entry (the worker accepts an arbitrary quad list), ink
- * produces one, notes are `/FreeText` shells whose comment carries the content —
- * and shapes produce **none**: the engine has no writer for them, so
- * `writeShapeAnnotations` builds those dictionaries itself.
+ * produces one — and notes and shapes produce **none**: the engine has no writer for
+ * them, so `writeNoteAnnotations` and `writeShapeAnnotations` build those dictionaries
+ * themselves.
  *
  * The geometry here is the mark's **stored** geometry: a mark's own `rotation` is
  * not baked in, because turning these fields is not the same as turning the mark —
@@ -612,18 +611,9 @@ export function storageEntriesFor(
         },
       ];
     }
+    // A note is a `/Text` with its own icon, written by `writeNoteAnnotations`: the engine's
+    // only writer for it was an empty `/FreeText`, which draws nothing.
     case 'note':
-      return [
-        {
-          ...base,
-          annotationType: EDITOR_FREETEXT,
-          rect: markRect(mark, pageHeight),
-          // The visible text is empty on purpose: the note *is* the comment, and
-          // `FREETEXT` is drawn with a WinAnsi base font that cannot spell Turkish.
-          value: '',
-          fontSize: 10,
-        },
-      ];
     case 'shapes':
     // Typed text needs a font that spells Turkish, which the engine's writer does not
     // have: `annotation-freetext.ts` writes these with an embedded Noto Sans.

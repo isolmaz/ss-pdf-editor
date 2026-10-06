@@ -528,10 +528,19 @@ engine's annotation storage is empty: there is nothing to serialise, and pdf.js 
 re-serialises and warns that `getData` was meant — measured on every export without a form
 edit.
 
+**Notes** (`writeNoteAnnotations`, `ops/annotation-shapes.ts`) are `/Text` sticky notes:
+the comment is their `/Contents`, and their `/AP` is a folded-sheet icon in the mark's colour
+(never fainter than 60 %), with the alpha in the appearance's `/ExtGState` as well as on `/CA`.
+They went through the engine before as empty `/FreeText` shells, whose appearance typed `()`:
+the note drew nothing in any other reader, nor in the app once the file was reopened. Shapes
+carry their alpha the same way, since pdf.js and PDFium paint the `/AP` and ignore `/CA`. The
+viewer's `imageResourcesPath` points at `PDFJS_ASSETS.images` (`/engines/pdfjs/images/`,
+pinned by `fetch-engines`), where pdf.js finds the `annotation-<name>.svg` icon it lays over a
+file's own `/Text` note.
+
 **Typed text** (`ops/annotation-freetext.ts`) is the one annotation writer that draws words:
-the engine's `FREETEXT` writer uses a WinAnsi base font with no `ş ğ ı İ`, so notes stay
-empty `/FreeText` shells and the `freetext` kind is written through MuPDF with the embedded Noto
-Sans in its `/AP`. `planFreeTextLayout()` (pure) wraps the text inside the box — breaking a
+the engine's `FREETEXT` writer uses a WinAnsi base font with no `ş ğ ı İ`, so the `freetext`
+kind is written through MuPDF with the embedded Noto Sans in its `/AP`. `planFreeTextLayout()` (pure) wraps the text inside the box — breaking a
 word wider than the box between characters rather than letting the reader clip it — and the
 writer re-opens its output and requires every mark back as a `/FreeText` with its marker and
 an appearance, or throws `verification-failed`. It reports the `annotations.freetext` step,
