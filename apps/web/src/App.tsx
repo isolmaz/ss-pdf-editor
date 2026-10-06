@@ -401,6 +401,14 @@ const AccessibilityPanel = lazy(async () => {
   return { default: module.AccessibilityPanel };
 });
 /**
+ * The reading-order boxes belong to the accessibility tags view; they draw what that view
+ * published to its store (same module instance as the panel, one chunk) and nothing else.
+ */
+const ReadingOrderLayer = lazy(async () => {
+  const module = await import('pdf-ui/panels');
+  return { default: module.ReadingOrderLayer };
+});
+/**
  * The measure layer and its settings strip arrive with the tool: they carry the
  * annotation writer and the ruler geometry, neither of which belongs in the first paint.
  */
@@ -3470,7 +3478,11 @@ export function App({ store }: AppProps) {
    * writes a file of its own.
    */
   const applyAccessibility = useCallback(
-    async (outcome: { readonly bytes: Uint8Array; readonly notes: readonly OperationNote[] }) => {
+    async (outcome: {
+      readonly bytes: Uint8Array;
+      readonly notes: readonly OperationNote[];
+      readonly steps: readonly string[];
+    }) => {
       const tab = store.active;
       const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
       if (tab === null || handle === null) return;
@@ -3480,7 +3492,7 @@ export function App({ store }: AppProps) {
         tabPageCount(tab),
         { key: 'a11y.applied', params: { count: outcome.notes.length } },
         'mupdf',
-        outcome.notes.map((note) => note.key),
+        outcome.steps,
       );
       setHandle(tab.id, next);
       setNotice(t('a11y.applied', { count: outcome.notes.length }));
@@ -5441,6 +5453,12 @@ export function App({ store }: AppProps) {
                           />
                         </Suspense>
                       ) : null}
+                      {/* The accessibility panel's numbered reading-order boxes. */}
+                      {viewer !== null && rightDock && rightTab === 'accessibility' ? (
+                        <Suspense fallback={null}>
+                          <ReadingOrderLayer t={t} viewer={viewer} />
+                        </Suspense>
+                      ) : null}
                     </>
                   )
                 }
@@ -5465,6 +5483,7 @@ export function App({ store }: AppProps) {
                   activeId={rightTab}
                   onSelect={setRightTab}
                   onToggle={() => setRightDock(false)}
+                  wide={rightTab === 'accessibility'}
                 >
                   {rightTab === 'tools' ? (
                     <ToolsRailPanel
@@ -5672,6 +5691,10 @@ export function App({ store }: AppProps) {
                         // The document's own language cannot be guessed; the interface's is
                         // what the shell knows, and the report says which one it wrote.
                         language="tr-TR"
+                        currentPage={currentPage}
+                        canEdit={canEdit}
+                        onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                        onWritten={(outcome) => void applyAccessibility(outcome)}
                         onTagged={(outcome) => void applyAccessibility(outcome)}
                         onAltWritten={(outcome) => void applyAccessibility(outcome)}
                         onNotice={setNotice}

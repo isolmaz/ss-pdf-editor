@@ -41,6 +41,8 @@ export interface DockProps {
   readonly onSelect: (id: string) => void;
   /** Collapse control; the app re-opens the dock from the menu, edge handle or shortcuts. */
   readonly onToggle: () => void;
+  /** A wider panel, for a tab whose content is a tree (the accessibility tags view). */
+  readonly wide?: boolean;
   /** The active tab's content. */
   readonly children: ReactNode;
 }
@@ -63,7 +65,7 @@ const DEFAULT_ICONS: Record<string, React.ElementType> = {
   accessibility: Wheelchair,
 };
 
-export function Dock({ t, side, tabs, activeId, onSelect, onToggle, children }: DockProps) {
+export function Dock({ t, side, tabs, activeId, onSelect, onToggle, wide = false, children }: DockProps) {
   const id = useId();
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
@@ -174,7 +176,7 @@ export function Dock({ t, side, tabs, activeId, onSelect, onToggle, children }: 
   return (
     <div
       className={`flex h-full shrink-0 border-kumo-line bg-kumo-base ${
-        side === 'left' ? 'w-72 border-r' : 'w-80 border-l'
+        side === 'left' ? 'w-72 border-r' : wide ? 'w-[26rem] max-w-full border-l' : 'w-80 border-l'
       }`}
     >
       {side === 'left' ? (

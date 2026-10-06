@@ -46,7 +46,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing · compression |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
 
@@ -337,10 +337,28 @@ nothing leaving the browser.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
     Right-to-left words come back in reading order.
-- **Accessibility.**
-  - The check reports facts only: no score and no conformance claim.
-  - A tagged-PDF writer adds structure tags to the file and verifies the result.
-  - `/Alt` and `/TU` writers set descriptions for images and form fields.
+- **Accessibility.** One panel with three views.
+  - **Report.** The quick check reports facts only: no score and no conformance claim.
+    A tagged-PDF writer adds structure tags to the file and verifies the result, and
+    `/Alt` and `/TU` writers set descriptions for images and form fields.
+  - **PDF/UA.** A check modelled on the Matterhorn Protocol: 34 rules, each marked pass,
+    fail, needs-a-person or not applicable, with a Turkish or English explanation, how to
+    fix it, and a link to the page or the element. It covers the tagged-PDF flag, the
+    structure tree, title and `DisplayDocTitle`, `/Lang`, content marking, figure alt text,
+    tables, headings, lists, links (`OBJR`), annotations, form tooltips, fonts (embedded,
+    `/ToUnicode`, characters that map to Unicode), `/Tabs /S`, the `pdfuaid` identifier in
+    the XMP packet and bookmarks for long documents. Colour contrast is **not measured**,
+    and the report says so. Quick fixes write the title, language, `DisplayDocTitle`, tab
+    order, link descriptions, field tooltips, artifact markers for drawn lines, and
+    Link/Form/Annot elements for annotations. The `pdfuaid:part` declaration is offered only
+    when every automated rule passes; the rules that need a person stay unverified.
+  - **Tags.** The structure tree as an editable outline, with numbered boxes over the pages
+    showing the reading order. Reorder by drag or by Alt+arrow keys, change an element's
+    type (P, H1–H6, Figure, Table, L, LI and the other standard types), set a figure's alt
+    text or a header cell's scope, group elements or make a list, mark content as an
+    artifact. A file with no tags shows the order its content is drawn in; change it and the
+    types, then tag the document. Edits are a draft applied in one write, verified by
+    reading the file back.
 - **Comparison.** Compare two documents by text or by pixels; the report always says which
   method it used.
 - **Batch.** Run one ordered set of steps over many files, with a report for each file.
@@ -455,10 +473,16 @@ The limits are defined once, in
   - RFC 5280 policy processing is not implemented.
   - Supported keys are RSA PKCS#1 v1.5 and ECDSA P-256/384/521, with SHA-256/384/512.
 - **Accessibility.**
-  - There is no PDF/UA claim.
-  - The check does not evaluate reading order, tables, lists, contrast, font embedding or
-    alt-text quality.
-  - A document that already has a structure tree is not re-tagged.
+  - The PDF/UA check is automated and cannot prove conformance: reading order, alt-text
+    quality and changes of language need a person, and colour contrast is not measured.
+    The file is only marked `pdfuaid:part = 1` when every automated rule passes.
+  - Tagging an untagged file orders content as it is drawn and guesses headings from font
+    size; a document that already has a structure tree is edited in the Tags view, not
+    re-tagged. Links, fields and annotations are tagged by a separate quick fix and land at
+    the end of the document until moved.
+  - The tags editor cannot turn an element into an artifact when its content sits inside a
+    form XObject or it owns a link, field or annotation, does not edit per-element `/Lang`,
+    and the annotation fix leaves a parent tree that is not a flat `Nums` array alone.
 - **Redaction audit.**
   - The audit scans raw bytes, so it cannot see inside compressed streams or object
     streams.
