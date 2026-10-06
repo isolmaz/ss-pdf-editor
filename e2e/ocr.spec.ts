@@ -3,19 +3,19 @@ import { resolve } from 'node:path';
 import type { Page } from 'playwright/test';
 import { expect, test } from 'playwright/test';
 import { useAdvancedMode } from './settings';
-import { readProducedPageTexts } from './tool-fixture';
+import { readProducedPageTexts, readProducedPdf } from './tool-fixture';
 
 /**
  * Real OCR, on both kinds of document it has to handle (`R09`, `R10`).
  *
- * **Boundary:** the fixtures are real PDFs supplied by the maintainer and kept out of the
- * repository (they are large; `.gitignore` covers them). Two shapes matter, and the
+ * **Boundary:** the fixtures are real PDFs kept out of the repository (they are large):
+ * put them in `e2e/fixtures/local/`, which `.gitignore` covers. Two shapes matter, and the
  * operation branches on exactly that difference:
  *
- *  - **`scanned.pdf`** — 139 pages, **no text layer at all** (verified with pdf.js:
+ *  - **`scanned.pdf`** — at least 3 pages, **no text layer at all** (verified with pdf.js:
  *    `getTextContent()` returns nothing). Every page is a genuine recognition job, so this
  *    is where the engine itself is proven: Tesseract really renders and recognises.
- *  - **`text.pdf`** — 4 pages that **do** carry text. The default `skip` mode must refuse
+ *  - **`text.pdf`** — at least 3 pages that **do** carry text. The default `skip` mode must refuse
  *    to re-OCR them and say so, which is the guard that keeps a working document from
  *    being silently overwritten with a worse text layer.
  *
@@ -24,9 +24,14 @@ import { readProducedPageTexts } from './tool-fixture';
  */
 
 const ROOT = process.cwd();
-const SCANNED = resolve(ROOT, 'test.pdf');
-const TEXT = resolve(ROOT, 'test1.pdf');
+const SCANNED = resolve(ROOT, 'e2e/fixtures/local/scanned.pdf');
+const TEXT = resolve(ROOT, 'e2e/fixtures/local/text.pdf');
 const has = (path: string) => existsSync(path) && statSync(path).size > 0;
+
+/** The fixture's page count, read from the file itself: any document of the right shape works. */
+async function pagesOf(path: string): Promise<number> {
+  return (await readProducedPdf(new Uint8Array(readFileSync(path)))).pageCount;
+}
 
 /** Open a fixture through the home screen's file input and wait for the page count. */
 async function openFixture(page: Page, path: string, pages: number): Promise<void> {
@@ -95,7 +100,9 @@ test.describe('OCR on a scanned document', () => {
   test.skip(!has(SCANNED), `fixture missing: ${SCANNED}`);
 
   test('recognises real pages and reports a word count', async ({ page }) => {
-    await openFixture(page, SCANNED, 139);
+    const pages = await pagesOf(SCANNED);
+    test.skip(pages < 3, `${SCANNED} needs at least 3 pages`);
+    await openFixture(page, SCANNED, pages);
     await useAdvanced(page);
     await openOcrDialog(page);
     await scopeTo(page, '1-2');
@@ -113,7 +120,9 @@ test.describe('OCR on a scanned document', () => {
   });
 
   test('the produced bytes keep a usable text layer and the viewer survives', async ({ page }) => {
-    await openFixture(page, SCANNED, 139);
+    const pages = await pagesOf(SCANNED);
+    test.skip(pages < 3, `${SCANNED} needs at least 3 pages`);
+    await openFixture(page, SCANNED, pages);
     await useAdvanced(page);
     await openOcrDialog(page);
     await scopeTo(page, '1-2');
@@ -126,7 +135,7 @@ test.describe('OCR on a scanned document', () => {
       .first()
       .click();
     await expect(page.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText('/ 139', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(`/ ${pages}`, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
 
     // The bytes are the evidence: the scan had no text at all, so words on pages 1-2 can
     // only be the recognised layer, and page 3 (outside the range) must stay empty.
@@ -146,13 +155,15 @@ test.describe('OCR on a document that already has text', () => {
   test.skip(!has(TEXT), `fixture missing: ${TEXT}`);
 
   test('the default skip mode refuses to re-OCR pages that carry text', async ({ page }) => {
-    await openFixture(page, TEXT, 4);
+    const pages = await pagesOf(TEXT);
+    test.skip(pages < 3, `${TEXT} needs at least 3 pages`);
+    await openFixture(page, TEXT, pages);
     await useAdvanced(page);
     await openOcrDialog(page);
     await scopeTo(page, '1-3');
     await runDialog(page);
 
-    // Every page of this fixture has text, so the run must report them as skipped. This is
+    // Pages 1-3 of this fixture carry text, so the run must report them as skipped. This is
     // the guard that stops a working text layer from being replaced by a worse one — and
     // it is decided per page, from the page's own text, so it finishes in seconds.
     await expect(report(page)).toBeVisible({ timeout: 120_000 });

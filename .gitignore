@@ -1,42 +1,22 @@
 node_modules/
 dist/
-build/
-coverage/
-.vite/
 *.tsbuildinfo
+*.log
 
-# engines, fonts and heavy binaries are fetched by script, never committed
+# Engines and fonts are fetched by `pnpm fetch:engines`, never committed
 public/engines/
 public/fonts/
 
-# generated test/report output only — reference images and visual-regression
-# baselines are deliberately NOT ignored (they must be committed)
+# Playwright output
 playwright-report/
 test-results/
 
-# End-to-end fixtures supplied by the maintainer: real documents, too large to commit.
-# `test.pdf` is a 139-page scan with no text layer (the OCR engine path); `test1..3.pdf`
-# carry text (the OCR skip guard). `e2e/ocr.spec.ts` skips itself with a stated reason
-# when a fixture is absent, so a missing file never reads as a passing OCR test.
-test.pdf
-test1.pdf
-test2.pdf
-test3.pdf
+# Local-only test documents (the OCR specs skip without them; see e2e/ocr.spec.ts)
+e2e/fixtures/local/
 
-# env and secrets
-.env
-.env.*
-!.env.example
+# Keys and environment files must never be committed
+.env*
 *.pem
 *.key
 *.p12
 *.pfx
-secrets/
-
-# os / editor noise
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/*
-!.vscode/settings.json
-*.log

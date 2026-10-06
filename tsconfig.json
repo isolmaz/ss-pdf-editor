@@ -19,14 +19,6 @@
     "noEmit": true,
     "types": []
   },
-  "include": [
-    "apps/**/*.ts",
-    "apps/**/*.tsx",
-    "packages/**/*.ts",
-    "packages/**/*.tsx",
-    "tools/spikes/**/*.ts",
-    "tools/spikes/**/*.tsx",
-    "e2e/**/*.ts"
-  ],
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx", "e2e/**/*.ts"],
   "exclude": ["**/dist/**", "**/node_modules/**"]
 }

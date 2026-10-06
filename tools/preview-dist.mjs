@@ -5,7 +5,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
  *
  * `public/_headers` is parsed by the same code the Vite plugin uses, so what
  * this server sends is what Cloudflare will send — CSP, COOP/COEP on
- * `/editor/*`, cache rules. That is the point: spikes and the editor must run
+ * `/editor/*`, cache rules. That is the point: the editor and the site must run
  * under the real policy, not a relaxed substitute (`PLAN.md §5/Phase 0`).
  *
  * Usage: node tools/preview-dist.mjs [--root dist] [--port 4178]

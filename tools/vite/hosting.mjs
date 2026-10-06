@@ -5,7 +5,7 @@
  * `public/_headers` is the single source of truth for the production policy
  * (Cloudflare applies it at the edge, for Pages and static-assets Workers alike). This plugin parses that same file
  * and applies the matching headers to the Vite dev server and `vite preview`,
- * so spikes and the editor run under the real CSP + COOP/COEP instead of a
+ * so the editor and the site run under the real CSP + COOP/COEP instead of a
  * relaxed developer substitute.
  *
  * It also serves the repository `public/` directory at the URL root in dev, so
@@ -83,11 +83,11 @@ export function headersFor(sections, pathname) {
   return result;
 }
 
-function applyHeaders(sections, relaxDevCsp, isolation) {
+function applyHeaders(sections, relaxDevCsp) {
   return (req, res, next) => {
     if (!req.url) return next();
     const pathname = new URL(req.url, 'http://localhost').pathname;
-    const headers = { ...headersFor(sections, pathname), ...isolation };
+    const headers = headersFor(sections, pathname);
     for (const [name, value] of Object.entries(headers)) {
       const isCsp = name.toLowerCase() === 'content-security-policy';
       res.setHeader(
@@ -115,30 +115,14 @@ function servePublicDir(publicDir) {
   };
 }
 
-export function hosting({ repoRoot, relaxDevCsp = false, crossOriginIsolation = false }) {
+export function hosting({ repoRoot, relaxDevCsp = false }) {
   const headersFile = join(repoRoot, 'public', '_headers');
   const sections = existsSync(headersFile) ? parseHeadersFile(readFileSync(headersFile, 'utf8')) : [];
-  // `_headers` scopes COOP/COEP to `/editor/*`. The throwaway spike harness needs
-  // the same isolation on every path it serves, because `SharedArrayBuffer` and
-  // `performance.measureUserAgentSpecificMemory()` are the measurement tools of
-  // spikes #1 and #5 — a spike host without isolation cannot take the numbers the
-  // plan asks for. Production policy still comes from `public/_headers` alone.
-  const isolation = crossOriginIsolation
-    ? {
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
-        'Cross-Origin-Resource-Policy': 'same-origin',
-      }
-    : {};
   if (relaxDevCsp) {
     console.log(
       `[hosting] ${sections.length} header section(s) from public/_headers; dev CSP relaxed with script-src 'unsafe-inline' (react-refresh preamble) — preview and production stay strict.`,
     );
   }
-  if (crossOriginIsolation)
-    console.log(
-      '[hosting] dev cross-origin isolation enabled (COOP/COEP/CORP on every path) for measurements.',
-    );
   return [
     {
       name: 'pdf-editor:hosting-headers',
@@ -146,7 +130,7 @@ export function hosting({ repoRoot, relaxDevCsp = false, crossOriginIsolation = 
       // function returned from `configureServer` as a post-hook and calls it
       // with no arguments — which crashed every dev/preview start.
       configureServer: (server) => {
-        server.middlewares.use(applyHeaders(sections, relaxDevCsp, isolation));
+        server.middlewares.use(applyHeaders(sections, relaxDevCsp));
       },
     },
     {

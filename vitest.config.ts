@@ -20,7 +20,6 @@ export default defineConfig({
       'packages/**/src/**/*.test.tsx',
       'apps/**/src/**/*.test.ts',
       'apps/**/src/**/*.test.tsx',
-      'tools/spikes/**/*.test.ts',
     ],
     environment: 'node',
     // MuPDF loads from the installed package in Node (`vitest.setup.ts`).

@@ -2,16 +2,7 @@
   "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": [
-      "**",
-      "!**/dist",
-      "!**/*.min.js",
-      "!public/engines",
-      "!**/node_modules",
-      "!**/playwright-report",
-      "!**/test-results",
-      "!tools/asset-pins.json"
-    ]
+    "includes": ["**", "!**/*.min.js", "!tools/asset-pins.json"]
   },
   "formatter": {
     "enabled": true,
