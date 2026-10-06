@@ -1,39 +1,54 @@
-# SsPdfEditor
+<div align="center">
 
-**A free PDF editor that runs entirely in your browser.** Your files never leave your
-device: no upload, no account, no subscription, no tracking.
+<img src="public/favicon.svg" width="88" height="88" alt="SsPdfEditor logo">
 
-**[Open the editor](https://pdf.isolmaz.com/editor/)** · [Website](https://pdf.isolmaz.com/) · [Report a bug](https://github.com/isolmaz/ss-pdf-editor/issues/new/choose) · [Architecture](architecture.md)
+<h1>SsPdfEditor</h1>
 
-- 🔒 **Private.** Every engine (pdf.js, MuPDF, Tesseract) runs in the tab. The server only
-  hands out static files.
-- ✍️ **Full editor.** You can annotate, fill forms, edit text, organise pages, redact, encrypt,
-  sign, run OCR, compare documents and run batches.
-- ✅ **Honest results.** Every write is re-opened and checked. Redaction removes content
-  instead of covering it.
-- 📴 **Works offline.** It installs as a PWA, in Turkish and English, with light and dark
-  themes.
+<p><b>A free PDF editor that runs entirely in your browser.</b><br>
+Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 
-| | |
-| --- | --- |
-| **Open, navigate, zoom** <br> ![Opening a PDF and moving through its pages](docs/media/open-and-navigate.gif) | **Mark up** <br> ![Highlighting, drawing and adding text](docs/media/annotate.gif) |
-| **Organise pages** <br> ![Rotating and reordering pages](docs/media/pages.gif) | **Fill and sign** <br> ![Filling a field and signing the document](docs/media/fill-and-sign.gif) |
-| **Redact for real** <br> ![Redacting a line of text](docs/media/redact.gif) | **Command palette and export** <br> ![The command palette and the export dialog](docs/media/palette-and-export.gif) |
+<p>
+<img alt="license AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue">
+<img alt="data local only" src="https://img.shields.io/badge/data-local%20only-2ea44f">
+<img alt="no account" src="https://img.shields.io/badge/account-none-2ea44f">
+<img alt="offline PWA" src="https://img.shields.io/badge/offline-PWA-5a3fc0">
+<img alt="languages" src="https://img.shields.io/badge/languages-TR%20%7C%20EN-555">
+<img alt="engines" src="https://img.shields.io/badge/engines-MuPDF%20%7C%20pdf.js%20%7C%20Tesseract-555">
+</p>
+
+<p><a href="https://pdf.isolmaz.com/editor/"><b>Open the editor</b></a> · <a href="https://pdf.isolmaz.com/">Website</a> · <a href="#quick-start">Run locally</a> · <a href="https://github.com/isolmaz/ss-pdf-editor/issues/new/choose">Report a bug</a></p>
+
+</div>
+
+---
 
 ## Features
 
-| Area | What you can do |
+| | |
+| :---: | :---: |
+| **Open, navigate, zoom** — thumbnails, outline, tabs<br>![Opening a PDF and moving through its pages](docs/media/open-and-navigate.gif) | **Search** — every match, across pages<br>![Searching the document](docs/media/search.gif) |
+| **Mark up** — highlight, shapes, ink, typed text<br>![Highlighting, drawing and adding text](docs/media/annotate.gif) | **Edit text** — retype a paragraph in place<br>![Editing a paragraph in place](docs/media/edit-text.gif) |
+| **Organise pages** — rotate, reorder, undo<br>![Rotating and reordering pages](docs/media/pages.gif) | **Watermark** — stamp every page<br>![Adding a watermark](docs/media/watermark.gif) |
+| **Fill and sign** — forms and PAdES signatures<br>![Filling a field and signing the document](docs/media/fill-and-sign.gif) | **Protect** — AES-256 password and permissions<br>![Encrypting the document](docs/media/protect.gif) |
+| **Redact for real** — content removed, then verified gone<br>![Redacting a line of text](docs/media/redact.gif) | **OCR** — make a scan searchable<br>![Recognising a scanned document](docs/media/ocr.gif) |
+| **Measure** — distance, perimeter, area<br>![Measuring on the page](docs/media/measure.gif) | **Compare** — what changed between two versions<br>![Comparing two documents](docs/media/compare.gif) |
+| **Reading mode** — the page as clean text, read aloud<br>![Reading mode](docs/media/reading-mode.gif) | **Dark theme, Turkish and English**<br>![Switching to the dark theme and Turkish](docs/media/theme-and-language.gif) |
+| **Command palette and export** — `Ctrl+K` finds any tool<br>![The command palette and the export dialog](docs/media/palette-and-export.gif) | **And more** — see the full list below ⬇️ |
+
+### Everything it can do
+
+| | |
 | --- | --- |
-| **Read** | Continuous scroll, search, thumbnails, outline, tabs, recent files, single-page / book / presentation modes, magnifier, snapshot to PNG, reading mode with read-aloud, password-protected files (read-only) |
-| **Annotate** | Highlight, underline, strike-out, squiggly, ink, shapes, notes, stamps, typed text (Turkish-safe), links; select, move, rotate and delete any mark, including the file's own |
-| **Forms** | Fill, create fields, set flags, flatten, simple calculations, FDF/JSON import and export |
-| **Measure** | Distance, perimeter and area with scale, grid and snapping, written as real PDF annotations |
-| **Pages** | Insert, delete, duplicate, reorder (drag), rotate, extract, split, replace, merge; page boxes and auto-crop; page labels; N-up, booklet, poster and duplex printing |
-| **Text** | Edit text in place with reflow, export text (plain or Markdown), export pages as images and build a PDF from images |
-| **Structure** | Edit the outline, add and remove attachments, edit layers (OCG), properties and XMP metadata, header/footer, Bates numbering, watermark |
-| **Security** | True redaction with an object-level audit, AES-256 encryption with permissions, remove a password, PAdES signing from a PKCS#12 file, signature verification against your own trust roots |
-| **Tools** | OCR (Turkish and English), accessibility check and tagging, alt text, text and pixel comparison, batch processing, compression |
-| **Workflow** | `Ctrl+K` command palette, undo/redo history, local drafts, Save over the original (Chromium) or Export a copy, simple and advanced interface modes |
+| 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
+| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · move, rotate and delete any mark |
+| 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
+| 📄 **Pages** | Insert · delete · duplicate · reorder · rotate · extract · split · replace · merge · page boxes and auto-crop · labels |
+| 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF |
+| 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
+| 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · PAdES signing · signature verification |
+| 🧰 **Tools** | OCR (TR/EN) · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
+| 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
+| ⚙️ **Workflow** | `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
 
 ## Quick start
 

@@ -1,8 +1,9 @@
 /**
- * The sample document the README recordings open (`readme-media.mjs`): a three-page service
+ * The sample documents the README recordings open (`readme-media.mjs`): a three-page service
  * agreement with headings, body text, a form field and a signature line, written with
- * MuPDF like every other fixture here. Not shipped; it exists so the GIFs show a document
- * that reads like a real one.
+ * MuPDF like every other fixture here; a revised copy of it (for the comparison clip); and
+ * an image-only "scan" of its first two pages (for the OCR clip). Not shipped; they exist so
+ * the GIFs show documents that read like real ones.
  */
 import * as mupdf from 'mupdf';
 import { createFixture } from './mupdf-fixture.mjs';
@@ -25,8 +26,12 @@ function wrap(text, width = 92) {
   return lines;
 }
 
-/** @returns {Uint8Array} */
-export function readmeDemoPdf() {
+/**
+ * @param {{ revised?: boolean }} [options]  `revised` changes the fee and the timeline, the
+ *   edits the comparison clip finds.
+ * @returns {Uint8Array}
+ */
+export function readmeDemoPdf({ revised = false } = {}) {
   const pdf = createFixture(mupdf);
   const bold = pdf.standardFont('Helvetica-Bold');
   pdf.info({ Title: 'Service Agreement', Author: 'Northwind Studio' });
@@ -40,12 +45,12 @@ export function readmeDemoPdf() {
     ],
     [
       '2. Timeline',
-      'The project starts on 1 November 2026 and runs for ten weeks. Milestones are reviewed ' +
+      `The project starts on 1 November 2026 and runs for ${revised ? 'twelve' : 'ten'} weeks. Milestones are reviewed ` +
         'every Friday; a delay on either side moves the following milestones by the same amount.',
     ],
     [
       '3. Fees and payment',
-      'The total fee is EUR 18,400, invoiced in three parts: 30% on signature, 40% at design ' +
+      `The total fee is EUR ${revised ? '21,000' : '18,400'}, invoiced in three parts: 30% on signature, 40% at design ` +
         'approval and 30% on launch. Invoices are payable within 14 days of receipt.',
     ],
     [
@@ -95,5 +100,23 @@ export function readmeDemoPdf() {
       page.text('Name, date and signature', { x: 56, y: 484, size: 9, color: MUTED });
     }
   });
+  return pdf.save();
+}
+
+/**
+ * The first two pages of the agreement as a scanner would hand them over: one picture per
+ * page and no text layer at all, so recognising them is a real OCR job.
+ * @returns {Uint8Array}
+ */
+export function readmeScannedPdf() {
+  const source = mupdf.Document.openDocument(readmeDemoPdf(), 'application/pdf');
+  const pdf = createFixture(mupdf);
+  for (let index = 0; index < 2; index += 1) {
+    const pixmap = source
+      .loadPage(index)
+      .toPixmap(mupdf.Matrix.scale(2, 2), mupdf.ColorSpace.DeviceRGB, false, true);
+    const page = pdf.addPage(595.28, 841.89);
+    page.image(pixmap.asPNG(), { x: 0, y: 0, width: 595.28, height: 841.89 });
+  }
   return pdf.save();
 }

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { readmeDemoPdf } from './readme-demo-pdf.mjs';
+import { readmeDemoPdf, readmeScannedPdf } from './readme-demo-pdf.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUT = join(ROOT, 'docs/media');
@@ -24,7 +24,11 @@ const BASE = process.env.APP_URL ?? 'http://localhost:4178';
 const VIEW = { width: 1280, height: 760 };
 const work = mkdtempSync(join(tmpdir(), 'readme-media-'));
 const demo = join(work, 'service-agreement.pdf');
+const revised = join(work, 'service-agreement-v2.pdf');
+const scanned = join(work, 'scanned-agreement.pdf');
 writeFileSync(demo, readmeDemoPdf());
+writeFileSync(revised, readmeDemoPdf({ revised: true }));
+writeFileSync(scanned, readmeScannedPdf());
 
 /** A cursor the recording can see, moved by the page's own mouse events. */
 const CURSOR = () => {
@@ -95,9 +99,9 @@ async function drag(page, from, to, steps = 22) {
   await pause(page, 500);
 }
 
-async function openDemo(page) {
+async function openDemo(page, file = demo) {
   await page.goto(`${BASE}/editor/`);
-  await page.locator('input[type="file"][accept*="application/pdf"]').first().setInputFiles(demo);
+  await page.locator('input[type="file"][accept*="application/pdf"]').first().setInputFiles(file);
   await page.locator('.pdfViewer canvas').first().waitFor({ timeout: 30_000 });
   await page
     .getByText('Opening the document…')
@@ -108,6 +112,37 @@ async function openDemo(page) {
 
 const notice = (page, text) => page.locator('[role="status"]').filter({ hasText: text });
 
+/** The settings dialog, opened from the header's gear as a user does. */
+async function settings(page, visible = true) {
+  const gear = page.getByRole('button', { name: /^(Settings|Ayarlar)$/ }).first();
+  if (visible) await press(page, gear, 600);
+  else await gear.click();
+  return page.getByRole('dialog', { name: /Settings|Ayarlar/ });
+}
+
+/** Switch to the advanced interface mode before a scene that needs its commands. */
+async function useAdvanced(page) {
+  const dialog = await settings(page, false);
+  await dialog.getByRole('radio', { name: 'Advanced mode' }).check();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await pause(page, 300);
+}
+
+/** Run a command through the `Ctrl+K` palette, typing it where the viewer can see. */
+async function palette(page, query) {
+  await page.keyboard.press('Control+k');
+  await pause(page, 300);
+  await page.keyboard.type(query, { delay: 90 });
+  await pause(page, 700);
+  await page.keyboard.press('Enter');
+  await pause(page, 700);
+}
+
+/**
+ * Each scene gets `mark()` (the clip starts here) and `cut()`, which returns a function
+ * that ends a stretch to drop from the clip — an engine working while nothing on screen
+ * changes.
+ */
 const SCENES = {
   async 'open-and-navigate'(page, mark) {
     await page.goto(`${BASE}/editor/`);
@@ -254,6 +289,175 @@ const SCENES = {
     await pause(page, 2200);
   },
 
+  async search(page, mark) {
+    await openDemo(page);
+    mark();
+    await pause(page, 500);
+    await page.keyboard.press('Control+f');
+    await pause(page, 400);
+    await page.keyboard.type('Northwind', { delay: 110 });
+    await page.keyboard.press('Enter');
+    await pause(page, 900);
+    for (let i = 0; i < 4; i += 1) {
+      await page.keyboard.press('Enter');
+      await pause(page, 700);
+    }
+    await pause(page, 800);
+  },
+
+  async 'edit-text'(page, mark, cut) {
+    await openDemo(page);
+    mark();
+    await palette(page, 'Edit text');
+    const block = page.locator('[data-text-block][data-block-text*="Northwind Studio will design"]').first();
+    await block.waitFor({ timeout: 60_000 });
+    await pause(page, 900);
+    await press(page, block, 900);
+    const form = page.getByRole('region', { name: 'Edit text' });
+    await press(page, form.locator('textarea').first(), 200);
+    await page.keyboard.press('Control+a');
+    await page.keyboard.type(
+      'Northwind Studio will design, build and launch the new client website, including a content audit and a two-week launch period.',
+      { delay: 22 },
+    );
+    await pause(page, 500);
+    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
+    const resume = cut();
+    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 180_000 });
+    resume();
+    await pause(page, 1100);
+    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    await form.waitFor({ state: 'hidden', timeout: 60_000 });
+    await press(page, page.getByRole('button', { name: 'Selection Tool', exact: true }), 2200);
+  },
+
+  async watermark(page, mark) {
+    await openDemo(page);
+    await useAdvanced(page);
+    mark();
+    await palette(page, 'Watermark');
+    const form = page.getByRole('region', { name: 'Watermark' });
+    await press(page, form.getByRole('textbox', { name: 'Text', exact: true }), 200);
+    await page.keyboard.press('Control+a');
+    await page.keyboard.type('CONFIDENTIAL', { delay: 90 });
+    await pause(page, 400);
+    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
+    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
+    await pause(page, 1100);
+    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    await form.waitFor({ state: 'hidden', timeout: 60_000 });
+    await pause(page, 2200);
+  },
+
+  async measure(page, mark) {
+    await openDemo(page);
+    await useAdvanced(page);
+    mark();
+    await palette(page, 'Distance');
+    const from = await onPage(page, 0, 56, 600);
+    const to = await onPage(page, 0, 300, 600);
+    await glide(page, from.x, from.y);
+    await page.mouse.click(from.x, from.y);
+    await pause(page, 300);
+    await page.mouse.move(to.x, to.y, { steps: 30 });
+    await page.mouse.click(to.x, to.y);
+    await page.keyboard.press('Enter');
+    await pause(page, 900);
+    await palette(page, 'Area');
+    for (const [x, y] of [
+      [320, 600],
+      [520, 600],
+      [520, 480],
+      [320, 480],
+    ]) {
+      const point = await onPage(page, 0, x, y);
+      await page.mouse.move(point.x, point.y, { steps: 18 });
+      await page.mouse.click(point.x, point.y);
+      await pause(page, 250);
+    }
+    await page.keyboard.press('Enter');
+    await pause(page, 2000);
+  },
+
+  async ocr(page, mark, cut) {
+    await openDemo(page, scanned);
+    await useAdvanced(page);
+    mark();
+    await pause(page, 600);
+    await palette(page, 'OCR');
+    const form = page.getByRole('region', { name: 'Text recognition' });
+    await form.waitFor();
+    await pause(page, 600);
+    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
+    const resume = cut();
+    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 240_000 });
+    resume();
+    await pause(page, 1300);
+    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    const done = cut();
+    await form.waitFor({ state: 'hidden', timeout: 60_000 });
+    await pause(page, 1500);
+    done();
+    await page.keyboard.press('Control+f');
+    await pause(page, 300);
+    await page.keyboard.type('website', { delay: 120 });
+    await page.keyboard.press('Enter');
+    await pause(page, 2200);
+  },
+
+  async protect(page, mark) {
+    await openDemo(page);
+    await useAdvanced(page);
+    mark();
+    await palette(page, 'Security');
+    const form = page.getByRole('region', { name: 'Security' });
+    await press(page, form.getByLabel('Open password'), 200);
+    await page.keyboard.type('northwind', { delay: 90 });
+    await press(page, form.getByLabel('Owner password'), 200);
+    await page.keyboard.type('owner-2026', { delay: 70 });
+    await press(page, form.getByRole('checkbox', { name: 'Copying' }), 500);
+    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
+    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
+    await pause(page, 1500);
+    await press(page, form.getByRole('button', { name: 'Download', exact: true }), 1800);
+  },
+
+  async compare(page, mark) {
+    await openDemo(page);
+    await useAdvanced(page);
+    mark();
+    await palette(page, 'Document comparison');
+    await page.locator('input[data-compare-picker]').setInputFiles(revised);
+    await page.getByText('Selected: service-agreement-v2.pdf').waitFor();
+    await pause(page, 700);
+    await press(page, page.getByRole('button', { name: 'Compare text' }), 300);
+    await page.getByRole('table', { name: 'Page-by-page comparison results' }).waitFor({ timeout: 60_000 });
+    await pause(page, 2600);
+  },
+
+  async 'reading-mode'(page, mark) {
+    await openDemo(page);
+    mark();
+    await pause(page, 500);
+    await page.keyboard.press('Control+h');
+    await pause(page, 1500);
+    await page.keyboard.press('ArrowRight');
+    await pause(page, 1300);
+    await page.keyboard.press('ArrowRight');
+    await pause(page, 1300);
+    await page.keyboard.press('Escape');
+    await pause(page, 900);
+  },
+
+  async 'theme-and-language'(page, mark) {
+    await openDemo(page);
+    mark();
+    const dialog = await settings(page);
+    await press(page, dialog.getByRole('button', { name: 'Dark Theme', exact: true }), 900);
+    await press(page, dialog.getByRole('button', { name: 'Türkçe', exact: true }), 900);
+    await press(page, dialog.getByRole('button', { name: 'Kapat', exact: true }), 1800);
+  },
+
   async 'palette-and-export'(page, mark) {
     await openDemo(page);
     mark();
@@ -268,6 +472,17 @@ const SCENES = {
   },
 };
 
+/** An ffmpeg filter prefix that drops the cut stretches; times are relative to the trimmed clip. */
+function drop(cuts, start) {
+  const offset = Math.max(0, start - 0.2);
+  const spans = cuts
+    .map(([from, to]) => [from - offset, to - offset])
+    .filter(([from, to]) => to > from)
+    .map(([from, to]) => `between(t,${from.toFixed(2)},${to.toFixed(2)})`);
+  if (spans.length === 0) return '';
+  return `select='not(${spans.join('+')})',setpts=N/FRAME_RATE/TB,`;
+}
+
 async function record(name) {
   const browser = await chromium.launch();
   const context = await browser.newContext({
@@ -278,11 +493,20 @@ async function record(name) {
   await context.addInitScript(CURSOR);
   const t0 = Date.now();
   let start = 0;
+  const cuts = [];
+  const now = () => (Date.now() - t0) / 1000;
   const page = await context.newPage();
   try {
-    await SCENES[name](page, () => {
-      start = (Date.now() - t0) / 1000;
-    });
+    await SCENES[name](
+      page,
+      () => {
+        start = now();
+      },
+      () => {
+        const from = now() + 0.3;
+        return () => cuts.push([from, now() - 0.3]);
+      },
+    );
   } finally {
     await context.close();
     await browser.close();
@@ -299,7 +523,7 @@ async function record(name) {
     '-i',
     video,
     '-vf',
-    'fps=10,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
+    `${drop(cuts, start)}fps=10,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
     gif,
   ]);
   console.log(`${name}: ${gif}`);
