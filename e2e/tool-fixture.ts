@@ -663,3 +663,101 @@ export async function textNotePdf(contents: string): Promise<Uint8Array> {
     doc.destroy();
   }
 }
+
+/**
+ * An image-only PDF — a scan: no text layer at all. Every page shows the given printed
+ * lines, large and black on white. The page is first typeset as a text PDF, rasterised by
+ * the pinned MuPDF, and only the picture is embedded in the result, so the only way words
+ * can later be found on a page is by recognising the picture.
+ */
+export async function scannedPdf(pageLines: readonly (readonly string[])[]): Promise<Uint8Array> {
+  interface MupdfPixmap {
+    asPNG(): Uint8Array;
+    destroy(): void;
+  }
+  interface MupdfObject {
+    destroy(): void;
+  }
+  interface MupdfBuffer {
+    asUint8Array(): Uint8Array;
+    destroy(): void;
+  }
+  interface ScanModule {
+    readonly Matrix: { scale(x: number, y: number): unknown };
+    readonly ColorSpace: { readonly DeviceGray: unknown };
+    readonly Image: new (data: Uint8Array) => unknown;
+    readonly Document: {
+      openDocument(
+        bytes: Uint8Array,
+        magic: string,
+      ): {
+        loadPage(index: number): {
+          toPixmap(matrix: unknown, space: unknown, alpha: boolean, annots: boolean): MupdfPixmap;
+        };
+        destroy(): void;
+      };
+    };
+    readonly PDFDocument: new () => {
+      addImage(image: unknown): MupdfObject;
+      addPage(mediabox: number[], rotate: number, resources: unknown, contents: string): MupdfObject;
+      insertPage(at: number, page: MupdfObject): void;
+      saveToBuffer(options: string): MupdfBuffer;
+      destroy(): void;
+    };
+  }
+  const width = 595;
+  const height = 842;
+  const scale = 3;
+  const bodies: string[] = ['<< /Type /Catalog /Pages 2 0 R >>', ''];
+  const kids: number[] = [];
+  bodies.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  for (const lines of pageLines) {
+    const content = lines
+      .map((line, row) => `BT /F1 40 Tf 60 ${height - 120 - row * 90} Td (${line}) Tj ET\n`)
+      .join('');
+    kids.push(bodies.length + 1);
+    bodies.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${bodies.length + 2} 0 R >>`,
+    );
+    bodies.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
+  }
+  bodies[1] = `<< /Type /Pages /Kids [${kids.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageLines.length} >>`;
+  let source = '%PDF-1.7\n';
+  const offsets: number[] = [];
+  for (const [index, body] of bodies.entries()) {
+    offsets.push(source.length);
+    source += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  }
+  const xref = offsets.map((value) => `${String(value).padStart(10, '0')} 00000 n \n`).join('');
+  source += `xref\n0 ${bodies.length + 1}\n0000000000 65535 f \n${xref}`;
+  source += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R >>\nstartxref\n${source.indexOf('xref\n')}\n%%EOF\n`;
+  const typeset = new Uint8Array([...source].map((character) => character.charCodeAt(0)));
+
+  // The root does not declare `mupdf`; it is resolved from the workspace that does.
+  const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as ScanModule;
+  const text = mupdf.Document.openDocument(typeset, 'application/pdf');
+  const scan = new mupdf.PDFDocument();
+  try {
+    for (let index = 0; index < pageLines.length; index += 1) {
+      const pixmap = text
+        .loadPage(index)
+        .toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceGray, false, false);
+      const image = scan.addImage(new mupdf.Image(pixmap.asPNG()));
+      pixmap.destroy();
+      const page = scan.addPage(
+        [0, 0, width, height],
+        0,
+        { XObject: { Im0: image } },
+        `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q\n`,
+      );
+      scan.insertPage(-1, page);
+    }
+    const saved = scan.saveToBuffer('compress');
+    const bytes = saved.asUint8Array().slice();
+    saved.destroy();
+    return bytes;
+  } finally {
+    scan.destroy();
+    text.destroy();
+  }
+}

@@ -35,10 +35,8 @@ pnpm build && pnpm assemble:dist
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
 ```
 
-The OCR specs need two real documents that are not in the repository: put a scanned PDF
-with no text layer at `e2e/fixtures/local/scanned.pdf` and a PDF that carries text at
-`e2e/fixtures/local/text.pdf` (the folder is ignored). Without them those specs skip and
-say why.
+The OCR specs generate their own inputs (a scan rendered from known printed lines, and a text PDF),
+so they run on a clean checkout.
 
 - A bug fix comes with a regression test that fails without the fix.
 - A test must check behaviour, and must fail when that behaviour breaks.
