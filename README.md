@@ -46,7 +46,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification |
-| 🧰 **Tools** | OCR (TR/EN) · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
 
@@ -233,8 +233,17 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 ### OCR, accessibility, comparison, batch
 
-- **OCR.** Turkish and English recognition adds an invisible, selectable text layer with a
-  real `/ToUnicode` map. Pages that already have text are skipped by default.
+- **OCR.** Recognition adds an invisible, selectable text layer with a real `/ToUnicode`
+  map. Pages that already have text are skipped by default.
+  - 27 languages: Turkish, English, German, French, Spanish, Italian, Portuguese, Dutch,
+    Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian,
+    Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and
+    traditional), Japanese and Korean.
+  - Turkish and English are in the offline package. The other packs are served by this site
+    and downloaded the first time you choose them; after that they work offline too.
+  - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
+    a glyph-less font whose codes are the text itself, so they can be searched and copied.
+    Right-to-left words come back in reading order.
 - **Accessibility.**
   - The check reports facts only: no score and no conformance claim.
   - A tagged-PDF writer adds structure tags to the file and verifies the result.

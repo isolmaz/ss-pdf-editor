@@ -1190,12 +1190,137 @@
     "tesseract": {
       "packages": [
         {
+          "name": "@tesseract.js-data/ara",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/aze",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/bul",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/ces",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/chi_sim",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/chi_tra",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/deu",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/ell",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
           "name": "@tesseract.js-data/eng",
           "version": "1.0.0",
           "license": "MIT"
         },
         {
+          "name": "@tesseract.js-data/fas",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/fra",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/heb",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/hin",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/hun",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/ita",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/jpn",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/kmr",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/kor",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/nld",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/pol",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/por",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/ron",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/rus",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/spa",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/swe",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
           "name": "@tesseract.js-data/tur",
+          "version": "1.0.0",
+          "license": "MIT"
+        },
+        {
+          "name": "@tesseract.js-data/ukr",
           "version": "1.0.0",
           "license": "MIT"
         },
@@ -1212,14 +1337,139 @@
       ],
       "files": [
         {
+          "path": "engines/tesseract/lang/best/ara.traineddata.gz",
+          "bytes": 1661906,
+          "sha256": "f4746c44b02342dd5b3d4f0198000f47d7c49f1a229e63e0f436c0592dcd9639"
+        },
+        {
+          "path": "engines/tesseract/lang/best/aze.traineddata.gz",
+          "bytes": 1664212,
+          "sha256": "2652f2c25d74582f4dce0dec6fe6f9c4f0ce445c931642cc69db707af04de8a3"
+        },
+        {
+          "path": "engines/tesseract/lang/best/bul.traineddata.gz",
+          "bytes": 1411343,
+          "sha256": "a38fdba9367316dad1d595427a975756e8c31367fc94a6530d012827833db8d7"
+        },
+        {
+          "path": "engines/tesseract/lang/best/ces.traineddata.gz",
+          "bytes": 2225029,
+          "sha256": "1ea33a8b6f9a9c18a6aae44a71eda06bbfdc206fe53cf1fc8121fb74def99166"
+        },
+        {
+          "path": "engines/tesseract/lang/best/chi_sim.traineddata.gz",
+          "bytes": 1718768,
+          "sha256": "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c"
+        },
+        {
+          "path": "engines/tesseract/lang/best/chi_tra.traineddata.gz",
+          "bytes": 1656239,
+          "sha256": "11fe2610dab05d8a880d02f193ce70203f4c4bbe061b987d5529a2c038a22743"
+        },
+        {
+          "path": "engines/tesseract/lang/best/deu.traineddata.gz",
+          "bytes": 1333102,
+          "sha256": "306c4280d0cbed46fbff727486bd43b92730181bae80f56941a091f363bdf28b"
+        },
+        {
+          "path": "engines/tesseract/lang/best/ell.traineddata.gz",
+          "bytes": 1324749,
+          "sha256": "e8a293abb398ec479176c1575aef24e2bacb0611c713f3fa996f97f0cd996fb3"
+        },
+        {
           "path": "engines/tesseract/lang/best/eng.traineddata.gz",
           "bytes": 2952873,
           "sha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91"
         },
         {
+          "path": "engines/tesseract/lang/best/fas.traineddata.gz",
+          "bytes": 424507,
+          "sha256": "b5847360e25f646c55449f1fe93eee57d53e406a265ead2374e7320bf0b82025"
+        },
+        {
+          "path": "engines/tesseract/lang/best/fra.traineddata.gz",
+          "bytes": 707406,
+          "sha256": "d611139672b3752c7097e671e4a1d9209dfd37f2aeb081ef6487fba3351e9255"
+        },
+        {
+          "path": "engines/tesseract/lang/best/heb.traineddata.gz",
+          "bytes": 580576,
+          "sha256": "9c70b524200dae77fb25e3567566eee600ccbcae9aeb89722990ccae0e84e805"
+        },
+        {
+          "path": "engines/tesseract/lang/best/hin.traineddata.gz",
+          "bytes": 1389692,
+          "sha256": "f3b6a0d320df38d886178cdd727b90dbf9df3db053adb32bd9cf73f0463cda07"
+        },
+        {
+          "path": "engines/tesseract/lang/best/hun.traineddata.gz",
+          "bytes": 2854466,
+          "sha256": "99feb1ac618ddd39942d646f1df792e5bd4504df45e1ef68e47df51db476a2ed"
+        },
+        {
+          "path": "engines/tesseract/lang/best/ita.traineddata.gz",
+          "bytes": 1660998,
+          "sha256": "f702fcfad297ce028ede3626d1467b67939f23ff23595f9badd54681cf25a4d3"
+        },
+        {
+          "path": "engines/tesseract/lang/best/jpn.traineddata.gz",
+          "bytes": 2030256,
+          "sha256": "2b63ebfbf1484de4a08ce53b29ef98a1c17658a93cbd38acb665d7d316d0be88"
+        },
+        {
+          "path": "engines/tesseract/lang/best/kmr.traineddata.gz",
+          "bytes": 1910803,
+          "sha256": "6811f278103ceaedc4d860e1db5f74bbdc7ff0d5595fe7331a9bd9b4a0923b8c"
+        },
+        {
+          "path": "engines/tesseract/lang/best/kor.traineddata.gz",
+          "bytes": 1572336,
+          "sha256": "78c21276ab14c9bb734d83be1055d9fe5469a4e7e977c51ad385be5737e61126"
+        },
+        {
+          "path": "engines/tesseract/lang/best/nld.traineddata.gz",
+          "bytes": 3005696,
+          "sha256": "a2d904b6ddc4feb0d31ecfcd7361a554102e7aa2e278c54f4fc029e0d0815571"
+        },
+        {
+          "path": "engines/tesseract/lang/best/pol.traineddata.gz",
+          "bytes": 2642356,
+          "sha256": "a20fdec4ff99d8f8e84c708da3e42a4e935c26863055a0ed88aef5c66a59b91b"
+        },
+        {
+          "path": "engines/tesseract/lang/best/por.traineddata.gz",
+          "bytes": 1392239,
+          "sha256": "dacebc1386ddaaf8389f81094236cca0d690897cde693d48cbdaa881c86e2b4c"
+        },
+        {
+          "path": "engines/tesseract/lang/best/ron.traineddata.gz",
+          "bytes": 1692160,
+          "sha256": "3c2f550b6369f43254adf637cfe1088c7b6faff3d0382555219315112a24582a"
+        },
+        {
+          "path": "engines/tesseract/lang/best/rus.traineddata.gz",
+          "bytes": 2679598,
+          "sha256": "f51f5edc992249ff9b70a227b22f242dfa47b2b1bbc7ae0ea74908640c101f6a"
+        },
+        {
+          "path": "engines/tesseract/lang/best/spa.traineddata.gz",
+          "bytes": 2100190,
+          "sha256": "40be52f97b5d4eb7460073dc1f94cd546b27150333c0bf854ed7e7132db6bceb"
+        },
+        {
+          "path": "engines/tesseract/lang/best/swe.traineddata.gz",
+          "bytes": 2503095,
+          "sha256": "b60d9fea7e570d11d6fdf26c8d0ef1d63b49222313773ce66777ed08fa20dc5a"
+        },
+        {
           "path": "engines/tesseract/lang/best/tur.traineddata.gz",
           "bytes": 2141291,
           "sha256": "384ba0dc28040451b7818d7d60e0a88df0d3003fa5a01d713a468779bc3d8c04"
+        },
+        {
+          "path": "engines/tesseract/lang/best/ukr.traineddata.gz",
+          "bytes": 2114206,
+          "sha256": "ea2789a0ad99ff84bfd252a7410a1e8661a7bc5acaa41573d23b54b71446aa4c"
         },
         {
           "path": "engines/tesseract/lang/fast/eng.traineddata.gz",

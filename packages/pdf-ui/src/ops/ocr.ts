@@ -29,6 +29,31 @@ import { resolveScope } from './scope';
 const LANGUAGE_LABELS: Record<OcrLanguage, MessageKey> = {
   tur: 'ocr.language.tr',
   eng: 'ocr.language.en',
+  deu: 'ocr.language.deu',
+  fra: 'ocr.language.fra',
+  spa: 'ocr.language.spa',
+  ita: 'ocr.language.ita',
+  por: 'ocr.language.por',
+  nld: 'ocr.language.nld',
+  pol: 'ocr.language.pol',
+  ces: 'ocr.language.ces',
+  hun: 'ocr.language.hun',
+  ron: 'ocr.language.ron',
+  swe: 'ocr.language.swe',
+  aze: 'ocr.language.aze',
+  kmr: 'ocr.language.kmr',
+  rus: 'ocr.language.rus',
+  ukr: 'ocr.language.ukr',
+  bul: 'ocr.language.bul',
+  ell: 'ocr.language.ell',
+  ara: 'ocr.language.ara',
+  fas: 'ocr.language.fas',
+  heb: 'ocr.language.heb',
+  hin: 'ocr.language.hin',
+  chi_sim: 'ocr.language.chi_sim',
+  chi_tra: 'ocr.language.chi_tra',
+  jpn: 'ocr.language.jpn',
+  kor: 'ocr.language.kor',
 };
 
 export const ocrDialog: OperationDialogSpec = {
@@ -46,6 +71,7 @@ export const ocrDialog: OperationDialogSpec = {
       // Turkish first: the product's first locale, and the pack the row is tested
       // against (the OCR quality gate).
       defaultValue: ['tur'],
+      columns: 2,
       options: OCR_LANGUAGES.map((language) => ({
         value: language,
         labelKey: LANGUAGE_LABELS[language],

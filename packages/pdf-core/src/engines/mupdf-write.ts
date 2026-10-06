@@ -376,6 +376,8 @@ export interface EmbeddedFace {
   readonly name: string;
   /** `<…>` hex operand for `Tj`: two-byte glyph ids (the resource is Identity-H). */
   encode(value: string): string;
+  /** Whether the face has a glyph for every character (a missing one encodes as glyph 0). */
+  covers(value: string): boolean;
   widthOfTextAtSize(value: string, size: number): number;
   /** Ascender only when `descender` is false; ascender minus descender otherwise. */
   heightAtSize(size: number, options?: { readonly descender?: boolean }): number;
@@ -426,6 +428,13 @@ export function embedFontFile(mupdf: Mupdf, doc: PDFDocument, name: string, byte
         hex += glyph.toString(16).padStart(4, '0');
       }
       return `<${hex}>`;
+    },
+    covers(value) {
+      for (const character of value) {
+        if (/\s/.test(character)) continue;
+        if (font.encodeCharacter(character.codePointAt(0) ?? 0) === 0) return false;
+      }
+      return true;
     },
     widthOfTextAtSize(value, size) {
       let units = 0;

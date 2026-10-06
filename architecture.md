@@ -411,7 +411,11 @@ had to stay green. The moves, and the defects they fixed on the way:
   fixed: a field whose dictionary is also its widget reported no page (`pageIndex: null` for
   most real forms), and creating a text field always failed ("No /DA");
 - the OCR text layer (`ops/ocr.ts` `writeOcrLayer`, step `ocr.layer`), one content stream per
-  page where the pdf-lib writer opened one per word;
+  page where the pdf-lib writer opened one per word. A word Noto Sans can spell uses it; any
+  other uses Tesseract's glyph-less design rebuilt in `engines/glyphless-font.ts` (Type 0
+  over Identity-H, every CID drawing one empty glyph, `/ToUnicode` CID *n* → UTF-16 unit *n*).
+  Tesseract's own copy of that font sits in its wasm data, which the build split at zero runs,
+  so it could not be lifted out whole;
 - the text-edit insert half (`ops/text-edit.ts`), steps `load` / `text.font` / `text.draw` /
   `save` after MuPDF's erase: a file font or Noto is embedded whole (`embedFontFile`), a
   standard-14 face is drawn through WinAnsiEncoding (`standardFace`) only when WinAnsi can
@@ -632,7 +636,20 @@ range it fails rather than clamping) → Tesseract recognises it in a worker cac
 one content stream per page, positioned through the page's unit viewport so the page's
 rotation cancels exactly once. The font is embedded as the **complete** programme,
 Identity-H with a `/ToUnicode` CMap — which is what makes the words selectable and
-searchable at all. Languages are Turkish and English; `existingText: 'skip' | 'overwrite'`
+searchable at all. Noto Sans has no Arabic, Hebrew or CJK glyphs: such a word encoded as
+glyph 0 and came back as nothing, so those words use the glyph-less font, whose codes are the
+text's UTF-16 units. A right-to-left word is written in visual order (grapheme clusters
+reversed), the order extractors undo with the bidi algorithm; written logically it came back
+reversed. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less font get a space
+beside them, because MuPDF found no gap between them and joined `नमस्ते दुनिया` into one
+word. All of this is measured through both MuPDF and pdf.js extraction.
+
+There are 27 languages (`OCR_LANGUAGE_CODES_ALL`). Turkish and English ship both models and
+are in the offline package; the others ship `4.0.0_best_int` only. The `4.0.0` packs add the
+legacy engine's data, which the LSTM-only worker never reads; for Chinese that is 27 MB, over
+the 25 MiB asset limit. A `fast` run that includes one of them runs at `best`
+(`effectiveOcrQuality`, one worker reads every language from one directory), and the report
+says so. `existingText: 'skip' | 'overwrite'`
 decides what happens to pages that already have text, and overwriting is reported as a
 warning because it is additive. Cancellation is a real `worker.terminate()`, and the
 `finally` awaits worker termination, so "memory is back" is true when the function
@@ -1436,9 +1453,9 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
 
-Inventory: 231 pinned files across seven groups — `mupdf` (3), `pdfjs` (200: worker,
-cmaps, standard fonts, wasm), `tesseract` (8: worker, core `.wasm.js` + `.wasm`, `fast` and
-`best` language data), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
+Inventory: 256 pinned files across seven groups — `mupdf` (3), `pdfjs` (200: worker,
+cmaps, standard fonts, wasm), `tesseract` (33: module, worker, core `.wasm.js` + `.wasm`,
+Turkish and English in `fast` and `best`, 25 more languages in `best`), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
 Dancing Script and Great Vibes, latin and latin-ext, for typed signatures).
 
 `tools/verify-assets.mjs` is the verification half of the pair: it re-hashes every pinned
