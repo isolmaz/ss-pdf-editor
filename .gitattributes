@@ -1,10 +1,6 @@
 # Normalize line endings for a Windows/macOS/Linux-friendly repo
 * text=auto eol=lf
 
-# Binaries
-*.png binary
+# The binaries the repository commits (README clips, the site footer image)
+*.gif binary
 *.jpg binary
-*.pdf binary
-*.wasm binary
-*.woff2 binary
-*.traineddata binary
