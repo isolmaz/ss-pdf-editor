@@ -253,6 +253,9 @@ test('print: the chosen range is rendered into the print sheet and handed to the
   await page.keyboard.press('Control+p');
   const dialog = page.getByRole('dialog', { name: 'Print' });
   await expect(dialog).toBeVisible();
+  // The title is followed by the choices, not by a stray character of markup.
+  const lines = (await dialog.innerText()).split('\n').map((line) => line.trim());
+  expect(lines.filter((line) => /^\p{L}$/u.test(line))).toEqual([]);
   await dialog.getByRole('radio', { name: 'Range' }).check();
   await dialog.getByRole('textbox', { name: 'Page range' }).fill('2-3');
   await dialog.getByRole('button', { name: 'Print', exact: true }).click();
