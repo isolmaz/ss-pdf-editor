@@ -86,6 +86,7 @@ import {
   pdfNumber as num,
   openForWrite,
   pageObjects,
+  producerKeptNote,
   type StandardFace,
   saveRewrite,
   standardFace,
@@ -94,7 +95,6 @@ import {
 } from '../engines/mupdf-write';
 import { notoSansBytes } from '../engines/noto';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
-import { PRODUCER_LINE } from './metadata';
 import {
   note,
   type OperationContext,
@@ -246,7 +246,7 @@ export async function applyTextEdit(
   }
   notes.push(note('preserved', 'op.note.textEdit.verifiedPages', { pages: verification.pageCount }));
   notes.push(note('preserved', 'op.note.redact.singleRevision'));
-  notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+  notes.push(producerKeptNote());
 
   const report: OperationReport = {
     engine: 'mupdf',

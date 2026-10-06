@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { PDFObject } from 'mupdf';
+import { createTranslator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stampDocument } from './stamp';
 
@@ -167,6 +168,9 @@ describe('stampDocument', () => {
     expect(alpha).toHaveLength(1);
     expect(alpha[0]).toBeCloseTo(0.3, 5);
     expect((await lines(out.bytes, 1)).lines).toEqual([]);
+    // Every report line reads as a sentence: the producer note once printed `{producer}`.
+    const say = createTranslator();
+    for (const entry of out.report.notes) expect(say(entry.key, entry.params)).not.toMatch(/\{[a-zA-Z]+\}/);
   });
 
   describe('watermark geometry', () => {

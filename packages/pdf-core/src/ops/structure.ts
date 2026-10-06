@@ -44,6 +44,7 @@ import {
   openForWrite,
   pageObjects,
   pageOutOfRange,
+  producerKeptNote,
   readNumbers,
   resolved,
   saveRewrite,
@@ -70,7 +71,6 @@ import {
   scanContent,
   type UserRect,
 } from './content-scan';
-import { PRODUCER_LINE } from './metadata';
 import { pageGeometry } from './stamp';
 import {
   applyStructureEdits,
@@ -990,7 +990,7 @@ export async function editStructure(
       notes.push(note('warning', STRUCT_KEYS.contentPartlyMissing, { count: state.missingContent }));
     }
     steps.push('producer');
-    notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    notes.push(producerKeptNote());
     throwIfAborted(context.signal);
     out = saveRewrite(doc, 'edit structure');
     steps.push('save');

@@ -67,7 +67,7 @@ import { ToolError } from 'pdf-shared';
 import { mapMupdfError, openPdf } from '../engines/mupdf';
 import {
   openForWrite,
-  PRODUCER_LINE,
+  producerKeptNote,
   readName,
   readText,
   saveRewrite,
@@ -978,7 +978,7 @@ export async function sanitizeDocument(
   if (inputRevisions > 1)
     notes.push(note('changed', 'op.note.sanitize.revisionsDropped', { count: inputRevisions }));
   notes.push(...warnings(original, options, compared, pictureChanges, after));
-  notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+  notes.push(producerKeptNote());
   steps.push('producer', 'save', 'verify');
   if (compared > 0) steps.push('render');
 

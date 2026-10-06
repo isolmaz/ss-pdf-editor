@@ -66,6 +66,7 @@ import { mapMupdfError } from '../engines/mupdf';
 import {
   openForWrite,
   pageObjects,
+  producerKeptNote,
   readName,
   readText,
   resolved,
@@ -74,7 +75,6 @@ import {
   visibleBox,
 } from '../engines/mupdf-write';
 import { readPageText } from '../text-source';
-import { PRODUCER_LINE } from './metadata';
 import { EDITOR_ROLES } from './struct-roles';
 import {
   note,
@@ -2089,7 +2089,7 @@ async function tagOpened(
 
   if (tagged.length === 0) {
     notes.push(note('warning', A11Y_KEYS.nothingTagged));
-    notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    notes.push(producerKeptNote());
     return {
       bytes,
       report: {
@@ -2151,7 +2151,7 @@ async function tagOpened(
   notes.push(note('warning', A11Y_KEYS.formsNotTagged));
 
   steps.push('producer');
-  notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+  notes.push(producerKeptNote());
 
   throwIfAborted(context.signal);
   const out = saveRewrite(doc, 'tag document');
@@ -2539,7 +2539,7 @@ export async function setImageAlt(
 
     if (applied.length === 0 && appliedFields.length === 0) {
       notes.push(note('warning', 'op.note.image.noneFound', { count: missing }));
-      notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+      notes.push(producerKeptNote());
       return {
         bytes,
         report: {

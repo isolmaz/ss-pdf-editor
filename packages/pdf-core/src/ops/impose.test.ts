@@ -5,6 +5,7 @@
  * back, and text that stops being text on the sheet.
  */
 
+import { createTranslator } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { buildPrintDocument, imposeDocument } from './impose';
 
@@ -92,6 +93,9 @@ describe('imposeDocument', () => {
     ]);
     expect(labels(result[0] ?? { words: [] })).toEqual(['P1', 'P2']);
     expect(labels(result[1] ?? { words: [] })).toEqual(['P3']);
+    // Every report line reads as a sentence: the producer note once printed `{producer}`.
+    const say = createTranslator();
+    for (const entry of out.report.notes) expect(say(entry.key, entry.params)).not.toMatch(/\{[a-zA-Z]+\}/);
   });
 
   it('orders a booklet so the folded sheets read 1…N', async () => {

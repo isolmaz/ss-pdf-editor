@@ -28,6 +28,7 @@ import {
   pageContentParts,
   pageObjects,
   pageResources,
+  producerKeptNote,
   resolved,
   saveRewrite,
 } from '../engines/mupdf-write';
@@ -256,7 +257,7 @@ export async function applyImageOpacity(
     const report: OperationReport = {
       engine: 'mupdf',
       steps,
-      notes: [...notes, note('preserved', 'op.note.metadata.producerKept', { producer: '' })],
+      notes: [...notes, producerKeptNote()],
       inputBytes: bytes.byteLength,
       outputBytes: out.byteLength,
       pageCount,

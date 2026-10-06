@@ -75,6 +75,7 @@ import {
   pageAsForm,
   pageObjects,
   pdfNumber,
+  producerKeptNote,
   saveRewrite,
 } from '../engines/mupdf-write';
 import { type PageGeometry, pageGeometry } from './stamp';
@@ -673,7 +674,7 @@ function imposeOpened(
   notes.push(note('preserved', 'op.note.impose.infoCopied'));
   if (rotatedPlacements > 0)
     notes.push(note('changed', 'op.note.impose.rotated', { count: rotatedPlacements }));
-  notes.push(note('preserved', 'op.note.metadata.producerKept'));
+  notes.push(producerKeptNote());
 
   const report: OperationReport = {
     engine: 'mupdf',

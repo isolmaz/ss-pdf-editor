@@ -33,9 +33,9 @@ import { mapMupdfError } from '../engines/mupdf';
 import {
   annotsOf,
   openForWrite,
-  PRODUCER_LINE,
   pageObjects,
   pdfDate,
+  producerKeptNote,
   saveRewrite,
   text,
   visibleBox,
@@ -591,7 +591,7 @@ export async function writeStrokeHighlights(
         steps: ['load', 'annotations.highlights', 'save'],
         notes: [
           note('changed', 'op.note.annotate.highlights', { count: written.length }),
-          note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
+          producerKeptNote(),
         ],
         inputBytes: bytes.byteLength,
         outputBytes: saved.byteLength,

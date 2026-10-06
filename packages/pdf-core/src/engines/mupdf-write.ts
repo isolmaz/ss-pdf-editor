@@ -31,6 +31,7 @@
 import type { Font, PDFDocument, PDFGraftMap, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { metricsFor } from 'pdf-text-engine';
+import { note, type OperationNote } from '../ops/types';
 import { loadMupdf, type Mupdf, mapMupdfError, openPdf, savePdf } from './mupdf';
 import { notoSansBytes } from './noto';
 
@@ -40,6 +41,15 @@ import { notoSansBytes } from './noto';
  * `ops/metadata.ts` for the operations that report it.
  */
 export const PRODUCER_LINE = 'SsPdfEditor (MuPDF 1.28)';
+
+/**
+ * The report line every rewrite adds: the producer the file now carries. One builder, because
+ * the message has a `{producer}` slot and a writer that called `note()` without it printed
+ * the placeholder itself (watermark, numbering, N-up).
+ */
+export function producerKeptNote(): OperationNote {
+  return note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE });
+}
 
 /** Full rewrite, unused objects dropped, streams compressed; object numbers kept. */
 export const MUPDF_REWRITE_OPTIONS = 'garbage,compress';
