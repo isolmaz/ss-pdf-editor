@@ -1162,7 +1162,8 @@ and a counter and a remover cannot disagree because they are one function.
 Rendition, RichMediaExecute and a `file:` URI are "active" (default on); other URIs and
 GoToR/GoToE are "external links" (default off); GoTo, Named, Hide, ResetForm, SetOCGState and
 the media actions stay. A Link whose external action went and that has no other destination is
-removed with it; one whose script went stays.
+removed with it; one whose script went stays, unless external links are removed in the same
+run.
 
 **Hidden layers** (`sanitize-layers.ts`). Visibility is read from the default configuration
 (`/BaseState`, `/ON`, `/OFF`, an `/AS` View usage state) and from OCMD membership policies; a
