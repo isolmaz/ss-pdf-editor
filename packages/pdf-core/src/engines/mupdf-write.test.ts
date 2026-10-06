@@ -16,6 +16,7 @@ import {
   readName,
   readText,
   saveRewrite,
+  subsetEmbeddedFaces,
   text,
 } from './mupdf-write';
 
@@ -129,6 +130,73 @@ describe('mupdf-write', () => {
     await expect(openForWrite(locked)).rejects.toMatchObject({ code: 'encrypted-unsupported' });
     const { doc } = await openForWrite(ownerOnly);
     expect(doc.countPages()).toBe(1);
+    doc.destroy();
+  });
+});
+
+describe('subsetEmbeddedFaces', () => {
+  beforeEach(() => {
+    const font = notoRegular();
+    vi.stubGlobal('fetch', async () => new Response(font));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const words = 'Şişli’de ığdır — İĞÜŞÖÇ';
+
+  /** A page that draws `words` with the embedded face, saved with or without the subset. */
+  async function draw(subset: boolean): Promise<Uint8Array> {
+    const { mupdf, doc } = await openForWrite(await blankPdf());
+    const face = await embedNotoSans(mupdf, doc);
+    const page = doc.findPage(0);
+    page.put('Resources', doc.addObject({ Font: { F1: face.ref } }));
+    page.put('Contents', doc.addStream(`BT /F1 14 Tf 72 700 Td ${face.encode(words)} Tj ET`, {}));
+    if (subset) expect(subsetEmbeddedFaces(mupdf, doc, [face])).toBeGreaterThan(100_000);
+    const bytes = saveRewrite(doc);
+    doc.destroy();
+    return bytes;
+  }
+
+  /** The face the page draws with: its font program's size and names, and the extracted text. */
+  async function inspect(bytes: Uint8Array) {
+    const { doc } = await openForWrite(bytes);
+    try {
+      const font = doc.findPage(0).get('Resources').get('Font').get('F1').resolve();
+      const descendant = font.get('DescendantFonts').resolve().get(0).resolve();
+      const descriptor = descendant.get('FontDescriptor').resolve();
+      return {
+        program: descriptor.get('FontFile2').readStream().getLength(),
+        baseFont: font.get('BaseFont').asName(),
+        descendantBaseFont: descendant.get('BaseFont').asName(),
+        descriptorName: descriptor.get('FontName').asName(),
+        extracted: doc.loadPage(0).toStructuredText('preserve-whitespace').asText().trim(),
+      };
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  it('replaces the whole face with a much smaller subset that still extracts as the same words', async () => {
+    const whole = await inspect(await draw(false));
+    const subset = await inspect(await draw(true));
+    expect(whole.program).toBeGreaterThan(300_000);
+    expect(subset.program).toBeLessThan(whole.program / 5);
+    expect(whole.extracted).toBe(words);
+    expect(subset.extracted).toBe(words);
+    // The subset is renamed everywhere the face is named (`ABCDEF+NotoSans`), so a reader sees one face.
+    expect(subset.baseFont).toMatch(/^[A-Z]{6}\+NotoSans/);
+    expect(subset.descendantBaseFont).toBe(subset.baseFont);
+    expect(subset.descriptorName).toBe(subset.baseFont);
+    expect(whole.baseFont).not.toContain('+');
+  });
+
+  it('keeps the face, and saves nothing, when its descriptor has no font program', async () => {
+    const { mupdf, doc } = await openForWrite(await blankPdf());
+    const face = await embedNotoSans(mupdf, doc);
+    const descendant = face.ref.resolve().get('DescendantFonts').resolve().get(0).resolve();
+    descendant.get('FontDescriptor').resolve().delete('FontFile2');
+    expect(subsetEmbeddedFaces(mupdf, doc, [face])).toBe(0);
     doc.destroy();
   });
 });

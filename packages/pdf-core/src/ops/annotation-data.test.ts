@@ -14,6 +14,7 @@ import {
   toAppSpace,
 } from './annotation-data';
 import { type AnnotationMark, commentText, contentsFor } from './annotations';
+import { serializeFdf } from './form-data';
 
 function note(): AnnotationMark {
   return {
@@ -66,6 +67,41 @@ describe('annotation data round trip', () => {
   });
 });
 
+describe('annotation data with Turkish text and a thread', () => {
+  const threaded = (): AnnotationMark => ({
+    ...note(),
+    contents: 'Şişli ığüöç (kontrol) \\ İĞÜŞÖÇ',
+    replies: [
+      { id: 'r1', author: 'Mehmet', contents: 'Düzelttim: çağrı', createdAt: '2026-10-02T08:00:00.000Z' },
+    ],
+    review: { state: 'Accepted', author: 'Mehmet', at: '2026-10-03T08:00:00.000Z' },
+  });
+
+  it.each([
+    ['FDF', () => parseAnnotationData(serializeAnnotationsFdf([threaded()], 3))],
+    ['JSON', () => parseAnnotationsJson(decode(serializeAnnotationsJson([threaded()], 3)))],
+  ])('%s keeps the words whole, the reply and the review, and mints a new reply id', (_name, read) => {
+    const [mark] = read().marks;
+    expect(mark?.contents).toBe('Şişli ığüöç (kontrol) \\ İĞÜŞÖÇ');
+    expect(mark?.author).toBe('Ayşe');
+    expect(mark?.replies).toHaveLength(1);
+    expect(mark?.replies?.[0]).toMatchObject({
+      author: 'Mehmet',
+      contents: 'Düzelttim: çağrı',
+      createdAt: '2026-10-02T08:00:00.000Z',
+    });
+    expect(mark?.replies?.[0]?.id).not.toBe('r1');
+    expect(mark?.review).toEqual({ state: 'Accepted', author: 'Mehmet', at: '2026-10-03T08:00:00.000Z' });
+  });
+
+  it('refuses text that is neither FDF nor JSON, and an FDF that carries no annotation records', () => {
+    expect(() => parseAnnotationData(new TextEncoder().encode('hello'))).toThrow(/annotation data file/);
+    const form = serializeFdf([{ name: 'customer', value: 'Ada' }]);
+    expect(() => parseAnnotationData(form)).toThrow();
+    expect(() => parseAnnotationsJson('{"marks": 3}')).toThrow(/no marks array/);
+  });
+});
+
 describe('toAppSpace', () => {
   it('mirrors user-space geometry about the page top, keeping each box ordered', () => {
     const inUserSpace: AnnotationMark = {
@@ -79,6 +115,17 @@ describe('toAppSpace', () => {
     expect(placed.quads).toEqual([[10, 102, 60, 142]]);
     expect(placed.rect).toEqual([10, 102, 60, 142]);
     expect(placed.strokes).toEqual([[10, 142, 60, 102]]);
+  });
+
+  it('mirrors a line`s two ends point by point, so it keeps its direction', () => {
+    const line: AnnotationMark = {
+      ...note(),
+      kind: 'shapes',
+      shape: 'line',
+      quads: [[10, 700, 60, 740]],
+      rect: [60, 740, 10, 700],
+    };
+    expect(toAppSpace(line, 842).rect).toEqual([60, 102, 10, 142]);
   });
 });
 
