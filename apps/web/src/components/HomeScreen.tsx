@@ -12,6 +12,7 @@
 
 import {
   ArrowsMerge,
+  Camera,
   CloudArrowUp,
   FileArrowUp,
   FilePdf,
@@ -37,7 +38,7 @@ import {
 
 const HomeToolGrid = lazy(() => import('./HomeToolGrid'));
 
-export type HomeStartAction = 'blank' | 'images' | 'merge' | 'batch' | 'convert';
+export type HomeStartAction = 'blank' | 'images' | 'merge' | 'batch' | 'convert' | 'scan';
 
 export interface HomeScreenProps {
   readonly t: Translator;
@@ -280,6 +281,13 @@ export function HomeScreen({
               title={t('home.start.images.title')}
               description={t('home.start.images.desc')}
               onClick={() => onStart('images')}
+              disabled={busy}
+            />
+            <StartCard
+              icon={<Camera size={20} weight="duotone" />}
+              title={t('home.start.scan.title')}
+              description={t('home.start.scan.desc')}
+              onClick={() => onStart('scan')}
               disabled={busy}
             />
             <StartCard

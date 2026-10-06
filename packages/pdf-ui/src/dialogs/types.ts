@@ -109,6 +109,14 @@ export type FieldSpec =
   | ({ readonly kind: 'color'; readonly defaultValue: string } & FieldBase)
   | ({ readonly kind: 'image'; readonly accept: string } & FieldBase)
   | ({ readonly kind: 'files'; readonly accept: string; readonly multiple: boolean } & FieldBase)
+  | ({
+      /**
+       * Pages scanned with the camera (`scan/ScanDialog.tsx`). The field holds the straightened
+       * pages as JPEG `File`s, so a run reads it exactly as it reads a `files` field of pictures;
+       * the button opens the scanner, which adds to the list.
+       */
+      readonly kind: 'scan';
+    } & FieldBase)
   | ({ readonly kind: 'readOnlyText'; readonly valueKey: MessageKey } & FieldBase);
 
 export type DialogParams = Readonly<Record<string, FieldValue>>;

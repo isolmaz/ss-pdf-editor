@@ -41,7 +41,7 @@ import type { FieldValue, OperationDialogSpec, OpRunContext } from '../dialogs/t
 import { resolveScope } from './scope';
 
 /** The three sources the insert and replace dialogs offer. */
-type SourceKind = 'blank' | 'image' | 'document';
+type SourceKind = 'blank' | 'image' | 'document' | 'scan';
 
 /** A `pageScope`-free source size choice. */
 type SizeChoice = 'a4' | 'letter' | 'match';
@@ -107,7 +107,7 @@ function readSource(params: Readonly<Record<string, FieldValue>>): SourceKind {
   // The renderer can only produce a declared option value, so this narrows the
   // wider `FieldValue` instead of guessing.
   const kind = params.source;
-  return kind === 'image' || kind === 'document' ? kind : 'blank';
+  return kind === 'image' || kind === 'document' || kind === 'scan' ? kind : 'blank';
 }
 
 function readSize(params: Readonly<Record<string, FieldValue>>): SizeChoice {
@@ -126,12 +126,14 @@ async function readInsertSource(
   kind: SourceKind,
   context: OpRunContext,
 ): Promise<PageInsertSource> {
-  if (kind === 'image') {
-    const files = await pickedImages(params.images);
+  if (kind === 'image' || kind === 'scan') {
+    // Scanned pages arrive as the straightened JPEG files the scanner made, so past this
+    // point they are pictures like any other (`imagesToPdf` does the placing).
+    const files = await pickedImages(kind === 'scan' ? params.scans : params.images);
     if (files.length === 0) {
       throw new ToolError('selection-empty', {
         engine: 'ui',
-        engineMessage: 'pageedit: no image was picked',
+        engineMessage: kind === 'scan' ? 'pageedit: no page was scanned' : 'pageedit: no image was picked',
       });
     }
     return {
@@ -215,10 +217,11 @@ export const insertPagesDialog: OperationDialogSpec = {
       kind: 'radio',
       labelKey: 'insert.source',
       defaultValue: 'blank',
-      columns: 3,
+      columns: 2,
       options: [
         { value: 'blank', labelKey: 'insert.source.blank' },
         { value: 'image', labelKey: 'insert.source.image' },
+        { value: 'scan', labelKey: 'insert.source.scan' },
         { value: 'document', labelKey: 'insert.source.document' },
       ],
     },
@@ -249,7 +252,7 @@ export const insertPagesDialog: OperationDialogSpec = {
       labelKey: 'insert.size',
       hintKey: 'insert.sizeMatchHint',
       defaultValue: 'a4',
-      visibleWhen: { field: 'source', equals: ['blank', 'image'] },
+      visibleWhen: { field: 'source', equals: ['blank', 'image', 'scan'] },
       options: [
         { value: 'a4', labelKey: 'insert.size.a4' },
         { value: 'letter', labelKey: 'insert.size.letter' },
@@ -262,7 +265,7 @@ export const insertPagesDialog: OperationDialogSpec = {
       kind: 'select',
       labelKey: 'insert.fit',
       defaultValue: 'fit',
-      visibleWhen: { field: 'source', equals: ['image'] },
+      visibleWhen: { field: 'source', equals: ['image', 'scan'] },
       options: [
         { value: 'fit', labelKey: 'insert.fit.fit' },
         { value: 'fill', labelKey: 'insert.fit.fill' },
@@ -279,7 +282,7 @@ export const insertPagesDialog: OperationDialogSpec = {
       min: 0,
       max: 50,
       step: 1,
-      visibleWhen: { field: 'source', equals: ['image'] },
+      visibleWhen: { field: 'source', equals: ['image', 'scan'] },
     },
     {
       id: 'images',
@@ -289,6 +292,12 @@ export const insertPagesDialog: OperationDialogSpec = {
       accept: 'image/*',
       multiple: true,
       visibleWhen: { field: 'source', equals: ['image'] },
+    },
+    {
+      id: 'scans',
+      kind: 'scan',
+      labelKey: 'insert.scans',
+      visibleWhen: { field: 'source', equals: ['scan'] },
     },
     {
       id: 'document',

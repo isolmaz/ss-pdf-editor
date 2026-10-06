@@ -13,7 +13,8 @@
     "./tools": "./src/tools/ToolSurface.tsx",
     "./printing": "./src/printing/PrintSurface.tsx",
     "./palette": "./src/commands/PaletteSurface.tsx",
-    "./text-edit": "./src/ops/TextEditSurface.tsx"
+    "./text-edit": "./src/ops/TextEditSurface.tsx",
+    "./scan": "./src/scan/ScanDialog.tsx"
   },
   "dependencies": {
     "@cloudflare/kumo": "2.13.2",

@@ -43,7 +43,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
-| 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
+| 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
 | 🧰 **Tools** | OCR in 27 languages · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
@@ -227,6 +227,35 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - The file is read back before it is offered (Word with mammoth, an independent reader),
     and the report says what was approximated.
 
+### Scanning with the camera
+
+**File → Scan with camera** (also on the home screen, in the palette and as a source in
+**Insert pages**) turns photographs of a document into a PDF, like a phone scanner app, with
+nothing leaving the browser.
+
+- **Camera or files.** The live preview opens the rear camera on a phone and offers a
+  camera picker on a laptop; the photograph is taken at the highest resolution the camera
+  offers. **Choose photos** takes pictures from files instead, which is also the way on a
+  device without a camera or when the camera permission is refused. Denied, missing,
+  in-use and insecure-connection cases each say what to do, in Turkish and English.
+- **The page is found for you.** An outline follows the page in the preview, and the
+  photograph is analysed again on capture. A small detector (no OpenCV) finds the page's four
+  straight edges even where a finger or glare breaks them. If it is not sure it says so and
+  leaves the corners for you to place.
+- **Four corners to drag.** A magnifier follows the finger, and the arrow keys move a
+  selected corner. The straightened page is shown next to the photograph as you move them.
+- **Straightened, not just cropped.** The page is warped to a rectangle, and its shape is
+  worked out from the perspective, so a page photographed at an angle comes out as an A4
+  page and not a stretched one.
+- **Four looks.** Original colour, grayscale, black and white (adaptive threshold, so a
+  shadow does not turn half the page black) and **Enhanced** (even lighting, white paper,
+  colour kept).
+- **Several pages.** Thumbnails to reorder, rotate, delete, retake and re-edit the corners
+  of, then A4, Letter or fit-to-image pages and a JPEG quality. The PDF opens as a new tab;
+  you are offered the OCR tool on it, which makes it searchable.
+- **Into an open document.** In **Insert pages**, the source **Scan with camera** inserts
+  the straightened pages after the page you choose.
+
 ### Redaction, security, signing
 
 - **True redaction.**
@@ -368,6 +397,17 @@ The limits are defined once, in
   - A chart or drawing becomes a picture, its labels included, so its text cannot be
     edited.
   - Scanned pages have no text to export until OCR has added it.
+- **Scanning with the camera.**
+  - The page is found from its edges, so a page of the same brightness as what it lies on,
+    or a background full of straight lines, may not be found; the corners are then yours to
+    place. The outline is a suggestion and the dialog says when it found none.
+  - The shape of a page photographed at an angle is worked out assuming square pixels and an
+    uncropped photograph; a crop or an unusual lens makes a small error. A page with folds or
+    a curl is flattened as if it were a plane.
+  - A photograph is decoded at up to 4096 px on its long side and a page is rendered at up
+    to 2600 px (about A4 at 220 dpi); a scan is not meant for archival reproduction.
+  - The camera needs a secure connection (https or localhost); the app's response headers
+    allow it for this site only.
 - **Simple signatures.** A drawn, typed or photographed signature is a picture on the page,
   not a certified digital signature: it proves nothing about who signed or whether the
   document changed afterwards. The dialog says so; use certificate signing for that.
