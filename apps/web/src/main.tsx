@@ -35,10 +35,18 @@ loadLocale(getStoredLocale()).then(render, render);
 // `pdf-ui/palette`) are warmed the same way and for the same reason: they are lazy so
 // the entry chunk stays inside the ≤250 KiB budget, and prefetching them
 // on idle keeps the first `Ctrl+P` or `Ctrl+K` from being a visible wait.
-const warm = () => {
+//
+// Not while offline: a chunk the cache does not hold fails then, and Chromium keeps a
+// failed dynamic import for the page's lifetime, so a warm-up run offline would leave the
+// first open failing after the network is back. It runs when the network returns instead.
+const warmChunks = () => {
   warmPdfjs();
   void import('pdf-ui/printing').catch(() => undefined);
   void import('pdf-ui/palette').catch(() => undefined);
+};
+const warm = () => {
+  if (navigator.onLine) warmChunks();
+  else window.addEventListener('online', warmChunks, { once: true });
   initServiceWorkerUpdates();
 };
 if ('requestIdleCallback' in window) {

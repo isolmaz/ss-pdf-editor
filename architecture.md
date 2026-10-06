@@ -94,7 +94,8 @@ recorded in the code:
 Everything heavy is a dynamic `import()`: the pdf.js core, the viewer stack, the dialogs,
 the dock panels, the print surface and the palette are all loaded on demand, and
 `main.tsx` warms the engine, printer and palette chunks on idle so the first user action
-does not pay for the download.
+does not pay for the download — but only online: Chromium keeps a failed dynamic import for
+the page's lifetime, so a warm-up run offline waits for the `online` event instead.
 The writers the shell reaches only from a user action and imports nowhere else —
 annotation removal, layer writes, attachments, the redaction audit and the font inventory
 — go through `apps/web/src/lazy-ops.ts`: same signatures, loaded on the first call.
@@ -128,7 +129,7 @@ chunks; it is still over the 250 KiB budget the README states.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (37 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (37 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) becomes `asset-offline`, never a damaged document. |
 | `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 

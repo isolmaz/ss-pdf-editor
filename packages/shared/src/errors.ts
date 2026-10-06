@@ -111,6 +111,14 @@ export function isToolError(value: unknown): value is ToolError {
 }
 
 /**
+ * A lazy chunk the browser could not fetch — offline with the chunk not cached, or a
+ * release that replaced it — in the words of Chromium, Firefox and Safari, and of the
+ * bundler's CSS preload. None of it says anything about the user's document.
+ */
+const CHUNK_LOAD_FAILED =
+  /dynamically imported module|Importing a module script failed|Unable to preload CSS/i;
+
+/**
  * Last line of defence: never let a raw error escape to the UI layer.
  * Unknown shapes become `internal` with the engine message preserved.
  */
@@ -118,6 +126,9 @@ export function toToolError(value: unknown, engine = 'model'): ToolError {
   if (isToolError(value)) return value;
   if (value instanceof DOMException && value.name === 'AbortError') {
     return new ToolError('aborted', { engine, engineMessage: value.message });
+  }
+  if (value instanceof Error && CHUNK_LOAD_FAILED.test(value.message)) {
+    return new ToolError('asset-offline', { engine, engineMessage: value.message }, { cause: value });
   }
   if (value instanceof Error) {
     return new ToolError('internal', { engine, engineMessage: value.message }, { cause: value });
