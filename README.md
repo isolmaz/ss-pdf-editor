@@ -8,6 +8,7 @@
 Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 
 <p>
+<a href="https://github.com/isolmaz/ss-pdf-editor/actions/workflows/ci.yml?query=branch%3Amain"><img alt="CI" src="https://github.com/isolmaz/ss-pdf-editor/actions/workflows/ci.yml/badge.svg?branch=main"></a>
 <img alt="license AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue">
 <img alt="data local only" src="https://img.shields.io/badge/data-local%20only-2ea44f">
 <img alt="no account" src="https://img.shields.io/badge/account-none-2ea44f">
@@ -659,16 +660,19 @@ docs/media/         the README clips
 
 ## Quality gates
 
-All gates run locally; the repository has no GitHub Actions workflow.
+GitHub Actions (`.github/workflows/ci.yml`, one `verify` job on `ubuntu-latest`) runs the
+`pnpm ci:verify` steps below on every pull request and on every push to `main`, with read-only
+token permissions and no secrets. `pnpm e2e` and `pnpm ci:behavior` are not run there; run them
+locally. To run the same checks locally, run `pnpm ci:verify`.
 
 - **`pnpm ci:verify`** runs these steps in order:
   1. `install --frozen-lockfile`
   2. `typecheck`
   3. `check`
-  4. `unit`
-  5. `audit:model-types`
-  6. `build`
-  7. `fetch:engines --sync`
+  4. `fetch:engines --sync` (the unit tests read the fetched fonts from `public/fonts`)
+  5. `unit`
+  6. `audit:model-types`
+  7. `build`
   8. `verify:assets`
   9. `check:licenses`
   10. `assemble:dist`

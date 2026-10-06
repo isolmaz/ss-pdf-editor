@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pnpm version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # The steps of `pnpm ci:verify` (see package.json), split so a failure is easy to locate;
+      # fetch:engines runs before unit because the unit tests need the fetched fonts.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm check
+      # Fonts and engines are not committed; some unit tests read public/fonts, so fetch before unit.
+      - run: pnpm fetch:engines --sync
+      - run: pnpm unit
+      - run: pnpm audit:model-types
+      - run: pnpm build
+      - run: pnpm verify:assets
+      - run: pnpm check:licenses
+      - run: pnpm assemble:dist

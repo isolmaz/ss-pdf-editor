@@ -2266,7 +2266,8 @@ styled Turkish `dist/404.html`, or the English `dist/en/404.html` under `/en/` (
 same nearest-404 rule when it serves `dist/`. Wrangler is pinned at 4.135.0 inside the
 deploy scripts.
 
-The release path is local gates, then a deliberate push, then Cloudflare: the build pipeline
+The release path is local gates, then a deliberate push (GitHub Actions runs the same
+`pnpm ci:verify` gate on it, as a check only: it never deploys), then Cloudflare: the build pipeline
 validates the pushed commit with `pnpm ci:verify` and its configured deploy command runs
 `pnpm run worker:deploy` — the same command a maintainer can run by hand, and the one that
 publishes <https://pdf.isolmaz.com/>. The `dist/_headers` file is part of the upload, so the
