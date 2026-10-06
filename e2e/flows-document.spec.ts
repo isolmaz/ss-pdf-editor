@@ -204,7 +204,7 @@ test('closing an edited document asks first, and the recent list names its contr
   await dialog.getByRole('button', { name: 'Close without saving' }).click();
 
   // Home again: the document is listed, with controls named in the interface language.
-  await page.getByRole('button', { name: 'Recent Documents' }).click();
+  await page.getByRole('tab', { name: 'Recent', exact: true }).click();
   const row = page.getByRole('row').filter({ hasText: 'recent.pdf' });
   await expect(row).toBeVisible();
   await expect(row.getByRole('button', { name: 'Star', exact: true })).toBeVisible();

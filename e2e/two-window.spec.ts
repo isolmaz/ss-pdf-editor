@@ -42,7 +42,8 @@ async function readVault(page: Page): Promise<{ drafts: string[]; sources: strin
 async function openFixture(page: Page, name: string): Promise<void> {
   await page.goto('/editor/');
   await page
-    .locator('input[type="file"][accept="application/pdf"]')
+    .locator('input[type="file"][accept*="application/pdf"]')
+    .first()
     .setInputFiles({ name, mimeType: 'application/pdf', buffer: Buffer.from(fixturePdf()) });
   await expect(page.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 30_000 });
 }

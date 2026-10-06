@@ -49,7 +49,7 @@ test.describe('offline shell', () => {
       // The shell's own bytes came out of the cache: the document still paints and the home
       // screen's controls are interactive.
       await expect(page.getByText('SsPdfEditor')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Discover' })).toBeVisible();
+      await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible();
       expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
     } finally {
       await context.setOffline(false);
