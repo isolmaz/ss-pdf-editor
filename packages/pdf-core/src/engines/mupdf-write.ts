@@ -86,6 +86,23 @@ export function saveRewrite(doc: PDFDocument, context = 'save', options = MUPDF_
 }
 
 /**
+ * Serialise the edited document as an incremental update: every byte of the input stays and
+ * the changed objects are appended, so a signature over the input keeps covering what it
+ * signed. When MuPDF cannot append (`canBeSavedIncrementally()` is false — a repaired file,
+ * or after `applyRedactions()`, where an append would keep the erased revision), the file is
+ * rewritten instead; callers that must never rewrite check that themselves first.
+ */
+export function saveIncremental(doc: PDFDocument, context = 'save'): Uint8Array {
+  if (!doc.canBeSavedIncrementally()) return saveRewrite(doc, context);
+  try {
+    doc.setMetaData('info:Producer', PRODUCER_LINE);
+    return savePdf(doc, 'incremental');
+  } catch (error) {
+    throw mapMupdfError(error, context);
+  }
+}
+
+/**
  * Carry a document's Info into a file another writer produced: title, author, subject,
  * keywords and creator as they are, and the two dates when they are PDF dates (a
  * malformed date is not carried over). The producer line is set when `target` is saved.

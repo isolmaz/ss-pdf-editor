@@ -160,8 +160,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   its AcroForm. The editor says so in a notice under the tool strip, and what it does
   depends on the kind of form:
   - *Static* XFA (the widgets are in the PDF): filled like any form, and every write also
-    updates the XFA data, so Acrobat shows the same values. *Remove XFA* keeps only the
-    AcroForm.
+    updates the XFA data, so Acrobat shows the same values. Filling in place appends that
+    update to the file instead of rewriting it, so a signature the form already carries
+    keeps covering what it signed. *Remove XFA* keeps only the AcroForm.
   - *Dynamic* XFA (the PDF page is only a "Please wait…" placeholder): *Fill XFA form*
     draws it with pdf.js's XFA renderer in its own window, saves what you typed into the
     form's data, and can export that data as XML. *Flatten to a normal PDF* writes the

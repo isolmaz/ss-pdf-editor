@@ -241,7 +241,9 @@ flowchart TD
 Contract points the router returns and the report shows:
 
 - `incremental` is true **only** for the single pdf.js `saveDocument` path on an
-  unencrypted input. Any other writer ends the fast path and says `incremental: false`.
+  unencrypted input, including the static-XFA datasets sync that follows it, which MuPDF
+  appends as one more revision (`saveIncremental`). Any other writer ends the fast path and
+  says `incremental: false`.
 - `rewritesStructure` is true for redaction, writer steps and page composition — those
   normalise object numbering, compression and XMP.
 - `reprotects` is true when the input was encrypted and the user did not ask for
@@ -1109,7 +1111,9 @@ chosen button decides. Three writers keep the data current, all through the same
 1. `fillFormFields` (the form panel, FDF/JSON import, calculations) syncs the fields it wrote
    — `xfa.datasets` is added to its steps and `xfa.note.synced`/`notSynced` to its notes;
 2. `materializeBase` runs `syncXfaDatasets` over the bytes pdf.js produced for inline widget
-   edits (`lazy-ops.ts`; a document without XFA comes back as the same array, unwritten);
+   edits (`lazy-ops.ts`; a document without XFA comes back as the same array, unwritten).
+   The sync is appended as an incremental update (`saveIncremental`; a rewrite only when
+   MuPDF cannot append), so the bytes pdf.js kept, and a signature over them, stay intact;
 3. `importXfaData` replaces the data and fills the widgets from it.
 
 `flattenForm` now accepts a static form (the XFA is removed because it would redraw every
