@@ -279,7 +279,7 @@ the same certificate twice is one entry.
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
 | `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction |
-| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
+| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`) and text editing (`ops/text-edit.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 
@@ -316,6 +316,8 @@ had to stay green. The moves, and the defects they fixed on the way:
   `writeRawStream`), and an ICC-based grey or RGB image now reads as grey or RGB samples —
   MuPDF tags device RGB with an sRGB profile, so without that an image replaced once could not
   be cropped or rotated again;
+- a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
+  US size in either orientation, with an empty content stream and no resources;
 - images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`), where two
   pdf-lib-era defects are fixed: EXIF orientations 6 and 8 were turned the wrong way (an
   upright phone photo came out upside down) and `contain`/`cover` squashed a turned photo into
@@ -841,10 +843,24 @@ and the panel used to do exactly that right after handing over its result, so ev
 applied from the panel was aborted before it reached the document
 (`e2e/editor-stability.spec.ts` fails with that call reinstated).
 
-`ops/index.ts` registers **27** dialog ids against lazy `import()` loaders, so a
+`ops/index.ts` registers **29** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
+
+**Standalone operations** start a document instead of changing one (`standalone: true`, known
+synchronously through `isStandaloneDialog`): a blank document (`new-document`,
+`pdf-core/ops/create.ts`), a PDF from images (`images-to-pdf`) and several PDFs merged into a
+new one (`merge-files`, the first file as the base of `mergeDocuments`). They run with no
+document open, their context carries no bytes, and their one result opens in a new tab. A
+tab's tools panel is frozen against that tab and dismissed when it changes, so these get a
+modal host instead (`dialogs/StartDialog.tsx`, the same `OperationForm` body) and their own
+result path (`handleStartResult`). Before, `images-to-pdf` went through `openDialog`, which
+returns without a tab — the command was enabled with no document and silently did nothing.
+
+A multiple `files` field is an ordered list: a new pick appends, and each entry can be moved
+up or down or removed, so the order of a merge or of the pages built from images is the
+user's.
 
 The command palette runs **one command per opening**: Enter reaches both the input's own
 handler and the list's item activation, and a keyboard-chosen command used to run twice — a
@@ -925,6 +941,7 @@ path in and out of the document, and the wiring between `pdf-model`, `pdf-core` 
 | `offline.ts` | Capability manifests and readiness |
 | `commands.ts`, `interface-mode.ts`, `useShortcuts.ts` | The command registry, the simple/advanced filter and the keyboard bindings |
 | `recent.ts`, `serviceWorkerUpdate.ts` | Idle-time recent list and the update banner |
+| `components/HomeScreen.tsx`, `components/HomeToolGrid.tsx` | The home screen: start actions, the recent list and the tool grid laid out from the command registry (§8.1) |
 
 ### 8.1 The open path
 
@@ -947,8 +964,21 @@ re-applying its protection without asking. "Create unlocked copy" runs `unlockDo
 (MuPDF, authenticated and re-read) on the source and opens the result as a new tab.
 
 While a file is read and parsed there is no tab to show, so the activity overlay says the
-document is opening. A home-screen card ("edit", "sign", "export") records its task and runs
-it once the opened document's viewer is ready.
+document is opening. A drop or a multi-file pick opens every PDF, each in its own tab, one
+after the other (`openFilesFromSurface`), because an open holds the busy gate until it settles.
+
+**The home screen** (`components/HomeScreen.tsx`) has two tabs that both act. *Start* holds
+the ways to begin — open, a blank document, a PDF from images, merging several PDFs, a batch
+run — and the recent list (search, sort, star, page count, an "open" badge for entries that
+are a tab right now; removing an entry or clearing the list never touches a file, and the
+clear asks first). *All tools* (`components/HomeToolGrid.tsx`, loaded with the tab) lays the
+command registry out by task: each tile is a command id, its title is the command's label and
+pressing it runs the command, so the grid cannot drift from the menus or the palette. It lists
+every tool in either interface mode — the simple mode filters menus and the palette, it never
+disables. With no document open, a tool that needs one records its command id
+(`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
+cancelled picker (the File System Access `AbortError` or the plain input's `cancel` event)
+drops the pending command, so it cannot run on a document opened later for another reason.
 
 Page actions from the status bar and the context menu act on the page panel's selection, or
 on the page on screen when nothing is selected; before, they required a selection and

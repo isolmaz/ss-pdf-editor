@@ -42,13 +42,13 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · move, rotate and delete any mark |
 | 📝 **Forms** | Fill · create fields · flags · flatten · calculations · FDF/JSON import and export |
-| 📄 **Pages** | Insert · delete · duplicate · reorder · rotate · extract · split · replace · merge · page boxes and auto-crop · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · export as text or Markdown · pages to images · images to PDF |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · AES-256 encryption · remove a password · PAdES signing · signature verification |
 | 🧰 **Tools** | OCR (TR/EN) · accessibility check and tagging · alt text · text and pixel comparison · batch processing · compression |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
-| ⚙️ **Workflow** | `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
+| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
 
 ## Quick start
 
@@ -84,6 +84,11 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 ### Reading and navigation
 
+- **Home screen.** *Start* opens a PDF (or several, each in its own tab), creates a blank
+  document, builds a PDF from images, merges several PDFs in the order you choose or starts
+  a batch run, and lists recent documents with search, sorting and stars. *All tools* lays
+  every tool out by task; pick a tool first and the editor asks for the file when the tool
+  needs one.
 - **Viewer.** pdf.js's own viewer stack drives continuous virtualised scrolling, text
   selection and search with match highlighting.
 - **View modes.** You get single-page, book and full-screen presentation modes, a
@@ -138,6 +143,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 - **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
   and merge.
+  - A new document starts as blank pages of A3, A4, A5, Letter or Legal, in either
+    orientation.
+  - Merging several files builds a new document in the order you set; its metadata comes
+    from the first file, and the report says so.
   - Composition goes through pdf.js `extractPages`, so outlines, form fields and page
     labels travel with the pages.
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets

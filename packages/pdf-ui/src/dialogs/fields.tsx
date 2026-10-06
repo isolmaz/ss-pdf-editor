@@ -41,6 +41,22 @@ import { type Translator, toToolError } from 'pdf-shared';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import type { DialogParams, FieldSpec, FieldValue } from './types';
 
+/**
+ * A stable React key per picked `File`: the list of a multiple field can be reordered, so
+ * its position is not an identity, and two picks of the same file are two entries.
+ */
+const fileKeys = new WeakMap<File, number>();
+let nextFileKey = 0;
+function fileKey(file: File): number {
+  let key = fileKeys.get(file);
+  if (key === undefined) {
+    nextFileKey += 1;
+    key = nextFileKey;
+    fileKeys.set(file, key);
+  }
+  return key;
+}
+
 /** Marks a page-scope value as the raw text the user typed. */
 const RANGE_PREFIX = 'range:';
 /** The three keyword scopes; any other value is a typed range. */
@@ -528,7 +544,13 @@ export function FieldList({
               className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-kumo-line bg-kumo-recessed/40 px-3 py-2 text-xs text-kumo-default transition-colors hover:border-kumo-focus hover:bg-kumo-tint focus-within:ring-1 focus-within:ring-kumo-focus"
             >
               <span className="shrink-0 rounded-sm border border-kumo-line bg-kumo-base px-2 py-0.5 font-medium">
-                {t(multiple ? 'dialog.field.chooseFiles' : 'dialog.field.chooseFile')}
+                {t(
+                  multiple
+                    ? picked.length > 0
+                      ? 'dialog.field.addFiles'
+                      : 'dialog.field.chooseFiles'
+                    : 'dialog.field.chooseFile',
+                )}
               </span>
               <span className="min-w-0 truncate text-kumo-subtle">
                 {picked.length === 0
@@ -544,10 +566,71 @@ export function FieldList({
                 accept={field.accept}
                 multiple={multiple}
                 // A file input cannot be controlled: the browser owns its value, so
-                // the picked files are read out of the event and never written back.
-                onChange={(event) => set(field.id, Array.from(event.target.files ?? []))}
+                // the picked files are read out of the event and never written back. A
+                // multiple field *adds* to its list — the order is the user's, built up
+                // over several picks — and the input is cleared so the same file can be
+                // picked again after it was removed.
+                onChange={(event) => {
+                  const chosen = Array.from(event.target.files ?? []);
+                  set(field.id, multiple ? [...picked, ...chosen] : chosen);
+                  event.target.value = '';
+                }}
               />
             </label>
+            {multiple && picked.length > 0 ? (
+              <ol className="flex flex-col gap-1">
+                {picked.map((file, index) => {
+                  const move = (to: number) => {
+                    const next = [...picked];
+                    const [item] = next.splice(index, 1);
+                    if (item !== undefined) next.splice(to, 0, item);
+                    set(field.id, next);
+                  };
+                  return (
+                    <li
+                      key={fileKey(file)}
+                      className="flex items-center gap-1 rounded-sm border border-kumo-line/60 bg-kumo-base px-2 py-1 text-[11px] text-kumo-default"
+                    >
+                      <span className="w-5 shrink-0 text-right tabular-nums text-kumo-subtle">
+                        {index + 1}.
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                      <button
+                        type="button"
+                        className="rounded px-1 text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-strong disabled:opacity-30"
+                        aria-label={t('dialog.field.moveUp', { name: file.name })}
+                        disabled={index === 0}
+                        onClick={() => move(index - 1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded px-1 text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-strong disabled:opacity-30"
+                        aria-label={t('dialog.field.moveDown', { name: file.name })}
+                        disabled={index === picked.length - 1}
+                        onClick={() => move(index + 1)}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded px-1 text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-danger"
+                        aria-label={t('dialog.field.removeFile', { name: file.name })}
+                        onClick={() =>
+                          set(
+                            field.id,
+                            picked.filter((_, other) => other !== index),
+                          )
+                        }
+                      >
+                        ×
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : null}
             {error === undefined ? null : <p className="text-[11px] text-kumo-danger">{error}</p>}
             {hint === undefined ? null : <p className="text-[11px] text-kumo-subtle">{hint}</p>}
           </div>

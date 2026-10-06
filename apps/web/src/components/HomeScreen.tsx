@@ -1,16 +1,30 @@
+/**
+ * The home screen: what a user can start, every tool by task, and the recent list.
+ *
+ * Two tabs, both of which do something. **Start** holds the ways to begin — open a PDF,
+ * a blank document, a PDF from images, merging several PDFs, a batch run — and the recent
+ * documents. **All tools** is the command registry laid out by task (`HomeToolGrid`): pick
+ * the tool first, and the shell asks for the file when the tool needs one.
+ *
+ * Nothing here holds document bytes. The recent list is metadata in `localStorage`
+ * (`recent.ts`); whether an entry is open in a tab is told by the shell, which owns the tabs.
+ */
+
 import {
+  ArrowsMerge,
   CloudArrowUp,
-  Export,
   FilePdf,
   FilePlus,
+  FolderOpen,
+  Images,
   MagnifyingGlass,
-  PencilSimple,
-  PenNib,
+  Stack,
   Star,
   Trash,
 } from '@phosphor-icons/react';
 import type { Translator } from 'pdf-shared';
-import { useId, useState } from 'react';
+import type { Command } from 'pdf-ui';
+import { lazy, type ReactNode, Suspense, useId, useMemo, useState } from 'react';
 import {
   clearRecentDocuments,
   loadRecentDocuments,
@@ -19,433 +33,452 @@ import {
   toggleStarRecentDocument,
 } from '../recent';
 
+const HomeToolGrid = lazy(() => import('./HomeToolGrid'));
+
+export type HomeStartAction = 'blank' | 'images' | 'merge' | 'batch';
+
 export interface HomeScreenProps {
-  readonly t?: Translator;
-  readonly onOpenFile: (file?: File) => void;
-  readonly onSelectRecent?: (item: RecentDocumentItem) => void;
-  readonly onOpenAction?: (action: 'edit' | 'sign' | 'export' | 'combine') => void;
-  readonly onOpenPalette?: () => void;
+  readonly t: Translator;
+  /** A file the user chose or dropped here; with none, the shell opens its picker. */
+  readonly onOpenFiles: (files: readonly File[]) => void;
+  readonly onOpenPicker: () => void;
+  readonly onSelectRecent: (item: RecentDocumentItem) => void;
+  readonly onStart: (action: HomeStartAction) => void;
+  readonly onOpenPalette: () => void;
+  /** Every command; the tool grid is built from them whatever the interface mode. */
+  readonly commands: readonly Command[];
+  /** Commands that start a document and never need one open. */
+  readonly standaloneCommands: ReadonlySet<string>;
+  readonly onRunCommand: (commandId: string) => void;
+  /** The tab the tools apply to, or `null` with no document open. */
+  readonly activeDocumentName: string | null;
+  /** Recent entries open in a tab right now, by id. */
+  readonly openIds: ReadonlySet<string>;
   readonly busy?: boolean;
 }
 
-function formatBytes(bytes: number): string {
+type SortKey = 'date' | 'name' | 'size';
+
+function formatBytes(bytes: number, locale: string): string {
+  const format = (value: number, digits: number) =>
+    value.toLocaleString(locale, { maximumFractionDigits: digits, minimumFractionDigits: digits });
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024) return `${format(bytes / 1024, 1)} KB`;
+  return `${format(bytes / (1024 * 1024), 1)} MB`;
 }
 
-function formatDate(timestamp: number, locale = 'tr'): string {
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / (1000 * 60));
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+/** "3 minutes ago", "yesterday", or a date — in the interface language, never hardcoded. */
+function formatOpened(timestamp: number, locale: string, now = Date.now()): string {
+  const seconds = Math.round((timestamp - now) / 1000);
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const abs = Math.abs(seconds);
+  if (abs < 60) return relative.format(0, 'second');
+  if (abs < 3600) return relative.format(Math.round(seconds / 60), 'minute');
+  if (abs < 86_400) return relative.format(Math.round(seconds / 3600), 'hour');
+  if (abs < 7 * 86_400) return relative.format(Math.round(seconds / 86_400), 'day');
+  return new Date(timestamp).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
-  if (locale === 'en') {
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days}d ago`;
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      day: 'numeric',
-      month: 'short',
-    });
-  }
+function fold(text: string): string {
+  return text.toLocaleLowerCase('tr').normalize('NFD').replace(/\p{M}/gu, '').replace(/ı/g, 'i');
+}
 
-  if (minutes < 1) return 'Az önce';
-  if (minutes < 60) return `${minutes} dk önce`;
-  if (hours < 24) return `${hours} sa önce`;
-  if (days === 1) return 'Dün';
-  if (days < 7) return `${days} gün önce`;
-  return new Date(timestamp).toLocaleDateString('tr-TR', {
-    day: 'numeric',
-    month: 'short',
-  });
+function TabButton({
+  selected,
+  controls,
+  onSelect,
+  children,
+}: {
+  readonly selected: boolean;
+  readonly controls: string;
+  readonly onSelect: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      aria-controls={controls}
+      onClick={onSelect}
+      className={`border-b-2 pb-2 text-sm font-semibold transition-colors ${
+        selected
+          ? 'border-pdf-accent text-kumo-strong'
+          : 'border-transparent text-kumo-subtle hover:text-kumo-default'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StartCard({
+  icon,
+  title,
+  description,
+  onClick,
+  disabled,
+}: {
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly description: string;
+  readonly onClick: () => void;
+  readonly disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="group flex h-full flex-col rounded-lg border border-kumo-line bg-kumo-base p-4 text-left transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <span className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-105">
+        {icon}
+      </span>
+      <span className="text-sm font-semibold text-kumo-strong">{title}</span>
+      <span className="mt-1 text-xs leading-relaxed text-kumo-subtle">{description}</span>
+    </button>
+  );
 }
 
 export function HomeScreen({
   t,
-  onOpenFile,
+  onOpenFiles,
+  onOpenPicker,
   onSelectRecent,
-  onOpenAction,
+  onStart,
   onOpenPalette,
+  commands,
+  standaloneCommands,
+  onRunCommand,
+  activeDocumentName,
+  openIds,
   busy = false,
 }: HomeScreenProps) {
   const [recentItems, setRecentItems] = useState<RecentDocumentItem[]>(() => loadRecentDocuments());
-  const [topTab, setTopTab] = useState<'discover' | 'tools'>('discover');
+  const [topTab, setTopTab] = useState<'start' | 'tools'>('start');
   const [recentTab, setRecentTab] = useState<'recent' | 'starred'>('recent');
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('date');
+  const [confirmClear, setConfirmClear] = useState(false);
   const fileInputId = useId();
+  const startPanelId = useId();
+  const toolsPanelId = useId();
+  const locale = t.locale;
 
-  const text_ = (key: string, fallback: string) => (t ? t(key as never) : fallback);
+  const displayedItems = useMemo(() => {
+    const needle = fold(query.trim());
+    const filtered = recentItems.filter(
+      (item) =>
+        (recentTab === 'recent' || item.starred === true) &&
+        (needle === '' || fold(item.name).includes(needle)),
+    );
+    const sorted = [...filtered];
+    if (sort === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name, locale));
+    else if (sort === 'size') sorted.sort((a, b) => b.sizeBytes - a.sizeBytes);
+    else sorted.sort((a, b) => b.openedAt - a.openedAt);
+    return sorted;
+  }, [locale, query, recentItems, recentTab, sort]);
 
-  const displayedItems = recentItems.filter((item) => {
-    if (recentTab === 'starred') return item.starred;
-    return true;
-  });
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onOpenFile(file);
-    }
-  };
-
-  const handleCardClick = (action: 'edit' | 'sign' | 'export' | 'combine') => {
-    if (onOpenAction) {
-      onOpenAction(action);
-    } else {
-      onOpenFile();
-    }
-  };
-
-  const handleRemove = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = removeRecentDocument(id);
-    setRecentItems(updated);
-  };
-
-  const handleToggleStar = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = toggleStarRecentDocument(id);
-    setRecentItems(updated);
-  };
-
-  const handleClearAll = () => {
-    const updated = clearRecentDocuments();
-    setRecentItems(updated);
-  };
+  const tabItems =
+    recentTab === 'starred' ? recentItems.filter((item) => item.starred === true) : recentItems;
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-kumo-canvas px-6 py-6 text-kumo-default md:px-12 select-none">
+    <div className="flex h-full flex-col overflow-y-auto bg-kumo-canvas px-4 py-6 text-kumo-default select-none md:px-12">
       <input
         id={fileInputId}
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,.pdf"
+        multiple
         className="sr-only"
-        onChange={handleFileSelect}
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = '';
+          if (files.length > 0) onOpenFiles(files);
+        }}
         disabled={busy}
       />
 
-      {/* Top Section: Discover / Tools Tabs */}
-      <div className="flex items-center justify-between border-b border-kumo-line pb-2">
-        <div className="flex items-center gap-6">
-          <button
-            type="button"
-            className={`pb-2 text-sm font-semibold transition-colors ${
-              topTab === 'discover'
-                ? 'border-b-2 border-pdf-accent text-kumo-strong'
-                : 'text-kumo-subtle hover:text-kumo-default'
-            }`}
-            onClick={() => setTopTab('discover')}
+      <div className="flex items-center justify-between gap-3 border-b border-kumo-line">
+        <div role="tablist" aria-label={t('home.start.title')} className="flex items-center gap-6">
+          <TabButton
+            selected={topTab === 'start'}
+            controls={startPanelId}
+            onSelect={() => setTopTab('start')}
           >
-            {text_('home.discover', 'Keşfet')}
-          </button>
-          <button
-            type="button"
-            className={`pb-2 text-sm font-semibold transition-colors ${
-              topTab === 'tools'
-                ? 'border-b-2 border-pdf-accent text-kumo-strong'
-                : 'text-kumo-subtle hover:text-kumo-default'
-            }`}
-            onClick={() => setTopTab('tools')}
+            {t('home.tab.start')}
+          </TabButton>
+          <TabButton
+            selected={topTab === 'tools'}
+            controls={toolsPanelId}
+            onSelect={() => setTopTab('tools')}
           >
-            {text_('home.tools', 'Araçlar')}
-          </button>
+            {t('home.tab.tools')}
+          </TabButton>
         </div>
-        <div className="flex items-center gap-3">
-          {onOpenPalette ? (
-            <button
-              type="button"
-              className="flex items-center gap-1.5 text-xs font-medium text-kumo-strong hover:underline"
-              onClick={onOpenPalette}
-            >
-              <MagnifyingGlass size={14} />
-              {text_('home.allTools', 'Tüm araçlar (Ctrl+K)')}
-            </button>
-          ) : null}
-        </div>
+        <button
+          type="button"
+          className="mb-2 flex items-center gap-1.5 text-xs font-medium text-kumo-strong hover:underline"
+          onClick={onOpenPalette}
+        >
+          <MagnifyingGlass size={14} aria-hidden="true" />
+          {t('home.palette')}
+        </button>
       </div>
 
-      {/* Hero Quick Action Cards */}
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 text-left">
-        {/* Card 1: Edit text & images */}
-        <button
-          type="button"
-          onClick={() => handleCardClick('edit')}
-          className="group flex flex-col justify-between rounded-lg border border-kumo-line bg-kumo-base p-4 text-left transition-all hover:border-kumo-contrast hover:bg-kumo-recessed cursor-pointer"
-        >
-          <div>
-            <div className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent group-hover:scale-105 transition-transform">
-              <PencilSimple size={20} weight="duotone" />
-            </div>
-            <h3 className="text-sm font-semibold text-kumo-strong">
-              {text_('home.editCardTitle', 'Metin ve görselleri düzenle')}
-            </h3>
-            <p className="mt-1.5 text-xs text-kumo-subtle leading-relaxed">
-              {text_(
-                'home.editCardDesc',
-                'Metinleri, görselleri ve sayfa yerleşimlerini doğrudan belgenin üzerinde değiştirin.',
-              )}
-            </p>
-          </div>
-          <div className="mt-4 pt-2 border-t border-kumo-line/50 text-[11px] font-medium text-pdf-accent">
-            {text_('home.chooseOrDrop', 'Dosya seçin veya sürükleyin →')}
-          </div>
-        </button>
-
-        {/* Card 2: Fill & sign */}
-        <button
-          type="button"
-          onClick={() => handleCardClick('sign')}
-          className="group flex flex-col justify-between rounded-lg border border-kumo-line bg-kumo-base p-4 text-left transition-all hover:border-kumo-contrast hover:bg-kumo-recessed cursor-pointer"
-        >
-          <div>
-            <div className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent group-hover:scale-105 transition-transform">
-              <PenNib size={20} weight="duotone" />
-            </div>
-            <h3 className="text-sm font-semibold text-kumo-strong">
-              {text_('home.signCardTitle', 'Doldur ve imzala')}
-            </h3>
-            <p className="mt-1.5 text-xs text-kumo-subtle leading-relaxed">
-              {text_(
-                'home.signCardDesc',
-                'Form alanlarını doldurun, görsel damga ekleyin veya yasal PAdES dijital imzanızı atın.',
-              )}
-            </p>
-          </div>
-          <div className="mt-4 pt-2 border-t border-kumo-line/50 text-[11px] font-medium text-pdf-accent">
-            {text_('home.chooseOrDrop', 'Dosya seçin veya sürükleyin →')}
-          </div>
-        </button>
-
-        {/* Card 3: Export a PDF */}
-        <button
-          type="button"
-          onClick={() => handleCardClick('export')}
-          className="group flex flex-col justify-between rounded-lg border border-kumo-line bg-kumo-base p-4 text-left transition-all hover:border-kumo-contrast hover:bg-kumo-recessed cursor-pointer"
-        >
-          <div>
-            <div className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent group-hover:scale-105 transition-transform">
-              <Export size={20} weight="duotone" />
-            </div>
-            <h3 className="text-sm font-semibold text-kumo-strong">
-              {text_('home.exportCardTitle', 'PDF dışa aktar')}
-            </h3>
-            <p className="mt-1.5 text-xs text-kumo-subtle leading-relaxed">
-              {text_(
-                'home.exportCardDesc',
-                'Belgenizi yüksek çözünürlüklü görsellere (PNG/JPEG), Markdown veya düz metne dönüştürün.',
-              )}
-            </p>
-          </div>
-          <div className="mt-4 pt-2 border-t border-kumo-line/50 text-[11px] font-medium text-pdf-accent">
-            {text_('home.chooseOrDrop', 'Dosya seçin veya sürükleyin →')}
-          </div>
-        </button>
-
-        {/* Card 4: Combine files */}
-        <button
-          type="button"
-          onClick={() => handleCardClick('combine')}
-          className="group flex flex-col justify-between rounded-lg border border-kumo-line bg-kumo-base p-4 text-left transition-all hover:border-kumo-contrast hover:bg-kumo-recessed cursor-pointer"
-        >
-          <div>
-            <div className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent group-hover:scale-105 transition-transform">
-              <FilePlus size={20} weight="duotone" />
-            </div>
-            <h3 className="text-sm font-semibold text-kumo-strong">
-              {text_('home.combineCardTitle', 'Dosyaları birleştir')}
-            </h3>
-            <p className="mt-1.5 text-xs text-kumo-subtle leading-relaxed">
-              {text_(
-                'home.combineCardDesc',
-                'Birden fazla PDF belgesini sayfa yapısını, formlarını ve anahattını koruyarak birleştirin.',
-              )}
-            </p>
-          </div>
-          <div className="mt-4 pt-2 border-t border-kumo-line/50 text-[11px] font-medium text-pdf-accent">
-            {text_('home.chooseFiles', 'Dosyaları seçin →')}
-          </div>
-        </button>
-
-        {/* Card 5: Cloud Dropzone */}
-        <label
-          htmlFor={fileInputId}
-          className="group flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-all hover:border-pdf-accent hover:bg-kumo-base cursor-pointer"
-        >
-          <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent group-hover:scale-110 transition-transform">
-            <CloudArrowUp size={24} weight="duotone" />
-          </div>
-          <span className="text-xs font-semibold text-kumo-strong">
-            {text_('home.dropzoneTitle', 'PDF dosyasını buraya bırakın')}
-          </span>
-          <span className="mt-1 text-[11px] text-kumo-subtle">
-            {text_('home.dropzoneDesc', 'veya cihazınızdan seçin')}
-          </span>
-        </label>
-      </div>
-
-      {/* Bottom Section: Recent Documents Table */}
-      <div className="mt-10 flex flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-kumo-line pb-2">
-          <div className="flex items-center gap-6">
-            <button
-              type="button"
-              className={`pb-2 text-sm font-semibold transition-colors ${
-                recentTab === 'recent'
-                  ? 'border-b-2 border-pdf-accent text-kumo-strong'
-                  : 'text-kumo-subtle hover:text-kumo-default'
-              }`}
-              onClick={() => setRecentTab('recent')}
-            >
-              {text_('home.recentTab', 'Son Kullanılanlar')}
-            </button>
-            <button
-              type="button"
-              className={`pb-2 text-sm font-semibold transition-colors ${
-                recentTab === 'starred'
-                  ? 'border-b-2 border-pdf-accent text-kumo-strong'
-                  : 'text-kumo-subtle hover:text-kumo-default'
-              }`}
-              onClick={() => setRecentTab('starred')}
-            >
-              {text_('home.starredTab', 'Yıldızlı')}
-            </button>
-          </div>
-
-          {displayedItems.length > 0 ? (
-            <button
-              type="button"
-              className="text-xs text-kumo-subtle hover:text-kumo-danger transition-colors"
-              onClick={handleClearAll}
-            >
-              {text_('home.clearList', 'Listeyi temizle')}
-            </button>
-          ) : null}
+      {topTab === 'tools' ? (
+        <div id={toolsPanelId} role="tabpanel">
+          <Suspense fallback={null}>
+            <HomeToolGrid
+              t={t}
+              commands={commands}
+              activeDocumentName={activeDocumentName}
+              standalone={standaloneCommands}
+              onRun={onRunCommand}
+            />
+          </Suspense>
         </div>
-
-        {/* Table Content */}
-        {displayedItems.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
-            <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-kumo-recessed text-kumo-subtle">
-              <FilePdf size={28} weight="duotone" />
-            </div>
-            <h4 className="text-sm font-medium text-kumo-strong">
-              {recentTab === 'starred'
-                ? text_('home.noStarred', 'Henüz yıldızlanan bir belge yok.')
-                : text_('home.noRecent', 'Son kullanılan belge bulunmuyor.')}
-            </h4>
-            <p className="mt-1 max-w-sm text-xs text-kumo-subtle">
-              {text_(
-                'home.privacyNotice',
-                'Açtığınız PDF belgeleri tarayıcınızın yerel belleğinde güvenle tutulur. Hiçbir belge dış sunucuya gönderilmez.',
-              )}
-            </p>
+      ) : (
+        <div id={startPanelId} role="tabpanel" className="flex flex-1 flex-col">
+          <h2 className="sr-only">{t('home.start.title')}</h2>
+          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <label
               htmlFor={fileInputId}
-              className="mt-4 inline-flex items-center gap-2 rounded-md bg-pdf-accent px-4 py-2 text-xs font-medium text-pdf-on-accent hover:opacity-90 cursor-pointer"
+              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus sm:col-span-2 lg:col-span-1 xl:col-span-1"
             >
-              <FilePdf size={16} />
-              {text_('home.dropzoneDesc', 'Cihazdan PDF Seç')}
+              <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110">
+                <CloudArrowUp size={24} weight="duotone" aria-hidden="true" />
+              </span>
+              <span className="text-xs font-semibold text-kumo-strong">{t('home.drop.title')}</span>
+              <span className="mt-1 text-[11px] text-kumo-subtle">{t('home.drop.desc')}</span>
             </label>
+            <StartCard
+              icon={<FolderOpen size={20} weight="duotone" />}
+              title={t('home.start.open.title')}
+              description={t('home.start.open.desc')}
+              onClick={onOpenPicker}
+              disabled={busy}
+            />
+            <StartCard
+              icon={<FilePlus size={20} weight="duotone" />}
+              title={t('home.start.blank.title')}
+              description={t('home.start.blank.desc')}
+              onClick={() => onStart('blank')}
+              disabled={busy}
+            />
+            <StartCard
+              icon={<Images size={20} weight="duotone" />}
+              title={t('home.start.images.title')}
+              description={t('home.start.images.desc')}
+              onClick={() => onStart('images')}
+              disabled={busy}
+            />
+            <StartCard
+              icon={<ArrowsMerge size={20} weight="duotone" />}
+              title={t('home.start.merge.title')}
+              description={t('home.start.merge.desc')}
+              onClick={() => onStart('merge')}
+              disabled={busy}
+            />
+            <StartCard
+              icon={<Stack size={20} weight="duotone" />}
+              title={t('home.start.batch.title')}
+              description={t('home.start.batch.desc')}
+              onClick={() => onStart('batch')}
+              disabled={busy}
+            />
           </div>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-left text-xs text-kumo-default">
-              <thead>
-                <tr className="border-b border-kumo-line text-[11px] font-medium uppercase tracking-wider text-kumo-subtle">
-                  <th scope="col" className="py-2.5 pl-2 pr-4 w-8">
-                    <span className="sr-only">{text_('home.colActions', 'İşlem')}</span>
-                  </th>
-                  <th scope="col" className="py-2.5 px-4 font-semibold">
-                    {text_('home.colName', 'Belge Adı')}
-                  </th>
-                  <th scope="col" className="py-2.5 px-4 font-semibold hidden sm:table-cell">
-                    {text_('home.colPrivacy', 'Gizlilik & Paylaşım')}
-                  </th>
-                  <th scope="col" className="py-2.5 px-4 font-semibold">
-                    {text_('home.colLastOpened', 'Son Açılma')}
-                  </th>
-                  <th scope="col" className="py-2.5 px-4 font-semibold text-right">
-                    {text_('home.colSize', 'Boyut')}
-                  </th>
-                  <th scope="col" className="py-2.5 pl-4 pr-2 w-10 text-right">
-                    <span className="sr-only">{text_('common.actions', 'Eylemler')}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-kumo-line/40">
-                {displayedItems.map((item) => (
-                  <tr
-                    key={item.id}
-                    tabIndex={0}
-                    onClick={() => {
-                      if (onSelectRecent) onSelectRecent(item);
-                      else onOpenFile();
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        if (onSelectRecent) onSelectRecent(item);
-                        else onOpenFile();
-                      }
-                    }}
-                    className="group hover:bg-kumo-base/80 cursor-pointer transition-colors"
-                  >
-                    <td className="py-3 pl-2 pr-4 text-center">
+
+          <div className="mt-10 flex flex-1 flex-col">
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-kumo-line">
+              <div role="tablist" aria-label={t('home.recentTab')} className="flex items-center gap-6">
+                <TabButton
+                  selected={recentTab === 'recent'}
+                  controls="home-recent"
+                  onSelect={() => setRecentTab('recent')}
+                >
+                  {t('home.recentTab')}
+                </TabButton>
+                <TabButton
+                  selected={recentTab === 'starred'}
+                  controls="home-recent"
+                  onSelect={() => setRecentTab('starred')}
+                >
+                  {t('home.starredTab')}
+                </TabButton>
+              </div>
+              {recentItems.length > 0 ? (
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <label className="relative block">
+                    <span className="sr-only">{t('home.recent.search')}</span>
+                    <MagnifyingGlass
+                      size={13}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-kumo-subtle"
+                    />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={t('home.recent.search')}
+                      className="w-44 rounded-md border border-kumo-line bg-kumo-base py-1 pr-2 pl-7 text-xs placeholder:text-kumo-subtle focus:border-kumo-focus focus:outline-none"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1 text-xs text-kumo-subtle">
+                    {t('home.recent.sort')}
+                    <select
+                      value={sort}
+                      onChange={(event) => setSort(event.target.value as SortKey)}
+                      className="rounded-md border border-kumo-line bg-kumo-base px-1.5 py-1 text-xs text-kumo-default focus:border-kumo-focus focus:outline-none"
+                    >
+                      <option value="date">{t('home.recent.sort.date')}</option>
+                      <option value="name">{t('home.recent.sort.name')}</option>
+                      <option value="size">{t('home.recent.sort.size')}</option>
+                    </select>
+                  </label>
+                  {confirmClear ? (
+                    <span role="alert" className="flex items-center gap-2 text-xs text-kumo-default">
+                      {t('home.clearConfirm')}
                       <button
                         type="button"
-                        aria-label={
-                          item.starred
-                            ? text_('home.unstar', 'Yıldızı kaldır')
-                            : text_('home.star', 'Yıldızla')
-                        }
-                        onClick={(e) => handleToggleStar(item.id, e)}
-                        className={`transition-colors ${
-                          item.starred
-                            ? 'text-kumo-warning fill-kumo-warning'
-                            : 'text-kumo-subtle/50 hover:text-kumo-subtle'
-                        }`}
+                        className="rounded-md bg-kumo-danger px-2 py-0.5 font-medium text-white hover:opacity-90"
+                        onClick={() => {
+                          setRecentItems(clearRecentDocuments());
+                          setConfirmClear(false);
+                        }}
                       >
-                        <Star size={16} weight={item.starred ? 'fill' : 'regular'} />
+                        {t('home.clearYes')}
                       </button>
-                    </td>
-                    <td className="py-3 px-4 font-medium text-kumo-strong">
-                      <div className="flex items-center gap-2">
-                        <FilePdf size={18} className="shrink-0 text-pdf-accent" />
-                        <span className="truncate max-w-[280px]">{item.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-kumo-subtle hidden sm:table-cell">
-                      <span className="inline-flex items-center rounded bg-kumo-recessed px-2 py-0.5 text-[11px] font-medium text-kumo-strong border border-kumo-line/50">
-                        {text_('home.localDevice', 'Yerel Cihaz')}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-kumo-subtle whitespace-nowrap">
-                      {formatDate(
-                        item.openedAt,
-                        t?.locale ?? (typeof document !== 'undefined' ? document.documentElement.lang : 'tr'),
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right tabular-nums text-kumo-subtle whitespace-nowrap">
-                      {formatBytes(item.sizeBytes)}
-                    </td>
-                    <td className="py-3 pl-4 pr-2 text-right">
                       <button
                         type="button"
-                        aria-label={text_('home.removeFromList', 'Listeden kaldır')}
-                        onClick={(e) => handleRemove(item.id, e)}
-                        className="rounded p-1 text-kumo-subtle opacity-0 group-hover:opacity-100 hover:bg-kumo-recessed hover:text-kumo-danger transition-all"
+                        className="rounded-md px-2 py-0.5 text-kumo-subtle hover:bg-kumo-recessed"
+                        onClick={() => setConfirmClear(false)}
                       >
-                        <Trash size={14} />
+                        {t('home.clearNo')}
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-xs text-kumo-subtle transition-colors hover:text-kumo-danger"
+                      onClick={() => setConfirmClear(true)}
+                    >
+                      {t('home.clearList')}
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <div id="home-recent" role="tabpanel" className="flex flex-1 flex-col">
+              {displayedItems.length === 0 ? (
+                <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
+                  <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-kumo-recessed text-kumo-subtle">
+                    <FilePdf size={28} weight="duotone" aria-hidden="true" />
+                  </span>
+                  <p className="text-sm font-medium text-kumo-strong">
+                    {tabItems.length > 0
+                      ? t('home.noMatch')
+                      : recentTab === 'starred'
+                        ? t('home.noStarred')
+                        : t('home.noRecent')}
+                  </p>
+                  <p className="mt-1 max-w-sm text-xs text-kumo-subtle">{t('home.privacyNotice')}</p>
+                </div>
+              ) : (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-left text-xs text-kumo-default">
+                    <thead>
+                      <tr className="border-b border-kumo-line text-[11px] font-medium tracking-wider text-kumo-subtle uppercase">
+                        <th scope="col" className="w-8 py-2.5 pr-2 pl-2">
+                          <span className="sr-only">{t('home.star')}</span>
+                        </th>
+                        <th scope="col" className="px-3 py-2.5 font-semibold">
+                          {t('home.colName')}
+                        </th>
+                        <th scope="col" className="hidden px-3 py-2.5 text-right font-semibold sm:table-cell">
+                          {t('home.colPages')}
+                        </th>
+                        <th scope="col" className="px-3 py-2.5 font-semibold">
+                          {t('home.colLastOpened')}
+                        </th>
+                        <th scope="col" className="hidden px-3 py-2.5 text-right font-semibold sm:table-cell">
+                          {t('home.colSize')}
+                        </th>
+                        <th scope="col" className="w-10 py-2.5 pr-2 pl-3 text-right">
+                          <span className="sr-only">{t('home.colActions')}</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-kumo-line/40">
+                      {displayedItems.map((item) => (
+                        <tr key={item.id} className="group transition-colors hover:bg-kumo-base/80">
+                          <td className="py-2 pr-2 pl-2 text-center">
+                            <button
+                              type="button"
+                              aria-pressed={item.starred === true}
+                              aria-label={item.starred === true ? t('home.unstar') : t('home.star')}
+                              onClick={() => setRecentItems(toggleStarRecentDocument(item.id))}
+                              className={`rounded p-1 transition-colors ${
+                                item.starred === true
+                                  ? 'text-kumo-warning'
+                                  : 'text-kumo-subtle/60 hover:text-kumo-subtle'
+                              }`}
+                            >
+                              <Star size={16} weight={item.starred === true ? 'fill' : 'regular'} />
+                            </button>
+                          </td>
+                          <td className="px-3 py-2 font-medium text-kumo-strong">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              aria-label={t('home.openRecent', { name: item.name })}
+                              onClick={() => onSelectRecent(item)}
+                              className="flex max-w-full items-center gap-2 rounded text-left hover:underline focus-visible:outline-1 focus-visible:outline-kumo-focus disabled:opacity-50"
+                            >
+                              <FilePdf size={18} className="shrink-0 text-pdf-accent" aria-hidden="true" />
+                              <span className="max-w-[18rem] truncate">{item.name}</span>
+                              {openIds.has(item.id) ? (
+                                <span className="shrink-0 rounded border border-kumo-line/60 bg-kumo-recessed px-1.5 py-px text-[10px] font-medium text-kumo-strong">
+                                  {t('home.badge.open')}
+                                </span>
+                              ) : null}
+                            </button>
+                          </td>
+                          <td className="hidden px-3 py-2 text-right text-kumo-subtle tabular-nums sm:table-cell">
+                            {item.pageCount === undefined ? '—' : item.pageCount.toLocaleString(locale)}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-kumo-subtle">
+                            <time dateTime={new Date(item.openedAt).toISOString()}>
+                              {formatOpened(item.openedAt, locale)}
+                            </time>
+                          </td>
+                          <td className="hidden px-3 py-2 text-right whitespace-nowrap text-kumo-subtle tabular-nums sm:table-cell">
+                            {formatBytes(item.sizeBytes, locale)}
+                          </td>
+                          <td className="py-2 pr-2 pl-3 text-right">
+                            {/* Visible on touch screens and to the keyboard; on a pointer
+                                device it fades in with the row. */}
+                            <button
+                              type="button"
+                              aria-label={`${t('home.removeFromList')}: ${item.name}`}
+                              onClick={() => setRecentItems(removeRecentDocument(item.id))}
+                              className="rounded p-1 text-kumo-subtle transition-opacity hover:bg-kumo-recessed hover:text-kumo-danger focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
+                            >
+                              <Trash size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-4 text-[11px] text-kumo-subtle">{t('home.privacyNotice')}</p>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
