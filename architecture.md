@@ -1865,6 +1865,14 @@ page list purely, so the effect of an action on the page order is reviewable wit
 rendering anything. Applying a result re-checks that the tab and working version it started
 from are still current; if not, the operation throws `aborted` and the model is untouched.
 
+The page list (`panels/PagesPanel.tsx`) shows what the main view shows: each thumbnail draws
+the session's unwritten marks over the page with the overlay's own `markVisual`, projected
+through a `markPageFrame` built from the page's view box and `/Rotate` at thumbnail scale,
+and each caption leads with the file's page label (`getPageLabels`) when it differs from the
+number — `App-ii (2)`. A change to the session's marks is journalled under the kind drawn, a
+delete, a comment edit or a mark edit (`annotationStepLabel`), so History names the step
+instead of calling every one "Comments".
+
 ### 8.4 Cross-window coordination
 
 Two tabs of one origin share the OPFS vault, so "which blobs are still live" and "who

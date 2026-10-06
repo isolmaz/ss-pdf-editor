@@ -93,6 +93,8 @@ export interface PdfPageSize {
   readonly height: number;
   /** Effective rotation (source rotation + requested rotation), in degrees. */
   readonly rotation: number;
+  /** The page box in PDF user space, `[x0, y0, x1, y1]` (`viewport.viewBox`). */
+  readonly viewBox: readonly [number, number, number, number];
 }
 
 /** One outline entry the shell can render: title plus its 0-based target page. */
@@ -169,6 +171,8 @@ export interface PdfDocumentHandle {
    * stay visible rather than being dropped silently.
    */
   getOutline(): Promise<readonly PdfOutlineEntry[]>;
+  /** The file's page labels (`/PageLabels`), one per page; `null` when it defines none. */
+  getPageLabels(): Promise<readonly string[] | null>;
   /**
    * The page's text runs with their geometry: the read
    * side of the text writer's own verification and of any selection path that
@@ -340,7 +344,17 @@ export async function openWithPdfjs(
     async getPageSize(pageIndex, scale, rotation) {
       const page = await document.getPage(pageIndex + 1);
       const viewport = page.getViewport({ scale, ...(rotation === undefined ? {} : { rotation }) });
-      return { width: viewport.width, height: viewport.height, rotation: viewport.rotation };
+      const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = viewport.viewBox;
+      return {
+        width: viewport.width,
+        height: viewport.height,
+        rotation: viewport.rotation,
+        viewBox: [x0, y0, x1, y1],
+      };
+    },
+
+    async getPageLabels() {
+      return document.getPageLabels();
     },
 
     async renderPage(pageIndex, canvas, renderOptions) {

@@ -1,4 +1,5 @@
 import type { PdfDocumentHandle } from 'pdf-core';
+import type { AnnotationMark } from 'pdf-core/ops/annotations';
 import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { MessageKey, Translator } from 'pdf-shared';
 import { useEffect, useState } from 'react';
@@ -69,6 +70,8 @@ export interface DocumentPanelProps {
    */
   readonly onEditOutline?: () => void;
   readonly version?: string;
+  /** The session's unwritten marks, drawn on the page thumbnails (`PagesPanel`). */
+  readonly marks?: readonly AnnotationMark[];
   /**
    * Layer state the panel shows, written into the file (`ops/layer-write.ts`).
    * Ownership follows the same rule: the panel holds the view state, the shell holds
@@ -122,6 +125,7 @@ export function DocumentPanel({
   editing,
   onExtract,
   version,
+  marks,
   onNotice,
   onHighlightQuery,
   onLayersChanged,
@@ -176,6 +180,7 @@ export function DocumentPanel({
           onPageAction={onPageAction}
           editing={editing}
           version={version}
+          marks={marks}
           {...(onExtract === undefined ? {} : { onExtract })}
         />
       ) : null}

@@ -23,6 +23,7 @@ import type { MeasureMark } from 'pdf-core/ops/measure';
 import type { MarkTarget } from 'pdf-ui/tools';
 import { describe, expect, it } from 'vitest';
 import {
+  annotationStepLabel,
   buildMarkTargets,
   isEmptyRemoval,
   type MarkedRedaction,
@@ -449,5 +450,32 @@ describe('withThreadRecords', () => {
   it('returns the selection itself when nothing in the file is a thread', () => {
     const keys = ['existing:0:1R'];
     expect(withThreadRecords(keys, [comment('1R'), comment('4R')])).toBe(keys);
+  });
+});
+
+describe('annotationStepLabel', () => {
+  const marked = highlight('h1', [[10, 10, 90, 20]]);
+  const drawn = ink('i1', [10, 40, 90, 60], [[10, 40, 90, 60]]);
+
+  it('names the kind that was drawn, and a delete as a delete', () => {
+    expect(annotationStepLabel([], [marked])).toBe('ann.kind.highlight');
+    expect(annotationStepLabel([marked], [marked, drawn])).toBe('ann.kind.ink');
+    expect(annotationStepLabel([marked, drawn], [drawn])).toBe('ann.remove');
+  });
+
+  it('tells a comment edit from a change to the mark itself', () => {
+    expect(annotationStepLabel([marked], [{ ...marked, contents: 'yorum' }])).toBe('ann.edit');
+    expect(
+      annotationStepLabel([marked], [{ ...marked, review: { state: 'Accepted', author: 'a', at: 'now' } }]),
+    ).toBe('ann.edit');
+    expect(annotationStepLabel([marked], [{ ...marked, rotation: 90 }])).toBe('ann.transform');
+    expect(annotationStepLabel([marked], [{ ...marked, color: '#ff0000', contents: 'x' }])).toBe(
+      'ann.transform',
+    );
+  });
+
+  it('falls back to the panel name only when one step mixes kinds or adds and removes', () => {
+    expect(annotationStepLabel([], [marked, drawn])).toBe('panel.comments');
+    expect(annotationStepLabel([marked], [drawn])).toBe('panel.comments');
   });
 });
