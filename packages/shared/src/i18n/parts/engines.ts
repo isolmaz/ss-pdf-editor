@@ -39,4 +39,6 @@ export const enginesPart = {
   'op.note.ocr.overwriteIsAdditive': 'Üzerine yaz modu mevcut metni silmez; yeni katman eklenir.',
   'op.note.ocr.lowConfidence': 'Sayfa {page}: düşük güvenilirlik (%{confidence}).',
   'op.note.ocr.hiddenLayer': 'Metin katmanı görünmez yazıldı; seçilebilir ve aranabilir.',
+  'op.note.ocr.bestModel':
+    'Seçilen dillerden bazılarının yalnızca en yüksek kalite modeli var; tanıma o modelle yapıldı (daha yavaş, daha doğru).',
 } as const;

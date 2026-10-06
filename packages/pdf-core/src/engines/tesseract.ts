@@ -33,8 +33,57 @@ export type OcrWord = {
   readonly confidence: number;
 };
 
-export type OcrLanguageCode = 'tur' | 'eng';
+/**
+ * Every language pack the build serves (tesseract's codes). Turkish and English ship both
+ * models and are cached for offline use with the OCR package; the others ship the
+ * integerized "best" model only and are fetched from this origin the first time they are
+ * used (the service worker keeps them after that). The `4.0.0` packs also carry the legacy
+ * engine's data, which the LSTM-only worker never reads: for Chinese it is 27 MB, more than
+ * the 25 MiB a deployed asset may be, and over the extra languages it would add ~190 MB
+ * the worker cannot use.
+ */
+export const OCR_LANGUAGE_CODES_ALL = [
+  'tur',
+  'eng',
+  'deu',
+  'fra',
+  'spa',
+  'ita',
+  'por',
+  'nld',
+  'pol',
+  'ces',
+  'hun',
+  'ron',
+  'swe',
+  'aze',
+  'kmr',
+  'rus',
+  'ukr',
+  'bul',
+  'ell',
+  'ara',
+  'fas',
+  'heb',
+  'hin',
+  'chi_sim',
+  'chi_tra',
+  'jpn',
+  'kor',
+] as const;
+export type OcrLanguageCode = (typeof OCR_LANGUAGE_CODES_ALL)[number];
 export type OcrQuality = 'fast' | 'best';
+
+/** The languages that ship the `fast` model too. */
+const FAST_LANGUAGES: ReadonlySet<OcrLanguageCode> = new Set(['tur', 'eng']);
+
+/**
+ * The quality a run can have: `fast` only when every language has a fast model, since one
+ * worker loads every language from one directory. Otherwise the run uses `best`.
+ */
+export function effectiveOcrQuality(languages: readonly OcrLanguageCode[], quality: OcrQuality): OcrQuality {
+  return quality === 'fast' && languages.some((language) => !FAST_LANGUAGES.has(language)) ? 'best' : quality;
+}
 
 export interface RecognizeInput {
   readonly image: Blob;

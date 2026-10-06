@@ -37,6 +37,7 @@
 
 import { ToolError } from 'pdf-shared';
 import type { PDFPageProxy } from 'pdfjs-dist';
+import { embedGlyphless, type GlyphlessFace } from '../engines/glyphless-font';
 import { mapMupdfError } from '../engines/mupdf';
 import {
   addPageResource,
@@ -49,7 +50,10 @@ import {
 } from '../engines/mupdf-write';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
 import {
+  effectiveOcrQuality,
   isOcrLanguageAvailable,
+  OCR_LANGUAGE_CODES_ALL,
+  type OcrLanguageCode,
   type OcrWord,
   recognizePage,
   terminateOcrWorkers,
@@ -58,9 +62,9 @@ import { note, type OperationContext, type OperationOutcome, throwIfAborted } fr
 
 export type OcrQuality = 'fast' | 'best';
 
-/** Language packs that ship pinned; more can be added without code changes. */
-export const OCR_LANGUAGES = ['tur', 'eng'] as const;
-export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
+/** Language packs that ship pinned (`engines/tesseract.ts`). */
+export const OCR_LANGUAGES = OCR_LANGUAGE_CODES_ALL;
+export type OcrLanguage = OcrLanguageCode;
 
 export interface OcrOptions {
   readonly pages: readonly number[];
@@ -122,11 +126,12 @@ export async function ocrDocument(
   if (options.pages.length === 0) {
     throw new ToolError('selection-empty', { engine: 'tesseract', engineMessage: 'no page selected' });
   }
+  const quality = effectiveOcrQuality(options.languages, options.quality);
   for (const language of options.languages) {
-    if (!(await isOcrLanguageAvailable(language, options.quality))) {
+    if (!(await isOcrLanguageAvailable(language, quality))) {
       throw new ToolError('ocr-language-missing', {
         engine: 'tesseract',
-        engineMessage: `${language} (${options.quality}) is not available at its pinned path`,
+        engineMessage: `${language} (${quality}) is not available at its pinned path`,
       });
     }
   }
@@ -171,7 +176,7 @@ export async function ocrDocument(
         image,
         scale,
         languages: options.languages,
-        quality: options.quality,
+        quality,
         signal: context.signal,
         onProgress: (fraction) => {
           context.onProgress?.({
@@ -244,6 +249,7 @@ export async function ocrDocument(
               confidence: Math.round(page.confidence),
             }),
           ),
+          ...(quality !== options.quality ? [note('changed', 'op.note.ocr.bestModel')] : []),
           note('preserved', 'op.note.ocr.hiddenLayer'),
         ],
         inputBytes: bytes.byteLength,
@@ -374,6 +380,12 @@ export interface OcrLayerPage {
  * squeezing its advance to the box width, and a text matrix turned by the direction
  * of the box's bottom edge — which is what puts a rotated page's layer back on top of
  * the words once the viewer applies `/Rotate`.
+ *
+ * A word Noto Sans can spell is drawn in it; any other (Arabic, Hebrew, Devanagari, CJK)
+ * in the glyph-less font (`engines/glyphless-font.ts`), whose CIDs are the word's UTF-16
+ * code units. A right-to-left word is written in visual order, its grapheme clusters
+ * reversed, the order a PDF producer draws glyphs in and the order extractors undo with
+ * the Unicode bidi algorithm; written in logical order it came back reversed.
  */
 export async function writeOcrLayer(
   bytes: Uint8Array,
@@ -384,6 +396,8 @@ export async function writeOcrLayer(
   try {
     const pages = pageObjects(doc);
     const font = await embedNotoSans(mupdf, doc);
+    // Only embedded when a word needs it.
+    let glyphless: GlyphlessFace | null = null;
     for (const layer of layers) {
       throwIfAborted(context.signal);
       if (layer.words.length === 0) continue;
@@ -396,6 +410,7 @@ export async function writeOcrLayer(
         });
       }
       const fontKey = addPageResource(doc, page, 'Font', 'OcrFont', font.ref);
+      let glyphlessKey: string | null = null;
       const invisible = addPageResource(
         doc,
         page,
@@ -413,7 +428,14 @@ export async function writeOcrLayer(
         const end = layer.toPdfPoint(word.x1, word.y1);
         const radians = Math.atan2(end[1] - start[1], end[0] - start[0]);
         const size = Math.max(MIN_WORD_SIZE, word.y1 - word.y0);
-        const natural = font.widthOfTextAtSize(word.text, size);
+        const native = font.covers(word.text);
+        if (!native && glyphlessKey === null) {
+          glyphless ??= embedGlyphless(doc);
+          glyphlessKey = addPageResource(doc, page, 'Font', 'OcrScript', glyphless.ref);
+        }
+        const face = native || glyphless === null ? font : glyphless;
+        const text = native ? word.text : visualOrder(word.text);
+        const natural = face.widthOfTextAtSize(text, size);
         const target = word.x1 - word.x0;
         // Squeeze the run to the measured box width: the glyph height stays the box
         // height, only the horizontal advance is scaled, which is what keeps a word
@@ -426,8 +448,8 @@ export async function writeOcrLayer(
         const cos = Math.cos(radians);
         const sin = Math.sin(radians);
         operators.push(
-          `q /${invisible} gs BT /${fontKey} ${num(size)} Tf ${num(squeeze)} Tz`,
-          `${[cos, sin, -sin, cos, start[0], start[1]].map(num).join(' ')} Tm ${font.encode(word.text)} Tj ET Q`,
+          `q /${invisible} gs BT /${native ? fontKey : glyphlessKey} ${num(size)} Tf ${num(squeeze)} Tz`,
+          `${[cos, sin, -sin, cos, start[0], start[1]].map(num).join(' ')} Tm ${face.encode(withGap(text))} Tj ET Q`,
         );
       }
       appendPageContent(doc, page, operators.join('\n'));
@@ -439,6 +461,41 @@ export async function writeOcrLayer(
   } finally {
     doc.destroy();
   }
+}
+
+/** Han, kana and their punctuation: scripts that put no space between words. */
+const UNSPACED = /[\u3000-\u30FF\u3400-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/;
+
+/** Latin, Greek, Cyrillic and general punctuation: words MuPDF already separates. */
+const MEASURED = /^[ -\u052F\u1E00-\u1FFF\u2000-\u206F]*$/;
+
+/**
+ * The word with a space beside it, where extraction needs one. MuPDF finds the gap
+ * between two words from where their glyphs end, and in Devanagari, Arabic, Hebrew,
+ * Korean and the glyph-less words those ends did not show a gap — `नमस्ते दुनिया` came
+ * out as one word, which search then missed. A space drawn beside the word (outside its
+ * box; nothing is visible) is read as the separator: after it, or before it in visual
+ * order for a right-to-left word, which is after it once read. Latin, Greek and Cyrillic
+ * need none, and Chinese and Japanese get none: they do not separate words with spaces.
+ */
+function withGap(text: string): string {
+  if (MEASURED.test(text) || UNSPACED.test(text)) return text;
+  return RIGHT_TO_LEFT.test(text) ? ` ${text}` : `${text} `;
+}
+
+/** Hebrew, Arabic, Syriac, Thaana, NKo, Samaritan, Mandaic and their presentation forms. */
+const RIGHT_TO_LEFT = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+
+/**
+ * A right-to-left word in the order its glyphs stand on the page: grapheme clusters
+ * reversed, so an Arabic letter keeps its marks. Any other word is returned as it is.
+ */
+export function visualOrder(text: string): string {
+  if (!RIGHT_TO_LEFT.test(text)) return text;
+  const clusters = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map(
+    (part) => part.segment,
+  );
+  return clusters.reverse().join('');
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -104,6 +104,7 @@ export type FieldSpec =
       readonly kind: 'checkboxList';
       readonly options: readonly FieldOption[];
       readonly defaultValue: readonly string[];
+      readonly columns?: number;
     } & FieldBase)
   | ({ readonly kind: 'color'; readonly defaultValue: string } & FieldBase)
   | ({ readonly kind: 'image'; readonly accept: string } & FieldBase)

@@ -496,6 +496,9 @@ export function FieldList({
 
       case 'checkboxList': {
         const current = values[field.id];
+        const items = field.options.map((option) => (
+          <Checkbox.Item key={option.value} label={t(option.labelKey)} value={option.value} />
+        ));
         return (
           <Checkbox.Group
             key={field.id}
@@ -505,9 +508,17 @@ export function FieldList({
             value={Array.isArray(current) ? (current as readonly string[]).slice() : []}
             onValueChange={(next) => set(field.id, next)}
           >
-            {field.options.map((option) => (
-              <Checkbox.Item key={option.value} label={t(option.labelKey)} value={option.value} />
-            ))}
+            {field.columns === undefined || field.columns <= 1 ? (
+              items
+            ) : (
+              // The radio group's wrapper, for the same reason (see `radio`).
+              <div
+                className="grid gap-1"
+                style={{ gridTemplateColumns: `repeat(${field.columns}, minmax(0, 1fr))` }}
+              >
+                {items}
+              </div>
+            )}
           </Checkbox.Group>
         );
       }
