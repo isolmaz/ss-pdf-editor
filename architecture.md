@@ -2150,6 +2150,10 @@ Versioning is the interesting half:
   `apps/web/src/offline-packages.json` — the single list, read by the app *and* by the
   build. A capability is ready only when every path it needs is cached, with the missing
   ones named; a substring check would report a half-downloaded language pack as ready.
+  The shell asks only about the capabilities the preparation fetches
+  (`incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }))`): `tesseract`
+  is cached on first use, and counting it made every finished preparation read as
+  incomplete.
 - A cache written under a different identity is not evidence for this build:
   `matchesBuild` is false and nothing may be called ready.
 - The worker only ever caches paths from the build's own manifest. A page cannot hand it an

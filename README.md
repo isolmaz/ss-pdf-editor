@@ -344,8 +344,10 @@ nothing leaving the browser.
     Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian,
     Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and
     traditional), Japanese and Korean.
-  - Turkish and English are in the offline package. The other packs are served by this site
-    and downloaded the first time you choose them; after that they work offline too.
+  - The OCR engine and every language pack are served by this site. Turkish and English are
+    the two packs listed in the offline manifest, but Settings → Offline use does not fetch
+    them (see [Offline use](#offline-use)). The engine and each pack are downloaded the first
+    time you run OCR with them; after that they work offline too.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
     Right-to-left words come back in reading order.
@@ -721,13 +723,17 @@ pnpm worker:deploy:dry      # same, with --dry-run
 - **Shell.** The editor's start page, the scripts it starts with and its Turkish and
   English text are cached when the worker installs, so a reload without a network still
   shows a working home screen.
-- **On request only.** Everything else is precached only when you ask for it, in
+- **On request only.** The rest is precached only when you ask for it, in
   Settings → Offline use.
-  It covers the shell, pdf.js, MuPDF and the fonts. OCR is not included, and neither is the
-  PDF/A converter (15.5 MB of WebAssembly): it is cached the first time the tool runs and
-  works offline after that.
-- **Readiness.** It is checked path by path. A half-downloaded pack is reported as
-  `missing`, with the missing paths named.
+  It covers the shell, pdf.js, MuPDF and the fonts. It does not fetch OCR, although the
+  manifest lists a `tesseract` capability (the OCR engine and the Turkish and English
+  packs), and it does not fetch the PDF/A converter (15.5 MB of WebAssembly) either. The
+  service worker stores any file under `/engines/` the first time it is fetched, so the OCR
+  engine, a language pack and the converter are cached when you first use them online and
+  work offline after that.
+- **Readiness.** It is checked path by path, for the same capabilities the preparation
+  fetches; OCR, cached on first use, is not counted against it. A half-downloaded pack is
+  reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
   reads an older cache.
 

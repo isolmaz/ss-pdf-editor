@@ -122,7 +122,8 @@ export const shellPart = {
   'settings.sweep.hint': 'Artık hiçbir belgeye ait olmayan eski kopyaları temizler.',
   'settings.sweep.action': 'Temizle',
   'settings.offline': 'Çevrimdışı paketler',
-  'settings.offline.hint': 'Düzenleme motorlarını bu cihaza indirir; internet yokken de çalışır.',
+  'settings.offline.hint':
+    'PDF motorlarını ve yazı tiplerini bu cihaza indirir; burada kullandığınız araçlar internet yokken de çalışır.',
   'settings.offline.check': 'Durumu denetle',
   'settings.offline.prepare': 'Hazırla',
   'settings.shortcuts.open': 'Göster',

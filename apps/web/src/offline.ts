@@ -274,9 +274,14 @@ export async function prepareOffline(
   );
 }
 
-/** The capabilities whose assets are absent, for a notice that names what is missing. */
-export function incompleteCapabilities(readiness: WorkerReadiness): readonly string[] {
-  return Object.entries(readiness.capabilities)
-    .filter(([, value]) => !value.ready)
-    .map(([name]) => name);
+/**
+ * The capabilities among `wanted` whose assets are absent, for a notice that names what is
+ * missing. Only what the preparation fetches is asked about: OCR is cached the first time it
+ * runs, so its absence after "Prepare" is not an unfinished preparation.
+ */
+export function incompleteCapabilities(
+  readiness: WorkerReadiness,
+  wanted: readonly OfflineCapability[],
+): readonly OfflineCapability[] {
+  return wanted.filter((name) => readiness.capabilities[name]?.ready === false);
 }
