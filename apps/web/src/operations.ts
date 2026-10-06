@@ -639,6 +639,11 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'convert.ts lays another format out as a brand-new PDF and writes its headings as the outline and its links as link annotations; nothing of a PDF source exists to keep',
   },
   {
+    steps: ['scan.compose'],
+    mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox'],
+    why: 'scan.ts composes the scanned pages through images.ts into a brand-new document; nothing of a source survives by construction',
+  },
+  {
     steps: ['images.create'],
     mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox'],
     why: 'images.ts creates a brand-new document; nothing of the source survives by construction',

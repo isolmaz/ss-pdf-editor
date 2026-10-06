@@ -15,6 +15,7 @@
 
 import {
   ArrowsIn,
+  Camera,
   Certificate,
   Crop,
   Database,
@@ -100,6 +101,7 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'tools.numbering', category: 'pages', icon: ListNumbers, descriptionKey: 'home.tool.numbering' },
   { id: 'file.convert', category: 'convert', icon: FileArrowUp, descriptionKey: 'home.tool.convert' },
   { id: 'file.create-images', category: 'convert', icon: Images, descriptionKey: 'home.tool.createImages' },
+  { id: 'file.scan', category: 'convert', icon: Camera, descriptionKey: 'home.tool.scan' },
   {
     id: 'tools.export-images',
     category: 'convert',
