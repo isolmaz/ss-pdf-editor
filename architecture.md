@@ -1302,10 +1302,12 @@ title, author, subject, keywords, creator and dates (`/DOCINFO`) and `/Lang`. Th
 one the engine converts with, so the intent describes the colours it produced. The Producer
 cannot be set: Ghostscript writes `GPL Ghostscript 10.06.0`, and the report says so.
 
-**Pipeline.** (1) `checkPdfA` on the input; a file that already claims the part and breaks no
-rule is returned as it is (`incremental: true`). (2) `prepareForPdfA` (`ops/pdfa-prepare.ts`).
-(3) Ghostscript with `-dPDFA=N -dPDFACompatibilityPolicy=1 -sColorConversionStrategy=RGB
--dAutoRotatePages=/None -dUseCropBox` and no downsampling. (4) `checkPdfA(output, { part })`:
+**Pipeline.** (1) `checkPdfA` on the input; a file that already claims the part, breaks no
+rule and leaves no rule unchecked (the same bar as step 4) is returned as it is
+(`incremental: true`); a file whose content could not all be read is converted.
+(2) `prepareForPdfA` (`ops/pdfa-prepare.ts`). (3) Ghostscript with `-dPDFA=N
+-dPDFACompatibilityPolicy=1 -sColorConversionStrategy=RGB -dAutoRotatePages=/None
+-dUseCropBox` and no downsampling. (4) `checkPdfA(output, { part })`:
 **a file that breaks a rule, or any rule that could not run, throws `pdfa-not-compliant`** and
 no bytes are offered. (5) Read-back: page count equal; the share of the input's words the output
 still extracts on up to 12 sampled pages (`wordRecall`, warning under 90 %); a 360 px grey render

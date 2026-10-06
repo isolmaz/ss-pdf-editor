@@ -375,6 +375,8 @@ nothing leaving the browser.
     and 3b.
   - Before the result is offered, the checker runs on it. **A file that breaks a rule is never
     handed over**: the operation stops and says which rule failed.
+  - A file that already claims the chosen level is left as it is only when it passes every
+    rule and the checker could read all of it; otherwise it is converted like any other.
   - The checker covers 20 rule groups (header and trailer, encryption, streams, XMP and the
     `pdfaid` claim, output intent, device colour, transparency, fonts, images, actions,
     annotations, forms, layers, embedded files). It reports each rule as passed, broken (with
