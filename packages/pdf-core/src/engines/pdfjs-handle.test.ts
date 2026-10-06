@@ -103,3 +103,21 @@ describe('loadPdfjs', () => {
     expect(state.attempts).toBe(1);
   });
 });
+
+describe('openWithPdfjs', () => {
+  it('reports a chunk the browser could not fetch as offline, not as a damaged file', async () => {
+    const { openWithPdfjs } = await freshLoader();
+    const original = state.error;
+    state.error = new TypeError('Failed to fetch dynamically imported module: /editor/assets/pdf-1.js');
+    state.failures = 1;
+    try {
+      await expect(openWithPdfjs(new Uint8Array([37, 80, 68, 70]))).rejects.toMatchObject({
+        name: 'ToolError',
+        code: 'asset-offline',
+        details: { engine: 'pdfjs' },
+      });
+    } finally {
+      state.error = original;
+    }
+  });
+});

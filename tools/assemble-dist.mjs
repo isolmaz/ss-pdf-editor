@@ -73,9 +73,38 @@ for (const file of [...pinned].sort((left, right) => (left.path < right.path ? -
 const version = `${stamp}-${digest.digest('hex').slice(0, 12)}`;
 
 const packages = JSON.parse(readFileSync(join(root, 'apps/web/src/offline-packages.json'), 'utf8'));
+
+/**
+ * The interface catalogues, as the paths the build gave them. Each language is a chunk of
+ * its own that the entry fetches at run time, so the worker's crawl of `index.html` never
+ * sees one — and a shell reloaded offline without its catalogue paints raw message keys.
+ * The chunk names are hashed, so they are read from the bundler's own record: the source
+ * map whose `sources` holds a registered language's `i18n/<id>.ts`. A language with no
+ * chunk is a failure, not an omission.
+ */
+function catalogueChunks(dir) {
+  const registry = readFileSync(join(root, 'packages/shared/src/i18n/locales.ts'), 'utf8');
+  const ids = [...registry.matchAll(/\bid: '([a-z-]+)'/g)].map((match) => match[1]);
+  const found = new Map();
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.js.map')) continue;
+    for (const source of JSON.parse(readFileSync(join(dir, name), 'utf8')).sources ?? []) {
+      const id = /packages\/shared\/src\/i18n\/([a-z-]+)\.ts$/.exec(source)?.[1];
+      if (id !== undefined && ids.includes(id))
+        found.set(id, `/editor/assets/${name.slice(0, -'.map'.length)}`);
+    }
+  }
+  const missing = ids.filter((id) => !found.has(id));
+  if (ids.length === 0 || missing.length > 0) {
+    console.error(`assemble-dist: no catalogue chunk for ${missing.join(', ') || 'any language'}`);
+    process.exit(1);
+  }
+  return ids.map((id) => found.get(id));
+}
+const shell = catalogueChunks(join(root, 'apps/web/dist/assets'));
 writeFileSync(
   join(out, 'offline-manifest.json'),
-  `${JSON.stringify({ version, capabilities: packages.capabilities }, null, 2)}\n`,
+  `${JSON.stringify({ version, capabilities: packages.capabilities, shell }, null, 2)}\n`,
 );
 
 /**

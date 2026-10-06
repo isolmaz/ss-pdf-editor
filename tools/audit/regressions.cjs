@@ -233,6 +233,9 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
     async keys() {
       return [...cached.keys()].map((url) => ({ url: new URL(url, 'https://local.test').href }));
     },
+    async addAll(urls) {
+      for (const url of urls) await cache.put(url, await context.fetch(url));
+    },
   };
   const context = {
     URL,
@@ -262,9 +265,16 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
       // The build's manifest is what the worker reads before it is willing to cache
       // anything: only paths listed there may enter the static cache.
       if (String(url).includes('/offline-manifest.json')) {
-        return new Response(JSON.stringify({ version: 'v1', capabilities: { core: ['/engines/core.js'] } }), {
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            capabilities: { core: ['/engines/core.js'] },
+            shell: ['/editor/assets/en-1.js', 'https://remote.test/x.js', '/elsewhere/tr.js'],
+          }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
       }
       return new Response('network');
     },
@@ -500,6 +510,17 @@ async function main() {
     const fetched = h.requests.filter((url) => !String(url).includes('/offline-manifest.json'));
     assert.deepEqual(fetched, ['/engines/core.js']);
     assert.equal(messages[0].count, 1);
+  });
+  await check('service-worker install caches the shell and its catalogues, only from the build', async () => {
+    const h = swHarness();
+    const event = h.dispatch('install');
+    await Promise.all(event.lifetimes);
+    // A language is a run-time chunk the HTML crawl never names: without it an offline
+    // reload paints raw message keys. Only the manifest's `/editor/assets/` paths are taken.
+    assert.ok(h.cached.has('/editor/index.html'));
+    assert.ok(h.cached.has('/editor/assets/en-1.js'));
+    assert.equal(h.requests.includes('https://remote.test/x.js'), false);
+    assert.equal(h.requests.includes('/elsewhere/tr.js'), false);
   });
   await check('message work extends the service-worker lifetime', async () => {
     const h = swHarness();

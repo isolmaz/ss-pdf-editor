@@ -456,6 +456,37 @@ export async function encryptedToolFixturePdf(
   }
 }
 
+/** The same fixture with an Info `/Author` (and `/Subject`) set by the pinned MuPDF: metadata to remove or show. */
+export async function authoredToolFixturePdf(author: string, subject: string): Promise<Uint8Array> {
+  interface MupdfBuffer {
+    asUint8Array(): Uint8Array;
+    destroy(): void;
+  }
+  interface MupdfModule {
+    readonly Document: {
+      openDocument(
+        bytes: Uint8Array,
+        magic: string,
+      ): {
+        asPDF(): {
+          setMetaData(key: string, value: string): void;
+          saveToBuffer(options: string): MupdfBuffer;
+        };
+      };
+    };
+  }
+  const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as MupdfModule;
+  const pdf = mupdf.Document.openDocument(toolFixturePdf(), 'application/pdf').asPDF();
+  pdf.setMetaData('info:Author', author);
+  pdf.setMetaData('info:Subject', subject);
+  const buffer = pdf.saveToBuffer('');
+  try {
+    return new Uint8Array(buffer.asUint8Array());
+  } finally {
+    buffer.destroy();
+  }
+}
+
 /**
  * One object of the produced file, printed by MuPDF: a page's dictionary entry (`page` is
  * the 0-based index), an entry below the catalogue (`null`) or of the trailer (`'trailer'`). `''` when absent.

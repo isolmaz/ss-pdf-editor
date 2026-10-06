@@ -262,7 +262,9 @@ export const SHELL_SHORTCUTS: readonly ShellShortcut[] = [
     id: 'view.reading',
     group: 'view',
     labelKey: 'nav.readingMode',
-    chords: [{ key: 'h', accel: true }],
+    // F9, the reader-view key of Edge and Firefox. It was `Ctrl+H`, which find and replace
+    // took over (the word processors' chord), and the earlier row always won.
+    chords: [{ key: 'F9' }],
     run: (shortcuts) => shortcuts.reading(),
   },
   {
@@ -339,6 +341,7 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   Backspace: 'Backspace',
   F4: 'F4',
   F5: 'F5',
+  F9: 'F9',
 };
 
 /** `Ctrl+Shift+S`, `PageDown`, `Ctrl++` — derived from the chord, never written twice. */

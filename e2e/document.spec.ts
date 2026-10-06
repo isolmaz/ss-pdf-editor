@@ -13,7 +13,7 @@ test.describe('opening a document', () => {
   test('a one-page PDF opens in the viewer with its page count', async ({ page }) => {
     await page.goto('/editor/');
 
-    const input = page.locator('input[type="file"][accept="application/pdf"]');
+    const input = page.locator('input[type="file"][accept*="application/pdf"]').first();
     await input.setInputFiles({
       name: 'fixture.pdf',
       mimeType: 'application/pdf',

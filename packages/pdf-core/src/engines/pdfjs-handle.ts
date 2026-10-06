@@ -237,7 +237,10 @@ export async function openWithPdfjs(
   const { signal } = options;
   if (signal?.aborted) throw abortError();
 
-  const pdfjs = await loadPdfjs();
+  // A chunk that cannot be fetched is not a damaged file: it maps to `asset-offline`.
+  const pdfjs = await loadPdfjs().catch((error: unknown) => {
+    throw mapPdfjsError(error);
+  });
   // Loading the chunk is asynchronous too, and an abort that arrives during it must not
   // start a parse the caller has already given up on.
   if (signal?.aborted) throw abortError();
