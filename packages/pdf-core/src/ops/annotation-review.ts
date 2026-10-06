@@ -10,7 +10,8 @@
  *    it answers, with `/RT /R` (the default, so it is not written);
  *  - a **review state** is the same shape plus `/State` and `/StateModel`: `Review`
  *    with `Accepted`, `Rejected`, `Cancelled`, `Completed` or `None`, or `Marked` with
- *    `Marked`/`Unmarked`. A state is a record, not a field of the comment: each one
+ *    `Marked`/`Unmarked`, both text strings (ISO 32000-1 Table 172; a file that wrote them
+ *    as names is still read). A state is a record, not a field of the comment: each one
  *    says who set what and when, and the newest is the comment's state.
  *
  * Both are written with an **empty appearance**. A reply lives in the comment list, not
@@ -159,7 +160,10 @@ export async function writeCommentReview(
             record.kind === 'reply' ? record.contents : stateContents(record.state, record.author),
           ),
           AP: { N: appearance },
-          ...(record.kind === 'state' ? { State: record.state, StateModel: 'Review' } : {}),
+          // Text strings (ISO 32000-1 Table 172), not names: a bare JS string becomes a name.
+          ...(record.kind === 'state'
+            ? { State: text(doc, record.state), StateModel: text(doc, 'Review') }
+            : {}),
         });
         if (colour?.isArray() === true) dict.put('C', colour);
         annotsOf(doc, page, true)?.push(dict);
@@ -239,7 +243,7 @@ async function verifyReview(
         if (readText(dict.get('NM')) !== record.id || readName(dict.get('Subtype')) !== 'Text') continue;
         const irt = dict.get('IRT');
         if (!irt.isIndirect() || referenceOf(irt) !== record.parentId) continue;
-        if (record.kind === 'state' && readName(dict.get('State')) !== record.state) continue;
+        if (record.kind === 'state' && readText(dict.get('State')) !== record.state) continue;
         found = true;
       }
       if (!found || !parentPresent) missing.push(record.id);

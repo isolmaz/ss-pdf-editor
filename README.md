@@ -129,9 +129,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   text readable, and freehand strokes stay continuous in the exported file.
 - **Comment threads.** In the Notes panel every comment can be answered and given a review
   status (Accepted, Rejected, Cancelled, Completed), as in Acrobat.
-  - A reply is a real PDF reply (`/IRT`) and a status is a real `/State` record, so Acrobat,
-    Foxit and other readers show the same thread. Replies and statuses already in a file
-    are listed under their comment.
+  - A reply is a real PDF reply (`/IRT`) and a status is a real `/State` record (text
+    strings, as the PDF standard defines them), so Acrobat, Foxit and other readers show
+    the same thread. Replies and statuses already in a file are listed under their comment.
   - A comment already in the file gets the reply at once, as one undoable step. A comment
     not saved yet keeps it until the comment itself is written.
   - Deleting a comment deletes its replies and statuses with it.

@@ -1894,8 +1894,10 @@ review state on itself (`AnnotationMark.replies`, `.review`), and `writeAnnotati
 writes them once `markerTargets` has resolved the reference the mark was given. A reply to a
 file comment is written at once through `writeFileAnnotation`, as one journal step. The
 writer refuses a parent that is not on its page or is a popup, widget or link, and reads
-every record back by `/NM`, `/IRT` and `/State`. pdf.js reports `/State` and `/StateModel`
-as name objects (`{ name }`), which `readAnnotations` unwraps.
+every record back by `/NM`, `/IRT` and `/State`. `/State` and `/StateModel` are written as
+text strings (ISO 32000-1 Table 172; a bare JS string would become a name). pdf.js passes
+them through as strings, or as name objects (`{ name }`) for a file that wrote names, and
+`readAnnotations` unwraps both.
 
 **XFDF** (`ops/annotation-xfdf.ts`, loaded on demand) exports the file's comments
 (`readAnnotations`) and the session's marks together, each with its thread, in PDF user
