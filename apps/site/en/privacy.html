@@ -188,7 +188,54 @@
           <div>
             <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Control Over Saving and Downloading</h2>
             <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Whether to save or download the final file you edited is entirely up to you. When you close the tab, the working copy in memory is deleted automatically.
+              Whether to save or download the final file you edited is entirely up to you. So that a window
+              closed by mistake loses nothing, unsaved changes are kept as a draft in this browser only and come
+              back when you open the editor again; closing the document's tab in the editor deletes its draft too.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">What Stays on Your Device</h2>
+            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              None of it goes to a server; it stays in this browser's own storage only:
+            </p>
+            <ul class="mt-2 list-disc space-y-1 ps-5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              <li>
+                Drafts: unsaved work and, where needed, the document's source copy (the browser's private file
+                system, OPFS).
+              </li>
+              <li>
+                The recent documents list: file name, size and page count (localStorage). In Chromium-based
+                browsers a reference to the file is kept too, so it can be reopened (IndexedDB); not the file's
+                contents.
+              </li>
+              <li>
+                Signature pictures you keep with “Remember on this device” (six at most), and the trust roots and
+                revocation lists you import.
+              </li>
+              <li>
+                Theme, language, interface mode and your recent commands; the app and engine files for offline use
+                (no documents).
+              </li>
+            </ul>
+            <p class="mt-2 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              Opening an encrypted (password-protected) document starts a sensitive session: that document's draft,
+              source copy and file reference are not kept, and the list shows only its name, size and page count.
+              You can turn the same setting on yourself with
+              <strong class="font-medium text-kumo-strong">Settings → Privacy and storage → Sensitive
+              session</strong>; turning it on deletes that document's stored copies. Delete a document's stored copies
+              with <strong class="font-medium text-kumo-strong">Delete Stored Copies of This Document</strong> in the
+              same section, and an entry of the recent list with the delete button beside it. Deleting does not
+              overwrite the bytes on disk; it is not secure erasure.
             </p>
           </div>
         </div>

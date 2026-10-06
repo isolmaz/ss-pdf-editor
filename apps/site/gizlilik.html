@@ -191,8 +191,54 @@
           <div>
             <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Kayıt ve İndirme Denetimi</h2>
             <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Düzenlediğiniz nihai dosyayı kaydetme veya indirme kararı tamamen size aittir. Sekmeyi kapattığınızda
-              bellekteki çalışma kopyası otomatik olarak silinir.
+              Düzenlediğiniz nihai dosyayı kaydetme veya indirme kararı tamamen size aittir. Kaydetmediğiniz
+              değişiklikler, yanlışlıkla kapanan bir pencerede kaybolmasın diye taslak olarak yalnızca bu tarayıcıda
+              tutulur ve düzenleyiciyi yeniden açtığınızda geri gelir; belgenin sekmesini düzenleyicide kapattığınızda
+              taslağı da silinir.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Cihazınızda Saklananlar</h2>
+            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              Hiçbiri sunucuya gitmez; yalnızca bu tarayıcının kendi depolama alanında kalır:
+            </p>
+            <ul class="mt-2 list-disc space-y-1 ps-5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              <li>
+                Taslaklar: kaydedilmemiş çalışma ve gerektiğinde belgenin kaynak kopyası (tarayıcının özel dosya
+                alanı, OPFS).
+              </li>
+              <li>
+                Son açılan belgeler listesi: dosya adı, boyutu ve sayfa sayısı (localStorage). Chromium tabanlı
+                tarayıcılarda dosyayı yeniden açabilmek için dosyaya bir başvuru da tutulur (IndexedDB); dosyanın
+                içeriği değil.
+              </li>
+              <li>
+                “Bu cihazda hatırla” ile sakladığınız imza görselleri (en fazla altı) ve içe aktardığınız güven
+                kökleri ile iptal listeleri.
+              </li>
+              <li>
+                Tema, dil, arayüz modu ve son kullandığınız komutlar; çevrimdışı kullanım için uygulama ve motor
+                dosyaları (belge içermez).
+              </li>
+            </ul>
+            <p class="mt-2 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              Şifreli (parola korumalı) bir belge açtığınızda hassas oturum başlar: o belgenin taslağı, kaynak
+              kopyası ve dosya başvurusu saklanmaz, listede yalnızca adı, boyutu ve sayfa sayısı görünür. Aynı ayarı
+              <strong class="font-medium text-kumo-strong">Ayarlar → Gizlilik ve depolama → Hassas oturum</strong>
+              ile kendiniz de açabilirsiniz; açtığınızda o belgenin kayıtlı kopyaları silinir. Bir belgenin kayıtlı
+              kopyalarını aynı bölümdeki <strong class="font-medium text-kumo-strong">Bu Belgenin Kayıtlı
+              Kopyalarını Sil</strong> ile, son açılanlar listesindeki bir girişi yanındaki silme düğmesiyle
+              kaldırabilirsiniz. Silme, diskteki baytların üzerine yazmaz; güvenli silme değildir.
             </p>
           </div>
         </div>
