@@ -105,7 +105,7 @@ export const mergeFilesDialog: OperationDialogSpec = {
   run: async (params, context) => {
     const picked = Array.isArray(params.files) ? (params.files as readonly File[]) : [];
     if (picked.length < 2) {
-      throw new ToolError('selection-empty', {
+      throw new ToolError('input-missing', {
         engine: 'ui',
         engineMessage: `merge-files: ${picked.length} file(s) picked, two are needed`,
       });

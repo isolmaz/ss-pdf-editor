@@ -246,7 +246,7 @@ export const watermarkDialog: OperationDialogSpec = {
       const picked = Array.isArray(params.image) ? (params.image as readonly File[]) : [];
       const file = picked[0];
       if (file === undefined) {
-        throw new ToolError('unsupported-format', {
+        throw new ToolError('input-missing', {
           engine: 'ui',
           engineMessage: 'watermark: image kind without a picked image',
         });

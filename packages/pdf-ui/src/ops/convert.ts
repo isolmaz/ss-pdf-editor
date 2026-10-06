@@ -71,7 +71,7 @@ export const convertDialog: OperationDialogSpec = {
     const picked = Array.isArray(params.files) ? (params.files as readonly File[]) : [];
     const first = picked[0];
     if (first === undefined) {
-      throw new ToolError('selection-empty', {
+      throw new ToolError('input-missing', {
         engine: 'ui',
         engineMessage: 'convert-to-pdf: no file picked',
       });

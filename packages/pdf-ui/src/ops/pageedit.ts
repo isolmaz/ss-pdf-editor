@@ -75,12 +75,9 @@ async function pickedDocument(
   context: OpRunContext,
 ): Promise<{ readonly name: string; readonly bytes: Uint8Array; readonly pages: readonly number[] }> {
   const picked = pickedFiles(value)[0];
-  // Nothing was picked. `ToolError` carries no custom message key, so the closest
-  // sentence the contract owns is "this file format is not supported" with the
-  // hint "select a PDF file" — which is what the user has to do next
-  // (`ops/file.ts` makes the same call).
+  // Nothing was picked.
   if (picked === undefined) {
-    throw new ToolError('unsupported-format', {
+    throw new ToolError('input-missing', {
       engine: 'ui',
       engineMessage: 'pageedit: no source PDF was picked',
     });
@@ -131,7 +128,7 @@ async function readInsertSource(
     // point they are pictures like any other (`imagesToPdf` does the placing).
     const files = await pickedImages(kind === 'scan' ? params.scans : params.images);
     if (files.length === 0) {
-      throw new ToolError('selection-empty', {
+      throw new ToolError('input-missing', {
         engine: 'ui',
         engineMessage: kind === 'scan' ? 'pageedit: no page was scanned' : 'pageedit: no image was picked',
       });

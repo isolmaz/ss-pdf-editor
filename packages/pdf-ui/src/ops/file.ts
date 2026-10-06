@@ -100,12 +100,9 @@ export const addDocumentDialog: OperationDialogSpec = {
     // is the wider `FieldValue`, so the narrowing is an assertion.
     const picked = Array.isArray(params.source) ? (params.source as readonly File[]) : [];
     const source = picked[0];
-    // Nothing was picked. `ToolError` carries no custom message key
-    // (`pdf-shared/errors.ts`), so the closest sentence the error contract owns is
-    // "this file format is not supported" with the hint "select a PDF file" —
-    // which is exactly what the user has to do next.
+    // Nothing was picked.
     if (source === undefined) {
-      throw new ToolError('unsupported-format', {
+      throw new ToolError('input-missing', {
         engine: 'ui',
         engineMessage: 'add-document: no file was picked',
       });
@@ -221,7 +218,7 @@ export const imagesToPdfDialog: OperationDialogSpec = {
   run: async (params, context) => {
     const picked = Array.isArray(params.images) ? (params.images as readonly File[]) : [];
     if (picked.length === 0) {
-      throw new ToolError('unsupported-format', {
+      throw new ToolError('input-missing', {
         engine: 'ui',
         engineMessage: 'images-to-pdf: no images were picked',
       });

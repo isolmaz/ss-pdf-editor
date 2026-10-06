@@ -65,7 +65,7 @@ export async function imagesToPdf(
 ): Promise<OperationOutcome> {
   throwIfAborted(context.signal);
   if (options.images.length === 0) {
-    throw new ToolError('selection-empty', { engine: 'model', engineMessage: 'no images were handed in' });
+    throw new ToolError('input-missing', { engine: 'model', engineMessage: 'no images were handed in' });
   }
   const margin = marginPoints(options.marginMm);
   const mupdf = await loadMupdf();
