@@ -43,6 +43,7 @@ import { sigValidatePart } from './parts/sigvalidate';
 import { stampPart } from './parts/stamp';
 import { texteditPart } from './parts/textedit';
 import { verifyPart } from './parts/verify';
+import { xfaPart } from './parts/xfa';
 
 export const tr = {
   ...annotationsPart,
@@ -82,6 +83,7 @@ export const tr = {
   ...stampPart,
   ...verifyPart,
   ...sigValidatePart,
+  ...xfaPart,
 
   'open.pdfFilter': 'PDF belgesi',
   'open.progress': 'Belge açılıyor…',

@@ -39,6 +39,7 @@ import type { RedactRect } from 'pdf-core/ops/redact';
 import { inspectProtection, type ProtectionState } from 'pdf-core/ops/security';
 import { verifySignatures } from 'pdf-core/ops/signature-status';
 import type { OperationContext, OperationNote, OperationProgress } from 'pdf-core/ops/types';
+import type { XfaInfo } from 'pdf-core/ops/xfa';
 import {
   addRevocationList,
   addTrustRoot,
@@ -194,6 +195,7 @@ import {
   auditRedactedDocument,
   convertToPdf,
   imagesToPdf,
+  inspectXfa,
   listPdfFonts,
   removeAttachments,
   resizeImageStamp,
@@ -373,6 +375,11 @@ const ScanDialog = lazy(async () => {
 const SignatureDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.SignatureDialog };
+});
+/** Fills a dynamic XFA form in pdf.js's XFA renderer (`XfaFormDialog`). */
+const XfaFormDialog = lazy(async () => {
+  const module = await import('pdf-ui/dialog');
+  return { default: module.XfaFormDialog };
 });
 /**
  * The comparison and accessibility panels read the working bytes and (for the
@@ -785,6 +792,8 @@ export function App({ store }: AppProps) {
     tabId: string;
     version: string;
     fields?: readonly FormFieldInfo[];
+    /** What the version's XFA is (`null`: none); read with the fields, from the same bytes. */
+    xfa?: XfaInfo | null;
     error?: ToolError;
   } | null>(null);
   const [inspectionRevision, setInspectionRevision] = useState(0);
@@ -808,6 +817,8 @@ export function App({ store }: AppProps) {
       ? formInventory
       : null;
   const formFields = currentForms?.fields ?? null;
+  const xfaInfo = currentForms?.xfa ?? null;
+  const [xfaDetailsOpen, setXfaDetailsOpen] = useState(false);
 
   /**
    * The file's annotations for the bytes on screen — `null` while the read is still in
@@ -1308,7 +1319,11 @@ export function App({ store }: AppProps) {
       try {
         const bytes = await materializeBase(contextFor(tab, handle), { signal: controller.signal });
         const fields = await readFormFields(bytes, controller.signal);
-        if (!controller.signal.aborted) setFormInventory({ tabId: tab.id, version: tab.working.id, fields });
+        // A failed XFA read must not hide the form list: the notice is an extra.
+        const xfa = await inspectXfa(bytes).catch(() => null);
+        if (!controller.signal.aborted) {
+          setFormInventory({ tabId: tab.id, version: tab.working.id, fields, xfa });
+        }
       } catch (error) {
         if (!controller.signal.aborted)
           setFormInventory({
@@ -1625,6 +1640,62 @@ export function App({ store }: AppProps) {
       }
     },
     [activeHandle, t],
+  );
+
+  /**
+   * The dynamic XFA form being filled: the tab it belongs to and the bytes frozen when the
+   * dialog opened, so what is saved back is a change to exactly the version that was shown.
+   */
+  const [xfaForm, setXfaForm] = useState<{ readonly tab: SessionTab; readonly bytes: Uint8Array } | null>(
+    null,
+  );
+  const openXfaForm = useCallback(() => {
+    const tab = store.active;
+    const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+    if (tab === null || handle === null) return;
+    if (busyRef.current || cancelRef.current !== null) {
+      refuseBusy();
+      return;
+    }
+    setNotice(null);
+    setBusy(true);
+    void (async () => {
+      try {
+        const bytes = await materializeBase(contextFor(tab, handle));
+        const info = await inspectXfa(bytes);
+        if (info === null) throw new ToolError('no-xfa', { engine: 'mupdf' });
+        if (info.kind === 'static') throw new ToolError('xfa-static', { engine: 'mupdf' });
+        if (store.active?.id === tab.id && store.active.working.id === tab.working.id) {
+          setXfaForm({ tab, bytes });
+        }
+      } catch (error) {
+        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
+        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [contextFor, refuseBusy, setBusy, store, t]);
+
+  /** The XFA dialog's verified bytes become the tab's next working version. */
+  const saveXfaForm = useCallback(
+    async (outcome: OperationOutcome & { readonly changed: number }) => {
+      const form = xfaForm;
+      const handle = form === null ? null : (handles.current.get(form.tab.id) ?? null);
+      if (form === null || handle === null) return;
+      const next = await applyProducedBytes(
+        contextFor(form.tab, handle),
+        outcome.bytes,
+        tabPageCount(form.tab),
+        { key: 'xfa.note.dataSaved', params: { count: outcome.changed } },
+        outcome.report.engine,
+        outcome.report.steps,
+      );
+      setHandle(form.tab.id, next);
+      setXfaForm(null);
+      setNotice(t('xfa.fill.saved', { count: outcome.changed }));
+    },
+    [contextFor, setHandle, t, xfaForm],
   );
 
   /**
@@ -4514,6 +4585,7 @@ export function App({ store }: AppProps) {
           if (activeTab !== null) closeTab(activeTab.id);
         },
         openDialog,
+        openXfaForm,
         showShortcuts,
         openSettings: () => setSettingsOpen(true),
         pageAction: runPageAction,
@@ -4569,6 +4641,7 @@ export function App({ store }: AppProps) {
       leftDock,
       magnifierOn,
       openDialog,
+      openXfaForm,
       openViaPicker,
       pageCount,
       prepareOfflinePackages,
@@ -4913,6 +4986,47 @@ export function App({ store }: AppProps) {
               onClearSelection={() => setSelectedKeys([])}
             />
           )}
+        </div>
+      ) : null}
+      {!isHome && xfaInfo !== null ? (
+        // A form with XFA: said once, plainly, with what can be done. Its own row, shown
+        // when the document opens, so arming a tool never moves the pages.
+        <div
+          role="status"
+          data-testid="xfa-banner"
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-kumo-line bg-kumo-tint px-3 py-1 text-[11px] text-kumo-default"
+        >
+          <span className="min-w-0 flex-1">
+            {t(xfaInfo.kind === 'dynamic' ? 'xfa.banner.dynamic' : 'xfa.banner.static')}{' '}
+            <button
+              type="button"
+              aria-expanded={xfaDetailsOpen}
+              className="underline underline-offset-2 hover:text-kumo-strong"
+              onClick={() => setXfaDetailsOpen((open) => !open)}
+            >
+              {t('xfa.banner.more')}
+            </button>
+          </span>
+          {xfaInfo.kind === 'dynamic' ? (
+            <>
+              <Button size="sm" shape="base" disabled={busy} onClick={openXfaForm}>
+                {t('xfa.banner.fill')}
+              </Button>
+              <Button size="sm" shape="base" disabled={!canEdit} onClick={() => openDialog('xfa-flatten')}>
+                {t('xfa.banner.flatten')}
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" shape="base" disabled={!canEdit} onClick={() => openDialog('xfa-remove')}>
+              {t('xfa.banner.remove')}
+            </Button>
+          )}
+          <Button size="sm" shape="base" disabled={!canEdit} onClick={() => openDialog('xfa-data')}>
+            {t('xfa.banner.data')}
+          </Button>
+          {xfaDetailsOpen ? (
+            <p className="basis-full text-[11px] text-kumo-subtle">{t('xfa.banner.supported')}</p>
+          ) : null}
         </div>
       ) : null}
       <main className="relative min-h-0 flex-1">
@@ -5739,6 +5853,19 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       ) : null}
+      {xfaForm === null ? null : (
+        <Suspense fallback={null}>
+          <XfaFormDialog
+            t={t}
+            bytes={xfaForm.bytes}
+            onClose={() => setXfaForm(null)}
+            onSave={saveXfaForm}
+            onExport={(file) => {
+              downloadFiles([{ name: file.name, bytes: file.bytes, mime: file.mime }]);
+            }}
+          />
+        </Suspense>
+      )}
       {signatureOpen ? (
         <Suspense fallback={null}>
           <SignatureDialog

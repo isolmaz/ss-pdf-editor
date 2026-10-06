@@ -50,6 +50,7 @@ import {
 } from '../engines/mupdf-write';
 import { type FormDataRecord, parseFdf, parseFormJson, serializeFdf, serializeFormJson } from './form-data';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
+import type { XfaFieldSnapshot } from './xfa-data';
 
 export type FormFieldKind =
   | 'text'
@@ -309,6 +310,37 @@ function readFieldValue(field: FieldNode): string | readonly string[] | boolean 
     default:
       return null;
   }
+}
+
+/** Whether the form carries XFA. Most do not, and then nothing XFA is ever loaded. */
+function hasXfaEntry(doc: PDFDocument): boolean {
+  const form = acroFormOf(doc);
+  return form !== null && !form.get('XFA').isNull();
+}
+
+/** The XFA writers bring an XML parser with them: they load only for a form that has XFA. */
+const loadXfa = () => import('./xfa');
+
+/**
+ * The fields as the XFA data sync reads them: kind, `/V` as text, and whether a button is
+ * on. A multi-select list has no single data value, so it is reported as `other`.
+ */
+export function xfaSnapshotsOf(doc: PDFDocument): XfaFieldSnapshot[] {
+  return collectFields(doc).map((field): XfaFieldSnapshot => {
+    const kind = kindOf(field);
+    const value = inherited(field.dict, 'V');
+    if (kind === 'text') return { name: field.name, kind, text: readText(value), on: null };
+    if (kind === 'checkbox' || kind === 'radio') {
+      const state = readName(value);
+      return { name: field.name, kind, text: state, on: state !== null && state !== 'Off' };
+    }
+    if (kind === 'dropdown' || kind === 'optionlist') {
+      const texts = textsOf(value);
+      if (texts.length > 1) return { name: field.name, kind: 'other', text: null, on: null };
+      return { name: field.name, kind, text: texts[0] ?? null, on: null };
+    }
+    return { name: field.name, kind: kind === 'signature' ? 'signature' : 'other', text: null, on: null };
+  });
 }
 
 function optionsOf(field: FieldNode): readonly string[] | null {
@@ -858,9 +890,25 @@ export async function fillFormFields(
       }
     }
 
+    // A static XFA form keeps its data apart from the widgets; an XFA-aware reader draws the
+    // data, so the values written above must reach it too (see xfa-data.ts).
+    const xfaPlan =
+      applied.length > 0 && hasXfaEntry(doc)
+        ? (await loadXfa()).syncXfaInDocument(
+            doc,
+            xfaSnapshotsOf(doc),
+            new Set(applied.map((field) => field.name)),
+          )
+        : null;
     const saved = saveRewrite(doc, 'form.save');
     notes.push(note('changed', 'form.note.filled', { count: applied.length }));
     notes.push(note('preserved', 'form.note.structure'));
+    if (xfaPlan !== null && xfaPlan.changed.length > 0) {
+      notes.push(note('changed', 'xfa.note.synced', { count: xfaPlan.changed.length }));
+    }
+    if (xfaPlan !== null && xfaPlan.skipped.length > 0) {
+      notes.push(note('warning', 'xfa.note.notSynced', { count: xfaPlan.skipped.length }));
+    }
     if (missing.length > 0) notes.push(note('warning', 'form.note.missing', { count: missing.length }));
     notes.push(
       appearancesUpdated
@@ -871,7 +919,10 @@ export async function fillFormFields(
       bytes: saved,
       report: {
         engine: 'mupdf',
-        steps: ['load', 'form.setText', 'save'],
+        steps:
+          xfaPlan !== null && xfaPlan.changed.length > 0
+            ? ['load', 'form.setText', 'xfa.datasets', 'save']
+            : ['load', 'form.setText', 'save'],
         notes,
         inputBytes: bytes.byteLength,
         outputBytes: saved.byteLength,
@@ -1142,11 +1193,13 @@ export async function flattenForm(
   throwIfAborted(context.signal);
   return await withDocument(bytes, 'form.flatten', async (opened) => {
     const { doc } = opened;
-    const form = acroFormOf(doc);
-    if (form !== null && !form.get('XFA').isNull()) {
-      throw new ToolError('unsupported', { engine: 'mupdf', engineMessage: 'XFA flatten is unsupported' });
-    }
     const fields = collectFields(doc);
+    // A form with XFA is flattened through its AcroForm half. A dynamic one has none: its
+    // pages are the XFA template alone, which only the XFA flatten (xfa-flatten.ts) can draw.
+    const hasXfa = hasXfaEntry(doc);
+    if (hasXfa && fields.length === 0) {
+      throw new ToolError('xfa-dynamic', { engine: 'mupdf', engineMessage: 'dynamic XFA form' });
+    }
     const selected =
       names === null
         ? fields
@@ -1242,6 +1295,8 @@ export async function flattenForm(
       if (field.entry.isIndirect()) removeEntry(field.holder, field.entry.asIndirect());
     }
     throwIfAborted(context.signal);
+    // The XFA would redraw every field from its data, flattened or not: it goes.
+    if (hasXfa) (await loadXfa()).removeXfaEntries(doc);
 
     const saved = saveRewrite(doc, 'form.save');
     return {
@@ -1252,6 +1307,7 @@ export async function flattenForm(
         notes: [
           note('changed', 'form.note.flattened', { count: selected.length }),
           note('lost', 'form.note.flattenFieldsGone'),
+          ...(hasXfa ? [note('lost', 'xfa.note.removed')] : []),
           ...(appearancesUpdated ? [note('preserved', 'form.note.appearanceNoto')] : []),
         ],
         inputBytes: bytes.byteLength,

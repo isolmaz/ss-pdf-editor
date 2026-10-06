@@ -71,6 +71,13 @@ export interface PdfOpenOptions {
   readonly onProgress?: (loaded: number, total: number) => void;
   /** Seeds the engine's annotation storage before the document is created. */
   readonly annotationStorage?: PdfAnnotationStorageInit;
+  /**
+   * Let pdf.js lay out a **dynamic XFA** form itself (`isPureXfa`, `page.getXfa()`). Off by
+   * default and for every document the editor edits: such a form then has the page list of
+   * its XFA template, not of the PDF (`MuPDF` and the page model see the placeholder page).
+   * Only the XFA viewer and the XFA flatten open a document this way.
+   */
+  readonly enableXfa?: boolean;
 }
 
 export interface PdfRenderOptions {
@@ -243,6 +250,7 @@ export async function openWithPdfjs(
     standardFontDataUrl: PDFJS_ASSETS.standardFonts,
     wasmUrl: PDFJS_ASSETS.wasm,
     verbosity: pdfjs.VerbosityLevel.WARNINGS,
+    ...(options.enableXfa === true ? { enableXfa: true } : {}),
     // **On purpose, and it is the difference between smooth and unusable scrolling.**
     // Turning this off (an earlier workaround for a render stall) forbids pdf.js from
     // decoding images into `ImageBitmap`s in the worker: it then ships raw RGB to the
