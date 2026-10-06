@@ -4,13 +4,14 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { hosting } from '../../tools/vite/hosting.mjs';
+import { phosphorWeights } from '../../tools/vite/phosphor-weights.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 // The editor is served at /editor/; the landing owns /.
 export default defineConfig({
   base: '/editor/',
-  plugins: [react(), tailwindcss(), ...hosting({ repoRoot, relaxDevCsp: true })],
+  plugins: [phosphorWeights(), react(), tailwindcss(), ...hosting({ repoRoot, relaxDevCsp: true })],
   publicDir: false,
   build: {
     outDir: 'dist',

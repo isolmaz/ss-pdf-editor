@@ -61,7 +61,7 @@ export function useLocale(): {
   locale: Locale;
   setLocale: (locale: Locale) => void;
 } {
-  // A stored language whose dictionary is not bundled starts in its fallback and
+  // A stored language whose dictionary is not loaded yet starts in its fallback and
   // switches once the dictionary has arrived (the effect below): a translator is built
   // from the dictionaries in memory, so it must not be built before they are there.
   const [locale, setLocaleState] = useState<Locale>(() => {
@@ -73,7 +73,7 @@ export function useLocale(): {
       : DEFAULT_LOCALE;
   });
 
-  // A language whose dictionary is not bundled is loaded first, so the switch shows
+  // A language whose dictionary is not loaded yet is loaded first, so the switch shows
   // its words at once instead of its fallback's for a moment.
   const setLocale = useCallback((next: Locale) => {
     const apply = () => {

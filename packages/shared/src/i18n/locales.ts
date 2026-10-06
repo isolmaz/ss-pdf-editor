@@ -4,16 +4,14 @@
  * Adding a language is one entry here and one dictionary file: a `Dictionary` holds the
  * keys it translates, and every key it does not is taken from its `fallback` (English for
  * a new language), then from Turkish, the one complete catalogue — so a half-translated
- * language never shows a blank label. Turkish and English are bundled with the app; any
- * other dictionary is a `load()` away, fetched only when someone picks that language.
+ * language never shows a blank label. Every dictionary is its own chunk, fetched when its
+ * language is in use (`loadLocale`): the app loads one catalogue, not all of them.
  *
  * `dir` is the writing direction the shell puts on `<html dir>`, which is what lets a
  * right-to-left language mirror the interface.
  */
 
-import { en } from './en';
 import type { Dictionary } from './index';
-import { tr } from './tr';
 
 export interface LocaleInfo {
   /** BCP 47 tag; also what `Intl` formats dates and numbers with. */
@@ -24,7 +22,7 @@ export interface LocaleInfo {
   readonly dir: 'ltr' | 'rtl';
   /** The locale a missing key comes from before Turkish. */
   readonly fallback?: string;
-  /** The dictionary; bundled locales resolve at once. */
+  /** Fetches the dictionary, a chunk of its own. */
   readonly load: () => Promise<Dictionary>;
 }
 
@@ -34,14 +32,14 @@ export const LOCALES = [
     nativeName: 'Türkçe',
     englishName: 'Turkish',
     dir: 'ltr',
-    load: async () => tr,
+    load: async () => (await import('./tr')).tr,
   },
   {
     id: 'en',
     nativeName: 'English',
     englishName: 'English',
     dir: 'ltr',
-    load: async () => en,
+    load: async () => (await import('./en')).en,
   },
 ] as const satisfies readonly LocaleInfo[];
 

@@ -1,5 +1,7 @@
 import { warmPdfjs } from 'pdf-core';
 import { SessionStore } from 'pdf-model';
+import { loadLocale } from 'pdf-shared';
+import { getStoredLocale } from 'pdf-ui/ui';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
@@ -13,11 +15,16 @@ if (container === null) throw new Error('#root is missing from index.html');
 // else owns document state.
 const store = new SessionStore();
 
-createRoot(container).render(
-  <StrictMode>
-    <App store={store} />
-  </StrictMode>,
-);
+// The interface language's catalogue is a chunk of its own (`pdf-shared` i18n): it is
+// fetched before the first render, so the first frame is already in that language and
+// the other catalogue is never downloaded.
+const render = () =>
+  createRoot(container).render(
+    <StrictMode>
+      <App store={store} />
+    </StrictMode>,
+  );
+loadLocale(getStoredLocale()).then(render, render);
 
 // The engine chunk is lazy for the sake of first paint; warming it while the browser is
 // idle means the *first* file the user picks does not wait for the download and parse.
