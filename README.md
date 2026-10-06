@@ -427,7 +427,9 @@ These describe how the build works; they are not promises.
   - A **sensitive session** saves nothing; any document opened with a password starts one.
   - The recent list keeps the file name, size and page count in `localStorage`. In
     Chromium it also keeps a *handle* to the file in IndexedDB — a reference the browser
-    asks permission for again, never the file's bytes. A sensitive session keeps no handle.
+    asks permission for again, never the file's bytes. A sensitive session keeps no handle:
+    marking a document sensitive, or purging it, forgets its handle, and so do removing an
+    entry and clearing the list.
   - A signature picture is kept only when you tick **Remember on this device**: in
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.

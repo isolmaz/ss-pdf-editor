@@ -10,7 +10,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getRecentHandle, pruneRecentHandles, putRecentHandle, reopenFromHandle } from './recent-handles';
+import {
+  deleteRecentHandle,
+  getRecentHandle,
+  pruneRecentHandles,
+  putRecentHandle,
+  reopenFromHandle,
+} from './recent-handles';
 
 class FakeHandle {
   permission: PermissionState = 'granted';
@@ -105,6 +111,16 @@ describe('stored handles', () => {
     expect(rows.size).toBe(0);
   });
 
+  it('forgets one entry’s handle and leaves the others', async () => {
+    for (const id of ['sensitive', 'other']) {
+      await putRecentHandle(id, new FakeHandle(id) as unknown as FileSystemFileHandle);
+    }
+    await deleteRecentHandle('sensitive');
+    expect([...rows.keys()]).toEqual(['other']);
+    await expect(deleteRecentHandle('never-stored')).resolves.toBeUndefined();
+    expect([...rows.keys()]).toEqual(['other']);
+  });
+
   it('does nothing and throws nothing without IndexedDB, or when it cannot be opened', async () => {
     vi.stubGlobal('indexedDB', undefined);
     await expect(
@@ -112,6 +128,7 @@ describe('stored handles', () => {
     ).resolves.toBeUndefined();
     expect(await getRecentHandle('x')).toBeNull();
     await expect(pruneRecentHandles(new Set())).resolves.toBeUndefined();
+    await expect(deleteRecentHandle('x')).resolves.toBeUndefined();
 
     vi.stubGlobal('indexedDB', {
       open: () => {

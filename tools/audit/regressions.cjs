@@ -357,6 +357,32 @@ async function main() {
     assert.equal(h.store.active.dirty, true);
     assert.ok(h.notices.some((notice) => String(notice).includes('error.permission-denied.message')));
   });
+  await check(
+    'marking a document sensitive, or purging it, forgets the handle that reopens its file',
+    async () => {
+      for (const name of ['toggleSensitiveSession', 'purgeActiveDocument']) {
+        const store = new model.SessionStore();
+        const tab = store.openDocument(documentInput());
+        const forgotten = [];
+        const bindings = {
+          activeTab: tab,
+          store,
+          channel: { runExclusive: (work) => work() },
+          draftWrites: { current: Promise.resolve() },
+          forgetTabDraft: async () => [],
+          deleteRecentHandle: async (id) => {
+            forgotten.push(id);
+          },
+          setNotice: () => {},
+          t: (key) => key,
+          ToolError,
+        };
+        await callback(name, bindings)();
+        await bindings.draftWrites.current;
+        assert.deepEqual(forgotten, [tab.id], name);
+      }
+    },
+  );
   await check('a failed Save As does not attach an unwritten destination', async () => {
     const target = fakeFile([]);
     const h = await saveHarness({ picker: async () => target.file, prepare: async () => null, saveAs: true });

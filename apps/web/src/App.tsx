@@ -226,6 +226,7 @@ import {
 } from './operations';
 import { addRecentDocument, loadRecentDocuments } from './recent';
 import {
+  deleteRecentHandle,
   ensureWriteAccess,
   getRecentHandle,
   pruneRecentHandles,
@@ -1152,7 +1153,10 @@ export function App({ store }: AppProps) {
     }
     try {
       await channel.runExclusive(async () => {
-        const queued = draftWrites.current.then(() => forgetTabDraft(activeTab.id));
+        const queued = draftWrites.current.then(async () => {
+          await deleteRecentHandle(activeTab.id);
+          return forgetTabDraft(activeTab.id);
+        });
         draftWrites.current = queued.catch(() => undefined);
         const removed = await queued;
         if (removed === null) setNotice(t('vault.incomplete'));
@@ -1278,11 +1282,15 @@ export function App({ store }: AppProps) {
       setNotice(t('redact.sensitive.off'));
       return;
     }
-    // Turning the opt-out **on** is also the moment the stored copies go: leaving them
-    // behind would make the toggle a label rather than a decision.
+    // Turning the opt-out **on** is also the moment the stored copies go, and the handle that
+    // would reopen the file: leaving them behind would make the toggle a label rather than a
+    // decision.
     setNotice(t('redact.sensitive.on'));
     draftWrites.current = draftWrites.current
-      .then(() => forgetTabDraft(activeTab.id))
+      .then(async () => {
+        await deleteRecentHandle(activeTab.id);
+        return forgetTabDraft(activeTab.id);
+      })
       .then((removed) => {
         if (removed === null) setNotice(t('vault.incomplete'));
       })

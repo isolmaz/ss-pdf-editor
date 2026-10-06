@@ -9,7 +9,8 @@
  * (`recent.ts`).
  *
  * Kept out of a sensitive session (a password-protected document): its tab saves nothing,
- * and a handle that reopens it is something saved.
+ * and a handle that reopens it is something saved. Marking a document sensitive or purging
+ * it forgets its handle; removing an entry or clearing the list forgets theirs at once.
  *
  * Every call tolerates a missing or failing IndexedDB (private windows, Firefox/Safari
  * without the API): the recent entry then falls back to the file picker, as it always did.
@@ -67,6 +68,11 @@ export async function putRecentHandle(id: string, handle: FileSystemFileHandle):
 export async function getRecentHandle(id: string): Promise<FileSystemFileHandle | null> {
   const value = await withStore('readonly', (store) => store.get(id) as IDBRequest<unknown>);
   return typeof FileSystemFileHandle !== 'undefined' && value instanceof FileSystemFileHandle ? value : null;
+}
+
+/** Forget one entry's handle: its document turned sensitive or was purged from this device. */
+export async function deleteRecentHandle(id: string): Promise<void> {
+  await withStore('readwrite', (store) => store.delete(id));
 }
 
 /** Forget every handle whose recent entry is gone (removed, cleared or pushed off the list). */

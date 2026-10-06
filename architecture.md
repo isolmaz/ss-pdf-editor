@@ -1701,10 +1701,11 @@ after the other (`openFilesFromSurface`), because an open holds the busy gate un
 **The home screen** (`components/HomeScreen.tsx`) has two tabs that both act. *Start* holds
 the ways to begin — open, a blank document, a PDF from images, merging several PDFs, a batch
 run — and the recent list (search, sort, star, page count, an "open" badge for entries that
-are a tab right now; removing an entry or clearing the list never touches a file, and the
-clear asks first). *All tools* (`components/HomeToolGrid.tsx`, loaded with the tab) lays the
-command registry out by task: each tile is a command id, its title is the command's label and
-pressing it runs the command, so the grid cannot drift from the menus or the palette. It lists
+are a tab right now; removing an entry or clearing the list never touches a file, it forgets
+the entry's stored handle at once, and the clear asks first). *All tools*
+(`components/HomeToolGrid.tsx`, loaded with the tab) lays the command registry out by task:
+each tile is a command id, its title is the command's label and pressing it runs the
+command, so the grid cannot drift from the menus or the palette. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never
 disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
@@ -1714,7 +1715,9 @@ drops the pending command, so it cannot run on a document opened later for anoth
 **Recent entries reopen their file.** Chromium hands a `FileSystemFileHandle` for a file picked
 with `showOpenFilePicker` or dropped (`DataTransferItem.getAsFileSystemHandle`), and
 `recent-handles.ts` keeps it in IndexedDB under the tab id — a reference to the file, never
-its bytes, and none for a sensitive session. A recent entry then reopens the file itself: the
+its bytes, and none for a sensitive session: turning a session sensitive, or purging the
+document, deletes the stored handle with its drafts (`deleteRecentHandle`), since a handle
+that reopens the file is something saved. A recent entry then reopens the file itself: the
 browser asks for read permission again on that click (`requestPermission` needs the gesture),
 a refusal is reported and taken as the answer, and a file that has moved or gone is reported
 before the picker is offered. A tab restored from a draft gets its handle back, so it can still
