@@ -15,6 +15,8 @@ export const errorsPart = {
   'error.value-out-of-range.hint': 'İşaretli alanı izin verilen en küçük ve en büyük değer arasında girin.',
   'error.selection-empty.message': 'Önce sayfa seçin.',
   'error.selection-empty.hint': 'Sayfalar panelinden bir veya daha fazla sayfa seçin.',
+  'error.no-text.message': 'Seçilen sayfalarda okunabilir metin yok.',
+  'error.no-text.hint': 'Sayfalar taranmış görünüyor; önce OCR uygulayıp yeniden deneyin.',
   'error.password-policy.message': 'Parola politikası gereği işlem durduruldu.',
   'error.password-policy.hint': 'Açma parolası olmadan şifreleme yapılamaz.',
 } as const;

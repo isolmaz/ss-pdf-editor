@@ -16,6 +16,7 @@ import { homePart } from './en-parts/home';
 import { imposePart } from './en-parts/impose';
 import { measurePart } from './en-parts/measure';
 import { ocrPart } from './en-parts/ocr';
+import { officePart } from './en-parts/office';
 import { optimizePart } from './en-parts/optimize';
 import { pageeditPart } from './en-parts/pageedit';
 import { pageopsPart } from './en-parts/pageops';
@@ -67,6 +68,7 @@ export const en: Record<MessageKey, string> = {
   ...shellPart,
   ...signaturePart,
   ...convertPart,
+  ...officePart,
   ...stampPart,
   ...verifyPart,
 

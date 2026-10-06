@@ -24,6 +24,7 @@ import { homePart } from './parts/home';
 import { imposePart } from './parts/impose';
 import { measurePart } from './parts/measure';
 import { ocrPart } from './parts/ocr';
+import { officePart } from './parts/office';
 import { optimizePart } from './parts/optimize';
 import { pageeditPart } from './parts/pageedit';
 import { pageopsPart } from './parts/pageops';
@@ -70,6 +71,7 @@ export const tr = {
   ...shellPart,
   ...signaturePart,
   ...convertPart,
+  ...officePart,
   ...stampPart,
   ...verifyPart,
 
