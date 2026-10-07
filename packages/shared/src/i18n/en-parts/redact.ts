@@ -11,7 +11,6 @@ export const redactPart = {
   'redact.clearMarks': 'Clear marks',
   'redact.cleanMetadata': 'Clean metadata and attachments as well',
   'redact.verify.done': 'Verification: targeted content no longer exists in document.',
-  'redact.verify.failed': 'Verification failed: targeted content was still found.',
   'redact.warning.localTrace':
     'Redaction removes content from the exported file; previous copies on your device (original file, draft, thumbnail) should be managed separately.',
   'redact.sensitive.on': 'Sensitive session: persistent draft disabled.',
@@ -22,7 +21,6 @@ export const redactPart = {
   'redact.cleanInfo': 'Metadata (Info + XMP)',
   'redact.cleanAttachments': 'Attachments (all)',
   'redact.cleanHint': 'Selected items will be completely purged from document during redaction.',
-  'redact.verify.remaining': 'Verification: content still found on {count} page(s).',
   'redact.imageMethod.none': 'Do not touch images',
   'redact.imageMethod.remove': 'Completely remove image',
   'redact.imageMethod.pixels': 'Erase pixels inside box only',

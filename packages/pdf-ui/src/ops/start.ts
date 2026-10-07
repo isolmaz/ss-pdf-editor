@@ -104,26 +104,27 @@ export const mergeFilesDialog: OperationDialogSpec = {
   ],
   run: async (params, context) => {
     const picked = Array.isArray(params.files) ? (params.files as readonly File[]) : [];
-    if (picked.length < 2) {
+    const [firstFile, ...otherFiles] = picked;
+    if (firstFile === undefined || otherFiles.length === 0) {
       throw new ToolError('input-missing', {
         engine: 'ui',
         engineMessage: `merge-files: ${picked.length} file(s) picked, two are needed`,
       });
     }
-    const sources = [];
-    for (const file of picked) {
+    const measure = async (file: File) => {
       const bytes = new Uint8Array(await file.arrayBuffer());
       // The page count comes from the engine that composes the merge, never from a byte
       // scan (object streams hide `/Type /Page`).
       const handle = await openWithPdfjs(bytes, { signal: context.signal });
       try {
-        sources.push({ name: file.name, bytes, pageCount: handle.pageCount });
+        return { name: file.name, bytes, pageCount: handle.pageCount };
       } finally {
         await handle.destroy();
       }
-    }
-    const [base, ...others] = sources;
-    if (base === undefined) throw new ToolError('selection-empty', { engine: 'ui' });
+    };
+    const base = await measure(firstFile);
+    const others = [];
+    for (const file of otherFiles) others.push(await measure(file));
     const outcome = await mergeDocuments(base, others, base.pageCount - 1, {
       signal: context.signal,
       onProgress: context.onProgress,

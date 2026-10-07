@@ -27,7 +27,6 @@ import {
   readPageLabels,
   writePageLabels,
 } from 'pdf-core';
-import { ToolError } from 'pdf-shared';
 import type { OperationDialogSpec } from '../dialogs/types';
 import { resolveScope } from './scope';
 
@@ -84,15 +83,8 @@ export const pageLabelsDialog: OperationDialogSpec = {
   ],
   run: async (params, context) => {
     const pages = resolveScope(params.range, context);
-    const startPage = pages[0];
-    if (startPage === undefined) {
-      // `resolveScope` refuses an empty scope itself, so this guard is the type's
-      // requirement rather than a reachable state.
-      throw new ToolError('selection-empty', {
-        engine: 'ui',
-        engineMessage: 'page labels: the range resolved to no page',
-      });
-    }
+    // `resolveScope` refuses an empty scope (`selection-empty` / `range-invalid`), so there is a first page.
+    const startPage = pages[0] as number;
     const style = params.style as PageLabelStyle;
     const prefix = String(params.prefix ?? '');
     const start = Number(params.start);
@@ -107,8 +99,10 @@ export const pageLabelsDialog: OperationDialogSpec = {
     // would otherwise be reported as written.
     const labels = await readPageLabels(outcome.bytes, context.pageCount, context.signal);
     const expected = formatLabel(style, prefix, 0, start);
-    const firstLabel = labels[startPage] ?? expected;
-    const lastLabel = labels[labels.length - 1] ?? firstLabel;
+    // The write above puts a label on every page from `startPage` on, so the reader returns one
+    // for each page of the document (`startPage` is inside it: the scope was resolved against it).
+    const firstLabel = labels[startPage] as string;
+    const lastLabel = labels[labels.length - 1] as string;
     const count = Math.max(0, context.pageCount - startPage);
 
     return {

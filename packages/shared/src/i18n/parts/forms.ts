@@ -93,7 +93,6 @@ export const formsPart = {
   'form.dialog.flattenHint': 'Alanlar sayfa içeriğine gömülür; artık düzenlenemez.',
   'form.note.inventory': 'Belgede {count} form alanı var.',
   'form.note.valid': 'Bütün değerler alan kurallarına uyuyor.',
-  'form.note.refused': '{count} değer alan kurallarına uymadı; adları raporda listelenir.',
   'form.note.exported': '{count} alan değeri veri dosyasına yazıldı.',
   'form.note.exportIsData': 'Üretilen dosya belgenin kendisi değil, form verisidir.',
   'form.note.imported': '{count} alan değeri veri dosyasından uygulandı.',
