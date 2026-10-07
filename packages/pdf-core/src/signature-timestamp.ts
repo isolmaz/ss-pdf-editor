@@ -29,7 +29,7 @@
  * it does not earn the claim "the signature existed before the certificate was revoked".
  */
 
-import { fromBER, ObjectIdentifier, OctetString } from 'asn1js';
+import { type BaseBlock, ObjectIdentifier, OctetString } from 'asn1js';
 import type { Certificate, SignerInfo } from 'pkijs';
 import { IssuerAndSerialNumber, Certificate as PkijsCertificate, TSTInfo } from 'pkijs';
 import { readSignedData } from './signature-evidence';
@@ -42,6 +42,7 @@ import {
 import {
   certificateName,
   checkTrust,
+  parseAsn1,
   type TrustReason,
   type TrustVerdict,
   validityOf,
@@ -137,33 +138,34 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   return true;
 }
 
-/** The content octets of an OCTET STRING, joining the segments of a constructed (BER) one. */
-function octets(value: OctetString): Uint8Array {
-  const block = value.valueBlock as unknown as { isConstructed?: boolean; value?: OctetString[] };
-  if (block.isConstructed === true && Array.isArray(block.value)) {
-    const parts = block.value.map(octets);
-    const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
-    let at = 0;
-    for (const part of parts) {
-      out.set(part, at);
-      at += part.length;
-    }
-    return out;
+/** The content octets of an OCTET STRING, or of a block tagged in its place, joining the segments of a constructed (BER) one. */
+function octets(value: BaseBlock): Uint8Array {
+  if (!value.idBlock.isConstructed) {
+    return new Uint8Array((value.valueBlock as unknown as { valueHexView: Uint8Array }).valueHexView);
   }
-  return new Uint8Array(value.valueBlock.valueHexView);
+  const parts = (value.valueBlock as unknown as { value: OctetString[] }).value.map(octets);
+  const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
 }
 
 /** The key identifier a certificate declares, or `null`. */
 function subjectKeyIdentifier(certificate: Certificate): Uint8Array | null {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_SUBJECT_KEY_IDENTIFIER);
   if (extension === undefined) return null;
-  const parsed = fromBER(buffer(new Uint8Array(extension.extnValue.valueBlock.valueHexView)));
-  return parsed.offset >= 0 && parsed.result instanceof OctetString ? octets(parsed.result) : null;
+  const parsed = parseAsn1(new Uint8Array(extension.extnValue.valueBlock.valueHexView));
+  return parsed !== null && parsed.result instanceof OctetString ? octets(parsed.result) : null;
 }
 
 /** The certificate a `SignerInfo` names (`IssuerAndSerialNumber` or `[0]` key identifier). */
 function certificateFor(signer: SignerInfo, certificates: readonly Certificate[]): Certificate | null {
-  const sid = signer.sid;
+  // `SignerIdentifier` is a CHOICE of those two, and the pkijs schema admits nothing else. A
+  // `[0]` key identifier stays the tagged block it was read as: it is never an `OctetString`.
+  const sid = signer.sid as IssuerAndSerialNumber | BaseBlock;
   if (sid instanceof IssuerAndSerialNumber) {
     return (
       certificates.find(
@@ -172,21 +174,20 @@ function certificateFor(signer: SignerInfo, certificates: readonly Certificate[]
       ) ?? null
     );
   }
-  if (sid instanceof OctetString) {
-    const wanted = octets(sid);
-    return (
-      certificates.find((candidate) => {
-        const identifier = subjectKeyIdentifier(candidate);
-        return identifier !== null && sameBytes(identifier, wanted);
-      }) ?? null
-    );
-  }
-  return null;
+  const wanted = octets(sid);
+  return (
+    certificates.find((candidate) => {
+      const identifier = subjectKeyIdentifier(candidate);
+      return identifier !== null && sameBytes(identifier, wanted);
+    }) ?? null
+  );
 }
 
 /** The value of one signed attribute of `signer`, as the asn1js node. */
 function signedAttribute(signer: SignerInfo, oid: string): unknown {
-  return signer.signedAttrs?.attributes.find((attribute) => attribute.type === oid)?.values[0];
+  const attribute = signer.signedAttrs?.attributes.find((entry) => entry.type === oid);
+  // pkijs leaves `values` unset for an attribute whose SET is empty.
+  return (attribute?.values as unknown[] | undefined)?.[0];
 }
 
 export interface VerifyTimestampInput {

@@ -37,8 +37,17 @@
  * than the issuer's name and key hashed with a supported digest.
  */
 
-import { fromBER, ObjectIdentifier } from 'asn1js';
-import type { Extension } from 'pkijs';
+import {
+  type BaseBlock,
+  BitString,
+  type Constructed,
+  type Enumerated,
+  type GeneralizedTime,
+  Integer,
+  ObjectIdentifier,
+  Sequence,
+} from 'asn1js';
+import type { Extension, Extensions } from 'pkijs';
 import {
   BasicConstraints,
   BasicOCSPResponse,
@@ -47,7 +56,13 @@ import {
   IssuingDistributionPoint,
   OCSPResponse,
 } from 'pkijs';
-import { certificateName, validityOf, verifyDataSignature } from './signature-trust';
+import {
+  certificateName,
+  parseAsn1,
+  parsedValueOf,
+  validityOf,
+  verifyDataSignature,
+} from './signature-trust';
 
 export type ListOrigin = 'imported' | 'embedded';
 
@@ -120,10 +135,7 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
 function integerKey(view: Uint8Array): string {
   let start = 0;
   while (start < view.length - 1 && view[start] === 0) start += 1;
-  let out = '';
-  for (let index = start; index < view.length; index += 1)
-    out += (view[index] ?? 0).toString(16).padStart(2, '0');
-  return out;
+  return Array.from(view.subarray(start), (octet) => octet.toString(16).padStart(2, '0')).join('');
 }
 
 function serialOf(certificate: Certificate): string {
@@ -148,9 +160,8 @@ function parseCertificate(der: Uint8Array): Certificate | null {
   }
 }
 
-function extensionsOf(extensions: { extensions?: Extension[] } | Extension[] | undefined): Extension[] {
-  if (extensions === undefined) return [];
-  return Array.isArray(extensions) ? extensions : (extensions.extensions ?? []);
+function extensionsOf(extensions: Extensions | undefined): Extension[] {
+  return extensions?.extensions ?? [];
 }
 
 function rawExtension(extension: Extension): Uint8Array {
@@ -161,11 +172,9 @@ function rawExtension(extension: Extension): Uint8Array {
 function keyUsageBit(certificate: Certificate, bit: number): boolean | null {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_KEY_USAGE);
   if (extension === undefined) return null;
-  const parsed = fromBER(buffer(rawExtension(extension)));
-  if (parsed.offset < 0) return false;
-  const view = (parsed.result as unknown as { valueBlock?: { valueHexView?: Uint8Array } }).valueBlock
-    ?.valueHexView;
-  const octet = view?.[bit >> 3];
+  const parsed = parseAsn1(rawExtension(extension));
+  if (parsed === null || !(parsed.result instanceof BitString)) return false;
+  const octet = parsed.result.valueBlock.valueHexView[bit >> 3];
   return octet === undefined ? false : (octet & (0x80 >> (bit & 7))) !== 0;
 }
 
@@ -173,11 +182,9 @@ function keyUsageBit(certificate: Certificate, bit: number): boolean | null {
 export function extendedKeyUsage(certificate: Certificate): readonly string[] | null {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_EXT_KEY_USAGE);
   if (extension === undefined) return null;
-  const parsed = fromBER(buffer(rawExtension(extension)));
-  if (parsed.offset < 0) return [];
-  const members =
-    (parsed.result as unknown as { valueBlock?: { value?: unknown[] } }).valueBlock?.value ?? [];
-  return members
+  const parsed = parseAsn1(rawExtension(extension));
+  if (parsed === null || !(parsed.result instanceof Sequence)) return [];
+  return parsed.result.valueBlock.value
     .filter((member): member is ObjectIdentifier => member instanceof ObjectIdentifier)
     .map((member) => member.getValue());
 }
@@ -185,7 +192,7 @@ export function extendedKeyUsage(certificate: Certificate): readonly string[] | 
 /** Whether the certificate may issue certificates (`basicConstraints cA`). */
 function isCa(certificate: Certificate): boolean {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_BASIC_CONSTRAINTS);
-  const parsed = extension?.parsedValue;
+  const parsed = parsedValueOf(extension);
   return parsed instanceof BasicConstraints && parsed.cA === true;
 }
 
@@ -249,9 +256,9 @@ export function parseCrl(der: Uint8Array, origin: ListOrigin): ParsedCrl | null 
     let lifted = false;
     for (const extension of extensionsOf(revoked.crlEntryExtensions)) {
       if (extension.extnID !== OID_REASON_CODE) continue;
-      const parsed = fromBER(buffer(rawExtension(extension)));
-      const code = (parsed.result as unknown as { valueBlock?: { valueDec?: number } }).valueBlock?.valueDec;
-      if (parsed.offset >= 0 && typeof code === 'number') {
+      const parsed = parseAsn1(rawExtension(extension));
+      if (parsed !== null && parsed.result instanceof Integer) {
+        const code = parsed.result.valueBlock.valueDec;
         lifted = code === REASON_REMOVE_FROM_CRL;
         reason = REASONS[code] ?? null;
       }
@@ -272,8 +279,12 @@ export function parseCrl(der: Uint8Array, origin: ListOrigin): ParsedCrl | null 
     if (extension.critical && !KNOWN_CRL_EXTENSIONS.has(extension.extnID)) unsupportedCritical = true;
     if (extension.extnID === OID_DELTA_CRL_INDICATOR) delta = true;
     if (extension.extnID !== OID_ISSUING_DISTRIBUTION_POINT) continue;
-    const scope = extension.parsedValue;
-    if (!(scope instanceof IssuingDistributionPoint)) {
+    const scope = parsedValueOf(extension);
+    // A scope that does not parse is never read as "no scope": pkijs hands back an empty object.
+    if (
+      !(scope instanceof IssuingDistributionPoint) ||
+      (scope as { parsingError?: string }).parsingError !== undefined
+    ) {
       unsupportedCritical = true;
       continue;
     }
@@ -341,7 +352,6 @@ async function verifyCrl(
   issuer: Certificate,
 ): Promise<'ok' | ListFailure> {
   if (parsed.unsupportedCritical || parsed.indirect) return 'unsupported-list';
-  if (!parsed.crl.issuer.isEqual(issuer.subject)) return 'invalid-list';
   const outcome = await verifyDataSignature(
     subtle,
     issuer,
@@ -359,7 +369,7 @@ async function verifyCrl(
 /** The URIs a certificate's own `cRLDistributionPoints` names, for partitioned-CRL matching. */
 function certificateDistributionPoints(certificate: Certificate): string[] {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_CRL_DISTRIBUTION_POINTS);
-  const parsed = extension?.parsedValue as
+  const parsed = parsedValueOf(extension) as
     | { distributionPoints?: { distributionPoint?: unknown }[] }
     | undefined;
   return (parsed?.distributionPoints ?? []).flatMap((point) => uriNames(point.distributionPoint));
@@ -461,36 +471,28 @@ async function certIdMatches(
   return sameBytes(keyHash, new Uint8Array(id.issuerKeyHash.valueBlock.valueHexView));
 }
 
-/** `certStatus` is `[0] good | [1] revoked { time, [0] reason } | [2] unknown`. */
-function readCertStatus(status: unknown): {
-  readonly kind: 'good' | 'revoked' | 'unknown';
-  readonly date: Date | null;
-  readonly reason: RevocationReason | null;
-} {
-  const block = status as { idBlock?: { tagNumber?: number }; valueBlock?: { value?: unknown } };
-  const tag = block.idBlock?.tagNumber;
-  if (tag === 0) return { kind: 'good', date: null, reason: null };
-  if (tag !== 1) return { kind: 'unknown', date: null, reason: null };
-  const members = Array.isArray(block.valueBlock?.value) ? (block.valueBlock.value as unknown[]) : [];
-  let date: Date | null = null;
-  let reason: RevocationReason | null = null;
-  for (const member of members) {
-    const entry = member as {
-      toDate?: () => Date;
-      idBlock?: { tagClass?: number; tagNumber?: number };
-      valueBlock?: { value?: unknown };
-    };
-    if (entry.idBlock?.tagClass === 3 && entry.idBlock.tagNumber === 0) {
-      const inner = Array.isArray(entry.valueBlock?.value)
-        ? (entry.valueBlock.value as unknown[])[0]
-        : undefined;
-      const code = (inner as { valueBlock?: { valueDec?: number } } | undefined)?.valueBlock?.valueDec;
-      if (typeof code === 'number') reason = REASONS[code] ?? null;
-    } else if (typeof entry.toDate === 'function') {
-      date = entry.toDate();
-    }
-  }
-  return { kind: 'revoked', date, reason };
+/** What an OCSP `certStatus` says. A revoked status always carries its time. */
+type CertStatus =
+  | { readonly kind: 'good' }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'revoked'; readonly date: Date; readonly reason: RevocationReason | null };
+
+/**
+ * `certStatus` is `[0] good | [1] revoked { time, [0] reason } | [2] unknown`. The pkijs schema
+ * that parsed the response only lets those three through, and a `[1]` is always a time and an
+ * optional `[0]` holding the reason code.
+ */
+function readCertStatus(status: BaseBlock): CertStatus {
+  const tag = status.idBlock.tagNumber;
+  if (tag === 0) return { kind: 'good' };
+  if (tag !== 1) return { kind: 'unknown' };
+  const [time, reason] = (status as Constructed).valueBlock.value as [GeneralizedTime, Constructed?];
+  const code = (reason?.valueBlock.value[0] as Enumerated | undefined)?.valueBlock.valueDec;
+  return {
+    kind: 'revoked',
+    date: time.toDate(),
+    reason: code === undefined ? null : (REASONS[code] ?? null),
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -602,15 +604,18 @@ async function buildChain(
   return links;
 }
 
-interface Evidence {
-  readonly status: 'good' | 'revoked';
+/** A statement from one verified list or response about one certificate. */
+type Evidence = {
   readonly source: 'crl' | 'ocsp';
   readonly origin: ListOrigin;
   readonly thisUpdate: Date;
   readonly nextUpdate: Date | null;
-  readonly revokedAt: Date | null;
-  readonly reason: RevocationReason | null;
-}
+} & (
+  | { readonly status: 'good' }
+  | { readonly status: 'revoked'; readonly revokedAt: Date; readonly reason: RevocationReason | null }
+);
+
+type RevokedEvidence = Extract<Evidence, { status: 'revoked' }>;
 
 export interface RevocationContext {
   readonly sources: RevocationSources;
@@ -682,8 +687,6 @@ async function evidenceFor(
       origin: parsed.origin,
       thisUpdate: parsed.thisUpdate,
       nextUpdate: parsed.nextUpdate,
-      revokedAt: null,
-      reason: null,
     });
   }
 
@@ -707,25 +710,31 @@ async function evidenceFor(
       note('list-scope');
       continue;
     }
-    evidence.push({
-      status: status.kind,
+    const stated = {
       source: 'ocsp',
       origin: parsed.origin,
       thisUpdate: relevant.thisUpdate,
       nextUpdate: relevant.nextUpdate ?? null,
-      revokedAt: status.date,
-      reason: status.reason,
-    });
+    } as const;
+    evidence.push(
+      status.kind === 'good'
+        ? { status: 'good', ...stated }
+        : { status: 'revoked', ...stated, revokedAt: status.date, reason: status.reason },
+    );
   }
   return { evidence, failure, seenList };
 }
 
 /** The evidence that decides: a lasting revocation wins, otherwise the newest statement. */
 function decisive(evidence: readonly Evidence[], validationTime: Date): Evidence | null {
-  const lasting = evidence.filter((entry) => entry.status === 'revoked' && !isHold(entry.reason));
-  if (lasting.length > 0) {
-    return (
-      [...lasting].sort((a, b) => (a.revokedAt?.getTime() ?? 0) - (b.revokedAt?.getTime() ?? 0))[0] ?? null
+  const lasting = evidence.filter(
+    (entry): entry is RevokedEvidence => entry.status === 'revoked' && !isHold(entry.reason),
+  );
+  const [first, ...others] = lasting;
+  if (first !== undefined) {
+    return others.reduce(
+      (earliest, entry) => (entry.revokedAt < earliest.revokedAt ? entry : earliest),
+      first,
     );
   }
   const newest = [...evidence].sort((a, b) => b.thisUpdate.getTime() - a.thisUpdate.getTime());
@@ -734,51 +743,63 @@ function decisive(evidence: readonly Evidence[], validationTime: Date): Evidence
   return covering ?? newest[0] ?? null;
 }
 
-function toCheck(
+/** The answer when nothing verified speaks for the certificate. */
+function unknownCheck(
   link: Link,
   role: RevocationRole,
-  decided: Evidence | null,
-  unknownReason: RevocationUnknownReason | null,
-  context: RevocationContext,
+  unknownReason: RevocationUnknownReason,
 ): RevocationCertCheck {
-  const subject = certificateName(link.certificate) ?? '—';
-  if (decided === null) {
-    return {
-      role,
-      subject,
-      status: 'unknown',
-      source: null,
-      origin: null,
-      thisUpdate: null,
-      nextUpdate: null,
-      coversValidationTime: null,
-      stale: false,
-      revokedAt: null,
-      reason: null,
-      timing: null,
-      unknownReason: unknownReason ?? 'no-list',
-    };
-  }
-  const revoked = decided.status === 'revoked';
   return {
     role,
-    subject,
-    status: decided.status,
+    subject: certificateName(link.certificate) ?? '—',
+    status: 'unknown',
+    source: null,
+    origin: null,
+    thisUpdate: null,
+    nextUpdate: null,
+    coversValidationTime: null,
+    stale: false,
+    revokedAt: null,
+    reason: null,
+    timing: null,
+    unknownReason,
+  };
+}
+
+/** The answer a verified list or response gives. */
+function decidedCheck(
+  link: Link,
+  role: RevocationRole,
+  decided: Evidence,
+  context: RevocationContext,
+): RevocationCertCheck {
+  const common = {
+    role,
+    subject: certificateName(link.certificate) ?? '—',
     source: decided.source,
     origin: decided.origin,
     thisUpdate: decided.thisUpdate.toISOString(),
     nextUpdate: decided.nextUpdate?.toISOString() ?? null,
-    coversValidationTime: revoked ? null : decided.thisUpdate >= context.validationTime,
     stale: decided.nextUpdate !== null && decided.nextUpdate < context.now,
-    revokedAt: decided.revokedAt?.toISOString() ?? null,
-    reason: decided.reason,
-    timing:
-      revoked && decided.revokedAt !== null
-        ? decided.revokedAt <= context.validationTime
-          ? 'before-signing'
-          : 'after-signing'
-        : null,
     unknownReason: null,
+  } as const;
+  if (decided.status === 'good') {
+    return {
+      ...common,
+      status: 'good',
+      coversValidationTime: decided.thisUpdate >= context.validationTime,
+      revokedAt: null,
+      reason: null,
+      timing: null,
+    };
+  }
+  return {
+    ...common,
+    status: 'revoked',
+    coversValidationTime: null,
+    revokedAt: decided.revokedAt.toISOString(),
+    reason: decided.reason,
+    timing: decided.revokedAt <= context.validationTime ? 'before-signing' : 'after-signing',
   };
 }
 
@@ -809,7 +830,7 @@ export async function checkRevocation(input: {
     if (link.selfSigned && index > 0) continue;
     const role: RevocationRole = index === 0 ? input.leafRole : 'intermediate';
     if (link.issuer === null) {
-      checks.push(toCheck(link, role, null, 'no-issuer', input.context));
+      checks.push(unknownCheck(link, role, 'no-issuer'));
       continue;
     }
     const { evidence, failure, seenList } = await evidenceFor(
@@ -819,13 +840,9 @@ export async function checkRevocation(input: {
     );
     const decided = decisive(evidence, input.context.validationTime);
     checks.push(
-      toCheck(
-        link,
-        role,
-        decided,
-        decided === null ? (seenList ? (failure ?? 'list-scope') : 'no-list') : null,
-        input.context,
-      ),
+      decided === null
+        ? unknownCheck(link, role, seenList ? (failure ?? 'list-scope') : 'no-list')
+        : decidedCheck(link, role, decided, input.context),
     );
   }
   return checks;

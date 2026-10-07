@@ -41,7 +41,6 @@ export const a11yPart = {
     '{page}. sayfa: {matched} metin bloğa bağlandı, {ambiguous} yakınlıkla, {unmatched} bağlanamadı.',
   'op.note.a11y.headingGuess':
     'Başlıklar yazı boyutu ve kalınlığa göre tahmin edildi (gövde {body} pt, {count} başlık).',
-  'op.note.a11y.headingLevelCap': '{count} başlık yazılmadı: altı düzeyden fazlası /P olarak yazıldı.',
   'op.note.a11y.orderFromContent':
     'Öğe sırası içerik akışındaki sıradır; görsel okuma sırasıyla karşılaştırılmadı.',
   'op.note.a11y.contentRewritten': '{pages} sayfanın içerik akışı işaretli içerik için yeniden yazıldı.',

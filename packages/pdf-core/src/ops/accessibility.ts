@@ -117,7 +117,6 @@ export const A11Y_KEYS = {
   pageOverlap: dictKey('op.note.a11y.pageOverlap'),
   placement: dictKey('op.note.a11y.placement'),
   headingGuess: dictKey('op.note.a11y.headingGuess'),
-  headingLevelCap: dictKey('op.note.a11y.headingLevelCap'),
   orderFromContent: dictKey('op.note.a11y.orderFromContent'),
   contentRewritten: dictKey('op.note.a11y.contentRewritten'),
   figureNoAlt: dictKey('op.note.a11y.figureNoAlt'),
@@ -1054,10 +1053,12 @@ function headingRoles(
   regions: readonly (readonly BlockRegion[])[],
   body: number,
 ): ReadonlyMap<number, string> {
+  // No body size means no text worth a vote (or text too small to round to a point): nothing
+  // can be told apart from it, so nothing is a heading.
+  if (body <= 0) return new Map();
   const sizes = new Set<number>();
   for (const page of regions) {
     for (const region of page) {
-      if (region.fontSize <= 0) continue;
       const isHeading =
         region.fontSize >= body * HEADING_SIZE_RATIO ||
         (region.bold && region.fontSize >= body * HEADING_BOLD_RATIO);
@@ -1964,7 +1965,8 @@ export async function planPages(
       done: pageIndex + 2,
       total: span,
     });
-    const pageRegions = regions[pageIndex] ?? [];
+    // Pass one pushed exactly one entry per page, in page order.
+    const pageRegions = regions[pageIndex] as readonly BlockRegion[];
     const scanned = scanPage(page);
     if (!scanned.ok) {
       notes.push(note('warning', A11Y_KEYS.pageUnreadable, { page: pageIndex + 1, reason: scanned.reason }));
@@ -2043,9 +2045,7 @@ async function tagOpened(
 
   /* ---- splice: marked content first, structure tree second ---- */
   const tagged: TaggedPage[] = [];
-  let rewritten = 0;
   let figuresWithoutAlt = 0;
-  let headingsWritten = 0;
   for (const plan of plans) {
     const pagePlan = options.plan?.pages[plan.pageIndex];
     const claims = claimsFor(plan, roles, pagePlan);
@@ -2065,10 +2065,8 @@ async function tagOpened(
     const spliced = spliceMarkedContent(plan.scan, claims.claims);
     // The rewrite compresses the new stream (`compress`), as the old writer's flate did.
     resolved(plan.pageRef)?.put('Contents', doc.addStream(spliced.bytes, {}));
-    rewritten += 1;
     for (const claim of claims.claims) {
       if (claim.role === 'Figure' && claim.alt === null) figuresWithoutAlt += 1;
-      if (claim.role.startsWith('H')) headingsWritten += 1;
     }
     tagged.push({
       pageIndex: plan.pageIndex,
@@ -2129,19 +2127,9 @@ async function tagOpened(
     notes.push(note('changed', A11Y_KEYS.langSet, { lang: language }));
   }
 
-  if (rewritten > 0) {
-    notes.push(note('changed', A11Y_KEYS.contentRewritten, { pages: rewritten }));
-  }
+  notes.push(note('changed', A11Y_KEYS.contentRewritten, { pages: tagged.length }));
   if (structure.headings > 0) {
     notes.push(note('warning', A11Y_KEYS.headingGuess, { body, count: structure.headings }));
-  }
-  if (headingsWritten < structure.headings) {
-    notes.push(
-      note('warning', A11Y_KEYS.headingLevelCap, {
-        limit: MAX_HEADING_LEVELS,
-        count: structure.headings - headingsWritten,
-      }),
-    );
   }
   if (figuresWithoutAlt > 0) {
     notes.push(note('warning', A11Y_KEYS.figureNoAlt, { count: figuresWithoutAlt }));
@@ -2298,7 +2286,7 @@ export function claimsFor(
       alt: pagePlan?.alts?.[id]?.trim() || figure.alt,
     });
   }
-  candidates.sort((left, right) => left.first - right.first || left.last - right.last);
+  candidates.sort((left, right) => left.first - right.first);
 
   // A page whose stream already carries marked-content ids (an untagged file that lost its
   // tree, say) must not get a second claim on the same number.

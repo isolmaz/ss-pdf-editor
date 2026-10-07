@@ -11,16 +11,24 @@ import {
   Constructed,
   Enumerated,
   fromBER,
+  GeneralizedTime,
   Integer,
   ObjectIdentifier,
   OctetString,
+  Primitive,
   Sequence,
+  Utf8String,
 } from 'asn1js';
 import {
   AlgorithmIdentifier,
   Attribute,
+  AttributeTypeAndValue,
+  BasicOCSPResponse,
+  CertID,
   CertificateRevocationList,
   ContentInfo,
+  CRLDistributionPoints,
+  DistributionPoint,
   EncapsulatedContentInfo,
   Extension,
   Extensions,
@@ -28,10 +36,15 @@ import {
   IssuerAndSerialNumber,
   IssuingDistributionPoint,
   MessageImprint,
+  OCSPResponse,
+  RelativeDistinguishedNames,
+  ResponseBytes,
+  ResponseData,
   RevokedCertificate,
   SignedAndUnsignedAttributes,
   SignedData,
   SignerInfo,
+  SingleResponse,
   Time,
   TSTInfo,
 } from 'pkijs';
@@ -49,6 +62,7 @@ const OID_ISSUING_DISTRIBUTION_POINT = '2.5.29.28';
 const OID_EXT_KEY_USAGE = '2.5.29.37';
 const OID_TIMESTAMP_TOKEN = '1.2.840.113549.1.9.16.2.14';
 const OID_REVOCATION_ARCHIVAL = '1.2.840.113583.1.1.8';
+export const OID_BASIC_OCSP_RESPONSE = '1.3.6.1.5.5.7.48.1.1';
 
 export const KP_TIME_STAMPING = '1.3.6.1.5.5.7.3.8';
 export const KP_OCSP_SIGNING = '1.3.6.1.5.5.7.3.9';
@@ -58,6 +72,16 @@ export const CRL_REASON = { keyCompromise: 1, superseded: 4, certificateHold: 6,
 
 function ext(oid: string, critical: boolean, inner: ArrayBuffer): Extension {
   return new Extension({ extnID: oid, critical, extnValue: inner });
+}
+
+/** `cRLDistributionPoints` naming the CRL URIs a certificate says its revocation list lives at. */
+export function crlDistributionPointsExtension(uris: readonly string[]): Extension {
+  const points = new CRLDistributionPoints({
+    distributionPoints: uris.map(
+      (uri) => new DistributionPoint({ distributionPoint: [new GeneralName({ type: 6, value: uri })] }),
+    ),
+  });
+  return ext('2.5.29.31', false, points.toSchema().toBER(false));
 }
 
 /** A critical `extKeyUsage` listing `purposes`, the way a time-stamping certificate carries it. */
@@ -75,10 +99,24 @@ export function deltaIndicatorExtension(base = 1): Extension {
 export function scopeExtension(scope: {
   readonly indirect?: boolean;
   readonly onlySomeReasons?: boolean;
+  readonly onlyUserCerts?: boolean;
+  readonly onlyCaCerts?: boolean;
+  readonly onlyAttributeCerts?: boolean;
   readonly distributionPointUri?: string;
+  /** The `distributionPoint` is a DNS name, which is not a URI. */
+  readonly distributionPointDns?: string;
+  /** The `distributionPoint` is `nameRelativeToCRLIssuer` (a relative name, not a list of general names). */
+  readonly distributionPointRelativeName?: string;
+  /** The value is not what an `issuingDistributionPoint` looks like. */
+  readonly malformed?: boolean;
 }): Extension {
+  if (scope.malformed === true)
+    return ext(OID_ISSUING_DISTRIBUTION_POINT, true, new Integer({ value: 5 }).toBER(false));
   const point = new IssuingDistributionPoint({
     ...(scope.indirect === true ? { indirectCRL: true } : {}),
+    ...(scope.onlyUserCerts === true ? { onlyContainsUserCerts: true } : {}),
+    ...(scope.onlyCaCerts === true ? { onlyContainsCACerts: true } : {}),
+    ...(scope.onlyAttributeCerts === true ? { onlyContainsAttributeCerts: true } : {}),
     ...(scope.onlySomeReasons === true
       ? { onlySomeReasons: new BitString({ valueHex: new Uint8Array([0x40]).buffer }) }
       : {}),
@@ -86,11 +124,26 @@ export function scopeExtension(scope: {
   if (scope.distributionPointUri !== undefined) {
     point.distributionPoint = [new GeneralName({ type: 6, value: scope.distributionPointUri })];
   }
+  if (scope.distributionPointDns !== undefined) {
+    point.distributionPoint = [new GeneralName({ type: 2, value: scope.distributionPointDns })];
+  }
+  if (scope.distributionPointRelativeName !== undefined) {
+    point.distributionPoint = new RelativeDistinguishedNames({
+      typesAndValues: [
+        new AttributeTypeAndValue({
+          type: '2.5.4.3',
+          value: new Utf8String({ value: scope.distributionPointRelativeName }),
+        }),
+      ],
+    });
+  }
   return ext(OID_ISSUING_DISTRIBUTION_POINT, true, point.toSchema().toBER(false));
 }
 
 export interface RevokedEntry {
   readonly cert: CertificateFixture;
+  /** The serial number written into the entry instead of the certificate's (content octets, as given). */
+  readonly serial?: Uint8Array;
   readonly at: Date;
   readonly reason?: number;
 }
@@ -104,6 +157,12 @@ export interface CrlOptions {
   readonly nextUpdate?: Date;
   readonly revoked?: readonly RevokedEntry[];
   readonly extensions?: readonly Extension[];
+  /** Writes this issuer name into the CRL instead of the issuer certificate's subject. */
+  readonly issuerName?: RelativeDistinguishedNames;
+  /** Written as the CRL's `signatureAlgorithm` after signing, so the list names an algorithm nobody implements. */
+  readonly signatureAlgorithmOid?: string;
+  /** Extensions written into every revoked entry besides the reason code. */
+  readonly entryExtensions?: readonly Extension[];
 }
 
 /** A signed X.509 CRL, DER. */
@@ -111,19 +170,22 @@ export async function issueCrl(options: CrlOptions): Promise<Uint8Array> {
   const crl = new CertificateRevocationList();
   crl.version = 1;
   crl.signature = new AlgorithmIdentifier({ algorithmId: OID_ECDSA_SHA256 });
-  crl.issuer = options.issuer.parsed.subject;
+  crl.issuer = options.issuerName ?? options.issuer.parsed.subject;
   crl.thisUpdate = new Time({ type: 0, value: options.thisUpdate });
   if (options.nextUpdate !== undefined) crl.nextUpdate = new Time({ type: 0, value: options.nextUpdate });
   const revoked = (options.revoked ?? []).map((entry) => {
     const item = new RevokedCertificate({
-      userCertificate: entry.cert.parsed.serialNumber,
+      userCertificate:
+        entry.serial === undefined
+          ? entry.cert.parsed.serialNumber
+          : new Integer({ valueHex: entry.serial.slice().buffer }),
       revocationDate: new Time({ type: 0, value: entry.at }),
     });
+    const entryExtensions = [...(options.entryExtensions ?? [])];
     if (entry.reason !== undefined) {
-      item.crlEntryExtensions = new Extensions({
-        extensions: [ext(OID_REASON_CODE, false, new Enumerated({ value: entry.reason }).toBER(false))],
-      });
+      entryExtensions.push(ext(OID_REASON_CODE, false, new Enumerated({ value: entry.reason }).toBER(false)));
     }
+    if (entryExtensions.length > 0) item.crlEntryExtensions = new Extensions({ extensions: entryExtensions });
     return item;
   });
   if (revoked.length > 0) crl.revokedCertificates = revoked;
@@ -131,6 +193,9 @@ export async function issueCrl(options: CrlOptions): Promise<Uint8Array> {
     crl.crlExtensions = new Extensions({ extensions: [...options.extensions] });
   }
   await crl.sign((options.signedBy ?? options.issuer).keyPair.privateKey, 'SHA-256');
+  if (options.signatureAlgorithmOid !== undefined) {
+    crl.signatureAlgorithm = new AlgorithmIdentifier({ algorithmId: options.signatureAlgorithmOid });
+  }
   return new Uint8Array(crl.toSchema(true).toBER(false));
 }
 
@@ -154,6 +219,59 @@ export interface TokenOptions {
   readonly extraCertificates?: readonly CertificateFixture[];
   /** Signs with this key instead of the TSA's own: a token whose signature the TSA certificate cannot verify. */
   readonly signWith?: CryptoKey;
+  /** Written as the imprint's hash OID instead of SHA-256 (the imprint bytes stay a SHA-256 digest). */
+  readonly imprintAlgorithmOid?: string;
+  /** Names the signer by `[0] subjectKeyIdentifier` with these octets instead of by issuer and serial. */
+  readonly keyIdentifier?: Uint8Array;
+  /** `keyIdentifier` written as a BER-constructed `[0]` of two OCTET STRING segments instead of primitive DER. */
+  readonly keyIdentifierConstructed?: boolean;
+  /** Signs over signed attributes (RFC 5652 §5.4) instead of the TSTInfo itself. */
+  readonly signedAttributes?: {
+    /** `'omit'` leaves the attribute out; a string is the OID written. The TSTInfo content type by default. */
+    readonly contentType?: string | 'omit';
+    /** `'wrong'` is the digest of other bytes; `'not-octets'` a non-OCTET STRING; `'empty'` a SET with no value. */
+    readonly messageDigest?: 'content' | 'wrong' | 'omit' | 'not-octets' | 'empty';
+  };
+}
+
+/** `[0] IMPLICIT SubjectKeyIdentifier`: the identifier's octets under a context tag. */
+function keyIdentifierBlock(octets: Uint8Array, constructed: boolean): Primitive | Constructed {
+  if (!constructed)
+    return new Primitive({ idBlock: { tagClass: 3, tagNumber: 0 }, valueHex: buffer(octets) });
+  const half = octets.length >> 1;
+  return new Constructed({
+    idBlock: { tagClass: 3, tagNumber: 0 },
+    value: [
+      new OctetString({ valueHex: buffer(octets.subarray(0, half)) }),
+      new OctetString({ valueHex: buffer(octets.subarray(half)) }),
+    ],
+  });
+}
+
+async function signedAttributesFor(
+  wanted: NonNullable<TokenOptions['signedAttributes']>,
+  content: Uint8Array,
+): Promise<SignedAndUnsignedAttributes> {
+  const attributes: Attribute[] = [];
+  const contentType = wanted.contentType ?? OID_TST_INFO;
+  if (contentType !== 'omit') {
+    attributes.push(
+      new Attribute({ type: '1.2.840.113549.1.9.3', values: [new ObjectIdentifier({ value: contentType })] }),
+    );
+  }
+  const digestType = '1.2.840.113549.1.9.4';
+  const mode = wanted.messageDigest ?? 'content';
+  if (mode === 'empty') attributes.push(new Attribute({ type: digestType, values: [] }));
+  if (mode === 'not-octets')
+    attributes.push(new Attribute({ type: digestType, values: [new Integer({ value: 1 })] }));
+  if (mode === 'content' || mode === 'wrong') {
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      buffer(mode === 'content' ? content : new Uint8Array([1, 2, 3])),
+    );
+    attributes.push(new Attribute({ type: digestType, values: [new OctetString({ valueHex: digest })] }));
+  }
+  return new SignedAndUnsignedAttributes({ type: 0, attributes });
 }
 
 /** An RFC 3161 `TimeStampToken` (a `ContentInfo` over `SignedData` over a `TSTInfo`), DER. */
@@ -170,19 +288,29 @@ export async function issueTimestampToken(options: TokenOptions): Promise<Uint8A
     genTime: options.genTime,
   });
   const certificate = options.tsa.parsed;
+  if (options.imprintAlgorithmOid !== undefined) {
+    tst.messageImprint.hashAlgorithm = new AlgorithmIdentifier({ algorithmId: options.imprintAlgorithmOid });
+  }
+  const tstBytes = tst.toSchema().toBER(false);
   const signedData = new SignedData({
     version: 3,
     encapContentInfo: new EncapsulatedContentInfo({
       eContentType: OID_TST_INFO,
-      eContent: new OctetString({ valueHex: tst.toSchema().toBER(false) }),
+      eContent: new OctetString({ valueHex: tstBytes }),
     }),
     signerInfos: [
       new SignerInfo({
         version: 1,
-        sid: new IssuerAndSerialNumber({
-          issuer: certificate.issuer,
-          serialNumber: certificate.serialNumber,
-        }),
+        sid:
+          options.keyIdentifier === undefined
+            ? new IssuerAndSerialNumber({
+                issuer: certificate.issuer,
+                serialNumber: certificate.serialNumber,
+              })
+            : keyIdentifierBlock(options.keyIdentifier, options.keyIdentifierConstructed === true),
+        ...(options.signedAttributes === undefined
+          ? {}
+          : { signedAttrs: await signedAttributesFor(options.signedAttributes, new Uint8Array(tstBytes)) }),
       }),
     ],
     certificates: [certificate, ...(options.extraCertificates ?? []).map((entry) => entry.parsed)],
@@ -276,4 +404,133 @@ export function withEditedCms(cms: Uint8Array, change: (signedData: SignedData) 
   if (signedData === null) throw new Error('fixture CMS does not parse');
   change(signedData);
   return wrapSignedData(signedData);
+}
+
+const HASH_OIDS = {
+  'SHA-1': '1.3.14.3.2.26',
+  'SHA-256': OID_SHA256,
+  'SHA-384': '2.16.840.1.101.3.4.2.2',
+  'SHA-512': '2.16.840.1.101.3.4.2.3',
+} as const;
+
+export type OcspHash = keyof typeof HASH_OIDS;
+
+export interface OcspSingle {
+  /** The certificate whose status the entry reports. */
+  readonly cert: CertificateFixture;
+  readonly status: 'good' | 'revoked' | 'unknown';
+  readonly thisUpdate: Date;
+  readonly nextUpdate?: Date;
+  /** `revoked` only. */
+  readonly revokedAt?: Date;
+  /** `revoked` only: the `CRLReason` code. */
+  readonly reason?: number;
+  /** The hash behind the CertID; SHA-256 by default. */
+  readonly hash?: OcspHash;
+  /** Written as the CertID's hash OID instead of the real one (the digests stay what `hash` made). */
+  readonly hashOid?: string;
+  /** The CA the CertID names (name and key hash); the response's `issuer` by default. */
+  readonly idIssuer?: CertificateFixture;
+  /** The CertID's issuer-name hash is that of this certificate's subject instead of the issuer's. */
+  readonly idNameOf?: CertificateFixture;
+  /** The CertID carries this certificate's serial number instead of `cert`'s. */
+  readonly idSerialOf?: CertificateFixture;
+}
+
+export interface OcspOptions {
+  /** The CA whose certificates the response speaks about. */
+  readonly issuer: CertificateFixture;
+  /** Signs the response (and is named as its responder); the issuer itself by default. */
+  readonly responder?: CertificateFixture;
+  /** Signs with this key instead of the responder's own: a response whose signature does not verify. */
+  readonly signWith?: CryptoKey;
+  readonly producedAt: Date;
+  readonly singles: readonly OcspSingle[];
+  /** Certificates travelling inside the response (a delegated responder's, usually). */
+  readonly certs?: readonly CertificateFixture[];
+  /** `responseStatus`; 0 (successful) by default. Anything else carries no response bytes. */
+  readonly responseStatus?: number;
+  /** `responseType` of the bytes; `id-pkix-ocsp-basic` by default. */
+  readonly responseType?: string;
+}
+
+async function certId(single: OcspSingle, issuer: CertificateFixture): Promise<CertID> {
+  const algorithm = single.hash ?? 'SHA-256';
+  const idIssuer = single.idIssuer ?? issuer;
+  const nameHash = await crypto.subtle.digest(
+    algorithm,
+    buffer(
+      new Uint8Array((single.idNameOf?.parsed.subject ?? single.cert.parsed.issuer).toSchema().toBER(false)),
+    ),
+  );
+  const keyHash = await crypto.subtle.digest(
+    algorithm,
+    buffer(new Uint8Array(idIssuer.parsed.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView)),
+  );
+  return new CertID({
+    hashAlgorithm: new AlgorithmIdentifier({ algorithmId: single.hashOid ?? HASH_OIDS[algorithm] }),
+    issuerNameHash: new OctetString({ valueHex: nameHash }),
+    issuerKeyHash: new OctetString({ valueHex: keyHash }),
+    serialNumber: (single.idSerialOf ?? single.cert).parsed.serialNumber,
+  });
+}
+
+function certStatus(single: OcspSingle): Primitive | Constructed {
+  if (single.status === 'good') return new Primitive({ idBlock: { tagClass: 3, tagNumber: 0 } });
+  if (single.status === 'unknown') return new Primitive({ idBlock: { tagClass: 3, tagNumber: 2 } });
+  const members: (GeneralizedTime | Constructed)[] = [
+    new GeneralizedTime({ valueDate: single.revokedAt ?? single.thisUpdate }),
+  ];
+  if (single.reason !== undefined) {
+    members.push(
+      new Constructed({
+        idBlock: { tagClass: 3, tagNumber: 0 },
+        value: [new Enumerated({ value: single.reason })],
+      }),
+    );
+  }
+  return new Constructed({ idBlock: { tagClass: 3, tagNumber: 1 }, value: members });
+}
+
+/** A DER `OCSPResponse` carrying a `BasicOCSPResponse` signed with pkijs. */
+export async function issueOcspResponse(options: OcspOptions): Promise<Uint8Array> {
+  const responder = options.responder ?? options.issuer;
+  const responses: SingleResponse[] = [];
+  for (const single of options.singles) {
+    responses.push(
+      new SingleResponse({
+        certID: await certId(single, options.issuer),
+        certStatus: certStatus(single),
+        thisUpdate: single.thisUpdate,
+        ...(single.nextUpdate === undefined ? {} : { nextUpdate: single.nextUpdate }),
+      }),
+    );
+  }
+  const basic = new BasicOCSPResponse({
+    tbsResponseData: new ResponseData({
+      responderID: responder.parsed.subject,
+      producedAt: options.producedAt,
+      responses,
+    }),
+    ...(options.certs === undefined ? {} : { certs: options.certs.map((entry) => entry.parsed) }),
+  });
+  await basic.sign(options.signWith ?? responder.keyPair.privateKey, 'SHA-256');
+  const status = options.responseStatus ?? 0;
+  const response = new OCSPResponse({
+    responseStatus: new Enumerated({ value: status }),
+    ...(status === 0
+      ? {
+          responseBytes: new ResponseBytes({
+            responseType: options.responseType ?? OID_BASIC_OCSP_RESPONSE,
+            response: new OctetString({ valueHex: basic.toSchema().toBER(false) }),
+          }),
+        }
+      : {}),
+  });
+  return new Uint8Array(response.toSchema().toBER(false));
+}
+
+/** An extension carrying exactly these inner bytes, however wrong they are for its OID. */
+export function rawExtension(oid: string, critical: boolean, inner: ArrayBuffer): Extension {
+  return ext(oid, critical, inner);
 }

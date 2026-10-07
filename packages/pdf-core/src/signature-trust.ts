@@ -41,8 +41,25 @@
  */
 
 import type { FromBerResult } from 'asn1js';
-import { fromBER, Integer, ObjectIdentifier, Sequence } from 'asn1js';
-import { BasicConstraints, Certificate, NameConstraints } from 'pkijs';
+import {
+  type Set as AsnSet,
+  BitString,
+  fromBER,
+  Integer,
+  ObjectIdentifier,
+  OctetString,
+  type Primitive,
+  Sequence,
+} from 'asn1js';
+import {
+  AltName,
+  BasicConstraints,
+  Certificate,
+  type Extension,
+  type GeneralName,
+  NameConstraints,
+  type RelativeDistinguishedNames,
+} from 'pkijs';
 
 /** A depth limit, because a chain longer than this is either broken or hostile. */
 const MAX_DEPTH = 8;
@@ -63,18 +80,16 @@ const CERTIFICATE_SIGNATURE_HASH: Record<string, string> = {
 const RSA_KEY = '1.2.840.113549.1.1.1';
 const EC_KEY = '1.2.840.10045.2.1';
 
-const CURVE_OIDS: Record<string, string> = {
-  '1.2.840.10045.3.1.7': 'P-256',
-  '1.3.132.0.34': 'P-384',
-  '1.3.132.0.35': 'P-521',
-};
-
 /**
- * The field width of each curve, in bytes — the width WebCrypto's ECDSA signature
- * representation is fixed to. P-521 is 521 bits, which is 66 bytes and **not** the 64 a
- * byte-count of the curve's name would suggest.
+ * The curves WebCrypto can verify here, by the OID a key names them with. `fieldBytes` is the
+ * width WebCrypto's ECDSA signature representation is fixed to: P-521 is 521 bits, which is 66
+ * bytes and **not** the 64 a byte-count of the curve's name would suggest.
  */
-const CURVE_FIELD_BYTES: Record<string, number> = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
+const CURVES: Record<string, { readonly name: string; readonly fieldBytes: number }> = {
+  '1.2.840.10045.3.1.7': { name: 'P-256', fieldBytes: 32 },
+  '1.3.132.0.34': { name: 'P-384', fieldBytes: 48 },
+  '1.3.132.0.35': { name: 'P-521', fieldBytes: 66 },
+};
 
 const OID_COMMON_NAME = '2.5.4.3';
 const OID_SUBJECT_KEY_IDENTIFIER = '2.5.29.14';
@@ -179,16 +194,19 @@ function bufferOf(bytes: Uint8Array): ArrayBuffer {
 }
 
 /**
- * `fromBER` over a byte array, never throwing and never mutating the caller's buffer.
+ * `fromBER` over a byte array: `null` for bytes that are not BER (asn1js both reports an
+ * error offset and throws, on a string type with an impossible value, say), and it never mutates
+ * the caller's buffer.
  *
  * `asn1js` copies from an `ArrayBuffer` it is handed, but the copy still has to be exact:
  * `.slice()` on a `Uint8Array` here is deliberate, because `der.buffer` may be a larger,
  * shared allocation and reading past the view would decode somebody else's bytes.
  */
-function parseAsn1(bytes: Uint8Array): FromBerResult | null {
+export function parseAsn1(bytes: Uint8Array): FromBerResult | null {
   try {
     const copies = bytes.slice();
-    return fromBER(copies.buffer.slice(copies.byteOffset, copies.byteOffset + copies.byteLength));
+    const parsed = fromBER(copies.buffer.slice(copies.byteOffset, copies.byteOffset + copies.byteLength));
+    return parsed.offset < 0 ? null : parsed;
   } catch {
     return null;
   }
@@ -206,7 +224,7 @@ function parseAsn1(bytes: Uint8Array): FromBerResult | null {
 function publicKeyOf(certificate: Certificate): {
   readonly spki: Uint8Array;
   readonly key: string;
-  readonly curve: string | null;
+  readonly curve: { readonly name: string; readonly fieldBytes: number } | null;
 } {
   const spki = new Uint8Array(certificate.subjectPublicKeyInfo.toSchema().toBER(false));
   const algorithm = certificate.subjectPublicKeyInfo.algorithm;
@@ -215,8 +233,21 @@ function publicKeyOf(certificate: Certificate): {
   return {
     spki,
     key: algorithm.algorithmId,
-    curve: curveOid === null ? null : (CURVE_OIDS[curveOid] ?? null),
+    curve: curveOid === null ? null : (CURVES[curveOid] ?? null),
   };
+}
+
+/**
+ * `extension.parsedValue`, or `undefined` for a value pkijs's decoder cannot read. The getter
+ * decodes on first use and lets asn1js's exception through for hostile DER (a string type with an
+ * impossible value, say), so every read of it from a certificate or list on the wire goes here.
+ */
+export function parsedValueOf(extension: Extension | undefined): unknown {
+  try {
+    return extension?.parsedValue;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The raw bytes of an extension, or `undefined` when the certificate does not carry it. */
@@ -243,7 +274,7 @@ export function ecdsaDerToRaw(der: Uint8Array, fieldBytes: number): Uint8Array |
   const parsed = parseAsn1(der);
   if (parsed === null) return null;
   // Trailing bytes after the SEQUENCE are not part of a signature: the encoding is exact.
-  if (parsed.offset < 0 || parsed.offset !== der.length) return null;
+  if (parsed.offset !== der.length) return null;
   if (!(parsed.result instanceof Sequence)) return null;
   const parts = parsed.result.valueBlock.value;
   if (parts.length !== 2) return null;
@@ -254,7 +285,8 @@ export function ecdsaDerToRaw(der: Uint8Array, fieldBytes: number): Uint8Array |
   for (const [index, node] of [r, s].entries()) {
     const encoded = node.valueBlock.valueHexView;
     // A leading high bit without a `0x00` pad is a negative integer, not a magnitude.
-    if (encoded.length === 0 || (encoded[0] ?? 0) >= 0x80) return null;
+    // (`encoded[0]` exists: the length is checked first.)
+    if (encoded.length === 0 || (encoded[0] as number) >= 0x80) return null;
     // `convertFromDER` drops the DER sign pad; what is left is the magnitude.
     const magnitude = node.convertFromDER().valueBlock.valueHexView;
     if (magnitude.length > fieldBytes) return null;
@@ -307,14 +339,12 @@ export async function verifyDataSignature(
         : 'mismatch';
     }
     if (key !== EC_KEY || curve === null) return 'unsupported';
-    const fieldBytes = CURVE_FIELD_BYTES[curve];
-    if (fieldBytes === undefined) return 'unsupported';
-    const raw = ecdsaDerToRaw(signature, fieldBytes);
+    const raw = ecdsaDerToRaw(signature, curve.fieldBytes);
     if (raw === null) return 'malformed';
     const imported = await subtle.importKey(
       'spki',
       bufferOf(spki),
-      { name: 'ECDSA', namedCurve: curve },
+      { name: 'ECDSA', namedCurve: curve.name },
       false,
       ['verify'],
     );
@@ -356,17 +386,17 @@ export function validityOf(certificate: Certificate, now: Date): CertificateVali
 /** `basicConstraints` as this validator reads it; `null` when the extension is absent. */
 function basicConstraintsOf(certificate: Certificate): BasicConstraints | null {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_BASIC_CONSTRAINTS);
-  const parsed = extension?.parsedValue;
+  const parsed = parsedValueOf(extension);
   return parsed instanceof BasicConstraints ? parsed : null;
 }
 
-/** `pathLenConstraint`, or `null` when the extension carries none. */
+/**
+ * `pathLenConstraint`, or `null` when the extension carries none. pkijs hands back an `Integer`
+ * instead of a number for a value wider than 32 bits: no chain is that long, so it is no limit.
+ */
 function pathLengthOf(constraints: BasicConstraints): number | null {
   const value = constraints.pathLenConstraint;
-  if (typeof value === 'number') return value;
-  if (value === undefined) return null;
-  const decoded = (value as unknown as { valueBlock?: { valueDec?: number } }).valueBlock?.valueDec;
-  return typeof decoded === 'number' && decoded >= 0 ? decoded : null;
+  return value === undefined || value instanceof Integer ? null : value;
 }
 
 /**
@@ -380,14 +410,10 @@ function keyCertSignOf(certificate: Certificate): boolean | null {
   const raw = extensionValue(certificate, OID_KEY_USAGE);
   if (raw === undefined) return null;
   const parsed = parseAsn1(raw);
-  if (parsed === null || parsed.offset < 0) return false;
-  const bits = parsed.result as unknown as { valueBlock?: { valueHexView?: Uint8Array } };
-  const octets = bits.valueBlock?.valueHexView;
-  if (octets === undefined) return false;
-  const index = KEY_USAGE_KEY_CERT_SIGN;
-  const octet = octets[index >> 3];
+  if (parsed === null || !(parsed.result instanceof BitString)) return false;
+  const octet = parsed.result.valueBlock.valueHexView[KEY_USAGE_KEY_CERT_SIGN >> 3];
   if (octet === undefined) return false;
-  return (octet & (0x80 >> (index & 7))) !== 0;
+  return (octet & (0x80 >> (KEY_USAGE_KEY_CERT_SIGN & 7))) !== 0;
 }
 
 /** The `subjectKeyIdentifier` / `authorityKeyIdentifier` key ids, for path building. */
@@ -395,37 +421,32 @@ function keyIdentifierOf(certificate: Certificate, oid: string): Uint8Array | nu
   const raw = extensionValue(certificate, oid);
   if (raw === undefined) return null;
   const parsed = parseAsn1(raw);
-  if (parsed === null || parsed.offset < 0) return null;
+  if (parsed === null) return null;
   if (oid === OID_AUTHORITY_KEY_IDENTIFIER) {
     // `AuthorityKeyIdentifier ::= SEQUENCE { keyIdentifier [0] IMPLICIT OCTET STRING OPTIONAL … }`
-    const children =
-      (parsed.result as unknown as { valueBlock?: { value?: unknown[] } }).valueBlock?.value ?? [];
-    for (const child of children) {
-      const block = (
-        child as {
-          idBlock?: { tagClass?: number; tagNumber?: number };
-          valueBlock?: { valueHexView?: Uint8Array };
-        }
-      ).idBlock;
-      if (block?.tagClass !== 3 || block.tagNumber !== 0) continue;
-      const bytes = (child as { valueBlock?: { valueHexView?: Uint8Array } }).valueBlock?.valueHexView;
-      if (bytes !== undefined) return new Uint8Array(bytes);
-    }
-    return null;
+    if (!(parsed.result instanceof Sequence)) return null;
+    const keyId = parsed.result.valueBlock.value.find(
+      (child) => child.idBlock.tagClass === 3 && child.idBlock.tagNumber === 0,
+    );
+    return keyId === undefined ? null : new Uint8Array((keyId as Primitive).valueBlock.valueHexView);
   }
-  const bytes = (parsed.result as unknown as { valueBlock?: { valueHexView?: Uint8Array } }).valueBlock
-    ?.valueHexView;
-  return bytes === undefined ? null : new Uint8Array(bytes);
+  return parsed.result instanceof OctetString ? new Uint8Array(parsed.result.valueBlock.valueHexView) : null;
 }
 
-/** One name a certificate asserts, in the form a name constraint is compared against. */
-interface AssertedName {
+/**
+ * A name in the form a name constraint compares: text for DNS names, mailboxes and URIs, the
+ * address (and mask, in a constraint) for `iPAddress`, the RDN sequence for a directory name.
+ */
+interface NameForm {
   readonly kind: 'dns' | 'email' | 'uri' | 'ip' | 'directory' | 'other';
   readonly text: string;
-  readonly bytes: Uint8Array | null;
+  /** `iPAddress` only (empty otherwise): the address, and in a constraint its mask. */
+  readonly bytes: Uint8Array;
+  /** `directoryName` only: each RDN as a comparable string, in order. */
+  readonly rdns: readonly string[];
 }
 
-const GENERAL_NAME_KINDS: Record<number, AssertedName['kind']> = {
+const GENERAL_NAME_KINDS: Record<number, NameForm['kind']> = {
   1: 'email',
   2: 'dns',
   4: 'directory',
@@ -433,49 +454,52 @@ const GENERAL_NAME_KINDS: Record<number, AssertedName['kind']> = {
   7: 'ip',
 };
 
-/** Every name a certificate asserts: its subject, then each `subjectAltName` entry. */
-function assertedNames(certificate: Certificate): AssertedName[] {
-  const names: AssertedName[] = [
-    { kind: 'directory', text: '', bytes: new Uint8Array(certificate.subject.toSchema().toBER(false)) },
-  ];
-  const extension = certificate.extensions?.find((entry) => entry.extnID === OID_SUBJECT_ALT_NAME);
-  const parsed = extension?.parsedValue as { altNames?: unknown[] } | undefined;
-  for (const entry of parsed?.altNames ?? []) {
-    const type = (entry as { type?: unknown }).type;
-    const value = (entry as { value?: unknown }).value;
-    const kind = typeof type === 'number' ? (GENERAL_NAME_KINDS[type] ?? 'other') : 'other';
-    if (kind === 'directory') {
-      const schema = (entry as { toSchema?: () => { toBER(sizeOnly?: boolean): ArrayBuffer } }).toSchema;
-      names.push({
-        kind,
-        text: '',
-        bytes: schema === undefined ? null : new Uint8Array(schema().toBER(false)),
-      });
-      continue;
-    }
-    if (typeof value === 'string') {
-      names.push({ kind, text: value, bytes: null });
-      continue;
-    }
-    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
-      const view = new Uint8Array(
-        value instanceof ArrayBuffer ? value : (value as Uint8Array).buffer,
-        0,
-        value.byteLength,
-      );
-      names.push({ kind, text: '', bytes: new Uint8Array(view) });
-      continue;
-    }
-    names.push({ kind, text: '', bytes: null });
-  }
-  return names;
+const NO_BYTES = new Uint8Array(0);
+
+/** The RDNs of a `Name`, each as the sorted DER of its attributes so `SET` order cannot matter. */
+function rdnStrings(name: RelativeDistinguishedNames): string[] {
+  // `toSchema()` of a name is a SEQUENCE of SETs of attributes.
+  return name.toSchema().valueBlock.value.map((rdn) =>
+    (rdn as AsnSet).valueBlock.value
+      .map((member) => Array.from(new Uint8Array(member.toBER(false))).join(','))
+      .sort()
+      .join('|'),
+  );
 }
 
-/** One `GeneralSubtree`, reduced to the two fields the comparisons need. */
-interface Constraint {
-  readonly kind: AssertedName['kind'];
-  readonly text: string;
-  readonly bytes: Uint8Array | null;
+/** One `GeneralName` in comparable form. pkijs reads every other kind into a block this does not compare. */
+function nameForm(name: GeneralName): NameForm {
+  const kind = GENERAL_NAME_KINDS[name.type] ?? 'other';
+  if (kind === 'directory') {
+    return { kind, text: '', bytes: NO_BYTES, rdns: rdnStrings(name.value as RelativeDistinguishedNames) };
+  }
+  if (kind === 'ip') {
+    return {
+      kind,
+      text: '',
+      bytes: new Uint8Array((name.value as OctetString).valueBlock.valueHexView),
+      rdns: [],
+    };
+  }
+  if (kind === 'other') return { kind, text: '', bytes: NO_BYTES, rdns: [] };
+  return { kind, text: name.value as string, bytes: NO_BYTES, rdns: [] };
+}
+
+/**
+ * Every name a certificate asserts: its subject, then each `subjectAltName` entry; `null` when
+ * the `subjectAltName` is there but cannot be read, because the names it asserts are then unknown.
+ */
+function assertedNames(certificate: Certificate): NameForm[] | null {
+  const names: NameForm[] = [
+    { kind: 'directory', text: '', bytes: NO_BYTES, rdns: rdnStrings(certificate.subject) },
+  ];
+  const extension = certificate.extensions?.find((entry) => entry.extnID === OID_SUBJECT_ALT_NAME);
+  if (extension === undefined) return names;
+  const parsed = parsedValueOf(extension);
+  if (!(parsed instanceof AltName) || (parsed as { parsingError?: string }).parsingError !== undefined)
+    return null;
+  names.push(...parsed.altNames.map(nameForm));
+  return names;
 }
 
 /**
@@ -484,50 +508,36 @@ interface Constraint {
  * invert the meaning of one group, so they never travel together.
  */
 interface NameConstraintSet {
-  readonly permitted: readonly Constraint[];
-  readonly excluded: readonly Constraint[];
+  readonly permitted: readonly NameForm[];
+  readonly excluded: readonly NameForm[];
 }
 
 const NO_CONSTRAINTS: NameConstraintSet = { permitted: [], excluded: [] };
 
-function constraintsOf(certificate: Certificate): NameConstraintSet {
+/** `null` when the extension is there but cannot be read: that is not "no constraints". */
+function constraintsOf(certificate: Certificate): NameConstraintSet | null {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_NAME_CONSTRAINTS);
-  const parsed = extension?.parsedValue;
-  if (!(parsed instanceof NameConstraints)) return NO_CONSTRAINTS;
+  if (extension === undefined) return NO_CONSTRAINTS;
+  const parsed = parsedValueOf(extension);
+  if (
+    !(parsed instanceof NameConstraints) ||
+    (parsed as { parsingError?: string }).parsingError !== undefined
+  )
+    return null;
   return {
-    permitted: (parsed.permittedSubtrees ?? []).map(constraintOf),
-    excluded: (parsed.excludedSubtrees ?? []).map(constraintOf),
+    permitted: (parsed.permittedSubtrees ?? []).map((subtree) => nameForm(subtree.base)),
+    excluded: (parsed.excludedSubtrees ?? []).map((subtree) => nameForm(subtree.base)),
   };
 }
 
 /**
- * A subtree's base name. An entry this validator cannot reduce to a comparable form keeps
- * `bytes === null`, and the comparison treats it as unsatisfiable rather than as a pass —
- * being unable to evaluate a constraint is not the same as satisfying it.
+ * RFC 5280 §4.2.1.10: `host.example.com` matches itself and anything to its left. An empty
+ * constraint matches every name (NSS, OpenSSL and Go agree; the RFC leaves it open).
  */
-function constraintOf(subtree: { base: unknown }): Constraint {
-  const base = subtree.base as {
-    type?: unknown;
-    value?: unknown;
-    toSchema?: () => { toBER(sizeOnly?: boolean): ArrayBuffer };
-  };
-  const kind = typeof base.type === 'number' ? (GENERAL_NAME_KINDS[base.type] ?? 'other') : 'other';
-  if (kind === 'directory') {
-    const schema = base.toSchema;
-    return { kind, text: '', bytes: schema === undefined ? null : new Uint8Array(schema().toBER(false)) };
-  }
-  if (typeof base.value === 'string') return { kind, text: base.value, bytes: null };
-  if (base.value instanceof ArrayBuffer || ArrayBuffer.isView(base.value)) {
-    return { kind, text: '', bytes: new Uint8Array(base.value as ArrayBuffer) };
-  }
-  return { kind, text: '', bytes: null };
-}
-
-/** RFC 5280 §4.2.1.10: `host.example.com` matches itself and anything to its left. */
 function dnsWithin(name: string, constraint: string): boolean {
   const target = name.toLowerCase().replace(/\.$/, '');
   const base = constraint.toLowerCase().replace(/\.$/, '');
-  if (base.length === 0) return target.length === 0;
+  if (base.length === 0) return true;
   if (base.startsWith('.')) return target === base.slice(1) || target.endsWith(base);
   return target === base || target.endsWith(`.${base}`);
 }
@@ -556,72 +566,48 @@ function uriWithin(name: string, constraint: string): boolean {
 function ipWithin(address: Uint8Array, constraint: Uint8Array): boolean {
   const half = constraint.length / 2;
   if (address.length !== half) return false;
-  for (let index = 0; index < half; index += 1) {
-    const mask = constraint[half + index] ?? 0;
-    if (((address[index] ?? 0) ^ (constraint[index] ?? 0)) & mask) return false;
-  }
-  return true;
+  // `index < half`, so both the constraint's address octet and its mask octet exist.
+  return Array.from(address).every(
+    (octet, index) => ((octet ^ (constraint[index] as number)) & (constraint[half + index] as number)) === 0,
+  );
 }
 
-/** Whether one asserted name satisfies one subtree of the matching kind. */
-function nameWithin(name: AssertedName, constraint: Constraint): boolean {
-  if (name.kind !== constraint.kind) return false;
+/**
+ * Whether one asserted name satisfies one subtree of the same kind. `namesAllowed` hands over
+ * only a constraint of the name's own kind, and never a name of kind `'other'`.
+ */
+function nameWithin(name: NameForm, constraint: NameForm): boolean {
   if (name.kind === 'dns') return dnsWithin(name.text, constraint.text);
   if (name.kind === 'email') return emailWithin(name.text, constraint.text);
   if (name.kind === 'uri') return uriWithin(name.text, constraint.text);
-  if (name.kind === 'ip') {
-    return name.bytes !== null && constraint.bytes !== null && ipWithin(name.bytes, constraint.bytes);
-  }
-  if (name.kind === 'directory') {
-    if (name.bytes === null || constraint.bytes === null) return false;
-    // `directoryName` constrains a *subtree*: the constraint's RDNs are a prefix of the
-    // name's (RFC 5280 §4.2.1.10, RFC 4514 ordering).
-    const constraintRdns = rdnSequence(constraint.bytes);
-    const nameRdns = rdnSequence(name.bytes);
-    if (constraintRdns === null || nameRdns === null) return false;
-    if (constraintRdns.length === 0 || constraintRdns.length > nameRdns.length) return false;
-    return constraintRdns.every((rdn, index) => rdn === nameRdns[index]);
-  }
-  return false;
-}
-
-/** The RDN sequence of a `Name`, as comparable strings; `null` when it will not parse. */
-function rdnSequence(der: Uint8Array): string[] | null {
-  const parsed = parseAsn1(der);
-  if (parsed === null || parsed.offset < 0) return null;
-  const sequence = parsed.result as Sequence;
-  const value = sequence.valueBlock.value;
-  if (value === undefined) return null;
-  return value.map((rdn) => {
-    const set = rdn as unknown as { valueBlock?: { value?: { toBER(sizeOnly?: boolean): ArrayBuffer }[] } };
-    const members = set.valueBlock?.value ?? [];
-    return members
-      .map((member) => Array.from(new Uint8Array(member.toBER(false))).join(','))
-      .sort()
-      .join('|');
-  });
+  if (name.kind === 'ip') return ipWithin(name.bytes, constraint.bytes);
+  // `directoryName` constrains a *subtree*: the constraint's RDNs are a prefix of the
+  // name's (RFC 5280 §4.2.1.10, RFC 4514 ordering). An empty constraint is a prefix of all.
+  return (
+    constraint.rdns.length <= name.rdns.length &&
+    constraint.rdns.every((rdn, index) => rdn === name.rdns[index])
+  );
 }
 
 /**
  * Whether every name `certificate` asserts survives `set`.
  *
  * A name of a kind this validator cannot compare, under a CA that constrains that kind,
- * is an unfinished check — the answer is `'unevaluable'`, never a pass. A constraint that
- * cannot be compared to anything is treated the same way, for the same reason.
+ * is an unfinished check — the answer is `'unevaluable'`, never a pass; so is a
+ * `subjectAltName` that cannot be read (`'unreadable'`).
  */
-function namesAllowed(certificate: Certificate, set: NameConstraintSet): boolean | 'unevaluable' {
-  if (set.permitted.length === 0 && set.excluded.length === 0) return true;
-  for (const name of assertedNames(certificate)) {
+function namesAllowed(
+  certificate: Certificate,
+  set: NameConstraintSet,
+): boolean | 'unevaluable' | 'unreadable' {
+  const names = assertedNames(certificate);
+  if (names === null) return 'unreadable';
+  for (const name of names) {
     const excluded = set.excluded.filter((constraint) => constraint.kind === name.kind);
     const permitted = set.permitted.filter((constraint) => constraint.kind === name.kind);
     if (name.kind === 'other') {
       if (excluded.length > 0 || permitted.length > 0) return 'unevaluable';
       continue;
-    }
-    if (
-      [...excluded, ...permitted].some((constraint) => constraint.bytes === null && constraint.kind !== 'dns')
-    ) {
-      if ([...excluded, ...permitted].some((constraint) => !comparable(constraint))) return 'unevaluable';
     }
     if (excluded.some((constraint) => nameWithin(name, constraint))) return false;
     // An empty `permitted` list constrains nothing: RFC 5280's subtree state starts as
@@ -630,13 +616,6 @@ function namesAllowed(certificate: Certificate, set: NameConstraintSet): boolean
     if (!permitted.some((constraint) => nameWithin(name, constraint))) return false;
   }
   return true;
-}
-
-/** Whether a constraint carries the value a comparison needs at all. */
-function comparable(constraint: Constraint): boolean {
-  if (constraint.kind === 'ip' || constraint.kind === 'directory') return constraint.bytes !== null;
-  if (constraint.kind === 'other') return false;
-  return constraint.text.length > 0;
 }
 
 /** Everything one candidate path produced: a verdict, or the first check that stopped it. */
@@ -690,11 +669,8 @@ async function validatePath(
   }
 
   for (let index = 0; index < last; index += 1) {
-    const child = path[index];
-    const parent = path[index + 1];
-    if (child === undefined || parent === undefined)
-      return { ok: false, reason: 'malformed', indeterminate: true };
-    const outcome = await signedBy(subtle, child, parent);
+    // `index < last`: both ends of the pair are on the path.
+    const outcome = await signedBy(subtle, path[index] as Certificate, path[index + 1] as Certificate);
     if (outcome === 'unsupported' || outcome === 'malformed') {
       return {
         ok: false,
@@ -706,8 +682,7 @@ async function validatePath(
   }
 
   for (let index = 1; index <= last; index += 1) {
-    const issuer = path[index];
-    if (issuer === undefined) return { ok: false, reason: 'malformed', indeterminate: true };
+    const issuer = path[index] as Certificate; // `index <= last`
     const usage = keyCertSignOf(issuer);
     if (usage === false) return { ok: false, reason: 'key-usage', indeterminate: false };
     const constraints = basicConstraintsOf(issuer);
@@ -723,14 +698,13 @@ async function validatePath(
   }
 
   for (let index = 1; index <= last; index += 1) {
-    const issuer = path[index];
-    if (issuer === undefined) return { ok: false, reason: 'malformed', indeterminate: true };
+    const issuer = path[index] as Certificate; // `index <= last`
     const constraints = constraintsOf(issuer);
+    if (constraints === null) return { ok: false, reason: 'malformed', indeterminate: true };
     if (constraints.permitted.length === 0 && constraints.excluded.length === 0) continue;
     for (let below = 0; below < index; below += 1) {
-      const subject = path[below];
-      if (subject === undefined) return { ok: false, reason: 'malformed', indeterminate: true };
-      const allowed = namesAllowed(subject, constraints);
+      const allowed = namesAllowed(path[below] as Certificate, constraints); // `below < index`
+      if (allowed === 'unreadable') return { ok: false, reason: 'malformed', indeterminate: true };
       if (allowed === 'unevaluable') {
         return { ok: false, reason: 'unsupported-critical-extension', indeterminate: true };
       }
@@ -780,8 +754,6 @@ export interface TrustInput {
 interface WalkState {
   /** A path ended at a trust anchor and every check ran: the answer is above argument. */
   reachableFailure: { reason: TrustReason; indeterminate: boolean } | null;
-  /** No path reached an anchor; the pool simply does not contain the issuer. */
-  sawCandidate: boolean;
   /** See {@link TrustInput.leafCriticalExtensions}. */
   readonly leafApplied: readonly string[];
 }
@@ -814,7 +786,6 @@ async function walk(
 
   for (const candidate of candidatesFor(current, pool)) {
     if (seen.has(candidate)) continue;
-    state.sawCandidate = true;
     const nextSeen = new Set(seen);
     nextSeen.add(candidate);
     const found = await walk(subtle, anchorSet, candidate, pool, now, [...path, candidate], nextSeen, state);
@@ -874,7 +845,6 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
 
   const state: WalkState = {
     reachableFailure: null,
-    sawCandidate: false,
     leafApplied: input.leafCriticalExtensions ?? [],
   };
   const found = await walk(subtle, roots, signer, pool, now, [signer], new Set([signer]), state);
