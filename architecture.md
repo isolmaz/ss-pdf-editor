@@ -1547,7 +1547,10 @@ cannot write `/NM`, so its marks carry the marker at the head of `/Contents` for
 `settleEngineMarks` moves it into the name before the file leaves. That step and the sticky
 notes are appended to the engine's incremental update, so adding a highlight or a note never
 rewrites the file; `readAnnotations` reads the
-names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`.
+names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`. A
+file that needs a password gives no names: the bytes pdf.js holds stay encrypted and MuPDF
+refuses them, and the file opens read-only, so its comments are listed from pdf.js alone
+rather than failing the read.
 Files written before the name carried it still have the marker in `/Contents`: `markerOf` and
 `commentText` read that too, and `viewer/marker-text.ts` watches the scroll container with a
 `MutationObserver` and rewrites such popup text through `commentText`, so the page never shows it.

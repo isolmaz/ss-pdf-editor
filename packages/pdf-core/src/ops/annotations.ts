@@ -1128,13 +1128,25 @@ export async function readAnnotations(
   });
 }
 
-/** `page|17R` → the mark id an annotation's `/NM` names, for the annotations we wrote. */
+/**
+ * `page|17R` → the mark id an annotation's `/NM` names, for the annotations we wrote.
+ *
+ * A file that needs a password to be read gives no names: pdf.js opened it with the
+ * reader's password, but the bytes it holds are still encrypted and MuPDF refuses them.
+ * Such a file opens read-only, so its comments are listed from what pdf.js read, with the
+ * marker an older write put in `/Contents`, instead of failing the whole read.
+ */
 async function annotationNames(
   bytes: Uint8Array,
   context: OperationContext,
 ): Promise<ReadonlyMap<string, string>> {
   const names = new Map<string, string>();
-  const { doc } = await openForWrite(bytes);
+  const opened = await openForWrite(bytes).catch((error: unknown) => {
+    if (error instanceof ToolError && error.code === 'encrypted-unsupported') return null;
+    throw error;
+  });
+  if (opened === null) return names;
+  const { doc } = opened;
   try {
     for (const [pageIndex, page] of pageObjects(doc).entries()) {
       throwIfAborted(context.signal);

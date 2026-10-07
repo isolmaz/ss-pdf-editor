@@ -410,6 +410,29 @@ describe('writeAnnotationsToFile', () => {
   });
 });
 
+describe('readAnnotations', () => {
+  it('lists the comments of a file that needs a password, opened with it', async () => {
+    const shaped = await writeShapeAnnotations(
+      await blank(),
+      [mark({ id: 'sq', kind: 'shapes', shape: 'square', rect: [40, 60, 200, 160] })],
+      run,
+    );
+    const source = mupdf.PDFDocument.openDocument(shaped.bytes.slice(), 'application/pdf').asPDF();
+    if (source === null) throw new Error('not a PDF');
+    const locked = new Uint8Array(
+      source.saveToBuffer('encrypt=aes-256,user-password=u,owner-password=o').asUint8Array(),
+    );
+    source.destroy();
+    const handle = await openWithPdfjs(locked, { password: 'u' });
+    try {
+      const read = await readAnnotations(handle, run);
+      expect(read.map((entry) => [entry.subtype, entry.contents])).toEqual([['Square', 'Şişli notu']]);
+    } finally {
+      await handle.destroy();
+    }
+  });
+});
+
 describe('markerTargets', () => {
   it('resolves a session mark to its own annotation, never to the popup that repeats its comment', async () => {
     const bytes = await engineWritten();
