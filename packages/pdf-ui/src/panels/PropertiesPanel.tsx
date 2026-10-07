@@ -265,19 +265,28 @@ interface Counts {
 /**
  * One sentence when a list changes size. The panels are re-rendered with fresh props
  * by the shell, so the previous counts live in a ref and only a real change speaks.
+ *
+ * The font list is `null` while the shell re-reads it after every change to the document,
+ * so a font change is two renders apart with a `null` between: the last count that was
+ * not `null` is the one the next one is compared with.
  */
 function useListAnnouncement(counts: Counts, t: Translator): string {
   const [message, setMessage] = useState('');
   const previous = useRef<Counts>(counts);
+  const lastFonts = useRef<number | null>(counts.fonts);
   useEffect(() => {
     const before = previous.current;
     previous.current = counts;
-    if (counts.fonts !== null && before.fonts !== null && counts.fonts !== before.fonts) {
-      setMessage(t('props.live.fonts', { count: counts.fonts }));
+    const fontsBefore = lastFonts.current;
+    if (counts.fonts !== null) lastFonts.current = counts.fonts;
+    // One sentence, the weightiest change first: opening another document changes every
+    // list, and its signatures are what the reader most needs to hear about.
+    if (counts.signatures !== before.signatures) {
+      setMessage(t('props.live.signatures', { count: counts.signatures }));
     } else if (counts.attachments !== before.attachments) {
       setMessage(t('props.live.attachments', { count: counts.attachments }));
-    } else if (counts.signatures !== before.signatures) {
-      setMessage(t('props.live.signatures', { count: counts.signatures }));
+    } else if (counts.fonts !== null && fontsBefore !== null && counts.fonts !== fontsBefore) {
+      setMessage(t('props.live.fonts', { count: counts.fonts }));
     }
   }, [counts, t]);
   return message;

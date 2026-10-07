@@ -144,8 +144,6 @@ export interface MeasureLayerProps {
   readonly gridSpacing?: number;
   readonly snapGrid?: boolean;
   readonly snapPoints?: boolean;
-  readonly selectedId?: string | null;
-  readonly onSelect?: (id: string) => void;
   /** The live reading, for the settings strip. */
   readonly onReading?: (reading: MeasureReading | null) => void;
   /**
@@ -275,8 +273,6 @@ export function MeasureLayer({
   gridSpacing = DEFAULT_GRID_SPACING,
   snapGrid = false,
   snapPoints = false,
-  selectedId,
-  onSelect,
   onReading,
   onStop,
 }: MeasureLayerProps) {
@@ -446,14 +442,7 @@ export function MeasureLayer({
       {/* The review half: measurements the session holds, in the space the writer
           converts from, so what is on screen is what the file will contain. */}
       {marks.map((mark) => (
-        <MarkShape
-          key={mark.id}
-          t={t}
-          mark={mark}
-          frame={frameOf(mark.pageIndex)}
-          selected={selectedId === mark.id}
-          onSelect={onSelect}
-        />
+        <MarkShape key={mark.id} t={t} mark={mark} frame={frameOf(mark.pageIndex)} />
       ))}
 
       {/* The grid, when armed with it on: a guide over the pages already laid out. */}
@@ -490,14 +479,10 @@ function MarkShape({
   t,
   mark,
   frame,
-  selected,
-  onSelect,
 }: {
   readonly t: Translator;
   readonly mark: MeasureMark;
   readonly frame: PageFrame | null;
-  readonly selected: boolean;
-  readonly onSelect?: (id: string) => void;
 }) {
   if (frame === null) return null;
   const screen = mark.points.map((point) => toScreen(frame, point));
@@ -514,10 +499,7 @@ function MarkShape({
       aria-label={label(t, MEASURE_KEYS[modeKey(mark.mode)])}
       data-measure={mark.id}
       tabIndex={-1}
-      onClick={() => onSelect?.(mark.id)}
-      className={`pointer-events-auto absolute border-0 bg-transparent p-0 ${
-        selected ? 'outline outline-2 outline-kumo-focus' : ''
-      }`}
+      className="pointer-events-auto absolute border-0 bg-transparent p-0"
       style={{ left: 0, top: 0, width: 0, height: 0 }}
     >
       <svg

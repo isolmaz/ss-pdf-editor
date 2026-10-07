@@ -118,6 +118,9 @@ import {
  */
 export type AnnotationTool = AnnotationKind | 'link';
 
+/** The kinds `markStyle` paints with one styled box per line: ink, shapes and typed text have their own branches. */
+type MarkupKind = Exclude<AnnotationKind, 'ink' | 'shapes' | 'freetext'>;
+
 /** A text selection, already reduced to per-line boxes in page points. */
 export interface TextSelection {
   readonly pageIndex: number;
@@ -861,7 +864,8 @@ export function markVisual(mark: AnnotationMark, frame: MarkPageFrame, identity 
           x: (turn.bounds[0] + turn.bounds[2]) / 2,
           y: (turn.bounds[1] + turn.bounds[3]) / 2,
         });
-  if (mark.kind === 'freetext') {
+  const kind = mark.kind;
+  if (kind === 'freetext') {
     return (
       <div key={mark.id} className="contents" data-ann={identity ? mark.id : undefined}>
         {textVisual(mark, frame)}
@@ -870,7 +874,7 @@ export function markVisual(mark: AnnotationMark, frame: MarkPageFrame, identity 
   }
   return (
     <div key={mark.id} className="contents" data-ann={identity ? mark.id : undefined}>
-      {mark.kind === 'ink' || (mark.kind === 'highlight' && (mark.strokes?.length ?? 0) > 0)
+      {kind === 'ink' || (kind === 'highlight' && (mark.strokes?.length ?? 0) > 0)
         ? (mark.strokes ?? []).map((strokePoints) => (
             <svg
               key={`${mark.id}:${strokePoints.join(',')}`}
@@ -881,7 +885,7 @@ export function markVisual(mark: AnnotationMark, frame: MarkPageFrame, identity 
                 top: 0,
                 width: 1,
                 height: 1,
-                mixBlendMode: mark.kind === 'highlight' ? 'multiply' : undefined,
+                mixBlendMode: kind === 'highlight' ? 'multiply' : undefined,
               }}
             >
               <polyline
@@ -897,14 +901,14 @@ export function markVisual(mark: AnnotationMark, frame: MarkPageFrame, identity 
               />
             </svg>
           ))
-        : mark.kind === 'shapes'
+        : kind === 'shapes'
           ? shapeVisual(mark, frame, turn, centre)
           : markBoxes(mark).map((box) => (
               <span
                 key={`${mark.id}:${box.join(',')}`}
                 aria-hidden="true"
                 className="pointer-events-none absolute z-10"
-                style={markStyle(mark, box, frame, turn, centre)}
+                style={markStyle(kind, mark, box, frame, turn, centre)}
               />
             ))}
     </div>
@@ -1043,6 +1047,7 @@ function shapeVisual(
  * stay readable under it at any opacity, which a solid fill never did.
  */
 function markStyle(
+  kind: MarkupKind,
   mark: AnnotationMark,
   box: MarkBox,
   frame: MarkPageFrame,
@@ -1053,7 +1058,7 @@ function markStyle(
   const base = { left, top, width, height } as const;
   const opacity = cssOpacity(mark.opacity);
   const bar = Math.max(1, (mark.thickness ?? 1.5) * frame.scale);
-  switch (mark.kind) {
+  switch (kind) {
     case 'highlight':
       // The file's own blend mode for `/Highlight`. `multiply` over the page's dark
       // glyphs leaves them dark, over white leaves the tint, and two overlapping
@@ -1102,13 +1107,6 @@ function markStyle(
         opacity: Math.max(opacity, 0.35),
         ...turnVisual(base, 0, centre, turn),
       };
-    case 'ink':
-    case 'shapes':
-    case 'freetext':
-      // Ink, the shapes and typed text are drawn by their own branches in `renderMark` and never
-      // reach here. A plain fill rather than nothing, so a caller that ever did route
-      // one here would be visible instead of silent.
-      return { ...base, background: mark.color, opacity };
   }
 }
 
