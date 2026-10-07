@@ -150,3 +150,22 @@ export function signatureFieldsPdf(): Uint8Array {
     '<< /Fields [7 0 R 8 0 R] >>',
   ]);
 }
+
+/**
+ * One page, four layers; the order lists `Alpha` and then a bare sub-list holding `Beta`, and
+ * `Gamma` and `Delta` are in no order entry. Every layer starts on.
+ */
+export function layerTreePdf(): Uint8Array {
+  const group = (name: string) => `<< /Type /OCG /Name (${name}) >>`;
+  return assemble([
+    '<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R 7 0 R 8 0 R] ' +
+      '/D << /Order [5 0 R [6 0 R]] /ON [5 0 R 6 0 R 7 0 R 8 0 R] >> >> >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << >> /Contents 4 0 R >>',
+    '<< /Length 0 >>\nstream\n\nendstream',
+    group('Alpha'),
+    group('Beta'),
+    group('Gamma'),
+    group('Delta'),
+  ]);
+}

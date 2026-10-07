@@ -47,9 +47,6 @@ export interface TooltipProps {
   readonly align?: 'start' | 'center' | 'end';
   /** Milliseconds of hover before the tip appears. Keyboard focus ignores it. */
   readonly delay?: number;
-  /** Controlled open state; omit to let hover and focus own it. */
-  readonly open?: boolean;
-  readonly onOpenChange?: (open: boolean) => void;
   readonly disabled?: boolean;
 }
 
@@ -73,16 +70,10 @@ export function Tooltip({
   side = 'top',
   align = 'center',
   delay = HOVER_DELAY_MS,
-  open,
-  onOpenChange,
   disabled,
 }: TooltipProps) {
   return (
-    <BaseTooltip.Root
-      open={open}
-      onOpenChange={onOpenChange === undefined ? undefined : (nextOpen) => onOpenChange(nextOpen)}
-      disabled={disabled ?? false}
-    >
+    <BaseTooltip.Root disabled={disabled ?? false}>
       {/* The caller's `id` is a contract other elements point at (a tabpanel's
           `aria-labelledby`), so it is handed to the primitive explicitly instead
           of racing the id it would otherwise generate for the trigger. */}

@@ -58,7 +58,6 @@ export interface OperationRunState {
   readonly error: OperationFailure | null;
   run: (spec: OperationDialogSpec, params: DialogParams, context: OperationRunContext) => void;
   cancel: () => void;
-  reset: () => void;
 }
 
 interface OperationRunSnapshot {
@@ -143,12 +142,5 @@ export function useOperationRun(): OperationRunState {
     setSnapshot(CANCELLED);
   }, []);
 
-  const reset = useCallback(() => {
-    // Resetting is a way out of any state, including a run that is still going.
-    controllerRef.current?.abort();
-    controllerRef.current = null;
-    setSnapshot(IDLE);
-  }, []);
-
-  return { ...snapshot, run, cancel, reset };
+  return { ...snapshot, run, cancel };
 }

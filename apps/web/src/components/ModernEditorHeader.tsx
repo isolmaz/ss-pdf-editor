@@ -62,10 +62,10 @@ export interface ModernEditorHeaderProps {
   readonly onSave: () => void;
   readonly canExport: boolean;
   readonly onExport: () => void;
-  readonly onExportOptions?: () => void;
+  readonly onExportOptions: () => void;
   readonly onSearch: () => void;
   readonly onPalette: () => void;
-  readonly menu?: ReactNode;
+  readonly menu: ReactNode;
   readonly tabs: readonly { readonly id: string; readonly name: string; readonly dirty: boolean }[];
   readonly activeTabId: string | null;
   readonly onSelectTab: (id: string) => void;
@@ -186,9 +186,7 @@ export function ModernEditorHeader({
           </span>
           <House size={16} className="hidden text-kumo-subtle sm:block" aria-hidden="true" />
         </button>
-        {menu ? (
-          <div className="hidden items-center border-s border-kumo-line ps-1 md:flex">{menu}</div>
-        ) : null}
+        <div className="hidden items-center border-s border-kumo-line ps-1 md:flex">{menu}</div>
       </div>
 
       {/* Task shortcuts: icons below 1536 px, icon and label above. */}
@@ -357,21 +355,19 @@ export function ModernEditorHeader({
             disabled={!canExport}
             title={t('shell.export.hint')}
             aria-label={t('shell.export')}
-            className={onExportOptions ? 'rounded-e-none border-e-0' : ''}
+            className="rounded-e-none border-e-0"
           >
             <span className="hidden md:inline">{t('shell.export')}</span>
           </Button>
-          {onExportOptions ? (
-            <button
-              type="button"
-              onClick={onExportOptions}
-              title={t('tools.exportOptions')}
-              aria-label={t('tools.exportOptions')}
-              className="flex h-8 items-center justify-center rounded-e-md border border-kumo-line bg-kumo-base px-1.5 text-kumo-subtle transition-colors hover:bg-kumo-recessed hover:text-kumo-strong"
-            >
-              <CaretDown size={12} aria-hidden="true" />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={onExportOptions}
+            title={t('tools.exportOptions')}
+            aria-label={t('tools.exportOptions')}
+            className="flex h-8 items-center justify-center rounded-e-md border border-kumo-line bg-kumo-base px-1.5 text-kumo-subtle transition-colors hover:bg-kumo-recessed hover:text-kumo-strong"
+          >
+            <CaretDown size={12} aria-hidden="true" />
+          </button>
         </div>
         <button
           type="button"

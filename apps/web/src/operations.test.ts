@@ -38,6 +38,7 @@ import {
   applyHistoryStep,
   applyPageAction,
   applyProducedBytes,
+  DOCUMENT_FACTS,
   hasEngineEdits,
   materializeBase,
   pageActionLabel,
@@ -1440,6 +1441,74 @@ describe('verifyForWrite: a reference the reader cannot question', () => {
       }
     },
   );
+});
+
+/** A reference whose reader describes every page with a view box of only three numbers. */
+function shortViewReference(real: PdfDocumentHandle): PdfDocumentHandle {
+  const bound = (target: object, property: string | symbol): unknown => {
+    const value: unknown = Reflect.get(target, property);
+    return typeof value === 'function' ? value.bind(target) : value;
+  };
+  const raw = new Proxy(real.raw, {
+    get(target, property) {
+      if (property !== 'getPage') return bound(target, property);
+      return async (number: number) => {
+        const page = await target.getPage(number);
+        return new Proxy(page, {
+          get: (pageTarget, pageProperty) =>
+            pageProperty === 'view' ? [0, 0, 595] : bound(pageTarget, pageProperty),
+        });
+      };
+    },
+  });
+  return { ...real, raw };
+}
+
+describe('verifyForWrite: a reference whose page boxes are unreadable', () => {
+  it('reports rotation and box as unsupported by the engine when a view box is not four numbers', async () => {
+    const source = await threePageDocument();
+    const real = await openWithPdfjs(source.bytes);
+    try {
+      const result = await verifyForWrite(source.bytes, {
+        expectedPageCount: 3,
+        sourceHandle: shortViewReference(real),
+        steps: [],
+      });
+      for (const fact of ['rotation', 'cropBox']) {
+        expect(checkFor(result, fact), fact).toEqual({
+          fact,
+          verdict: 'unsupported',
+          reason: 'engine-cannot',
+        });
+      }
+    } finally {
+      await real.destroy();
+    }
+  });
+});
+
+describe('verifyForWrite: every fact is answered', () => {
+  it.each([
+    ['without a reference', { expectedPageCount: 3, steps: [] }],
+    ['over the byte budget', { expectedPageCount: 3, steps: [], budgetBytes: 1 }],
+    ['against a reference', { expectedPageCount: 3, steps: [], reference: true }],
+    ['with expected form fields', { expectedPageCount: 3, steps: [], reference: true, fields: [] }],
+  ] as const)('lists every document fact, in report order, %s', async (_label, run) => {
+    const source = await threePageDocument();
+    const reference = 'reference' in run ? await openWithPdfjs(source.bytes) : undefined;
+    try {
+      const result = await verifyForWrite(source.bytes, {
+        expectedPageCount: run.expectedPageCount,
+        steps: run.steps,
+        ...('budgetBytes' in run ? { budgetBytes: run.budgetBytes } : {}),
+        ...(reference === undefined ? {} : { sourceHandle: reference }),
+        ...('fields' in run ? { expectedFormFields: run.fields } : {}),
+      });
+      expect(result.checks.map((check) => check.fact)).toEqual([...DOCUMENT_FACTS]);
+    } finally {
+      await reference?.destroy();
+    }
+  });
 });
 
 describe('base bytes and shortcuts', () => {

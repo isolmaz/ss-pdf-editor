@@ -1104,8 +1104,10 @@ async function checkGeometry(
       return;
     }
     if (produced.rotation !== source.rotation && rotationChanged < 0) rotationChanged = index;
+    // Both boxes are four-number tuples and `corner` runs over the produced one, so the index is
+    // always present in the source box too; the cast only drops the `undefined` of the index type.
     const sameBox = produced.box.every(
-      (value, corner) => Math.abs(value - (source.box[corner] ?? Number.NaN)) <= BOX_TOLERANCE,
+      (value, corner) => Math.abs(value - (source.box[corner] as number)) <= BOX_TOLERANCE,
     );
     if (!sameBox && boxChanged < 0) boxChanged = index;
   }
@@ -1422,9 +1424,11 @@ export async function verifyForWrite(
     record('annotations', 'unsupported', 'pending-storage');
     record('signatures', 'unsupported', 'trust-policy');
 
-    const checks = DOCUMENT_FACTS.map(
-      (fact): FactCheck => verdicts.get(fact) ?? { fact, verdict: 'unsupported', reason: 'engine-cannot' },
-    );
+    // Every fact of `DOCUMENT_FACTS` is recorded on every path that returns: pageCount above (a
+    // change either throws or is recorded), the geometry, text, form, outline and label checks on each
+    // of their exits (reference missing, over budget, reader failure, compared), and annotations and
+    // signatures just before. A run that cannot record a fact throws instead of returning.
+    const checks = DOCUMENT_FACTS.map((fact) => verdicts.get(fact) as FactCheck);
     // `pageCount` is always recorded verified or degraded, so a run is never left with nothing checked.
     const state = checks.some((check) => check.verdict === 'degraded') ? 'degraded' : 'verified';
     return {
