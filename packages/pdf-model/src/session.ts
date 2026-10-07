@@ -226,7 +226,7 @@ export class SessionStore {
         } satisfies DocumentChangePayload,
       },
     });
-    if (appended.discarded.length > 0) this.#releaseDiscarded(tab.id, appended.discarded);
+    if (appended.discarded.length > 0) this.#releaseDiscarded(tab, appended.discarded);
     this.#remember(tab.id, produced);
     this.#setWorking(tab.id, produced, input.pageCount, input.overlays);
     // The subscribers must hear about it: `#setWorking` replaces `#tabs`, and the
@@ -324,7 +324,7 @@ export class SessionStore {
       engine: 'model',
       op: { kind: 'document.overlays', payload: { before: tab.working.overlays ?? null, after: overlays } },
     });
-    if (appended.discarded.length > 0) this.#releaseDiscarded(tabId, appended.discarded);
+    if (appended.discarded.length > 0) this.#releaseDiscarded(tab, appended.discarded);
     this.#setOverlays(tabId, overlays);
     this.#publish();
   }
@@ -370,12 +370,12 @@ export class SessionStore {
   }
 
   #move(tabId: string, direction: 'undo' | 'redo'): HistoryResult {
-    const tab = this.#tabs.find((candidate) => candidate.id === tabId);
-    if (tab === undefined) return { kind: 'empty' };
     const preview = this.previewHistory(tabId, direction);
     if (preview.kind === 'empty' || preview.step.kind === 'unavailable') return preview;
-    const entry = direction === 'undo' ? tab.journal.undo() : tab.journal.redo();
-    if (entry === undefined) return { kind: 'empty' };
+    // The preview found the tab and an entry on this side of the cursor, so the tab exists
+    // and the journal moves onto exactly that entry.
+    const tab = this.#tabs.find((candidate) => candidate.id === tabId) as SessionTab;
+    const entry = (direction === 'undo' ? tab.journal.undo() : tab.journal.redo()) as JournalEntry;
     const step = this.#stepFor(tab, entry, direction);
     this.#publish();
     return { kind: 'done', step, direction };
@@ -441,7 +441,7 @@ export class SessionStore {
    * may name a document that an earlier, still-reachable entry also names, and releasing
    * that one would break `undo` to a state the user can still walk back to.
    */
-  #releaseDiscarded(tabId: string, discarded: readonly JournalEntry[]): void {
+  #releaseDiscarded(tab: SessionTab, discarded: readonly JournalEntry[]): void {
     const unreachable = new Set<string>();
     for (const entry of discarded) {
       const payload = entry.op.payload as Partial<DocumentChangePayload> | undefined;
@@ -457,40 +457,36 @@ export class SessionStore {
      * release. An entry naming the same document on both sides keeps it reachable, which is
      * the case a branch that re-lands on an earlier state depends on.
      */
-    const tab = this.#tabs.find((candidate) => candidate.id === tabId);
     const reachable = new Set<string>();
-    const entries = tab?.journal.entries ?? [];
-    const cursor = tab?.journal.cursor ?? 0;
-    for (let index = 0; index < cursor; index += 1) {
-      const entry = entries[index];
-      if (entry === undefined || entry.op.kind !== DOCUMENT_CHANGE_KIND) continue;
+    for (const entry of tab.journal.entries.slice(0, tab.journal.cursor)) {
+      if (entry.op.kind !== DOCUMENT_CHANGE_KIND) continue;
       const payload = entry.op.payload as Partial<DocumentChangePayload> | undefined;
       if (typeof payload?.before === 'string') reachable.add(payload.before);
       if (typeof payload?.after === 'string') reachable.add(payload.after);
     }
-    const working = tab?.working.produced?.id;
+    const working = tab.working.produced?.id;
     if (working !== undefined) reachable.add(working);
 
-    const kept = (this.#productions.get(tabId) ?? []).filter(
+    const kept = this.snapshotsFor(tab.id).filter(
       (item) => reachable.has(item.id) || !unreachable.has(item.id),
     );
-    this.#productions.set(tabId, kept);
+    this.#productions.set(tab.id, kept);
   }
 
   #remember(tabId: string, produced: ProducedDocument): void {
-    const kept = [...(this.#productions.get(tabId) ?? []), produced];
+    const kept = [...this.snapshotsFor(tabId), produced];
     const budget = snapshotBudgetFor(produced.bytes.byteLength);
     let total = kept.reduce((sum, item) => sum + item.bytes.byteLength, 0);
     while (kept.length > SNAPSHOT_BUDGET.keepNewest && total > budget) {
-      const dropped = kept.shift();
-      if (dropped === undefined) break;
+      // Non-empty: the loop runs while more than `keepNewest` (≥ 0) snapshots are kept.
+      const dropped = kept.shift() as ProducedDocument;
       total -= dropped.bytes.byteLength;
     }
     this.#productions.set(tabId, kept);
   }
 
   #find(tabId: string, id: string): ProducedDocument | null {
-    return (this.#productions.get(tabId) ?? []).find((item) => item.id === id) ?? null;
+    return this.snapshotsFor(tabId).find((item) => item.id === id) ?? null;
   }
 
   #publish(): void {

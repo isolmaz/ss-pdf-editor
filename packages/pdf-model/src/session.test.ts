@@ -45,6 +45,7 @@ describe('SessionStore', () => {
     store.closeTab(first.id);
     expect(store.getSnapshot().activeId).toBeNull();
     expect(store.getSnapshot().tabs).toHaveLength(0);
+    expect(store.active).toBeNull();
   });
 
   it('marks only the addressed document dirty', () => {
@@ -414,5 +415,172 @@ describe('a burst of form edits is one undo step', () => {
     store.setOverlays(tab.id, { engineValues: ['A'] }, 'ann.engineEdit');
     store.setOverlays(tab.id, { engineValues: ['Ab'] }, 'ann.engineEdit');
     expect(store.active?.journal.length).toBe(2);
+  });
+});
+
+describe('a history restored from storage', () => {
+  /** A journal entry as a stored draft carries it: `parseDraft` checks its shape, not its payload. */
+  const entry = (seq: number, kind: string, payload: unknown) => ({
+    id: `entry-${seq}`,
+    seq,
+    labelKey: 'ann.engineEdit',
+    engine: 'model' as const,
+    op: { kind, payload },
+    schema: 2,
+    timestamp: 1,
+  });
+  const produced = (id: string) => ({
+    id,
+    bytes: new Uint8Array([7]),
+    pageCount: 2,
+    inputBytes: 3,
+    labelKey: 'ann.engineEdit' as const,
+  });
+  const draft = (fields: Record<string, unknown>) =>
+    ({
+      id: 'draft',
+      name: 'a.pdf',
+      pageCount: 3,
+      size: 3,
+      dirty: false,
+      updatedAt: 1,
+      sourceKey: 'k',
+      engineValues: { entries: [], dropped: 0 },
+      journal: [],
+      ...fields,
+    }) as never;
+  const restored = (fields: Record<string, unknown>, snapshots: ReturnType<typeof produced>[] = []) => {
+    const store = new SessionStore();
+    const other = store.openDocument(document('other.pdf'));
+    const tab = store.openDocument(document('a.pdf'));
+    store.restoreHistory(tab.id, draft(fields), snapshots);
+    return { store, tab, other };
+  };
+
+  it('derives the saved state of a draft that did not store one', () => {
+    const journal = [
+      entry(0, 'document.overlays', { before: null, after: 1 }),
+      entry(1, 'document.overlays', { before: 1, after: 2 }),
+    ];
+    const savedState = (fields: Record<string, unknown>) => restored(fields).store.active?.savedState;
+    // An unsaved session has no saved state at all.
+    expect(savedState({ dirty: true, journal })).toBeNull();
+    // A clean one was saved at its own state: the stored id, else the entry before the cursor.
+    expect(savedState({ stateId: 'state-9', journal })).toBe('state-9');
+    expect(savedState({ journal, journalCursor: 1 })).toBe('entry-0');
+    expect(savedState({ journal })).toBe('entry-1');
+    expect(savedState({ journal: [] })).toBe('source');
+    // A stored saved state wins over every derivation.
+    expect(savedState({ dirty: true, journal, savedState: 'entry-0' })).toBe('entry-0');
+  });
+
+  it('touches only the addressed tab, and nothing for a tab that is not open', () => {
+    const { store, tab, other } = restored({
+      journal: [entry(0, 'document.overlays', { before: null, after: 1 })],
+    });
+    const [first, second] = store.getSnapshot().tabs;
+    expect(first?.id).toBe(other.id);
+    expect(first?.journal.length).toBe(0);
+    expect(second?.id).toBe(tab.id);
+    expect(second?.journal.length).toBe(1);
+    const before = store.getSnapshot();
+    store.restoreHistory('missing', draft({}), [produced('p')]);
+    expect(store.getSnapshot()).toBe(before);
+    expect(store.snapshotsFor('missing')).toEqual([]);
+    store.addOutput(tab.id, { id: 'out' } as never);
+    expect(store.getSnapshot().tabs.map((item) => item.outputs.length)).toEqual([0, 1]);
+  });
+
+  it('opens on the source when the stored working version has no snapshot', () => {
+    const { store, tab } = restored({ workingId: 'gone' }, [produced('kept')]);
+    expect(store.producedFor(tab.id)).toBeNull();
+    expect(store.active?.working.pageOrder).toHaveLength(3);
+  });
+
+  it('refuses to step onto an entry it cannot replay, and leaves the cursor where it was', () => {
+    const cases = [
+      entry(0, 'something.else', null),
+      entry(0, 'document.change', null),
+      entry(0, 'document.change', { before: null }),
+      // Undo steps to `before`: a snapshot the store does not hold.
+      entry(0, 'document.change', { before: 'not-kept', after: 'also-not-kept' }),
+    ];
+    for (const stored of cases) {
+      const { store, tab } = restored({ journal: [stored] });
+      const result = store.undo(tab.id);
+      expect(result.kind === 'done' && result.step.kind, stored.op.kind).toBe('unavailable');
+      expect(store.active?.journal.cursor).toBe(1);
+      expect(store.previewHistory(tab.id, 'redo')).toEqual({ kind: 'empty' });
+    }
+    expect(new SessionStore().previewHistory('missing', 'undo')).toEqual({ kind: 'empty' });
+  });
+
+  it('a new edit over a stored redo tail releases only the snapshots that tail alone named', () => {
+    const journal = [
+      // Before the cursor: payloads a build of this app never wrote, but storage can hold.
+      entry(0, 'document.change', undefined),
+      entry(1, 'document.change', { before: 'shared', after: 'shared' }),
+      // The redo tail: one snapshot only it names, one an earlier entry also names, and
+      // entries that name nothing.
+      entry(2, 'document.change', { before: 'shared', after: 'tail-only' }),
+      entry(3, 'document.change', { before: 'tail-only', after: 'shared' }),
+      entry(4, 'document.overlays', { before: null, after: 1 }),
+      entry(5, 'document.change', null),
+    ];
+    const { store, tab } = restored({ journal, journalCursor: 2, workingId: 'shared' }, [
+      produced('shared'),
+      produced('tail-only'),
+      produced('unnamed'),
+    ]);
+    const made = store.applyOperation({
+      tabId: tab.id,
+      bytes: new Uint8Array([9]),
+      pageCount: 2,
+      labelKey: 'ann.engineEdit',
+      engine: 'mupdf',
+      steps: [],
+      overlays: null,
+    });
+    expect(store.snapshotsFor(tab.id).map((item) => item.id)).toEqual(['shared', 'unnamed', made.id]);
+  });
+
+  it('a new edit over a tail that names no snapshot keeps every snapshot', () => {
+    const journal = [
+      entry(0, 'document.overlays', { before: null, after: 1 }),
+      entry(1, 'document.change', { before: null }),
+    ];
+    const { store, tab } = restored({ journal, journalCursor: 1 }, [produced('a'), produced('b')]);
+    store.setOverlays(tab.id, { annotations: ['new'] }, 'ann.engineEdit');
+    expect(store.snapshotsFor(tab.id).map((item) => item.id)).toEqual(['a', 'b']);
+  });
+
+  it('previewing an overlay step names it without changing what is shown', () => {
+    const store = new SessionStore();
+    const tab = store.openDocument(document('a.pdf'));
+    store.setOverlays(tab.id, { annotations: ['mark'] }, 'ann.engineEdit');
+    const preview = store.previewHistory(tab.id, 'undo');
+    expect(preview.kind === 'done' && preview.step.kind).toBe('overlays');
+    expect(store.active?.working.overlays).toEqual({ annotations: ['mark'] });
+  });
+});
+
+describe('what a tab carries from its inputs', () => {
+  it('keeps the file handle it was opened from, and the label params of an operation on both the snapshot and the step', () => {
+    const store = new SessionStore();
+    const handle = { name: 'a.pdf' } as unknown as FileSystemFileHandle;
+    const tab = store.openDocument({ ...document('a.pdf'), handle });
+    expect(tab.source.handle).toBe(handle);
+    const made = store.applyOperation({
+      tabId: tab.id,
+      bytes: new Uint8Array([1]),
+      pageCount: 3,
+      labelKey: 'ann.engineEdit',
+      labelParams: { count: 2 },
+      engine: 'mupdf',
+      steps: [],
+      overlays: null,
+    });
+    expect(made.labelParams).toEqual({ count: 2 });
+    expect(store.active?.journal.entries[0]?.labelParams).toEqual({ count: 2 });
   });
 });
