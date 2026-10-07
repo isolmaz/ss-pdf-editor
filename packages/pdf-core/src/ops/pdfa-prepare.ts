@@ -448,6 +448,12 @@ function drawMissingAppearances(doc: PDFDocument, tally: Tally): number {
       if (hasAppearance(annotation) || isEmptyRect(annotation)) continue;
       const flags = numberAt(annotation, 'F') ?? 0;
       if ((flags & (1 | 2 | 32)) !== 0) continue; // hidden: left out by the engine
+      // An annotation written inline in `/Annots` becomes an object of its own first. Loading the
+      // page synthesises appearances into a scratch copy of whatever it touches, so an inline
+      // dictionary — and the page holding it — would be drawn, and deleted from, only in that
+      // copy: the file kept it without an appearance while the report counted it removed.
+      const entry = annotations.get(at);
+      if (!entry.isIndirect()) annotations.put(at, doc.addObject(entry));
       needing.push(at);
     }
     if (needing.length === 0) continue;
@@ -456,8 +462,8 @@ function drawMissingAppearances(doc: PDFDocument, tally: Tally): number {
       const wrappers = page.getAnnotations();
       for (const at of needing.reverse()) {
         const target = annotations.get(at);
-        const id = target.isIndirect() ? target.asIndirect() : -1;
-        const wrapper = id < 0 ? undefined : wrappers.find((entry) => entry.getObject().asIndirect() === id);
+        const id = target.asIndirect();
+        const wrapper = wrappers.find((entry) => entry.getObject().asIndirect() === id);
         let ok = false;
         if (wrapper !== undefined) {
           ok = drawAppearance(wrapper, () => hasAppearance(resolved(target) ?? target));

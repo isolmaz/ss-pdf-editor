@@ -96,6 +96,32 @@ describe('prepareForPdfA', () => {
     }
   });
 
+  it('draws an annotation written inline in /Annots, and removes one it cannot draw from the file too', async () => {
+    const bytes = handPdf({
+      1: '<</Type/Catalog/Pages 2 0 R>>',
+      2: '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+      3:
+        '<</Type/Page/Parent 2 0 R/MediaBox[0 0 100 100]/Annots[' +
+        '<</Type/Annot/Subtype/Text/Rect[1 1 5 5]/F 4>> <</Type/Annot/Subtype/Unheard/Rect[40 40 60 60]/F 4>>]>>',
+    });
+    const prepared = await prepareForPdfA(bytes, 2, run);
+    expect(prepared.counters.appearancesDrawn).toBe(1);
+    expect([...prepared.counters.annotationsRemoved]).toEqual([['Unheard', 1]]);
+
+    const mupdf = await loadMupdf();
+    const doc = openPdf(mupdf, prepared.bytes);
+    try {
+      // What the report says is what the file holds: the note, now with an appearance, and nothing else.
+      const annotations = doc.findPage(0).get('Annots');
+      expect(annotations.length).toBe(1);
+      const note = annotations.get(0).resolve();
+      expect(note.get('Subtype').asName()).toBe('Text');
+      expect(note.get('AP').get('N').isStream()).toBe(true);
+    } finally {
+      doc.destroy();
+    }
+  });
+
   it('refuses a file that needs a password and says an owner-password file was written unprotected', async () => {
     await expect(
       prepareForPdfA(await fixture({ save: 'encrypt=aes-128,owner-password=o,user-password=u' }), 2, run),
