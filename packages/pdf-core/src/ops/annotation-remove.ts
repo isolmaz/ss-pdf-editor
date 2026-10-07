@@ -138,8 +138,8 @@ function referenceId(ref: Reference): string {
  */
 function referenceOf(object: PDFObject): Reference | null {
   if (!object.isIndirect()) return null;
-  const match = MUPDF_REFERENCE.exec(object.toString());
-  if (match === null) return { objectNumber: object.asIndirect(), generationNumber: 0 };
+  // MuPDF prints every indirect reference as `<number> <generation> R`.
+  const match = MUPDF_REFERENCE.exec(object.toString()) as RegExpExecArray;
   return { objectNumber: Number(match[1]), generationNumber: Number(match[2]) };
 }
 
@@ -157,27 +157,28 @@ function parseReferenceId(id: string): Reference | null {
   if (!Number.isSafeInteger(objectNumber) || objectNumber <= 0) return null;
   const digits = match[2] as string;
   const generationNumber = digits.length === 0 ? 0 : Number.parseInt(digits, 10);
-  return Number.isSafeInteger(generationNumber) && generationNumber >= 0
-    ? { objectNumber, generationNumber }
-    : null;
+  return Number.isSafeInteger(generationNumber) ? { objectNumber, generationNumber } : null;
 }
 
 /** The annotation references one page holds, by id, next to the array that holds them. */
 interface PageAnnotations {
   readonly array: PDFObject | null;
-  /** id → position in `/Annots`, for entries that travel as indirect references. */
-  readonly refs: ReadonlyMap<string, number>;
+  /** id → every position in `/Annots` that lists it (an object can be listed twice), for entries that are indirect references. */
+  readonly refs: ReadonlyMap<string, readonly number[]>;
   /** `/Annots` entry count, direct dictionaries included. */
   readonly count: number;
 }
 
 function annotationsOf(doc: PDFDocument, page: PDFObject): PageAnnotations {
   const array = annotsOf(doc, page);
-  const refs = new Map<string, number>();
+  const refs = new Map<string, number[]>();
   if (array === null) return { array, refs, count: 0 };
   for (let position = 0; position < array.length; position += 1) {
     const id = idOf(array.get(position));
-    if (id !== null) refs.set(id, position);
+    if (id === null) continue;
+    const positions = refs.get(id);
+    if (positions === undefined) refs.set(id, [position]);
+    else positions.push(position);
   }
   return { array, refs, count: array.length };
 }
@@ -238,8 +239,6 @@ interface RemovalExpectation {
   /** `/Annots` entries removed per touched page (a page can list one object twice). */
   readonly removedCounts: ReadonlyMap<number, number>;
 }
-
-const NO_IDS: ReadonlySet<string> = new Set();
 
 /**
  * Every reference to a doomed object that survives the removal.
@@ -315,8 +314,9 @@ async function verifyRemoval(produced: Uint8Array, expected: RemovalExpectation)
   try {
     ({ doc } = await openForWrite(produced));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw verificationFailed(`produced file does not re-open: ${message}`);
+    // `openForWrite` throws `Error`s only (`ToolError` or the engine's own).
+    const failure = error as Error;
+    throw verificationFailed(`produced file does not re-open: ${failure.message}`);
   }
   try {
     const pages = pageObjects(doc);
@@ -325,7 +325,8 @@ async function verifyRemoval(produced: Uint8Array, expected: RemovalExpectation)
     }
     for (const [index, page] of pages.entries()) {
       const annotations = annotationsOf(doc, page);
-      const want = (expected.beforeCounts[index] ?? 0) - (expected.removedCounts.get(index) ?? 0);
+      // The produced file has the page count that was checked above, so the index is in range.
+      const want = (expected.beforeCounts[index] as number) - (expected.removedCounts.get(index) ?? 0);
       if (annotations.count !== want) {
         throw verificationFailed(
           `page ${index + 1} carries ${annotations.count} annotations, expected ${want}`,
@@ -334,7 +335,8 @@ async function verifyRemoval(produced: Uint8Array, expected: RemovalExpectation)
       }
       const before = expected.beforeIds.get(index);
       if (before === undefined) continue;
-      const gone = expected.removedIds.get(index) ?? NO_IDS;
+      // A page with ids read before the removal is a page something was removed from.
+      const gone = expected.removedIds.get(index) as ReadonlySet<string>;
       for (const id of before) {
         const present = annotations.refs.has(id);
         if (gone.has(id)) {
@@ -381,9 +383,8 @@ function applyRemovals(
   touched: Iterable<number>,
 ): void {
   for (const [pageIndex, positions] of doomedPositions) {
-    const page = pages[pageIndex];
-    const array = page === undefined ? null : annotsOf(doc, page);
-    if (array === null) continue;
+    // Positions were read from this page's own array, so both exist.
+    const array = annotsOf(doc, pages[pageIndex] as PDFObject) as PDFObject;
     // Descending, so positions collected from the untouched array stay valid.
     for (const position of [...positions].sort((left, right) => right - left)) array.delete(position);
   }
@@ -464,12 +465,13 @@ export async function removePdfAnnotations(
       return annotations;
     };
 
-    /** Record one entry for removal, once, whatever asked for it. */
-    const doom = (pageIndex: number, position: number, id: string, number: number): void => {
+    /** Record every entry that lists the annotation for removal, once, whatever asked for it. */
+    const doom = (pageIndex: number, listing: readonly number[], id: string, number: number): void => {
       const positions = doomedPositions.get(pageIndex) ?? new Set<number>();
-      if (!positions.has(position)) {
+      doomedPositions.set(pageIndex, positions);
+      for (const position of listing) {
+        if (positions.has(position)) continue;
         positions.add(position);
-        doomedPositions.set(pageIndex, positions);
         removedCounts.set(pageIndex, (removedCounts.get(pageIndex) ?? 0) + 1);
       }
       const ids = removedIds.get(pageIndex) ?? new Set<string>();
@@ -481,10 +483,10 @@ export async function removePdfAnnotations(
     /** Unlink an annotation whichever page lists it; `false` when no page does. */
     const doomAnywhere = (id: string, number: number): boolean => {
       for (const [pageIndex, page] of pages.entries()) {
-        const position = annotationsOf(doc, page).refs.get(id);
-        if (position === undefined) continue;
+        const listing = annotationsOf(doc, page).refs.get(id);
+        if (listing === undefined) continue;
         readPage(pageIndex, page);
-        doom(pageIndex, position, id, number);
+        doom(pageIndex, listing, id, number);
         return true;
       }
       return false;
@@ -495,9 +497,11 @@ export async function removePdfAnnotations(
         throwIfAborted(context.signal);
         const page = pageOrFail(target.pageIndex, `annotation ${target.id}`);
         const annotations = readPage(target.pageIndex, page);
-        const position = annotations.refs.get(target.id);
-        const entry = position === undefined ? null : (annotations.array?.get(position) ?? null);
-        if (position === undefined || entry === null || !entry.isIndirect()) {
+        const listing = annotations.refs.get(target.id);
+        // `refs` holds indirect entries only, so a listed id has an array, a first position and an indirect entry.
+        const entry =
+          listing === undefined ? null : (annotations.array as PDFObject).get(listing[0] as number);
+        if (listing === undefined || entry === null) {
           throw new ToolError('selection-empty', {
             engine: 'mupdf',
             pageIndex: target.pageIndex,
@@ -522,7 +526,7 @@ export async function removePdfAnnotations(
               "erasing it would remove the field from the document's form",
           });
         }
-        doom(target.pageIndex, position, target.id, entry.asIndirect());
+        doom(target.pageIndex, listing, target.id, entry.asIndirect());
 
         // The comment's own popup window goes with the comment, and only when the
         // popup's `/Parent` says the comment owns it.

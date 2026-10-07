@@ -84,7 +84,8 @@ img { max-width: 100% }
 .slide td, .slide th { font-size: 16pt }
 `;
 
-const NATIVE_MAGIC: Readonly<Partial<Record<ConvertFormat, string>>> = {
+/** The formats MuPDF reads itself, and the type each is opened as. */
+const NATIVE_MAGIC: Readonly<Record<'html' | 'epub' | 'fb2', string>> = {
   html: 'text/html',
   epub: 'application/epub+zip',
   fb2: 'application/x-fictionbook',
@@ -121,7 +122,8 @@ function decodeEntities(value: string): string {
 }
 
 function stem(name: string): string {
-  const base = name.split(/[\\/]/).pop() ?? name;
+  // `split` always yields at least one piece.
+  const base = name.split(/[\\/]/).pop() as string;
   const dot = base.lastIndexOf('.');
   return (dot > 0 ? base.slice(0, dot) : base).trim();
 }
@@ -179,7 +181,7 @@ export async function convertToPdf(
       const title = HTML_TITLE.exec(head)?.[1]?.replace(/\s+/g, ' ').trim() ?? '';
       if (title !== '') sourceTitle = decodeEntities(title);
     }
-    parts = [{ bytes: request.bytes, magic: NATIVE_MAGIC[format] ?? 'text/html', page: null }];
+    parts = [{ bytes: request.bytes, magic: NATIVE_MAGIC[format], page: null }];
   }
   throwIfAborted(context.signal);
 
@@ -193,9 +195,10 @@ export async function convertToPdf(
   steps.push('convert.layout', 'convert.write');
   try {
     for (const part of parts) {
-      let source: MupdfDocument | null = null;
+      let opened: MupdfDocument | null = null;
       try {
-        source = mupdf.Document.openDocument(part.bytes, part.magic);
+        const source = mupdf.Document.openDocument(part.bytes, part.magic);
+        opened = source;
         const page = part.page ?? chosen;
         // A slide is the slide; everything else gets the chosen margin. The user stylesheet
         // only adds the page margin, so a document's own CSS keeps the rest of its look.
@@ -253,22 +256,20 @@ export async function convertToPdf(
           const convert = (
             item: NonNullable<ReturnType<MupdfDocument['loadOutline']>>[number],
           ): OutlineNodeInput => {
-            const at = item.uri === undefined ? -1 : (source?.resolveLink(item.uri) ?? -1);
-            const destination =
-              item.uri === undefined || at < 0 ? null : (source?.resolveLinkDestination(item.uri) ?? null);
+            let destination: OutlineNodeInput['destination'] = null;
+            if (item.uri !== undefined) {
+              const at = source.resolveLink(item.uri);
+              if (at >= 0) {
+                const point = source.resolveLinkDestination(item.uri);
+                destination = {
+                  pageIndex: offset + at,
+                  ...(Number.isFinite(point.x) && Number.isFinite(point.y) ? { x: point.x, y: point.y } : {}),
+                };
+              }
+            }
             return {
               title: (item.title ?? '').trim() || '—',
-              destination:
-                at < 0
-                  ? null
-                  : {
-                      pageIndex: offset + at,
-                      ...(destination !== null &&
-                      Number.isFinite(destination.x) &&
-                      Number.isFinite(destination.y)
-                        ? { x: destination.x, y: destination.y }
-                        : {}),
-                    },
+              destination,
               ...(item.down === undefined ? {} : { children: item.down.map(convert) }),
             };
           };
@@ -276,7 +277,7 @@ export async function convertToPdf(
         }
         pageCount += count;
       } finally {
-        source?.destroy();
+        opened?.destroy();
       }
     }
     writer.close();

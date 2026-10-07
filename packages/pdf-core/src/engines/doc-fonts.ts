@@ -47,7 +47,7 @@ const GAP_THOUSANDTHS = 250;
 /** How deep form XObjects are searched for fonts. */
 const FORM_DEPTH = 3;
 
-/** Code ranges larger than this are not expanded (a broken `/ToUnicode`). */
+/** `/W` ranges longer than this are not expanded (a broken or hostile width table). */
 const MAX_RANGE = 0x10000;
 
 /** `ABCDEF+Name` → `Name`, then lower case letters and digits only. */
@@ -194,8 +194,19 @@ function singleCodePoint(hex: string): number | null {
   for (let index = 0; index < hex.length; index += 4)
     units.push(Number.parseInt(hex.slice(index, index + 4), 16));
   const text = String.fromCharCode(...units);
-  const points = [...text];
-  return points.length === 1 ? (points[0]?.codePointAt(0) ?? null) : null;
+  if ([...text].length !== 1) return null;
+  // One code point means the string is not empty.
+  return text.codePointAt(0) as number;
+}
+
+/** Capture group `index` of a match of a pattern in which that group is mandatory, so it always took part. */
+function group(match: RegExpMatchArray, index: number): string {
+  return match[index] as string;
+}
+
+/** The character a code point is, one per iteration of a string, so never empty. */
+function pointOf(character: string): number {
+  return character.codePointAt(0) as number;
 }
 
 /**
@@ -217,24 +228,28 @@ function toUnicodeCodes(entry: PDFObject, bytes: 1 | 2): Map<number, number> | n
   };
   const hexLength = bytes * 2;
   for (const block of source.matchAll(/beginbfchar([\s\S]*?)endbfchar/gu)) {
-    for (const pair of (block[1] ?? '').matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/gu)) {
-      const [, code = '', text = ''] = pair;
+    for (const pair of group(block, 1).matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/gu)) {
+      const code = group(pair, 1);
+      const text = group(pair, 2);
       if (code.length !== hexLength) continue;
       put(Number.parseInt(code, 16), singleCodePoint(text));
     }
   }
   for (const block of source.matchAll(/beginbfrange([\s\S]*?)endbfrange/gu)) {
-    const body = block[1] ?? '';
+    const body = group(block, 1);
     for (const range of body.matchAll(
       /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(<[0-9a-fA-F]+>|\[[^\]]*\])/gu,
     )) {
-      const [, low = '', high = '', target = ''] = range;
+      const low = group(range, 1);
+      const high = group(range, 2);
+      const target = group(range, 3);
       if (low.length !== hexLength || high.length !== hexLength) continue;
       const start = Number.parseInt(low, 16);
       const end = Number.parseInt(high, 16);
-      if (end < start || end - start >= MAX_RANGE) continue;
+      // Codes are one or two bytes, so a range spans at most 0xFFFF codes: never an absurd one.
+      if (end < start) continue;
       if (target.startsWith('[')) {
-        const items = [...target.matchAll(/<([0-9a-fA-F]+)>/gu)].map((match) => match[1] ?? '');
+        const items = [...target.matchAll(/<([0-9a-fA-F]+)>/gu)].map((match) => group(match, 1));
         for (let code = start; code <= end; code += 1) {
           const item = items[code - start];
           if (item !== undefined) put(code, singleCodePoint(item));
@@ -316,10 +331,11 @@ const GLYPH_NAMES: Readonly<Record<string, number>> = {
 };
 
 function glyphNamePoint(name: string): number | null {
-  if (/^[A-Za-z]$/u.test(name)) return name.codePointAt(0) ?? null;
+  if (/^[A-Za-z]$/u.test(name)) return pointOf(name);
   const unicode = /^uni([0-9A-Fa-f]{4})$/u.exec(name);
-  if (unicode?.[1] !== undefined) return Number.parseInt(unicode[1], 16);
-  return GLYPH_NAMES[name] ?? null;
+  if (unicode !== null) return Number.parseInt(group(unicode, 1), 16);
+  // Own names only: `constructor` and `__proto__` are on every object and are not glyphs.
+  return Object.hasOwn(GLYPH_NAMES, name) ? (GLYPH_NAMES[name] as number) : null;
 }
 
 /** A base encoding's code → code point table, through the platform's own decoder. */
@@ -337,8 +353,8 @@ function baseEncoding(name: string | null): Map<number, number> {
   const decoder = new TextDecoder(label);
   for (let code = 0x20; code <= 0xff; code += 1) {
     if (code === 0x7f) continue;
-    const point = decoder.decode(new Uint8Array([code])).codePointAt(0);
-    if (point !== undefined && point !== 0xfffd) codes.set(code, point);
+    // Both decoders map every byte (WHATWG windows-1252 and macintosh have no holes), to one character.
+    codes.set(code, pointOf(decoder.decode(new Uint8Array([code]))));
   }
   return codes;
 }
@@ -380,9 +396,9 @@ function encodingCodes(entry: PDFObject): Map<number, number> | null {
 /** Whether every character of `text` has a code; white space may be drawn as gaps instead. */
 export function encodes(font: DocumentFont, text: string): boolean {
   for (const character of text) {
-    const point = character.codePointAt(0) ?? 0;
     if (character.trim() === '') continue;
-    if (!font.codes.has(point) || font.width(font.codes.get(point) ?? 0) <= 0) return false;
+    const code = font.codes.get(pointOf(character));
+    if (code === undefined || font.width(code) <= 0) return false;
   }
   return true;
 }
@@ -391,7 +407,7 @@ export function encodes(font: DocumentFont, text: string): boolean {
 export function measureText(font: DocumentFont, text: string, size: number): number {
   let total = 0;
   for (const character of text) {
-    const code = font.codes.get(character.codePointAt(0) ?? 0);
+    const code = font.codes.get(pointOf(character));
     total += code === undefined ? GAP_THOUSANDTHS : font.width(code);
   }
   return (total * size) / 1000;
@@ -407,7 +423,7 @@ export function showText(font: DocumentFont, text: string): string {
   const parts: string[] = [];
   let run = '';
   for (const character of text) {
-    const code = font.codes.get(character.codePointAt(0) ?? 0);
+    const code = font.codes.get(pointOf(character));
     if (code !== undefined) {
       run += hex(code);
       continue;

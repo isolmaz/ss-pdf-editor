@@ -288,8 +288,9 @@ async function verifyOutput(
   try {
     ({ doc } = await openForWrite(produced));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw verificationFailed(`produced file does not re-open: ${message}`, error);
+    // Both callees throw `Error`s only (`ToolError` or the engine's own).
+    const failure = error as Error;
+    throw verificationFailed(`produced file does not re-open: ${failure.message}`, error);
   }
   try {
     if (doc.countPages() !== pageCount) {
@@ -300,13 +301,20 @@ async function verifyOutput(
     try {
       properties = readProperties(doc);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw verificationFailed(`produced file has no readable layer properties: ${message}`, error);
+      // Both callees throw `Error`s only (`ToolError` or the engine's own).
+      const failure = error as Error;
+      throw verificationFailed(`produced file has no readable layer properties: ${failure.message}`, error);
     }
+
+    // The request names layers as the document had them; a rename in the same request changes
+    // what the produced file calls them.
+    const renamed = expected.renamed;
+    const producedName = (name: string): string =>
+      renamed !== null && name === renamed.from ? renamed.to : name;
 
     for (const update of expected.toggled) {
       for (const group of properties.groups) {
-        if (group.name !== update.name) continue;
+        if (group.name !== producedName(update.name)) continue;
         const isOn = contains(properties.on, group.number);
         const isOff = contains(properties.off, group.number);
         if (update.visible ? !isOn || isOff : !isOff || isOn) {
@@ -319,7 +327,8 @@ async function verifyOutput(
 
     if (expected.order !== null) {
       const producedOrder = readOrder(properties.order).numbers;
-      for (const [index, name] of expected.order.entries()) {
+      for (const [index, requested] of expected.order.entries()) {
+        const name = producedName(requested);
         const group = properties.groups.find((entry) => entry.name === name);
         if (group === undefined || producedOrder[index] !== group.number) {
           throw verificationFailed(`the produced /Order does not carry "${name}" at position ${index + 1}`);
@@ -327,7 +336,6 @@ async function verifyOutput(
       }
     }
 
-    const renamed = expected.renamed;
     if (renamed !== null && !properties.groups.some((group) => group.name === renamed.to)) {
       throw verificationFailed(`no optional content group carries the new name "${renamed.to}"`);
     }
@@ -421,6 +429,7 @@ function editLayers(
       (group) => !named.some((entry) => entry.number === group.number),
     );
     const next = [...named, ...omitted];
+    const nextNumbers = next.map((group) => group.number);
     /**
      * The document's own order is already exactly this and already flat: nothing to
      * write. A nested or labelled tree is never "already this", because writing it flat
@@ -429,12 +438,15 @@ function editLayers(
     const sameOrder =
       !previous.structured &&
       previous.numbers.length === next.length &&
-      previous.numbers.every((number, index) => next[index]?.number === number);
+      previous.numbers.every((number, index) => nextNumbers[index] === number);
     if (!sameOrder) {
       const array = doc.newArray();
       for (const group of next) array.push(group.ref);
       properties.config.put('Order', array);
-      edit.appliedOrder = order.filter((name) => properties.groups.some((entry) => entry.name === name));
+      // Each layer once, in the order it was first named: a repeat is not a second position.
+      edit.appliedOrder = [...new Set(order)].filter((name) =>
+        properties.groups.some((entry) => entry.name === name),
+      );
       edit.steps.push('layer.order');
       if (previous.structured) edit.notes.push(note('lost', 'op.note.layer.orderFlattened'));
       if (unknown > 0) edit.notes.push(note('warning', 'op.note.layer.orderUnknown', { count: unknown }));
@@ -492,7 +504,9 @@ function editLayers(
     );
     if (viewOverrides > 0)
       edit.notes.push(note('changed', 'op.note.layer.viewOverrides', { count: viewOverrides }));
-    if (properties.as !== null) edit.notes.push(note('preserved', 'op.note.layer.usageKept'));
+    // Only entries still in the file were kept: an /AS emptied above is gone.
+    if (arrayAt(properties.config, 'AS') !== null)
+      edit.notes.push(note('preserved', 'op.note.layer.usageKept'));
   }
   return edit;
 }

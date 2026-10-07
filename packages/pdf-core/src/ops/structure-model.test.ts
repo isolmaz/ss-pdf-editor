@@ -8,50 +8,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyStructureEdits,
-  EMPTY_MODEL,
   readingOrder,
   type StructContent,
   type StructEdit,
   StructEditError,
-  type StructKid,
-  type StructNode,
   type StructureModel,
   structureSignature,
 } from './structure-model';
-
-const mcid = (id: number, pageIndex = 0): StructKid => ({
-  kind: 'content',
-  item: { kind: 'mcid', mcid: id, pageIndex, inStream: false },
-});
-
-function el(
-  key: string,
-  role: string,
-  kids: readonly (StructKid | StructNode)[] = [],
-  extra: Partial<StructNode> = {},
-): StructNode {
-  return {
-    key,
-    role,
-    standard: role,
-    pageIndex: 0,
-    alt: null,
-    actualText: null,
-    lang: null,
-    scope: null,
-    colSpan: 1,
-    rowSpan: 1,
-    headers: [],
-    elementId: null,
-    editable: true,
-    kids: kids.map((kid): StructKid => ('kind' in kid ? kid : { kind: 'element', node: kid })),
-    ...extra,
-  };
-}
-
-function modelOf(...roots: StructNode[]): StructureModel {
-  return { ...EMPTY_MODEL, present: true, readable: true, roots, nodeCount: 0 };
-}
+import { el, mcid, modelOf } from './structure-model.fixtures';
 
 /** Document > H1, Sect > (P, P), Figure; every leaf owns one marked-content id on page 0. */
 function sample(): StructureModel {

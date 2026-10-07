@@ -126,9 +126,9 @@ function readRoleMap(root: PDFObject): Record<string, string> {
   const dict = dictOf(root.get('RoleMap'));
   if (dict === null) return map;
   dict.forEach((value, key) => {
-    if (typeof key !== 'string') return;
     const target = nameOf(value);
-    if (target !== null) map[key] = target;
+    // A dictionary's keys are names, so `String` only narrows the type.
+    if (target !== null) map[String(key)] = target;
   });
   return map;
 }
@@ -345,10 +345,6 @@ export function walkNodes(
 
 export function elementKids(node: StructNode): readonly StructNode[] {
   return node.kids.flatMap((kid) => (kid.kind === 'element' ? [kid.node] : []));
-}
-
-export function contentKids(node: StructNode): readonly StructContent[] {
-  return node.kids.flatMap((kid) => (kid.kind === 'content' ? [kid.item] : []));
 }
 
 export function findNode(
@@ -702,8 +698,6 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
         parent.kids.splice(rawIndexOf(parent, node.key), 1);
         break;
       }
-      default:
-        break;
     }
   }
 
@@ -716,7 +710,7 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
           : { kind: 'content', item: kid.item },
     ),
   });
-  const result = holder.kids.flatMap((kid) => (kid.kind === 'element' ? [finish(kid.node)] : []));
+  const result = elementKids(finish(holder));
   let count = 0;
   const tally = (node: StructNode): void => {
     count += 1;

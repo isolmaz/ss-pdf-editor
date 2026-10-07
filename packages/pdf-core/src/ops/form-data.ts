@@ -135,10 +135,6 @@ export interface FdfToken {
  * needs the same scanner — a second one would be a second set of escaping bugs.
  */
 export function tokenizePdfSource(source: string): readonly FdfToken[] {
-  return tokenizeFdf(source);
-}
-
-function tokenizeFdf(source: string): readonly FdfToken[] {
   const tokens: FdfToken[] = [];
   let index = 0;
   while (index < source.length) {
@@ -154,7 +150,7 @@ function tokenizeFdf(source: string): readonly FdfToken[] {
       while (index < source.length && depth > 0) {
         const current = source[index] as string;
         if (current === '\\') {
-          const sequence = /^\\[0-7]{3}|^\\[\\()nrtbf]/.exec(source.slice(index));
+          const sequence = /^\\[0-7]{1,3}|^\\[\\()nrtbf]/.exec(source.slice(index));
           if (sequence !== null) {
             raw.push(sequence[0]);
             index += sequence[0].length;
@@ -230,46 +226,69 @@ function tokenizeFdf(source: string): readonly FdfToken[] {
  * rebuilt in one pass before it can be decoded — which is exactly the pass a regex
  * over the source cannot do. A `\376\377` prefix is a UTF-16BE BOM and switches the
  * assembly to two-byte code units; anything else is Latin-1, the encoding a PDF
- * string without a BOM is read in.
+ * string without a BOM is read in. A character that is not a byte at all (the source was
+ * text, or Latin-1 bytes read as Windows-1252, which has `€` where Latin-1 has a control
+ * character) is already text: it stays itself, and only in a UTF-16 string is it widened to
+ * the two-byte form the BOM announces.
  */
 function decodeFdfString(raw: string): string {
-  const bytes: number[] = [];
+  /** Bytes (escapes and characters up to U+00FF) and, above that, code points. */
+  const units: number[] = [];
   let index = 0;
   while (index < raw.length) {
     if (raw[index] === '\\') {
-      const octal = /^\\([0-7]{3})/.exec(raw.slice(index));
+      const octal = /^\\([0-7]{1,3})/.exec(raw.slice(index));
       if (octal !== null) {
-        bytes.push(Number.parseInt(octal[1] as string, 8));
+        units.push(Number.parseInt(octal[1] as string, 8));
         index += octal[0].length;
         continue;
       }
-      bytes.push(escapeCharacter(raw[index + 1]));
+      // The tokenizer keeps only the escapes it understands, so a backslash is followed by one of them.
+      units.push(escapeCharacter(raw[index + 1] as string));
       index += 2;
       continue;
     }
-    const code = raw.codePointAt(index) ?? 0;
-    if (code <= 0xff) bytes.push(code);
-    else {
-      // A character outside Latin-1 cannot live in a PDF string; it is widened to
-      // the UTF-16BE form the BOM above announces.
-      const units = code > 0xffff ? surrogatePair(code) : [code];
-      for (const unit of units) bytes.push((unit >> 8) & 0xff, unit & 0xff);
-    }
+    // `index` is inside the string, so there is a code point to read.
+    const code = raw.codePointAt(index) as number;
+    units.push(code);
     index += code > 0xffff ? 2 : 1;
   }
 
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+  if (units[0] === 0xfe && units[1] === 0xff) {
+    const bytes: number[] = [];
+    for (const unit of units) {
+      if (unit <= 0xff) bytes.push(unit);
+      else {
+        const halves = unit > 0xffff ? surrogatePair(unit) : [unit];
+        for (const half of halves) bytes.push((half >> 8) & 0xff, half & 0xff);
+      }
+    }
     let out = '';
     for (let position = 2; position + 1 < bytes.length; position += 2) {
       out += String.fromCharCode((bytes[position] as number) * 256 + (bytes[position + 1] as number));
     }
     return out;
   }
-  return new TextDecoder('latin1').decode(new Uint8Array(bytes));
+  const latin1 = new TextDecoder('latin1');
+  let out = '';
+  let run: number[] = [];
+  const flush = (): void => {
+    out += latin1.decode(new Uint8Array(run));
+    run = [];
+  };
+  for (const unit of units) {
+    if (unit <= 0xff) run.push(unit);
+    else {
+      flush();
+      out += String.fromCodePoint(unit);
+    }
+  }
+  flush();
+  return out;
 }
 
 /** The character an FDF escape stands for (`\n`, `\(`, …). */
-function escapeCharacter(escaped: string | undefined): number {
+function escapeCharacter(escaped: string): number {
   switch (escaped) {
     case 'n':
       return 0x0a;
@@ -282,7 +301,7 @@ function escapeCharacter(escaped: string | undefined): number {
     case 'f':
       return 0x0c;
     default:
-      return escaped === undefined ? 0x5c : (escaped.codePointAt(0) ?? 0x5c);
+      return escaped.codePointAt(0) as number;
   }
 }
 
@@ -300,7 +319,7 @@ export function parseFdf(bytes: Uint8Array): readonly FormDataRecord[] {
       engineMessage: 'not an FDF file',
     });
   }
-  const tokens = tokenizeFdf(source);
+  const tokens = tokenizePdfSource(source);
   const records: FormDataRecord[] = [];
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];

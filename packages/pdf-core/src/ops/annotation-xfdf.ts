@@ -163,7 +163,8 @@ function gestures(strokes: readonly (readonly number[])[]): string {
   const runs = strokes.map((stroke) => {
     const points: string[] = [];
     for (let index = 0; index + 1 < stroke.length; index += 2) {
-      points.push(`${num(stroke[index] ?? 0)},${num(stroke[index + 1] ?? 0)}`);
+      // The loop condition keeps both coordinates of the pair inside the stroke.
+      points.push(`${num(stroke[index] as number)},${num(stroke[index + 1] as number)}`);
     }
     return `<gesture>${points.join(';')}</gesture>`;
   });
@@ -454,9 +455,10 @@ function childElements(parent: Element, name: string): Element[] {
 /** `<contents>`, or the plain text of `<contents-richtext>`, or the `contents` attribute. */
 function contentsOf(element: Element): string {
   const plain = childElements(element, 'contents')[0];
-  if (plain !== undefined) return plain.textContent ?? '';
+  // The text of an element is a string; `null` is what a document or doctype answers.
+  if (plain !== undefined) return plain.textContent as string;
   const rich = childElements(element, 'contents-richtext')[0];
-  if (rich !== undefined) return (rich.textContent ?? '').trim();
+  if (rich !== undefined) return (rich.textContent as string).trim();
   return attr(element, 'contents') ?? '';
 }
 
@@ -513,10 +515,12 @@ function markFromElement(element: Element, kind: (typeof ELEMENT_KINDS)[string])
         const start = numbers(attr(element, 'start'));
         const end = numbers(attr(element, 'end'));
         if (start.length < 2 || end.length < 2) return null;
-        const ends: MarkBox = [start[0] ?? 0, start[1] ?? 0, end[0] ?? 0, end[1] ?? 0];
+        // Two numbers at least on each side, checked just above.
+        const ends: MarkBox = [start[0] as number, start[1] as number, end[0] as number, end[1] as number];
         return { ...base, quads: [box], shape: 'line', rect: ends };
       }
-      return { ...base, quads: [box], shape: kind.shape ?? 'square', rect: box };
+      // Every `shapes` entry of ELEMENT_KINDS names its shape; `line` returned above.
+      return { ...base, quads: [box], shape: kind.shape as 'square' | 'circle', rect: box };
     }
     case 'freetext': {
       const appearance = childElements(element, 'defaultappearance')[0]?.textContent ?? '';
@@ -575,12 +579,14 @@ export async function parseXfdf(bytes: Uint8Array): Promise<AnnotationDataResult
 
   const marks = new Map<string, AnnotationMark>();
   const order: string[] = [];
-  const answers: Element[] = [];
+  /** Records that answer another comment, with the name they answer. */
+  const answers: { readonly element: Element; readonly parent: string }[] = [];
   let skipped = 0;
   let pageUnknown = 0;
   for (const element of elements) {
-    if (attr(element, 'inreplyto') !== null && attr(element, 'replyType') !== 'group') {
-      answers.push(element);
+    const parent = attr(element, 'inreplyto');
+    if (parent !== null && attr(element, 'replyType') !== 'group') {
+      answers.push({ element, parent });
       continue;
     }
     const kind = ELEMENT_KINDS[element.localName];
@@ -596,10 +602,9 @@ export async function parseXfdf(bytes: Uint8Array): Promise<AnnotationDataResult
 
   // A reply may answer a reply: each record is attached to the comment its chain ends at.
   const parentOf = new Map<string, string>();
-  for (const element of answers) {
+  for (const { element, parent } of answers) {
     const name = attr(element, 'name');
-    const parent = attr(element, 'inreplyto');
-    if (name !== null && parent !== null) parentOf.set(name, parent);
+    if (name !== null) parentOf.set(name, parent);
   }
   const rootOf = (start: string): string | null => {
     let current: string | undefined = start;
@@ -612,8 +617,8 @@ export async function parseXfdf(bytes: Uint8Array): Promise<AnnotationDataResult
   };
   const replies = new Map<string, CommentReply[]>();
   const reviews = new Map<string, CommentReview>();
-  for (const element of answers) {
-    const root = rootOf(attr(element, 'inreplyto') ?? '');
+  for (const { element, parent } of answers) {
+    const root = rootOf(parent);
     const state = attr(element, 'state');
     const model = attr(element, 'statemodel') ?? 'Review';
     if (root === null || (state !== null && model !== 'Review')) {
