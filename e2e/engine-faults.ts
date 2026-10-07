@@ -28,8 +28,8 @@
  *  - MuPDF methods are synchronous WebAssembly calls: they can fail but cannot be held. Its
  *    only holdable point is the module load (`module`), which stalls the first thing in the page
  *    that needs MuPDF. pdf.js requests are asynchronous: any of them can be held, but only the
- *    ones answered with a promise can be made to fail (a streamed `GetTextContent` or
- *    `GetOperatorList` request has no reply to turn into an error).
+ *    ones answered with a promise or a stream can be made to fail (a streamed `GetTextContent`
+ *    fails on its first read).
  *  - A rule fires once by default (`times` for more). Rules live in the page: a reload starts clean.
  *    Only `module` rules can be armed before the first navigation.
  *  - Use `test.use({ serviceWorkers: 'block' })`: requests that pass a service worker are not seen
@@ -112,6 +112,7 @@ function installTable(): void {
       }
       const action: unknown = Reflect.get(message, 'action');
       const callbackId: unknown = Reflect.get(message, 'callbackId');
+      const streamId: unknown = Reflect.get(message, 'streamId');
       const target: unknown = Reflect.get(message, 'targetName');
       const source: unknown = Reflect.get(message, 'sourceName');
       if (typeof action !== 'string') {
@@ -119,7 +120,11 @@ function installTable(): void {
         return;
       }
       table.requests[action] = (table.requests[action] ?? 0) + 1;
-      const rule = table.take('pdfjs', action, callbackId === undefined ? ['hold'] : ['fail', 'hold']);
+      const rule = table.take(
+        'pdfjs',
+        action,
+        callbackId === undefined && streamId === undefined ? ['hold'] : ['fail', 'hold'],
+      );
       if (rule === null) {
         forward();
         return;
@@ -129,17 +134,16 @@ function installTable(): void {
         void rule.gate.then(forward);
         return;
       }
-      // pdf.js's `MessageHandler` turns `{ callback: 2 (ERROR), reason }` into a rejected request.
+      // pdf.js's `MessageHandler` turns `{ callback: 2 (ERROR), reason }` into a rejected request and
+      // `{ stream: 8 (START_COMPLETE), success: false, reason }` into a stream that fails on its first read.
+      const reason = { name: 'UnknownErrorException', message: rule.message, details: rule.message };
       setTimeout(() => {
         this.dispatchEvent(
           new MessageEvent('message', {
-            data: {
-              sourceName: target,
-              targetName: source,
-              callback: 2,
-              callbackId,
-              reason: { name: 'UnknownErrorException', message: rule.message, details: rule.message },
-            },
+            data:
+              streamId === undefined
+                ? { sourceName: target, targetName: source, callback: 2, callbackId, reason }
+                : { sourceName: target, targetName: source, stream: 8, streamId, success: false, reason },
           }),
         );
       }, 0);
