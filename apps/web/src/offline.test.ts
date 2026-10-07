@@ -144,8 +144,9 @@ describe('the shipped path list matches the pinned assets', () => {
     for (const engine of Object.values(pins.engines)) {
       for (const file of engine.files) pinned.add(`/${file.path}`);
     }
-    // Shell entries are build outputs, not pinned engine assets.
-    const shell = new Set(OFFLINE_CAPABILITIES.core);
+    // The shell's pages and scripts are build outputs, not pinned engine assets. The
+    // interface fonts it caches are pinned, so they are checked like every other asset.
+    const shell = new Set(OFFLINE_CAPABILITIES.core.filter((path) => !path.startsWith('/fonts/')));
     // An empty list would satisfy the check below for nothing.
     expect(offline.length).toBeGreaterThan(0);
     expect(pinned.size).toBeGreaterThan(0);
