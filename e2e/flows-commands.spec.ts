@@ -160,6 +160,9 @@ test('page boxes and labels: a set CropBox and a Roman label range reach the fil
   await choose(page, form, 'Numbering style', 'i, ii, iii');
   await form.getByRole('textbox', { name: 'Prefix' }).fill('App-');
   await applyForm(form);
+  // The labels the file now carries are the ones the page list shows.
+  await expect(page.getByRole('option').nth(0)).toContainText('App-i (1)');
+  await expect(page.getByRole('option').nth(1)).toContainText('App-ii (2)');
 
   const bytes = await exported(page, 'boxes.pdf');
   expect(await readProducedEntry(bytes, 0, 'CropBox')).toMatch(/10\s+20\s+310\s+420/);

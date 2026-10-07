@@ -58,6 +58,41 @@ import { type MarkFamily, type MarkTarget, markTargetKey } from 'pdf-ui/tools';
  */
 export { markTargetKey };
 
+/** A mark with what its comment says set aside: what is left is what it looks like. */
+function withoutComment(mark: AnnotationMark): string {
+  const { contents: _contents, replies: _replies, review: _review, ...rest } = mark;
+  return JSON.stringify(rest);
+}
+
+/**
+ * The History label of one change to the session's marks: the kind that was drawn, a
+ * delete, a comment edit or a move/turn/restyle. Every step used to read "Comments",
+ * so a list of ten steps could not say which one to go back to.
+ */
+export function annotationStepLabel(
+  before: readonly AnnotationMark[],
+  after: readonly AnnotationMark[],
+): MessageKey {
+  const was = new Map(before.map((mark) => [mark.id, mark]));
+  const kept = new Set(after.map((mark) => mark.id));
+  const added = after.filter((mark) => !was.has(mark.id));
+  const removed = before.filter((mark) => !kept.has(mark.id));
+  if (added.length > 0 && removed.length === 0) {
+    const [first] = added;
+    return first !== undefined && added.every((mark) => mark.kind === first.kind)
+      ? annotationKindKey(first.kind)
+      : 'panel.comments';
+  }
+  if (removed.length > 0 && added.length === 0) return 'ann.remove';
+  if (added.length > 0) return 'panel.comments';
+  const changed = after.filter((mark) => was.get(mark.id) !== mark);
+  const commentOnly = changed.every((mark) => {
+    const old = was.get(mark.id);
+    return old !== undefined && withoutComment(old) === withoutComment(mark);
+  });
+  return changed.length > 0 && commentOnly ? 'ann.edit' : 'ann.transform';
+}
+
 /** A redaction intent as the session stores it: an id and the rectangle behind it. */
 export interface MarkedRedaction {
   readonly id: string;

@@ -681,6 +681,14 @@ export function PdfViewerPane({
       };
 
       const onPagesInit = () => {
+        // A count belongs to the document it was found in: the new one has not been
+        // searched, and the next Enter in the find box starts a fresh search of it.
+        setFind((previous) =>
+          previous.matches === 0 && previous.current === 0
+            ? previous
+            : { ...previous, matches: 0, current: 0 },
+        );
+        setFindState(null);
         // A rewritten document (same identity: the shell's `documentKey`, else the
         // handle's fingerprint) resumes where the reader was; a first open or a
         // different document starts at fit-width on page 1, exactly as this pane

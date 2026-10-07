@@ -161,7 +161,9 @@ export function isVisible(field: FieldSpec, values: DialogParams): boolean {
 /** The typed range inside a `'range:<text>'` value, or the value itself. */
 function scopeText(value: FieldValue | undefined): string {
   const text = typeof value === 'string' ? value : '';
-  return text.startsWith(RANGE_PREFIX) ? text.slice(RANGE_PREFIX.length) : text;
+  // A keyword is not a range the reader typed: switching to "custom" from "selection"
+  // put the word itself in the box, already failing to parse.
+  return text.startsWith(RANGE_PREFIX) ? text.slice(RANGE_PREFIX.length) : '';
 }
 
 /** Whether a page-scope value is one of the three keywords rather than a range. */
@@ -337,26 +339,29 @@ export function FieldList({
         const value = typeof raw === 'string' ? raw : 'all';
         const mode: KeywordScope | 'custom' = isKeywordScope(value) ? value : 'custom';
         const text = rangeDrafts[field.id] ?? scopeText(value);
+        // The range box is the group's sibling, not its child: inside the radio group it
+        // was rebuilt on every keystroke, and each key replaced what the reader had typed.
         return (
-          <Radio.Group<string>
-            key={field.id}
-            legend={label}
-            value={mode}
-            description={hint ?? (selectedCount === 0 ? t('op.scope.empty') : undefined)}
-            onValueChange={(next) => {
-              set(field.id, next === 'custom' ? `${RANGE_PREFIX}${text}` : next);
-            }}
-          >
-            <Radio.Item label={t('op.scope.all', { count: pageCount })} value="all" />
-            {currentPage === undefined ? null : (
-              <Radio.Item label={t('op.scope.current', { page: currentPage + 1 })} value="current" />
-            )}
-            <Radio.Item
-              label={t('op.scope.selection', { count: selectedCount })}
-              value="selection"
-              disabled={selectedCount === 0}
-            />
-            <Radio.Item label={t('op.scope.custom')} value="custom" />
+          <div key={field.id} className="flex flex-col gap-1.5">
+            <Radio.Group<string>
+              legend={label}
+              value={mode}
+              description={hint ?? (selectedCount === 0 ? t('op.scope.empty') : undefined)}
+              onValueChange={(next) => {
+                set(field.id, next === 'custom' ? `${RANGE_PREFIX}${text}` : next);
+              }}
+            >
+              <Radio.Item label={t('op.scope.all', { count: pageCount })} value="all" />
+              {currentPage === undefined ? null : (
+                <Radio.Item label={t('op.scope.current', { page: currentPage + 1 })} value="current" />
+              )}
+              <Radio.Item
+                label={t('op.scope.selection', { count: selectedCount })}
+                value="selection"
+                disabled={selectedCount === 0}
+              />
+              <Radio.Item label={t('op.scope.custom')} value="custom" />
+            </Radio.Group>
             {mode === 'custom' ? (
               <Input
                 size="sm"
@@ -373,7 +378,7 @@ export function FieldList({
                 }}
               />
             ) : null}
-          </Radio.Group>
+          </div>
         );
       }
 
@@ -414,7 +419,10 @@ export function FieldList({
             size="sm"
             label={label}
             description={hint}
-            error={error}
+            // An unpicked choice is not an error while there is something to pick from: the
+            // "nothing to select" message belongs to a list that was read and came back
+            // empty. The form stays invalid (no confirm) until a value is chosen.
+            error={(choices?.[field.id] ?? []).length === 0 ? error : undefined}
             value={String(values[field.id] ?? field.defaultValue)}
             // Kumo's trigger prints the raw value unless it is told the label.
             renderValue={(value) =>

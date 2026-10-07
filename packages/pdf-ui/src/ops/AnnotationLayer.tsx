@@ -687,72 +687,9 @@ export function AnnotationLayer({
     return frame;
   };
 
-  /**
-   * One mark's visuals, under the single `data-ann` node consumers look it up by.
-   * A closure rather than two JSX copies, because the two roots below both draw from
-   * it and they have to agree on the geometry down to the pixel.
-   */
   const renderMark = (mark: AnnotationMark): React.ReactNode => {
     const frame = frameFor(mark.pageIndex);
-    if (frame === null) return null;
-    const turn = markTurn(mark);
-    // The centre every visual of this mark turns about: the projected `annotationBounds`
-    // centre, which is the point the writer bakes its rotation around as well.
-    const centre =
-      turn === null
-        ? null
-        : frame.toScreen({
-            x: (turn.bounds[0] + turn.bounds[2]) / 2,
-            y: (turn.bounds[1] + turn.bounds[3]) / 2,
-          });
-    if (mark.kind === 'freetext') {
-      return (
-        <div key={mark.id} className="contents" data-ann={mark.id}>
-          {textVisual(mark, frame)}
-        </div>
-      );
-    }
-    return (
-      <div key={mark.id} className="contents" data-ann={mark.id}>
-        {mark.kind === 'ink' || (mark.kind === 'highlight' && (mark.strokes?.length ?? 0) > 0)
-          ? (mark.strokes ?? []).map((strokePoints) => (
-              <svg
-                key={`${mark.id}:${strokePoints.join(',')}`}
-                aria-hidden="true"
-                className="pointer-events-none absolute overflow-visible z-10"
-                style={{
-                  left: 0,
-                  top: 0,
-                  width: 1,
-                  height: 1,
-                  mixBlendMode: mark.kind === 'highlight' ? 'multiply' : undefined,
-                }}
-              >
-                <polyline
-                  points={strokePath(strokePoints, frame, turn)}
-                  fill="none"
-                  stroke={mark.color}
-                  strokeOpacity={cssOpacity(mark.opacity)}
-                  // Points are in page points → screen pixels; the stroke has to
-                  // scale with them, or a 2 pt line stays 2 px at 250 % zoom.
-                  strokeWidth={Math.max(1, (mark.thickness ?? 2) * frame.scale)}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ))
-          : mark.kind === 'shapes'
-            ? shapeVisual(mark, frame, turn, centre)
-            : markBoxes(mark).map((box) => (
-                <span
-                  key={`${mark.id}:${box.join(',')}`}
-                  aria-hidden="true"
-                  className="pointer-events-none absolute z-10"
-                  style={markStyle(mark, box, frame, turn, centre)}
-                />
-              ))}
-      </div>
-    );
+    return frame === null ? null : markVisual(mark, frame);
   };
 
   /**
@@ -904,6 +841,73 @@ export function AnnotationLayer({
           : null}
       </div>
     </>
+  );
+}
+
+/**
+ * One mark's visuals in `frame`, under the single `data-ann` node consumers look it up
+ * by. One function rather than JSX copies, because the layer's two roots and the page
+ * thumbnails all draw from it and they have to agree on the geometry down to the pixel.
+ * `identity` is off for a copy (a thumbnail): `data-ann` must name one node per mark.
+ */
+export function markVisual(mark: AnnotationMark, frame: MarkPageFrame, identity = true): React.ReactNode {
+  const turn = markTurn(mark);
+  // The centre every visual of this mark turns about: the projected `annotationBounds`
+  // centre, which is the point the writer bakes its rotation around as well.
+  const centre =
+    turn === null
+      ? null
+      : frame.toScreen({
+          x: (turn.bounds[0] + turn.bounds[2]) / 2,
+          y: (turn.bounds[1] + turn.bounds[3]) / 2,
+        });
+  if (mark.kind === 'freetext') {
+    return (
+      <div key={mark.id} className="contents" data-ann={identity ? mark.id : undefined}>
+        {textVisual(mark, frame)}
+      </div>
+    );
+  }
+  return (
+    <div key={mark.id} className="contents" data-ann={identity ? mark.id : undefined}>
+      {mark.kind === 'ink' || (mark.kind === 'highlight' && (mark.strokes?.length ?? 0) > 0)
+        ? (mark.strokes ?? []).map((strokePoints) => (
+            <svg
+              key={`${mark.id}:${strokePoints.join(',')}`}
+              aria-hidden="true"
+              className="pointer-events-none absolute overflow-visible z-10"
+              style={{
+                left: 0,
+                top: 0,
+                width: 1,
+                height: 1,
+                mixBlendMode: mark.kind === 'highlight' ? 'multiply' : undefined,
+              }}
+            >
+              <polyline
+                points={strokePath(strokePoints, frame, turn)}
+                fill="none"
+                stroke={mark.color}
+                strokeOpacity={cssOpacity(mark.opacity)}
+                // Points are in page points → screen pixels; the stroke has to
+                // scale with them, or a 2 pt line stays 2 px at 250 % zoom.
+                strokeWidth={Math.max(1, (mark.thickness ?? 2) * frame.scale)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ))
+        : mark.kind === 'shapes'
+          ? shapeVisual(mark, frame, turn, centre)
+          : markBoxes(mark).map((box) => (
+              <span
+                key={`${mark.id}:${box.join(',')}`}
+                aria-hidden="true"
+                className="pointer-events-none absolute z-10"
+                style={markStyle(mark, box, frame, turn, centre)}
+              />
+            ))}
+    </div>
   );
 }
 

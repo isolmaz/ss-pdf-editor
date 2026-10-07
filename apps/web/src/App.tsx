@@ -157,6 +157,7 @@ import {
 import { PdfViewerPane, type ViewerApi } from 'pdf-ui/viewer';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
+  annotationStepLabel,
   buildMarkTargets,
   isEmptyRemoval,
   normalizePendingMarks,
@@ -748,7 +749,11 @@ export function App({ store }: AppProps) {
       const overlays = pendingOverlays(tab);
       const next = typeof change === 'function' ? change(overlays.annotations) : change;
       if (next === overlays.annotations || (next.length === 0 && overlays.annotations.length === 0)) return;
-      store.setOverlays(tab.id, { ...overlays, annotations: next } as unknown as JsonValue, 'panel.comments');
+      store.setOverlays(
+        tab.id,
+        { ...overlays, annotations: next } as unknown as JsonValue,
+        annotationStepLabel(overlays.annotations, next),
+      );
     },
     [store],
   );
@@ -4222,7 +4227,9 @@ export function App({ store }: AppProps) {
         setNotice(
           answer.kind === 'reply'
             ? t('ann.reply.pendingDone')
-            : t('ann.state.by', { state: t(`ann.state.${answer.state}`), author }),
+            : author.trim() === ''
+              ? t(`ann.state.${answer.state}`)
+              : t('ann.state.by', { state: t(`ann.state.${answer.state}`), author }),
         );
         return;
       }
@@ -5265,6 +5272,7 @@ export function App({ store }: AppProps) {
                   onPageAction={runPageAction}
                   editing={canEdit}
                   version={activeTab.working.stateId}
+                  marks={visibleMarks.annotations}
                   onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
                   onNotice={setNotice}
                   onHighlightQuery={(query) => viewerApi.current?.find(query)}

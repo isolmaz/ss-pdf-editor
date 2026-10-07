@@ -357,7 +357,10 @@ had to stay green. The moves, and the defects they fixed on the way:
   replacement is written into the object the page already names (`writeObject` +
   `writeRawStream`), and an ICC-based grey or RGB image now reads as grey or RGB samples —
   MuPDF tags device RGB with an sRGB profile, so without that an image replaced once could not
-  be cropped or rotated again;
+  be cropped or rotated again. A replacement picture with alpha keeps it as the `/SMask` MuPDF
+  produced for it; only the old picture's mask is dropped (it used to drop both, so a
+  transparent PNG came out on a black ground), and the report says so
+  (`op.note.image.maskDropped`);
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
 - a placed picture — a drawn, typed or photographed signature, initials, or an image
@@ -1003,6 +1006,22 @@ character's fill colour from MuPDF's text walk, and a block's colour is the one 
 glyphs use. pdf.js's page-dominant colour is the fallback for a block MuPDF reported none
 for; reading that one colour for every block turned a red heading black when it was edited.
 
+**Reading order.** The writer draws each line where it stands in the content stream, not
+after it (`drawInReadingOrder` in `ops/text-edit.ts`): a drawn run that shares a baseline
+with a run the page keeps **of the same line** is spliced in right after that run's text
+object (before it, when nothing stands to its left), inside `q … Q` with the inverse of the
+matrix in force there and a reset text state. Extractors, search and screen readers follow
+the stream, and a shorter word used to come back as every line's head first and all the
+moved rests at the end of the page. The line is the one the drawn text continues
+(`TextEditInsertLine.lineSpan`, its left and right edge): a run of the column or table cell
+beside it shares the baseline but not the span, and splicing after it read the two columns
+interleaved, line by line. Text with no run of its own line to follow (a match that starts
+its line with nothing kept after it, a paragraph Edit Text redraws), or a page whose content
+cannot be read, is drawn in one stream after the page's own. The splice point is the end of
+the anchor's text object, so a producer that writes several lines in one `BT … ET` (LaTeX
+does) still reads that object's line heads before the rests drawn after it. A line that only
+closed the gap a shorter word left is not counted as "did not fit in place".
+
 **Verification.** The writer's checks apply, with two corrections this operation needed: a
 replacement that contains the old text (`2024` → `2024–2025`) is not "erased text still
 present" — the lines the operation drew are subtracted before the count — and text drawn word
@@ -1583,7 +1602,9 @@ Every capability the menus can run is described by exactly one `OperationDialogS
 noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
 `checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
-`fieldErrors()` from `dialogs/fields.tsx`. A run's `noticeKey` is the sentence the shell
+`fieldErrors()` from `dialogs/fields.tsx`. A `choice` (a select of document data) with
+nothing picked keeps the run waiting, but only shows "no items to select in this document"
+when the document's list really is empty. A run's `noticeKey` is the sentence the shell
 shows whatever the result kind (replace, new tab, download); without one it says what
 happened to the file. A field marked `advanced` is rendered in one closed "advanced
 options" section after the essential fields (it opens itself while one of its fields is
@@ -1859,6 +1880,14 @@ values, outlines and page labels travel with the pages. `planPageAction()` compu
 page list purely, so the effect of an action on the page order is reviewable without
 rendering anything. Applying a result re-checks that the tab and working version it started
 from are still current; if not, the operation throws `aborted` and the model is untouched.
+
+The page list (`panels/PagesPanel.tsx`) shows what the main view shows: each thumbnail draws
+the session's unwritten marks over the page with the overlay's own `markVisual`, projected
+through a `markPageFrame` built from the page's view box and `/Rotate` at thumbnail scale,
+and each caption leads with the file's page label (`getPageLabels`) when it differs from the
+number — `App-ii (2)`. A change to the session's marks is journalled under the kind drawn, a
+delete, a comment edit or a mark edit (`annotationStepLabel`), so History names the step
+instead of calling every one "Comments".
 
 ### 8.4 Cross-window coordination
 

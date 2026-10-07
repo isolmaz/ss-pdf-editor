@@ -390,6 +390,14 @@ export interface TextEditInsertLine {
    * present for a justified line. When absent, `text` is drawn whole at `x`.
    */
   readonly words?: readonly { readonly text: string; readonly x: number }[];
+  /**
+   * `[left, right]` of the page line this text continues, in the same space as `x`. Text
+   * the page still has on that baseline inside it is the line's own, and the writer puts
+   * this text beside it in the content stream, so the line reads in order. Absent when
+   * none of the line's own text stays (a redrawn paragraph): the text is drawn after the
+   * page's content, never beside a neighbouring column's line.
+   */
+  readonly lineSpan?: readonly [number, number];
 }
 
 /** Replacement lines for one page. */

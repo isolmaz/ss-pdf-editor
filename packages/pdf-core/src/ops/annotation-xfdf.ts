@@ -36,6 +36,7 @@
 import { ToolError } from 'pdf-shared';
 import type { AnnotationDataResult } from './annotation-data';
 import { isoFromAcrobatDate } from './annotation-data';
+import { stateContents } from './annotation-review';
 import { commentThreads } from './annotation-threads';
 import {
   type AnnotationKind,
@@ -211,7 +212,7 @@ function threadElements(
           state: review.state,
           statemodel: 'Review',
         },
-        contents: `${review.state} set by ${review.author}`,
+        contents: stateContents(review.state, review.author),
       }),
     );
   }

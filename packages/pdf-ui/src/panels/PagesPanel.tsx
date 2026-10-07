@@ -40,6 +40,7 @@ import {
   Trash,
 } from '@phosphor-icons/react';
 import type { PdfDocumentHandle } from 'pdf-core';
+import type { AnnotationMark } from 'pdf-core/ops/annotations';
 import type { Translator } from 'pdf-shared';
 import {
   Fragment,
@@ -55,6 +56,8 @@ import {
   useState,
 } from 'react';
 import { Button } from '../components/Button';
+import { markVisual } from '../ops/AnnotationLayer';
+import { type MarkPageFrame, markPageFrame } from '../ops/mark-interaction';
 
 /**
  * What the page list asks the app to do with the selection.
@@ -96,10 +99,23 @@ export interface PagesPanelProps {
    */
   readonly onExtract?: () => void;
   readonly version?: string;
+  /**
+   * The session's marks the file does not hold yet. The main view draws them over the
+   * page; a thumbnail without them showed a page the reader had already marked as clean.
+   */
+  readonly marks?: readonly AnnotationMark[];
 }
 
 /** Thumbnail width; the page's own aspect ratio supplies the height. */
 const THUMBNAIL_WIDTH = 104;
+
+const NO_MARKS: readonly AnnotationMark[] = [];
+
+/** A thumbnail's caption: the page number, with the file's own label before it when the two differ. */
+function pageCaption(label: string | undefined, pageIndex: number): string {
+  const number = String(pageIndex + 1);
+  return label === undefined || label === '' || label === number ? number : `${label} (${number})`;
+}
 
 /**
  * The drop indicator is a real element between two rows, in flow and always
@@ -122,8 +138,36 @@ export function PagesPanel({
   editing,
   onExtract,
   version,
+  marks,
 }: PagesPanelProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The file's page labels. Written by the page-labels tool and shown by every other
+   * reader; without them here the tool's result was visible everywhere but in the app.
+   */
+  const [labels, setLabels] = useState<readonly string[] | null>(null);
+  useEffect(() => {
+    let current = true;
+    setLabels(null);
+    document.getPageLabels().then(
+      (read) => {
+        if (current) setLabels(read);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [document]);
+  const marksByPage = useMemo(() => {
+    const byPage = new Map<number, AnnotationMark[]>();
+    for (const mark of marks ?? []) {
+      const list = byPage.get(mark.pageIndex);
+      if (list === undefined) byPage.set(mark.pageIndex, [mark]);
+      else list.push(mark);
+    }
+    return byPage;
+  }, [marks]);
   const moveToId = useId();
   /** The roving tab stop: exactly one option carries `tabIndex={0}`. */
   const [focusPage, setFocusPage] = useState(currentPage);
@@ -563,13 +607,18 @@ export function PagesPanel({
                   </div>
                 ) : null}
 
-                <PageThumbnail key={`${page}-${version ?? ''}`} document={document} pageIndex={page} />
+                <PageThumbnail
+                  key={`${page}-${version ?? ''}`}
+                  document={document}
+                  pageIndex={page}
+                  marks={marksByPage.get(page) ?? NO_MARKS}
+                />
                 <span
                   className={`mt-1 block text-xs tabular-nums ${
                     isSelected || isActive ? 'font-medium text-kumo-strong' : 'text-kumo-subtle'
                   }`}
                 >
-                  {page + 1}
+                  {pageCaption(labels?.[page], page)}
                 </span>
               </div>
             </Fragment>
@@ -586,10 +635,20 @@ export function PagesPanel({
  * eagerly: the whole point of the observer is that a 2000-page document costs
  * 2000 cheap placeholders, not 2000 render tasks.
  */
-function PageThumbnail({ document, pageIndex }: { document: PdfDocumentHandle; pageIndex: number }) {
+function PageThumbnail({
+  document,
+  pageIndex,
+  marks,
+}: {
+  document: PdfDocumentHandle;
+  pageIndex: number;
+  marks: readonly AnnotationMark[];
+}) {
   const holderRef = useRef<HTMLDivElement | null>(null);
   const paintedRef = useRef(false);
   const [height, setHeight] = useState<number | null>(null);
+  /** The painted page's projection, for the marks drawn over it; null until it is painted. */
+  const [frame, setFrame] = useState<MarkPageFrame | null>(null);
 
   /**
    * Each attempt owns a **fresh canvas**. Reusing the element across tab switches
@@ -603,7 +662,8 @@ function PageThumbnail({ document, pageIndex }: { document: PdfDocumentHandle; p
       if (holder === null) return;
       const page = await document.getPageSize(pageIndex, 1);
       const scale = THUMBNAIL_WIDTH / page.width;
-      setHeight(Math.round(page.height * scale));
+      const shown = { x: 0, y: 0, width: THUMBNAIL_WIDTH, height: Math.round(page.height * scale) };
+      setHeight(shown.height);
       // `document` here is the PDF handle prop, not the global: reach for the DOM explicitly.
       const canvas = globalThis.document.createElement('canvas');
       canvas.className = 'max-w-full';
@@ -612,6 +672,18 @@ function PageThumbnail({ document, pageIndex }: { document: PdfDocumentHandle; p
       await document.renderPage(pageIndex, canvas, { scale, signal });
       if (signal.aborted) return;
       holder.replaceChildren(canvas);
+      const [x0, y0, x1, y1] = page.viewBox;
+      setFrame(
+        markPageFrame({
+          rotation: (((page.rotation % 360) + 360) % 360) as 0 | 90 | 180 | 270,
+          originX: x0,
+          top: y1,
+          width: x1 - x0,
+          height: y1 - y0,
+          page: shown,
+          container: shown,
+        }),
+      );
       paintedRef.current = true;
     },
     [document, pageIndex],
@@ -626,6 +698,7 @@ function PageThumbnail({ document, pageIndex }: { document: PdfDocumentHandle; p
     // whose new handle lands after its new state id — a flag that survived either kept
     // the previous document's picture on screen.
     paintedRef.current = false;
+    setFrame(null);
     const controller = new AbortController();
     // Lazy, and **staying** lazy: the observer is not disconnected after the first
     // hit, so a thumbnail whose first attempt was aborted is drawn when it next
@@ -644,11 +717,22 @@ function PageThumbnail({ document, pageIndex }: { document: PdfDocumentHandle; p
     };
   }, [draw]);
 
+  // The canvas and the marks share one isolated box the size of the painted page: a
+  // highlight's multiply then blends with the page under it and nothing outside.
   return (
-    <div
-      ref={holderRef}
-      className="flex justify-center bg-pdf-paper"
-      style={height === null ? { height: 140 } : { height }}
-    />
+    <div className="flex justify-center">
+      <div
+        className="relative isolate overflow-hidden bg-pdf-paper"
+        data-thumbnail-page=""
+        style={{ width: THUMBNAIL_WIDTH, height: height ?? 140 }}
+      >
+        <div ref={holderRef} />
+        {frame === null || marks.length === 0 ? null : (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0" data-thumbnail-marks="">
+            {marks.map((mark) => markVisual(mark, frame, false))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

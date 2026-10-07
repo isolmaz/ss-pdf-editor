@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
 import { expect, test } from 'playwright/test';
 import { useAdvancedMode } from './settings';
-import { readProducedPageTexts, readProducedPdf, textNotePdf, toolFixturePdf } from './tool-fixture';
+import {
+  labelledPdf,
+  readProducedPageTexts,
+  readProducedPdf,
+  textNotePdf,
+  toolFixturePdf,
+} from './tool-fixture';
 
 /**
  * Editor flows end to end: errors, navigation, page operations, search, forms,
@@ -228,4 +234,37 @@ test("a file's own sticky note is drawn with its icon, not a broken image", asyn
     .toBe(true);
   expect(icons.length).toBeGreaterThan(0);
   expect(icons.every((entry) => entry.status === 200)).toBe(true);
+});
+
+test('edit text: the paragraph boxes sit on the text of a page the file turns, at every quarter turn', async ({
+  page,
+}) => {
+  await open(page, 'turned-text.pdf', labelledPdf('Turned', 4, { rotations: [0, 90, 180, 270] }));
+  for (const index of [0, 1, 2, 3]) {
+    await page.getByRole('option').nth(index).click();
+    await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+    await expect(page.locator(`[data-text-block][data-block-text="Turned ${index + 1}"]`)).toHaveCount(1, {
+      timeout: 30_000,
+    });
+    // pdf.js's own text layer is the referee: its span is where the words are drawn.
+    const words = page
+      .locator(`.pdfViewer[data-active-viewer] .page[data-page-number="${index + 1}"] .textLayer span`)
+      .filter({ hasText: `Turned ${index + 1}` })
+      .first();
+    await words.scrollIntoViewIfNeeded();
+    const drawn = await words.boundingBox();
+    const placed = await page
+      .locator(`[data-text-block][data-block-text="Turned ${index + 1}"]`)
+      .boundingBox();
+    expect(drawn).not.toBeNull();
+    expect(placed).not.toBeNull();
+    if (drawn === null || placed === null) return;
+    const centre = { x: drawn.x + drawn.width / 2, y: drawn.y + drawn.height / 2 };
+    expect(centre.x, `page ${index + 1}: words inside the box horizontally`).toBeGreaterThan(placed.x);
+    expect(centre.x).toBeLessThan(placed.x + placed.width);
+    expect(centre.y, `page ${index + 1}: words inside the box vertically`).toBeGreaterThan(placed.y);
+    expect(centre.y).toBeLessThan(placed.y + placed.height);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-text-block]')).toHaveCount(0);
+  }
 });

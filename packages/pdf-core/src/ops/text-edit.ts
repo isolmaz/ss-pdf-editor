@@ -53,7 +53,7 @@
  * resolves elsewhere is refused here rather than becoming a third-party request.
  */
 
-import type { PDFPage as MupdfPage, PDFAnnotation, PDFObject, Quad, Rect } from 'mupdf';
+import type { PDFPage as MupdfPage, PDFAnnotation, PDFDocument, PDFObject, Quad, Rect } from 'mupdf';
 import { ToolError, toToolError } from 'pdf-shared';
 import type { TextEditErase, TextEditInsert, TextEditInsertLine, TextEditRequest } from 'pdf-text-engine';
 import {
@@ -95,6 +95,8 @@ import {
 } from '../engines/mupdf-write';
 import { notoSansBytes } from '../engines/noto';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
+import { IDENTITY, type Matrix, pageContent, readInstructions } from './accessibility';
+import { scanContent } from './content-scan';
 import {
   note,
   type OperationContext,
@@ -492,6 +494,150 @@ async function eraseStage(
   return { bytes: produced, pageCount, boxes, erased, rectCount };
 }
 
+/** One text object to draw: where it starts (user space) and its `BT … ET`. */
+interface DrawnText {
+  readonly x: number;
+  readonly y: number;
+  readonly text: string;
+  /** `[left, right]` of the page line it continues (`TextEditInsertLine.lineSpan`). */
+  readonly lineSpan: readonly [number, number] | undefined;
+  readonly fontSize: number;
+}
+
+/** How far a drawn text's baseline may sit from an existing run's and share its line. */
+const SAME_BASELINE_PT = 0.5;
+
+/**
+ * How far left of a line's ink its first run may start, in ems: the origin sits a glyph's
+ * left side bearing before the ink. Far less than any gap between two columns.
+ */
+const LINE_ORIGIN_SLACK_EM = 0.25;
+
+/** The state a drawn text object needs wherever it lands, so it draws as it does on a clean page. */
+const TEXT_STATE_RESET = '0 Tc 0 Tw 100 Tz 0 Ts 0 Tr';
+
+/** The inverse of `matrix`, or `null` when it is singular. */
+function invertMatrix(matrix: Matrix): Matrix | null {
+  const [a, b, c, d, e, f] = matrix;
+  const det = a * d - b * c;
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-9) return null;
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}
+
+/**
+ * Draw `drawn` on `page` in reading order. Text that continues a line the page still has
+ * part of goes into the content stream right after that line's text object (the run to its
+ * left; the run to its right when nothing stands left of it), so the line a replacement
+ * belongs to reads head, replacement, rest — the order every extractor, screen reader and
+ * search follows is the stream's. Only runs on the same baseline **inside the line's own
+ * span** count: a neighbouring column's line is never an anchor. Each such object is
+ * wrapped in `q … Q` with the inverse of the matrix in force there and a reset text state,
+ * so it draws exactly where it would on a clean page. Text with no run of its line to
+ * follow (a redrawn paragraph), and a page whose content cannot be read, keep the old
+ * behaviour: one new stream after the page's own.
+ */
+function drawInReadingOrder(doc: PDFDocument, page: PDFObject, drawn: readonly DrawnText[]): void {
+  if (drawn.length === 0) return;
+  const content = pageContent(page);
+  const instructions = content === null ? null : readInstructions(content.bytes);
+  if (content === null || instructions === null) {
+    appendPageContent(doc, page, drawn.map((item) => `q ${item.text} Q`).join('\n'));
+    return;
+  }
+  const runs = scanContent(content.bytes, instructions).paints.filter(
+    (paint) => paint.kind === 'text' && paint.origin !== null && paint.ctm !== undefined,
+  );
+  const spliced: { readonly at: number; readonly order: number; readonly text: string }[] = [];
+  const loose: DrawnText[] = [];
+
+  for (const [order, item] of drawn.entries()) {
+    // Only the line's own text is a place to splice into: a run of another column or table
+    // cell on the same baseline would interleave the two, line by line.
+    const span = item.lineSpan;
+    if (span === undefined) {
+      loose.push(item);
+      continue;
+    }
+    const slack = LINE_ORIGIN_SLACK_EM * item.fontSize;
+    const level = runs.filter((run) => {
+      const origin = run.origin;
+      return (
+        origin !== null &&
+        Math.abs(origin.y - item.y) <= SAME_BASELINE_PT &&
+        origin.x >= span[0] - slack &&
+        origin.x <= span[1]
+      );
+    });
+    let anchor: (typeof runs)[number] | undefined;
+    let after = true;
+    for (const run of level) {
+      const x = run.origin?.x ?? Number.NaN;
+      const best = anchor?.origin?.x ?? Number.NEGATIVE_INFINITY;
+      if (x <= item.x + SAME_BASELINE_PT && x >= best) anchor = run;
+    }
+    if (anchor === undefined) {
+      after = false;
+      for (const run of level) {
+        const x = run.origin?.x ?? Number.NaN;
+        const best = anchor?.origin?.x ?? Number.POSITIVE_INFINITY;
+        if (x < best) anchor = run;
+      }
+    }
+    const inverse = anchor?.ctm === undefined ? null : invertMatrix(anchor.ctm);
+    let at = -1;
+    if (anchor !== undefined && inverse !== null) {
+      if (after) {
+        for (let index = anchor.index + 1; index < instructions.length; index += 1) {
+          const operator = instructions[index]?.operator;
+          if (operator === 'BT') break;
+          if (operator === 'ET') {
+            at = instructions[index]?.end ?? -1;
+            break;
+          }
+        }
+      } else {
+        for (let index = anchor.index - 1; index >= 0; index -= 1) {
+          const operator = instructions[index]?.operator;
+          if (operator === 'ET') break;
+          if (operator === 'BT') {
+            at = instructions[index]?.start ?? -1;
+            break;
+          }
+        }
+      }
+    }
+    if (at < 0 || inverse === null) {
+      loose.push(item);
+      continue;
+    }
+    const plain = inverse.every((value, index) => Math.abs(value - (IDENTITY[index] ?? 0)) < 1e-9);
+    const cm = plain ? '' : `${inverse.map(num).join(' ')} cm `;
+    spliced.push({ at, order, text: `\nq ${cm}${TEXT_STATE_RESET} ${item.text} Q\n` });
+  }
+
+  if (spliced.length > 0) {
+    spliced.sort((a, b) => a.at - b.at || a.order - b.order);
+    const encoder = new TextEncoder();
+    const parts: Uint8Array[] = [];
+    let from = 0;
+    for (const piece of spliced) {
+      parts.push(content.bytes.subarray(from, piece.at), encoder.encode(piece.text));
+      from = piece.at;
+    }
+    parts.push(content.bytes.subarray(from));
+    const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
+    const joined = new Uint8Array(total);
+    let offset = 0;
+    for (const part of parts) {
+      joined.set(part, offset);
+      offset += part.byteLength;
+    }
+    page.put('Contents', doc.addStream(joined, {}));
+  }
+  // One content stream per page, so a block does not leave one stream per line behind.
+  if (loose.length > 0) appendPageContent(doc, page, loose.map((item) => `q ${item.text} Q`).join('\n'));
+}
+
 /** One of the document's own fonts, drawn with the codes it already uses. */
 interface DocumentFace {
   readonly ref: PDFObject;
@@ -561,7 +707,7 @@ async function writeStage(
         });
       }
       const resourceKeys = new Map<LineFace, string>();
-      const operators: string[] = [];
+      const drawn: DrawnText[] = [];
 
       for (const line of work.lines) {
         const words = line.words !== undefined && line.words.length > 0 ? line.words : null;
@@ -596,9 +742,13 @@ async function writeStage(
         for (const placement of placements) {
           if (placement.text === '') continue;
           const origin = topLeftToUserPoint(box, placement.x, line.y);
-          operators.push(
-            `q BT ${num(red)} ${num(green)} ${num(blue)} rg /${key} ${num(size)} Tf 1 0 0 1 ${num(origin.x)} ${num(origin.y)} Tm ${show(font, placement.text)} ET Q`,
-          );
+          drawn.push({
+            x: origin.x,
+            y: origin.y,
+            lineSpan: line.lineSpan,
+            fontSize: size,
+            text: `BT ${num(red)} ${num(green)} ${num(blue)} rg /${key} ${num(size)} Tf 1 0 0 1 ${num(origin.x)} ${num(origin.y)} Tm ${show(font, placement.text)} ET`,
+          });
         }
         if (words !== null) justifiedLines += 1;
         lineCount += 1;
@@ -610,8 +760,7 @@ async function writeStage(
         });
       }
 
-      // One content stream per page, so a block does not leave one stream per line behind.
-      if (operators.length > 0) appendPageContent(doc, page, operators.join('\n'));
+      drawInReadingOrder(doc, page, drawn);
     }
 
     throwIfAborted(context.signal);

@@ -126,6 +126,23 @@ test('extract: the selected page opens as its own document and the source keeps 
   expect(source.map((text) => text.trim())).toEqual(['Page 1', 'Page 2', 'Page 3']);
 });
 
+test('extract: a custom range typed key by key is the range extracted', async ({ page }) => {
+  await open(page, 'ranged.pdf', labelledPdf('Page', 4));
+  await thumbs(page).nth(1).click();
+  const form = await openForm(page, 'Extract Pages', 'Extract Pages');
+  await form.getByRole('radio', { name: 'Custom range' }).check();
+  const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
+  // Switching from the selection does not put the word "selection" in the box.
+  await expect(range).toHaveValue('');
+  await range.pressSequentially('2-3', { delay: 60 });
+  await expect(range).toHaveValue('2-3');
+  await previewForm(form, 'Open in new tab');
+  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await expect(thumbs(page)).toHaveCount(2, { timeout: 30_000 });
+  const extracted = await readProducedPageTexts(await exported(page, 'ranged-out.pdf'));
+  expect(extracted.map((text) => text.trim())).toEqual(['Page 2', 'Page 3']);
+});
+
 /** Collect every download the page starts, saved and read back, until `count` have arrived. */
 async function collectDownloads(
   page: Page,
@@ -236,6 +253,9 @@ test('print: the chosen range is rendered into the print sheet and handed to the
   await page.keyboard.press('Control+p');
   const dialog = page.getByRole('dialog', { name: 'Print' });
   await expect(dialog).toBeVisible();
+  // The title is followed by the choices, not by a stray character of markup.
+  const lines = (await dialog.innerText()).split('\n').map((line) => line.trim());
+  expect(lines.filter((line) => /^\p{L}$/u.test(line))).toEqual([]);
   await dialog.getByRole('radio', { name: 'Range' }).check();
   await dialog.getByRole('textbox', { name: 'Page range' }).fill('2-3');
   await dialog.getByRole('button', { name: 'Print', exact: true }).click();
@@ -441,4 +461,84 @@ test('thumbnails follow the page: a turn of an already-turned page, an insert, a
   // first file's pictures.
   await openAnother(page, 'wide.pdf', labelledPdf('Wide', 6, { size: [842, 595] }));
   for (const index of [0, 5]) await expectThumbnailMatchesPage(page, index);
+});
+
+test('find: the count belongs to the document it was found in', async ({ page }) => {
+  await open(page, 'four.pdf', labelledPdf('Leaf', 4));
+  await page.keyboard.press('Control+f');
+  const box = page.getByRole('textbox', { name: 'Find in document' });
+  await box.fill('Leaf');
+  await box.press('Enter');
+  await expect(page.getByText('1 of 4 matches')).toBeVisible({ timeout: 30_000 });
+
+  await openAnother(page, 'two.pdf', labelledPdf('Leaf', 2));
+  // The first document's count is not shown over the second one.
+  await expect(page.getByText(/of 4 matches/)).toHaveCount(0);
+  await box.press('Enter');
+  await expect(page.getByText('1 of 2 matches')).toBeVisible({ timeout: 30_000 });
+});
+
+/**
+ * The drawn part of the marks under `marks`, as fractions of the `host` box they sit on:
+ * the union of their leaf elements (the 1 px SVG hosts of strokes have children and are
+ * skipped).
+ */
+async function markFraction(
+  page: Page,
+  host: string,
+  marks: string,
+): Promise<readonly [number, number, number, number] | null> {
+  return page.evaluate(
+    ([hostSelector, marksSelector]) => {
+      const box = document.querySelector(hostSelector)?.getBoundingClientRect();
+      const leaves = [...document.querySelectorAll(`${marksSelector} *`)].filter(
+        (node) => node.childElementCount === 0,
+      );
+      if (box === undefined || leaves.length === 0 || box.width === 0) return null;
+      const rects = leaves.map((node) => node.getBoundingClientRect());
+      return [
+        (Math.min(...rects.map((rect) => rect.left)) - box.left) / box.width,
+        (Math.min(...rects.map((rect) => rect.top)) - box.top) / box.height,
+        (Math.max(...rects.map((rect) => rect.right)) - box.left) / box.width,
+        (Math.max(...rects.map((rect) => rect.bottom)) - box.top) / box.height,
+      ] as const;
+    },
+    [host, marks] as const,
+  );
+}
+
+test('a drawn mark shows on its thumbnail where the main view draws it, and History names it', async ({
+  page,
+}) => {
+  // A page the file turns: the thumbnail has to project the mark through the same turn.
+  await open(page, 'marked.pdf', labelledPdf('Marked', 2, { rotations: [90, 0] }));
+  await page.getByRole('button', { name: 'Draw Shape (Rectangle)', exact: true }).click();
+  const sheet = page.locator('.pdfViewer[data-active-viewer] .page').first();
+  const box = await sheet.boundingBox();
+  if (box === null) throw new Error('no page box');
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator('[data-ann]')).toHaveCount(1);
+
+  const onPage = await markFraction(page, '.pdfViewer[data-active-viewer] .page', '[data-ann]');
+  await expect(page.locator('[data-thumb="0"] [data-thumbnail-marks]')).toHaveCount(1);
+  const onThumb = await markFraction(
+    page,
+    '[data-thumb="0"] [data-thumbnail-page]',
+    '[data-thumb="0"] [data-thumbnail-marks]',
+  );
+  expect(onPage).not.toBeNull();
+  expect(onThumb).not.toBeNull();
+  // The same place on the page, to within a thumbnail pixel or two.
+  for (const [index, value] of (onPage ?? []).entries()) expect(onThumb?.[index]).toBeCloseTo(value, 1);
+  // The other page has no mark, and its thumbnail draws none.
+  await expect(page.locator('[data-thumb="1"] [data-thumbnail-marks]')).toHaveCount(0);
+
+  // The step is named for what was drawn, not for the panel every mark is listed in.
+  await page.getByRole('tab', { name: 'History' }).click();
+  const steps = page.getByRole('list', { name: 'History' });
+  await expect(steps.getByText('Shape', { exact: true })).toBeVisible();
+  await expect(steps.getByText('Comments', { exact: true })).toHaveCount(0);
 });
