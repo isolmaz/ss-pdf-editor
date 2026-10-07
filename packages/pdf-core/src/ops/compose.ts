@@ -468,8 +468,8 @@ function buildEntries(options: ComposeOptions, planned: readonly PlannedPage[]):
       if (shared === undefined) shared = source.bytes === undefined ? null : source.bytes.slice();
       return shared;
     };
+    // Every level holds a page: a level only exists because one was placed on it.
     for (const level of levels) {
-      if (level.length === 0) continue;
       const ascending = [...level].sort((a, b) => a.page - b.page);
       entries.push({
         document: documentFor(),
@@ -498,7 +498,8 @@ function buildCopyLevels(
   if (baseIndex < 0) return undefined;
   const levels = new Int32Array(pageCount).fill(-1);
   for (const page of planned) {
-    if (page.source === baseIndex && page.page < pageCount) levels[page.page] = 0;
+    // `planPages` refused a base page outside `pageCount`.
+    if (page.source === baseIndex) levels[page.page] = 0;
   }
   return levels;
 }
@@ -529,8 +530,8 @@ function applyRotation(
 ): void {
   for (const [index, planned] of rotated.entries()) {
     throwIfAborted(context.signal);
-    const page = pages[planned.position];
-    if (page === undefined) continue;
+    // `assertPageCount` made the output exactly as long as the plan, so every position exists.
+    const page = pages[planned.position] as PDFObject;
     const own = resolved(page.getInheritable('Rotate'));
     const current = own?.isNumber() === true ? own.asNumber() : 0;
     page.put('Rotate', (((current + planned.rotation) % 360) + 360) % 360);
@@ -581,11 +582,9 @@ async function downloadInfo(handle: PdfComposeHandle): Promise<number> {
 /** Base Info and XMP, plus the outline size used as the merge loss baseline. */
 async function readBaseMetadata(handle: PdfDocumentHandle): Promise<BaseMetadata> {
   const metadata = await handle.raw.getMetadata();
-  const rawInfo: unknown = metadata.info;
-  // The Info dictionary as plain strings; the shape is engine data, so it stays
-  // `unknown` until it is read through a `typeof` check.
-  const info: Record<string, unknown> =
-    typeof rawInfo === 'object' && rawInfo !== null ? (rawInfo as Record<string, unknown>) : {};
+  // pdf.js's `getMetadata` always answers an `info` object (empty for a file without an Info
+  // dictionary); its values are engine data and are read through `typeof` checks.
+  const info = metadata.info as Record<string, unknown>;
   return {
     info,
     xmp: readXmp(metadata.metadata),
@@ -644,8 +643,7 @@ interface StructureMeasure {
 
 /** Count what the engine claims to merge, on the document that was produced. */
 function measureStructure(document: PDFDocument): StructureMeasure {
-  const catalog = resolved(document.getTrailer().get('Root'));
-  if (catalog === null) return { outline: 0, labels: 0, fields: 0 };
+  const catalog = document.getTrailer().get('Root').resolve();
   return {
     outline: countOutlineTree(catalog.get('Outlines')),
     labels: countNumberTree(catalog.get('PageLabels')),

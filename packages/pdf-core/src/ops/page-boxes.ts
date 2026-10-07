@@ -465,8 +465,8 @@ export async function applyPageBoxes(
 
     for (const [position, pageIndex] of pages.entries()) {
       throwIfAborted(context.signal);
-      const page = pageList[pageIndex];
-      if (page === undefined) throw new ToolError('range-invalid', { engine: 'mupdf', pageIndex });
+      // Every index was checked against the page count above.
+      const page = pageList[pageIndex] as PDFObject;
       const result = applyPlan(doc, page, plan, measured?.get(pageIndex) ?? null, stats);
       if (!result.changed) {
         stats.unchangedPages += 1;
@@ -572,9 +572,7 @@ function scalePairs(array: PDFObject, x: number, y: number): void {
  * scale uses: `/Rect`, `/QuadPoints`, `/Vertices`, `/L`, `/CL`, `/RD` and each `/InkList`
  * stroke.
  */
-function scaleAnnotations(page: PDFObject, x: number, y: number): void {
-  const annots = resolved(page.get('Annots'));
-  if (annots === null || !annots.isArray()) return;
+function scaleAnnotations(annots: PDFObject, x: number, y: number): void {
   for (let index = 0; index < annots.length; index += 1) {
     const annot = resolved(annots.get(index));
     if (annot === null || !annot.isDictionary()) continue;
@@ -724,8 +722,9 @@ function applyScalePage(
   scaleContent(doc, page, plan.factor, plan.factor);
   // Scaling the annotations keeps a highlight on the text it marks instead of leaving
   // it behind.
-  if (resolved(page.get('Annots'))?.isArray() === true) {
-    scaleAnnotations(page, plan.factor, plan.factor);
+  const annots = resolved(page.get('Annots'));
+  if (annots?.isArray() === true) {
+    scaleAnnotations(annots, plan.factor, plan.factor);
     stats.annotatedPages += 1;
   }
   if (!plan.scaleBoxes) return { box: null, changed: true };
@@ -755,17 +754,13 @@ function applyAutoCropPage(
   const padded = inflate(measured, plan.padding);
   const enlarged = ensureMinimum(padded, MIN_CROP_POINTS);
   if (!sameRect(enlarged, padded)) stats.minSizePages += 1;
-  // Never outside the MediaBox: a CropBox larger than the page is invalid.
+  // Never outside the MediaBox: a CropBox larger than the page is invalid. The ink was measured
+  // on the rendered page, which MuPDF clips to the MediaBox, so it lies inside it and the
+  // intersection keeps at least the ink's own area.
   const next = intersect(enlarged, readBox(page, 'media'));
-  if (!isPositive(next)) {
-    stats.emptyMeasurements += 1;
-    return { box: null, changed: false };
-  }
   const trimUpToDate = plan.alsoTrim ? sameRect(readBox(page, 'trim'), next) : true;
-  if (sameRect(readBox(page, 'crop'), next) && trimUpToDate) {
-    stats.unchangedPages += 1;
-    return { box: null, changed: false };
-  }
+  // The caller counts an unchanged page; counting it here too reported it twice.
+  if (sameRect(readBox(page, 'crop'), next) && trimUpToDate) return { box: null, changed: false };
   writeBox(page, 'crop', next);
   if (plan.alsoTrim) writeBox(page, 'trim', next);
   return { box: next, changed: true };
@@ -779,9 +774,8 @@ function applyAutoCropPage(
 function applyRotatePage(page: PDFObject, degrees: 90 | 180 | 270): PagePlan {
   const rotate = resolved(page.getInheritable('Rotate'));
   const current = quarterTurns(rotate?.isNumber() === true ? rotate.asNumber() : 0);
-  const next = quarterTurns(current + degrees);
-  if (next === current) return { box: null, changed: false };
-  page.put('Rotate', next);
+  // `degrees` is 90, 180 or 270, so the page always ends up facing another way.
+  page.put('Rotate', quarterTurns(current + degrees));
   return { box: null, changed: true };
 }
 
@@ -848,9 +842,8 @@ function measureInkBounds(
     let position = 0;
     for (const pageIndex of pages) {
       throwIfAborted(context.signal);
-      const object = pageList[pageIndex];
-      if (object === undefined) continue;
-      const geometry = pageGeometry(object);
+      // Every index was checked against the page count by the caller.
+      const geometry = pageGeometry(pageList[pageIndex] as PDFObject);
       const page = doc.loadPage(pageIndex);
       let device: Rect | null;
       try {
@@ -905,9 +898,10 @@ function inkBox(pixmap: Pixmap): Rect | null {
     for (let x = 0; x < width; x += 1) {
       // DeviceRGB without alpha: three channels per pixel, in order.
       const offset = row + x * components;
-      const red = pixels[offset] ?? 255;
-      const green = pixels[offset + 1] ?? 255;
-      const blue = pixels[offset + 2] ?? 255;
+      // `x < width` and `y < height` keep the three reads inside the pixmap.
+      const red = pixels[offset] as number;
+      const green = pixels[offset + 1] as number;
+      const blue = pixels[offset + 2] as number;
       if (red >= INK_THRESHOLD && green >= INK_THRESHOLD && blue >= INK_THRESHOLD) continue;
       if (x < x0) x0 = x;
       if (x > x1) x1 = x;
