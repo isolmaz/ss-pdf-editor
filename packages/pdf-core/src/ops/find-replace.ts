@@ -59,6 +59,7 @@ import {
   type TextBlock,
   type TextEditInsertLine,
   type TextEditRequest,
+  type TextLine,
   type TextPage,
   type TextStyle,
 } from 'pdf-text-engine';
@@ -303,7 +304,7 @@ function displayName(name: string): string {
  * `close`), the catalogue's tables and MuPDF's standard faces. "Already drawn" is read
  * from the models: every glyph carries the font name it was drawn with.
  */
-async function documentFaces(
+export async function documentFaces(
   bytes: Uint8Array,
   models: readonly TextPage[],
   fonts: TextFontSet,
@@ -347,7 +348,7 @@ async function documentFaces(
               points = new Set();
               drawn.set(key, points);
             }
-            for (const character of glyph.ch) points.add(character.codePointAt(0) ?? 0);
+            for (const character of glyph.ch) points.add(pointOf(character));
           }
         }
       }
@@ -358,7 +359,7 @@ async function documentFaces(
     if (font === null || !encodes(font, text)) return null;
     const points = drawn.get(fontKey(pageIndex, fontName));
     for (const character of text) {
-      if (character.trim() !== '' && points?.has(character.codePointAt(0) ?? 0) !== true) return null;
+      if (character.trim() !== '' && points?.has(pointOf(character)) !== true) return null;
     }
     return font;
   };
@@ -401,7 +402,7 @@ async function documentFaces(
       }
       let width = 0;
       for (const character of text) {
-        width += font.advanceGlyph(font.encodeCharacter(character.codePointAt(0) ?? 0), 0);
+        width += font.advanceGlyph(font.encodeCharacter(pointOf(character)), 0);
       }
       return width * size;
     },
@@ -409,12 +410,39 @@ async function documentFaces(
   return { faces, close: () => doc.destroy() };
 }
 
-/** A glyph of a block, by position. */
+/** A glyph of a block, by position, with the line that holds it. */
 interface GlyphAt {
   readonly line: number;
+  readonly textLine: TextLine;
   readonly word: number;
   readonly index: number;
   readonly glyph: GlyphBox;
+}
+
+/**
+ * The code point of one element of a string iteration (`for…of`, spread): an iterator
+ * yields whole, non-empty characters, so `codePointAt(0)` always has an answer.
+ */
+function pointOf(character: string): number {
+  return character.codePointAt(0) as number;
+}
+
+/**
+ * `items[index]` for an index the caller has already bounded (a loop condition, or a list
+ * that is parallel to `items`), which `noUncheckedIndexedAccess` cannot see.
+ */
+function inBounds<T>(items: readonly T[], index: number): T {
+  return items[index] as T;
+}
+
+/**
+ * The first and last glyph of a match. A match is found by a search text that opens and
+ * closes with a non-space token (`searchTokens` trims it), and only a glyph unit carries
+ * such a token (`findHits`), so a match always starts and ends on a glyph; the same holds
+ * for the glyphs of the line stretch `placeLine` erases, which begins at a match.
+ */
+function endsOf(glyphs: readonly GlyphAt[]): { readonly head: GlyphAt; readonly tail: GlyphAt } {
+  return { head: inBounds(glyphs, 0), tail: inBounds(glyphs, glyphs.length - 1) };
 }
 
 /** One piece of a block's text: a glyph, or the gap between two words or lines. */
@@ -446,7 +474,7 @@ function foldToken(value: string, matchCase: boolean): string {
   return value.toLowerCase();
 }
 
-function sameToken(left: string, right: string): boolean {
+function sameToken(left: string, right: string | undefined): boolean {
   if (left === right) return true;
   if (left === EITHER_I) return right === 'i' || right === 'ı';
   if (right === EITHER_I) return left === 'i' || left === 'ı';
@@ -479,21 +507,20 @@ function tokensOf(text: string, matchCase: boolean): readonly string[] {
  * would not have fitted on this one. Anything else (an address, a list) is a line the
  * author ended, and a re-laid block keeps it as a paragraph break.
  */
-function softBreak(block: TextBlock, line: number, size: number): boolean {
-  const current = block.lines[line];
-  const next = block.lines[line + 1];
-  const nextWord = next?.words[0];
-  if (current === undefined || nextWord === undefined) return false;
+function softBreak(block: TextBlock, line: TextLine, next: TextLine, size: number): boolean {
+  const nextWord = next.words[0];
+  if (nextWord === undefined) return false;
   const width = block.rect[2] - block.rect[0];
-  const used = current.rect[2] - current.rect[0];
+  const used = line.rect[2] - line.rect[0];
   return used + WORD_GAP_EM * size + (nextWord.rect[2] - nextWord.rect[0]) > width - 1;
 }
 
 /** The block as units: glyphs, word gaps and line breaks. */
 function unitsOf(block: TextBlock, matchCase: boolean): readonly Unit[] {
   const units: Unit[] = [];
+  let before: TextLine | null = null;
   for (const [lineIndex, line] of block.lines.entries()) {
-    if (lineIndex > 0) {
+    if (before !== null) {
       const previous = units.at(-1);
       const ended = previous?.glyph?.glyph.ch;
       const opens = line.words[0]?.glyphs[0]?.ch ?? '';
@@ -508,7 +535,7 @@ function unitsOf(block: TextBlock, matchCase: boolean): readonly Unit[] {
           units[units.length - 1] = { ...previous, text: '', tokens: [] };
         }
       } else {
-        const soft = softBreak(block, lineIndex - 1, block.style.fontSize);
+        const soft = softBreak(block, before, line, block.style.fontSize);
         units.push({ text: soft ? ' ' : '\n', tokens: [' '], glyph: null });
       }
     }
@@ -521,10 +548,11 @@ function unitsOf(block: TextBlock, matchCase: boolean): readonly Unit[] {
         units.push({
           text: soft ? '' : glyph.ch,
           tokens: soft ? [] : tokensOf(glyph.ch, matchCase),
-          glyph: { line: lineIndex, word: wordIndex, index, glyph },
+          glyph: { line: lineIndex, textLine: line, word: wordIndex, index, glyph },
         });
       }
     }
+    before = line;
   }
   return units;
 }
@@ -553,13 +581,7 @@ function findHits(
   let unaligned = 0;
   let at = 0;
   while (at + needle.length <= tokens.length) {
-    let matches = true;
-    for (let offset = 0; offset < needle.length; offset += 1) {
-      if (!sameToken(needle[offset] ?? '', tokens[at + offset] ?? '')) {
-        matches = false;
-        break;
-      }
-    }
+    let matches = needle.every((token, offset) => sameToken(token, tokens[at + offset]));
     const end = at + needle.length;
     if (matches && wholeWord && (isWordToken(tokens[at - 1]) || isWordToken(tokens[end]))) matches = false;
     if (!matches) {
@@ -571,7 +593,7 @@ function findHits(
       at += 1;
       continue;
     }
-    hits.push({ first: owner[at] ?? 0, last: owner[end - 1] ?? 0 });
+    hits.push({ first: inBounds(owner, at), last: inBounds(owner, end - 1) });
     at = end;
   }
   return { hits, unaligned };
@@ -626,7 +648,7 @@ function calibratedSize(
   size: number,
   faces: FaceSource,
 ): number {
-  if (face.startsWith(DOCUMENT_FONT_PREFIX) || original.trim() === '' || !(extent > 0)) return size;
+  if (face.startsWith(DOCUMENT_FONT_PREFIX) || !(extent > 0)) return size;
   if (STANDARD_FACE_NAMES[face] !== undefined && !canEncodeWinAnsi(original)) return size;
   const natural = faces.measure(original, face, size, pageIndex);
   if (!(natural > 0)) return size;
@@ -649,21 +671,16 @@ function sameFace(pageIndex: number, fontName: string, text: string, faces: Face
 function missingIn(text: string, metrics: FontMetrics): number {
   let missing = 0;
   for (const character of text) {
-    if (character.trim() !== '' && !metrics.hasGlyph(character.codePointAt(0) ?? 0)) missing += 1;
+    if (character.trim() !== '' && !metrics.hasGlyph(pointOf(character))) missing += 1;
   }
   return missing;
 }
 
 /** The glyph drawn right after this one on its line, or `null` at the line's end. */
-function nextGlyph(
-  block: TextBlock,
-  at: GlyphAt,
-): { readonly glyph: GlyphBox; readonly sameWord: boolean } | null {
-  const line = block.lines[at.line];
-  const word = line?.words[at.word];
-  const inWord = word?.glyphs[at.index + 1];
+function nextGlyph(at: GlyphAt): { readonly glyph: GlyphBox; readonly sameWord: boolean } | null {
+  const inWord = at.textLine.words[at.word]?.glyphs[at.index + 1];
   if (inWord !== undefined) return { glyph: inWord, sameWord: true };
-  const following = line?.words[at.word + 1]?.glyphs[0];
+  const following = at.textLine.words[at.word + 1]?.glyphs[0];
   return following === undefined ? null : { glyph: following, sameWord: false };
 }
 
@@ -678,32 +695,32 @@ function tableLike(block: TextBlock): boolean {
  * The nearest left edge to the right of `x` of anything else in the line's band: another
  * line of the block (a table cell) or another block. `null` when nothing stands there.
  */
-function rightObstacle(page: TextPage, block: TextBlock, lineIndex: number, x: number): number | null {
-  const band = block.lines[lineIndex]?.rect ?? block.rect;
+function rightObstacle(page: TextPage, block: TextBlock, line: TextLine, x: number): number | null {
+  const band = line.rect;
   let nearest: number | null = null;
   const consider = (rect: Rect): void => {
     if (rect[0] < x - 0.01 || rect[3] <= band[1] || rect[1] >= band[3]) return;
     nearest = nearest === null ? rect[0] : Math.min(nearest, rect[0]);
   };
-  for (const [index, line] of block.lines.entries()) if (index !== lineIndex) consider(line.rect);
+  for (const other of block.lines) if (other !== line) consider(other.rect);
   for (const other of page.blocks) if (other !== block) consider(other.rect);
   return nearest;
 }
 
-/** How far right text that ends line `lineIndex` of `block` may run. */
-function lineEndLimit(
-  page: TextPage,
-  block: TextBlock,
-  lineIndex: number,
-  right: number,
-  size: number,
-): number {
-  const obstacle = rightObstacle(page, block, lineIndex, right);
+/** How far right text that ends `line` of `block` may run. */
+function lineEndLimit(page: TextPage, block: TextBlock, line: TextLine, right: number, size: number): number {
+  const obstacle = rightObstacle(page, block, line, right);
   if (obstacle !== null) return Math.max(right, obstacle - size / 2);
-  if (lineIndex === block.lines.length - 1 || tableLike(block)) {
+  if (line === block.lines.at(-1) || tableLike(block)) {
     return Math.max(right, block.rect[2], page.width - PAGE_MARGIN_PT);
   }
   return Math.max(right, block.rect[2]) + LINE_OVERRUN_PT;
+}
+
+/** Whether a match runs across a line break. */
+function spansLines(glyphs: readonly GlyphAt[]): boolean {
+  const { head, tail } = endsOf(glyphs);
+  return head.line !== tail.line;
 }
 
 /** Where the glyphs of the plan go: erase rectangles, drawn lines and what they cost. */
@@ -721,8 +738,8 @@ interface Placement {
  * begin.
  */
 function eraseBox(block: TextBlock, glyphs: readonly GlyphAt[]): Rect {
-  const head = glyphs[0]?.glyph.rect ?? [0, 0, 0, 0];
-  const tail = glyphs.at(-1)?.glyph.rect ?? head;
+  const head = endsOf(glyphs).head.glyph.rect;
+  const tail = endsOf(glyphs).tail.glyph.rect;
   const inset = Math.min(EDGE_INSET_PT, (tail[2] - head[0]) / 4);
   const left = head[0] + inset;
   const right = tail[2] - inset;
@@ -755,12 +772,12 @@ function replacementStyle(
   fonts: TextFontSet,
   faces: FaceSource,
 ): { readonly face: string; readonly size: number; readonly extent: number; readonly x: number } {
-  const head = glyphs[0]?.glyph;
-  const tail = glyphs.at(-1)?.glyph ?? head;
-  const x = head?.origin?.[0] ?? head?.rect[0] ?? 0;
-  const extent = (tail?.rect[2] ?? x) - x;
-  const size = head?.size ?? block.style.fontSize;
-  if (head === undefined || replacement === '') return { face: '', size, extent, x };
+  const { head: first, tail: last } = endsOf(glyphs);
+  const head = first.glyph;
+  const x = head.origin?.[0] ?? head.rect[0];
+  const extent = last.glyph.rect[2] - x;
+  const size = head.size ?? block.style.fontSize;
+  if (replacement === '') return { face: '', size, extent, x };
   const face = replacementFace(page.pageIndex, head, block, replacement, fonts, faces);
   const original = glyphs.map((entry) => entry.glyph.ch).join('');
   return { face, size: calibratedSize(page.pageIndex, face, original, extent, size, faces), extent, x };
@@ -779,9 +796,7 @@ function placeInPlace(
   faces: FaceSource,
   minimum: number,
 ): Placement | null {
-  const head = glyphs[0];
-  const tail = glyphs.at(-1);
-  if (head === undefined || tail === undefined) return null;
+  const { head, tail } = endsOf(glyphs);
   const rect = eraseBox(block, glyphs);
   if (replacement === '') return { rects: [rect], lines: [], shrunk: 0 };
 
@@ -789,10 +804,10 @@ function placeInPlace(
   const right = tail.glyph.rect[2];
   const style = replacementStyle(page, block, glyphs, replacement, fonts, faces);
   const { face, size, x } = style;
-  const baseline = head.glyph.origin?.[1] ?? block.lines[head.line]?.baseline ?? rect[3];
+  const baseline = head.glyph.origin?.[1] ?? head.textLine.baseline;
   const measure = (drawnSize: number): number => faces.measure(replacement, face, drawnSize, page.pageIndex);
   const width = measure(size);
-  const line = block.lines[head.line];
+  const line = head.textLine;
   const drawnLine = (drawnSize: number, at: number): Placement => ({
     rects: [rect],
     lines: [
@@ -804,16 +819,14 @@ function placeInPlace(
         color: head.glyph.color ?? block.style.color,
         fontId: face,
         width: measure(drawnSize),
-        ...(line === undefined ? {} : { lineSpan: [line.rect[0], line.rect[2]] as const }),
+        lineSpan: [line.rect[0], line.rect[2]],
       },
     ],
     shrunk: drawnSize < size ? 1 : 0,
   });
 
   const wholeLine =
-    line !== undefined &&
-    line.words[0]?.glyphs[0] === head.glyph &&
-    line.words.at(-1)?.glyphs.at(-1) === tail.glyph;
+    line.words[0]?.glyphs[0] === head.glyph && line.words.at(-1)?.glyphs.at(-1) === tail.glyph;
   const centre = (left + right) / 2;
   // A one-line block has no alignment the model can read; centred on the page is
   // what a title looks like, and that is where the new title belongs too.
@@ -838,12 +851,12 @@ function placeInPlace(
     return drawnLine(drawn, align === 'center' ? centre - drawnWidth / 2 : right - drawnWidth);
   }
 
-  const next = nextGlyph(block, tail);
+  const next = nextGlyph(tail);
   let limit: number;
   if (next?.sameWord === true) limit = next.glyph.rect[0];
   else if (next !== null)
     limit = next.glyph.rect[0] - Math.min(next.glyph.rect[0] - right, WORD_GAP_EM * size);
-  else limit = lineEndLimit(page, block, tail.line, right, size);
+  else limit = lineEndLimit(page, block, tail.textLine, right, size);
   const drawn = fittedSize(size, width, Math.max(limit, right) - x, minimum);
   return drawn === null ? null : drawnLine(drawn, x);
 }
@@ -861,10 +874,8 @@ function movesLine(
   fonts: TextFontSet,
   faces: FaceSource,
 ): boolean {
-  const head = glyphs[0];
-  const tail = glyphs.at(-1);
-  if (head === undefined || tail === undefined) return false;
-  const next = nextGlyph(block, tail);
+  const { head, tail } = endsOf(glyphs);
+  const next = nextGlyph(tail);
   const size = head.glyph.size ?? block.style.fontSize;
   if (next === null) return false;
   if (!next.sameWord && next.glyph.rect[0] - tail.glyph.rect[2] > TAB_GAP_EM * size) return false;
@@ -875,7 +886,7 @@ function movesLine(
 }
 
 /**
- * The line way: every match on line `lineIndex` replaced and the text after it drawn
+ * The line way: every match of `matches` (all on one line) replaced and the text after it drawn
  * again in its own fonts, moved by the difference, up to the end of the line or to the
  * next tab-like gap (text after one keeps its place while the moved text still ends a
  * word gap before it, and moves along otherwise, as a column would). A deleted match
@@ -885,24 +896,22 @@ function movesLine(
 function placeLine(
   page: TextPage,
   block: TextBlock,
-  lineIndex: number,
   matches: readonly (readonly GlyphAt[])[],
   replacement: string,
   fonts: TextFontSet,
   faces: FaceSource,
 ): Placement | null {
-  const line = block.lines[lineIndex];
-  if (line === undefined) return null;
+  // The caller groups matches by line, so there is at least one.
+  const { line: lineIndex, textLine: line } = endsOf(inBounds(matches, 0)).head;
   const lineSpan = [line.rect[0], line.rect[2]] as const;
   const glyphs: GlyphAt[] = [];
   for (const [word, entry] of line.words.entries()) {
-    for (const [index, glyph] of entry.glyphs.entries()) glyphs.push({ line: lineIndex, word, index, glyph });
+    for (const [index, glyph] of entry.glyphs.entries()) {
+      glyphs.push({ line: lineIndex, textLine: line, word, index, glyph });
+    }
   }
   const starts = new Map<GlyphBox, readonly GlyphAt[]>();
-  for (const match of matches) {
-    const head = match[0];
-    if (head !== undefined) starts.set(head.glyph, match);
-  }
+  for (const match of matches) starts.set(endsOf(match).head.glyph, match);
 
   const rects: Rect[] = [];
   const lines: TextEditInsertLine[] = [];
@@ -910,10 +919,11 @@ function placeLine(
   // The first erased glyph of the stretch being moved; `null` outside one.
   let stretch: number | null = null;
   const close = (end: number, limit: number): boolean => {
-    const last = glyphs[end - 1];
-    if (stretch === null || last === undefined) return true;
-    if (last.glyph.rect[2] + delta > limit + 0.01) return false;
-    rects.push(eraseBox(block, glyphs.slice(stretch, end)));
+    if (stretch === null) return true;
+    // `end` is past the stretch's first glyph: a match starts it and the loop has moved on.
+    const erased = glyphs.slice(stretch, end);
+    if (endsOf(erased).tail.glyph.rect[2] + delta > limit + 0.01) return false;
+    rects.push(eraseBox(block, erased));
     stretch = null;
     delta = 0;
     return true;
@@ -921,13 +931,14 @@ function placeLine(
 
   let index = 0;
   while (index < glyphs.length) {
-    const head = glyphs[index];
-    if (head === undefined) break;
+    const head = inBounds(glyphs, index);
     const size = head.glyph.size ?? block.style.fontSize;
-    const previous = glyphs[index - 1];
-    if (stretch !== null && previous !== undefined && previous.word !== head.word) {
+    if (stretch !== null) {
+      const previous = inBounds(glyphs, index - 1);
       const gap = head.glyph.rect[0] - previous.glyph.rect[2];
-      if (gap > TAB_GAP_EM * size) close(index, head.glyph.rect[0] - WORD_GAP_EM * size);
+      if (previous.word !== head.word && gap > TAB_GAP_EM * size) {
+        close(index, head.glyph.rect[0] - WORD_GAP_EM * size);
+      }
     }
     const x = head.glyph.origin?.[0] ?? head.glyph.rect[0];
     const y = head.glyph.origin?.[1] ?? line.baseline;
@@ -935,7 +946,7 @@ function placeLine(
     const match = starts.get(head.glyph);
     if (match !== undefined) {
       stretch ??= index;
-      const tail = match.at(-1) ?? head;
+      const { tail } = endsOf(match);
       const style = replacementStyle(page, block, match, replacement, fonts, faces);
       const width =
         replacement === '' ? 0 : faces.measure(replacement, style.face, style.size, page.pageIndex);
@@ -968,9 +979,8 @@ function placeLine(
     // A run of the original text: one word, one font, up to the next match.
     let end = index + 1;
     while (end < glyphs.length) {
-      const candidate = glyphs[end];
+      const candidate = inBounds(glyphs, end);
       if (
-        candidate === undefined ||
         candidate.word !== head.word ||
         candidate.glyph.fontName !== head.glyph.fontName ||
         starts.has(candidate.glyph)
@@ -999,24 +1009,27 @@ function placeLine(
     index = end;
   }
 
-  const last = glyphs.at(-1)?.glyph;
-  if (last === undefined) return null;
+  // The line holds the matches, so it holds glyphs.
+  const last = endsOf(glyphs).tail.glyph;
   const size = last.size ?? block.style.fontSize;
-  if (!close(glyphs.length, lineEndLimit(page, block, lineIndex, last.rect[2], size))) return null;
+  if (!close(glyphs.length, lineEndLimit(page, block, line, last.rect[2], size))) return null;
   return { rects, lines, shrunk: 0 };
 }
 
 /** The block's text with every match replaced, line breaks as `unitsOf` decided them. */
 function replacedText(units: readonly Unit[], hits: readonly Hit[], replacement: string): string {
+  const joined = (from: number, to?: number): string =>
+    units
+      .slice(from, to)
+      .map((unit) => unit.text)
+      .join('');
   let text = '';
   let next = 0;
   for (const hit of hits) {
-    for (let index = next; index < hit.first; index += 1) text += units[index]?.text ?? '';
-    text += replacement;
+    text += joined(next, hit.first) + replacement;
     next = hit.last + 1;
   }
-  for (let index = next; index < units.length; index += 1) text += units[index]?.text ?? '';
-  return text;
+  return text + joined(next);
 }
 
 /** A piece of a re-laid word: one face, one size, one colour. */
@@ -1043,12 +1056,11 @@ interface Paragraph {
  */
 function blockAlign(block: TextBlock, units: readonly Unit[]): TextAlign {
   const ends = new Set<number>([block.lines.length - 1]);
+  // The line of the last glyph before a hard break ends a paragraph.
+  let latest = 0;
   for (const unit of units) {
-    if (unit.text === '\n') {
-      // The unit after a hard break opens a line; the line before it ends a paragraph.
-      const next = units[units.indexOf(unit) + 1]?.glyph?.line;
-      if (next !== undefined) ends.add(next - 1);
-    }
+    if (unit.glyph !== null) latest = unit.glyph.line;
+    else if (unit.text === '\n') ends.add(latest);
   }
   const full = block.lines.filter((_line, index) => !ends.has(index));
   if (
@@ -1078,38 +1090,49 @@ function paragraphsOf(
   const paragraphs: Paragraph[] = [];
   let words: Atom[][] = [];
   let word: Atom[] = [];
-  let indent = (block.lines[0]?.rect[0] ?? block.rect[0]) - block.rect[0];
-  let run: { glyphs: GlyphAt[] } | null = null;
+  // The paragraph's indent is its first line's offset from the block's left edge, read
+  // from the first glyph the paragraph has.
+  let indent = 0;
+  let opened = false;
+  const open = (glyph: GlyphAt): void => {
+    if (opened) return;
+    indent = glyph.textLine.rect[0] - block.rect[0];
+    opened = true;
+  };
+  // The glyphs of the original text since the last change of font, size or colour.
+  let run: GlyphAt[] = [];
   const flushRun = (): boolean => {
-    if (run === null) return true;
-    const head = run.glyphs[0]?.glyph;
-    const text = run.glyphs.map((entry) => entry.glyph.ch).join('');
-    run = null;
-    if (head === undefined || text === '') return true;
-    const face = head.fontName === undefined ? null : sameFace(page.pageIndex, head.fontName, text, faces);
+    if (run.length === 0) return true;
+    const { head } = endsOf(run);
+    const text = run.map((entry) => entry.glyph.ch).join('');
+    run = [];
+    const fontName = head.glyph.fontName;
+    const face = fontName === undefined ? null : sameFace(page.pageIndex, fontName, text, faces);
     if (face === null) return false;
-    const size = head.size ?? block.style.fontSize;
+    const size = head.glyph.size ?? block.style.fontSize;
     word.push({
       text,
       face,
       size,
-      color: head.color ?? block.style.color,
+      color: head.glyph.color ?? block.style.color,
       width: faces.measure(text, face, size, page.pageIndex),
     });
     return true;
   };
-  const flushWord = (): boolean => {
-    if (!flushRun()) return false;
+  const endWord = (): void => {
     if (word.length > 0) words.push(word);
     word = [];
+  };
+  const flushWord = (): boolean => {
+    if (!flushRun()) return false;
+    endWord();
     return true;
   };
   const starts = new Map(hits.map((hit) => [hit.first, hit]));
 
   let index = 0;
   while (index < units.length) {
-    const unit = units[index];
-    if (unit === undefined) break;
+    const unit = inBounds(units, index);
     const hit = starts.get(index);
     if (hit !== undefined) {
       if (!flushRun()) return null;
@@ -1117,11 +1140,12 @@ function paragraphsOf(
         .slice(hit.first, hit.last + 1)
         .map((entry) => entry.glyph)
         .filter((glyph): glyph is GlyphAt => glyph !== null);
+      const { head } = endsOf(glyphs);
+      open(head);
       const style = replacementStyle(page, block, glyphs, replacement, fonts, faces);
-      const color = glyphs[0]?.glyph.color ?? block.style.color;
-      const pieces = replacement.split(/\s+/u);
-      for (const [at, piece] of pieces.entries()) {
-        if (at > 0 && !flushWord()) return null;
+      const color = head.glyph.color ?? block.style.color;
+      for (const [at, piece] of replacement.split(/\s+/u).entries()) {
+        if (at > 0) endWord();
         if (piece === '') continue;
         word.push({
           text: piece,
@@ -1139,22 +1163,20 @@ function paragraphsOf(
       if (unit.text === '\n') {
         paragraphs.push({ words, indent });
         words = [];
-        const opening = units[index + 1]?.glyph?.line;
-        const line = opening === undefined ? undefined : block.lines[opening];
-        indent = (line?.rect[0] ?? block.rect[0]) - block.rect[0];
+        indent = 0;
+        opened = false;
       }
       index += 1;
       continue;
     }
+    open(unit.glyph);
     if (unit.text === '') {
       // A dropped hyphen or a soft hyphen: nothing to draw.
       index += 1;
       continue;
     }
-    const current: { glyphs: GlyphAt[] } | null = run;
-    const head = current?.glyphs[0]?.glyph;
+    const head = run[0]?.glyph;
     if (
-      current !== null &&
       head !== undefined &&
       (head.fontName !== unit.glyph.glyph.fontName ||
         head.size !== unit.glyph.glyph.size ||
@@ -1162,8 +1184,7 @@ function paragraphsOf(
     ) {
       if (!flushRun()) return null;
     }
-    if (run === null) run = { glyphs: [] };
-    (run as { glyphs: GlyphAt[] }).glyphs.push(unit.glyph);
+    run.push(unit.glyph);
     index += 1;
   }
   if (!flushWord()) return null;
@@ -1179,7 +1200,8 @@ function lowestBaseline(page: TextPage, block: TextBlock, size: number): number 
     if (other.rect[2] <= block.rect[0] || other.rect[0] >= block.rect[2]) continue;
     floor = Math.min(floor, other.rect[1] - size * 0.3);
   }
-  return Math.max(floor, block.lines.at(-1)?.baseline ?? block.rect[3]);
+  // A block with a match has lines.
+  return Math.max(floor, inBounds(block.lines, block.lines.length - 1).baseline);
 }
 
 /**
@@ -1204,7 +1226,7 @@ function placeParagraph(
   const width = block.rect[2] - block.rect[0];
   const size = block.style.fontSize;
   const leading = block.style.leading > 0 ? block.style.leading : size * 1.2;
-  const first = block.lines[0]?.baseline ?? block.rect[3];
+  const first = inBounds(block.lines, 0).baseline;
   const floor = lowestBaseline(page, block, size);
   const space = (atom: Atom, scale: number): number =>
     faces.measure(' ', atom.face, atom.size * scale, page.pageIndex);
@@ -1254,11 +1276,9 @@ function placeParagraph(
     let x = block.rect[0] + line.indent;
     if (align === 'center') x += (available - line.natural) / 2;
     else if (align === 'right') x += available - line.natural;
-    for (const [at, word] of line.words.entries()) {
-      if (at > 0) {
-        const previous = line.words[at - 1]?.at(-1);
-        x += (previous === undefined ? 0 : space(previous, scale)) + stretch;
-      }
+    let before: Atom | null = null;
+    for (const word of line.words) {
+      if (before !== null) x += space(before, scale) + stretch;
       for (const atom of word) {
         lines.push({
           text: atom.text,
@@ -1270,10 +1290,12 @@ function placeParagraph(
           width: atom.width * scale,
         });
         x += atom.width * scale;
+        before = atom;
       }
     }
   }
-  const metrics = fonts.metrics[fonts.catalog.candidates[0]?.id ?? ''];
+  const catalogued = fonts.catalog.candidates[0];
+  const metrics = catalogued === undefined ? undefined : fonts.metrics[catalogued.id];
   if (metrics === undefined) {
     throw new ToolError('font-missing', { engine: 'pdf-text-engine', engineMessage: 'no catalogue metrics' });
   }
@@ -1335,7 +1357,7 @@ function placeParagraphInOneFace(
     box: [block.rect[0], block.rect[1], block.rect[2], Math.max(block.rect[3], floor + size * 0.3)],
     minFontSize: size * MIN_REFLOW_SCALE,
   };
-  const overflow = text.trim() !== '' && reflowBlock({ block, text, options }, metrics).overflow;
+  const overflow = reflowBlock({ block, text, options }, metrics).overflow;
   const request = planTextEdit({ page, blockId: block.id, replacement: text, options, font: face }, metrics);
   return {
     rects: request.erase.flatMap((entry) => entry.rects),
@@ -1381,7 +1403,7 @@ export function planFindReplace(
       lines.push(...placement.lines);
       shrunk += placement.shrunk;
     };
-    for (const block of page.blocks) {
+    for (const [position, block] of page.blocks.entries()) {
       const units = unitsOf(block, query.matchCase);
       const { hits, unaligned } =
         needle.length === 0 ? { hits: [], unaligned: 0 } : findHits(units, needle, query.wholeWord);
@@ -1389,9 +1411,8 @@ export function planFindReplace(
       skipped += unaligned;
       if (unaligned > 0) skippedPages.add(page.pageIndex);
       if (hits.length === 0) continue;
-      const verdict =
-        editability.blocks.find((entry) => entry.blockId === block.id)?.verdict ?? 'not-editable';
-      if (verdict === 'not-editable') {
+      // The report lists the page's blocks in order.
+      if (inBounds(editability.blocks, position).verdict === 'not-editable') {
         skipped += hits.length;
         skippedPages.add(page.pageIndex);
         continue;
@@ -1412,7 +1433,7 @@ export function planFindReplace(
           .map((unit) => unit.glyph)
           .filter((glyph): glyph is GlyphAt => glyph !== null),
       );
-      const crossesLines = matches.some((glyphs) => glyphs.some((glyph) => glyph.line !== glyphs[0]?.line));
+      const crossesLines = matches.some(spansLines);
       let placements: Placement[] | null = null;
       let moved = 0;
       if (!crossesLines) {
@@ -1421,15 +1442,15 @@ export function planFindReplace(
         placements = [];
         const byLine = new Map<number, (readonly GlyphAt[])[]>();
         for (const glyphs of matches) {
-          const lineIndex = glyphs[0]?.line ?? 0;
+          const lineIndex = endsOf(glyphs).head.line;
           byLine.set(lineIndex, [...(byLine.get(lineIndex) ?? []), glyphs]);
         }
-        for (const [lineIndex, lineMatches] of byLine) {
+        for (const lineMatches of byLine.values()) {
           const moving = lineMatches.some((glyphs) =>
             movesLine(page, block, glyphs, query.replace, fonts, faces),
           );
           if (moving) {
-            const result = placeLine(page, block, lineIndex, lineMatches, query.replace, fonts, faces);
+            const result = placeLine(page, block, lineMatches, query.replace, fonts, faces);
             if (result !== null) {
               placements.push(result);
               // Closing the gap a shorter replacement leaves is not a failure to fit: only
@@ -1450,9 +1471,7 @@ export function planFindReplace(
             placements.push(...singles);
             continue;
           }
-          const result = moving
-            ? null
-            : placeLine(page, block, lineIndex, lineMatches, query.replace, fonts, faces);
+          const result = moving ? null : placeLine(page, block, lineMatches, query.replace, fonts, faces);
           if (result === null) {
             placements = null;
             break;
@@ -1474,10 +1493,9 @@ export function planFindReplace(
         // Table cells are never laid out as a paragraph: each match is drawn as small as
         // a cell allows, or left alone and reported.
         for (const glyphs of matches) {
-          const oneLine = glyphs.every((glyph) => glyph.line === glyphs[0]?.line);
-          const result = oneLine
-            ? placeInPlace(page, block, glyphs, query.replace, fonts, faces, MIN_CELL_SCALE)
-            : null;
+          const result = spansLines(glyphs)
+            ? null
+            : placeInPlace(page, block, glyphs, query.replace, fonts, faces, MIN_CELL_SCALE);
           if (result === null) {
             noRoom += 1;
             continue;

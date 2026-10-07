@@ -11,11 +11,12 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { PDFDocument } from 'mupdf';
+import { buildTextPage, type TextPage } from 'pdf-text-engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
 import { embedNotoSans, subsetEmbeddedFaces } from '../engines/mupdf-write';
-import { loadTextFonts } from '../text-source';
-import { type FindReplaceOptions, findReplace } from './find-replace';
+import { loadTextFonts, readDocumentText } from '../text-source';
+import { documentFaces, type FindReplaceOptions, findReplace } from './find-replace';
 
 const run = { signal: new AbortController().signal };
 
@@ -1039,5 +1040,151 @@ describe('findReplace reports and options', () => {
         onProgress: () => late.abort(),
       }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+/** The page's text model with the font name taken off every glyph that draws `ch`. */
+function withoutFontName(model: TextPage, ch: string): TextPage {
+  return {
+    ...model,
+    blocks: model.blocks.map((block) => ({
+      ...block,
+      lines: block.lines.map((line) => ({
+        ...line,
+        words: line.words.map((word) => ({
+          ...word,
+          glyphs: word.glyphs.map((glyph) => {
+            if (glyph.ch !== ch) return glyph;
+            const { fontName: _removed, ...bare } = glyph;
+            return bare;
+          }),
+        })),
+      })),
+    })),
+  };
+}
+
+/** The font name of the page's first block, which the extractor reported for its glyphs. */
+function fontNameOf(model: TextPage): string {
+  const name = model.blocks[0]?.style.fontName;
+  if (typeof name !== 'string') throw new Error('the page has no font name');
+  return name;
+}
+
+describe('documentFaces', () => {
+  /** `Merhaba dünya` in embedded Noto Sans, read the way `findReplace` reads a page. */
+  async function readPage() {
+    const bytes = await page([{ text: 'Merhaba dünya', y: 330 }]);
+    const inputs = await readDocumentText(bytes, [0], run);
+    const model = buildTextPage(inputs[0] ?? { pageIndex: 0, width: 1, height: 1, rotation: 0, blocks: [] });
+    const fonts = await loadTextFonts();
+    return { bytes, model, fonts, fontName: fontNameOf(model) };
+  }
+
+  it('offers the page’s own font for text made of characters that font has drawn', async () => {
+    const { bytes, model, fonts, fontName } = await readPage();
+    const source = await documentFaces(bytes, [model], fonts);
+    try {
+      expect(source.faces.own(0, fontName, 'dünya Merhaba')).toBe(`doc:${fontName}`);
+      // `z` is in the font's encoding but the page never shows it: a subset need not hold it.
+      expect(source.faces.own(0, fontName, 'Merhaba z')).toBeNull();
+      expect(source.faces.own(0, 'NoSuchFont', 'Merhaba')).toBeNull();
+    } finally {
+      source.close();
+    }
+  });
+
+  it('does not count a glyph that reports no font name as drawn by any font', async () => {
+    const { bytes, model, fonts, fontName } = await readPage();
+    const source = await documentFaces(bytes, [withoutFontName(model, 'M')], fonts);
+    try {
+      expect(source.faces.own(0, fontName, 'M')).toBeNull();
+      expect(source.faces.own(0, fontName, 'erhaba')).toBe(`doc:${fontName}`);
+    } finally {
+      source.close();
+    }
+  });
+
+  it('reflows with the page font’s own advances and only the glyphs the page has drawn', async () => {
+    const { bytes, model, fonts, fontName } = await readPage();
+    const source = await documentFaces(bytes, [model], fonts);
+    const mupdf = await loadMupdf();
+    try {
+      const metrics = source.faces.ownMetrics(0, fontName, 'Merhaba');
+      if (metrics === null) throw new Error('the page font draws Merhaba');
+      const regular = new mupdf.Font('NotoSans', noto('400Regular/NotoSans_400Regular.ttf'));
+      expect(metrics.unitsPerEm).toBe(1000);
+      for (const character of ['M', 'ü', 'y']) {
+        const point = character.codePointAt(0) ?? 0;
+        expect(metrics.glyphAdvance(point)).toBeCloseTo(
+          regular.advanceGlyph(regular.encodeCharacter(point), 0) * 1000,
+          0,
+        );
+        expect(metrics.hasGlyph(point)).toBe(true);
+      }
+      // A space is always there; `z` was never drawn.
+      expect(metrics.hasGlyph(0x20)).toBe(true);
+      expect(metrics.hasGlyph(0x7a)).toBe(false);
+      expect(metrics.lineGap).toBe(0);
+      expect(metrics.missing).toEqual([]);
+      expect(source.faces.ownMetrics(0, fontName, 'Merhaba z')).toBeNull();
+    } finally {
+      source.close();
+    }
+  });
+
+  it('measures text in the page’s own font, the catalogue’s faces and a standard face', async () => {
+    const { bytes, model, fonts, fontName } = await readPage();
+    const source = await documentFaces(bytes, [model], fonts);
+    const mupdf = await loadMupdf();
+    try {
+      const regular = new mupdf.Font('NotoSans', noto('400Regular/NotoSans_400Regular.ttf'));
+      const helvetica = new mupdf.Font('Helvetica');
+      const advance = (font: InstanceType<typeof mupdf.Font>, text: string) =>
+        [...text].reduce(
+          (sum, character) => sum + font.advanceGlyph(font.encodeCharacter(character.codePointAt(0) ?? 0), 0),
+          0,
+        );
+      expect(source.faces.measure('Merhaba', `doc:${fontName}`, 10, 0)).toBeCloseTo(
+        advance(regular, 'Merhaba') * 10,
+        1,
+      );
+      expect(source.faces.measure('Merhaba', 'noto-sans', 10, 0)).toBeCloseTo(
+        advance(regular, 'Merhaba') * 10,
+        1,
+      );
+      expect(source.faces.measure('Merhaba', 'helvetica', 10, 0)).toBeCloseTo(
+        advance(helvetica, 'Merhaba') * 10,
+        5,
+      );
+      expect(source.faces.measure('Merhaba', 'helvetica', 20, 0)).toBeCloseTo(
+        advance(helvetica, 'Merhaba') * 20,
+        5,
+      );
+    } finally {
+      source.close();
+    }
+  });
+
+  it('refuses to measure with a font it does not have', async () => {
+    const { bytes, model, fonts } = await readPage();
+    const source = await documentFaces(bytes, [model], { ...fonts, metrics: {} });
+    try {
+      expect(() => source.faces.measure('x', 'doc:NoSuchFont', 10, 0)).toThrowError(
+        expect.objectContaining({
+          code: 'internal',
+          details: { engine: 'model', engineMessage: 'no document font doc:NoSuchFont' },
+        }),
+      );
+      // The set has no table for the catalogue face either, and it is not a standard face.
+      expect(() => source.faces.measure('x', 'noto-sans', 10, 0)).toThrowError(
+        expect.objectContaining({
+          code: 'internal',
+          details: { engine: 'model', engineMessage: 'no metrics for face noto-sans' },
+        }),
+      );
+    } finally {
+      source.close();
+    }
   });
 });
