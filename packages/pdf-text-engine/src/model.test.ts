@@ -10,8 +10,9 @@
  * "s" 384.1–391.0, " " 391.0–393.1, "i" 390.9–395.9).
  */
 
+import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { buildTextPage } from './model';
+import { buildTextPage, lineOrientation } from './model';
 import type { CharInput, PageTextInput } from './types';
 
 const SIZE = 10;
@@ -161,5 +162,180 @@ describe('buildTextPage word segmentation', () => {
       blocks: [{ quad: [72, 90, 400, 104], lines: [{ chars, quad: [72, 90, 400, 104], baseline: 100 }] }],
     });
     expect(built.blocks[0]?.lines[0]?.words[0]?.rect).toEqual([72, 92, 77, 102]);
+  });
+});
+
+describe('buildTextPage — refusals, style facts and the cases with nothing to measure', () => {
+  /** A glyph of `size` in `fontName` whose box starts at x on the baseline at y. */
+  const glyph = (ch: string, x: number, y = BASELINE, size = SIZE, fontName = 'Helvetica'): CharInput => ({
+    ch,
+    quad: [x, y - 8, x + 5, y + 2],
+    origin: [x, y],
+    size,
+    fontName,
+  });
+  const input = (blocks: PageTextInput['blocks'], extra: Partial<PageTextInput> = {}): PageTextInput => ({
+    pageIndex: 0,
+    width: 595,
+    height: 842,
+    rotation: 0,
+    blocks,
+    ...extra,
+  });
+  const lineOf = (chars: readonly CharInput[], baseline = BASELINE) => ({
+    chars,
+    quad: [72, baseline - 8, 400, baseline + 2] as const,
+    baseline,
+  });
+  const blockOf = (...lines: ReturnType<typeof lineOf>[]) => ({ quad: [72, 0, 400, 800] as const, lines });
+
+  it('refuses a page index or a page size it cannot place text on', () => {
+    const fail = (extra: Partial<PageTextInput>): string => {
+      try {
+        buildTextPage(input([], extra));
+        return 'built';
+      } catch (error) {
+        return error instanceof ToolError ? `${error.code}: ${error.details.engineMessage}` : 'other';
+      }
+    };
+    expect(fail({ pageIndex: -1 })).toBe('range-invalid: pageIndex -1');
+    expect(fail({ pageIndex: 1.5 })).toBe('range-invalid: pageIndex 1.5');
+    expect(fail({ width: 0 })).toBe('range-invalid: page size 0 x 842');
+    expect(fail({ height: Number.NaN })).toBe('range-invalid: page size 595 x NaN');
+  });
+
+  it('drops a block with no inked glyph or no usable size, and numbers the rest from b0', () => {
+    const built = buildTextPage(
+      input([
+        blockOf(lineOf([glyph(' ', 72)])),
+        blockOf(lineOf([glyph('a', 72, BASELINE, 0)])),
+        blockOf(lineOf([glyph('b', 72)]), lineOf([glyph('c', 72, BASELINE + 30)])),
+      ]),
+    );
+    expect(built.blocks.map((block) => [block.id, block.text])).toEqual([['b0', 'b\nc']]);
+  });
+
+  it('takes the most used named font, ignores unnamed and zero-size glyphs, and has no name when none is given', () => {
+    const named = buildTextPage(
+      input([
+        blockOf(
+          lineOf([
+            glyph('a', 72, BASELINE, 0, 'Times-Bold'),
+            glyph('b', 77, BASELINE, 12, ''),
+            glyph('c', 82, BASELINE, 12, 'Helvetica-Oblique'),
+            glyph('d', 87, BASELINE, 12, 'Helvetica-Oblique'),
+          ]),
+        ),
+      ]),
+    ).blocks[0];
+    expect(named?.style).toMatchObject({
+      fontName: 'Helvetica-Oblique',
+      fontFamily: 'sans',
+      italic: true,
+      fontSize: 12,
+    });
+    const unnamed = buildTextPage(input([blockOf(lineOf([glyph('a', 72, BASELINE, 10, '')]))])).blocks[0];
+    expect([unnamed?.style.fontName, unnamed?.style.fontFamily]).toEqual([null, 'unknown']);
+  });
+
+  it('falls back to 1.2 em leading when the lines share a baseline, and checks the colour it is given', () => {
+    const stacked = buildTextPage(input([blockOf(lineOf([glyph('a', 72)]), lineOf([glyph('b', 200)]))]))
+      .blocks[0];
+    expect(stacked?.style.leading).toBe(12);
+    const coloured = buildTextPage(input([blockOf(lineOf([glyph('a', 72)]))], { colors: { 0: '#a1b2c3' } }));
+    expect(coloured.blocks[0]?.style.color).toBe('#a1b2c3');
+    expect(() =>
+      buildTextPage(input([blockOf(lineOf([glyph('a', 72)]))], { colors: { 0: '#A1B2C3' } })),
+    ).toThrow(/colour #A1B2C3/);
+    expect(() => buildTextPage(input([blockOf(lineOf([glyph('a', 72)]))], { colors: { 0: 'red' } }))).toThrow(
+      /colour red \(expected #rrggbb\)/,
+    );
+  });
+
+  it('reads a line whose glyphs share one origin as horizontal, and two glyphs on one spot as horizontal', () => {
+    const same = [glyph('a', 72), glyph('b', 72)];
+    const built = buildTextPage(input([blockOf(lineOf(same))])).blocks[0];
+    expect(built?.text).toBe('ab');
+    const line = built?.lines[0];
+    if (line === undefined) throw new Error('no line');
+    expect(lineOrientation(line)).toBe('horizontal');
+  });
+});
+
+describe('buildTextPage — paragraph blocks', () => {
+  const glyphAt = (ch: string, x: number, y: number, fontName = 'Helvetica', size = SIZE): CharInput => ({
+    ch,
+    quad: [x, y - 8, x + 5, y + 2],
+    origin: [x, y],
+    size,
+    fontName,
+  });
+  /** A block with one horizontal line of `text` starting at (x, baseline). */
+  const block = (text: string, x: number, baseline: number, fontName = 'Helvetica', size = SIZE) => {
+    const chars = [...text].map((ch, index) => glyphAt(ch, x + index * 5, baseline, fontName, size));
+    const quad = [x, baseline - 8, x + text.length * 5, baseline + 2] as const;
+    return { quad, lines: [{ chars, quad, baseline }] };
+  };
+  /** A block of one vertical line: each glyph below the last. */
+  const vertical = (x: number, top: number) => {
+    const chars = [...'abc'].map((ch, index) => glyphAt(ch, x, top + index * 12));
+    const quad = [x, top - 8, x + 5, top + 26] as const;
+    return { quad, lines: [{ chars, quad, baseline: top }] };
+  };
+  const texts = (blocks: PageTextInput['blocks']) =>
+    buildTextPage({ pageIndex: 0, width: 595, height: 842, rotation: 0, blocks }).blocks.map(
+      (built) => built.text,
+    );
+
+  it('joins the next line of the same paragraph into one block, with its own leading', () => {
+    const built = buildTextPage({
+      pageIndex: 0,
+      width: 595,
+      height: 842,
+      rotation: 0,
+      blocks: [block('aaaa', 72, 100), block('bbbb', 72, 114), block('cc', 72, 128)],
+    }).blocks;
+    expect(built.map((item) => [item.id, item.text, item.style.leading])).toEqual([
+      ['b0', 'aaaa\nbbbb\ncc', 14],
+    ]);
+  });
+
+  it('keeps blocks apart that differ in font, size, rhythm, column or direction', () => {
+    expect(texts([block('aaaa', 72, 100), block('bbbb', 72, 114, 'Times-Roman')])).toEqual(['aaaa', 'bbbb']);
+    expect(texts([block('aaaa', 72, 100), block('bbbb', 72, 114, 'Helvetica', 11)])).toEqual([
+      'aaaa',
+      'bbbb',
+    ]);
+    // A paragraph break: more than 1.6 × the 12 pt leading.
+    expect(texts([block('aaaa', 72, 100), block('bbbb', 72, 120)])).toEqual(['aaaa', 'bbbb']);
+    // Above the previous block, not below it.
+    expect(texts([block('aaaa', 72, 100), block('bbbb', 72, 90)])).toEqual(['aaaa', 'bbbb']);
+    // A column beside the paragraph.
+    expect(texts([block('aaaa', 72, 100), block('bbbb', 300, 114)])).toEqual(['aaaa', 'bbbb']);
+    // A vertical line: each glyph is its own word along the line's direction, and it never joins.
+    expect(texts([vertical(72, 100), block('bbbb', 72, 140)])).toEqual(['a b c', 'bbbb']);
+  });
+
+  it('calls a single line centred on the page centred, and one off centre left', () => {
+    const align = (x: number) =>
+      buildTextPage({
+        pageIndex: 0,
+        width: 595,
+        height: 842,
+        rotation: 0,
+        blocks: [block('abcdefghij', x, 100)],
+      }).blocks[0]?.align;
+    // 50 pt wide: centred on 297.5 when it starts at 272.5.
+    expect(align(272.5)).toBe('center');
+    expect(align(72)).toBe('left');
+    // Two lines of different length sharing one centre, flush on neither side.
+    const centred = buildTextPage({
+      pageIndex: 0,
+      width: 595,
+      height: 842,
+      rotation: 0,
+      blocks: [block('abcdefghij', 72, 100), block('abcd', 87, 114)],
+    }).blocks;
+    expect(centred.map((item) => [item.text, item.align])).toEqual([['abcdefghij\nabcd', 'center']]);
   });
 });
