@@ -1445,10 +1445,7 @@ export function App({ store }: AppProps) {
     };
   }, []);
   /** The roots as bytes, for the verifier; recomputed when the list changes. */
-  const trustRootBytes = useMemo(
-    () => trustRoots.map((root) => toDer(root)).filter((der): der is Uint8Array => der !== null),
-    [trustRoots],
-  );
+  const trustRootBytes = useMemo(() => trustRoots.map((root) => toDer(root)), [trustRoots]);
   /**
    * The CRLs the user imported: the same OPFS settings directory and the same re-check when
    * the list changes (an imported CRL is exactly what turns "indeterminate" into an answer).
@@ -1464,8 +1461,7 @@ export function App({ store }: AppProps) {
     };
   }, []);
   const revocationListBytes = useMemo(
-    () =>
-      revocationLists.map((list) => revocationListDer(list)).filter((der): der is Uint8Array => der !== null),
+    () => revocationLists.map((list) => revocationListDer(list)),
     [revocationLists],
   );
   const [factsInventory, setDocumentFacts] = useState<{

@@ -18,9 +18,7 @@ function crlBlobs(bytes: Uint8Array): Uint8Array[] {
   const text = new TextDecoder('latin1').decode(bytes);
   const blocks = [...text.matchAll(PEM_BLOCK)];
   if (blocks.length === 0) return [bytes];
-  return blocks
-    .map((block) => fromBase64(block[1] ?? ''))
-    .filter((der): der is Uint8Array => der !== null && der.length > 0);
+  return blocks.map((block) => fromBase64(block[1] ?? '')).filter((der) => der.length > 0);
 }
 
 export async function importRevocationLists(

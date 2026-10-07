@@ -9,8 +9,8 @@
  * and when it arrived.
  *
  * The file is untrusted input when it is read back (`drafts.ts` follows the same rule): a
- * base64 value that does not decode is dropped rather than trusted, and the version field
- * is checked so a future format cannot be misread as this one.
+ * base64 value that decodes to almost nothing is dropped rather than trusted, and the
+ * version field is checked so a future format cannot be misread as this one.
  */
 
 export interface TrustRoot {
@@ -39,7 +39,8 @@ const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 export function toBase64(bytes: Uint8Array): string {
   let out = '';
   for (let index = 0; index < bytes.length; index += 3) {
-    const first = bytes[index] ?? 0;
+    // In range: the loop runs while `index < bytes.length`.
+    const first = bytes[index] as number;
     const second = bytes[index + 1];
     const third = bytes[index + 2];
     out += ALPHABET[first >> 2];
@@ -50,16 +51,18 @@ export function toBase64(bytes: Uint8Array): string {
   return out;
 }
 
-export function fromBase64(text: string): Uint8Array | null {
+/**
+ * Decode base64, ignoring everything outside the alphabet (line breaks, PEM indentation,
+ * `=` padding), so every character that reaches the decoder has a value.
+ */
+export function fromBase64(text: string): Uint8Array {
   const clean = text.replace(/[^A-Za-z0-9+/]/g, '');
   const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
   let at = 0;
   let buffer = 0;
   let bits = 0;
   for (const character of clean) {
-    const value = ALPHABET.indexOf(character);
-    if (value < 0) return null;
-    buffer = (buffer << 6) | value;
+    buffer = (buffer << 6) | ALPHABET.indexOf(character);
     bits += 6;
     if (bits >= 8) {
       bits -= 8;
@@ -79,7 +82,7 @@ export function trustRootFrom(der: Uint8Array, label: string, addedAt = Date.now
   return { id: `root-${hash.toString(16)}`, label, derBase64: encoded, addedAt };
 }
 
-export function toDer(root: TrustRoot): Uint8Array | null {
+export function toDer(root: TrustRoot): Uint8Array {
   return fromBase64(root.derBase64);
 }
 
@@ -106,7 +109,7 @@ export function parseTrustRoots(raw: unknown): TrustRootsFile {
     const der = fromBase64(root.derBase64);
     // A certificate is at least a few hundred bytes of DER; a value that decodes to almost
     // nothing is a corrupted entry, not a root.
-    if (der === null || der.length < 64) continue;
+    if (der.length < 64) continue;
     roots.push({
       id: root.id,
       label: root.label,
@@ -115,8 +118,4 @@ export function parseTrustRoots(raw: unknown): TrustRootsFile {
     });
   }
   return { version: 1, roots };
-}
-
-export function serialiseTrustRoots(file: TrustRootsFile): string {
-  return JSON.stringify(file);
 }

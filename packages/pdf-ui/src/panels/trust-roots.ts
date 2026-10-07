@@ -29,7 +29,7 @@ export async function importTrustRoots(
     const text = new TextDecoder().decode(bytes);
     const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(text);
     const der = pem === null ? bytes : fromBase64(pem[1] ?? '');
-    if (der === null || der.length === 0 || der[0] !== 0x30) {
+    if (der.length === 0 || der[0] !== 0x30) {
       refused += 1;
       continue;
     }
