@@ -398,8 +398,9 @@ function buildSupport(map: EdgeMap): Support {
 
 /** Fraction of a side's in-picture length that lies on an edge running the side's way; `-1` if mostly outside. */
 function sideSupport(support: Support, from: Point, to: Point): number {
+  // `bestQuad` has dropped every quad with a side under `minSide`, and `detectPage` refuses a
+  // working picture under 16 px a side, so `length` is at least 2.4 and `steps` is positive.
   const length = Math.hypot(to.x - from.x, to.y - from.y);
-  if (length < 1) return 0;
   // The side's normal direction, folded into [0, π).
   let normal = Math.atan2(to.x - from.x, -(to.y - from.y));
   if (normal < 0) normal += Math.PI;
@@ -433,7 +434,10 @@ function cornerAngle(a: Point, b: Point, c: Point): number {
   const v1y = a.y - b.y;
   const v2x = c.x - b.x;
   const v2y = c.y - b.y;
-  const cosine = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) || 1);
+  // The caller has checked the quad is strictly convex, so no two neighbouring corners coincide
+  // and neither vector is zero (the corners are line intersections, a few hundred pixels from
+  // the origin: distinct ones are far more than 1e-100 apart, so the product cannot underflow).
+  const cosine = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y));
   return (Math.acos(Math.max(-1, Math.min(1, cosine))) * 180) / Math.PI;
 }
 
@@ -582,13 +586,11 @@ function refine(map: EdgeMap, line: Line, from: Point, to: Point): Line {
   const rho = meanX * Math.cos(theta) + meanY * Math.sin(theta);
   // Refuse a refit that wandered: the least-squares line must stay close to the Hough one.
   if (angleBetween(theta, line.theta) > Math.PI / 24 || Math.abs(rho - line.rho) > 4) return line;
-  // Fold to θ ∈ [0, π) with the matching ρ sign, as the rest of the file expects.
+  // Fold to θ ∈ [0, π) with the matching ρ sign, as the rest of the file expects. `direction` is
+  // an atan2 result halved, so in (-π/2, π/2]: `theta` starts in (0, π] and only grows by π, and
+  // never needs lifting from below zero.
   let foldedTheta = theta;
   let foldedRho = rho;
-  while (foldedTheta < 0) {
-    foldedTheta += Math.PI;
-    foldedRho = -foldedRho;
-  }
   while (foldedTheta >= Math.PI) {
     foldedTheta -= Math.PI;
     foldedRho = -foldedRho;
@@ -602,8 +604,10 @@ function refine(map: EdgeMap, line: Line, from: Point, to: Point): Line {
  * rectangle the user adjusts).
  */
 export function detectPage(image: RasterImage): DetectedPage | null {
-  if (image.width < 16 || image.height < 16) return null;
   const gray = grayDownscale(image, WORKING_SIZE);
+  // A picture whose working raster is under 16 px either way (or empty) holds no page to find;
+  // a long thin strip shrinks to that, so the check is on the raster the detector reads.
+  if (gray.width < 16 || gray.height < 16) return null;
   const map = detectEdges(gray);
   const peaks = houghLines(map);
   if (peaks.length < 2) return null;
