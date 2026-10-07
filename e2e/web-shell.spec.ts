@@ -158,3 +158,153 @@ test('a document opened and then listed shows its page count and size on the hom
   await expect(row.getByRole('cell').nth(2)).toHaveText('3');
   await expect(row.getByRole('cell').nth(4)).toContainText(/\d+(\.\d)? KB/);
 });
+
+const pageBox = (page: Page) => page.getByRole('textbox', { name: 'Page number' });
+
+test('the page number box takes a valid page, and an unusable or out-of-range entry leaves the page where it was', async ({
+  page,
+}) => {
+  await openApp(page, 'nav.pdf', labelledPdf('Nav', 3), { advanced: false });
+  await expect(page.getByText('/ 3', { exact: true })).toBeVisible();
+  await expect(pageBox(page)).toHaveValue('1');
+
+  for (const entry of ['99', '0', 'abc', '']) {
+    await pageBox(page).fill(entry);
+    await pageBox(page).press('Enter');
+    await pageBox(page).blur();
+    await expect(pageBox(page)).toHaveValue('1');
+  }
+  await pageBox(page).fill('3');
+  await pageBox(page).press('Enter');
+  await expect(pageBox(page)).toHaveValue('3');
+  await expect(page.getByRole('button', { name: 'Next Page' })).toBeDisabled();
+});
+
+test('Fit Width puts the zoom back to the page width after zooming out', async ({ page }) => {
+  await openApp(page, 'zoom.pdf', labelledPdf('Zoom', 1), { advanced: false });
+  const fit = page.getByRole('button', { name: /^Fit Width \(\d+%\)$/ });
+  const fitted = await fit.getAttribute('aria-label');
+  await page.getByRole('button', { name: 'Zoom Out (-)' }).click();
+  await page.getByRole('button', { name: 'Zoom Out (-)' }).click();
+  await expect(fit).not.toHaveAttribute('aria-label', fitted ?? '');
+  await fit.click();
+  await expect(fit).toHaveAttribute('aria-label', fitted ?? '');
+});
+
+test('the header lists the open documents; Escape and a press outside close the list, and a choice switches document', async ({
+  page,
+}) => {
+  await openApp(page, 'first.pdf', labelledPdf('First', 1), { advanced: false });
+  await openApp(page, 'second.pdf', labelledPdf('Second', 2), { advanced: false, navigate: false });
+  const switcher = page.getByRole('button', { name: /^second\.pdf/ }).first();
+  const list = page.getByText(/Open documents \(2\)/);
+
+  await switcher.click();
+  await expect(list).toBeVisible();
+  await expect(switcher).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(list).toBeHidden();
+  await expect(switcher).toHaveAttribute('aria-expanded', 'false');
+
+  await switcher.click();
+  await expect(list).toBeVisible();
+  await page.mouse.click(5, 300);
+  await expect(list).toBeHidden();
+
+  await switcher.click();
+  await page.getByRole('button', { name: 'first.pdf', exact: true }).click();
+  await expect(list).toBeHidden();
+  await expect(page.getByRole('button', { name: /^first\.pdf/ }).first()).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await expect(page.getByText('/ 1', { exact: true })).toBeVisible();
+});
+
+test('pressing the armed tool on the rail a second time puts the pointer back in select', async ({
+  page,
+}) => {
+  await openApp(page, 'rail.pdf', labelledPdf('Rail', 1), { advanced: false });
+  const rectangle = page.getByRole('button', { name: 'Draw Shape (Rectangle)', exact: true });
+  const select = page.getByRole('button', { name: 'Selection Tool', exact: true });
+  await expect(select).toHaveAttribute('aria-pressed', 'true');
+  await rectangle.click();
+  await expect(rectangle).toHaveAttribute('aria-pressed', 'true');
+  await expect(select).toHaveAttribute('aria-pressed', 'false');
+  await rectangle.click();
+  await expect(rectangle).toHaveAttribute('aria-pressed', 'false');
+  await expect(select).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('a key that reaches the window from the document itself still runs its shortcut, and one typed into an editable field does not', async ({
+  page,
+}) => {
+  await openApp(page, 'keys.pdf', labelledPdf('Keys', 2), { advanced: false });
+  const thumbnails = page.getByRole('option');
+  await expect(thumbnails.first()).toBeVisible();
+
+  // Fired at `document`, whose target is no element: the page panel still toggles.
+  await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true }));
+  });
+  await expect(thumbnails).toHaveCount(0);
+  await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true }));
+  });
+  await expect(thumbnails.first()).toBeVisible();
+
+  // Typed into a contenteditable region, the same key belongs to the field, not the shell.
+  await page.evaluate(() => {
+    const field = document.createElement('div');
+    field.id = 'scratch-editor';
+    field.contentEditable = 'true';
+    field.tabIndex = 0;
+    document.body.append(field);
+    field.focus();
+  });
+  await page.keyboard.press('F4');
+  await expect(thumbnails.first()).toBeVisible();
+  await page.evaluate(() => {
+    document.getElementById('scratch-editor')?.remove();
+  });
+  await page.locator('.pdfViewer[data-active-viewer]').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('F4');
+  await expect(thumbnails).toHaveCount(0);
+});
+
+test('Export Options in the header opens the export dialog and Escape closes it', async ({ page }) => {
+  await openApp(page, 'export.pdf', labelledPdf('Export', 1), { advanced: false });
+  await page.getByRole('button', { name: 'Export Options' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(/Export/i);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});
+
+test('without requestIdleCallback or a network the shell still starts, and warms its chunks once the network is back', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Reflect.deleteProperty(window, 'requestIdleCallback');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+  });
+  const chunks: string[] = [];
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url());
+    if (pathname.startsWith('/editor/assets/') && pathname.endsWith('.js')) chunks.push(pathname);
+  });
+  await page.goto('/editor/');
+  await expect(page.getByRole('tab', { name: 'Start' })).toHaveAttribute('aria-selected', 'true');
+  // The idle fallback (a 2 s timer) has run: the worker registration it starts is the proof.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => (await navigator.serviceWorker.getRegistration('/editor/')) !== undefined),
+    )
+    .toBe(true);
+  const before = chunks.length;
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('online'));
+  });
+  await expect.poll(() => chunks.length, { timeout: 30_000 }).toBeGreaterThan(before);
+});

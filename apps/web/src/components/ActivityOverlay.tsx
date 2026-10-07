@@ -55,10 +55,12 @@ export function ActivityOverlay({
     return () => clearTimeout(timer);
   }, [notice, hovered, onDismiss]);
 
-  const percent =
-    progress === null || progress.total === undefined || progress.total === 0
-      ? 100
-      : Math.round((100 * (progress.done ?? 0)) / progress.total);
+  // A job that reports no step count (or a count of zero) has nothing to count against: its
+  // bar is full and indeterminate, so assistive technology is given no value to read out.
+  const total =
+    progress === null || progress.total === undefined || progress.total === 0 ? null : progress.total;
+  const done = progress?.done ?? 0;
+  const percent = total === null ? 100 : Math.round((100 * done) / total);
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-3 z-50 flex flex-col items-center gap-2 px-3">
@@ -79,19 +81,13 @@ export function ActivityOverlay({
         <div
           role="progressbar"
           aria-label={t('progress.label')}
-          aria-valuemin={0}
-          aria-valuemax={progress.total ?? 0}
-          aria-valuenow={progress.done ?? 0}
+          {...(total === null ? {} : { 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': done })}
           className="pdf-floating-shadow pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-md border border-kumo-line bg-kumo-base px-3 py-1.5 text-xs"
         >
           <span className="min-w-0 truncate text-kumo-subtle">
-            {progress.total === undefined
+            {total === null
               ? t(progress.labelKey)
-              : t('op.progress', {
-                  label: t(progress.labelKey),
-                  done: progress.done ?? 0,
-                  total: progress.total,
-                })}
+              : t('op.progress', { label: t(progress.labelKey), done, total })}
           </span>
           <span className="h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-kumo-recessed">
             <span className="block h-full bg-pdf-accent" style={{ width: `${percent}%` }} />

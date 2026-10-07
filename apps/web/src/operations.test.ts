@@ -1169,13 +1169,42 @@ describe('verifyForWrite: what a change is measured as', () => {
     expect(result.state).toBe('verified');
   });
 
-  it('stops when the signal had already fired', async () => {
+  it('refuses with an aborted error, from the model, when the signal fires while the pages are being compared', async () => {
+    const source = await threePageDocument();
+    const aborted = new AbortController();
+    const reference = await openWithPdfjs(source.bytes);
+    // The reference answers its first page text and the user cancels at that moment.
+    const cancelling: PdfDocumentHandle = {
+      ...reference,
+      getPageText: async (index) => {
+        aborted.abort();
+        return await reference.getPageText(index);
+      },
+    };
+    try {
+      const failure = await verifyForWrite(source.bytes, {
+        expectedPageCount: 3,
+        steps: [],
+        sourceHandle: cancelling,
+        signal: aborted.signal,
+      }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(ToolError);
+      expect(failure).toMatchObject({ code: 'aborted', details: { engine: 'model' } });
+    } finally {
+      await reference.destroy();
+    }
+  });
+
+  it('refuses a signal that fired before the file was opened, from the reader', async () => {
     const source = await threePageDocument();
     const aborted = new AbortController();
     aborted.abort();
-    await expect(
-      verifyForWrite(source.bytes, { expectedPageCount: 3, steps: [], signal: aborted.signal }),
-    ).rejects.toThrow();
+    const failure = await verifyForWrite(source.bytes, {
+      expectedPageCount: 3,
+      steps: [],
+      signal: aborted.signal,
+    }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'aborted', details: { engine: 'pdfjs' } });
   });
 
   it('treats form fields by what the operation declared: count, values, and an operation it cannot characterise', async () => {
@@ -1379,5 +1408,86 @@ describe('base bytes and shortcuts', () => {
       verdict: 'degraded',
       reason: 'budget',
     });
+  });
+});
+
+describe('materializeBase over a static XFA form', () => {
+  const TEMPLATE =
+    '<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/"><subform name="form1"><subform><field name="Name"><ui><textEdit/></ui></field></subform></subform></template>';
+  const DATASETS =
+    '<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><Name>Old</Name></form1></xfa:data></xfa:datasets>';
+
+  /** A one-field static XFA form: the widget is what a reader edits, the datasets are what XFA reads. */
+  function staticXfaForm(widgetValue: string | null): Uint8Array {
+    const document = new mupdf.PDFDocument();
+    document.insertPage(0, document.addPage([0, 0, 400, 300], 0, {}, ''));
+    const page = document.findPage(0);
+    const root = document.addObject({ T: document.newString('form1[0]'), Kids: [] });
+    const inner = document.addObject({ T: document.newString('#subform[0]'), Parent: root, Kids: [] });
+    root.get('Kids').push(inner);
+    const name = document.addObject({
+      Type: 'Annot',
+      Subtype: 'Widget',
+      Rect: [20, 250, 180, 270],
+      P: page,
+      F: 4,
+      FT: 'Tx',
+      T: document.newString('Name[0]'),
+      Parent: inner,
+      AP: { N: document.addStream('', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 160, 20] }) },
+      ...(widgetValue === null ? {} : { V: document.newString(widgetValue) }),
+    });
+    inner.get('Kids').push(name);
+    page.put('Annots', [name]);
+    const form = document.addObject({ Fields: [root] });
+    const packets = document.newArray();
+    for (const [packet, body] of [
+      ['template', TEMPLATE],
+      ['datasets', DATASETS],
+    ] as const) {
+      packets.push(document.newString(packet));
+      packets.push(document.addStream(body, document.newDictionary()));
+    }
+    form.put('XFA', packets);
+    document.getTrailer().get('Root').put('AcroForm', form);
+    return saved(document);
+  }
+
+  function datasetsOf(bytes: Uint8Array): string {
+    const document = reopen(bytes);
+    try {
+      const xfa = document.getTrailer().get('Root').get('AcroForm').resolve().get('XFA').resolve();
+      for (let at = 0; at + 1 < xfa.length; at += 2) {
+        if (xfa.get(at).asString() === 'datasets') {
+          return new TextDecoder().decode(
+            xfa
+              .get(at + 1)
+              .readStream()
+              .asUint8Array(),
+          );
+        }
+      }
+      throw new Error('the form has no datasets packet');
+    } finally {
+      document.destroy();
+    }
+  }
+
+  it('brings the XFA datasets in step with the value the engine save wrote, and journals that step', async () => {
+    const master = staticXfaForm(null);
+    const engineSaved = staticXfaForm('Ada Lovelace');
+    expect(datasetsOf(engineSaved)).toContain('<Name>Old</Name>');
+    const live = await engineSaveHandle(master, engineSaved);
+    try {
+      const store = new SessionStore();
+      const tab = store.openDocument({ name: 'xfa.pdf', bytes: master, sha256: 'xfa', pageCount: 1 });
+      const steps: SaveStepDescription[] = [];
+      const bytes = await materializeBase({ store, t: createTranslator(), tab, handle: live }, SIGNAL, steps);
+      expect(datasetsOf(bytes)).toContain('<Name>Ada Lovelace</Name>');
+      expect(steps.map((step) => step.id)).toEqual(['pdfjs.saveDocument', 'xfa.datasets']);
+      expect(steps[1]).toMatchObject({ engine: 'mupdf', note: 'static XFA data kept in step' });
+    } finally {
+      await live.destroy();
+    }
   });
 });
