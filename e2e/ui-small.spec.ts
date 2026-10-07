@@ -1,8 +1,21 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
 import { expect, test } from './test';
-import { readProducedPdf, toolFixturePdf } from './tool-fixture';
-import { CANVAS, dragPage, menuItem, openPdf, rail, runCommand, sheetPhotoPng } from './ui-helpers';
+import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import {
+  CANVAS,
+  dragPage,
+  encodePng,
+  exportBytes,
+  menuItem,
+  openDockTab,
+  openPdf,
+  pageFrame,
+  rail,
+  runCommand,
+  sheetPhotoPng,
+  toClient,
+} from './ui-helpers';
 import { cmsBy, fromNow, signedDocument, signingPki } from './ui-panels9-helpers';
 import {
   FLAT_FORM,
@@ -529,4 +542,196 @@ test('a scan that carries text is reported as read from pixels, its fields are g
     page.getByRole('note').filter({ hasText: '1 page(s) are scans: only horizontal lines were read' }),
   ).toBeVisible();
   await expect(page.getByRole('note').filter({ hasText: 'only a picture with no text' })).toHaveCount(0);
+});
+
+/* ------------------------------------------------------------------ *
+ * Placing a picture: its size, the ghost under the pointer, the page edges
+ * ------------------------------------------------------------------ */
+
+const flatPicture = (width: number, height: number) => ({
+  name: 'picture.png',
+  mimeType: 'image/png',
+  buffer: encodePng(width, height, () => [200, 30, 30]),
+});
+
+/** Arm the placement of a picture file the way the image picker does. */
+async function armImage(page: Page, width: number, height: number): Promise<void> {
+  await page.locator('input[type="file"][accept^="image/png"]').setInputFiles(flatPicture(width, height));
+  await expect(page.locator('[data-stamp-placement]')).toBeAttached();
+}
+
+/** The stamps of the exported file, in page points. */
+async function placedStamps(page: Page, name: string) {
+  const produced = await readProducedPdf(await exportBytes(page, name));
+  return produced.annotations
+    .filter((annotation) => annotation.subtype === 'Stamp')
+    .map((annotation) => {
+      const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = annotation.rect;
+      return { width: x1 - x0, height: y1 - y0, centerX: (x0 + x1) / 2, centerY: (y0 + y1) / 2 };
+    });
+}
+
+test('an image is placed at 96 dpi, shrunk to 60 % of the page when larger, and kept inside the page', async ({
+  page,
+}) => {
+  await openPdf(page);
+  const frame = await pageFrame(page);
+
+  // 400 x 200 px is 300 x 150 pt; clicked mid-page it is centred on the click.
+  await armImage(page, 400, 200);
+  const middle = toClient(frame, 300, 400);
+  await page.mouse.move(middle.x, middle.y, { steps: 4 });
+  const ghost = page.locator('[data-stamp-ghost]');
+  await expect(ghost).toBeVisible();
+  const shown = await ghost.boundingBox();
+  expect(shown?.width).toBeCloseTo(300 * frame.scale, 0);
+  expect(shown?.height).toBeCloseTo(150 * frame.scale, 0);
+  // Over the tools rail the pointer is off the pages: the ghost goes.
+  await page.mouse.move(5, 300, { steps: 4 });
+  await expect(ghost).toHaveCount(0);
+  // A right-button press is not a placement.
+  await page.mouse.click(middle.x, middle.y, { button: 'right' });
+  await expect(page.locator('[data-stamp-placement]')).toBeAttached();
+  await page.mouse.click(middle.x, middle.y);
+  await expect(page.locator('[data-stamp-placement]')).toHaveCount(0);
+
+  // 2000 x 1000 px would be 1500 x 750 pt: it is shrunk, aspect kept, to 60 % of the page width.
+  await armImage(page, 2000, 1000);
+  const corner = toClient(frame, 4, 838);
+  await page.mouse.move(corner.x, corner.y, { steps: 4 });
+  await page.mouse.click(corner.x, corner.y);
+  await expect(page.locator('[data-stamp-placement]')).toHaveCount(0);
+
+  const [normal, big, ...rest] = await placedStamps(page, 'images.pdf');
+  expect(rest).toEqual([]);
+  expect(normal?.width).toBeCloseTo(300, 0);
+  expect(normal?.height).toBeCloseTo(150, 0);
+  expect(normal?.centerX).toBeCloseTo(300, 0);
+  expect(normal?.centerY).toBeCloseTo(400, 0);
+  expect(big?.width).toBeCloseTo(595 * 0.6, 0);
+  expect(big?.height).toBeCloseTo(595 * 0.3, 0);
+  // The click was in the page's top-left corner: the picture is pushed inside the page.
+  expect(big?.centerX).toBeCloseTo((595 * 0.6) / 2, 0);
+  expect(big?.centerY).toBeCloseTo(842 - (595 * 0.3) / 2, 0);
+});
+
+test('on a page turned a quarter the picture keeps the size it shows on screen', async ({ page }) => {
+  await openPdf(page);
+  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await expect
+    .poll(async () => {
+      const box = await page.locator(CANVAS).first().boundingBox();
+      return box !== null && box.width > box.height;
+    })
+    .toBe(true);
+  await armImage(page, 400, 200);
+  const sheet = await page.locator(CANVAS).first().boundingBox();
+  if (sheet === null) throw new Error('the turned page is not on screen');
+  const middle = { x: sheet.x + sheet.width / 2, y: sheet.y + sheet.height / 2 };
+  await page.mouse.move(middle.x, middle.y, { steps: 4 });
+  const shown = await page.locator('[data-stamp-ghost]').boundingBox();
+  // On screen it is wider than tall, as the picture is.
+  expect(shown?.width).toBeCloseTo((shown?.height ?? 0) * 2, 0);
+  await page.mouse.click(middle.x, middle.y);
+  await expect(page.locator('[data-stamp-placement]')).toHaveCount(0);
+  const [stamp] = await placedStamps(page, 'turned.pdf');
+  // In the file's own (unturned) space the stamp's extents are swapped.
+  expect(stamp?.width).toBeCloseTo(150, 0);
+  expect(stamp?.height).toBeCloseTo(300, 0);
+  expect(stamp?.centerX).toBeCloseTo(297.5, 0);
+  expect(stamp?.centerY).toBeCloseTo(421, 0);
+});
+
+/* ------------------------------------------------------------------ *
+ * The tool settings strip
+ * ------------------------------------------------------------------ */
+
+const settingsStrip = (page: Page) => page.getByRole('group', { name: 'Tool settings' });
+
+test('Add Text settings: the size is kept between 6 and 72 pt, an empty field keeps the last size, colour and author are taken', async ({
+  page,
+}) => {
+  await openPdf(page);
+  await rail(page, 'Add Text').click();
+  const strip = settingsStrip(page);
+  const size = strip.getByRole('spinbutton', { name: 'Size' });
+  await size.fill('500');
+  await expect(size).toHaveValue('72');
+  await size.fill('2');
+  await expect(size).toHaveValue('6');
+  await size.fill('18.4');
+  await expect(size).toHaveValue('18');
+  // A half-typed (empty) field is not a size: the last valid one stays.
+  await size.fill('');
+  await size.blur();
+  await expect(size).toHaveValue('18');
+
+  const colour = strip.getByLabel('Color');
+  await colour.fill('#0000ff');
+  await expect(colour).toHaveValue('#0000ff');
+  const author = strip.getByRole('textbox', { name: 'Author' });
+  await author.fill('Ada Lovelace');
+  await expect(author).toHaveValue('Ada Lovelace');
+});
+
+test('shape settings: thickness stays between 1 and 20, opacity is read out, and the chosen kind is what is drawn', async ({
+  page,
+}) => {
+  await openPdf(page);
+  await rail(page, 'Draw Shape (Rectangle)').click();
+  const strip = settingsStrip(page);
+  const thickness = strip.getByRole('spinbutton', { name: 'Thickness' });
+  await thickness.fill('99');
+  await expect(thickness).toHaveValue('20');
+  await thickness.fill('0');
+  await expect(thickness).toHaveValue('1');
+  await thickness.fill('7');
+  await thickness.fill('');
+  await thickness.blur();
+  await expect(thickness).toHaveValue('7');
+
+  const opacity = strip.getByRole('slider', { name: 'Opacity' });
+  await opacity.fill('0.5');
+  await expect(strip.getByText('50%')).toBeVisible();
+  await strip.getByRole('combobox', { name: 'Shape' }).selectOption('circle');
+  await expect(strip.getByRole('combobox', { name: 'Shape' })).toHaveValue('circle');
+
+  await dragPage(page, [100, 400], [300, 500]);
+  const produced = await readProducedPdf(await exportBytes(page, 'circle.pdf'));
+  const circles = produced.annotations.filter((mark) => mark.subtype === 'Circle');
+  expect(circles).toHaveLength(1);
+});
+
+test('redaction settings count the marked areas and Apply redaction removes the covered text from the file', async ({
+  page,
+}) => {
+  await openPdf(page);
+  await openDockTab(page, 'Redaction');
+  await page.getByRole('button', { name: 'Open redaction tool', exact: true }).click();
+  const strip = settingsStrip(page);
+  await expect(strip.getByText('0 area(s) marked')).toBeVisible();
+  const apply = strip.getByRole('button', { name: 'Apply redaction' });
+  await expect(apply).toBeDisabled();
+  // Over the fourth text line of the fixture.
+  await dragPage(page, [72, 594], [320, 574]);
+  // The gesture leaves the tool; arming it again shows what is pending.
+  await expect(page.locator('[data-mark-family="redaction"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Open redaction tool', exact: true }).click();
+  await expect(strip.getByText('1 area(s) marked')).toBeVisible();
+  await expect(apply).toBeEnabled();
+  await apply.click();
+  // Apply opens the redaction form over the pending marks; its two steps remove the text.
+  const form = page.getByRole('region', { name: /Redact/ });
+  await expect(form).toBeVisible({ timeout: 30_000 });
+  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(form.getByRole('alert')).toHaveText(
+    'This operation may permanently delete content. Continue?',
+  );
+  await form.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+  await expect(form).toBeHidden({ timeout: 60_000 });
+  const texts = await readProducedPageTexts(await exportBytes(page, 'redacted.pdf'));
+  expect(texts[0]).toContain('Third line stays untouched');
+  expect(texts[0]).not.toContain('Fourth line for redaction marks');
 });
