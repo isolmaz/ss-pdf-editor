@@ -71,8 +71,9 @@ function parseXml(text: string, path: string, damaged?: Set<string>): Document {
       else damaged?.add(path);
     },
   } as never);
-  const document = parser.parseFromString(text, 'application/xml') as unknown as Document;
-  if (failure !== null || document.documentElement === null) {
+  // xmldom hands back `undefined` for an empty string.
+  const document = parser.parseFromString(text, 'application/xml') as unknown as Document | undefined;
+  if (failure !== null || document === undefined || document.documentElement === null) {
     throw new ToolError('corrupt-document', { engine: 'model', path, engineMessage: failure ?? 'empty XML' });
   }
   return document;
@@ -83,6 +84,15 @@ function damageNotes(damaged: ReadonlySet<string>): OperationNote[] {
   return damaged.size === 0
     ? []
     : [note('lost', 'op.note.convert.xmlDamaged', { parts: [...damaged].join(', ') })];
+}
+
+/**
+ * An attribute, or `null` when the element does not carry it. xmldom answers a missing attribute
+ * with `""`, which no `?? default` can tell from an attribute that is present and empty.
+ */
+function attribute(element: Element | null | undefined, name: string): string | null {
+  if (element === null || element === undefined || !element.hasAttribute(name)) return null;
+  return element.getAttribute(name);
 }
 
 /** Element children whose local name is `name` (namespace prefixes vary between producers). */
@@ -125,7 +135,7 @@ function relationshipAttribute(element: Element, name: string): string | null {
     if (item.localName === name && item.namespaceURI === RELATIONSHIPS_NS) return item.value;
   }
   // A producer that wrote the prefix without declaring it.
-  return element.getAttribute(`r:${name}`);
+  return attribute(element, `r:${name}`);
 }
 
 async function openZip(bytes: Uint8Array, path: string): Promise<JSZip> {
@@ -169,14 +179,13 @@ async function relationships(
   zip: JSZip,
   part: string,
 ): Promise<Map<string, { target: string; external: boolean }>> {
-  const folder = part.split('/').slice(0, -1).join('/');
-  const file = part.split('/').pop() ?? '';
-  const text = await entryText(zip, `${folder === '' ? '' : `${folder}/`}_rels/${file}.rels`);
+  const slash = part.lastIndexOf('/');
+  const text = await entryText(zip, `${part.slice(0, slash + 1)}_rels/${part.slice(slash + 1)}.rels`);
   const map = new Map<string, { target: string; external: boolean }>();
   if (text === null) return map;
   for (const rel of descendants(parseXml(text, `${part}.rels`), 'Relationship')) {
-    const id = rel.getAttribute('Id');
-    const target = rel.getAttribute('Target');
+    const id = attribute(rel, 'Id');
+    const target = attribute(rel, 'Target');
     if (id === null || target === null) continue;
     const external = rel.getAttribute('TargetMode') === 'External';
     map.set(id, { target: external ? target : resolvePath(part, target), external });
@@ -211,7 +220,7 @@ function base64(bytes: Uint8Array): string {
 
 /** An image part as a data URI MuPDF can decode, or `null` for formats it cannot (EMF, WMF, SVG). */
 async function imageDataUri(zip: JSZip, path: string): Promise<string | null> {
-  const type = IMAGE_TYPES[(path.split('.').pop() ?? '').toLowerCase()];
+  const type = IMAGE_TYPES[path.slice(path.lastIndexOf('.') + 1).toLowerCase()];
   if (type === undefined) return null;
   const bytes = await entryBytes(zip, path);
   return bytes === null ? null : `data:${type};base64,${base64(bytes)}`;
@@ -259,7 +268,7 @@ function isDateFormat(code: string): boolean {
     .replace(/"[^"]*"/g, '')
     .replace(/\[[^\]]*\]/g, '')
     .replace(/\\./g, '');
-  return /[dmyhs]/i.test(bare) && !/^[#0.,%E+\- ]*$/i.test(bare);
+  return /[dmyhs]/i.test(bare);
 }
 
 /** An Excel serial (1900 system, the 1900-02-29 bug included) as ISO date or date-time. */
@@ -282,7 +291,7 @@ function cellIndex(reference: string): { readonly column: number; readonly row: 
 
 function sharedString(si: Element): string {
   const direct = child(si, 't');
-  if (direct !== null) return direct.textContent ?? '';
+  if (direct !== null) return direct.textContent;
   return children(si, 'r')
     .map((run) => child(run, 't')?.textContent ?? '')
     .join('');
@@ -316,11 +325,11 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
     const styles = parseXml(stylesText, 'xl/styles.xml', damaged);
     const custom = new Map<number, string>();
     for (const format of descendants(styles, 'numFmt')) {
-      custom.set(Number(format.getAttribute('numFmtId')), format.getAttribute('formatCode') ?? '');
+      custom.set(Number(format.getAttribute('numFmtId')), attribute(format, 'formatCode') ?? '');
     }
     const cellXfs = descendants(styles, 'cellXfs')[0];
     for (const xf of children(cellXfs, 'xf')) {
-      const id = Number(xf.getAttribute('numFmtId') ?? 0);
+      const id = Number(attribute(xf, 'numFmtId') ?? 0);
       const code = custom.get(id);
       dateStyles.push(BUILTIN_DATE_FORMATS.has(id) || (code !== undefined && isDateFormat(code)));
     }
@@ -330,7 +339,7 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
   let truncated = 0;
   const sheets = descendants(workbook, 'sheet');
   for (const sheet of sheets) {
-    const name = sheet.getAttribute('name') ?? '';
+    const name = attribute(sheet, 'name') ?? '';
     const target = rels.get(relationshipAttribute(sheet, 'id') ?? '')?.target;
     if (target === undefined) continue;
     const sheetText = await entryText(zip, target);
@@ -342,19 +351,19 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
     let maxColumn = -1;
     for (const row of descendants(document, 'row')) {
       for (const cell of children(row, 'c')) {
-        const at = cellIndex(cell.getAttribute('r') ?? '');
+        const at = cellIndex(attribute(cell, 'r') ?? '');
         if (at === null) continue;
         if (at.row >= MAX_SHEET_ROWS || at.column >= MAX_SHEET_COLUMNS) {
           truncated += 1;
           continue;
         }
-        const type = cell.getAttribute('t') ?? 'n';
+        const type = attribute(cell, 't') ?? 'n';
         const raw = child(cell, 'v')?.textContent ?? '';
         let value: string;
         if (type === 's') value = strings[Number(raw)] ?? '';
         else if (type === 'inlineStr') value = sharedString(child(cell, 'is') ?? cell);
         else if (type === 'b') value = raw === '1' ? 'TRUE' : 'FALSE';
-        else if (type === 'n' && raw !== '' && dateStyles[Number(cell.getAttribute('s') ?? 0)] === true) {
+        else if (type === 'n' && raw !== '' && dateStyles[Number(attribute(cell, 's') ?? 0)] === true) {
           value = serialDate(Number(raw), date1904);
         } else value = raw;
         if (value === '') continue;
@@ -373,9 +382,10 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
     const spans = new Map<string, { rows: number; columns: number }>();
     const covered = new Set<string>();
     for (const merge of descendants(document, 'mergeCell')) {
-      const [from, to] = (merge.getAttribute('ref') ?? '').split(':');
-      const start = cellIndex(from ?? '');
-      const end = cellIndex(to ?? from ?? '');
+      const ref = attribute(merge, 'ref') ?? '';
+      const colon = ref.indexOf(':');
+      const start = cellIndex(colon < 0 ? ref : ref.slice(0, colon));
+      const end = cellIndex(colon < 0 ? ref : ref.slice(colon + 1));
       if (start === null || end === null) continue;
       spans.set(`${start.row}:${start.column}`, {
         rows: end.row - start.row + 1,
@@ -463,9 +473,9 @@ function runsHtml(paragraph: Element): string {
     let piece = text;
     if (props?.getAttribute('b') === '1') piece = `<b>${piece}</b>`;
     if (props?.getAttribute('i') === '1') piece = `<i>${piece}</i>`;
-    if ((props?.getAttribute('u') ?? 'none') !== 'none') piece = `<u>${piece}</u>`;
+    if ((attribute(props, 'u') ?? 'none') !== 'none') piece = `<u>${piece}</u>`;
     // `sz` is in hundredths of a point (ECMA-376 §21.1.2.3.9).
-    const size = Number(props?.getAttribute('sz') ?? Number.NaN) / 100;
+    const size = Number(attribute(props, 'sz') ?? Number.NaN) / 100;
     if (Number.isFinite(size) && size >= 4 && size <= 200)
       piece = `<span style="font-size:${size}pt">${piece}</span>`;
     html += piece;
@@ -504,7 +514,7 @@ function tableHtml(table: Element, width: number | null): string {
     html += '<tr>';
     for (const cell of children(row, 'tc')) {
       if (cell.getAttribute('hMerge') === '1' || cell.getAttribute('vMerge') === '1') continue;
-      const span = Number(cell.getAttribute('gridSpan') ?? 1);
+      const span = Number(attribute(cell, 'gridSpan') ?? 1);
       const body = child(cell, 'txBody');
       html += `<td${span > 1 ? ` colspan="${span}"` : ''}>${body === null ? '' : textBodyHtml(body, false)}</td>`;
     }
@@ -529,9 +539,7 @@ async function shapeTreeHtml(tree: Element, context: SlideContext): Promise<stri
   const shapes = Array.from(
     { length: tree.childNodes.length },
     (_value, index) => tree.childNodes[index] as Element,
-  ).filter(
-    (node) => node.nodeType === 1 && ['sp', 'pic', 'graphicFrame', 'grpSp'].includes(node.localName ?? ''),
-  );
+  ).filter((node) => node.nodeType === 1 && ['sp', 'pic', 'graphicFrame', 'grpSp'].includes(node.localName));
   let html = '';
   for (const shape of readingOrder(shapes)) {
     if (shape.localName === 'grpSp') {
@@ -587,8 +595,8 @@ export async function pptxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
   const presentation = parseXml(presentationText, 'ppt/presentation.xml', damaged);
   const size = descendants(presentation, 'sldSz')[0];
   const page = {
-    width: Number(size?.getAttribute('cx') ?? 9144000) / EMU_PER_POINT,
-    height: Number(size?.getAttribute('cy') ?? 6858000) / EMU_PER_POINT,
+    width: Number(attribute(size, 'cx') ?? 9144000) / EMU_PER_POINT,
+    height: Number(attribute(size, 'cy') ?? 6858000) / EMU_PER_POINT,
   };
   const rels = await relationships(zip, 'ppt/presentation.xml');
   const parts: HtmlPart[] = [];

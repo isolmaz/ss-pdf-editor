@@ -155,7 +155,6 @@ export function encodePacket(text: string): Uint8Array {
 /** The `xfa:data` element of a datasets document, or `null`. */
 export function dataElementOf(datasets: Document): Element | null {
   const root = datasets.documentElement;
-  if (root === null) return null;
   if (root.localName === 'data' && inNamespace(root, 'xfa-data')) return root;
   return childElements(root, 'data').find((element) => inNamespace(element, 'xfa-data')) ?? null;
 }
@@ -164,7 +163,8 @@ export function dataElementOf(datasets: Document): Element | null {
 function textOf(node: Node): string {
   let out = '';
   for (let child = node.firstChild; child !== null; child = child.nextSibling) {
-    if (child.nodeType === 3 || child.nodeType === 4) out += child.nodeValue ?? '';
+    // A text or CDATA node always has a value: `nodeValue` is typed nullable for the other node types.
+    if (child.nodeType === 3 || child.nodeType === 4) out += child.nodeValue as string;
     // A `<value>` child: a multi-select list stores one per selected item.
     else if (child.nodeType === 1 && (child as Element).localName === 'value') out += textOf(child);
   }
@@ -209,8 +209,9 @@ function buildTemplate(element: Element, parent: TemplateNode | null): TemplateN
 
 /** Split a SOM segment `name[3]` / `#subform[0]` / `name` into its parts. */
 function parseSegment(segment: string): { name: string; index: number } {
-  const match = /^(.*?)(?:\[(\d+)\])?$/.exec(segment);
-  return { name: match?.[1] ?? segment, index: match?.[2] === undefined ? 0 : Number(match[2]) };
+  const occurrence = /\[(\d+)\]$/.exec(segment);
+  if (occurrence === null) return { name: segment, index: 0 };
+  return { name: segment.slice(0, occurrence.index), index: Number(occurrence[1]) };
 }
 
 /**
@@ -228,8 +229,8 @@ function resolveTemplateNode(
 ): TemplateNode | null {
   let current: TemplateNode = root;
   // The first segment names the root subform itself.
-  const first = segments[0];
-  if (first === undefined) return null;
+  // `somSegments` always yields one segment at least (`''.split('.')` is `['']`).
+  const first = segments[0] as { name: string; index: number };
   const top = root.children.find((kid) => kid.name === first.name && kid.tag === 'subform');
   if (top === undefined) return null;
   current = top;
@@ -259,28 +260,29 @@ function allNodes(root: TemplateNode, out: TemplateNode[] = []): TemplateNode[] 
 function itemTexts(field: Element): string[] {
   const items = childElements(field, 'items').find((element) => element.getAttribute('save') !== '1');
   if (items === undefined) return [];
-  return childElements(items).map((item) => item.textContent ?? '');
+  return childElements(items).map(textOf);
 }
 
 function pictureOf(field: Element): string | null {
   for (const holder of ['format', 'edit']) {
     const block = childElements(field, holder)[0];
     const picture = block === undefined ? undefined : childElements(block, 'picture')[0];
-    const text = picture?.textContent?.trim();
-    if (text !== undefined && text !== '') return text;
+    const text = picture === undefined ? '' : textOf(picture).trim();
+    if (text !== '') return text;
   }
   // The picture may also sit on the widget: `<ui><dateTimeEdit><picture>`.
   const ui = childElements(field, 'ui')[0];
   const editor = ui === undefined ? undefined : childElements(ui)[0];
   const picture = editor === undefined ? undefined : childElements(editor, 'picture')[0];
-  const text = picture?.textContent?.trim();
-  return text !== undefined && text !== '' ? text : null;
+  const text = picture === undefined ? '' : textOf(picture).trim();
+  return text === '' ? null : text;
 }
 
 /** The part of a picture inside `date{...}`, when it is a pure date picture. */
 function datePictureOf(picture: string | null): string | null {
-  const match = picture === null ? null : /^date\{([^}]*)\}$/.exec(picture);
-  return match?.[1] === undefined || match[1] === '' ? null : match[1];
+  if (picture === null || !picture.startsWith('date{') || !picture.endsWith('}')) return null;
+  const inner = picture.slice('date{'.length, -1);
+  return inner === '' || inner.includes('}') ? null : inner;
 }
 
 /** The bind mode of a template node: `normal` (the default), `none`, `global`, or a dataRef. */
@@ -322,9 +324,10 @@ function bindField(
   if (root !== null && node === null) {
     // The index of an unnamed container can run past the template: match by the field's
     // own name when exactly one template field carries it.
-    const leaf = segments.at(-1)?.name ?? '';
-    const named = all.filter((candidate) => candidate.tag === 'field' && candidate.name === leaf);
-    node = named.length === 1 ? (named[0] ?? null) : null;
+    // (`somSegments` yields one segment at least.)
+    const leaf = (segments.at(-1) as { name: string }).name;
+    const [only, ...others] = all.filter((candidate) => candidate.tag === 'field' && candidate.name === leaf);
+    node = only !== undefined && others.length === 0 ? only : null;
   }
 
   if (node === null) {
@@ -448,24 +451,35 @@ export function isoDateToDisplay(value: string, picture: string): string | null 
 // reading and writing the data
 // ---------------------------------------------------------------------------
 
-/** The element at `path` below `data`, or `null`. With `create`, missing nodes are made. */
-function dataNodeAt(data: Element, path: readonly DataStep[], create: boolean): Element | null {
+/** The element at `path` below `data`, or `null`. */
+function findDataNode(data: Element, path: readonly DataStep[]): Element | null {
+  let current = data;
+  for (const step of path) {
+    const next = childElements(current, step.name)[step.index];
+    if (next === undefined) return null;
+    current = next;
+  }
+  return current;
+}
+
+/** The element at `path` below `data`, the missing nodes along it made. */
+function ensureDataNode(data: Element, path: readonly DataStep[]): Element {
   let current = data;
   for (const step of path) {
     const siblings = childElements(current, step.name);
-    let next = siblings[step.index] ?? null;
-    if (next === null) {
-      if (!create) return null;
-      const owner = current.ownerDocument;
-      for (let count = siblings.length; count <= step.index; count += 1) {
-        // A data node carries no namespace of its own: the datasets default is none.
-        const made = owner.createElementNS(null, step.name);
-        current.appendChild(made);
-        next = made;
-      }
+    const existing = siblings[step.index];
+    if (existing !== undefined) {
+      current = existing;
+      continue;
     }
-    if (next === null) return null;
-    current = next;
+    // `step.index` is past the last sibling, so the loop makes at least one node.
+    let made = current;
+    for (let count = siblings.length; count <= step.index; count += 1) {
+      // A data node carries no namespace of its own: the datasets default is none.
+      made = current.ownerDocument.createElementNS(null, step.name);
+      current.appendChild(made);
+    }
+    current = made;
   }
   return current;
 }
@@ -548,7 +562,8 @@ export function planSync(
     let value: string | null;
     if (binding.group !== null) {
       const key = `${binding.path.map((step) => `${step.name}[${step.index}]`).join('/')}#${binding.group}`;
-      value = groupValue.get(key) ?? '';
+      // Set above for this very binding, whose snapshot exists.
+      value = groupValue.get(key) as string;
     } else {
       value = dataValueFor(binding, snapshot);
     }
@@ -556,7 +571,7 @@ export function planSync(
       skipped.push({ name: binding.name, reason: binding.datePicture === null ? 'unmapped' : 'formatted' });
       continue;
     }
-    const existing = dataNodeAt(data, binding.path, false);
+    const existing = findDataNode(data, binding.path);
     if (existing !== null && hasElementChildren(existing)) {
       skipped.push({ name: binding.name, reason: 'data-group' });
       continue;
@@ -566,12 +581,7 @@ export function planSync(
       unchanged += 1;
       continue;
     }
-    const target = existing ?? dataNodeAt(data, binding.path, true);
-    if (target === null) {
-      skipped.push({ name: binding.name, reason: 'unmapped' });
-      continue;
-    }
-    setText(target, value);
+    setText(existing ?? ensureDataNode(data, binding.path), value);
     changed.push(binding.name);
   }
   return { xml: changed.length === 0 ? null : serializeNode(document), changed, unchanged, skipped };
@@ -582,7 +592,7 @@ export function readBoundValue(datasetsXml: string, binding: XfaBinding): string
   if (binding.path === null) return null;
   const document = parseXml(datasetsXml);
   const data = document === null ? null : dataElementOf(document);
-  const node = data === null ? null : dataNodeAt(data, binding.path, false);
+  const node = data === null ? null : findDataNode(data, binding.path);
   return node === null || hasElementChildren(node) ? null : textOf(node);
 }
 
@@ -647,6 +657,8 @@ export function dataMarkupOf(xml: string): string | null {
     holder = datasets === undefined ? null : (childElements(datasets, 'data')[0] ?? null);
   }
   if (holder === null) {
+    // A packet or an XDP without `xfa:data` holds no data; only a bare data document is the data itself.
+    if (root.localName === 'datasets' || root.localName === 'xdp') return null;
     // A bare data document: its root element is the data itself.
     return childElements(root).length === 0 && textOf(root) === '' ? null : serializeNode(root);
   }

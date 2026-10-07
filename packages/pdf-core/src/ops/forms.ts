@@ -523,7 +523,7 @@ function wrapLines(value: string, width: number, measure: (text: string) => numb
     let line = '';
     for (const word of paragraph.split(' ')) {
       const candidate = line === '' ? word : `${line} ${word}`;
-      if (measure(candidate) <= width || (line === '' && measure(word) <= width)) {
+      if (measure(candidate) <= width) {
         line = candidate;
         continue;
       }
@@ -691,11 +691,9 @@ function ensureAcroForm(doc: PDFDocument): PDFObject {
   const catalog = resolved(doc.getTrailer().get('Root'));
   if (catalog === null)
     throw new ToolError('corrupt-document', { engine: 'mupdf', engineMessage: 'no /Root' });
-  catalog.put('AcroForm', doc.addObject({ Fields: [], DA: pdfText(doc, `/${FORM_FONT} 0 Tf 0 g`) }));
-  const form = acroFormOf(doc);
-  if (form === null)
-    throw new ToolError('internal', { engine: 'mupdf', engineMessage: 'AcroForm not created' });
-  return form;
+  const created = doc.addObject({ Fields: [], DA: pdfText(doc, `/${FORM_FONT} 0 Tf 0 g`) });
+  catalog.put('AcroForm', created);
+  return created.resolve();
 }
 
 /**
@@ -867,12 +865,15 @@ function writeValue(doc: PDFDocument, field: FieldNode, value: FormFill['value']
     );
     if (!editable && exported.some((entry) => entry === undefined))
       refuseValue(field.name, 'not one of the options');
-    const values = exported.map((entry, index) => entry ?? chosen[index] ?? '');
+    const values = chosen.map((entry, index) => exported[index] ?? entry);
     if (values.length > 1 && (flagsOf(field.dict) & FF.multiSelect) === 0)
       refuseValue(field.name, 'one option only');
+    const [first, ...rest] = values;
     field.dict.put(
       'V',
-      values.length === 1 ? pdfText(doc, values[0] ?? '') : values.map((entry) => pdfText(doc, entry)),
+      first !== undefined && rest.length === 0
+        ? pdfText(doc, first)
+        : values.map((entry) => pdfText(doc, entry)),
     );
     field.dict.delete('I');
     return true;
@@ -1001,7 +1002,7 @@ export async function createFormFields(
     for (const [index, spec] of fields.entries()) {
       throwIfAborted(context.signal);
       const page = pages[spec.pageIndex];
-      if (page === undefined || spec.pageIndex < 0) {
+      if (page === undefined) {
         throw new ToolError('range-invalid', {
           engine: 'mupdf',
           engineMessage: `field ${spec.name} targets page ${spec.pageIndex + 1} of ${pageCount}`,
@@ -1108,14 +1109,15 @@ export async function createFormFields(
         }
         case 'dropdown':
         case 'optionlist': {
-          const selected = spec.defaultValue !== undefined && options.includes(spec.defaultValue);
+          const selected =
+            spec.defaultValue !== undefined && options.includes(spec.defaultValue) ? spec.defaultValue : null;
           entry = widget(rect, {
             FT: 'Ch',
             T: title,
             Ff: (spec.kind === 'dropdown' ? FF.combo : 0) | required,
             Opt: options.map((option) => pdfText(doc, option)),
             DA: da,
-            ...(selected ? { V: pdfText(doc, spec.defaultValue ?? '') } : {}),
+            ...(selected === null ? {} : { V: pdfText(doc, selected) }),
           });
           widgets = [entry];
           break;
@@ -1143,8 +1145,13 @@ export async function createFormFields(
       arrayIn(doc, form, 'Fields').push(entry);
       const annots = annotsOf(doc, page, true);
       for (const kid of widgets) annots?.push(kid);
-      const node = collectFields(doc).find((field) => field.name === spec.name);
-      if (node !== undefined) await updateAppearances(doc, fonts, node);
+      await updateAppearances(doc, fonts, {
+        name: spec.name,
+        dict: entry.resolve(),
+        entry,
+        holder: arrayIn(doc, form, 'Fields'),
+        widgets: widgets.map((kid) => ({ dict: kid.resolve(), entry: kid })),
+      });
       created.push(spec.name);
       context.onProgress?.({
         phase: 'forms',
@@ -1511,7 +1518,7 @@ function tokenize(expression: string): string[] {
       let end = index;
       while (end < expression.length && /[0-9.]/.test(expression[end] as string)) end += 1;
       const text = expression.slice(index, end);
-      if (Number.isNaN(Number.parseFloat(text))) {
+      if (!/^[0-9]+(\.[0-9]+)?$/.test(text)) {
         throw new ToolError('value-out-of-range', {
           engine: 'model',
           engineMessage: `calculation: malformed number "${text}"`,
