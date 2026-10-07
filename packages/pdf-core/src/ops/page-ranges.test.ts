@@ -85,7 +85,8 @@ describe('parsePageRanges', () => {
 
   it('names the offending 1-based page when validation refuses', () => {
     try {
-      validateRanges({ pages: [4], source: '5' }, 3);
+      // The source text is not the page: a refusal that echoed it would say "1, 5".
+      validateRanges({ pages: [0, 4], source: '1, 5' }, 3);
       throw new Error('expected a refusal');
     } catch (error) {
       expect(isToolError(error) && error.details.path).toBe('5');
