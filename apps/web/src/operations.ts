@@ -201,11 +201,6 @@ export type PageAction =
       readonly insertAfter: number;
     };
 
-/** Page count of the tab's current working version. */
-export function tabPageCount(tab: SessionTab): number {
-  return tab.working.produced?.pageCount ?? tab.source.pageCount;
-}
-
 /**
  * Build the composition a `PageAction` implies. Pure so the action's effect on
  * the page list is reviewable without rendering anything.

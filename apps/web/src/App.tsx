@@ -65,6 +65,7 @@ import {
   type TrustRoot,
   type TrustRootsFile,
   toDer,
+  workingPageCount,
 } from 'pdf-model';
 import { checkDocumentLimits, createTranslator, detectDeviceTier, ToolError } from 'pdf-shared';
 import { lazy, Suspense } from 'react';
@@ -221,7 +222,6 @@ import {
   pruneOverlays,
   redactionNeedles,
   removeMarkTargets,
-  tabPageCount,
   verifyForWrite,
   type WriteVerification,
 } from './operations';
@@ -850,7 +850,7 @@ export function App({ store }: AppProps) {
 
   const activeTab = session.tabs.find((tab) => tab.id === session.activeId) ?? null;
   const activeHandle = activeTab === null ? null : (handles.current.get(activeTab.id) ?? null);
-  const pageCount = activeTab === null ? 0 : tabPageCount(activeTab);
+  const pageCount = activeTab === null ? 0 : workingPageCount(activeTab);
   const currentForms =
     activeTab !== null &&
     formInventory?.tabId === activeTab.id &&
@@ -960,7 +960,7 @@ export function App({ store }: AppProps) {
   const verdict = useMemo(() => {
     if (activeTab === null) return checkDocumentLimits(tier, 0, 0);
     const currentBytes = activeTab.working.produced?.bytes.byteLength ?? activeTab.source.size;
-    return checkDocumentLimits(tier, tabPageCount(activeTab), currentBytes);
+    return checkDocumentLimits(tier, workingPageCount(activeTab), currentBytes);
   }, [activeTab, tier]);
   /** Editing is off in viewing mode and while an operation runs. */
   const viewingOnly = verdict.kind === 'viewing-only';
@@ -1108,7 +1108,7 @@ export function App({ store }: AppProps) {
         draftFor({
           id: before.id,
           name: before.name,
-          pageCount: tabPageCount(before),
+          pageCount: workingPageCount(before),
           size: before.source.size,
           sourcePageCount: before.source.pageCount,
           dirty: before.dirty,
@@ -1625,7 +1625,7 @@ export function App({ store }: AppProps) {
         const next = await applyProducedBytes(
           contextFor(tab, handle),
           outcome.bytes,
-          tabPageCount(tab),
+          workingPageCount(tab),
           { key: 'props.attach.added', params: { count: outcome.added.length } },
           outcome.report.engine,
           outcome.report.steps,
@@ -1658,7 +1658,7 @@ export function App({ store }: AppProps) {
         const next = await applyProducedBytes(
           contextFor(tab, handle),
           outcome.bytes,
-          tabPageCount(tab),
+          workingPageCount(tab),
           { key: 'props.attach.removed', params: { count: outcome.removed.length } },
           outcome.report.engine,
           outcome.report.steps,
@@ -1743,7 +1743,7 @@ export function App({ store }: AppProps) {
       const next = await applyProducedBytes(
         contextFor(form.tab, handle),
         outcome.bytes,
-        tabPageCount(form.tab),
+        workingPageCount(form.tab),
         { key: 'xfa.note.dataSaved', params: { count: outcome.changed } },
         outcome.report.engine,
         outcome.report.steps,
@@ -1788,7 +1788,7 @@ export function App({ store }: AppProps) {
         const next = await applyProducedBytes(
           contextFor(tab, handle),
           outcome.bytes,
-          tabPageCount(tab),
+          workingPageCount(tab),
           { key: 'form.note.filled', params: { count: 1 } },
           outcome.report.engine,
           outcome.report.steps,
@@ -2349,7 +2349,7 @@ export function App({ store }: AppProps) {
           setNotice(t('ann.data.empty'));
           return;
         }
-        const pageCount = tabPageCount(tab);
+        const pageCount = workingPageCount(tab);
         const data = await import('pdf-core/ops/annotation-data');
         bytes =
           format === 'json'
@@ -2572,7 +2572,7 @@ export function App({ store }: AppProps) {
       const next = await applyProducedBytes(
         contextFor(tab, handle),
         bytes,
-        tabPageCount(tab),
+        workingPageCount(tab),
         { key: 'ann.engineEdit' },
         executed[executed.length - 1]?.engine ?? 'pdfjs',
         executed.map((step) => step.id),
@@ -2744,7 +2744,7 @@ export function App({ store }: AppProps) {
        * verification has to allow for.
        */
       const verification = await verifyForWrite(base, {
-        expectedPageCount: tabPageCount(tab),
+        expectedPageCount: workingPageCount(tab),
         sourceHandle: handle,
         steps: executedSteps.map((step) => step.id),
         expectedFormFields: formFields.map((field) => ({
@@ -3259,7 +3259,7 @@ export function App({ store }: AppProps) {
             tabId: tab.id,
             workingId: tab.working.id,
             name: tab.name,
-            pageCount: tabPageCount(tab),
+            pageCount: workingPageCount(tab),
             bytes,
             ...(presets === undefined ? {} : { presets }),
           });
@@ -3531,7 +3531,7 @@ export function App({ store }: AppProps) {
       const next = await applyProducedBytes(
         contextFor(tab, handle),
         outcome.bytes,
-        tabPageCount(tab),
+        workingPageCount(tab),
         { key: 'a11y.applied', params: { count: outcome.notes.length } },
         'mupdf',
         outcome.steps,

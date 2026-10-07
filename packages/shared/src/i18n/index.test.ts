@@ -71,26 +71,47 @@ describe('a partial locale', () => {
     vi.resetModules();
   });
 
-  /** A registry in which `xx` falls back to `en`, then Turkish, and each holds one different key. */
-  async function partialRegistry() {
+  /**
+   * A registry in which `xx` falls back to `en`, then Turkish, and each holds one different key.
+   * `fetched` lists every dictionary chunk the loader asked for, in order.
+   */
+  async function partialRegistry(fetched: string[] = []) {
     vi.resetModules();
     vi.doMock('./locales', async (importActual) => {
       const actual = await importActual<typeof import('./locales')>();
+      const chunk = (id: string, dictionary: Record<string, string>) => async () => {
+        fetched.push(id);
+        return dictionary;
+      };
       const registry = [
         {
           id: 'tr',
           dir: 'ltr',
-          load: async () => ({ 'toolbar.hand': 'TR hand', 'update.refresh': 'TR refresh' }),
+          load: chunk('tr', { 'toolbar.hand': 'TR hand', 'update.refresh': 'TR refresh' }),
         },
-        { id: 'en', dir: 'ltr', load: async () => ({ 'update.refresh': 'EN refresh' }) },
-        { id: 'xx', dir: 'ltr', fallback: 'en', load: async () => ({ 'update.available': 'XX available' }) },
-        { id: 'a', dir: 'ltr', fallback: 'b', load: async () => ({}) },
-        { id: 'b', dir: 'ltr', fallback: 'a', load: async () => ({}) },
+        { id: 'en', dir: 'ltr', load: chunk('en', { 'update.refresh': 'EN refresh' }) },
+        { id: 'xx', dir: 'ltr', fallback: 'en', load: chunk('xx', { 'update.available': 'XX available' }) },
+        { id: 'a', dir: 'ltr', fallback: 'b', load: chunk('a', {}) },
+        { id: 'b', dir: 'ltr', fallback: 'a', load: chunk('b', {}) },
+        { id: 'orphan', dir: 'ltr', fallback: 'gone', load: chunk('orphan', { 'update.available': 'O' }) },
       ];
       return { ...actual, localeInfo: (id: string) => registry.find((info) => info.id === id) };
     });
     return await import('./index');
   }
+
+  it('fetches each dictionary once, and skips a fallback that is not registered', async () => {
+    const fetched: string[] = [];
+    const i18n = await partialRegistry(fetched);
+    await i18n.loadLocale('xx' as never);
+    await i18n.loadLocale('en');
+    await i18n.loadLocale('xx' as never);
+    expect(fetched).toEqual(['xx', 'en']);
+    await i18n.loadLocale('orphan' as never);
+    expect(fetched).toEqual(['xx', 'en', 'orphan']);
+    expect(i18n.isLocaleLoaded('gone' as never)).toBe(false);
+    expect(i18n.createTranslator('orphan' as never)('update.available')).toBe('O');
+  });
 
   it('takes a missing key from its fallback, then from Turkish, and the key itself last', async () => {
     const i18n = await partialRegistry();

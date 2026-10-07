@@ -28,14 +28,13 @@ import type { PdfDocumentHandle } from 'pdf-core';
 import type { Mupdf } from 'pdf-core/engines/mupdf';
 import { openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
 import { readFormFields } from 'pdf-core/ops/forms';
-import { encodeEngineValues, type JsonValue, SessionStore } from 'pdf-model';
+import { encodeEngineValues, type JsonValue, SessionStore, workingPageCount } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import {
   applyHistoryStep,
   materializeBase,
   pendingOverlays,
-  tabPageCount,
   verifyForWrite,
   type WriteVerification,
 } from './operations';
@@ -185,7 +184,7 @@ async function materializedVerification(
     executedSteps,
   );
   return await verifyForWrite(bytes, {
-    expectedPageCount: tabPageCount(tab),
+    expectedPageCount: workingPageCount(tab),
     sourceHandle: reference,
     steps: executedSteps.map((step) => step.id),
     expectedFormFields,
