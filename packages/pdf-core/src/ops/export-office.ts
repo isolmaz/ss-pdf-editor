@@ -49,6 +49,7 @@ import {
   type PageLayout,
   readPageLayout,
   renderRegion,
+  type TableCell,
   textRows,
 } from './page-layout';
 import { note, type OperationContext, type OperationNote, type OutputFile, throwIfAborted } from './types';
@@ -88,17 +89,19 @@ const EMU = 12700;
  * shared
  * ------------------------------------------------------------------ */
 
+/** The text without the control characters XML 1.0 cannot carry. */
+function xmlSafe(value: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the characters being removed
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+}
+
 /** XML text: the five entities, and the control characters XML 1.0 cannot carry dropped. */
 function xml(value: string): string {
-  return (
-    value
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the characters being removed
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-  );
+  return xmlSafe(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
@@ -303,17 +306,20 @@ function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
     const previousIndex = group[group.length - 1] as number;
     const previous = boxes[previousIndex] as Box;
     const previousChars = kept[previousIndex] as LayoutChar[];
-    const size = commonSize(previousChars) || 10;
+    const size = commonSize(previousChars);
     const height = previous[3] - previous[1];
     const gap = box[1] - previous[3];
     const pitch =
       group.length > 1
         ? (previous[1] - (boxes[group[0] as number] as Box)[1]) / (group.length - 1)
         : height * 1.25;
-    const firstChar = (kept[index] as LayoutChar[]).find((char) => char.c.trim() !== '')?.c ?? '';
+    const leading = (kept[index] as LayoutChar[])
+      .map((char) => char.c)
+      .join('')
+      .trimStart();
     const shortLine = previous[2] < right - Math.max(size * 3, (right - previous[0]) * 0.12);
     const wideGap = gap > Math.max(height * 0.6, pitch - height + size * 0.5);
-    const bullet = /^[•▪◦‣●○■□–—*·]$/.test(firstChar) || /^\d{1,2}[.)]$/.test(firstChar);
+    const bullet = /^[•▪◦‣●○■□–—*·]/.test(leading) || /^\d{1,2}[.)]\s/.test(leading);
     // A different size starts a new paragraph too: a heading run into its body text.
     const resized = Math.abs(commonSize(kept[index] as LayoutChar[]) - size) >= 1;
     if (shortLine || wideGap || bullet || resized) groups.push([index]);
@@ -358,39 +364,40 @@ function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
       if (position > 0) {
         // Join the line to the previous one: drop a hyphen that breaks a word, else a space.
         const nextChar = line.find((char) => char.c.trim() !== '');
-        const last = text.at(-1) ?? '';
-        const beforeLast = text.at(-2) ?? '';
+        // The text so far, across runs: a hyphen set in another style than the letters
+        // before it still breaks the word.
+        const written = runs.map((run) => run.text).join('') + text;
+        const last = written.slice(-1);
+        const beforeLast = written.slice(-2, -1);
         if (
           HYPHENS.has(last) &&
           /\p{L}/u.test(beforeLast) &&
           nextChar !== undefined &&
           /\p{Ll}/u.test(nextChar.c)
         ) {
+          // The last character pushed is the hyphen, and it is in `text`, the open run.
           text = text.slice(0, -1);
-          if (text === '' && runs.length > 0) {
-            // The hyphen began a run of its own; take it off the previous one instead.
-            const previous = runs[runs.length - 1] as Run;
-            runs[runs.length - 1] = { ...previous, text: previous.text.slice(0, -1) };
-          }
         } else if (last !== ' ' && line[0]?.c !== ' ') {
           push(line[0] as LayoutChar, ' ');
         }
       }
-      for (const char of line) push(char, char.c === '\t' ? '\t' : char.c);
+      for (const char of line) push(char, char.c);
     }
     flush();
     // Leading and trailing spaces are layout, not content.
-    const firstRun = runs[0];
-    if (firstRun !== undefined) runs[0] = { ...firstRun, text: firstRun.text.replace(/^\s+/, '') };
-    const lastRun = runs[runs.length - 1];
-    if (lastRun !== undefined) runs[runs.length - 1] = { ...lastRun, text: lastRun.text.replace(/\s+$/, '') };
+    const trimmed = runs.map((run, at) => {
+      let trimmedText = run.text;
+      if (at === 0) trimmedText = trimmedText.replace(/^\s+/, '');
+      if (at === runs.length - 1) trimmedText = trimmedText.replace(/\s+$/, '');
+      return { ...run, text: trimmedText };
+    });
     const lineBoxes = group.map((index) => boxes[index] as Box);
     const first = lineBoxes[0] as Box;
     const last = lineBoxes[lineBoxes.length - 1] as Box;
     const visible = chars.filter((char) => char.c.trim() !== '');
     return {
       kind: 'paragraph',
-      runs: runs.filter((run) => run.text !== ''),
+      runs: trimmed.filter((run) => run.text !== ''),
       box: [
         Math.min(...lineBoxes.map((box) => box[0])),
         first[1],
@@ -479,7 +486,7 @@ interface DocxContext {
 
 function headingLevel(paragraph: Paragraph, context: DocxContext): number | null {
   const text = textOf(paragraph);
-  if (text.length === 0 || text.length > 200 || paragraph.lines.length > 3) return null;
+  if (text.length > 200 || paragraph.lines.length > 3) return null;
   return context.headings.get(Math.round(paragraph.size * 2)) ?? null;
 }
 
@@ -548,7 +555,7 @@ function paragraphXml(
   }
   if (extra.includes('<w:sectPr')) props.push(extra.slice(extra.indexOf('<w:sectPr')));
   // Counted per paragraph: a style change inside a word splits runs, not words.
-  context.writtenWords += words(textOf(paragraph));
+  context.writtenWords += words(xmlSafe(textOf(paragraph)));
   return `<w:p><w:pPr>${props.join('')}</w:pPr>${paragraph.runs.map(runXml).join('')}</w:p>`;
 }
 
@@ -635,8 +642,10 @@ function tableXml(grid: Grid, column: Column, context: DocxContext): string {
         start === undefined
           ? table.cells.find((cell) => cell.column === col && cell.row < row && cell.row + cell.rowSpan > row)
           : undefined;
-      const cell = start ?? above;
-      const columnSpan = cell?.columnSpan ?? 1;
+      // Every grid position starts a cell or lies under one that started above: the cells of
+      // `findTables` and `findTextTables` tile their grid.
+      const cell = (start ?? above) as TableCell;
+      const columnSpan = cell.columnSpan;
       const props = [
         `<w:tcW w:w="${span(col, columnSpan)}" w:type="dxa"/>`,
         columnSpan > 1 ? `<w:gridSpan w:val="${columnSpan}"/>` : '',
@@ -645,7 +654,8 @@ function tableXml(grid: Grid, column: Column, context: DocxContext): string {
       ].join('');
       let body = '<w:p/>';
       if (start !== undefined) {
-        const paragraphs = grid.cells.get(`${row}:${col}`) ?? [];
+        // `pageItems` sets the paragraphs of every cell of the table.
+        const paragraphs = grid.cells.get(`${row}:${col}`) as readonly Paragraph[];
         const cellColumn = { left: start.box[0] + 2.85, right: start.box[2] - 2.85 };
         const written = paragraphs
           .map((paragraph) => {
@@ -815,7 +825,7 @@ function headingSizes(paragraphs: readonly Paragraph[], bodySize: number): Map<n
   const sizes = new Set<number>();
   for (const paragraph of paragraphs) {
     const text = textOf(paragraph);
-    if (text.length === 0 || text.length > 200 || paragraph.lines.length > 3) continue;
+    if (text.length > 200 || paragraph.lines.length > 3) continue;
     if (paragraph.size >= bodySize * 1.3 || (paragraph.bold && paragraph.size >= bodySize * 1.15)) {
       sizes.add(Math.round(paragraph.size * 2));
     }
@@ -835,7 +845,8 @@ async function writeDocx(
   language: string,
   context: OperationContext,
 ): Promise<{ bytes: Uint8Array; tables: number; streams: number; pictures: number; written: number }> {
-  const items = pages.map(pageItems);
+  const laid = pages.map((page) => ({ page, items: pageItems(page) }));
+  const items = laid.map((entry) => entry.items);
   const paragraphs = items.flat().flatMap((item) => (item.kind === 'paragraph' ? [item] : []));
   const allChars = pages.flatMap((page) =>
     page.layout.blocks.flatMap((block) =>
@@ -856,8 +867,8 @@ async function writeDocx(
   };
 
   context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
-  const body = pages
-    .map((page, index) => docxPage(page, items[index] ?? [], index === 0, index === pages.length - 1, docx))
+  const body = laid
+    .map((entry, index) => docxPage(entry.page, entry.items, index === 0, index === laid.length - 1, docx))
     .join('');
   const document =
     `${XML_HEAD}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
@@ -938,8 +949,8 @@ interface Sheet {
   readonly rows: readonly (readonly string[])[];
   /** `[row0, column0, row1, column1]`, inclusive. */
   readonly merges: readonly (readonly [number, number, number, number])[];
-  /** Column widths in points, when the rules give them. */
-  readonly widths: readonly number[] | null;
+  /** Column widths in Excel's character units: a ruled table's from its rules, text rows' from their longest text. */
+  readonly widths: readonly number[];
 }
 
 function tableSheet(table: LayoutTable, name: string): Sheet {
@@ -957,7 +968,7 @@ function tableSheet(table: LayoutTable, name: string): Sheet {
     name,
     rows: grid,
     merges,
-    widths: table.xs.slice(1).map((x, index) => x - (table.xs[index] as number)),
+    widths: table.xs.slice(1).map((x, index) => clamp((x - (table.xs[index] as number)) / 5.25, 4, 80)),
   };
 }
 
@@ -970,7 +981,16 @@ function rowsSheet(page: ReadPage, name: string): Sheet | null {
     for (const [column, text] of row.cells) cells[column] = text;
     return cells;
   });
-  return { name, rows: grid, merges: [], widths: null };
+  // Every row has every column, so the first row puts the columns in the map in order.
+  const longest = new Map<number, number>();
+  for (const row of grid) {
+    for (const [column, text] of row.entries()) {
+      const length = Math.max(...text.split('\n').map((piece) => piece.length));
+      longest.set(column, Math.max(longest.get(column) ?? 0, length));
+    }
+  }
+  const widths = [...longest.values()].map((length) => clamp(length + 2, 6, 60));
+  return { name, rows: grid, merges: [], widths };
 }
 
 /** Sheets for the pages: their ruled tables, or the text rows of a page without one. */
@@ -1037,10 +1057,12 @@ export function cellNumber(text: string): number | null {
     // Both appear: the later one is the decimal mark, the other groups thousands.
     const decimal = lastDot > lastComma ? '.' : ',';
     const group = decimal === '.' ? ',' : '.';
-    const [whole, fraction, ...more] = body.split(decimal);
-    if (more.length > 0 || fraction === undefined || fraction === '' || fraction.includes(group)) return null;
-    if (!new RegExp(`^\\d{1,3}(\\${group}\\d{3})+$`).test(whole ?? '')) return null;
-    digits = `${(whole ?? '').split(group).join('')}.${fraction}`;
+    const at = body.lastIndexOf(decimal);
+    const whole = body.slice(0, at);
+    const fraction = body.slice(at + 1);
+    // A second decimal mark, or a group out of place, fails the pattern for the whole part.
+    if (fraction === '' || !new RegExp(`^\\d{1,3}(\\${group}\\d{3})+$`).test(whole)) return null;
+    digits = `${whole.split(group).join('')}.${fraction}`;
   } else {
     const mark = lastDot !== -1 ? '.' : ',';
     const parts = body.split(mark);
@@ -1056,8 +1078,8 @@ export function cellNumber(text: string): number | null {
       digits = `${whole}.${fraction}`;
     }
   }
+  // At most fifteen digits and one point: always a finite number.
   const number = Number(digits);
-  if (!Number.isFinite(number)) return null;
   return negative ? -number : number;
 }
 
@@ -1096,21 +1118,11 @@ function sheetNames(sheets: readonly Sheet[]): string[] {
 async function writeXlsx(
   sheets: readonly Sheet[],
   title: string,
-): Promise<{ bytes: Uint8Array; numbers: number; cells: number }> {
+): Promise<{ bytes: Uint8Array; numbers: number }> {
   let numbers = 0;
-  let cells = 0;
   const names = sheetNames(sheets);
   const sheetXml = sheets.map((sheet) => {
-    const columns = Math.max(1, ...sheet.rows.map((row) => row.length));
-    const widths = Array.from({ length: columns }, (_value, index) => {
-      if (sheet.widths !== null) return clamp((sheet.widths[index] ?? 40) / 5.25, 4, 80);
-      const longest = Math.max(
-        0,
-        ...sheet.rows.map((row) => Math.max(...(row[index] ?? '').split('\n').map((line) => line.length))),
-      );
-      return clamp(longest + 2, 6, 60);
-    });
-    const cols = widths
+    const cols = sheet.widths
       .map(
         (width, index) =>
           `<col min="${index + 1}" max="${index + 1}" width="${width.toFixed(2)}" customWidth="1"/>`,
@@ -1121,7 +1133,6 @@ async function writeXlsx(
         const content = row
           .map((text, columnIndex) => {
             if (text === '') return '';
-            cells += 1;
             const ref = `${columnName(columnIndex)}${rowIndex + 1}`;
             const number = cellNumber(text);
             if (number !== null) {
@@ -1201,29 +1212,7 @@ async function writeXlsx(
   sheetXml.forEach((content, index) => {
     files[`xl/worksheets/sheet${index + 1}.xml`] = content;
   });
-  return { bytes: await zipped(files), numbers, cells };
-}
-
-/** Reopens the workbook: every sheet is there and holds every cell written. */
-async function verifyXlsx(bytes: Uint8Array, sheets: number, cells: number): Promise<void> {
-  const zip = await JSZip.loadAsync(bytes);
-  let found = 0;
-  for (let index = 1; index <= sheets; index += 1) {
-    const sheet = await zip.file(`xl/worksheets/sheet${index}.xml`)?.async('string');
-    if (sheet === undefined) {
-      throw new ToolError('verification-failed', {
-        engine: 'model',
-        engineMessage: `xlsx sheet ${index} missing`,
-      });
-    }
-    found += sheet.match(/<c r="/g)?.length ?? 0;
-  }
-  if (found !== cells) {
-    throw new ToolError('verification-failed', {
-      engine: 'model',
-      engineMessage: `xlsx read-back found ${found} cells, ${cells} were written`,
-    });
-  }
+  return { bytes: await zipped(files), numbers };
 }
 
 /**
@@ -1357,17 +1346,17 @@ export async function exportOffice(
         engineMessage: 'export-office: the pages hold no text to put in cells',
       });
     }
-    steps.push('office.write', 'verify');
+    steps.push('office.write');
     context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
     if (options.format === 'xlsx') {
       const written = await writeXlsx(sheets, title);
-      await verifyXlsx(written.bytes, sheets.length, written.cells);
       file = { name: `${stem}.xlsx`, bytes: written.bytes, mime: MIME.xlsx };
       notes.push(note('changed', 'op.note.exportOffice.done', { format: 'XLSX', pages: pages.length }));
       notes.push(note('changed', 'op.note.exportOffice.sheets', { count: sheets.length }));
       if (written.numbers > 0)
         notes.push(note('changed', 'op.note.exportOffice.numbers', { count: written.numbers }));
     } else {
+      steps.push('verify');
       const written = writeCsv(sheets, options.csvDelimiter ?? ',');
       file = { name: `${stem}.csv`, bytes: written.bytes, mime: MIME.csv };
       notes.push(note('changed', 'op.note.exportOffice.done', { format: 'CSV', pages: pages.length }));

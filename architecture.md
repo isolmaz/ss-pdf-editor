@@ -387,8 +387,9 @@ had to stay green. The moves, and the defects they fixed on the way:
   count compared. `ops/convert-formats.ts` holds the extension table with no dependencies,
   so the shell can recognise a convertible file without loading the converters;
 - PDF → Word, Excel and CSV (`ops/export-office.ts`, steps `office.read` / `office.tables` /
-  `office.write` / `verify`). A download: nothing is written to the document. The ideas are
-  pdf2docx's (MIT; none of its code), the table modes Tabula's. `ops/page-layout.ts` reads a
+  `office.write` / `verify`; `verify` is reported for Word, read back with mammoth, and for
+  CSV, read back with the RFC 4180 parser). A download: nothing is written to the document.
+  The ideas are pdf2docx's (MIT; none of its code), the table modes Tabula's. `ops/page-layout.ts` reads a
   page as layout. Characters with font, size, weight and colour come from the
   structured-text walker. Pictures are drawn through their own transform into a transparent
   pixmap: `Image.toPixmap()` gave raw samples, so an `/SMask` picture became a grey box with
