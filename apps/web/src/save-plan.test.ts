@@ -122,6 +122,18 @@ describe('signatureWarning', () => {
     });
   });
 
+  it('keeps the first append it found when a later signed file is appended to as well', async () => {
+    // Both files are kept by the output (it extends the opened file and the produced one),
+    // so neither is a rewrite and the opened file's finding stands.
+    const produced = bytes(...opened, 5);
+    const output = bytes(...produced, 6);
+    const verify = async (file: Uint8Array) => (file === opened ? ['opened'] : ['produced']);
+    expect(await signatureWarning(output, opened, produced, verify)).toEqual({
+      fate: 'appended',
+      signatures: ['opened'],
+    });
+  });
+
   it('stops asking once a rewrite is certain', async () => {
     const { verify, asked } = verifier([opened, signedInSession]);
     await signatureWarning(bytes(9, 9), opened, signedInSession, verify);
