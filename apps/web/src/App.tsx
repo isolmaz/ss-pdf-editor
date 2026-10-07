@@ -1900,18 +1900,25 @@ export function App({ store }: AppProps) {
             openWithPdfjs(working?.bytes ?? bytes),
             sha256Hex(bytes),
           ]);
+          // The handle the document was opened from, if one was kept (`recent-handles.ts`):
+          // without it a restored tab could only Export, never Save over its file.
+          const fileHandle = await getRecentHandle(draft.id);
+          // Nothing awaits from here to the tab being in: the check, the document in front
+          // and the opening all see one state. Read before the last await, "in front" was
+          // whatever was open then, and a document the user opened while the handle store
+          // answered lost the front to the restored one — whose export they then took for
+          // their own.
           if (disposed) {
             await handle.destroy();
             return;
           }
-          if (disposed || store.getSnapshot().tabs.some((item) => item.id === draft.id)) {
+          // Opened meanwhile (from the recent list, say): the live tab stays, and the other
+          // drafts are still restored.
+          if (store.getSnapshot().tabs.some((item) => item.id === draft.id)) {
             await handle.destroy();
-            return;
+            continue;
           }
           const activeBeforeRestore = store.getSnapshot().activeId;
-          // The handle the document was opened from, if one was kept (`recent-handles.ts`):
-          // without it a restored tab could only Export, never Save over its file.
-          const fileHandle = await getRecentHandle(draft.id);
           const tab = store.openDocument({
             id: draft.id,
             name: draft.name,
