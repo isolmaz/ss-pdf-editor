@@ -529,13 +529,9 @@ export function CommentsPanel({
                   ) : null}
                 </div>
                 {isEditing ? (
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      commitEdit();
-                    }}
-                    className="mt-1"
-                  >
+                  // A <div>, not a form: the box is a textarea (Enter types a line) and there is no
+                  // submit button, so nothing could ever submit it; the edit commits on blur.
+                  <div className="mt-1">
                     <label className="sr-only" htmlFor={`ann-comment-${row.id}`}>
                       {t('ann.comment')}
                     </label>
@@ -547,7 +543,7 @@ export function CommentsPanel({
                       onBlur={commitEdit}
                       className="w-full rounded-sm border border-kumo-line bg-kumo-base p-1 text-xs text-kumo-default outline-none focus:ring-1 focus:ring-kumo-focus"
                     />
-                  </form>
+                  </div>
                 ) : null}
               </li>
             );

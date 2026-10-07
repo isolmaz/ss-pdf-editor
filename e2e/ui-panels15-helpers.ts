@@ -26,7 +26,7 @@ export const FORM_FIELDS: readonly FixtureField[] = [
 ];
 
 /** Assemble objects, their cross-reference table and a trailer; the content is ASCII. */
-function assemble(bodies: readonly string[]): Uint8Array {
+export function assemble(bodies: readonly string[]): Uint8Array {
   const chunks: string[] = ['%PDF-1.7\n'];
   const offsets: number[] = [];
   let offset = (chunks[0] ?? '').length;
