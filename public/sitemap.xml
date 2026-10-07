@@ -4,12 +4,14 @@
     <loc>https://pdf.isolmaz.com/</loc>
     <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
     <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/" />
+    <lastmod>2026-10-07</lastmod>
     <changefreq>monthly</changefreq>
   </url>
   <url>
     <loc>https://pdf.isolmaz.com/en/</loc>
     <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
     <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/" />
+    <lastmod>2026-10-07</lastmod>
     <changefreq>monthly</changefreq>
   </url>
   <url>
@@ -20,24 +22,28 @@
     <loc>https://pdf.isolmaz.com/gizlilik</loc>
     <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/gizlilik" />
     <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/privacy" />
+    <lastmod>2026-10-07</lastmod>
     <changefreq>yearly</changefreq>
   </url>
   <url>
     <loc>https://pdf.isolmaz.com/en/privacy</loc>
     <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/gizlilik" />
     <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/privacy" />
+    <lastmod>2026-10-07</lastmod>
     <changefreq>yearly</changefreq>
   </url>
   <url>
     <loc>https://pdf.isolmaz.com/kosullar</loc>
     <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/kosullar" />
     <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/terms" />
+    <lastmod>2026-10-07</lastmod>
     <changefreq>yearly</changefreq>
   </url>
   <url>
     <loc>https://pdf.isolmaz.com/en/terms</loc>
     <xhtml:link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/kosullar" />
     <xhtml:link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/terms" />
+    <lastmod>2026-10-07</lastmod>
     <changefreq>yearly</changefreq>
   </url>
 </urlset>

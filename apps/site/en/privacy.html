@@ -142,7 +142,7 @@
           <div>
             <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Your Documents Are Never Uploaded</h2>
             <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              The PDF files you open or edit are processed directly in your own browser's temporary memory. Not a single byte of data is sent to a server.
+              The PDF files you open or edit are processed directly in your own browser's temporary memory. Not a single byte of data is sent to a server. The server only serves static files; there is no API a document could be uploaded to.
             </p>
           </div>
         </div>
@@ -165,6 +165,22 @@
         <div class="flex items-start gap-4">
           <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
             <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">No Third Parties</h2>
+            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              The engines, OCR language packs and fonts are served by this site; no request goes to any third party. A strict content security policy (CSP) allows connections to this site only. There are no cookies and no analytics.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
               <circle cx="12" cy="13" r="3" />
             </svg>
@@ -172,7 +188,7 @@
           <div>
             <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Camera Only When You Scan</h2>
             <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              When you scan a document, the browser asks for your camera first. The picture is processed on your device and only the pages you keep become the PDF; no sound is recorded, and the camera turns off when you close the scan window.
+              When you scan a document, the browser asks for your camera first. The picture is processed on your device and only the pages you keep become the PDF; no sound is recorded, and the camera turns off when you close the scan window. The site’s response headers allow the camera for this site only.
             </p>
           </div>
         </div>
@@ -219,17 +235,22 @@
                 contents.
               </li>
               <li>
-                Signature pictures you keep with “Remember on this device” (six at most), and the trust roots and
-                revocation lists you import.
+                Signature pictures you keep with “Remember on this device” (six at most, localStorage; each is
+                deleted from the signature dialog), and the trust roots and revocation lists you import (the app’s
+                own settings folder, OPFS; they stay until you remove them).
               </li>
               <li>
-                Theme, language, interface mode and your recent commands; the app and engine files for offline use
-                (no documents).
+                Theme, language, interface mode and your recent commands.
+              </li>
+              <li>
+                The static files of the app, the PDF engines, the OCR language packs and the fonts, for offline use
+                (the service worker’s cache). Document bytes never enter the cache.
               </li>
             </ul>
             <p class="mt-2 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
               Opening an encrypted (password-protected) document starts a sensitive session: that document's draft,
-              source copy and file reference are not kept, and the list shows only its name, size and page count.
+              source copy and file reference are not kept, and the list shows only its name, size and page count. The password is kept in memory only and is
+              never written anywhere.
               You can turn the same setting on yourself with
               <strong class="font-medium text-kumo-strong">Settings → Privacy and storage → Sensitive
               session</strong>; turning it on deletes that document's stored copies. Delete a document's stored copies
@@ -345,8 +366,8 @@
           <div class="space-y-3">
             <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Company & Legal</h2>
             <ul class="space-y-2 text-xs text-white/70">
-              <li><a class="transition-colors hover:text-white" href="/en/privacy">Privacy Policy</a></li>
-              <li><a class="transition-colors hover:text-white" href="/en/terms">Terms of Service</a></li>
+              <li><a class="transition-colors hover:text-white" href="/en/privacy">Privacy Notice</a></li>
+              <li><a class="transition-colors hover:text-white" href="/en/terms">Terms of Use</a></li>
               <li><a class="transition-colors hover:text-white" href="/en/#privacy">Zero Data Commitment</a></li>
               <li><a class="transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">Contact</a></li>
             </ul>
@@ -368,8 +389,8 @@
           <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
             <p>© 2026 SsPdfEditor. All rights reserved.</p>
             <div class="flex flex-wrap items-center gap-6">
-              <a class="transition-colors hover:text-white/90" href="/en/privacy">Privacy Policy</a>
-              <a class="transition-colors hover:text-white/90" href="/en/terms">Terms of Service</a>
+              <a class="transition-colors hover:text-white/90" href="/en/privacy">Privacy Notice</a>
+              <a class="transition-colors hover:text-white/90" href="/en/terms">Terms of Use</a>
               <a class="transition-colors hover:text-white/90" href="/en/#privacy">Local Privacy Guarantee</a>
             </div>
           </div>
