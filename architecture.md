@@ -1447,8 +1447,9 @@ The pieces, in the order the text-edit pipeline uses them:
    ink in its **original** face, so `fittedBox()` widens it when the matched face (usually
    Noto Sans, ~6 % wider than Helvetica) would break a line the reader kept whole: by what
    the widest hard line needs, away from the side the alignment anchors, within the page,
-   clear of any block beside it and by at most 25 %. Without it, editing one line of a
-   six-line list rewrapped all six.
+   clear of any block beside it and by at most 25 %. A line longer than that wraps inside
+   the box the others widened; it does not cancel their widening. Without it, editing one
+   line of a six-line list rewrapped all six.
 
 **Coordinate space is fixed for the whole package**: unrotated PDF user space with a
 top-left origin, unit = point, rects as `[x0, y0, x1, y1]` ascending with `y` measured

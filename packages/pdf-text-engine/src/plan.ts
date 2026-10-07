@@ -151,8 +151,9 @@ const MAX_WIDEN_RATIO = 1.25;
  * the content below it. The box grows by what the widest hard line needs, away from the
  * side its alignment anchors (right for left and justified text, left for right-aligned,
  * both for centred), but never past the page edge, never into a block beside it, and
- * never by more than {@link MAX_WIDEN_RATIO}: past that the text really is longer than
- * the line, and the block wraps as before. Its height stays free, as the derived box's.
+ * never by more than {@link MAX_WIDEN_RATIO}: a line past that really is longer than the
+ * line and wraps, inside the box the other lines widened. Its height stays free, as the
+ * derived box's.
  *
  * `null` keeps the derived box: nothing needed widening, or there was no room.
  */
@@ -166,15 +167,18 @@ function fittedBox(
 ): Rect | null {
   const [x0, y0, x1, y1] = block.rect;
   const width = x1 - x0;
+  // A line past the widening limit really is longer than the line and wraps in the
+  // widened box; it does not take the widening away from the lines that only need it.
   const needed = Math.max(
     0,
     ...text
       .split(/\r\n|\r|\n/)
       .map((line) => line.replace(/\s+/g, ' ').trim())
       .filter((line) => line !== '')
-      .map((line) => measureLineWidth(line, fontSize, metrics)),
+      .map((line) => measureLineWidth(line, fontSize, metrics))
+      .filter((lineWidth) => lineWidth <= width * MAX_WIDEN_RATIO),
   );
-  if (needed <= width || needed > width * MAX_WIDEN_RATIO) return null;
+  if (needed <= width) return null;
   // The room on each side: the page edge, or the nearest block that shares a band of
   // this block's height.
   let leftLimit = 0;
