@@ -161,6 +161,18 @@ describe('imposeDocument', () => {
     // …and the bottom-left tile its bottom edge: the whole page is on the grid.
     expect(result[2]?.words.map((word) => word.text)).toContain('HIDDEN');
   });
+
+  it('tiles a page the file turns clockwise the way a reader shows it', async () => {
+    const out = await imposeDocument(
+      await source(1, [0]),
+      { mode: 'poster', pages: [0], paper: 'a4', columns: 2, rows: 2, overlapMm: 0, cropMarks: false },
+      run,
+    );
+    // `/Rotate 90` carries the page's top-left label to the top right, so it is on the
+    // top-right tile; turned the other way, the poster was upside down and it was on the
+    // bottom-left one.
+    expect((await sheets(out.bytes)).map(labels)).toEqual([[], ['P1'], [], []]);
+  });
 });
 
 describe('imposeDocument poster overlap and crop marks', () => {

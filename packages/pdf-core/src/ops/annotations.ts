@@ -42,9 +42,12 @@
  *
  * A mark's text travels as the annotation's popup (`contents` + `popupRef`),
  * which the worker writes as `/Contents` — what every reader shows as the note.
- * The body is prefixed with `pdf-editor-ann:<id>` so a re-read can tell our
+ * The annotation's name (`/NM`) is `pdf-editor-ann:<id>`, so a re-read can tell our
  * annotations from the document's own; that marker is also what makes the
- * acceptance round trip checkable.
+ * acceptance round trip checkable. The engine cannot write `/NM`, so its marks carry
+ * the marker at the head of `/Contents` for one step, and `settleEngineMarks` moves it
+ * into the name before the file leaves. Files written before kept the marker in
+ * `/Contents`; `markerOf` and `commentText` still read those.
  *
  * ## Rotation
  *
@@ -70,7 +73,7 @@ import {
   readName,
   readText,
   resolved,
-  saveRewrite,
+  saveIncremental,
   text,
   visibleBox,
 } from '../engines/mupdf-write';
@@ -127,9 +130,6 @@ export interface CommentReview {
   readonly author: string;
   readonly at: string;
 }
-
-/** Mark kinds the pdf.js writer cannot finish and the MuPDF step takes over. */
-export const OWNED_KINDS: readonly AnnotationKind[] = ['underline', 'strikeout', 'squiggly', 'shapes'];
 
 /**
  * A markup mark over text: one quad per selected line run.
@@ -768,7 +768,11 @@ export async function settleEngineMarks(
       if (error instanceof Error && error.name === 'AbortError') throw error;
       throw mapMupdfError(error, 'annotations.settle');
     }
-    const saved = saveRewrite(doc, 'annotations.settle');
+    // Every save of a highlight or an ink stroke passes through here, so the step is
+    // appended to the engine's own incremental update rather than rewriting the file:
+    // the bytes the reader opened, and a signature over them, stay as they were.
+    const incremental = doc.canBeSavedIncrementally();
+    const saved = saveIncremental(doc, 'annotations.settle');
     return {
       bytes: saved,
       retagged,
@@ -782,7 +786,7 @@ export async function settleEngineMarks(
         inputBytes: bytes.byteLength,
         outputBytes: saved.byteLength,
         pageCount: pages.length,
-        incremental: false,
+        incremental,
       },
     };
   } finally {
@@ -1124,13 +1128,25 @@ export async function readAnnotations(
   });
 }
 
-/** `page|17R` → the mark id an annotation's `/NM` names, for the annotations we wrote. */
+/**
+ * `page|17R` → the mark id an annotation's `/NM` names, for the annotations we wrote.
+ *
+ * A file that needs a password to be read gives no names: pdf.js opened it with the
+ * reader's password, but the bytes it holds are still encrypted and MuPDF refuses them.
+ * Such a file opens read-only, so its comments are listed from what pdf.js read, with the
+ * marker an older write put in `/Contents`, instead of failing the whole read.
+ */
 async function annotationNames(
   bytes: Uint8Array,
   context: OperationContext,
 ): Promise<ReadonlyMap<string, string>> {
   const names = new Map<string, string>();
-  const { doc } = await openForWrite(bytes);
+  const opened = await openForWrite(bytes).catch((error: unknown) => {
+    if (error instanceof ToolError && error.code === 'encrypted-unsupported') return null;
+    throw error;
+  });
+  if (opened === null) return names;
+  const { doc } = opened;
   try {
     for (const [pageIndex, page] of pageObjects(doc).entries()) {
       throwIfAborted(context.signal);

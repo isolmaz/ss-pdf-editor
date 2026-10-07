@@ -93,7 +93,7 @@ export const annotationsPart = {
   'ann.transformed': '{count} işaret taşındı veya döndürüldü.',
   'ann.transform': 'İşaretleri düzenle',
 
-  // The writer's report (`writeAnnotations` / `retagTextMarkup` /
+  // The writer's report (`writeAnnotations` / `settleEngineMarks` /
   // `writeShapeAnnotations`).
   'op.progress.annotate': 'Notlar yazılıyor',
   'op.progress.annotate.retag': 'Altı çizili ve üstü çizili biçimler düzeltiliyor',

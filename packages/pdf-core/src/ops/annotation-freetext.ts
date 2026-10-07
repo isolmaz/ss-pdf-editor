@@ -116,8 +116,8 @@ export function freeTextSize(mark: AnnotationMark): number {
  *
  * The mark's `rect` fixes the box's top-left corner and its width (page space, top-left
  * origin); the height follows the wrapped text, so a box never cuts off the last line.
- * `/Contents` carries the session marker ahead of the text, the convention every mark
- * this app writes follows — it is how a later edit finds the annotation again.
+ * `/NM` carries the session marker and `/Contents` the text alone, the convention every
+ * mark this app writes follows — the name is how a later edit finds the annotation again.
  */
 export async function writeFreeTextAnnotations(
   bytes: Uint8Array,

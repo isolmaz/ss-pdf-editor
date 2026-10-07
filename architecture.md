@@ -255,9 +255,10 @@ flowchart TD
 Contract points the router returns and the report shows:
 
 - `incremental` is true **only** for the single pdf.js `saveDocument` path on an
-  unencrypted input, including the static-XFA datasets sync that follows it, which MuPDF
-  appends as one more revision (`saveIncremental`). Any other writer ends the fast path and
-  says `incremental: false`.
+  unencrypted input, including the steps MuPDF appends to it as one more revision
+  (`saveIncremental`): the static-XFA datasets sync, and the annotation settle step and
+  sticky notes (`writeAnnotationsToFile`). Any other writer ends the fast path and says
+  `incremental: false`; so does an append MuPDF cannot make and turns into a rewrite.
 - `rewritesStructure` is true for redaction, writer steps and page composition — those
   normalise object numbering, compression and XMP.
 - `reprotects` is true when the input was encrypted and the user did not ask for
@@ -358,7 +359,8 @@ had to stay green. The moves, and the defects they fixed on the way:
   MuPDF tags device RGB with an sRGB profile, so without that an image replaced once could not
   be cropped or rotated again. A replacement picture with alpha keeps it as the `/SMask` MuPDF
   produced for it; only the old picture's mask is dropped (it used to drop both, so a
-  transparent PNG came out on a black ground);
+  transparent PNG came out on a black ground), and the report says so
+  (`op.note.image.maskDropped`);
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
 - a placed picture — a drawn, typed or photographed signature, initials, or an image
@@ -1006,13 +1008,19 @@ for; reading that one colour for every block turned a red heading black when it 
 
 **Reading order.** The writer draws each line where it stands in the content stream, not
 after it (`drawInReadingOrder` in `ops/text-edit.ts`): a drawn run that shares a baseline
-with a run the page keeps is spliced in right after that run's text object (before it, when
-nothing stands to its left), inside `q … Q` with the inverse of the matrix in force there and
-a reset text state. Extractors, search and screen readers follow the stream, and a shorter
-word used to come back as every line's head first and all the moved rests at the end of the
-page. Text with no run to follow, or a page whose content cannot be read, is drawn in one
-stream after the page's own. A line that only closed the gap a shorter word left is not
-counted as "did not fit in place".
+with a run the page keeps **of the same line** is spliced in right after that run's text
+object (before it, when nothing stands to its left), inside `q … Q` with the inverse of the
+matrix in force there and a reset text state. Extractors, search and screen readers follow
+the stream, and a shorter word used to come back as every line's head first and all the
+moved rests at the end of the page. The line is the one the drawn text continues
+(`TextEditInsertLine.lineSpan`, its left and right edge): a run of the column or table cell
+beside it shares the baseline but not the span, and splicing after it read the two columns
+interleaved, line by line. Text with no run of its own line to follow (a match that starts
+its line with nothing kept after it, a paragraph Edit Text redraws), or a page whose content
+cannot be read, is drawn in one stream after the page's own. The splice point is the end of
+the anchor's text object, so a producer that writes several lines in one `BT … ET` (LaTeX
+does) still reads that object's line heads before the rests drawn after it. A line that only
+closed the gap a shorter word left is not counted as "did not fit in place".
 
 **Verification.** The writer's checks apply, with two corrections this operation needed: a
 replacement that contains the old text (`2024` → `2024–2025`) is not "erased text still
@@ -1458,8 +1466,9 @@ The pieces, in the order the text-edit pipeline uses them:
    ink in its **original** face, so `fittedBox()` widens it when the matched face (usually
    Noto Sans, ~6 % wider than Helvetica) would break a line the reader kept whole: by what
    the widest hard line needs, away from the side the alignment anchors, within the page,
-   clear of any block beside it and by at most 25 %. Without it, editing one line of a
-   six-line list rewrapped all six.
+   clear of any block beside it and by at most 25 %. A line longer than that wraps inside
+   the box the others widened; it does not cancel their widening. Without it, editing one
+   line of a six-line list rewrapped all six.
 
 **Coordinate space is fixed for the whole package**: unrotated PDF user space with a
 top-left origin, unit = point, rects as `[x0, y0, x1, y1]` ascending with `y` measured
@@ -1555,8 +1564,13 @@ answers the page, the centre in app space and the upright size. Escape cancels i
 Every annotation this app writes is named `pdf-editor-ann:<id>` (`/NM`), and its
 `/Contents` — what every reader prints — holds the author's words alone. The engine (pdf.js)
 cannot write `/NM`, so its marks carry the marker at the head of `/Contents` for one step and
-`settleEngineMarks` moves it into the name before the file leaves; `readAnnotations` reads the
-names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`.
+`settleEngineMarks` moves it into the name before the file leaves. That step and the sticky
+notes are appended to the engine's incremental update, so adding a highlight or a note never
+rewrites the file; `readAnnotations` reads the
+names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`. A
+file that needs a password gives no names: the bytes pdf.js holds stay encrypted and MuPDF
+refuses them, and the file opens read-only, so its comments are listed from pdf.js alone
+rather than failing the read.
 Files written before the name carried it still have the marker in `/Contents`: `markerOf` and
 `commentText` read that too, and `viewer/marker-text.ts` watches the scroll container with a
 `MutationObserver` and rewrites such popup text through `commentText`, so the page never shows it.
@@ -1588,7 +1602,9 @@ Every capability the menus can run is described by exactly one `OperationDialogS
 noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
 `checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
-`fieldErrors()` from `dialogs/fields.tsx`. A run's `noticeKey` is the sentence the shell
+`fieldErrors()` from `dialogs/fields.tsx`. A `choice` (a select of document data) with
+nothing picked keeps the run waiting, but only shows "no items to select in this document"
+when the document's list really is empty. A run's `noticeKey` is the sentence the shell
 shows whatever the result kind (replace, new tab, download); without one it says what
 happened to the file. A field marked `advanced` is rendered in one closed "advanced
 options" section after the essential fields (it opens itself while one of its fields is

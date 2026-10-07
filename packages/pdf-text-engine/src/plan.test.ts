@@ -100,6 +100,21 @@ describe('planTextEdit with a wider substitute face', () => {
     }
   });
 
+  it('still keeps the untouched lines whole when one edited line runs well past the block', () => {
+    const list = block('b0', LIST);
+    const lengthened = 'Line 3 was rewritten, and it keeps running well past where the line used to end';
+    const edited = LIST.map((text, index) => (index === 2 ? lengthened : text));
+    const request = planTextEdit(
+      { page: pageOf(list), blockId: 'b0', replacement: edited.join('\n') },
+      WIDER,
+    );
+    const texts = request.insert[0]?.lines.map((line) => line.text) ?? [];
+    // The five lines the reader did not touch come back whole, in order; only the long one wraps.
+    expect(texts.filter((text) => LIST.includes(text))).toEqual(LIST.filter((_text, index) => index !== 2));
+    expect(texts.length).toBeGreaterThan(LIST.length);
+    expect(texts.length).toBeLessThan(LIST.length + 3);
+  });
+
   it('leaves a block in its own face exactly as wide as it was', () => {
     const list = block('b0', LIST);
     const request = planTextEdit(

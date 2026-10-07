@@ -498,15 +498,10 @@ export async function applyImageEdit(
       target.ref.writeRawStream(encoded);
       doc.deleteObject(produced);
 
-      const after = target.ref.resolve();
-      if (dropMask && !ownMask) {
-        for (const key of ['SMask', 'Mask']) {
-          if (!after.get(key).isNull()) {
-            after.delete(key);
-            dropped += 1;
-          }
-        }
-        // The old mask described the old pixels; `garbage` collects its object on save.
+      if (dropMask) {
+        // The dictionary written above is the new picture's alone, so the old object's mask
+        // is already gone: it described the old pixels, and `garbage` collects it on save.
+        if (oldMask !== undefined) dropped += 1;
       } else if (oldMask !== undefined && !ownMask) {
         notes.push(note('warning', 'op.note.image.maskKept', { name: replacement.name }));
       }

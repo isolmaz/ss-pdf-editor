@@ -59,6 +59,34 @@ async function page(lines: readonly Line[]): Promise<Uint8Array> {
   return bytes;
 }
 
+/** A US Letter page drawing `content` with Helvetica as `/F`. */
+async function helveticaPage(content: string): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+  doc.insertPage(0, doc.addPage([0, 0, 612, 792], 0, { Font: { F: helvetica } }, content));
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** The page's text lines in content-stream order, as PDFium and screen readers read them. */
+async function streamLines(bytes: Uint8Array): Promise<string[]> {
+  const mupdf = await loadMupdf();
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+  try {
+    return doc
+      .loadPage(0)
+      .toStructuredText('preserve-whitespace')
+      .asText()
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+  } finally {
+    doc.destroy();
+  }
+}
+
 /**
  * What a reader shows, top to bottom: MuPDF's lines grouped by baseline and joined left to
  * right (a replaced word is drawn after the old content, so extraction order is not
@@ -153,6 +181,54 @@ describe('findReplace', () => {
         .replace(/\s+/g, '');
       expect(streamText).toBe(
         `Titleofthepage${lines.map((text) => text.replace('quick', 'slow').replace(/\s+/g, '')).join('')}`,
+      );
+    } finally {
+      reread.destroy();
+    }
+  });
+
+  it('keeps a column whole when the match starts a line of the column beside it', async () => {
+    const left = [1, 2, 3].map((k) => `Left column line ${k} text`);
+    const right = [1, 2, 3].map((k) => `quick right column ${k} words`);
+    const input = await helveticaPage(
+      [
+        ...left.map((text, index) => `BT /F 12 Tf 1 0 0 1 72 ${700 - index * 24} Tm (${text}) Tj ET`),
+        ...right.map((text, index) => `BT /F 12 Tf 1 0 0 1 330 ${700 - index * 24} Tm (${text}) Tj ET`),
+      ].join('\n'),
+    );
+    const out = await findReplace(input, query({ find: 'quick', replace: 'slow', matchCase: true }), run);
+    expect(out.replaced).toBe(3);
+    // The right column's lines have nothing of their own left of the match: a left-column
+    // line on the same baseline is not theirs to follow, or the columns read interleaved.
+    expect(await streamLines(out.bytes)).toEqual([
+      ...left,
+      ...right.map((text) => text.replace('quick', 'slow')),
+    ]);
+  });
+
+  it('draws spliced text where it belongs under a scaled matrix, in stream order', async () => {
+    const lines = [1, 2, 3].map((k) => `Line ${k} the quick brown fox`);
+    // Half-scale CTM, text coordinates doubled: the page shows the lines at x = 72.
+    const input = await helveticaPage(
+      `q 0.5 0 0 0.5 0 0 cm ${lines
+        .map((text, index) => `BT /F 24 Tf 1 0 0 1 144 ${1400 - index * 48} Tm (${text}) Tj ET`)
+        .join(' ')} Q`,
+    );
+    const out = await findReplace(input, query({ find: 'quick', replace: 'quickest', matchCase: true }), run);
+    expect(out.replaced).toBe(3);
+    const expected = lines.map((text) => text.replace('quick', 'quickest'));
+    expect(await streamLines(out.bytes)).toEqual(expected);
+    // Each line still starts at the page's x = 72 and keeps its baseline: the splice undid the
+    // scale in force where it landed, and drew nothing twice the size or off the line.
+    const mupdf = await loadMupdf();
+    const reread = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
+    try {
+      const json = JSON.parse(reread.loadPage(0).toStructuredText('preserve-whitespace').asJSON()) as {
+        blocks: { lines?: { text: string; bbox: { x: number; y: number } }[] }[];
+      };
+      const boxes = json.blocks.flatMap((block) => block.lines ?? []);
+      expect(boxes.map((line) => [line.text.trim(), Math.round(line.bbox.x)])).toEqual(
+        expected.map((text) => [text, 72]),
       );
     } finally {
       reread.destroy();
