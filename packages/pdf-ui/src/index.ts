@@ -58,7 +58,7 @@ export {
 export { FormPanel, type FormPanelProps } from './panels/FormPanel';
 export { HistoryPanel, type HistoryPanelProps } from './panels/HistoryPanel';
 export { type PageMoveAction, PagesPanel, type PagesPanelProps } from './panels/PagesPanel';
-export { PropertiesPanel, type PropertiesPanelProps } from './panels/PropertiesPanel';
+export { type AttachmentRow, PropertiesPanel, type PropertiesPanelProps } from './panels/PropertiesPanel';
 export { RedactionAuditPanel, type RedactionAuditPanelProps } from './panels/RedactionAuditPanel';
 export { RedactionPanel, type RedactionPanelProps } from './panels/RedactionPanel';
 export { ToolsRailPanel, type ToolsRailPanelProps } from './panels/ToolsRailPanel';

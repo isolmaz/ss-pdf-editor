@@ -18,7 +18,7 @@ import { PanelLoading, PanelMessage } from './PanelParts';
  * Adding and removing are the writer half (`ops/attachments-write.ts`), reached the way
  * every other writer is: the panel holds no bytes, so it hands the picked files (or the
  * names to drop) to the shell, which runs the operation on the working document and
- * journals one step. Absent those callbacks the panel stays a reader.
+ * journals one step.
  */
 
 export interface AttachmentsPanelProps {
@@ -26,13 +26,10 @@ export interface AttachmentsPanelProps {
   readonly t: Translator;
   /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
   readonly onNotice?: (message: string) => void;
-  /**
-   * Files to embed (`ops/attachments-write.ts`). The shell does the write; the panel has
-   * no bytes. Absent in a reader-only host, which also hides the control.
-   */
-  readonly onAdd?: (files: readonly File[]) => void;
+  /** Files to embed (`ops/attachments-write.ts`). The shell does the write; the panel has no bytes. */
+  readonly onAdd: (files: readonly File[]) => void;
   /** Attachment names to remove, by the engine's own filename. */
-  readonly onRemove?: (names: readonly string[]) => void;
+  readonly onRemove: (names: readonly string[]) => void;
   /** The host is not taking writes right now (no document, viewing tier, busy). */
   readonly disabled?: boolean;
 }
@@ -186,34 +183,33 @@ export function AttachmentsPanel({
   if (state.failure !== null) return <PanelMessage text={t(state.failure.messageKey)} />;
   if (state.attachments === null) return <PanelLoading />;
 
-  const picker =
-    onAdd === undefined ? null : (
-      <div className="flex shrink-0 items-center gap-2 border-b border-kumo-line px-2 py-1.5">
-        <input
-          ref={pickerRef}
-          type="file"
-          multiple
-          className="hidden"
-          data-attachment-picker=""
-          onChange={(event) => {
-            const files = Array.from(event.target.files ?? []);
-            // The same file picked twice in a row has to fire again, so the input is
-            // cleared the moment its value has been read.
-            event.target.value = '';
-            if (files.length > 0) onAdd(files);
-          }}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          icon={Plus}
-          disabled={disabled === true}
-          onClick={() => pickerRef.current?.click()}
-        >
-          {t('panel.attachments.add')}
-        </Button>
-      </div>
-    );
+  const picker = (
+    <div className="flex shrink-0 items-center gap-2 border-b border-kumo-line px-2 py-1.5">
+      <input
+        ref={pickerRef}
+        type="file"
+        multiple
+        className="hidden"
+        data-attachment-picker=""
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          // The same file picked twice in a row has to fire again, so the input is
+          // cleared the moment its value has been read.
+          event.target.value = '';
+          if (files.length > 0) onAdd(files);
+        }}
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        icon={Plus}
+        disabled={disabled === true}
+        onClick={() => pickerRef.current?.click()}
+      >
+        {t('panel.attachments.add')}
+      </Button>
+    </div>
+  );
 
   if (state.attachments.length === 0) {
     return (
@@ -261,18 +257,16 @@ export function AttachmentsPanel({
                 disabled={saving === attachment.id}
                 onClick={() => void save(attachment)}
               />
-              {onRemove === undefined ? null : (
-                <Button
-                  size="sm"
-                  shape="base"
-                  variant="outline"
-                  icon={Trash}
-                  title={t('panel.attachments.remove')}
-                  aria-label={`${t('panel.attachments.remove')}: ${attachment.filename}`}
-                  disabled={disabled === true}
-                  onClick={() => onRemove([attachment.filename])}
-                />
-              )}
+              <Button
+                size="sm"
+                shape="base"
+                variant="outline"
+                icon={Trash}
+                title={t('panel.attachments.remove')}
+                aria-label={`${t('panel.attachments.remove')}: ${attachment.filename}`}
+                disabled={disabled === true}
+                onClick={() => onRemove([attachment.filename])}
+              />
             </li>
           );
         })}

@@ -111,7 +111,7 @@ import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
-import type { FieldValue, MeasureReading } from 'pdf-ui';
+import type { AttachmentRow, FieldValue, MeasureReading } from 'pdf-ui';
 import type { SavedSignature, StampSource } from 'pdf-ui/dialog';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import {
@@ -287,6 +287,27 @@ function selectionRedactAreas(viewer: ViewerApi): readonly RedactRect[] {
   return selectionBoxes(viewer).flatMap((selection) =>
     selection.boxes.map((box) => ({ pageIndex: selection.pageIndex, space: 'app-v1' as const, rect: box })),
   );
+}
+
+/**
+ * The embedded files the properties panel lists, each with its measured size. The engine's
+ * attachment list carries names and descriptions but not payloads, so a size is the byte
+ * length of the payload read one file at a time; an unreadable payload is `null`.
+ */
+async function measuredAttachments(
+  handle: PdfDocumentHandle,
+  signal: AbortSignal,
+): Promise<readonly AttachmentRow[]> {
+  const measured: AttachmentRow[] = [];
+  for (const attachment of await listPdfAttachments(handle)) {
+    if (signal.aborted) break;
+    const size = await readPdfAttachment(handle, attachment).then(
+      (bytes) => bytes.byteLength,
+      () => null,
+    );
+    measured.push({ name: attachment.filename, description: attachment.description, size });
+  }
+  return measured;
 }
 
 export interface AppProps {
@@ -1507,7 +1528,7 @@ export function App({ store }: AppProps) {
         const [fonts, signatures, attachments, protection] = await Promise.all([
           listPdfFonts(bytes, controller.signal),
           verifySignatures(bytes, controller.signal, { roots: trustRootBytes, crls: revocationListBytes }),
-          listPdfAttachments(handle),
+          measuredAttachments(handle, controller.signal),
           inspectProtection(bytes),
         ]);
         if (controller.signal.aborted) return;
@@ -1516,11 +1537,7 @@ export function App({ store }: AppProps) {
           version: tab.working.id,
           fonts,
           signatures,
-          attachments: attachments.map((attachment) => ({
-            name: attachment.filename,
-            description: attachment.description,
-            size: attachment.content === null ? null : attachment.content.byteLength,
-          })),
+          attachments,
           // The protection state comes from the engine's own reader, not from a
           // guess: an unencrypted document reports `encrypted: false` and no
           // permissions, which is a fact and not an empty table.
@@ -4737,6 +4754,7 @@ export function App({ store }: AppProps) {
         toggleFullscreen: () => void toggleFullscreen(),
         toggleReading: () => setReading((value) => !value),
         toggleMagnifier: () => setMagnifierOn((value) => !value),
+        openSnapshot: () => setSnapshotOpen(true),
         toggleLeftDock: () => setLeftDock((value) => !value),
         toggleRightDock: () => setRightDock((value) => !value),
         selectAllPages: () => setSelectedPages(Array.from({ length: pageCount }, (_v, index) => index)),

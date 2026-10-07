@@ -40,14 +40,17 @@ import { PanelLoading, PanelMessage } from './PanelParts';
 import { importRevocationLists } from './revocation-lists';
 import { importTrustRoots } from './trust-roots';
 
+/** One embedded file as the panel lists it; `size` is `null` when its payload cannot be read. */
+export interface AttachmentRow {
+  readonly name: string;
+  readonly description: string;
+  readonly size: number | null;
+}
+
 export interface PropertiesPanelProps {
   readonly t: Translator;
   readonly fonts: readonly PdfFontInfo[] | null;
-  readonly attachments: readonly {
-    readonly name: string;
-    readonly description: string;
-    readonly size: number | null;
-  }[];
+  readonly attachments: readonly AttachmentRow[];
   readonly signatures: readonly SignatureVerification[];
   readonly security: { readonly encrypted: boolean; readonly permissions: readonly string[] } | null;
   readonly loading?: boolean;

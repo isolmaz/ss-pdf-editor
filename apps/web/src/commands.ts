@@ -104,6 +104,7 @@ export interface CommandHost {
   readonly toggleFullscreen: () => void;
   readonly toggleReading: () => void;
   readonly toggleMagnifier: () => void;
+  readonly openSnapshot: () => void;
   readonly toggleLeftDock: () => void;
   readonly toggleRightDock: () => void;
   readonly selectAllPages: () => void;
@@ -545,6 +546,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabled: noDocument,
       checked: host.magnifier,
       run: host.toggleMagnifier,
+    },
+    {
+      id: 'view.snapshot',
+      labelKey: 'tools.snapshot',
+      group: 'view',
+      disabled: noDocument,
+      keywords: ['snapshot', 'screenshot', 'capture', 'png', 'goruntu'],
+      run: host.openSnapshot,
     },
     {
       id: 'view.layers',
