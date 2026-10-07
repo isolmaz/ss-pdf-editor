@@ -35,6 +35,8 @@ export const officePart = {
   'op.note.exportOffice.streamTables':
     'Çizgisiz {count} tablo, metnin aralıklarından tanınıp kenarlıksız tablo olarak aktarıldı; sütunlarını kontrol edin.',
   'op.note.exportOffice.pictures': '{count} görsel aktarıldı.',
+  'op.note.exportOffice.picturesLost':
+    '{count} görsel aktarılmadı: görüntü verisi okunamadı ya da yalnızca metin taşıyan bir tablo hücresinin içinde duruyor.',
   'op.note.exportOffice.sheets': 'Çalışma kitabında {count} sayfa var.',
   'op.note.exportOffice.numbers':
     '{count} hücre sayı olarak yazıldı. Tek anlamlı olmayan değerler (ör. 1.234: bin mi, bir virgül iki yüz otuz dört mü) metin olarak bırakıldı.',

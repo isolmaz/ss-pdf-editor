@@ -105,7 +105,7 @@ describe('exportOffice read-back and picture faults', () => {
     });
   });
 
-  it('leaves out a picture that MuPDF could not draw, drawing or not', async () => {
+  it('leaves out a picture that MuPDF could not draw, drawing or not, and says so', async () => {
     state.dropPng = true;
     const bytes = await officeDocument([
       {
@@ -122,5 +122,9 @@ describe('exportOffice read-back and picture faults', () => {
     const zip = await JSZip.loadAsync(file.bytes);
     expect((await zip.file('word/document.xml')?.async('string')) ?? '').not.toContain('<w:drawing>');
     expect(notes.map((entry) => entry.key)).not.toContain('op.note.exportOffice.pictures');
+    expect(notes.find((entry) => entry.key === 'op.note.exportOffice.picturesLost')).toMatchObject({
+      kind: 'lost',
+      params: { count: 1 },
+    });
   });
 });

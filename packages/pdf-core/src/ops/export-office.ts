@@ -412,6 +412,21 @@ function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
   });
 }
 
+/**
+ * Pictures of a page the Word document does not carry (`pageItems` leaves them out): one MuPDF
+ * could not draw, and one inside a table, whose cells hold text only. A picture inside a
+ * drawing is carried by the drawing's own picture.
+ */
+function lostPictures(page: ReadPage): number {
+  const tables = [...page.tables, ...page.streams];
+  return page.layout.blocks.filter(
+    (block) =>
+      block.kind === 'image' &&
+      !page.figures.some((figure) => contains(figure.box, block.box)) &&
+      (block.png === null || tables.some((table) => contains(table.box, block.box))),
+  ).length;
+}
+
 /** One page as items in reading order: MuPDF's block order, each table where it starts. */
 function pageItems(page: ReadPage): Item[] {
   const items: Item[] = [];
@@ -1333,6 +1348,8 @@ export async function exportOffice(
     }
     if (written.pictures > 0)
       notes.push(note('preserved', 'op.note.exportOffice.pictures', { count: written.pictures }));
+    const lost = pages.reduce((sum, page) => sum + lostPictures(page), 0);
+    if (lost > 0) notes.push(note('lost', 'op.note.exportOffice.picturesLost', { count: lost }));
   } else {
     steps.push('office.tables');
     const names = options.sheetName ?? {

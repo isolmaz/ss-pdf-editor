@@ -778,6 +778,36 @@ describe('exportOffice → DOCX pictures', () => {
     });
   });
 
+  it('says so when a picture inside a ruled table is left out, since cells hold text only', async () => {
+    const bytes = await officeDocument([
+      {
+        images: { Im1: red },
+        content: [
+          courier(58, 360, 'Ad'),
+          courier(208, 360, 'Logo'),
+          courier(58, 320, 'Ada'),
+          picture('Im1', 210, 300, 30, 30),
+          '0.5 w 0 G',
+          '50 380 m 350 380 l S',
+          '50 340 m 350 340 l S',
+          '50 290 m 350 290 l S',
+          '50 380 m 50 290 l S',
+          '200 380 m 200 290 l S',
+          '350 380 m 350 290 l S',
+        ].join('\n'),
+      },
+    ]);
+    const { file, notes } = await exportOffice(bytes, docxOptions, run);
+    expect(await documentXml(file.bytes)).not.toContain('<w:drawing>');
+    expect(notes.map((entry) => [entry.key, entry.params])).toEqual([
+      ['op.note.exportOffice.done', { format: 'DOCX', pages: 1 }],
+      ['op.note.exportOffice.docxApproximate', undefined],
+      ['op.note.exportOffice.tables', { count: 1 }],
+      ['op.note.exportOffice.picturesLost', { count: 1 }],
+    ]);
+    expect(notes.find((entry) => entry.key === 'op.note.exportOffice.picturesLost')?.kind).toBe('lost');
+  });
+
   it('shrinks a picture that is wider than its column, and moves its page break and section onto it', async () => {
     const bytes = await officeDocument([
       {
