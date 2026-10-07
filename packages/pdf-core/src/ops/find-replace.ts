@@ -780,6 +780,7 @@ function placeInPlace(
   const baseline = head.glyph.origin?.[1] ?? block.lines[head.line]?.baseline ?? rect[3];
   const measure = (drawnSize: number): number => faces.measure(replacement, face, drawnSize, page.pageIndex);
   const width = measure(size);
+  const line = block.lines[head.line];
   const drawnLine = (drawnSize: number, at: number): Placement => ({
     rects: [rect],
     lines: [
@@ -791,12 +792,12 @@ function placeInPlace(
         color: head.glyph.color ?? block.style.color,
         fontId: face,
         width: measure(drawnSize),
+        ...(line === undefined ? {} : { lineSpan: [line.rect[0], line.rect[2]] as const }),
       },
     ],
     shrunk: drawnSize < size ? 1 : 0,
   });
 
-  const line = block.lines[head.line];
   const wholeLine =
     line !== undefined &&
     line.words[0]?.glyphs[0] === head.glyph &&
@@ -880,6 +881,7 @@ function placeLine(
 ): Placement | null {
   const line = block.lines[lineIndex];
   if (line === undefined) return null;
+  const lineSpan = [line.rect[0], line.rect[2]] as const;
   const glyphs: GlyphAt[] = [];
   for (const [word, entry] of line.words.entries()) {
     for (const [index, glyph] of entry.glyphs.entries()) glyphs.push({ line: lineIndex, word, index, glyph });
@@ -934,6 +936,7 @@ function placeLine(
           color,
           fontId: style.face,
           width,
+          lineSpan,
         });
       }
       delta += width - (tail.glyph.rect[2] - x);
@@ -979,6 +982,7 @@ function placeLine(
       color,
       fontId: face,
       width: faces.measure(text, face, size, page.pageIndex),
+      lineSpan,
     });
     index = end;
   }

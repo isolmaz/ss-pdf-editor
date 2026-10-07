@@ -499,10 +499,19 @@ interface DrawnText {
   readonly x: number;
   readonly y: number;
   readonly text: string;
+  /** `[left, right]` of the page line it continues (`TextEditInsertLine.lineSpan`). */
+  readonly lineSpan: readonly [number, number] | undefined;
+  readonly fontSize: number;
 }
 
 /** How far a drawn text's baseline may sit from an existing run's and share its line. */
 const SAME_BASELINE_PT = 0.5;
+
+/**
+ * How far left of a line's ink its first run may start, in ems: the origin sits a glyph's
+ * left side bearing before the ink. Far less than any gap between two columns.
+ */
+const LINE_ORIGIN_SLACK_EM = 0.25;
 
 /** The state a drawn text object needs wherever it lands, so it draws as it does on a clean page. */
 const TEXT_STATE_RESET = '0 Tc 0 Tw 100 Tz 0 Ts 0 Tr';
@@ -516,14 +525,16 @@ function invertMatrix(matrix: Matrix): Matrix | null {
 }
 
 /**
- * Draw `drawn` on `page` in reading order. Text that stands on the baseline of a run the
- * page already has goes into the content stream right after that run's text object (the
- * run to its left; the run to its right when nothing stands left of it), so the line a
- * replacement belongs to reads head, replacement, rest — the order every extractor,
- * screen reader and search follows is the stream's. Each such object is wrapped in `q …
- * Q` with the inverse of the matrix in force there and a reset text state, so it draws
- * exactly where it would on a clean page. Text with no run to follow, and a page whose
- * content cannot be read, keep the old behaviour: one new stream after the page's own.
+ * Draw `drawn` on `page` in reading order. Text that continues a line the page still has
+ * part of goes into the content stream right after that line's text object (the run to its
+ * left; the run to its right when nothing stands left of it), so the line a replacement
+ * belongs to reads head, replacement, rest — the order every extractor, screen reader and
+ * search follows is the stream's. Only runs on the same baseline **inside the line's own
+ * span** count: a neighbouring column's line is never an anchor. Each such object is
+ * wrapped in `q … Q` with the inverse of the matrix in force there and a reset text state,
+ * so it draws exactly where it would on a clean page. Text with no run of its line to
+ * follow (a redrawn paragraph), and a page whose content cannot be read, keep the old
+ * behaviour: one new stream after the page's own.
  */
 function drawInReadingOrder(doc: PDFDocument, page: PDFObject, drawn: readonly DrawnText[]): void {
   if (drawn.length === 0) return;
@@ -540,7 +551,23 @@ function drawInReadingOrder(doc: PDFDocument, page: PDFObject, drawn: readonly D
   const loose: DrawnText[] = [];
 
   for (const [order, item] of drawn.entries()) {
-    const level = runs.filter((run) => Math.abs((run.origin?.y ?? Number.NaN) - item.y) <= SAME_BASELINE_PT);
+    // Only the line's own text is a place to splice into: a run of another column or table
+    // cell on the same baseline would interleave the two, line by line.
+    const span = item.lineSpan;
+    if (span === undefined) {
+      loose.push(item);
+      continue;
+    }
+    const slack = LINE_ORIGIN_SLACK_EM * item.fontSize;
+    const level = runs.filter((run) => {
+      const origin = run.origin;
+      return (
+        origin !== null &&
+        Math.abs(origin.y - item.y) <= SAME_BASELINE_PT &&
+        origin.x >= span[0] - slack &&
+        origin.x <= span[1]
+      );
+    });
     let anchor: (typeof runs)[number] | undefined;
     let after = true;
     for (const run of level) {
@@ -718,6 +745,8 @@ async function writeStage(
           drawn.push({
             x: origin.x,
             y: origin.y,
+            lineSpan: line.lineSpan,
+            fontSize: size,
             text: `BT ${num(red)} ${num(green)} ${num(blue)} rg /${key} ${num(size)} Tf 1 0 0 1 ${num(origin.x)} ${num(origin.y)} Tm ${show(font, placement.text)} ET`,
           });
         }

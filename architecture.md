@@ -1007,13 +1007,19 @@ for; reading that one colour for every block turned a red heading black when it 
 
 **Reading order.** The writer draws each line where it stands in the content stream, not
 after it (`drawInReadingOrder` in `ops/text-edit.ts`): a drawn run that shares a baseline
-with a run the page keeps is spliced in right after that run's text object (before it, when
-nothing stands to its left), inside `q … Q` with the inverse of the matrix in force there and
-a reset text state. Extractors, search and screen readers follow the stream, and a shorter
-word used to come back as every line's head first and all the moved rests at the end of the
-page. Text with no run to follow, or a page whose content cannot be read, is drawn in one
-stream after the page's own. A line that only closed the gap a shorter word left is not
-counted as "did not fit in place".
+with a run the page keeps **of the same line** is spliced in right after that run's text
+object (before it, when nothing stands to its left), inside `q … Q` with the inverse of the
+matrix in force there and a reset text state. Extractors, search and screen readers follow
+the stream, and a shorter word used to come back as every line's head first and all the
+moved rests at the end of the page. The line is the one the drawn text continues
+(`TextEditInsertLine.lineSpan`, its left and right edge): a run of the column or table cell
+beside it shares the baseline but not the span, and splicing after it read the two columns
+interleaved, line by line. Text with no run of its own line to follow (a match that starts
+its line with nothing kept after it, a paragraph Edit Text redraws), or a page whose content
+cannot be read, is drawn in one stream after the page's own. The splice point is the end of
+the anchor's text object, so a producer that writes several lines in one `BT … ET` (LaTeX
+does) still reads that object's line heads before the rests drawn after it. A line that only
+closed the gap a shorter word left is not counted as "did not fit in place".
 
 **Verification.** The writer's checks apply, with two corrections this operation needed: a
 replacement that contains the old text (`2024` → `2024–2025`) is not "erased text still
