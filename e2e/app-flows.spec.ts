@@ -164,9 +164,9 @@ async function openOfflineSettings(page: Page): Promise<Locator> {
   return dialog;
 }
 
-test('Prepare fills the offline cache, and Check status then reports every package ready', async ({
-  page,
-}) => {
+test('Prepare fills the offline cache, and Check status then reports every package ready', {
+  tag: '@service-worker',
+}, async ({ page }) => {
   const dialog = await openOfflineSettings(page);
   await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, undefined, {
     timeout: 30_000,
