@@ -182,8 +182,9 @@ export function writeDatasets(doc: PDFDocument, xml: string): void {
   if (document === null || replacement === null) throw new Error('the XFA stream is not well-formed XML');
   const root = document.documentElement;
   const imported = document.importNode(replacement.documentElement, true);
+  // The first datasets element: the one `readXfaPackets` (and so every reader here) takes.
   let existing: Element | null = null;
-  for (let node = root.firstChild; node !== null; node = node.nextSibling) {
+  for (let node = root.firstChild; node !== null && existing === null; node = node.nextSibling) {
     if (node.nodeType === 1 && (node as Element).localName === 'datasets') existing = node as Element;
   }
   if (existing === null) root.appendChild(imported);

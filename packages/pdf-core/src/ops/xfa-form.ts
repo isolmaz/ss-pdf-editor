@@ -59,7 +59,6 @@ async function withDocument<T>(
   try {
     return await body(opened);
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
     if (error instanceof ToolError) throw error;
     throw mapMupdfError(error, context);
   } finally {
@@ -270,6 +269,15 @@ export async function importXfaData(
       const filled = await fillFormFields(output, fills, context);
       output = filled.bytes;
       widgets = fills.length;
+      // The fill brings the datasets in step with the widgets by its own rule, which for a field
+      // the template says nothing about (no template packet, or an unnamed check box item) spells
+      // a value its own way. The import is what the user asked for: its data is put back.
+      const restored = await withDocument(output, 'xfa.import.restore', ({ doc }) => {
+        if (sameEntries(entriesOf(doc), expected)) return null;
+        writeDatasets(doc, written.replaced);
+        return saveRewrite(doc, 'xfa.import');
+      });
+      if (restored !== null) output = restored;
     }
     if (widgets > 0) notes.push(note('changed', 'xfa.note.widgetsFilled', { count: widgets }));
     if (skipped.length > 0) notes.push(note('warning', 'xfa.note.notSynced', { count: skipped.length }));
@@ -277,14 +285,8 @@ export async function importXfaData(
 
   // Read back: the data in the file is the data that was imported.
   await withDocument(output, 'xfa.import.verify', ({ doc }) => {
-    const text = datasetsText(doc);
-    const actual = text === null ? [] : dataEntries(text);
-    const same =
-      actual.length === expected.length &&
-      expected.every(
-        (entry, index) => actual[index]?.path === entry.path && actual[index]?.value === entry.value,
-      );
-    if (!same) {
+    const actual = entriesOf(doc);
+    if (!sameEntries(actual, expected)) {
       throw new ToolError('verification-failed', {
         engine: 'mupdf',
         engineMessage: `the datasets hold ${actual.length} values, ${expected.length} were imported`,
@@ -309,6 +311,31 @@ export async function importXfaData(
       incremental: false,
     },
   };
+}
+
+/** One `(path, text)` leaf of the datasets, as `dataEntries` lists them. */
+interface DataEntry {
+  readonly path: string;
+  readonly value: string;
+}
+
+/**
+ * Every value the datasets of a document hold. Only for a document `importXfaData` has written
+ * the datasets of: neither the fill nor the restore ever removes the packet.
+ */
+function entriesOf(doc: PDFDocument): readonly DataEntry[] {
+  // `datasetsText` is null only for a document without the packet, which `writeDatasets` has
+  // just made impossible for every document this runs on.
+  return dataEntries(datasetsText(doc) as string);
+}
+
+function sameEntries(actual: readonly DataEntry[], expected: readonly DataEntry[]): boolean {
+  return (
+    actual.length === expected.length &&
+    expected.every(
+      (entry, index) => actual[index]?.path === entry.path && actual[index]?.value === entry.value,
+    )
+  );
 }
 
 async function pageCountOf(bytes: Uint8Array): Promise<number> {

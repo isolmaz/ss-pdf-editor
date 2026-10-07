@@ -9,10 +9,9 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import type { PDFDocument, PDFObject } from 'mupdf';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadMupdf } from '../engines/mupdf';
 import { fillFormFields, flattenForm, readFormFields } from './forms';
+import type { OperationOutcome } from './types';
 import { describeXfa, readXfaPackets, syncXfaInDocument, writeDatasets } from './xfa';
 import {
   exportXfaData,
@@ -22,134 +21,9 @@ import {
   removeXfa,
   syncXfaDatasets,
 } from './xfa-form';
+import { DATASETS, datasetsOf, editWidgets, TEMPLATE, withPdf, xfaPdf, xfaTexts } from './xfa-form.fixtures';
 
 const run = { signal: new AbortController().signal };
-
-const TEMPLATE = `<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/"><subform name="form1"><subform><field name="Name"><ui><textEdit/></ui></field><field name="Agree"><ui><checkButton/></ui><items><integer>1</integer><integer>0</integer></items></field><field name="Birth"><ui><dateTimeEdit/></ui><format><picture>date{DD/MM/YYYY}</picture></format></field></subform></subform></template>`;
-const DATASETS = `<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><Name>Old</Name><Agree>0</Agree><Birth>2000-01-01</Birth><City>Ankara</City></form1></xfa:data></xfa:datasets>`;
-const PREAMBLE = '<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">';
-
-interface Build {
-  /** `static` has AcroForm widgets; `dynamic` has none. */
-  readonly kind: 'static' | 'dynamic' | 'none';
-  readonly layout?: 'array' | 'stream';
-  readonly datasets?: boolean;
-  readonly template?: string;
-}
-
-async function xfaPdf({ kind, layout = 'array', datasets = true, template = TEMPLATE }: Build) {
-  const mupdf = await loadMupdf();
-  const doc = new mupdf.PDFDocument();
-  doc.insertPage(0, doc.addPage([0, 0, 400, 300], 0, {}, ''));
-  const page = doc.findPage(0);
-  const box = (width: number, height: number) =>
-    doc.addStream('', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, width, height] });
-  const widget = (extra: Record<string, unknown>, rect: number[]) =>
-    doc.addObject({ Type: 'Annot', Subtype: 'Widget', Rect: rect, P: page, F: 4, ...extra });
-
-  const fields: PDFObject[] = [];
-  if (kind !== 'dynamic') {
-    const root = doc.addObject({ T: doc.newString('form1[0]'), Kids: [] });
-    const inner = doc.addObject({ T: doc.newString('#subform[0]'), Parent: root, Kids: [] });
-    root.get('Kids').push(inner);
-    const name = widget(
-      { FT: 'Tx', T: doc.newString('Name[0]'), Parent: inner, AP: { N: box(160, 20) } },
-      [20, 250, 180, 270],
-    );
-    const agree = widget(
-      {
-        FT: 'Btn',
-        T: doc.newString('Agree[0]'),
-        Parent: inner,
-        V: 'Off',
-        AS: 'Off',
-        AP: { N: { Yes: box(20, 20), Off: box(20, 20) } },
-      },
-      [20, 210, 40, 230],
-    );
-    const birth = widget(
-      { FT: 'Tx', T: doc.newString('Birth[0]'), Parent: inner, AP: { N: box(100, 20) } },
-      [20, 170, 120, 190],
-    );
-    for (const entry of [name, agree, birth]) inner.get('Kids').push(entry);
-    page.put('Annots', [name, agree, birth]);
-    fields.push(root);
-  }
-  const form = doc.addObject({ Fields: fields });
-  doc.getTrailer().get('Root').put('AcroForm', form);
-
-  if (kind !== 'none') {
-    const packets: [string, string][] = [
-      ['preamble', PREAMBLE],
-      ['template', template],
-      ...(datasets ? ([['datasets', DATASETS]] as [string, string][]) : []),
-      ['postamble', '<xfa:postamble/>'],
-    ];
-    if (layout === 'array') {
-      const array = doc.newArray();
-      for (const [name, body] of packets) {
-        array.push(doc.newString(name));
-        array.push(doc.addStream(body, doc.newDictionary()));
-      }
-      form.put('XFA', array);
-    } else {
-      const body = packets
-        .filter(([name]) => name === 'template' || name === 'datasets')
-        .map(([, text]) => text)
-        .join('');
-      form.put(
-        'XFA',
-        doc.addStream(`<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">${body}</xdp:xdp>`, doc.newDictionary()),
-      );
-    }
-    if (kind === 'dynamic') doc.getTrailer().get('Root').put('NeedsRendering', true);
-  }
-  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
-  doc.destroy();
-  return bytes;
-}
-
-/** Run `body` on the document, as an independent reader opening the bytes. */
-async function withPdf<T>(bytes: Uint8Array, body: (doc: PDFDocument) => T): Promise<T> {
-  const mupdf = await loadMupdf();
-  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
-  if (doc === null) throw new Error('not a PDF');
-  try {
-    return body(doc);
-  } finally {
-    doc.destroy();
-  }
-}
-
-/** The XFA as the file holds it: packet name → text for an array, `{ xdp: text }` for one stream. */
-function xfaTexts(bytes: Uint8Array): Promise<Record<string, string>> {
-  return withPdf(bytes, (doc) => {
-    const entry = doc.getTrailer().get('Root').get('AcroForm').resolve().get('XFA');
-    const text = (stream: PDFObject) => new TextDecoder().decode(stream.readStream().asUint8Array());
-    const xfa = entry.resolve();
-    if (!xfa.isArray()) return { xdp: text(entry) };
-    const out: Record<string, string> = {};
-    for (let at = 0; at + 1 < xfa.length; at += 2) out[xfa.get(at).asString()] = text(xfa.get(at + 1));
-    return out;
-  });
-}
-
-/** Set widget values the way an editor that knows nothing of XFA does: straight into `/V`. */
-function editWidgets(bytes: Uint8Array, values: Record<string, string>): Promise<Uint8Array> {
-  return withPdf(bytes, (doc) => {
-    const annots = doc.findPage(0).get('Annots').resolve();
-    for (let at = 0; at < annots.length; at += 1) {
-      const widget = annots.get(at).resolve();
-      const value = values[widget.get('T').asString()];
-      if (value === undefined) continue;
-      if (widget.get('FT').asName() === 'Btn') {
-        widget.put('V', value);
-        widget.put('AS', value);
-      } else widget.put('V', doc.newString(value));
-    }
-    return new Uint8Array(doc.saveToBuffer('').asUint8Array());
-  });
-}
 
 describe('xfa packets and inspection', () => {
   it('tells a static form, a dynamic form and no XFA apart, in both layouts', async () => {
@@ -243,7 +117,7 @@ describe('xfa operations', () => {
     expect((await xfaTexts(stale)).datasets).toContain('<Name>Old</Name>');
     const synced = await syncXfaDatasets(stale);
     expect(synced.changed).toBe(3);
-    const datasets = (await xfaTexts(synced.bytes)).datasets as string;
+    const datasets = await datasetsOf(synced.bytes);
     expect(datasets).toContain('<Name>Çağrı Işık</Name>');
     // The template's on item, not the widget's "Yes"; the ISO date, not the displayed one.
     expect(datasets).toContain('<Agree>1</Agree>');
@@ -264,7 +138,7 @@ describe('xfa operations', () => {
     expect(synced.bytes.length).toBeGreaterThan(stale.length);
     expect(synced.bytes.subarray(0, stale.length)).toEqual(stale);
     expect(await withPdf(synced.bytes, (doc) => doc.countVersions())).toBe(revisions + 1);
-    const datasets = (await xfaTexts(synced.bytes)).datasets as string;
+    const datasets = await datasetsOf(synced.bytes);
     expect(datasets).toContain('<Name>Yeni Değer</Name>');
     expect(datasets).toContain('<Birth/>');
     // The checkbox and the field the form has no widget for are left alone.
@@ -359,7 +233,7 @@ describe('xfa operations', () => {
       (await readFormFields(out.bytes)).map((field) => [field.name.split('.').pop(), field.value]),
     );
     expect(fields).toMatchObject({ 'Name[0]': 'Ümit', 'Agree[0]': true, 'Birth[0]': '09/03/2024' });
-    const datasets = (await xfaTexts(out.bytes)).datasets as string;
+    const datasets = await datasetsOf(out.bytes);
     expect(datasets).toContain('<City>İzmir</City>');
     expect(datasets).toContain('<Birth>2024-03-09</Birth>');
 
@@ -396,5 +270,211 @@ describe('xfa operations', () => {
     await expect(finishXfaFill(before, await xfaPdf({ kind: 'none' }), run)).rejects.toMatchObject({
       code: 'no-xfa',
     });
+  });
+});
+
+// Forms the main fixture does not describe: a template that leaves a field out or binds it to nothing, a
+// file with no datasets packet or one that is not XML, a dynamic form given data, data the widgets
+// already show, a value the widget cannot take, and a save that dropped the datasets.
+const DATA = '<form1><Name>Zed</Name><Agree>1</Agree><Birth>2024-03-05</Birth></form1>';
+const keys = (outcome: OperationOutcome) => outcome.report.notes.map((entry) => entry.key);
+const noteParams = (outcome: OperationOutcome, key: string) =>
+  outcome.report.notes.find((entry) => entry.key === key)?.params;
+const valuesOf = async (bytes: Uint8Array) =>
+  Object.fromEntries((await readFormFields(bytes, run.signal)).map((field) => [field.name, field.value]));
+
+describe('importing data into a static form', () => {
+  it('fills the widgets from a string or from bytes, and writes nothing when they already show it', async () => {
+    const input = await xfaPdf({ kind: 'static' });
+    const first = await importXfaData(input, DATA, run);
+    expect([first.values, first.widgets]).toEqual([3, 3]);
+    expect(first.report.steps).toEqual(['load', 'xfa.datasets', 'form.setText', 'verify', 'save']);
+    expect(noteParams(first, 'xfa.note.widgetsFilled')).toEqual({ count: 3 });
+    expect(Object.values(await valuesOf(first.bytes))).toEqual(expect.arrayContaining(['Zed', '05/03/2024']));
+
+    // The same data again, as bytes: every widget already shows it, so no fill runs.
+    const again = await importXfaData(first.bytes, new TextEncoder().encode(DATA), run);
+    expect(again.widgets).toBe(0);
+    expect(again.report.steps).toEqual(['load', 'xfa.datasets', 'verify', 'save']);
+    expect(keys(again)).not.toContain('xfa.note.widgetsFilled');
+  });
+
+  it('leaves a widget alone when the data has no value for it', async () => {
+    const out = await importXfaData(
+      await xfaPdf({ kind: 'static' }),
+      '<form1><Name>Only</Name></form1>',
+      run,
+    );
+    expect([out.values, out.widgets]).toEqual([1, 1]);
+  });
+
+  it('counts the fields it could not bind and the values it could not fill, and says so', async () => {
+    const noBinding = TEMPLATE.replace('<field name="Name">', '<field name="Name"><bind match="none"/>');
+    const out = await importXfaData(await xfaPdf({ kind: 'static', template: noBinding }), DATA, run);
+    expect(noteParams(out, 'xfa.note.notSynced')).toEqual({ count: 1 });
+    expect(out.widgets).toBe(2);
+
+    const badDate = await importXfaData(
+      await xfaPdf({ kind: 'static' }),
+      '<form1><Name>Zed</Name><Birth>not a date</Birth></form1>',
+      run,
+    );
+    expect(noteParams(badDate, 'xfa.note.notSynced')).toEqual({ count: 1 });
+    expect(badDate.widgets).toBe(1);
+  });
+
+  it('does not count a field the template does not mention as one that could not be synced', async () => {
+    const partial = TEMPLATE.replace(/<field name="Birth">.*?<\/field>/, '');
+    const out = await importXfaData(await xfaPdf({ kind: 'static', template: partial }), DATA, run);
+    expect(keys(out)).not.toContain('xfa.note.notSynced');
+    expect(out.widgets).toBe(2);
+  });
+
+  it('binds fields by the shape of their names when the form has no template packet', async () => {
+    const out = await importXfaData(await xfaPdf({ kind: 'static', template: null }), DATA, run);
+    expect(out.widgets).toBeGreaterThan(0);
+    expect(Object.values(await valuesOf(out.bytes))).toContain('Zed');
+    // The fill would spell the check box "Yes" and the date as the widget shows it; the data is what was imported.
+    const datasets = await datasetsOf(out.bytes);
+    expect(datasets).toContain('<Agree>1</Agree>');
+    expect(datasets).toContain('<Birth>2024-03-05</Birth>');
+  });
+
+  it('creates the datasets when the form has none', async () => {
+    const out = await importXfaData(await xfaPdf({ kind: 'static', datasets: false }), DATA, run);
+    expect(out.values).toBe(3);
+    expect((await xfaTexts(out.bytes)).datasets).toContain('<Name>Zed</Name>');
+  });
+
+  it('refuses datasets that are not XML, and data that is not XML data', async () => {
+    await expect(
+      importXfaData(await xfaPdf({ kind: 'static', datasets: 'not xml at all' }), DATA, run),
+    ).rejects.toMatchObject({
+      code: 'corrupt-document',
+      details: { engineMessage: 'the datasets are not XML' },
+    });
+    await expect(importXfaData(await xfaPdf({ kind: 'static' }), 'plain text', run)).rejects.toMatchObject({
+      code: 'unsupported-format',
+    });
+  });
+});
+
+describe('importing data into an unusual file', () => {
+  // An XDP stream with two datasets elements: the reader takes the first, so the writer must
+  // replace that one, or what was imported is not what is read back.
+  const twice = DATASETS + DATASETS.replace('Old', 'Second');
+
+  it('writes the first datasets element of an XDP stream, the one that is read, static or dynamic', async () => {
+    for (const kind of ['static', 'dynamic'] as const) {
+      const input = await xfaPdf({ kind, layout: 'stream', datasets: twice });
+      const out = await importXfaData(input, '<form1><Name>Zed</Name></form1>', run);
+      expect(out.values).toBe(1);
+      const { xdp } = await xfaTexts(out.bytes);
+      expect(xdp).toContain('<Name>Zed</Name>');
+      expect(xdp).toContain('<Name>Second</Name>');
+      expect(xdp?.indexOf('<Name>Zed</Name>')).toBeLessThan(xdp?.indexOf('<Name>Second</Name>') ?? 0);
+      expect((await inspectXfa(out.bytes))?.dataValues).toBe(1);
+    }
+  });
+
+  it('reports an XDP stream that is not well-formed as the engine failing to write it', async () => {
+    const broken = await xfaPdf({ kind: 'dynamic', layout: 'stream', datasets: '<unclosed' });
+    await expect(importXfaData(broken, DATA, run)).rejects.toMatchObject({
+      details: { engineMessage: 'xfa.import: the XFA stream is not well-formed XML' },
+    });
+  });
+
+  it('keeps the imported data when the fill spells a check box value its own way', async () => {
+    // The check box item has no on/off texts, so the fill's own datasets sync would write "Yes".
+    const unnamed = TEMPLATE.replace('<items><integer>1</integer><integer>0</integer></items>', '');
+    const out = await importXfaData(await xfaPdf({ kind: 'static', template: unnamed }), DATA, run);
+    expect(out.values).toBe(3);
+    const datasets = await datasetsOf(out.bytes);
+    expect(datasets).toContain('<Agree>1</Agree>');
+    expect(datasets).toContain('<Birth>2024-03-05</Birth>');
+  });
+});
+
+describe('importing data into a dynamic form', () => {
+  it('writes the datasets and fills no widgets, because it has none', async () => {
+    const out = await importXfaData(await xfaPdf({ kind: 'dynamic' }), DATA, run);
+    expect([out.values, out.widgets]).toEqual([3, 0]);
+    expect(out.report.steps).toEqual(['load', 'xfa.datasets', 'verify', 'save']);
+    expect((await xfaTexts(out.bytes)).datasets).toContain('<Name>Zed</Name>');
+  });
+});
+
+describe('exporting data', () => {
+  it('refuses a form whose datasets hold no data, or that has no datasets packet', async () => {
+    await expect(exportXfaData(await xfaPdf({ kind: 'static', datasets: false }))).rejects.toMatchObject({
+      code: 'unsupported',
+      details: { engineMessage: 'the XFA datasets hold no data' },
+    });
+    const empty =
+      '<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data/></xfa:datasets>';
+    await expect(exportXfaData(await xfaPdf({ kind: 'static', datasets: empty }))).rejects.toMatchObject({
+      code: 'unsupported',
+    });
+    await expect(exportXfaData(await xfaPdf({ kind: 'none' }))).rejects.toMatchObject({ code: 'no-xfa' });
+  });
+});
+
+describe('syncing the datasets', () => {
+  it('returns the same bytes for a dynamic form, which has no widgets to sync', async () => {
+    const input = await xfaPdf({ kind: 'dynamic' });
+    expect(await syncXfaDatasets(input)).toEqual({ bytes: input, changed: 0, skipped: [] });
+  });
+
+  it('returns the same bytes, and names the fields it cannot follow, when the data already agrees', async () => {
+    const noBinding = TEMPLATE.replace('<field name="Name">', '<field name="Name"><bind match="none"/>');
+    // Name is bound to nothing; the empty Birth widget and the unchecked Agree match their data.
+    const agreeing = DATASETS.replace('<Birth>2000-01-01</Birth>', '<Birth/>');
+    const input = await xfaPdf({ kind: 'static', template: noBinding, datasets: agreeing });
+    const out = await syncXfaDatasets(input);
+    expect(out.bytes).toBe(input);
+    expect(out.changed).toBe(0);
+    expect(out.skipped).toEqual([{ name: 'form1[0].#subform[0].Name[0]', reason: 'no-binding' }]);
+  });
+
+  it('writes the fields it can follow, and still names the one it cannot, when the data differs', async () => {
+    const noBinding = TEMPLATE.replace('<field name="Name">', '<field name="Name"><bind match="none"/>');
+    // Birth's widget is empty and the data says 2000-01-01: that field needs writing.
+    const input = await xfaPdf({ kind: 'static', template: noBinding });
+    const out = await syncXfaDatasets(input);
+    expect(out.bytes).not.toBe(input);
+    expect(out.changed).toBe(1);
+    expect(out.skipped).toEqual([{ name: 'form1[0].#subform[0].Name[0]', reason: 'no-binding' }]);
+    const datasets = await datasetsOf(out.bytes);
+    expect(datasets).toContain('<Birth/>');
+    expect(datasets).toContain('<Name>Old</Name>');
+  });
+});
+
+describe('checking a save of a dynamic form', () => {
+  it('reads a save that dropped the datasets packet as one that changed nothing', async () => {
+    const before = await xfaPdf({ kind: 'dynamic' });
+    const saved = await xfaPdf({ kind: 'dynamic', datasets: false });
+    const out = await finishXfaFill(before, saved, run);
+    expect(out.changed).toBe(0);
+    expect(keys(out)).toContain('xfa.note.nothingChanged');
+  });
+
+  it('counts the values that moved, and refuses a save that changed another packet or the page list', async () => {
+    const before = await xfaPdf({ kind: 'dynamic' });
+    const typed = await xfaPdf({
+      kind: 'dynamic',
+      datasets:
+        '<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><Name>Typed</Name></form1></xfa:data></xfa:datasets>',
+    });
+    expect((await finishXfaFill(before, typed, run)).changed).toBe(1);
+    const retemplated = await xfaPdf({ kind: 'dynamic', template: TEMPLATE.replace('Name', 'Other') });
+    await expect(finishXfaFill(before, retemplated, run)).rejects.toMatchObject({
+      code: 'verification-failed',
+    });
+    const twoPages = await withPdf(before, (doc) => {
+      doc.insertPage(1, doc.addPage([0, 0, 10, 10], 0, {}, ''));
+      return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    });
+    await expect(finishXfaFill(before, twoPages, run)).rejects.toMatchObject({ code: 'verification-failed' });
   });
 });
