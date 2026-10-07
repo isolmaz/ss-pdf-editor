@@ -195,7 +195,12 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
 
   /** Take the next photograph from the queue to the crop screen. */
   const openNext = useCallback(
-    async (waiting: readonly { readonly blob: Blob; readonly name: string }[], into: Target) => {
+    async (
+      waiting: readonly { readonly blob: Blob; readonly name: string }[],
+      into: Target,
+      /** A photograph before these could not be opened: its notice stays on screen. */
+      carryNotice = false,
+    ) => {
       const [next, ...rest] = waiting;
       if (next === undefined) {
         setDraft(null);
@@ -204,7 +209,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
         return;
       }
       setDecoding(true);
-      setNotice(null);
+      if (!carryNotice) setNotice(null);
       try {
         const made = await makeDraft(next.blob, next.name);
         setQueue(rest);
@@ -216,7 +221,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
         setNotice(t('scan.page.decodeFailed', { name: next.name }));
         setQueue(rest);
         // Carry on with the rest of the photographs; a damaged one must not stop the batch.
-        if (rest.length > 0) await openNext(rest, into);
+        if (rest.length > 0) await openNext(rest, into, true);
         else setView(pages.length > 0 ? 'pages' : 'camera');
       } finally {
         setDecoding(false);
@@ -511,7 +516,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                   {target.kind === 'edit' || queue.length === 0 ? t('op.cancel') : t('scan.crop.skip')}
                 </Button>
                 <Button variant="primary" disabled={!isConvexQuad(draftQuad)} onClick={acceptDraft}>
-                  {target.kind === 'edit' ? t('op.apply') : t('scan.crop.done')}
+                  {target.kind === 'edit' ? t('scan.crop.apply') : t('scan.crop.done')}
                 </Button>
               </div>
             </div>
