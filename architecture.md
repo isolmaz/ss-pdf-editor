@@ -255,9 +255,10 @@ flowchart TD
 Contract points the router returns and the report shows:
 
 - `incremental` is true **only** for the single pdf.js `saveDocument` path on an
-  unencrypted input, including the static-XFA datasets sync that follows it, which MuPDF
-  appends as one more revision (`saveIncremental`). Any other writer ends the fast path and
-  says `incremental: false`.
+  unencrypted input, including the steps MuPDF appends to it as one more revision
+  (`saveIncremental`): the static-XFA datasets sync, and the annotation settle step and
+  sticky notes (`writeAnnotationsToFile`). Any other writer ends the fast path and says
+  `incremental: false`; so does an append MuPDF cannot make and turns into a rewrite.
 - `rewritesStructure` is true for redaction, writer steps and page composition — those
   normalise object numbering, compression and XMP.
 - `reprotects` is true when the input was encrypted and the user did not ask for
@@ -1458,8 +1459,9 @@ The pieces, in the order the text-edit pipeline uses them:
    ink in its **original** face, so `fittedBox()` widens it when the matched face (usually
    Noto Sans, ~6 % wider than Helvetica) would break a line the reader kept whole: by what
    the widest hard line needs, away from the side the alignment anchors, within the page,
-   clear of any block beside it and by at most 25 %. Without it, editing one line of a
-   six-line list rewrapped all six.
+   clear of any block beside it and by at most 25 %. A line longer than that wraps inside
+   the box the others widened; it does not cancel their widening. Without it, editing one
+   line of a six-line list rewrapped all six.
 
 **Coordinate space is fixed for the whole package**: unrotated PDF user space with a
 top-left origin, unit = point, rects as `[x0, y0, x1, y1]` ascending with `y` measured
@@ -1555,8 +1557,13 @@ answers the page, the centre in app space and the upright size. Escape cancels i
 Every annotation this app writes is named `pdf-editor-ann:<id>` (`/NM`), and its
 `/Contents` — what every reader prints — holds the author's words alone. The engine (pdf.js)
 cannot write `/NM`, so its marks carry the marker at the head of `/Contents` for one step and
-`settleEngineMarks` moves it into the name before the file leaves; `readAnnotations` reads the
-names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`.
+`settleEngineMarks` moves it into the name before the file leaves. That step and the sticky
+notes are appended to the engine's incremental update, so adding a highlight or a note never
+rewrites the file; `readAnnotations` reads the
+names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`. A
+file that needs a password gives no names: the bytes pdf.js holds stay encrypted and MuPDF
+refuses them, and the file opens read-only, so its comments are listed from pdf.js alone
+rather than failing the read.
 Files written before the name carried it still have the marker in `/Contents`: `markerOf` and
 `commentText` read that too, and `viewer/marker-text.ts` watches the scroll container with a
 `MutationObserver` and rewrites such popup text through `commentText`, so the page never shows it.

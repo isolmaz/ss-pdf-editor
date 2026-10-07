@@ -36,6 +36,7 @@ import {
   pageObjects,
   pdfDate,
   producerKeptNote,
+  saveIncremental,
   saveRewrite,
   text,
   visibleBox,
@@ -55,7 +56,6 @@ import {
   markerFor,
   markerTargets,
   markRect,
-  OWNED_KINDS,
   settleEngineMarks,
   writeAnnotations,
 } from './annotations';
@@ -275,7 +275,10 @@ export async function writeNoteAnnotations(
       throw mapMupdfError(error, 'annotations.notes');
     }
 
-    const saved = saveRewrite(doc, 'annotations.notes');
+    // A note is appended, as the engine appends a highlight: adding a comment leaves the
+    // bytes the reader opened, and a signature over them, as they were.
+    const incremental = doc.canBeSavedIncrementally();
+    const saved = saveIncremental(doc, 'annotations.notes');
     return {
       bytes: saved,
       written,
@@ -286,7 +289,7 @@ export async function writeNoteAnnotations(
         inputBytes: bytes.byteLength,
         outputBytes: saved.byteLength,
         pageCount: pages.length,
-        incremental: false,
+        incremental,
       },
     };
   } finally {
@@ -701,9 +704,11 @@ function markerAppearance(
  * its marks are written as `/IRT` records (`ops/annotation-review.ts`): a reply needs
  * the reference its comment was given, which only exists once the comment is written.
  *
- * Steps 2 to 4 are MuPDF rewrites, so they end the incremental fast path
- * and the report says so; a session holding only marks the engine
- * can write keeps it.
+ * The settle step and the notes are appended to the engine's incremental update
+ * (`saveIncremental`), so a session of highlights, ink, text marks and notes keeps the
+ * bytes the reader opened, and a signature over them. The shape and marker steps, typed
+ * text, turns and replies are MuPDF rewrites: they end the incremental fast path, and
+ * the report says so — as it does when MuPDF could not append and rewrote instead.
  *
  * ## Rotation
  *
@@ -770,6 +775,9 @@ export async function writeAnnotationsToFile(
   }
 
   let bytes: Uint8Array;
+  // Whether every step so far appended to the file it was given (`saveIncremental` falls
+  // back to a rewrite when MuPDF cannot append, and its report says so).
+  let appended = true;
   if (engineMarks.length > 0) {
     const written = await writeAnnotations(
       handle,
@@ -782,6 +790,7 @@ export async function writeAnnotationsToFile(
 
     const settled = await settleEngineMarks(bytes, engineMarks, context);
     bytes = settled.bytes;
+    appended &&= settled.report.incremental;
     steps.push(...settled.report.steps);
     notes.push(...settled.report.notes);
   } else {
@@ -798,6 +807,7 @@ export async function writeAnnotationsToFile(
   if (stickies.length > 0) {
     const stuck = await writeNoteAnnotations(bytes, stickies, context);
     bytes = stuck.bytes;
+    appended &&= stuck.report.incremental;
     steps.push(...stuck.report.steps);
     notes.push(...stuck.report.notes);
   }
@@ -899,6 +909,7 @@ export async function writeAnnotationsToFile(
     report: {
       engine:
         shapes.length > 0 ||
+        stickies.length > 0 ||
         markers.length > 0 ||
         texts.length > 0 ||
         turned.length > 0 ||
@@ -916,7 +927,7 @@ export async function writeAnnotationsToFile(
         texts.length === 0 &&
         turned.length === 0 &&
         answered.length === 0 &&
-        !engineMarks.some((mark) => OWNED_KINDS.includes(mark.kind)),
+        appended,
     },
   };
 }
