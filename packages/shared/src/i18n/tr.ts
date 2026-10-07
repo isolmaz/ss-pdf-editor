@@ -150,6 +150,8 @@ export const tr = {
     'Depo listesi eksiksiz okunamadı; hiçbir şey silinmedi. Yarım bir listeden silmek, başka bir belgenin tek kopyasını yok edebilir.',
   'vault.sweepNoChannel':
     'Bu tarayıcıda pencereler arası bilgi kanalı yok; artık kopya taraması, başka bir pencerede açık belgeleri göremeden çalıştırılmadı.',
+  'vault.peerSilent':
+    'Düzenleyicinin başka bir penceresi hangi belgeleri tuttuğunu bildirmedi; hiçbir şey silinmedi. O pencere yanıt verdiğinde yeniden deneyin ya da pencereyi kapatın.',
   'batch.folder.watch': 'Klasör İzle',
   'batch.folder.watching': 'Klasör izleniyor',
   'batch.folder.stop': 'İzlemeyi Durdur',

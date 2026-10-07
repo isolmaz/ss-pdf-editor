@@ -1904,6 +1904,14 @@ window's only copy.
 References are only ever **added**. A window that answers once and dies leaves its keys
 pinned, which costs space; forgetting a live window's keys would cost a document.
 
+A probe does not wait on a timer. Every open window holds a `navigator.locks` lock named
+after its id (`pdf-editor.vault.window.<id>`); before a sweep, `probe()` lists the held
+locks (`locks.query()`) and completes only when each live window has answered *that*
+probe, so a busy background tab that answers late still gets its keys counted. A window
+the lock manager lists but that stays silent for 10 s (a frozen tab) makes `probe()`
+resolve `false` and the sweep refuses (`vault.peerSilent`: nothing is deleted). Only without a lock
+manager does the probe fall back to a fixed 250 ms wait.
+
 ### 8.5 Sensitive sessions, drafts and cleanup
 
 Persistence is a shared callback used by both the manual OPFS save and the automatic draft

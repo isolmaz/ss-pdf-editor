@@ -1188,7 +1188,12 @@ export function App({ store }: AppProps) {
         return;
       }
       await channel.runExclusive(async () => {
-        await channel.probe();
+        // A live window that never answered is a window whose documents are unknown: the
+        // reference graph is incomplete, so nothing is deleted.
+        if (!(await channel.probe())) {
+          setNotice(t('vault.peerSilent'));
+          return;
+        }
         const queued = draftWrites.current.then(async () => {
           const inventory = await readInventory();
           const storedSources = (await draftStorage.listSources?.()) ?? [];

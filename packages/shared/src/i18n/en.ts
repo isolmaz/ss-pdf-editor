@@ -138,6 +138,8 @@ export const en: Record<MessageKey, string> = {
     'The vault inventory could not be read completely, so nothing was deleted. Sweeping from a partial list can destroy another document’s only copy.',
   'vault.sweepNoChannel':
     'This browser exposes no cross-window channel, so the orphan sweep was not run: it cannot see documents open in another window.',
+  'vault.peerSilent':
+    'Another window of the editor did not say which documents it holds, so nothing was deleted. Try again once that window responds, or close it.',
   'batch.folder.watch': 'Watch Folder',
   'batch.folder.watching': 'Watching folder',
   'batch.folder.stop': 'Stop Watching',
