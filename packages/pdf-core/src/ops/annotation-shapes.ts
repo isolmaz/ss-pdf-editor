@@ -140,12 +140,10 @@ export async function writeShapeAnnotations(
       for (const mark of shapes) {
         throwIfAborted(context.signal);
         const page = pages[mark.pageIndex];
-        const box = boxesOf(mark)[0];
+        // `boxesOf` answers at least one box or refuses the mark with `selection-empty`.
+        const box = boxesOf(mark)[0] as MarkBox;
         if (page === undefined) {
           throw new ToolError('range-invalid', { engine: 'mupdf', pageIndex: mark.pageIndex });
-        }
-        if (box === undefined) {
-          throw new ToolError('selection-empty', { engine: 'mupdf', pageIndex: mark.pageIndex });
         }
         const subtype = SHAPE_SUBTYPES[mark.shape ?? 'square'];
         if (subtype === undefined) {
@@ -162,7 +160,7 @@ export async function writeShapeAnnotations(
           Type: 'XObject',
           Subtype: 'Form',
           FormType: 1,
-          BBox: [0, 0, (rect[2] ?? 0) - (rect[0] ?? 0), (rect[3] ?? 0) - (rect[1] ?? 0)],
+          BBox: [0, 0, (rect[2] as number) - (rect[0] as number), (rect[3] as number) - (rect[1] as number)],
           Matrix: [1, 0, 0, 1, 0, 0],
           // The stroke's alpha rides the appearance too: pdf.js and PDFium paint the
           // `/AP` and ignore the annotation's `/CA`, so a 40 % rectangle exported opaque.
@@ -246,8 +244,8 @@ export async function writeNoteAnnotations(
         }
         const crop = visibleBox(page);
         const rect = markRect({ ...mark, thickness: 0 }, crop.y + crop.height);
-        const width = (rect[2] ?? 0) - (rect[0] ?? 0);
-        const height = (rect[3] ?? 0) - (rect[1] ?? 0);
+        const width = (rect[2] as number) - (rect[0] as number);
+        const height = (rect[3] as number) - (rect[1] as number);
         const opacity = Math.max(mark.opacity, NOTE_MIN_OPACITY);
         const appearance = doc.addStream(noteAppearance(width, height, hexToRgb(mark.color)), {
           Type: 'XObject',
@@ -301,8 +299,9 @@ export async function writeNoteAnnotations(
  * A note's icon in annotation space: a sheet in the mark's colour with its top-right
  * corner folded, outlined dark enough to read on any page, and three lines of "text".
  */
-function noteAppearance(width: number, height: number, color: readonly number[]): string {
+function noteAppearance(width: number, height: number, color: readonly [number, number, number]): string {
   const num = (value: number) => value.toFixed(3);
+  const [red, green, blue] = color;
   const inset = 0.75;
   const fold = Math.min(width, height) * 0.3;
   const left = inset;
@@ -319,7 +318,7 @@ function noteAppearance(width: number, height: number, color: readonly number[])
   }
   return [
     `/GS0 ${OP.SetGraphicsState}`,
-    `${num(color[0] ?? 1)} ${num(color[1] ?? 1)} ${num(color[2] ?? 0)} rg`,
+    `${num(red)} ${num(green)} ${num(blue)} rg`,
     `0.25 0.25 0.25 ${OP.StrokingColorRgb}`,
     `1 ${OP.SetLineWidth}`,
     `1 ${OP.SetLineJoinStyle}`,
@@ -379,7 +378,7 @@ function nothingToDo(bytes: Uint8Array, step: string): OperationOutcome {
 }
 
 /** The `/L` line for a line annotation, in PDF user space, in drag order. */
-function lineEndpoints(box: MarkBox, pageTop: number): readonly number[] {
+function lineEndpoints(box: MarkBox, pageTop: number): readonly [number, number, number, number] {
   return [box[0], pageTop - box[1], box[2], pageTop - box[3]];
 }
 
@@ -404,8 +403,8 @@ function shapeAppearance(
   stroke: number,
   mark: AnnotationMark,
 ): string {
-  const rectLeft = rect[0] ?? 0;
-  const rectBottom = rect[1] ?? 0;
+  const rectLeft = rect[0] as number;
+  const rectBottom = rect[1] as number;
   const left = Math.min(box[0], box[2]) - rectLeft;
   const right = Math.max(box[0], box[2]) - rectLeft;
   const top = pageTop - Math.min(box[1], box[3]) - rectBottom;
@@ -428,8 +427,8 @@ function shapeAppearance(
     const ry = Math.abs(top - bottom) / 2;
     const vertical = KAPPA * ry;
     const horizontal = KAPPA * rx;
-    const curve = (a: number[]) =>
-      `${num(a[0] ?? 0)} ${num(a[1] ?? 0)} ${num(a[2] ?? 0)} ${num(a[3] ?? 0)} ${num(a[4] ?? 0)} ${num(a[5] ?? 0)} ${OP.AppendBezierCurve}`;
+    const curve = (a: readonly [number, number, number, number, number, number]) =>
+      `${a.map(num).join(' ')} ${OP.AppendBezierCurve}`;
     return [
       header,
       `${num(cx - rx)} ${num(cy)} ${OP.MoveTo}`,
@@ -445,10 +444,10 @@ function shapeAppearance(
 
   if (subtype === 'Line') {
     const endpoints = lineEndpoints(box, pageTop);
-    const x0 = (endpoints[0] ?? 0) - rectLeft;
-    const y0 = (endpoints[1] ?? 0) - rectBottom;
-    const x1 = (endpoints[2] ?? 0) - rectLeft;
-    const y1 = (endpoints[3] ?? 0) - rectBottom;
+    const x0 = endpoints[0] - rectLeft;
+    const y0 = endpoints[1] - rectBottom;
+    const x1 = endpoints[2] - rectLeft;
+    const y1 = endpoints[3] - rectBottom;
     return [
       header,
       `${num(x0)} ${num(y0)} ${OP.MoveTo}`,
@@ -536,7 +535,8 @@ export async function writeStrokeHighlights(
         // thickness would clip its own round caps against the form's `/BBox`.
         const rect = markRect({ ...mark, thickness: stroke }, pageTop);
         const opacity = Math.max(mark.opacity, MIN_OPACITY);
-        const runs = (mark.strokes ?? []).map((run) => [...run]);
+        // `markers` was filtered by `isStrokedHighlight`, so every mark here has strokes.
+        const runs = (mark.strokes as readonly (readonly number[])[]).map((run) => [...run]);
         const quads = markerQuads(runs, pageTop, stroke);
         // `/QuadPoints` is required on a highlight, and a one-point stroke has no
         // segment to follow: the padded rect is the honest answer for it.
@@ -544,14 +544,14 @@ export async function writeStrokeHighlights(
           quads.length > 0
             ? quads
             : [
-                rect[0] ?? 0,
-                rect[3] ?? 0,
-                rect[2] ?? 0,
-                rect[3] ?? 0,
-                rect[0] ?? 0,
-                rect[1] ?? 0,
-                rect[2] ?? 0,
-                rect[1] ?? 0,
+                rect[0] as number,
+                rect[3] as number,
+                rect[2] as number,
+                rect[3] as number,
+                rect[0] as number,
+                rect[1] as number,
+                rect[2] as number,
+                rect[1] as number,
               ];
         const [red, green, blue] = hexToRgb(mark.color);
 
@@ -559,7 +559,7 @@ export async function writeStrokeHighlights(
           Type: 'XObject',
           Subtype: 'Form',
           FormType: 1,
-          BBox: [0, 0, (rect[2] ?? 0) - (rect[0] ?? 0), (rect[3] ?? 0) - (rect[1] ?? 0)],
+          BBox: [0, 0, (rect[2] as number) - (rect[0] as number), (rect[3] as number) - (rect[1] as number)],
           Matrix: [1, 0, 0, 1, 0, 0],
           // `Multiply` is what keeps the page's own dark text readable under the
           // band, and what stops a crossing stroke from darkening where it overlaps
@@ -626,10 +626,11 @@ function markerQuads(runs: readonly (readonly number[])[], pageTop: number, stro
   const quads: number[] = [];
   for (const run of runs) {
     for (let index = 0; index + 3 < run.length; index += 2) {
-      const x0 = run[index] ?? 0;
-      const y0 = run[index + 1] ?? 0;
-      const x1 = run[index + 2] ?? 0;
-      const y1 = run[index + 3] ?? 0;
+      // `index + 3 < run.length` bounds the four reads.
+      const x0 = run[index] as number;
+      const y0 = run[index + 1] as number;
+      const x1 = run[index + 2] as number;
+      const y1 = run[index + 3] as number;
       if (Math.hypot(x1 - x0, y1 - y0) < MIN_QUAD_LENGTH) continue;
       const left = Math.min(x0, x1) - pad;
       const right = Math.max(x0, x1) + pad;
@@ -647,24 +648,25 @@ function markerAppearance(
   rect: readonly number[],
   pageTop: number,
   stroke: number,
-  color: readonly number[],
+  color: readonly [number, number, number],
 ): string {
-  const rectLeft = rect[0] ?? 0;
-  const rectBottom = rect[1] ?? 0;
+  const rectLeft = rect[0] as number;
+  const rectBottom = rect[1] as number;
   const num = (value: number) => value.toFixed(3);
+  const [red, green, blue] = color;
   const buffer = [
     `/GS0 ${OP.SetGraphicsState}`,
     `${num(stroke)} ${OP.SetLineWidth}`,
     `1 ${OP.SetLineCapStyle}`,
     `1 ${OP.SetLineJoinStyle}`,
-    `${num(color[0] ?? 0)} ${num(color[1] ?? 0)} ${num(color[2] ?? 0)} ${OP.StrokingColorRgb}`,
+    `${num(red)} ${num(green)} ${num(blue)} ${OP.StrokingColorRgb}`,
   ];
   for (const run of runs) {
     if (run.length < 2) continue;
     let opened = false;
     for (let index = 0; index + 1 < run.length; index += 2) {
-      const x = (run[index] ?? 0) - rectLeft;
-      const y = pageTop - (run[index + 1] ?? 0) - rectBottom;
+      const x = (run[index] as number) - rectLeft;
+      const y = pageTop - (run[index + 1] as number) - rectBottom;
       buffer.push(`${num(x)} ${num(y)} ${opened ? OP.LineTo : OP.MoveTo}`);
       opened = true;
     }
@@ -672,8 +674,8 @@ function markerAppearance(
       // A lone point is still a mark: repeat it as a zero-length segment, which a
       // round cap paints as the dot the user tapped — without this the annotation
       // exists, its `/QuadPoints` claim the area, and nothing is drawn at all.
-      const x = (run[0] ?? 0) - rectLeft;
-      const y = pageTop - (run[1] ?? 0) - rectBottom;
+      const x = (run[0] as number) - rectLeft;
+      const y = pageTop - (run[1] as number) - rectBottom;
       buffer.push(`${num(x)} ${num(y)} ${OP.LineTo}`);
     }
   }
@@ -838,9 +840,10 @@ export async function writeAnnotationsToFile(
     }
     const groups = new Map<QuarterTurn, { pageIndex: number; id: string }[]>();
     for (const target of targets) {
-      const mark = turned.find((candidate) => candidate.id === target.markId);
-      if (mark === undefined) continue;
-      const rotation: QuarterTurn = mark.rotation ?? 0;
+      // `markerTargets` answers only for the marks it was asked about, and `turned` holds
+      // exactly the marks with a non-zero rotation.
+      const mark = turned.find((candidate) => candidate.id === target.markId) as AnnotationMark;
+      const rotation = mark.rotation as QuarterTurn;
       const group = groups.get(rotation) ?? [];
       group.push(target);
       groups.set(rotation, group);
@@ -918,7 +921,7 @@ export async function writeAnnotationsToFile(
           : 'pdfjs',
       steps,
       notes,
-      inputBytes: handle.pageCount === 0 ? 0 : bytes.byteLength,
+      inputBytes: bytes.byteLength,
       outputBytes: bytes.byteLength,
       pageCount: handle.pageCount,
       incremental:
@@ -930,9 +933,4 @@ export async function writeAnnotationsToFile(
         appended,
     },
   };
-}
-
-/** Kept for callers that only need the `/Subtype` vocabulary. */
-export function ownedSubtypeFor(kind: AnnotationMark['kind']): string | null {
-  return SHAPE_SUBTYPES[kind] ?? null;
 }
