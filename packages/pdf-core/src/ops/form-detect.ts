@@ -69,7 +69,15 @@ import {
   readFormFields,
   readFormWidgets,
 } from './forms';
-import { apply, borrowed, findTables, readPageLayout, rgb, transformBox } from './page-layout';
+import {
+  apply,
+  borrowed,
+  findTables,
+  type LayoutBlock,
+  readPageLayout,
+  rgb,
+  transformBox,
+} from './page-layout';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 export type { CandidateKind, CandidateSource, Confidence } from './form-detect-rules';
@@ -150,18 +158,19 @@ interface Subpath {
 /** A subpath's points in page space, with how many lines and curves it holds. */
 function walkSubpaths(path: Path, ctm: Matrix): Subpath[] {
   const out: Subpath[] = [];
-  let current: Subpath | null = null;
+  // MuPDF opens every path with a `moveTo`, so a line or a curve always extends the last subpath.
+  const last = (): Subpath => out[out.length - 1] as Subpath;
   path.walk({
     moveTo(x, y) {
-      current = { points: [apply(ctm, x, y) as [number, number]], lines: 0, curves: 0 };
-      out.push(current);
+      out.push({ points: [apply(ctm, x, y) as [number, number]], lines: 0, curves: 0 });
     },
     lineTo(x, y) {
-      current?.points.push(apply(ctm, x, y) as [number, number]);
-      if (current !== null) current.lines += 1;
+      const current = last();
+      current.points.push(apply(ctm, x, y) as [number, number]);
+      current.lines += 1;
     },
     curveTo(x1, y1, x2, y2, x3, y3) {
-      if (current === null) return;
+      const current = last();
       current.points.push(
         apply(ctm, x1, y1) as [number, number],
         apply(ctm, x2, y2) as [number, number],
@@ -182,7 +191,10 @@ function boundsOf(points: readonly (readonly [number, number])[]): Box {
 
 /** Whether four or five points walk the outline of an upright rectangle. */
 function isRectangle(points: readonly (readonly [number, number])[]): boolean {
-  const corners = points.length === 5 && samePoint(points[0], points[4]) ? points.slice(0, 4) : points;
+  const corners =
+    points.length === 5 && samePoint(points[0] as [number, number], points[4] as [number, number])
+      ? points.slice(0, 4)
+      : points;
   if (corners.length !== 4) return false;
   for (let index = 0; index < 4; index += 1) {
     const from = corners[index] as readonly [number, number];
@@ -194,11 +206,8 @@ function isRectangle(points: readonly (readonly [number, number])[]): boolean {
   return true;
 }
 
-function samePoint(
-  a: readonly [number, number] | undefined,
-  b: readonly [number, number] | undefined,
-): boolean {
-  return a !== undefined && b !== undefined && Math.abs(a[0] - b[0]) <= 0.3 && Math.abs(a[1] - b[1]) <= 0.3;
+function samePoint(a: readonly [number, number], b: readonly [number, number]): boolean {
+  return Math.abs(a[0] - b[0]) <= 0.3 && Math.abs(a[1] - b[1]) <= 0.3;
 }
 
 /**
@@ -371,7 +380,7 @@ function rasterRules(mupdf: Mupdf, page: Page): HLine[] {
     for (let y = 0; y < height; y += 2) {
       for (let x = 0; x < width; x += 2) {
         const level = pixels[y * stride + x * channels] as number;
-        histogram[level] = (histogram[level] ?? 0) + 1;
+        histogram[level] = (histogram[level] as number) + 1;
       }
     }
     // Otsu: the threshold that separates paper from ink best.
@@ -471,19 +480,20 @@ export function readDetectionPage(mupdf: Mupdf, page: Page): ReadPage {
   const layout = readPageLayout(mupdf, page, { images: false });
   const drawing = readDrawing(mupdf, page, shift);
 
-  const lines = layout.blocks.flatMap((block) =>
-    block.kind === 'text'
-      ? block.lines.map((line) => ({
-          chars: line.chars.map((char): DetectChar => ({ c: char.c, box: char.box, size: char.size })),
-        }))
-      : [],
-  );
+  // `images: false` reads no picture blocks; the filter is what narrows the type.
+  const lines = layout.blocks
+    .filter((block): block is Extract<LayoutBlock, { kind: 'text' }> => block.kind === 'text')
+    .flatMap((block) =>
+      block.lines.map((line) => ({
+        chars: line.chars.map((char): DetectChar => ({ c: char.c, box: char.box, size: char.size })),
+      })),
+    );
   const hasText = lines.some((line) => line.chars.some((char) => char.c.trim() !== ''));
   const hlines: HLine[] = [];
   const vlines: VLine[] = [];
   for (const rule of layout.rulings) {
     if (rule.y0 === rule.y1) hlines.push({ x0: rule.x0, x1: rule.x1, y: rule.y0 });
-    else if (rule.x0 === rule.x1) vlines.push({ x: rule.x0, y0: rule.y0, y1: rule.y1 });
+    else vlines.push({ x: rule.x0, y0: rule.y0, y1: rule.y1 });
   }
   hlines.push(...dottedLines(drawing.dots));
 
@@ -574,8 +584,9 @@ async function existingWidgets(
   for (const field of await readFormWidgets(bytes)) {
     names.add(field.name.toLowerCase());
     for (const widget of field.widgets) {
-      const page = widget.pageIndex === null ? undefined : pages[widget.pageIndex];
-      if (widget.pageIndex === null || page === undefined) continue;
+      // A widget that sits on no page of the document cannot be over a candidate.
+      if (widget.pageIndex === null) continue;
+      const page = pages[widget.pageIndex] as { readonly box: UserBox };
       const list = rects.get(widget.pageIndex) ?? [];
       const [x0, y0, x1, y1] = widget.rect;
       list.push([x0, page.box.y + page.box.height - y1, x1, page.box.y + page.box.height - y0]);
@@ -644,8 +655,7 @@ export async function detectFormFields(bytes: Uint8Array, context: OperationCont
       } finally {
         page.destroy();
       }
-      const pageGeometry = geometry[index];
-      if (pageGeometry === undefined) continue;
+      const pageGeometry = geometry[index] as { box: UserBox; rotation: 0 | 90 | 180 | 270 };
       const groupNames = new Map<string, string>();
       for (const [order, candidate] of raw.entries()) {
         const rect = displayToAppRect(pageGeometry.rotation, pageGeometry.box, candidate.rect);
@@ -782,8 +792,8 @@ export async function createDetectedFields(
         // Option texts must differ: they are what the field's value is read back as.
         const seen = new Set<string>();
         const options = members.map((member, order) => {
-          const base =
-            (member.option ?? '').trim() === '' ? `Option ${order + 1}` : (member.option ?? '').trim();
+          const named = (member.option ?? '').trim();
+          const base = named === '' ? `Option ${order + 1}` : named;
           let option = base;
           for (let count = 2; seen.has(option); count += 1) option = `${base} ${count}`;
           seen.add(option);
@@ -866,8 +876,8 @@ export async function createDetectedFields(
       continue;
     }
     for (const [at, rect] of want.rects.entries()) {
-      const widget = found.widgets[at];
-      if (widget === undefined) continue;
+      // The two lists have the same length (checked above).
+      const widget = found.widgets[at] as (typeof found.widgets)[number];
       const [x, y, w, h] = rect;
       const matches =
         widget.pageIndex === want.pageIndex &&

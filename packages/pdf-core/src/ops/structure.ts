@@ -74,8 +74,10 @@ import {
 import { pageGeometry } from './stamp';
 import {
   applyStructureEdits,
+  elementKids,
   findNode,
   readStructureModel,
+  type StructContent,
   type StructEdit,
   StructEditError,
   type StructNode,
@@ -142,13 +144,11 @@ export function resourceHooks(resources: PDFObject | null): ContentHooks {
       if (xobjects === null) return null;
       const entry = xobjects.get(name);
       if (entry.isNull() || !entry.isStream()) return null;
-      const dict = resolved(entry);
-      if (dict === null) return null;
-      const subtype = nameOf(dict.get('Subtype'));
+      const subtype = nameOf(entry.get('Subtype'));
       if (subtype === 'Image') return { kind: 'image' };
       if (subtype !== 'Form') return { kind: 'other' };
-      const box = readNumbers(dict.get('BBox'));
-      const matrix = readNumbers(dict.get('Matrix'));
+      const box = readNumbers(entry.get('BBox'));
+      const matrix = readNumbers(entry.get('Matrix'));
       const [b0 = 0, b1 = 0, b2 = 0, b3 = 0] = box;
       const [m0 = 1, m1 = 0, m2 = 0, m3 = 1, m4 = 0, m5 = 0] = matrix;
       return {
@@ -242,10 +242,13 @@ function glyphsOf(input: PageTextInput): readonly GlyphRef[] {
       for (const entry of line.words) {
         word += 1;
         for (const glyph of entry.glyphs) {
+          // `buildTextPage` gives every glyph it builds its origin and size (the `Glyph` type
+          // keeps them optional for models made by hand).
+          const origin = glyph.origin as readonly [number, number];
           glyphs.push({
-            x: glyph.origin?.[0] ?? glyph.rect[0],
-            y: glyph.origin?.[1] ?? glyph.rect[3],
-            size: glyph.size ?? Math.max(1, glyph.rect[3] - glyph.rect[1]),
+            x: origin[0],
+            y: origin[1],
+            size: glyph.size as number,
             rect: glyph.rect,
             ch: glyph.ch,
             word,
@@ -417,7 +420,7 @@ function layoutItems(
 
   const items: LayoutItem[] = [];
   for (const [mcid, rect] of rects) {
-    const label = (texts.get(mcid) ?? []).join('').replace(/\s+/g, ' ').trim();
+    const label = (texts.get(mcid) as string[]).join('').replace(/\s+/g, ' ').trim();
     items.push({
       mcid,
       rect,
@@ -473,11 +476,12 @@ export async function readTagCandidates(
   const { doc } = await openForWrite(bytes);
   try {
     const planned = await planPages(doc, bytes, context, options.pageText ?? readPageText);
+    const pageDicts = pageObjects(doc);
     const pages: TagCandidatePage[] = [];
     for (const plan of planned.plans) {
       throwIfAborted(context.signal);
-      const page = pageObjects(doc)[plan.pageIndex];
-      if (page === undefined) continue;
+      // A plan is made per page of this document.
+      const page = pageDicts[plan.pageIndex] as PDFObject;
       const geometry = pageGeometry(page);
       const box = geometry.box;
       const marks = scanContent(plan.scan.bytes, plan.scan.instructions, contentHooks(page));
@@ -505,14 +509,15 @@ export async function readTagCandidates(
           });
           continue;
         }
-        const paint = marks.paints.find((entry) => entry.index === claim.first || entry.index === claim.last);
+        // A figure claim is one image `Do`, and `scanContent` reports a paint for every such `Do`.
+        const paint = marks.paints.find((entry) => entry.index === claim.first) as PaintOp;
         candidates.push({
           id: claim.blockId,
           kind: 'figure',
           role: claim.role,
           text: '',
           alt: claim.alt,
-          rect: paint?.bbox == null ? null : relativeUserRect(box, paint.bbox),
+          rect: paint.bbox === null ? null : relativeUserRect(box, paint.bbox),
         });
       }
       pages.push({
@@ -677,12 +682,10 @@ function handleOf(state: WriteState, key: string): PDFObject {
   const known = state.handles.get(key);
   if (known !== undefined) return known;
   if (key.startsWith('o')) {
-    const number = Number(key.slice(1));
-    if (Number.isInteger(number)) {
-      const handle = state.doc.newIndirect(number);
-      state.handles.set(key, handle);
-      return handle;
-    }
+    // Every key the model gives an indirect element is `o<object number>`.
+    const handle = state.doc.newIndirect(Number(key.slice(1)));
+    state.handles.set(key, handle);
+    return handle;
   }
   throw new StructEditError('missing', `no element with key ${key}`);
 }
@@ -694,15 +697,29 @@ function parentHandle(state: WriteState, parent: StructNode | null): PDFObject {
 /** An explicit `/Pg`, so an element that inherited its page from the parent it leaves keeps it. */
 function pinPage(state: WriteState, element: PDFObject, pageIndex: number | null): void {
   if (pageIndex === null || !element.get('Pg').isNull()) return;
-  const page = state.pages[pageIndex];
-  if (page !== undefined) element.put('Pg', page);
+  // A page index of the model is one of the document's pages.
+  element.put('Pg', state.pages[pageIndex] as PDFObject);
 }
 
 function subtreeContent(node: StructNode, into: { page: number | null; mcid: number }[]): void {
   for (const kid of node.kids) {
     if (kid.kind === 'element') subtreeContent(kid.node, into);
-    else if (kid.item.kind === 'mcid') into.push({ page: kid.item.pageIndex, mcid: kid.item.mcid });
+    else {
+      // `applyStructureEdits` refuses an artifact edit on a subtree that holds an annotation
+      // reference, so what is left here is marked content.
+      const item = kid.item as Extract<StructContent, { kind: 'mcid' }>;
+      into.push({ page: item.pageIndex, mcid: item.mcid });
+    }
   }
+}
+
+/**
+ * The element an edit names, in the model the earlier edits produced. `editStructure` applies
+ * the whole draft to the model (`applyStructureEdits`) before it writes a byte, which refuses a
+ * key that is not there, so every edit finds its element.
+ */
+function located(current: StructureModel, key: string): NonNullable<ReturnType<typeof findNode>> {
+  return findNode(current, key) as NonNullable<ReturnType<typeof findNode>>;
 }
 
 function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel): void {
@@ -730,8 +747,7 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       break;
     }
     case 'move': {
-      const found = findNode(current, edit.key);
-      if (found === null) throw new StructEditError('missing', `no element with key ${edit.key}`);
+      const found = located(current, edit.key);
       const node = handleOf(state, edit.key);
       const from = parentHandle(state, found.parent);
       writeKids(
@@ -749,8 +765,7 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       break;
     }
     case 'group': {
-      const first = findNode(current, edit.keys[0] as string);
-      if (first === null) throw new StructEditError('missing', 'nothing to group');
+      const first = located(current, edit.keys[0] as string);
       const parent = parentHandle(state, first.parent);
       const members = edit.keys.map((key) => handleOf(state, key));
       const entries = kidsOf(parent);
@@ -766,8 +781,7 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       state.handles.set(edit.newKey, wrapper);
       for (const member of inOrder) {
         member.put('P', wrapper);
-        const model = edit.keys.map((key) => findNode(current, key)).find((entry) => entry !== null);
-        pinPage(state, member, model?.node.pageIndex ?? null);
+        pinPage(state, member, first.node.pageIndex);
       }
       const rest = entries.filter((entry) => !inOrder.some((member) => sameObject(entry, member)));
       rest.splice(position, 0, wrapper);
@@ -776,8 +790,7 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       break;
     }
     case 'unwrap': {
-      const found = findNode(current, edit.key);
-      if (found === null) throw new StructEditError('missing', `no element with key ${edit.key}`);
+      const found = located(current, edit.key);
       const node = handleOf(state, edit.key);
       const parent = parentHandle(state, found.parent);
       const entries = kidsOf(parent);
@@ -786,17 +799,15 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       entries.splice(position, 1, ...children);
       writeKids(doc, parent, entries);
       for (const child of children) child.put('P', parent);
-      for (const kid of found.node.kids) {
-        if (kid.kind !== 'element') continue;
-        const child = state.handles.get(kid.node.key) ?? handleOf(state, kid.node.key);
-        pinPage(state, child, kid.node.pageIndex);
+      // An element that owns content cannot be unwrapped, so every kid of `found` is an element.
+      for (const kid of elementKids(found.node)) {
+        pinPage(state, handleOf(state, kid.key), kid.pageIndex);
       }
       state.counts.unwraps += 1;
       break;
     }
     case 'artifact': {
-      const found = findNode(current, edit.key);
-      if (found === null) throw new StructEditError('missing', `no element with key ${edit.key}`);
+      const found = located(current, edit.key);
       const node = handleOf(state, edit.key);
       const parent = parentHandle(state, found.parent);
       writeKids(
@@ -818,8 +829,6 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       state.counts.artifacts += 1;
       break;
     }
-    default:
-      break;
   }
 }
 
@@ -832,8 +841,8 @@ function artifactifyPage(
   pageIndex: number,
   mcids: ReadonlySet<number>,
 ): { readonly replaced: number } {
-  const page = state.pages[pageIndex];
-  if (page === undefined) throw pageOutOfRange(pageIndex, 'mark as artifact');
+  // The page index of an artifact edit is one the model read from this document's pages.
+  const page = state.pages[pageIndex] as PDFObject;
   const content = pageContent(page);
   const instructions = content === null ? null : readInstructions(content.bytes);
   if (content === null || instructions === null) {
@@ -880,7 +889,9 @@ function artifactifyPage(
  * Public: editStructure
  * ------------------------------------------------------------------ */
 
-function toolErrorOf(error: StructEditError): ToolError {
+/** A refused edit as the error the caller sees; anything else is not ours to name and passes through. */
+function refusal(error: unknown): unknown {
+  if (!(error instanceof StructEditError)) return error;
   const code =
     error.reason === 'alt'
       ? 'value-out-of-range'
@@ -929,8 +940,7 @@ export async function editStructure(
     try {
       expected = applyStructureEdits(base, edits);
     } catch (error) {
-      if (error instanceof StructEditError) throw toolErrorOf(error);
-      throw error;
+      throw refusal(error);
     }
     const rootValue = catalogOf(doc).get('StructTreeRoot');
     const state: WriteState = {
@@ -955,8 +965,7 @@ export async function editStructure(
         applyEdit(state, edit, current);
         current = applyStructureEdits(current, [edit]);
       } catch (error) {
-        if (error instanceof StructEditError) throw toolErrorOf(error);
-        throw error;
+        throw refusal(error);
       }
     }
     steps.push('tags');
