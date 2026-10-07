@@ -91,11 +91,10 @@ export function SettingsDialog({
   return (
     <Dialog.Root
       open
-      onOpenChange={(open, details) => {
-        if (!open) {
-          details.cancel();
-          onClose();
-        }
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
+        details.cancel();
+        onClose();
       }}
     >
       <Dialog size="lg" className="pdf-floating-shadow flex max-h-[85vh] w-full flex-col gap-4 p-5">

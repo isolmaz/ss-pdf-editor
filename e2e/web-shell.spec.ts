@@ -1,7 +1,9 @@
 import type { Page } from 'playwright/test';
+import { formatBytes } from '../packages/pdf-core/src/ops/types';
 import { openApp } from './app-helpers';
 import { expect, test } from './test';
-import { labelledPdf } from './tool-fixture';
+import { labelledPdf, toolFixturePdf } from './tool-fixture';
+import { exportBytes, openPdf } from './ui-helpers';
 import { deployableOrigin } from './web-shell-helpers';
 
 /**
@@ -307,4 +309,29 @@ test('without requestIdleCallback or a network the shell still starts, and warms
     window.dispatchEvent(new Event('online'));
   });
   await expect.poll(() => chunks.length, { timeout: 30_000 }).toBeGreaterThan(before);
+});
+
+test('the export dialog gives the size of the document as it stands, not of the file first opened', async ({
+  page,
+}) => {
+  const original = toolFixturePdf();
+  await openPdf(page, 'sized.pdf', original);
+  /** The export dialog offers the document under its current size, then closes again. */
+  const expectSize = async (bytes: number): Promise<void> => {
+    await page.getByRole('button', { name: 'Export Options', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Download / Export' });
+    await expect(dialog.getByRole('radio', { name: `This PDF (${formatBytes(bytes)})` })).toBeChecked();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+  };
+  await expectSize(original.byteLength);
+
+  // Deleting the second page produces a new version of the document.
+  const thumbs = page.getByRole('option');
+  await thumbs.nth(1).hover();
+  await thumbs.nth(1).getByRole('button', { name: 'Delete pages' }).click();
+  await expect(thumbs).toHaveCount(1);
+  const exported = await exportBytes(page, 'one-page.pdf');
+  expect(exported.byteLength).not.toBe(original.byteLength);
+  await expectSize(exported.byteLength);
 });

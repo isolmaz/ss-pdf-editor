@@ -5296,6 +5296,7 @@ export function App({ store }: AppProps) {
                   onNotice={setNotice}
                   onHighlightQuery={(query) => viewerApi.current?.find(query)}
                   onLayersChanged={() => void viewerApi.current?.refreshOptionalContent()}
+                  onExtract={() => openDialog('extract-pages')}
                   onEditOutline={() => openDialog('outline-edit')}
                   onWriteLayers={(request) => void writeLayers(request)}
                   onAddAttachments={(files) => void writeAttachments({ add: files })}
@@ -6221,7 +6222,7 @@ export function App({ store }: AppProps) {
             open={exportModalOpen}
             t={t}
             fileName={activeTab.name}
-            fileSizeFormatted={`${(activeTab.source.master.byteLength / 1024).toFixed(1)} KB`}
+            fileSize={(activeTab.working.produced?.bytes ?? activeTab.source.master).byteLength}
             onClose={() => setExportModalOpen(false)}
             onExport={(opts) => handleExportWithOptions(opts)}
           />

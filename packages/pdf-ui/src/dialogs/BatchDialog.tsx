@@ -861,14 +861,15 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
   return (
     <Dialog.Root
       open={open}
-      onOpenChange={(next, details) => {
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
         // A run in flight has no half-finished file worth showing; cancelling has
         // its own button (`OperationForm.tsx` follows the same rule).
         if (running) {
           details.cancel();
           return;
         }
-        if (!next) onClose();
+        onClose();
       }}
     >
       <Dialog

@@ -399,8 +399,8 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
   return (
     <Dialog.Root
       open
-      onOpenChange={(open, details) => {
-        if (open) return;
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
         details.cancel();
         requestClose();
       }}

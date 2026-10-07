@@ -1,5 +1,6 @@
 import { Dialog } from '@cloudflare/kumo/components/dialog';
 import { X } from '@phosphor-icons/react';
+import { formatBytes } from 'pdf-core/ops/types';
 import type { Translator } from 'pdf-shared';
 import { useId, useState } from 'react';
 import { Button } from '../components/Button';
@@ -13,21 +14,15 @@ export interface ExportOptions {
 
 export interface ExportDialogProps {
   readonly open: boolean;
-  readonly t?: Translator;
+  readonly t: Translator;
   readonly fileName: string;
-  readonly fileSizeFormatted?: string;
+  /** Byte length of the document as it stands: the latest produced version, else the opened file. */
+  readonly fileSize: number;
   readonly onClose: () => void;
   readonly onExport: (options: ExportOptions) => void;
 }
 
-export function ExportDialog({
-  open,
-  t,
-  fileName,
-  fileSizeFormatted = '2.4 KB',
-  onClose,
-  onExport,
-}: ExportDialogProps) {
+export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }: ExportDialogProps) {
   const [selectedKind, setSelectedKind] = useState<ExportOptions['kind']>('pdf');
   const [compressionLevel, setCompressionLevel] = useState<'high' | 'medium' | 'low'>('medium');
   const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png');
@@ -44,38 +39,28 @@ export function ExportDialog({
     onClose();
   };
 
-  const text_ = (key: string, params?: Record<string, string | number>) => {
-    if (!t) return key;
-    return t(key as never, params as never);
-  };
-
   return (
     <Dialog.Root
       open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={() => onClose()}
     >
       <Dialog
         size="base"
         className="flex max-w-md w-full flex-col gap-4 rounded-xl border border-kumo-line bg-kumo-base p-5 pdf-floating-shadow"
       >
-        {/* Header matching Image #3 */}
         <div className="flex items-center justify-between">
-          <Dialog.Title className="text-base font-bold text-kumo-strong">
-            {text_('export.title')}
-          </Dialog.Title>
+          <Dialog.Title className="text-base font-bold text-kumo-strong">{t('export.title')}</Dialog.Title>
           <button
             type="button"
             onClick={onClose}
-            aria-label={text_('op.close')}
+            aria-label={t('op.close')}
             className="flex size-7 items-center justify-center rounded-md text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong transition-colors"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Options list matching Image #3 */}
         <div className="flex flex-col gap-2.5 select-none">
           {/* Option 1: Current PDF */}
           <label
@@ -94,7 +79,7 @@ export function ExportDialog({
                 className="size-4 text-pdf-accent accent-pdf-accent"
               />
               <span className="text-xs font-semibold text-kumo-strong">
-                {text_('export.thisPdf', { size: fileSizeFormatted })}
+                {t('export.thisPdf', { size: formatBytes(fileSize) })}
               </span>
             </div>
             <span className="text-[11px] font-medium text-kumo-subtle truncate max-w-[140px]">
@@ -118,7 +103,7 @@ export function ExportDialog({
                 onChange={() => setSelectedKind('compressed')}
                 className="size-4 text-pdf-accent accent-pdf-accent"
               />
-              <span className="text-xs font-semibold text-kumo-strong">{text_('export.compressed')}</span>
+              <span className="text-xs font-semibold text-kumo-strong">{t('export.compressed')}</span>
             </div>
             <select
               value={compressionLevel}
@@ -127,16 +112,16 @@ export function ExportDialog({
               className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
               onClick={(e) => e.stopPropagation()}
             >
-              <option value="high">{text_('export.levelHigh')}</option>
-              <option value="medium">{text_('export.levelMedium')}</option>
-              <option value="low">{text_('export.levelLow')}</option>
+              <option value="high">{t('export.levelHigh')}</option>
+              <option value="medium">{t('export.levelMedium')}</option>
+              <option value="low">{t('export.levelLow')}</option>
             </select>
           </label>
 
           {/* Section: File Formats */}
           <div className="mt-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-kumo-subtle">
-              {text_('export.fileFormats')}
+              {t('export.fileFormats')}
             </span>
           </div>
 
@@ -156,7 +141,7 @@ export function ExportDialog({
                 onChange={() => setSelectedKind('images')}
                 className="size-4 text-pdf-accent accent-pdf-accent"
               />
-              <span className="text-xs font-semibold text-kumo-strong">{text_('export.imageFormat')}</span>
+              <span className="text-xs font-semibold text-kumo-strong">{t('export.imageFormat')}</span>
             </div>
             <select
               value={imageFormat}
@@ -186,7 +171,7 @@ export function ExportDialog({
                 onChange={() => setSelectedKind('text')}
                 className="size-4 text-pdf-accent accent-pdf-accent"
               />
-              <span className="text-xs font-semibold text-kumo-strong">{text_('export.textFormat')}</span>
+              <span className="text-xs font-semibold text-kumo-strong">{t('export.textFormat')}</span>
             </div>
             <span className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-subtle">
               TXT
@@ -209,13 +194,13 @@ export function ExportDialog({
                 onChange={() => setSelectedKind('office')}
                 className="size-4 text-pdf-accent accent-pdf-accent"
               />
-              <span className="text-xs font-semibold text-kumo-strong">{text_('export.office.option')}</span>
+              <span className="text-xs font-semibold text-kumo-strong">{t('export.office.option')}</span>
             </div>
             <select
               value={officeFormat}
               disabled={selectedKind !== 'office'}
               onChange={(e) => setOfficeFormat(e.target.value as 'docx' | 'xlsx' | 'csv')}
-              aria-label={text_('export.office.format')}
+              aria-label={t('export.office.format')}
               className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
               onClick={(e) => e.stopPropagation()}
             >
@@ -226,7 +211,6 @@ export function ExportDialog({
           </label>
         </div>
 
-        {/* Primary Download Button matching Image #3 */}
         <div className="mt-2">
           <Button
             variant="primary"
@@ -235,14 +219,14 @@ export function ExportDialog({
             className="w-full justify-center bg-pdf-accent text-pdf-on-accent font-semibold py-2.5 rounded-lg shadow-xs hover:opacity-95 transition-opacity"
           >
             {selectedKind === 'pdf'
-              ? text_('export.downloadPdf')
+              ? t('export.downloadPdf')
               : selectedKind === 'compressed'
-                ? text_('export.downloadCompressed')
+                ? t('export.downloadCompressed')
                 : selectedKind === 'images'
-                  ? text_('export.downloadImages')
+                  ? t('export.downloadImages')
                   : selectedKind === 'office'
-                    ? text_('export.office.download')
-                    : text_('export.downloadText')}
+                    ? t('export.office.download')
+                    : t('export.downloadText')}
           </Button>
         </div>
       </Dialog>

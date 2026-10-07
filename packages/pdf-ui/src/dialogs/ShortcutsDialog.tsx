@@ -45,14 +45,12 @@ export function ShortcutsDialog({ t, open, groups, onClose }: ShortcutsDialogPro
   return (
     <Dialog.Root
       open={open}
-      onOpenChange={(next, details) => {
-        if (!next) {
-          // The shell owns the open state (it also owns the focus return), so the
-          // popup's own close is cancelled and the unmount comes from the state —
-          // the same contract `CloseDocumentDialog` follows.
-          details.cancel();
-          onClose();
-        }
+      onOpenChange={(_open, details) => {
+        // The shell owns the open state (it also owns the focus return; there is no
+        // trigger), so the popup only ever asks to close: its own close is cancelled and
+        // the unmount comes from the state — the same contract `CloseDocumentDialog` follows.
+        details.cancel();
+        onClose();
       }}
     >
       <Dialog
