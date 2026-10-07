@@ -30,17 +30,32 @@ test('PageDown, PageUp, End and Home move through the pages and the page field f
 test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 change the zoom the status bar reports', async ({ page }) => {
   await openApp(page, 'zoom.pdf', labelledPdf('Zoom', 1), { advanced: false });
   const zoom = (value: RegExp) => page.getByRole('button', { name: value });
+  // The scale pdf.js draws the pages at (its `--scale-factor` is in CSS pixels per point).
+  const drawn = () =>
+    page.evaluate(() => {
+      const viewer = document.querySelector('.pdfViewer[data-active-viewer]');
+      if (viewer === null) return Number.NaN;
+      const factor = Number.parseFloat(getComputedStyle(viewer).getPropertyValue('--scale-factor'));
+      return Math.round(((factor * 72) / 96) * 100);
+    });
+  // A document opens at fit width, and the status bar reports the scale it is drawn at.
+  // On a 1440 px window that is not 100%: before, the open reset the report to 100% after
+  // the viewer had already applied fit width.
+  const fit = await drawn();
+  expect(fit).not.toBe(100);
+  await expect(zoom(new RegExp(`^Fit Width \\(${fit}%\\)$`))).toBeVisible();
+  await page.keyboard.press('Control+1');
   await expect(zoom(/^Fit Width \(100%\)$/)).toBeVisible();
+  expect(await drawn()).toBe(100);
   await page.keyboard.press('Control+=');
   await expect(zoom(/^Fit Width \(125%\)$/)).toBeVisible();
   await page.keyboard.press('Control+-');
   await page.keyboard.press('Control+-');
   await expect(zoom(/^Fit Width \(75%\)$/)).toBeVisible();
-  await page.keyboard.press('Control+1');
-  await expect(zoom(/^Fit Width \(100%\)$/)).toBeVisible();
+  expect(await drawn()).toBe(75);
   await page.keyboard.press('Control+0');
-  // Fit width on a 1440 px wide window is not the 100% of before.
-  await expect(zoom(/^Fit Width \((?!100%)\d+%\)$/)).toBeVisible();
+  await expect(zoom(new RegExp(`^Fit Width \\(${fit}%\\)$`))).toBeVisible();
+  expect(await drawn()).toBe(fit);
 });
 
 test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, Escape closes it', async ({

@@ -2065,7 +2065,8 @@ export function App({ store }: AppProps) {
           if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
         }
         setCurrentPage(0);
-        setZoomState(1);
+        // No zoom reset here: the viewer reports the scale it draws the new document at
+        // (fit width), and a reset after the awaits above would overwrite that report.
         setSelectedPages([]);
         setRedactionMarks([]);
         if (fileVerdict.kind === 'warn') setNotice(t('limit.warn.pages'));
@@ -2229,7 +2230,6 @@ export function App({ store }: AppProps) {
       setShowHomeScreen(false);
       await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
       setCurrentPage(0);
-      setZoomState(1);
     },
     [draftStorage, store, tier],
   );
