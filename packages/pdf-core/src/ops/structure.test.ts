@@ -1152,7 +1152,10 @@ describe('editStructure: refusals', () => {
         [{ op: 'move', key: keyOfRole(model, 'P'), parentKey: direct, index: 0 }],
         run,
       ),
-    ).rejects.toMatchObject({ code: 'selection-empty' });
+    ).rejects.toMatchObject({
+      code: 'unsupported',
+      details: { engineMessage: expect.stringMatching(/^not-editable: /) },
+    });
   });
 
   it('refuses a draft the model refuses, with the reason as its message', async () => {

@@ -619,6 +619,14 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
         if (target === holder && parent !== holder) {
           throw new StructEditError('root', 'nothing is moved above the document element');
         }
+        // The move rewrites the /K of the parent it leaves and of the one it joins; an
+        // element the writer cannot address (a direct one) can be neither. The holder is
+        // not written as an element, so moves among the top-level elements stay allowed.
+        for (const changed of [parent, target]) {
+          if (changed !== holder && !changed.editable) {
+            throw new StructEditError('not-editable', `${changed.key} cannot take or give up children`);
+          }
+        }
         const from = rawIndexOf(parent, node.key);
         parent.kids.splice(from, 1);
         const at = rawPositionForElementIndex(target, edit.index);
@@ -632,6 +640,10 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
         const first = find(edit.keys[0] as string);
         const parent = first.parent;
         if (parent === null) throw new StructEditError('root', 'the root cannot be grouped');
+        // The wrapper replaces the members in the parent's /K, which must be writable.
+        if (parent !== holder && !parent.editable) {
+          throw new StructEditError('not-editable', `${parent.key} cannot take a new group`);
+        }
         const members: MutableNode[] = [];
         for (const key of edit.keys) {
           const located = find(key);

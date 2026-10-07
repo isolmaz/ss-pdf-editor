@@ -437,8 +437,10 @@ test('an element that is a direct object is listed but cannot be changed or drag
   await expect(page.getByTestId('tags-up')).toBeDisabled();
   await expect(page.getByTestId('tags-down')).toBeDisabled();
   await expect(page.getByTestId('tags-indent')).toBeDisabled();
-  // A drop onto it from another row is still a drop into a parent that exists, so nothing is blocked there;
-  // the element itself stays where it is.
+  // Nothing can be dropped into it either: its /K cannot be rewritten. Before, the drop was
+  // taken into the draft and Apply then failed with an unrelated "Select pages first.".
+  await rowOf(page, 'H1').dragTo(direct, { targetPosition: { x: 40, y: 10 } });
+  await expect(notice(page, 'That element cannot be changed here.')).toBeVisible();
   expect(await draftCount(page)).toBe(0);
 });
 
