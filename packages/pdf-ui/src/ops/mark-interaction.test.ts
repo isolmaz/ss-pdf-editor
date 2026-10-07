@@ -293,6 +293,15 @@ describe('the hit tests — reach and degenerate shapes', () => {
     expect(targetMarqueeHit(diagonal, [60, 20, 80, 40])).toBe(false);
   });
 
+  it('selects a hairline that only grazes one corner of the marquee, whichever corner it is', () => {
+    // y = x − 20 meets [40 40 60 60] at its corner (60, 40) and nowhere else; both ends are outside.
+    expect(targetMarqueeHit(stroke(0, [50, 30, 70, 50]), [40, 40, 60, 60])).toBe(true);
+    // y = −x + 80 meets it at (40, 40) only.
+    expect(targetMarqueeHit(stroke(0, [30, 50, 50, 30]), [40, 40, 60, 60])).toBe(true);
+    // The same line moved a point away misses.
+    expect(targetMarqueeHit(stroke(0, [51, 30, 71, 50]), [40, 40, 60, 60])).toBe(false);
+  });
+
   it('marquees only the page the rectangle was drawn on', () => {
     const here = target({ key: 'annotation:h', id: 'h', pageIndex: 2 });
     expect(marqueeTargets([here], [{ pageIndex: 3, rect: [0, 0, 1000, 1000] }])).toEqual([]);
