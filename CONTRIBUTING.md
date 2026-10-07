@@ -63,7 +63,10 @@ add `--no-deps` (`pnpm e2e e2e/offline.spec.ts --no-deps`); without it the whole
 - A guard against a misbehaving engine or a hostile file stays even when no real file reaches
   it, and is tested by fault injection: a `*.faults.test.ts` next to the operation wraps
   `loadMupdf` in a proxy that makes the engine misbehave at the step under test (see
-  `packages/pdf-core/src/ops/structure.faults.test.ts`). Code that nothing can reach is
+  `packages/pdf-core/src/ops/structure.faults.test.ts`). In the browser, `e2e/engine-faults.ts`
+  does the same for the running app: it serves MuPDF through a wrapper and wraps pdf.js's
+  worker, so a spec can make one named engine call fail, or hold it to stage a race, and
+  assert what the user sees and that the file is unchanged. Code that nothing can reach is
   deleted instead; coverage-ignore comments are not used.
 - Update the affected documentation in the same commit.
 

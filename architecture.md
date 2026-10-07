@@ -1937,8 +1937,9 @@ The simple/advanced switch is a **discovery filter, not a permission system**
 (`interface-mode.ts`): it decides which commands the palette and menus offer, which tool
 groups are shown and which dock tabs appear. Nothing is removed from the build and no
 keyboard shortcut stops working, because a mode that silently disabled a capability would
-turn a preference into a bug report. The preference persists in `localStorage` and
-announces itself on `window`, so every surface reacts without prop drilling.
+turn a preference into a bug report. The preference persists in `localStorage`; the shell
+reads it once, changes it in one place (`changeMode`: Settings, and the palette's "Advanced
+mode" button), and hands it to every surface as a prop.
 
 ### 8.7 The mark selection and the one removal intent
 
