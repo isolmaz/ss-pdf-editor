@@ -304,6 +304,87 @@ describe('how a signature is paired with its bytes', () => {
   });
 });
 
+describe('a signed file larger than 16 MiB', () => {
+  /** The four numbers the file itself spells out in the signature's /ByteRange. */
+  const writtenRange = (bytes: Uint8Array): number[] => {
+    const found = /\/ByteRange \[(\d+) (\d+) (\d+) (\d+)\]/.exec(latin1(bytes.subarray(0, 4096)));
+    if (found === null) throw new Error('no /ByteRange written');
+    return found.slice(1).map(Number);
+  };
+
+  it('is verified against the exact signed bytes although the engine reads its /ByteRange as 32-bit floats', async () => {
+    const signer = await identity();
+    // 17 MiB of filler after the signature dictionary: the last range number is far past 2^24.
+    // That size makes the number odd, so a 32-bit float cannot hold it (the engine rounds it).
+    const filler = new Uint8Array(17 * 1024 * 1024);
+    const bytes = await signedPdf(cmsBy(signer), {
+      extraObjects: [
+        { number: 6, body: `<< /Length ${filler.length} >>\nstream\n${latin1(filler)}\nendstream` },
+      ],
+    });
+    const [, , , length2] = writtenRange(bytes);
+    expect(bytes.length).toBeGreaterThan(2 ** 24);
+    expect(Math.fround(length2 ?? 0)).not.toBe(length2);
+    expect(await onlyVerdict(bytes)).toMatchObject({
+      integrity: 'valid',
+      coverage: 'covers-whole-document',
+      changesAfterSigning: 0,
+    });
+  }, 30_000);
+
+  it('reads a byte flipped in the far part of such a file as invalid', async () => {
+    const signer = await identity();
+    const filler = new Uint8Array(17 * 1024 * 1024);
+    const bytes = await signedPdf(cmsBy(signer), {
+      extraObjects: [
+        { number: 6, body: `<< /Length ${filler.length} >>\nstream\n${latin1(filler)}\nendstream` },
+      ],
+    });
+    const tampered = bytes.slice();
+    tampered[tampered.length - 1000] = 0x01;
+    expect(await onlyVerdict(tampered)).toMatchObject({
+      integrity: 'invalid',
+      coverage: 'covers-whole-document',
+    });
+  }, 30_000);
+});
+
+describe('signatures whose /ByteRange the engine cannot tell apart', () => {
+  // 17000000 and 17000001 are the same 32-bit float: the object graph reads both as 17000000.
+  const dictionary = (last: number): string =>
+    `<< /Type /Sig /SubFilter /adbe.pkcs7.detached /ByteRange [0 10 20000000 ${last}] /Contents <00> >>`;
+
+  it('pairs neither of two signatures whose ranges round to the same float, and leaves both unchecked', async () => {
+    const bytes = formFile({
+      fields: '[10 0 R 11 0 R]',
+      objects: [
+        { number: 10, body: '<< /T (first) /FT /Sig /V 20 0 R >>' },
+        { number: 11, body: '<< /T (second) /FT /Sig /V 21 0 R >>' },
+        { number: 20, body: dictionary(17_000_000) },
+        { number: 21, body: dictionary(17_000_001) },
+      ],
+    });
+    expect(await verdictsOf(bytes)).toMatchObject([
+      { fieldName: 'first', integrity: 'unchecked', reasonKey: REASON.layout, coverage: 'unknown' },
+      { fieldName: 'second', integrity: 'unchecked', reasonKey: REASON.layout, coverage: 'unknown' },
+    ]);
+  });
+
+  it('pairs a signature whose range is repeated exactly in another dictionary of the file', async () => {
+    const bytes = formFile({
+      fields: '[10 0 R]',
+      objects: [
+        { number: 10, body: '<< /T (first) /FT /Sig /V 20 0 R >>' },
+        { number: 20, body: dictionary(17_000_000) },
+        { number: 21, body: dictionary(17_000_000) },
+      ],
+    });
+    expect(await verdictsOf(bytes)).toMatchObject([
+      { fieldName: 'first', integrity: 'unchecked', reasonKey: REASON.der, coverage: 'unknown' },
+    ]);
+  });
+});
+
 describe('revisions after the signature', () => {
   it('counts the revisions appended after a signature and reports the range as covering part of the file', async () => {
     const signer = await identity();

@@ -1143,9 +1143,25 @@ function tlvBytes(der: Uint8Array, tlv: Tlv): Uint8Array {
   return der.subarray(tlv.start, tlv.start + tlv.headerLength + tlv.length);
 }
 
-/** The four ByteRange integers are identical — the object graph's and the file's. */
+/** The four ByteRange integers are identical. */
 function sameRange(left: ByteRangeTuple, right: ByteRangeTuple): boolean {
   return left[0] === right[0] && left[1] === right[1] && left[2] === right[2] && left[3] === right[3];
+}
+
+/**
+ * The scanned range a field's `/ByteRange` stands for. The object graph hands numbers over as
+ * 32-bit floats, so above 2^24 (a file of more than 16 MiB) an integer comes back rounded to
+ * the nearest float; the file's own digits are exact, and they are what gets hashed. A field is
+ * paired with the scanned range whose four numbers round to what the object graph read. When
+ * no scanned range does, or when ranges that differ round alike (two candidates the object
+ * graph cannot tell apart), nothing is paired and the signature stays unchecked.
+ */
+function pairedRange(scanned: readonly ByteRangeTuple[], read: ByteRangeTuple): ByteRangeTuple | null {
+  const candidates = scanned.filter((entry) =>
+    entry.every((number, index) => Math.fround(number) === read[index]),
+  );
+  const [first] = candidates;
+  return first !== undefined && candidates.every((entry) => sameRange(entry, first)) ? first : null;
 }
 
 /**
@@ -1434,13 +1450,13 @@ export async function verifySignatures(
 
     const contents = field.contents;
     const range = field.byteRange;
-    // A raw entry is only accepted when the four numbers are identical to the object
-    // graph's: a dictionary that arrived inside an object stream carries numbers for a
-    // file this scan never saw, and hashing those ranges would be nonsense.
-    const match = range === null ? undefined : scanned.find((entry) => sameRange(entry, range));
+    // A raw entry is only accepted when its four numbers are the ones the object graph read
+    // (to float precision): a dictionary that arrived inside an object stream carries numbers
+    // for a file this scan never saw, and hashing those ranges would be nonsense.
+    const match = range === null ? null : pairedRange(scanned, range);
     if (field.subFilter === TIMESTAMP_SUBFILTER) {
       results.push(
-        await verifyTimestampEntry(bytes, field, match ?? null, revisions, {
+        await verifyTimestampEntry(bytes, field, match, revisions, {
           roots,
           crls: options.crls ?? [],
           dss,
@@ -1517,7 +1533,7 @@ export async function verifySignatures(
       evidence,
     };
 
-    results.push(await verifyOne(bytes, field, facts, match ?? null, revisions));
+    results.push(await verifyOne(bytes, field, facts, match, revisions));
   }
   return results;
 }
