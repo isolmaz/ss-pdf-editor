@@ -2186,6 +2186,15 @@ export function isAbort(error: unknown): error is Error {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+/**
+ * What a writer throws for an error caught around engine work: the caller's own abort passes
+ * through untouched, a `ToolError` already says what failed, anything else is MuPDF's and is
+ * mapped with the step (`context`) that was running.
+ */
+export function engineFailure(error: unknown, context: string): Error {
+  return isAbort(error) ? error : mapMupdfError(error, context);
+}
+
 /** The image `Do` operators of one page, with the alt text their XObject already carries. */
 export function figureClaims(
   page: PDFObject,

@@ -42,9 +42,9 @@
  */
 
 import type { PDFDocument, PDFObject } from 'mupdf';
-import { ToolError } from 'pdf-shared';
-import { hexStringToLatin1, loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
+import { hexStringToLatin1, loadMupdf, openPdf } from '../engines/mupdf';
 import { readName, resolved } from '../engines/mupdf-write';
+import { engineFailure } from './accessibility';
 import { nameOf, numberOf, type Operand, scanContent } from './pdfa-content';
 import { NS_DC, NS_PDF, NS_XMP, parseXmp, type XmpPacket, xmpList, xmpText } from './pdfa-xmp';
 import { throwIfAborted } from './types';
@@ -362,7 +362,8 @@ function checkBytes(bytes: Uint8Array, findings: Findings): void {
     while (index < bytes.length && (bytes[index] === 10 || bytes[index] === 13)) index += 1;
     const comment = bytes[index] === 0x25;
     let high = 0;
-    for (let at = index + 1; comment && at < index + 1 + 4; at += 1) if ((bytes[at] ?? 0) > 127) high += 1;
+    for (let at = index + 1; comment && at < index + 1 + 4; at += 1)
+      if ((bytes[at] as number) > 127) high += 1;
     if (!comment || high < 4) findings.add('header', { detail: 'no binary comment on the second line' });
   }
 
@@ -536,7 +537,7 @@ function checkOutputIntents(
       findings.add('output-intent', { detail: 'the profile has no ICC signature' });
       continue;
     }
-    const major = header[8] ?? 0;
+    const major = header[8] as number;
     const deviceClass = String.fromCharCode(...header.subarray(12, 16));
     const colourSpace = String.fromCharCode(...header.subarray(16, 20)).trim();
     if (major > 4) findings.add('output-intent', { detail: `ICC version ${major}` });
@@ -1263,20 +1264,11 @@ export async function checkPdfA(
 ): Promise<PdfACheckReport> {
   if (signal !== undefined) throwIfAborted(signal);
   const mupdf = await loadMupdf();
-  let doc: PDFDocument;
-  try {
-    doc = openPdf(mupdf, bytes);
-  } catch (error) {
-    if (error instanceof ToolError && error.code !== 'internal') {
-      throw error;
-    }
-    throw mapMupdfError(error, 'pdfa check');
-  }
+  const doc = openPdf(mupdf, bytes);
   try {
     return await run(doc, bytes, options, signal);
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
-    throw mapMupdfError(error, 'pdfa check');
+    throw engineFailure(error, 'pdfa check');
   } finally {
     doc.destroy();
   }

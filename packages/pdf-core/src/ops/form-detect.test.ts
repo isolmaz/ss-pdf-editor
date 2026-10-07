@@ -249,7 +249,7 @@ describe('createDetectedFields', () => {
     // Created fields are not proposed again, and are counted instead.
     const again = await detectFormFields(out.bytes, run);
     expect(again.candidates).toEqual([]);
-    expect(again.alreadyFields).toBeGreaterThanOrEqual(5);
+    expect(again.alreadyFields).toBe(candidates.length);
   });
 
   it('places fields on a turned page by its user-space frame and draws them upright with /MK /R', async () => {

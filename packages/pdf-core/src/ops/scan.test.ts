@@ -110,8 +110,13 @@ describe('scanPagesToPdf', () => {
     // And an aborted signal stops it before any work.
     const controller = new AbortController();
     controller.abort();
+    const progress: unknown[] = [];
     await expect(
-      scanPagesToPdf({ pages: [good], pageSize: 'a4' }, { signal: controller.signal }),
-    ).rejects.toThrow();
+      scanPagesToPdf(
+        { pages: [good], pageSize: 'a4' },
+        { signal: controller.signal, onProgress: (entry) => progress.push(entry) },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(progress).toEqual([]);
   });
 });

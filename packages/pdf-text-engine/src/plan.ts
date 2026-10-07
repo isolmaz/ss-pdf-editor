@@ -252,8 +252,7 @@ function mergeOverlapping(rects: readonly Rect[]): readonly Rect[] {
   for (const rect of rects) {
     let current = rect;
     for (let index = merged.length - 1; index >= 0; index -= 1) {
-      const other = merged[index];
-      if (other === undefined) continue;
+      const other = merged[index] as Rect;
       const overlaps =
         other[0] <= current[2] && current[0] <= other[2] && other[1] <= current[3] && current[1] <= other[3];
       if (!overlaps) continue;

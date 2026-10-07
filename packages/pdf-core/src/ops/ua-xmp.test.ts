@@ -93,4 +93,81 @@ describe('ua-xmp', () => {
   it('refuses to edit a packet with no description', () => {
     expect(editUaPacket(packet(''), { title: 'T' })).toBeNull();
   });
+
+  it('decodes numeric and hexadecimal character references and leaves an unknown named one as written', () => {
+    const text = packet(
+      '<rdf:Description dc:title="A&#x41;&#66;&copy;&amp;" xmlns:dc="http://purl.org/dc/elements/1.1/"/>',
+    );
+    expect(readXmpTitle(text)).toBe('AAB&copy;&');
+  });
+
+  it('reads an empty title attribute as no title, and an element title in every shape', () => {
+    expect(readXmpTitle(packet('<rdf:Description dc:title=" "/>'))).toBeNull();
+    // No x-default entry: the first list item is the title.
+    expect(
+      readXmpTitle(
+        packet(
+          '<dc:title><rdf:Alt><rdf:li xml:lang="de">Erste</rdf:li><rdf:li xml:lang="fr">Seconde</rdf:li></rdf:Alt></dc:title>',
+        ),
+      ),
+    ).toBe('Erste');
+    // No list at all: the element's own text.
+    expect(readXmpTitle(packet('<dc:title>Plain <b>text</b></dc:title>'))).toBe('Plain text');
+  });
+
+  it('drops control characters from a written title, keeping tab and line breaks', () => {
+    const text = buildUaPacket({ title: 'a\u0001b\tc\nd\re\u001ff' });
+    expect(readXmpTitle(text)).toBe('ab\tc\nd\ref');
+  });
+
+  it('writes only the part when no title is given, in a fresh packet and in an edited one', () => {
+    const fresh = buildUaPacket({ uaPart: 1 });
+    expect(readUaPart(fresh)).toBe(1);
+    expect(readXmpTitle(fresh)).toBeNull();
+    const edited = editUaPacket(packet('<rdf:Description rdf:about=""></rdf:Description>'), { uaPart: 1 });
+    expect(readUaPart(edited as string)).toBe(1);
+    expect(readXmpTitle(edited as string)).toBeNull();
+    expect(reread(edited as string).wellFormed).toBe(true);
+  });
+
+  it('replaces a title written as an attribute of the description', () => {
+    const edited = editUaPacket(
+      packet(
+        '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:title="Old &amp; gray"/>',
+      ),
+      { title: 'New <one>' },
+    );
+    expect(edited).not.toBeNull();
+    expect(readXmpTitle(edited as string)).toBe('New <one>');
+    expect(edited as string).not.toContain('Old');
+    expect(reread(edited as string).wellFormed).toBe(true);
+  });
+
+  it('does not repeat a namespace declaration the description already has', () => {
+    const edited = editUaPacket(
+      packet(
+        `<rdf:Description rdf:about="" xmlns:dc="${DC}" xmlns:pdfuaid="${NS_PDFUAID}"></rdf:Description>`,
+      ),
+      { title: 'T', uaPart: 1 },
+    );
+    const text = edited as string;
+    expect(text.match(/xmlns:dc=/g)).toHaveLength(1);
+    expect(text.match(/xmlns:pdfuaid=/g)).toHaveLength(1);
+    expect(readXmpTitle(text)).toBe('T');
+    expect(readUaPart(text)).toBe(1);
+  });
+
+  it('keeps the about attribute of a self-closing description', () => {
+    const edited = editUaPacket(packet('<rdf:Description rdf:about="uuid:1"/>'), { title: 'T' });
+    expect(edited as string).toContain('rdf:about="uuid:1"');
+    expect((edited as string).match(/rdf:about=/g)).toHaveLength(1);
+    expect(reread(edited as string).wellFormed).toBe(true);
+  });
+
+  it('refuses a packet whose description is eaten by the title it replaces, or is never closed', () => {
+    const swallowed = packet('<dc:title><rdf:Description rdf:about=""/></dc:title>');
+    expect(editUaPacket(swallowed, { title: 'T', uaPart: 1 })).toBeNull();
+    const unclosed = packet('<rdf:Description rdf:about="">');
+    expect(editUaPacket(unclosed, { title: 'T' })).toBeNull();
+  });
 });

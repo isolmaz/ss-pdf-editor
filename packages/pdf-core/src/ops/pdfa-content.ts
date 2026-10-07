@@ -42,7 +42,7 @@ class Reader {
   skipSpace(): void {
     const { bytes } = this;
     while (this.position < bytes.length) {
-      const byte = bytes[this.position] ?? NUL;
+      const byte = bytes[this.position] as number;
       if (WHITESPACE.has(byte)) this.position += 1;
       else if (byte === 0x25) {
         while (this.position < bytes.length && bytes[this.position] !== 10 && bytes[this.position] !== 13) {
@@ -55,11 +55,11 @@ class Reader {
   /** The run of regular characters starting here. */
   word(): string {
     const start = this.position;
-    while (this.position < this.bytes.length && isRegular(this.bytes[this.position] ?? NUL))
+    while (this.position < this.bytes.length && isRegular(this.bytes[this.position] as number))
       this.position += 1;
     let text = '';
     for (let index = start; index < this.position; index += 1)
-      text += String.fromCharCode(this.bytes[index] ?? 0);
+      text += String.fromCharCode(this.bytes[index] as number);
     return text;
   }
 
@@ -77,7 +77,7 @@ class Reader {
     let depth = 1;
     const { bytes } = this;
     while (this.position < bytes.length && depth > 0) {
-      const byte = bytes[this.position] ?? NUL;
+      const byte = bytes[this.position] as number;
       if (byte === 0x5c) this.position += 2;
       else {
         if (byte === 0x28) depth += 1;
@@ -100,7 +100,7 @@ class Reader {
   object(depth: number): { operand: Operand } | { keyword: string } | null {
     this.skipSpace();
     if (this.done) return null;
-    const byte = this.bytes[this.position] ?? NUL;
+    const byte = this.bytes[this.position] as number;
     if (depth > MAX_DEPTH) {
       this.position += 1;
       return { operand: { t: 'null' } };
@@ -140,7 +140,6 @@ class Reader {
       const items: Operand[] = [];
       for (;;) {
         this.skipSpace();
-        if (this.done) break;
         if (this.bytes[this.position] === 0x5d) {
           this.position += 1;
           break;
@@ -157,10 +156,6 @@ class Reader {
       return { operand: { t: 'null' } };
     }
     const word = this.word();
-    if (word === '') {
-      this.position += 1;
-      return { operand: { t: 'null' } };
-    }
     if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(word)) return { operand: { t: 'num', v: Number.parseFloat(word) } };
     if (word === 'true') return { operand: { t: 'bool', v: true } };
     if (word === 'false') return { operand: { t: 'bool', v: false } };

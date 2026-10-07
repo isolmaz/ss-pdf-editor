@@ -312,10 +312,7 @@ function createPrintOcg(doc: PDFDocument): PDFObject {
     Usage: { Print: { PrintState: 'OFF' } },
   });
 
-  const catalog = resolved(doc.getTrailer().get('Root'));
-  if (catalog === null) {
-    throw new ToolError('corrupt-document', { engine: 'mupdf', engineMessage: 'document has no /Root' });
-  }
+  const catalog = doc.getTrailer().get('Root').resolve();
   if (resolved(catalog.get('OCProperties'))?.isDictionary() !== true) {
     catalog.put('OCProperties', doc.addObject({}));
   }
@@ -346,6 +343,21 @@ interface WatermarkImage {
   readonly width: number;
   readonly height: number;
 }
+
+/** What the run embedded once, before the pages: a picture, or the text face. */
+type Drawing =
+  | { readonly kind: 'image'; readonly image: WatermarkImage; readonly options: WatermarkOptions }
+  | { readonly kind: 'text'; readonly font: EmbeddedFace };
+
+/** What a stamp draws on one page: a picture, or text in the embedded face. */
+type StampSubject =
+  | { readonly kind: 'image'; readonly image: WatermarkImage; readonly options: WatermarkOptions }
+  | {
+      readonly kind: 'text';
+      readonly font: EmbeddedFace;
+      readonly text: string;
+      readonly options: StampOptions;
+    };
 
 /** Embed a PNG or JPEG as an image XObject (alpha becomes its `/SMask`). */
 function embedImage(mupdf: Mupdf, doc: PDFDocument, bytes: Uint8Array, name: string): WatermarkImage {
@@ -403,17 +415,15 @@ function frameMatrix(degrees: number, origin: { readonly x: number; readonly y: 
 function pageOperators(
   doc: PDFDocument,
   page: PDFObject,
-  options: StampOptions,
-  font: EmbeddedFace | undefined,
-  image: WatermarkImage | undefined,
-  text: string | undefined,
+  subject: StampSubject,
   propertyKey: string | undefined,
 ): string {
   const geometry = pageGeometry(page);
   const operators: string[] = [];
   if (propertyKey !== undefined) operators.push(`/OC /${propertyKey} BDC`);
 
-  if (options.kind === 'watermark' && image !== undefined) {
+  if (subject.kind === 'image') {
+    const { image, options } = subject;
     const width = requireRange(options.scale, 0.05, 5, 'scale') * geometry.display.width;
     const height = width * (image.height / image.width);
     const userRotation = geometry.rotation + options.rotationDegrees;
@@ -435,12 +445,7 @@ function pageOperators(
     return operators.join('\n');
   }
 
-  if (font === undefined || text === undefined) {
-    throw new ToolError('internal', {
-      engine: 'model',
-      engineMessage: 'stamp content without a font or text',
-    });
-  }
+  const { font, text, options } = subject;
 
   /**
    * The size, by kind. A header/footer states its own point size; a watermark
@@ -559,18 +564,19 @@ async function stampOpened(
     });
   }
 
-  const needsText = options.kind !== 'watermark' || options.text !== undefined;
-  const font = needsText ? await embedNotoSans(mupdf, doc) : undefined;
   if ('fontSize' in options) requireRange(options.fontSize, 4, 200, 'fontSize');
   if (options.kind !== 'watermark') requireRange(options.marginMm, 0, 100, 'marginMm');
   else requireRange(options.opacity, 0, 1, 'opacity');
 
-  let image: WatermarkImage | undefined;
+  // The picture watermark is the only stamp without text: everything else needs the face.
+  let drawing: Drawing;
   if (options.kind === 'watermark' && options.image !== undefined) {
-    image = embedImage(mupdf, doc, options.image.bytes, options.image.name);
+    const { bytes: imageBytes, name } = options.image;
+    drawing = { kind: 'image', image: embedImage(mupdf, doc, imageBytes, name), options };
     steps.push('image');
-    notes.push(note('changed', 'op.note.stamp.imageEmbedded', { name: options.image.name }));
-  } else if (font !== undefined) {
+    notes.push(note('changed', 'op.note.stamp.imageEmbedded', { name }));
+  } else {
+    drawing = { kind: 'text', font: await embedNotoSans(mupdf, doc) };
     steps.push('font');
   }
 
@@ -589,12 +595,12 @@ async function stampOpened(
 
   for (const [index, pageIndex] of stampPages.entries()) {
     throwIfAborted(context.signal);
-    const page = pages[pageIndex];
-    if (page === undefined) throw new ToolError('range-invalid', { engine: 'model', pageIndex });
+    // `orderedPages` has checked every index against the page count.
+    const page = pages[pageIndex] as PDFObject;
     const geometry = pageGeometry(page);
     if (geometry.rotation !== 0) rotatedPages += 1;
 
-    let text: string | undefined;
+    let text = '';
     if (options.kind === 'bates') {
       text = batesText(options.prefix, options.startAt + index, Math.max(1, Math.floor(options.digits)));
     } else if (options.kind === 'header-footer') {
@@ -613,10 +619,11 @@ async function stampOpened(
       emptyFileToken ||= filled.usedEmptyFile;
       text = filled.text;
     } else {
-      text = options.text;
+      // The picture watermark draws no text.
+      text = options.text ?? '';
     }
 
-    if (text !== undefined && text.trim() === '') {
+    if (drawing.kind === 'text' && text.trim() === '') {
       throw new ToolError('selection-empty', {
         engine: 'model',
         engineMessage: 'stamp text resolved to an empty string',
@@ -625,7 +632,8 @@ async function stampOpened(
 
     const propertyKey =
       printOcg === undefined ? undefined : addPageResource(doc, page, 'Properties', 'OC', printOcg);
-    appendPageContent(doc, page, pageOperators(doc, page, options, font, image, text, propertyKey));
+    const subject: StampSubject = drawing.kind === 'image' ? drawing : { ...drawing, text, options };
+    appendPageContent(doc, page, pageOperators(doc, page, subject, propertyKey));
     context.onProgress?.({
       phase: 'stamp',
       labelKey: 'op.progress.stamp',
@@ -636,12 +644,14 @@ async function stampOpened(
   steps.push('stamp');
 
   throwIfAborted(context.signal);
-  if (font !== undefined) subsetEmbeddedFaces(mupdf, doc, [font]);
+  if (drawing.kind === 'text') subsetEmbeddedFaces(mupdf, doc, [drawing.font]);
   const out = saveRewrite(doc, 'stamp');
   steps.push('save');
 
   notes.push(note('changed', 'op.note.stamp.drawn', { count: stampPages.length }));
-  if (font !== undefined) notes.push(note('changed', 'op.note.stamp.fontEmbedded', { font: font.name }));
+  if (drawing.kind === 'text') {
+    notes.push(note('changed', 'op.note.stamp.fontEmbedded', { font: drawing.font.name }));
+  }
   if (rotatedPages > 0) notes.push(note('preserved', 'op.note.stamp.rotateAware', { count: rotatedPages }));
   if (options.kind === 'watermark') notes.push(note('changed', 'op.note.stamp.overContent'));
   if (emptyFileToken) notes.push(note('warning', 'op.note.stamp.fileTokenEmpty'));

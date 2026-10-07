@@ -259,11 +259,17 @@ describe('xfa operations', () => {
     const stale = await editWidgets(await xfaPdf({ kind: 'static' }), { 'Name[0]': 'Yeni Değer' });
     const revisions = await withPdf(stale, (doc) => doc.countVersions());
     const synced = await syncXfaDatasets(stale);
-    expect(synced.changed).toBeGreaterThan(0);
+    // Two fields differ from the datasets: Name (edited) and Birth (its widget was never filled, the datasets say 2000-01-01).
+    expect(synced.changed).toBe(2);
     expect(synced.bytes.length).toBeGreaterThan(stale.length);
     expect(synced.bytes.subarray(0, stale.length)).toEqual(stale);
     expect(await withPdf(synced.bytes, (doc) => doc.countVersions())).toBe(revisions + 1);
-    expect((await xfaTexts(synced.bytes)).datasets).toContain('<Name>Yeni Değer</Name>');
+    const datasets = (await xfaTexts(synced.bytes)).datasets as string;
+    expect(datasets).toContain('<Name>Yeni Değer</Name>');
+    expect(datasets).toContain('<Birth/>');
+    // The checkbox and the field the form has no widget for are left alone.
+    expect(datasets).toContain('<Agree>0</Agree>');
+    expect(datasets).toContain('<City>Ankara</City>');
   });
 
   it('syncs only the fields a fill touched, and a form-panel fill reaches the datasets', async () => {

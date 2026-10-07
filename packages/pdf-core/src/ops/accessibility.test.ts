@@ -6,8 +6,9 @@
  * written as a name instead of text.
  */
 
+import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { checkAccessibility, setImageAlt, tagDocument } from './accessibility';
+import { checkAccessibility, engineFailure, setImageAlt, tagDocument } from './accessibility';
 
 const run = { signal: new AbortController().signal };
 
@@ -175,5 +176,25 @@ describe('accessibility', () => {
     await expect(
       setImageAlt(await fixture(), [{ kind: 'image', pageIndex: 0, name: 'Im1', alt: ' ' }], run),
     ).rejects.toMatchObject({ code: 'value-out-of-range' });
+  });
+});
+
+describe('engineFailure', () => {
+  it("hands back the caller's abort and a ToolError as they are, and maps anything else with the step that was running", () => {
+    const abort = new Error('operation aborted');
+    abort.name = 'AbortError';
+    expect(engineFailure(abort, 'step')).toBe(abort);
+    const known = new ToolError('corrupt-document', { engine: 'mupdf', engineMessage: 'broken' });
+    expect(engineFailure(known, 'step')).toBe(known);
+    const mapped = engineFailure(new Error('cannot open file'), 'check things');
+    expect(mapped).toBeInstanceOf(ToolError);
+    expect(mapped).toMatchObject({
+      code: 'corrupt-document',
+      details: { engineMessage: 'check things: cannot open file' },
+    });
+    expect(engineFailure('plain text', 'step')).toMatchObject({
+      code: 'internal',
+      details: { engineMessage: 'step: plain text' },
+    });
   });
 });

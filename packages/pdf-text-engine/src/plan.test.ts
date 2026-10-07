@@ -67,6 +67,26 @@ const LIST = Array.from(
 );
 
 describe('planTextEdit with a wider substitute face', () => {
+  it('deletes a block that has no lines with an empty erase list and no insert', () => {
+    const hollow = { ...block('b0', ['x']), lines: [] };
+    expect(planTextEdit({ page: pageOf(hollow), blockId: 'b0', replacement: '  ' }, WIDER)).toEqual({
+      erase: [],
+      insert: [],
+      fonts: {},
+    });
+  });
+
+  it('refuses an edit of a block the page does not have, naming the block and the page', () => {
+    const attempt = () =>
+      planTextEdit({ page: pageOf(block('b0', LIST)), blockId: 'b9', replacement: 'x' }, WIDER);
+    expect(attempt).toThrow(
+      expect.objectContaining({
+        code: 'range-invalid',
+        details: expect.objectContaining({ pageIndex: 0, engineMessage: 'block b9' }),
+      }),
+    );
+  });
+
   it('keeps every line the reader kept on one line on one line, the edited one included', () => {
     const list = block('b0', LIST);
     const edited = LIST.map((text, index) => (index === 2 ? 'EDITED line' : text)).join('\n');
@@ -282,9 +302,41 @@ describe('planTextEdit box fitting and justification', () => {
     for (const line of lines) expect(line.x + (line.width ?? 0)).toBeLessThanOrEqual(list.rect[2] + 0.01);
   });
 
-  it('carries word placements for justified text only', () => {
-    const words = 'one two three four';
-    expect(run([own()], { align: 'justify' }, words)[0]?.words).toBeDefined();
-    expect(run([own()], { align: 'left' }, words)[0]?.words).toBeUndefined();
+  it('carries stretched word placements on every full line of a justified paragraph, and natural ones on its last', () => {
+    const list = own();
+    const text = 'aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll';
+    const lines = run([list], { align: 'justify' }, text);
+    // The box keeps its width (234 pt; the paragraph is longer than 1.25 lines): seven 4-letter words are 34 glyphs of 6.36 pt, an eighth word would not fit.
+    expect(lines.map((line) => line.text)).toEqual([
+      'aaaa bbbb cccc dddd eeee ffff gggg',
+      'hhhh iiii jjjj kkkk llll',
+    ]);
+    const glyph = SIZE * 0.53;
+    const placed = lines.map((line) => line.words ?? []);
+    expect(placed.map((row) => row.map((word) => word.text))).toEqual(
+      lines.map((line) => line.text.split(' ')),
+    );
+    const edge = list.rect[2];
+    // First line: starts at the box's left edge, the last word ends on the right edge, and the gaps are equal.
+    const first = placed[0] ?? [];
+    expect(first[0]?.x).toBeCloseTo(list.rect[0], 6);
+    const lastWord = first.at(-1);
+    expect((lastWord?.x ?? 0) + (lastWord?.text.length ?? 0) * glyph).toBeCloseTo(edge, 2);
+    const gaps = first.slice(1).map((word, index) => {
+      const before = first[index];
+      return word.x - ((before?.x ?? 0) + (before?.text.length ?? 0) * glyph);
+    });
+    for (const gap of gaps) expect(gap).toBeCloseTo(gaps[0] ?? 0, 2);
+    // Stretched: wider than the natural single space.
+    expect(gaps[0]).toBeGreaterThan(glyph);
+    // Last line: natural positions, one space glyph between words, ending short of the edge.
+    const last = placed[1] ?? [];
+    expect(last[0]?.x).toBeCloseTo(list.rect[0], 6);
+    expect(last[1]?.x).toBeCloseTo(list.rect[0] + 4 * glyph + glyph, 6);
+    expect(last[2]?.x).toBeCloseTo(list.rect[0] + 2 * (4 * glyph + glyph), 6);
+    // Any other alignment is drawn whole.
+    for (const align of ['left', 'right', 'center'] as const) {
+      for (const line of run([list], { align }, text)) expect(line.words).toBeUndefined();
+    }
   });
 });

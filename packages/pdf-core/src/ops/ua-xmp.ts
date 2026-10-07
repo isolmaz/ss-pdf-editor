@@ -34,7 +34,7 @@ function decodeEntities(value: string): string {
 function escapeXml(value: string): string {
   let clean = '';
   for (const char of value) {
-    const code = char.codePointAt(0) ?? 0;
+    const code = char.codePointAt(0) as number;
     if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue;
     clean += char;
   }

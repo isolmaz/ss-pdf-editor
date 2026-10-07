@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import type { PDFObject } from 'mupdf';
 import { createTranslator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { stampDocument } from './stamp';
+import { displayToUserPoint, geometryOf, pageGeometry, type StampOptions, stampDocument } from './stamp';
 
 const run = { signal: new AbortController().signal };
 
@@ -30,6 +30,24 @@ async function twoPages(): Promise<Uint8Array> {
   doc.insertPage(0, doc.addPage([0, 0, 595, 842], 0, {}, ''));
   doc.insertPage(1, doc.addPage([0, 0, 595, 842], 90, {}, ''));
   doc.setMetaData('info:Title', 'Çeyrek Rapor');
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/**
+ * Pages that already carry text ("Existing {n}" in Helvetica at 100,700 of the unrotated page), one
+ * per rotation, with no Info dictionary at all.
+ */
+async function textPages(rotations: readonly (0 | 90 | 180 | 270)[], title?: string): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = new mupdf.PDFDocument();
+  const font = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+  for (const [index, rotation] of rotations.entries()) {
+    const contents = `BT /F1 24 Tf 100 700 Td (Existing ${index + 1}) Tj ET`;
+    doc.insertPage(index, doc.addPage([0, 0, 595, 842], rotation, { Font: { F1: font } }, contents));
+  }
+  if (title !== undefined) doc.setMetaData('info:Title', title);
   const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
   doc.destroy();
   return bytes;
@@ -141,7 +159,7 @@ describe('stampDocument', () => {
 
   it('draws a see-through text watermark and keeps what was on the page', async () => {
     const out = await stampDocument(
-      await twoPages(),
+      await textPages([0, 0]),
       {
         kind: 'watermark',
         pages: [0],
@@ -156,7 +174,8 @@ describe('stampDocument', () => {
       run,
     );
     const page = await lines(out.bytes, 0);
-    expect(page.lines.map((line) => line.text)).toEqual(['GİZLİ']);
+    // The text that was on the page is still extracted, next to the watermark that was drawn over it.
+    expect(page.lines.map((line) => line.text).sort()).toEqual(['Existing 1', 'GİZLİ']);
     const alpha = await withDoc(out.bytes, (doc) => {
       const states = doc.findPage(0).get('Resources').resolve().get('ExtGState').resolve();
       const found: number[] = [];
@@ -167,7 +186,7 @@ describe('stampDocument', () => {
     });
     expect(alpha).toHaveLength(1);
     expect(alpha[0]).toBeCloseTo(0.3, 5);
-    expect((await lines(out.bytes, 1)).lines).toEqual([]);
+    expect((await lines(out.bytes, 1)).lines.map((line) => line.text)).toEqual(['Existing 2']);
     // Every report line reads as a sentence: the producer note once printed `{producer}`.
     const say = createTranslator();
     for (const entry of out.report.notes) expect(say(entry.key, entry.params)).not.toMatch(/\{[a-zA-Z]+\}/);
@@ -325,5 +344,371 @@ describe('stampDocument', () => {
         run,
       ),
     ).rejects.toMatchObject({ code: 'range-invalid' });
+  });
+});
+
+const footer = (overrides: Record<string, unknown> = {}) =>
+  ({
+    kind: 'header-footer',
+    pages: [0],
+    anchor: 'bottom-center',
+    template: 'Footer',
+    startAt: 1,
+    fontSize: 12,
+    marginMm: 10,
+    skipFirst: false,
+    ...overrides,
+  }) as unknown as StampOptions;
+
+const textWatermark = (overrides: Record<string, unknown> = {}) =>
+  ({
+    kind: 'watermark',
+    pages: [0],
+    text: 'DRAFT',
+    opacity: 1,
+    rotationDegrees: 0,
+    scale: 0.5,
+    tile: false,
+    tileSpacing: 50,
+    noPrint: false,
+    ...overrides,
+  }) as unknown as StampOptions;
+
+const imageWatermark = (
+  image: { bytes: Uint8Array; name: string },
+  overrides: Record<string, unknown> = {},
+) =>
+  ({
+    kind: 'watermark',
+    pages: [0],
+    image,
+    opacity: 1,
+    rotationDegrees: 0,
+    scale: 0.5,
+    tile: false,
+    tileSpacing: 50,
+    noPrint: false,
+    ...overrides,
+  }) as unknown as StampOptions;
+
+describe('page geometry', () => {
+  const box = { x: 10, y: 20, width: 300, height: 400 };
+
+  it('maps a displayed point back into user space for each of the four rotations', () => {
+    expect(displayToUserPoint(geometryOf(0, box), 5, 7)).toEqual({ x: 15, y: 27 });
+    expect(displayToUserPoint(geometryOf(90, box), 5, 7)).toEqual({ x: 10 + 300 - 7, y: 20 + 5 });
+    expect(displayToUserPoint(geometryOf(180, box), 5, 7)).toEqual({ x: 10 + 300 - 5, y: 20 + 400 - 7 });
+    expect(displayToUserPoint(geometryOf(270, box), 5, 7)).toEqual({ x: 10 + 7, y: 20 + 400 - 5 });
+  });
+
+  it('normalises any multiple of 90, negative ones included, and swaps the displayed size on a quarter turn', () => {
+    expect(geometryOf(-90, box)).toMatchObject({ rotation: 270, display: { width: 400, height: 300 } });
+    expect(geometryOf(450, box)).toMatchObject({ rotation: 90, display: { width: 400, height: 300 } });
+    expect(geometryOf(180, box)).toMatchObject({ rotation: 180, display: { width: 300, height: 400 } });
+  });
+
+  it('reads /Rotate and the CropBox of a page dictionary, and treats a missing /Rotate as upright', async () => {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 600, 800], 0, {}, ''));
+    doc.insertPage(1, doc.addPage([0, 0, 600, 800], 270, {}, ''));
+    doc.findPage(1).put('CropBox', [100, 100, 500, 700]);
+    doc.insertPage(2, doc.addPage([0, 0, 600, 800], 0, {}, ''));
+    doc.findPage(2).put('Rotate', doc.newString('sideways'));
+    try {
+      // A /Rotate that is not a number is no rotation.
+      expect(pageGeometry(doc.findPage(2)).rotation).toBe(0);
+      expect(pageGeometry(doc.findPage(0))).toEqual({
+        rotation: 0,
+        box: { x: 0, y: 0, width: 600, height: 800 },
+        display: { width: 600, height: 800 },
+      });
+      expect(pageGeometry(doc.findPage(1))).toEqual({
+        rotation: 270,
+        box: { x: 100, y: 100, width: 400, height: 600 },
+        display: { width: 600, height: 400 },
+      });
+    } finally {
+      doc.destroy();
+    }
+  });
+});
+
+describe('stampDocument placement and content', () => {
+  beforeEach(() => {
+    const font = notoRegular();
+    vi.stubGlobal('fetch', async () => new Response(font));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('puts each anchor in its own corner of the displayed page, the margin away from the edges', async () => {
+    const margin = 10 * (72 / 25.4);
+    const place = async (anchor: string) => {
+      const out = await stampDocument(await textPages([0]), footer({ anchor }), run);
+      const page = await lines(out.bytes, 0);
+      const found = page.lines.find((line) => line.text === 'Footer');
+      if (found === undefined) throw new Error('no footer line');
+      return { ...found.bbox, pageWidth: page.width, pageHeight: page.height };
+    };
+    const left = await place('top-left');
+    expect(left.x).toBeCloseTo(margin, 0);
+    expect(left.y).toBeGreaterThan(margin - 2);
+    expect(left.y).toBeLessThan(margin + 4);
+    const topCentre = await place('top-center');
+    expect(Math.abs(topCentre.x + topCentre.w / 2 - 595 / 2)).toBeLessThan(1);
+    expect(topCentre.y).toBeLessThan(margin + 4);
+    const bottomLeft = await place('bottom-left');
+    expect(bottomLeft.x).toBeCloseTo(margin, 0);
+    expect(bottomLeft.y + bottomLeft.h).toBeGreaterThan(842 - margin - 4);
+    const bottomRight = await place('bottom-right');
+    expect(Math.abs(bottomRight.x + bottomRight.w - (595 - margin))).toBeLessThan(3);
+    const centre = await place('center');
+    expect(Math.abs(centre.x + centre.w / 2 - 595 / 2)).toBeLessThan(1);
+    expect(Math.abs(centre.y + centre.h / 2 - 842 / 2)).toBeLessThan(2);
+  });
+
+  it('keeps the footer horizontal and in the bottom band of pages turned 180 and 270 degrees, and leaves their text alone', async () => {
+    const out = await stampDocument(await textPages([180, 270]), footer({ pages: [0, 1] }), run);
+    for (const pageIndex of [0, 1]) {
+      const page = await lines(out.bytes, pageIndex);
+      const found = page.lines.find((line) => line.text === 'Footer');
+      if (found === undefined) throw new Error('no footer line');
+      expect(found.bbox.w).toBeGreaterThan(found.bbox.h);
+      expect(found.bbox.x + found.bbox.w / 2).toBeCloseTo(page.width / 2, -1);
+      expect(found.bbox.y + found.bbox.h).toBeLessThan(page.height);
+      expect(found.bbox.y).toBeGreaterThan(page.height - 60);
+      expect(page.lines.some((line) => line.text === `Existing ${pageIndex + 1}`)).toBe(true);
+    }
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.stamp.rotateAware')?.params).toEqual({
+      count: 2,
+    });
+  });
+
+  it('draws a see-through image watermark through a graphics state, and an opaque one without any', async () => {
+    const image = { bytes: await redSquarePng(), name: 'logo.png' };
+    const seeThrough = await stampDocument(await twoPages(), imageWatermark(image, { opacity: 0.4 }), run);
+    const opacities = await withDoc(seeThrough.bytes, (doc) => {
+      const states = doc.findPage(0).get('Resources').resolve().get('ExtGState').resolve();
+      const found: number[] = [];
+      states.forEach((value: PDFObject) => {
+        found.push(value.resolve().get('ca').asNumber());
+      });
+      return found;
+    });
+    expect(opacities).toHaveLength(1);
+    expect(opacities[0]).toBeCloseTo(0.4, 5);
+    const operators = await withDoc(seeThrough.bytes, (doc) => {
+      const contents = doc.findPage(0).get('Contents').resolve();
+      return contents
+        .get(contents.length - 1)
+        .readStream()
+        .asString();
+    });
+    expect(operators).toMatch(/^q\n\/GS\d* gs\n[-\d. ]+ cm\n\/Watermark\d* Do\nQ\n$/);
+
+    const opaque = await stampDocument(await twoPages(), imageWatermark(image), run);
+    const opaqueOperators = await withDoc(opaque.bytes, (doc) => {
+      const contents = doc.findPage(0).get('Contents').resolve();
+      return contents
+        .get(contents.length - 1)
+        .readStream()
+        .asString();
+    });
+    expect(opaqueOperators).toMatch(/^q\n[-\d. ]+ cm\n\/Watermark\d* Do\nQ\n$/);
+  });
+
+  it('embeds a JPEG watermark, and tiles an image watermark at the requested spacing', async () => {
+    const mupdf = await import('mupdf');
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 16, 16], false);
+    pixmap.clear(60);
+    const jpeg = new Uint8Array(pixmap.asJPEG(90, false));
+    pixmap.destroy();
+    const out = await stampDocument(
+      await twoPages(),
+      imageWatermark({ bytes: jpeg, name: 'logo.jpg' }, { tile: true, tileSpacing: 100, scale: 0.1 }),
+      run,
+    );
+    const facts = await withDoc(out.bytes, (doc) => {
+      const contents = doc.findPage(0).get('Contents').resolve();
+      const operators = contents
+        .get(contents.length - 1)
+        .readStream()
+        .asString();
+      const xobjects = doc.findPage(0).get('Resources').resolve().get('XObject').resolve();
+      const filters: string[] = [];
+      xobjects.forEach((value: PDFObject) => {
+        const image = value.resolve();
+        if (image.get('Subtype').asName() === 'Image') filters.push(image.get('Filter').asName());
+      });
+      return { draws: operators.split('Do').length - 1, filters };
+    });
+    // 100 mm = 283.5 pt: 2 columns × 2 rows (595/283.5 and 842/283.5 floor to 2) on the page, and the JPEG is stored as DCT.
+    expect(facts).toEqual({ draws: 4, filters: ['DCTDecode'] });
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.stamp.imageEmbedded')?.params).toEqual({
+      name: 'logo.jpg',
+    });
+  });
+
+  it('refuses a watermark image that is neither PNG nor JPEG, naming the file, and one whose PNG data is cut off', async () => {
+    await expect(
+      stampDocument(
+        await twoPages(),
+        imageWatermark({ bytes: Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8, 9), name: 'logo.gif' }),
+        run,
+      ),
+    ).rejects.toMatchObject({ code: 'unsupported', details: { path: 'logo.gif' } });
+    const truncatedPng = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0);
+    await expect(
+      stampDocument(await twoPages(), imageWatermark({ bytes: truncatedPng, name: 'broken.png' }), run),
+    ).rejects.toMatchObject({ code: 'internal', details: { engine: 'mupdf' } });
+  });
+
+  it('wraps a text watermark of a no-print group in marked content and registers the group once', async () => {
+    const out = await stampDocument(await twoPages(), textWatermark({ noPrint: true, opacity: 0.5 }), run);
+    expect(out.report.steps).toEqual(['load', 'font', 'ocg', 'stamp', 'save']);
+    const operators = await withDoc(out.bytes, (doc) => {
+      const contents = doc.findPage(0).get('Contents').resolve();
+      return contents
+        .get(contents.length - 1)
+        .readStream()
+        .asString();
+    });
+    expect(operators.startsWith('/OC /OC')).toBe(true);
+    expect(operators).toMatch(/BDC\nq\n\/GS\d* gs\nBT\n/);
+    expect(operators.endsWith('EMC\n')).toBe(true);
+  });
+
+  it('adds its optional-content group to the groups a document already declares', async () => {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 595, 842], 0, {}, ''));
+    const existing = doc.addObject({ Type: 'OCG', Name: doc.newString('Existing layer') });
+    doc
+      .getTrailer()
+      .get('Root')
+      .put('OCProperties', doc.addObject({ OCGs: [existing], D: { Order: [existing], ON: [existing] } }));
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const out = await stampDocument(bytes, textWatermark({ noPrint: true }), run);
+    const names = await withDoc(out.bytes, (read) => {
+      const groups = read.getTrailer().get('Root', 'OCProperties').resolve().get('OCGs').resolve();
+      const found: string[] = [];
+      for (let index = 0; index < groups.length; index += 1) {
+        found.push(groups.get(index).resolve().get('Name').asString());
+      }
+      return found;
+    });
+    expect(names).toEqual(['Existing layer', 'SsPdfEditor no-print stamp']);
+  });
+
+  it('uses the first-page template on page one only, and warns when {file} resolves to nothing', async () => {
+    const out = await stampDocument(
+      await textPages([0, 0]),
+      footer({ pages: [0, 1], template: 'Page {page} of {total} {file}', firstPageTemplate: 'Cover {file}' }),
+      run,
+    );
+    expect((await lines(out.bytes, 0)).lines.map((line) => line.text)).toContain('Cover ');
+    expect((await lines(out.bytes, 1)).lines.map((line) => line.text)).toContain('Page 2 of 2 ');
+    expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.stamp.fileTokenEmpty');
+  });
+
+  it('reads {file} from an Info dictionary that has a title, and treats an Info without a title as empty', async () => {
+    const titled = await stampDocument(
+      await textPages([0], 'Annual Report'),
+      footer({ template: 'File {file}' }),
+      run,
+    );
+    expect((await lines(titled.bytes, 0)).lines.map((line) => line.text)).toContain('File Annual Report');
+    expect(titled.report.notes.map((entry) => entry.key)).not.toContain('op.note.stamp.fileTokenEmpty');
+
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument((await textPages([0])).slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    doc.setMetaData('info:Author', 'Someone');
+    const authored = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const untitled = await stampDocument(authored, footer({ template: 'File {file}' }), run);
+    expect(untitled.report.notes.map((entry) => entry.key)).toContain('op.note.stamp.fileTokenEmpty');
+  });
+});
+
+describe('stampDocument refusals', () => {
+  beforeEach(() => {
+    const font = notoRegular();
+    vi.stubGlobal('fetch', async () => new Response(font));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('refuses an empty page selection and a selection of only the skipped first page', async () => {
+    await expect(stampDocument(await twoPages(), footer({ pages: [] }), run)).rejects.toMatchObject({
+      code: 'selection-empty',
+      details: { engineMessage: 'no pages to stamp' },
+    });
+    await expect(
+      stampDocument(await twoPages(), footer({ pages: [0], skipFirst: true }), run),
+    ).rejects.toMatchObject({
+      code: 'selection-empty',
+      details: { engineMessage: 'every selected page was skipped' },
+    });
+  });
+
+  it('refuses numbers outside their range with value-out-of-range, naming the field', async () => {
+    const cases: [StampOptions, string][] = [
+      [footer({ fontSize: 2 }), 'fontSize must be between 4 and 200'],
+      [footer({ marginMm: 101 }), 'marginMm must be between 0 and 100'],
+      [textWatermark({ opacity: 1.5 }), 'opacity must be between 0 and 1'],
+      [textWatermark({ scale: 9 }), 'scale must be between 0.05 and 5'],
+      [textWatermark({ tile: true, tileSpacing: 2 }), 'tileSpacing must be between 5 and 500'],
+      [footer({ fontSize: Number.NaN }), 'fontSize must be between 4 and 200'],
+    ];
+    for (const [options, message] of cases) {
+      await expect(stampDocument(await twoPages(), options, run)).rejects.toMatchObject({
+        code: 'value-out-of-range',
+        details: { engineMessage: message },
+      });
+    }
+  });
+
+  it('refuses a watermark with neither text nor image, and one with both', async () => {
+    const image = { bytes: await redSquarePng(), name: 'logo.png' };
+    await expect(
+      stampDocument(await twoPages(), textWatermark({ text: undefined }), run),
+    ).rejects.toMatchObject({
+      code: 'unsupported',
+      details: { engineMessage: 'watermark needs text or an image' },
+    });
+    await expect(stampDocument(await twoPages(), textWatermark({ image }), run)).rejects.toMatchObject({
+      code: 'unsupported',
+      details: { engineMessage: 'watermark takes either text or an image, not both' },
+    });
+  });
+
+  it('refuses stamp text that resolves to nothing, and a text with no measurable width', async () => {
+    await expect(stampDocument(await twoPages(), footer({ template: '  ' }), run)).rejects.toMatchObject({
+      code: 'selection-empty',
+      details: { engineMessage: 'stamp text resolved to an empty string' },
+    });
+    await expect(
+      stampDocument(await twoPages(), textWatermark({ text: '\u200B' }), run),
+    ).rejects.toMatchObject({
+      code: 'unsupported',
+      details: { engineMessage: 'watermark text has no measurable width' },
+    });
+  });
+
+  it('stops with an AbortError, not a tool error, when the signal aborts between pages', async () => {
+    const controller = new AbortController();
+    await expect(
+      stampDocument(await twoPages(), footer({ pages: [0, 1] }), {
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (progress.done === 1) controller.abort();
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
