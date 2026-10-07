@@ -45,7 +45,7 @@ export interface PdfUaViewProps {
   readonly t: Translator;
   readonly read: (context: OperationContext) => Promise<Uint8Array>;
   /** The interface language, offered as the default for the document language. Never guessed. */
-  readonly language?: string;
+  readonly language: string;
   /** The document can be changed (not a read-only session). */
   readonly canEdit: boolean;
   readonly onGoToPage?: (pageIndex: number) => void;
@@ -294,7 +294,7 @@ export function PdfUaView({
       }
       case 'lang': {
         const id = 'lang';
-        const fallback = current.lang ?? language ?? '';
+        const fallback = current.lang ?? language;
         return (
           <div className="flex flex-col gap-1">
             <InlineFix

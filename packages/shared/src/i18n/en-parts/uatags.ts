@@ -441,7 +441,6 @@ export const uatagsPart = {
   'tags.untagged.figure': '[image]',
   'tags.untagged.skipped': '{count} block(s) on this page cannot be tagged.',
   'tags.untagged.artifactPaths': 'Mark drawn lines and backgrounds as artifacts',
-  'tags.untagged.noLanguage': 'The file has no language and none will be written.',
   'tags.untagged.language': 'Language {lang} is written when the file has none.',
   'tags.untagged.apply': 'Tag document',
 

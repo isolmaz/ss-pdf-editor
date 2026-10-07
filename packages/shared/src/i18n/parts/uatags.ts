@@ -442,7 +442,6 @@ export const uatagsPart = {
   'tags.untagged.figure': '[görsel]',
   'tags.untagged.skipped': 'Bu sayfadaki {count} blok etiketlenemiyor.',
   'tags.untagged.artifactPaths': 'Çizilen çizgileri ve arka planları artefakt olarak işaretle',
-  'tags.untagged.noLanguage': 'Dosyanın dili yok ve hiçbir dil yazılmayacak.',
   'tags.untagged.language': 'Dosyada dil yoksa {lang} yazılır.',
   'tags.untagged.apply': 'Belgeyi etiketle',
 

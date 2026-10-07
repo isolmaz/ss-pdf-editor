@@ -93,7 +93,6 @@ export const a11yPart = {
   'panel.a11y.notChecked': 'Unaudited items',
   'panel.a11y.notes': 'Notes from this operation',
   'panel.a11y.tag': 'Tag document',
-  'panel.a11y.noLanguage': 'No language provided: /Lang will not be written and the report will state this.',
   'panel.a11y.alt': 'Figure alt text',
   'panel.a11y.alt.empty': 'No rendered figures found in this document.',
   'panel.a11y.alt.target': '{name} · page {pages}',

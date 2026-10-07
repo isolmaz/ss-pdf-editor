@@ -5754,7 +5754,7 @@ export function App({ store }: AppProps) {
                         read={currentBytes}
                         // The document's own language cannot be guessed; the interface's is
                         // what the shell knows, and the report says which one it wrote.
-                        language="tr-TR"
+                        language={locale}
                         currentPage={currentPage}
                         canEdit={canEdit}
                         onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}

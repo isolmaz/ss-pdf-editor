@@ -117,7 +117,6 @@ export const a11yPart = {
   'panel.a11y.notChecked': 'Bakılmayanlar',
   'panel.a11y.notes': 'Bu yazma işleminin notları',
   'panel.a11y.tag': 'Belgeyi etiketle',
-  'panel.a11y.noLanguage': 'Dil verilmedi: /Lang yazılmayacak ve rapor bunu söyleyecek.',
   'panel.a11y.alt': 'Görsel alt metinleri',
   'panel.a11y.alt.empty': 'Bu belgede çizilen görsel bulunamadı.',
   'panel.a11y.alt.target': '{name} · {pages}. sayfa',

@@ -644,7 +644,7 @@ test.describe('a file with no tags', () => {
     await expect(page.locator('[data-tags-mode="untagged"]')).toBeVisible();
     await expect(page.getByText('This file has no tags.')).toBeVisible();
     await expect(page.getByText('Page 1 of 2')).toBeVisible();
-    await expect(page.getByText('Language tr-TR is written when the file has none.')).toBeVisible();
+    await expect(page.getByText('Language en is written when the file has none.')).toBeVisible();
     await expect(page.getByText(/Page 2 not tagged: content stream unreadable/)).toBeVisible();
     const items = page.locator('[data-plan-id]');
     await expect(items).toHaveCount(4);
@@ -680,7 +680,8 @@ test.describe('a file with no tags', () => {
     await page.locator('[data-tags-apply]').click();
     await expect(notice(page, /Accessibility tagging applied to document/)).toBeVisible({ timeout: 60_000 });
     const produced = await readTags(await exportBytes(page, 'tagged.pdf'));
-    expect(produced.lang).toBe('tr-TR');
+    // The interface's language: the document had none.
+    expect(produced.lang).toBe('en');
     const roles = flatten(produced.root).map((entry) => entry.role);
     expect(roles).toEqual(['Document', 'H1', 'P', 'Figure']);
     expect(flatten(produced.root).find((entry) => entry.role === 'Figure')?.alt).toBe('A bar chart');

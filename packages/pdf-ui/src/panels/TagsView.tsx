@@ -69,7 +69,7 @@ export interface TagsViewProps {
   readonly t: Translator;
   readonly read: (context: OperationContext) => Promise<Uint8Array>;
   /** Written as `/Lang` when an untagged file is tagged and has none. */
-  readonly language?: string;
+  readonly language: string;
   /** 0-based page the viewer shows. */
   readonly currentPage: number;
   readonly canEdit: boolean;
@@ -1160,7 +1160,7 @@ function UntaggedEditor({
         pages[Number(pageIndex)] = { order: value.order, roles: value.roles, alts: value.alts };
       }
       const tagged = await tagDocument(bytes, context, {
-        ...(language === undefined ? {} : { language }),
+        language,
         plan: { pages },
       });
       let outBytes = tagged.bytes;
@@ -1332,9 +1332,7 @@ function UntaggedEditor({
         </label>
         <div className="flex items-center gap-1">
           <span className="min-w-0 flex-1 text-[10px] text-kumo-subtle">
-            {language === undefined
-              ? t(key('tags.untagged.noLanguage'))
-              : t(key('tags.untagged.language'), { lang: language })}
+            {t(key('tags.untagged.language'), { lang: language })}
           </span>
           <Button
             variant="primary"
