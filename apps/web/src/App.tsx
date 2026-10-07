@@ -3757,6 +3757,35 @@ export function App({ store }: AppProps) {
     [openDialog, openProducedTab, refuseBusy, setBusy, t],
   );
 
+  /**
+   * The print dialog's imposed file (N-up, booklet, duplex sides): opened as a new tab, the
+   * place a user can read, save or print it from.
+   */
+  const handlePrintProduced = useCallback(
+    async (file: { readonly name: string; readonly bytes: Uint8Array }) => {
+      if (busyRef.current || cancelRef.current !== null) {
+        refuseBusy();
+        return;
+      }
+      const controller = new AbortController();
+      cancelRef.current = controller;
+      setBusy(true);
+      try {
+        await openProducedTab(file.name, file.bytes, controller.signal);
+        setPrintOpen(false);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
+      } finally {
+        if (cancelRef.current === controller) {
+          cancelRef.current = null;
+          setBusy(false);
+        }
+      }
+    },
+    [openProducedTab, refuseBusy, setBusy, t],
+  );
+
   /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
   const startContext: OperationRunContext = useMemo(
     () => ({ bytes: new Uint8Array(0), pageCount: 0, name: '', currentPage: 0, selectedPages: [], t }),
@@ -5391,6 +5420,7 @@ export function App({ store }: AppProps) {
                             snapGrid={measureSnapGrid}
                             snapPoints={measureSnapPoints}
                             onReading={setMeasureReading}
+                            onStop={() => setCanvasTool('select')}
                             onCreate={(mark) => {
                               setMeasureMarks((marks) => [...marks, mark]);
                               if (activeTab !== null) store.setDirty(activeTab.id, true);
@@ -5920,6 +5950,7 @@ export function App({ store }: AppProps) {
                   open={printOpen}
                   onClose={() => setPrintOpen(false)}
                   onNotice={setNotice}
+                  onProduced={(file) => void handlePrintProduced(file)}
                 />
               </Suspense>
             ) : null}
