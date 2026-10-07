@@ -34,6 +34,9 @@ export async function holdSavePicker(page: Page): Promise<void> {
  * page: the browser's own `File`, never read by the test process.
  */
 export async function offerHugeFile(page: Page, name: string, bytes: number): Promise<void> {
+  // The home screen mounts its file input after the shell boots; on a loaded machine that is
+  // after `goto` returns.
+  await page.locator('input[type="file"][accept*="application/pdf"]').first().waitFor({ state: 'attached' });
   await page.evaluate(
     ({ name, bytes }) => {
       const input = document.querySelector<HTMLInputElement>('input[type="file"][accept*="application/pdf"]');
