@@ -713,17 +713,29 @@ interface Placement {
   readonly shrunk: number;
 }
 
-/** The box of a run of glyphs, inset at both ends by `EDGE_INSET_PT`. */
-function eraseBox(glyphs: readonly GlyphAt[]): Rect {
+/**
+ * The box of a run of glyphs, inset at both ends by `EDGE_INSET_PT`. A glyph's box runs from
+ * the font's ascent to its descent, which is taller than the leading of tightly set text:
+ * the box would reach into the glyphs of the line above or below, and MuPDF's redaction
+ * removes every glyph a rectangle touches. The box stops where such a line's own boxes
+ * begin.
+ */
+function eraseBox(block: TextBlock, glyphs: readonly GlyphAt[]): Rect {
   const head = glyphs[0]?.glyph.rect ?? [0, 0, 0, 0];
   const tail = glyphs.at(-1)?.glyph.rect ?? head;
   const inset = Math.min(EDGE_INSET_PT, (tail[2] - head[0]) / 4);
-  return [
-    head[0] + inset,
-    Math.min(...glyphs.map((entry) => entry.glyph.rect[1])),
-    tail[2] - inset,
-    Math.max(...glyphs.map((entry) => entry.glyph.rect[3])),
-  ];
+  const left = head[0] + inset;
+  const right = tail[2] - inset;
+  let top = Math.min(...glyphs.map((entry) => entry.glyph.rect[1]));
+  let bottom = Math.max(...glyphs.map((entry) => entry.glyph.rect[3]));
+  const own = new Set(glyphs.map((entry) => entry.line));
+  for (const [index, line] of block.lines.entries()) {
+    if (own.has(index) || line.rect[2] <= left || line.rect[0] >= right) continue;
+    // A line below starts inside the box; a line above ends inside it.
+    if (line.rect[1] > top && line.rect[1] < bottom) bottom = line.rect[1];
+    else if (line.rect[3] > top && line.rect[3] < bottom) top = line.rect[3];
+  }
+  return [left, top, right, bottom];
 }
 
 /** The size a replacement of `width` at `size` is drawn at in `room`, or `null` when it would be too small. */
@@ -770,7 +782,7 @@ function placeInPlace(
   const head = glyphs[0];
   const tail = glyphs.at(-1);
   if (head === undefined || tail === undefined) return null;
-  const rect = eraseBox(glyphs);
+  const rect = eraseBox(block, glyphs);
   if (replacement === '') return { rects: [rect], lines: [], shrunk: 0 };
 
   const left = head.glyph.rect[0];
@@ -901,7 +913,7 @@ function placeLine(
     const last = glyphs[end - 1];
     if (stretch === null || last === undefined) return true;
     if (last.glyph.rect[2] + delta > limit + 0.01) return false;
-    rects.push(eraseBox(glyphs.slice(stretch, end)));
+    rects.push(eraseBox(block, glyphs.slice(stretch, end)));
     stretch = null;
     delta = 0;
     return true;
@@ -1025,7 +1037,9 @@ interface Paragraph {
 /**
  * The alignment of a block, read from its lines: justified when every line that does not
  * end a paragraph reaches the block's right edge. The model reads a block whose first
- * line is indented or that holds two paragraphs as left-aligned.
+ * line is indented or that holds two paragraphs as left-aligned, and only such a block is
+ * promoted: a centred or right-aligned block keeps its alignment, though its lines too
+ * reach the right edge when they are right-aligned.
  */
 function blockAlign(block: TextBlock, units: readonly Unit[]): TextAlign {
   const ends = new Set<number>([block.lines.length - 1]);
@@ -1040,7 +1054,7 @@ function blockAlign(block: TextBlock, units: readonly Unit[]): TextAlign {
   if (
     full.length > 0 &&
     full.every((line) => Math.abs(line.rect[2] - block.rect[2]) <= JUSTIFIED_TOLERANCE_PT) &&
-    block.align !== 'center'
+    block.align === 'left'
   ) {
     return 'justify';
   }
@@ -1199,7 +1213,10 @@ function placeParagraph(
   const layout = (scale: number): Laid[] => {
     const lines: Laid[] = [];
     for (const paragraph of paragraphs) {
-      let current: Laid = { words: [], indent: paragraph.indent, last: false, natural: 0 };
+      // A centred or right-aligned line's offset from the block's left edge is its alignment,
+      // not an indent: the alignment below places it.
+      const indent = align === 'center' || align === 'right' ? 0 : paragraph.indent;
+      let current: Laid = { words: [], indent, last: false, natural: 0 };
       for (const word of paragraph.words) {
         const wordWidth = word.reduce((sum, atom) => sum + atom.width * scale, 0);
         const previous = current.words.at(-1)?.at(-1);
