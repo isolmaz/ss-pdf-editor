@@ -596,6 +596,39 @@ describe('mark-only history', () => {
   });
 });
 
+describe('applyHistoryStep over a mark-only step', () => {
+  it('keeps the live viewer when it is refused, and leaves the history where it was', async () => {
+    const source = await threePageDocument(1);
+    const store = new SessionStore();
+    const opened = store.openDocument({
+      name: 'marks.pdf',
+      bytes: source.bytes,
+      sha256: 'marks',
+      pageCount: 1,
+    });
+    const handle = await openWithPdfjs(source.bytes);
+    try {
+      const empty = { annotations: [], measures: [], redactions: [] };
+      store.setOverlays(opened.id, empty as unknown as JsonValue, 'ann.engineEdit');
+      const cursor = store.active?.journal.cursor;
+      const aborted = new AbortController();
+      aborted.abort();
+      const tab = store.active;
+      if (tab === null) throw new Error('the document closed');
+      await expect(
+        applyHistoryStep({ store, tab, handle, t: createTranslator('en') }, 'undo', {
+          signal: aborted.signal,
+        }),
+      ).rejects.toMatchObject({ code: 'aborted' });
+      expect(store.active?.journal.cursor).toBe(cursor);
+      // The viewer was not the step's to release: it still answers.
+      expect((await handle.raw.getPage(1)).pageNumber).toBe(1);
+    } finally {
+      await handle.destroy();
+    }
+  });
+});
+
 /** A session over `bytes`, the live handle the app would hold, and the tab as a page action sees it. */
 async function openSession(bytes: Uint8Array, pageCount: number) {
   const store = new SessionStore();
@@ -1334,6 +1367,79 @@ describe('verifyForWrite: what the reader cannot answer', () => {
       /^\[verification-failed\] pdfjs: cropBox: page 1 box changed$/,
     );
   });
+});
+
+/**
+ * A reference handle whose reader fails on one question: the one engine-boundary fault these
+ * tests inject. Everything else it answers is the real pdf.js handle's.
+ */
+function failingReference(
+  real: PdfDocumentHandle,
+  failure: 'outline' | 'pageLabels' | 'pageText',
+): PdfDocumentHandle {
+  const raw =
+    failure === 'pageLabels'
+      ? new Proxy(real.raw, {
+          get(target, property) {
+            if (property === 'getPageLabels') {
+              return async () => {
+                throw new Error('the page label tree cannot be read');
+              };
+            }
+            const value: unknown = Reflect.get(target, property);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        })
+      : real.raw;
+  return {
+    ...real,
+    raw,
+    getOutline:
+      failure === 'outline'
+        ? async () => {
+            throw new Error('the outline cannot be read');
+          }
+        : real.getOutline,
+    getPageText:
+      failure === 'pageText'
+        ? async () => {
+            throw new Error('the page text cannot be read');
+          }
+        : real.getPageText,
+  };
+}
+
+describe('verifyForWrite: a reference the reader cannot question', () => {
+  it.each([
+    ['outline', ['outlines']],
+    ['pageLabels', ['pageLabels']],
+    ['pageText', ['pageOrder', 'pageContent', 'textContent']],
+  ] as const)(
+    'reports %s as unsupported by the engine and still checks what it can read',
+    async (failure, facts) => {
+      const source = await threePageDocument();
+      const real = await openWithPdfjs(source.bytes);
+      try {
+        const result = await verifyForWrite(source.bytes, {
+          expectedPageCount: 3,
+          sourceHandle: failingReference(real, failure),
+          steps: [],
+        });
+        for (const fact of facts) {
+          expect(checkFor(result, fact), fact).toEqual({
+            fact,
+            verdict: 'unsupported',
+            reason: 'engine-cannot',
+          });
+        }
+        // Geometry does not depend on the failed question: it is still compared and verified.
+        expect(checkFor(result, 'rotation')?.verdict).toBe('verified');
+        expect(checkFor(result, 'cropBox')?.verdict).toBe('verified');
+      } finally {
+        await real.destroy();
+      }
+    },
+  );
 });
 
 describe('base bytes and shortcuts', () => {
