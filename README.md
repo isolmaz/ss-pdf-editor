@@ -238,7 +238,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     size and orientation, and two-column text is read column by column. Ruled tables
     become Word tables with their merged cells. Tables without rules are recognised from
     the spacing of the text and become borderless tables. Pictures keep their transparency;
-    charts and drawings made of vector graphics are carried as pictures.
+    charts and drawings made of vector graphics are carried as pictures. A picture that
+    cannot be read, or one inside a table cell, is left out, and the report says how many.
   - **Excel (XLSX):** one sheet per table, with merged cells and the column widths of the
     rules. A page without any table becomes one sheet of its rows. A value becomes a number
     only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
