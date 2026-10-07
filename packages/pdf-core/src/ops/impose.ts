@@ -11,7 +11,9 @@
  *    resources** (grafted once per document), bounded by its CropBox — which
  *    preserves cropping (source defect A16). The page's `/Rotate` is **not** applied:
  *    its own rotation is added to the placement rotation, or a rotated source lands
- *    sideways.
+ *    sideways. `/Rotate` turns **clockwise** and a `cm` angle counter-clockwise, so the
+ *    form is drawn at `formTurn(rotation)`; adding the two directly turned every 90°
+ *    and 270° page upside down on the sheet.
  *  - a Form XObject carries no `/Annots` (links, annotations, form widgets), no
  *    outline and no page labels; that is reported as a loss.
  *  - fonts and images are copied, so the content stays vector: text in the
@@ -75,6 +77,7 @@ import {
   pageAsForm,
   pageObjects,
   pdfNumber,
+  producerKeptNote,
   saveRewrite,
 } from '../engines/mupdf-write';
 import { type PageGeometry, pageGeometry } from './stamp';
@@ -267,6 +270,11 @@ function anchorForLowerLeft(
     default:
       return { x: lowerLeft.x, y: lowerLeft.y };
   }
+}
+
+/** The `cm` angle (counter-clockwise) that shows a page as its clockwise `/Rotate` does. */
+function formTurn(pageRotation: number): number {
+  return (360 - (((pageRotation % 360) + 360) % 360)) % 360;
 }
 
 /** Same anchor, for content centred on a point. */
@@ -494,7 +502,7 @@ function imposeOpened(
     turn: boolean,
   ): number => {
     const { geometry } = embedded;
-    const rotation = geometry.rotation + (turn ? 90 : 0);
+    const rotation = formTurn(geometry.rotation) + (turn ? 90 : 0);
     const visible = turn
       ? { width: geometry.display.height, height: geometry.display.width }
       : geometry.display;
@@ -636,11 +644,11 @@ function imposeOpened(
           const lowerLeft = { x: -column * pitchX, y: size.height + row * pitchY - visible.height };
           const anchor = anchorForLowerLeft(
             lowerLeft,
-            geometry.rotation,
+            formTurn(geometry.rotation),
             geometry.box.width * scale,
             geometry.box.height * scale,
           );
-          sheet.drawPage(embedded.form, anchor.x, anchor.y, scale, geometry.rotation);
+          sheet.drawPage(embedded.form, anchor.x, anchor.y, scale, formTurn(geometry.rotation));
           if (options.cropMarks) sheet.push(...cropMarkOperators(size, column, row, columns, rows, overlap));
           sheet.finish();
           sheetsProduced += 1;
@@ -673,7 +681,7 @@ function imposeOpened(
   notes.push(note('preserved', 'op.note.impose.infoCopied'));
   if (rotatedPlacements > 0)
     notes.push(note('changed', 'op.note.impose.rotated', { count: rotatedPlacements }));
-  notes.push(note('preserved', 'op.note.metadata.producerKept'));
+  notes.push(producerKeptNote());
 
   const report: OperationReport = {
     engine: 'mupdf',
@@ -965,11 +973,11 @@ function printOpened(
         }
         const anchor = anchorCentred(
           { x: rectangle.x + rectangle.width / 2, y: rectangle.y + rectangle.height / 2 },
-          geometry.rotation,
+          formTurn(geometry.rotation),
           geometry.box.width * scale,
           geometry.box.height * scale,
         );
-        sheet.drawPage(embedded.form, anchor.x, anchor.y, scale, geometry.rotation);
+        sheet.drawPage(embedded.form, anchor.x, anchor.y, scale, formTurn(geometry.rotation));
         if (overflow) sheet.push('Q');
         if (options.cropMarks) sheet.push(...cellCropMarks(rectangle));
       }

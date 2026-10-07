@@ -27,6 +27,7 @@ import {
   openForWrite,
   PRODUCER_LINE,
   pdfDate,
+  producerKeptNote,
   readText,
   resolved,
   saveRewrite,
@@ -755,7 +756,7 @@ export async function writeMetadata(
 
       // `saveRewrite` sets the producer line; the step is declared here, where the policy is.
       steps.push('producer');
-      notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+      notes.push(producerKeptNote());
 
       let xmpTouched = false;
       if (cleanXmp) {

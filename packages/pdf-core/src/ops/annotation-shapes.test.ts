@@ -9,28 +9,29 @@
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
-import { writeShapeAnnotations } from './annotation-shapes';
+import { writeAnnotationsToFile, writeShapeAnnotations } from './annotation-shapes';
 import {
   type AnnotationMark,
   type ExistingAnnotation,
   markerFor,
   markerTargets,
   readAnnotations,
-  retagTextMarkup,
+  settleEngineMarks,
 } from './annotations';
 
 const pdfjs = await loadPdfjs();
 pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
+  // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks.
+  createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
 ).href;
 
 const run = { signal: new AbortController().signal };
 
 /** Two 400×500 pages; the second has a CropBox that starts at (50, 50). */
-async function blank(extra?: (doc: import('mupdf').PDFDocument) => void): Promise<Uint8Array> {
-  const mupdf = await import('mupdf');
+async function blank(extra?: (doc: mupdf.PDFDocument) => void): Promise<Uint8Array> {
   const doc = new mupdf.PDFDocument();
   doc.insertPage(-1, doc.addPage([0, 0, 400, 500], 0, {}, ''));
   doc.insertPage(-1, doc.addPage([0, 0, 400, 500], 0, {}, ''));
@@ -64,28 +65,31 @@ async function annotationsOf(bytes: Uint8Array): Promise<readonly ExistingAnnota
 }
 
 /**
- * Per annotation with a comment (`Subtype|marker line`): whether it carries a normal
- * appearance stream, and its `/CA` (pdf.js does not report opacity for every kind).
+ * Per annotation this app named (`Subtype|marker`): whether it carries a normal appearance
+ * stream, its `/CA` (pdf.js does not report opacity for every kind) and its `/Contents`.
  */
-async function appearances(bytes: Uint8Array): Promise<Record<string, { ap: boolean; ca: number | null }>> {
-  const mupdf = await import('mupdf');
+async function appearances(
+  bytes: Uint8Array,
+): Promise<Record<string, { ap: boolean; ca: number | null; contents: string | null }>> {
   const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
   if (doc === null) throw new Error('not a PDF');
   try {
-    const found: Record<string, { ap: boolean; ca: number | null }> = {};
+    const found: Record<string, { ap: boolean; ca: number | null; contents: string | null }> = {};
     for (let page = 0; page < doc.countPages(); page += 1) {
       const annots = doc.findPage(page).get('Annots');
       if (annots.isNull()) continue;
       const array = annots.resolve();
       for (let index = 0; index < array.length; index += 1) {
         const dict = array.get(index).resolve();
-        const contents = dict.get('Contents');
-        if (contents.isNull()) continue;
+        const name = dict.get('NM');
+        if (name.isNull()) continue;
         const ap = dict.get('AP');
         const ca = dict.get('CA');
-        found[`${dict.get('Subtype').asName()}|${contents.asString().split('\n')[0]}`] = {
+        const contents = dict.get('Contents');
+        found[`${dict.get('Subtype').asName()}|${name.asString()}`] = {
           ap: !ap.isNull() && ap.resolve().get('N').isStream(),
           ca: ca.isNull() ? null : ca.asNumber(),
+          contents: contents.isNull() ? null : contents.asString(),
         };
       }
     }
@@ -107,10 +111,12 @@ describe('writeShapeAnnotations', () => {
     expect(out.written).toEqual(shapes.map((shape) => markerFor(shape.id)));
 
     const read = await annotationsOf(out.bytes);
-    const byMarker = (id: string) => read.find((entry) => entry.contents.startsWith(markerFor(id)));
+    const byMarker = (id: string) => read.find((entry) => entry.marker === id);
     // Page space is top-left; the file is bottom-left, padded by half the stroke.
     expect(byMarker('sq')).toMatchObject({ subtype: 'Square', rect: [39, 339, 201, 441], color: '#ff0000' });
-    expect(byMarker('sq')?.contents).toContain('Şişli notu');
+    // The comment is the author's words alone: the marker is the annotation's `/NM`, and
+    // `/Contents` is what every other reader prints.
+    expect(byMarker('sq')?.contents).toBe('Şişli notu');
     expect(byMarker('ci')).toMatchObject({ subtype: 'Circle', color: '#0000ff' });
     // pdf.js reports a line's coordinates normalised, so only the span is checked here.
     expect(byMarker('li')).toMatchObject({ subtype: 'Line', vertices: [50, 100, 300, 150] });
@@ -119,6 +125,12 @@ describe('writeShapeAnnotations', () => {
     const drawn = Object.values(await appearances(out.bytes));
     expect(drawn.map((entry) => entry.ap)).toEqual([true, true, true, true]);
     expect(drawn.map((entry) => entry.ca)).toEqual([0.5, 0.5, 0.5, 0.5]);
+    expect(drawn.map((entry) => entry.contents)).toEqual([
+      'Şişli notu',
+      'Şişli notu',
+      'Şişli notu',
+      'Şişli notu',
+    ]);
   });
 
   it('paints each shape with its own outline, stroke width and colour, and keeps a line in drag order', async () => {
@@ -144,7 +156,6 @@ describe('writeShapeAnnotations', () => {
       }),
     ];
     const out = await writeShapeAnnotations(await blank(), shapes, run);
-    const mupdf = await import('mupdf');
     const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
     try {
       // The file's own /L is in drag order: from (300, 400) to (50, 350) in top-left page space.
@@ -192,6 +203,40 @@ describe('writeShapeAnnotations', () => {
       expect(at(175, 375)).toEqual(green);
       expect(at(300, 400)).toEqual(green);
       expect(at(175, 340)).toEqual(white);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('paints a translucent shape translucent: the appearance carries the opacity, not only /CA', async () => {
+    // A reader paints the `/AP`; with the alpha only on the annotation's `/CA` a 40 %
+    // rectangle came out of the export as a solid one.
+    const out = await writeShapeAnnotations(
+      await blank(),
+      [
+        mark({
+          id: 'sq',
+          kind: 'shapes',
+          shape: 'square',
+          rect: [40, 60, 200, 160],
+          thickness: 6,
+          opacity: 0.4,
+        }),
+      ],
+      run,
+    );
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
+    try {
+      const pixmap = doc.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
+      const pixels = pixmap.getPixels();
+      const offset = (110 * pixmap.getWidth() + 40) * pixmap.getNumberOfComponents();
+      const [red, green, blue] = [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
+      // Red at 40 % over white: (255, 153, 153), give or take the rasteriser's rounding.
+      expect(red).toBe(255);
+      expect(green).toBeGreaterThan(140);
+      expect(green).toBeLessThan(166);
+      expect(blue).toBeGreaterThan(140);
+      expect(blue).toBeLessThan(166);
     } finally {
       doc.destroy();
     }
@@ -254,32 +299,36 @@ async function engineWritten(): Promise<Uint8Array> {
   });
 }
 
-describe('retagTextMarkup', () => {
+describe('settleEngineMarks', () => {
   it('turns each session highlight into its own kind and leaves the popup and the rest alone', async () => {
     const marks = [
       mark({ id: 'u1', kind: 'underline', quads: [[40, 60, 200, 90]] }),
       mark({ id: 's1', kind: 'strikeout', quads: [[40, 120, 200, 150]] }),
       mark({ id: 'q1', kind: 'squiggly', quads: [[40, 180, 200, 210]] }),
     ];
-    const out = await retagTextMarkup(await engineWritten(), marks, run);
+    const out = await settleEngineMarks(await engineWritten(), marks, run);
     expect(out.retagged).toHaveLength(3);
     const subtypes = (await annotationsOf(out.bytes)).map((entry) => entry.subtype).sort();
     expect(subtypes).toEqual(['Highlight', 'Popup', 'Squiggly', 'StrikeOut', 'Underline']);
     const drawn = await appearances(out.bytes);
     expect(drawn[`Underline|${markerFor('u1')}`]?.ap).toBe(true);
     expect(drawn[`Squiggly|${markerFor('q1')}`]?.ap).toBe(true);
+    // The engine could only tag the comment with the marker; settled, the marker is the
+    // name and the comment — the mark's and its popup's — is the author's words alone.
+    expect(drawn[`Underline|${markerFor('u1')}`]?.contents).toBe('Şişli notu');
+    const comments = (await annotationsOf(out.bytes)).map((entry) => entry.contents);
+    expect(comments.some((text) => text.includes('pdf-editor-ann:'))).toBe(false);
   });
 });
 
-describe('retagTextMarkup appearance', () => {
+describe('settleEngineMarks appearance', () => {
   it('draws an underline at the baseline, a strike through the middle and a zigzag, each in its colour', async () => {
     const marks = [
       mark({ id: 'u1', kind: 'underline', quads: [[40, 60, 200, 90]], color: '#ff0000' }),
       mark({ id: 's1', kind: 'strikeout', quads: [[40, 120, 200, 150]], color: '#0000ff' }),
       mark({ id: 'q1', kind: 'squiggly', quads: [[40, 180, 200, 210]], color: '#00aa00', thickness: 4 }),
     ];
-    const out = await retagTextMarkup(await engineWritten(), marks, run);
-    const mupdf = await import('mupdf');
+    const out = await settleEngineMarks(await engineWritten(), marks, run);
     const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf');
     try {
       const pixmap = doc.loadPage(0).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
@@ -314,6 +363,76 @@ describe('retagTextMarkup appearance', () => {
   });
 });
 
+describe('writeAnnotationsToFile', () => {
+  /** The session written over `input`, and whether every byte of `input` was kept. */
+  async function save(input: Uint8Array, session: AnnotationMark) {
+    const handle = await openWithPdfjs(input);
+    try {
+      const out = await writeAnnotationsToFile(handle, [session], run);
+      const kept =
+        out.bytes.byteLength > input.byteLength && input.every((byte, at) => out.bytes[at] === byte);
+      return { out, kept };
+    } finally {
+      await handle.destroy();
+    }
+  }
+
+  it('appends a highlight and a note to the file the reader opened, and says so', async () => {
+    for (const session of [
+      mark({ id: 'hl', kind: 'highlight' }),
+      mark({ id: 'nt', kind: 'note', rect: [40, 60, 64, 84] }),
+    ]) {
+      const input = await blank();
+      const { out, kept } = await save(input, session);
+      // An appended revision leaves the bytes a signature covers as they were; a rewrite
+      // re-serialises them and breaks it.
+      expect({ kind: session.kind, kept, incremental: out.report.incremental }).toEqual({
+        kind: session.kind,
+        kept: true,
+        incremental: true,
+      });
+      const written = (await annotationsOf(out.bytes)).find((entry) => entry.marker === session.id);
+      expect(written?.contents).toBe('Şişli notu');
+    }
+  });
+
+  it('says a shape rewrote the file, because it did', async () => {
+    const input = await blank();
+    const { out, kept } = await save(
+      input,
+      mark({ id: 'sq', kind: 'shapes', shape: 'square', rect: [40, 60, 200, 160] }),
+    );
+    expect({ kept, incremental: out.report.incremental, engine: out.report.engine }).toEqual({
+      kept: false,
+      incremental: false,
+      engine: 'mupdf',
+    });
+  });
+});
+
+describe('readAnnotations', () => {
+  it('lists the comments of a file that needs a password, opened with it', async () => {
+    const shaped = await writeShapeAnnotations(
+      await blank(),
+      [mark({ id: 'sq', kind: 'shapes', shape: 'square', rect: [40, 60, 200, 160] })],
+      run,
+    );
+    const source = mupdf.PDFDocument.openDocument(shaped.bytes.slice(), 'application/pdf').asPDF();
+    if (source === null) throw new Error('not a PDF');
+    const locked = new Uint8Array(
+      source.saveToBuffer('encrypt=aes-256,user-password=u,owner-password=o').asUint8Array(),
+    );
+    source.destroy();
+    const handle = await openWithPdfjs(locked, { password: 'u' });
+    try {
+      const read = await readAnnotations(handle, run);
+      expect(read.map((entry) => [entry.subtype, entry.contents])).toEqual([['Square', 'Şişli notu']]);
+    } finally {
+      await handle.destroy();
+    }
+  });
+});
+
 describe('markerTargets', () => {
   it('resolves a session mark to its own annotation, never to the popup that repeats its comment', async () => {
     const bytes = await engineWritten();
@@ -326,9 +445,7 @@ describe('markerTargets', () => {
       run,
     );
     const read = await annotationsOf(bytes);
-    const highlight = read.find(
-      (entry) => entry.subtype === 'Highlight' && entry.contents.startsWith(markerFor('u1')),
-    );
+    const highlight = read.find((entry) => entry.subtype === 'Highlight' && entry.marker === 'u1');
     // `s1` is on page 1, not page 2: a marker is only looked for on the page it names.
     expect(found).toEqual([{ pageIndex: 0, id: highlight?.id, markId: 'u1' }]);
   });

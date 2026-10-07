@@ -103,9 +103,10 @@ describe('writeFreeTextAnnotations', () => {
       expect(annots.length).toBe(1);
       const dict = annots.get(0).resolve();
       expect(dict.get('Subtype').asName()).toBe('FreeText');
-      const text = dict.get('Contents').asString();
-      expect(text).toContain('pdf-editor-ann:text-1');
-      expect(text).toContain('Şişli’de ığdır — İĞÜŞÖÇ');
+      // The marker names the annotation; `/Contents`, what every reader prints, is the
+      // typed text alone.
+      expect(dict.get('NM').asString()).toBe('pdf-editor-ann:text-1');
+      expect(dict.get('Contents').asString()).toBe('Şişli’de ığdır — İĞÜŞÖÇ');
       // The box keeps the clicked top-left corner (72, 72 from the top) and the width;
       // its height is one line of the wrapped text: the pitch plus the padding.
       const box = dict.get('Rect').resolve();

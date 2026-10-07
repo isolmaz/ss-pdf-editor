@@ -5,6 +5,7 @@
  * back, and text that stops being text on the sheet.
  */
 
+import { createTranslator } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { buildPrintDocument, imposeDocument } from './impose';
 
@@ -92,6 +93,9 @@ describe('imposeDocument', () => {
     ]);
     expect(labels(result[0] ?? { words: [] })).toEqual(['P1', 'P2']);
     expect(labels(result[1] ?? { words: [] })).toEqual(['P3']);
+    // Every report line reads as a sentence: the producer note once printed `{producer}`.
+    const say = createTranslator();
+    for (const entry of out.report.notes) expect(say(entry.key, entry.params)).not.toMatch(/\{[a-zA-Z]+\}/);
   });
 
   it('orders a booklet so the folded sheets read 1…N', async () => {
@@ -127,6 +131,14 @@ describe('imposeDocument', () => {
     const hidden = sheet?.words.filter((word) => word.text === 'HIDDEN') ?? [];
     expect(hidden).toHaveLength(1);
     expect((hidden[0]?.bbox.h ?? 0) > (hidden[0]?.bbox.w ?? 0)).toBe(true);
+    // …and turned the way `/Rotate 90` turns it, clockwise: the page's top-left label
+    // ends up at the top right of its cell. A counter-clockwise turn is just as
+    // vertical, and put the label at the bottom left — the page upside down.
+    const label = sheet?.words.find((word) => word.text === 'P1');
+    expect(label).toBeDefined();
+    const cellWidth = (sheet?.width ?? 0) / 2;
+    expect((label?.bbox.x ?? 0) + (label?.bbox.w ?? 0) / 2).toBeGreaterThan(cellWidth / 2);
+    expect((label?.bbox.y ?? 0) + (label?.bbox.h ?? 0) / 2).toBeLessThan((sheet?.height ?? 0) / 2);
   });
 
   it('tiles a poster over columns × rows sheets', async () => {
@@ -142,6 +154,18 @@ describe('imposeDocument', () => {
     expect(labels(result[3] ?? { words: [] })).toEqual([]);
     // …and the bottom-left tile its bottom edge: the whole page is on the grid.
     expect(result[2]?.words.map((word) => word.text)).toContain('HIDDEN');
+  });
+
+  it('tiles a page the file turns clockwise the way a reader shows it', async () => {
+    const out = await imposeDocument(
+      await source(1, [0]),
+      { mode: 'poster', pages: [0], paper: 'a4', columns: 2, rows: 2, overlapMm: 0, cropMarks: false },
+      run,
+    );
+    // `/Rotate 90` carries the page's top-left label to the top right, so it is on the
+    // top-right tile; turned the other way, the poster was upside down and it was on the
+    // bottom-left one.
+    expect((await sheets(out.bytes)).map(labels)).toEqual([[], ['P1'], [], []]);
   });
 });
 
@@ -232,6 +256,31 @@ describe('buildPrintDocument', () => {
       ['P1', 'P2'],
       ['P3', 'P4'],
     ]);
+  });
+
+  it('prints a page the file turns clockwise the way a reader shows it', async () => {
+    const out = await buildPrintDocument(
+      await source(1, [0]),
+      {
+        pages: [0],
+        perSheet: 1,
+        paper: 'a4',
+        duplex: 'simplex',
+        landscape: true,
+        scale: 'fit',
+        marginMm: 0,
+        cropMarks: false,
+        booklet: false,
+      },
+      run,
+    );
+    const [sheet] = await sheets(out.bytes);
+    // `/Rotate 90` carries the top-left label to the top right; the print once turned the
+    // page the other way, upside down.
+    const label = sheet?.words.find((word) => word.text === 'P1');
+    expect(label).toBeDefined();
+    expect((label?.bbox.x ?? 0) + (label?.bbox.w ?? 0) / 2).toBeGreaterThan((sheet?.width ?? 0) / 2);
+    expect((label?.bbox.y ?? 0) + (label?.bbox.h ?? 0) / 2).toBeLessThan((sheet?.height ?? 0) / 2);
   });
 
   /** The page labels of a sheet as rows (top to bottom), each left to right. */

@@ -563,12 +563,7 @@ export function PagesPanel({
                   </div>
                 ) : null}
 
-                <PageThumbnail
-                  key={`${page}-${version ?? ''}`}
-                  document={document}
-                  pageIndex={page}
-                  version={version}
-                />
+                <PageThumbnail key={`${page}-${version ?? ''}`} document={document} pageIndex={page} />
                 <span
                   className={`mt-1 block text-xs tabular-nums ${
                     isSelected || isActive ? 'font-medium text-kumo-strong' : 'text-kumo-subtle'
@@ -591,25 +586,10 @@ export function PagesPanel({
  * eagerly: the whole point of the observer is that a 2000-page document costs
  * 2000 cheap placeholders, not 2000 render tasks.
  */
-function PageThumbnail({
-  document,
-  pageIndex,
-  version,
-}: {
-  document: PdfDocumentHandle;
-  pageIndex: number;
-  version?: string;
-}) {
+function PageThumbnail({ document, pageIndex }: { document: PdfDocumentHandle; pageIndex: number }) {
   const holderRef = useRef<HTMLDivElement | null>(null);
   const paintedRef = useRef(false);
   const [height, setHeight] = useState<number | null>(null);
-
-  const lastKeyRef = useRef<string>('');
-  const currentKey = `${document.raw.numPages}-${version ?? ''}`;
-  if (lastKeyRef.current !== currentKey) {
-    lastKeyRef.current = currentKey;
-    paintedRef.current = false;
-  }
 
   /**
    * Each attempt owns a **fresh canvas**. Reusing the element across tab switches
@@ -640,6 +620,12 @@ function PageThumbnail({
   useEffect(() => {
     const holder = holderRef.current;
     if (holder === null) return undefined;
+    // `draw` changes exactly when the handle or the page does, so what is painted is
+    // stale from here on. The item keeps its key across a document swap of the same
+    // length (two freshly opened files are both state `source`) and across a write
+    // whose new handle lands after its new state id — a flag that survived either kept
+    // the previous document's picture on screen.
+    paintedRef.current = false;
     const controller = new AbortController();
     // Lazy, and **staying** lazy: the observer is not disconnected after the first
     // hit, so a thumbnail whose first attempt was aborted is drawn when it next

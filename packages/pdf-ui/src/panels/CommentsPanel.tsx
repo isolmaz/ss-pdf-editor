@@ -24,7 +24,7 @@ import type {
   ExistingAnnotation,
   ReviewState,
 } from 'pdf-core/ops/annotations';
-import { annotationKindKey, commentText, REVIEW_STATES } from 'pdf-core/ops/annotations';
+import { annotationKindKey, REVIEW_STATES } from 'pdf-core/ops/annotations';
 import type { MessageKey, Translator } from 'pdf-shared';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { PanelLoading, PanelMessage } from './PanelParts';
@@ -170,14 +170,14 @@ export function CommentsPanel({
           pageIndex: annotation.pageIndex,
           kind: annotation.kind ?? 'note',
           color: null,
-          contents: commentText(annotation.contents),
+          contents: annotation.contents,
           author: annotation.author,
           pending: false,
           selectable: false,
           replies: (thread?.replies ?? []).map((reply) => ({
             id: reply.annotation.id,
             author: reply.annotation.author,
-            contents: commentText(reply.annotation.contents),
+            contents: reply.annotation.contents,
             depth: reply.depth,
           })),
           review:

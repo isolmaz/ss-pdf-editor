@@ -42,7 +42,15 @@ import type { PDFDocument, PDFObject } from 'mupdf';
 import type { MessageKey } from 'pdf-shared';
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
-import { openForWrite, pageObjects, resolved, saveRewrite, text, visibleBox } from '../engines/mupdf-write';
+import {
+  openForWrite,
+  pageObjects,
+  producerKeptNote,
+  resolved,
+  saveRewrite,
+  text,
+  visibleBox,
+} from '../engines/mupdf-write';
 import {
   type Claim,
   catalogOf,
@@ -65,7 +73,6 @@ import {
   textOf,
 } from './accessibility';
 import { type ContentMarks, coverageOf, enclosing, PATH_CONSTRUCTION, scanContent } from './content-scan';
-import { PRODUCER_LINE } from './metadata';
 import { contentHooks, resourceHooks } from './structure';
 import {
   elementKids,
@@ -1881,7 +1888,7 @@ export async function fixPdfUa(
       notes.push(note('warning', UA_FIX_KEYS.manualRemain));
     }
   }
-  notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+  notes.push(producerKeptNote());
   return {
     bytes: out,
     report: {

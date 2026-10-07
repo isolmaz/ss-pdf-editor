@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { Download, Page } from 'playwright/test';
 import { expect, test } from 'playwright/test';
 import { useAdvancedMode } from './settings';
-import { readProducedEntry, readProducedPageTexts } from './tool-fixture';
+import { labelledPdf, readProducedEntry, readProducedPageTexts } from './tool-fixture';
 
 /**
  * Page and file flows end to end: insert, merge, extract, split, the two exports, print,
@@ -16,37 +16,6 @@ import { readProducedEntry, readProducedPageTexts } from './tool-fixture';
 test.use({ viewport: { width: 1440, height: 900 } });
 
 const CANVAS = '.pdfViewer[data-active-viewer] .page canvas';
-
-/**
- * An N-page PDF whose every page carries one line of text, `<label> <number>`, so the
- * order of a produced file is readable from its text. Built byte by byte like the other
- * fixtures: ASCII only, a computed cross-reference table.
- */
-function labelledPdf(label: string, pages: number): Uint8Array {
-  const bodies: string[] = ['<< /Type /Catalog /Pages 2 0 R >>', ''];
-  const kids: number[] = [];
-  bodies.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  for (let index = 0; index < pages; index += 1) {
-    const content = `BT /F1 24 Tf 72 700 Td (${label} ${index + 1}) Tj ET\n`;
-    kids.push(bodies.length + 1);
-    bodies.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${bodies.length + 2} 0 R >>`,
-    );
-    bodies.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
-  }
-  bodies[1] = `<< /Type /Pages /Kids [${kids.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages} >>`;
-
-  let source = '%PDF-1.7\n';
-  const offsets: number[] = [];
-  for (const [index, body] of bodies.entries()) {
-    offsets.push(source.length);
-    source += `${index + 1} 0 obj\n${body}\nendobj\n`;
-  }
-  const xref = offsets.map((value) => `${String(value).padStart(10, '0')} 00000 n \n`).join('');
-  source += `xref\n0 ${bodies.length + 1}\n0000000000 65535 f \n${xref}`;
-  source += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R >>\nstartxref\n${source.indexOf('xref\n')}\n%%EOF\n`;
-  return new Uint8Array([...source].map((character) => character.charCodeAt(0)));
-}
 
 const pdfFile = (name: string, bytes: Uint8Array) => ({
   name,
@@ -314,6 +283,9 @@ test('drag and drop: a dropped PDF opens, a dropped non-PDF is refused, and a se
   page,
 }) => {
   await page.goto('/editor/');
+  // The drop target is the shell itself: a drop sent before it has rendered lands on the
+  // bare page and is never seen.
+  await expect(page.locator('input[type="file"][accept*="application/pdf"]').first()).toBeAttached();
   await dropFiles(page, [
     // Not a PDF and not a format the converter takes (a `.txt` would become a PDF).
     { name: 'notes.bin', type: 'application/octet-stream', bytes: new TextEncoder().encode('hello') },
@@ -378,4 +350,95 @@ test("a thumbnail's own rotate and delete buttons act on that thumbnail's page, 
   expect(texts.map((text) => text.trim())).toEqual(['Hover 1', 'Hover 2']);
   expect(await readProducedEntry(bytes, 0, 'Rotate')).toMatch(/^0?$/);
   expect(await readProducedEntry(bytes, 1, 'Rotate')).toBe('90');
+});
+
+/**
+ * How far thumbnail `index` is from the main view's page `index`: both canvases' aspect
+ * ratios and the mean difference of 16×16 grey copies (0–255). The main page is brought
+ * into view first, so its canvas is painted.
+ */
+async function thumbnailVersusPage(
+  page: Page,
+  index: number,
+): Promise<{ readonly thumb: number; readonly main: number; readonly diff: number }> {
+  return page.evaluate((pageIndex) => {
+    const thumb = document.querySelector<HTMLCanvasElement>(`[data-thumb="${pageIndex}"] canvas`);
+    const main = document.querySelector<HTMLCanvasElement>(
+      `.pdfViewer[data-active-viewer] .page[data-page-number="${pageIndex + 1}"] canvas`,
+    );
+    if (thumb === null || main === null || thumb.width === 0 || main.width === 0) {
+      return { thumb: 0, main: -1, diff: 255 };
+    }
+    const grey = (source: HTMLCanvasElement): number[] => {
+      const small = document.createElement('canvas');
+      small.width = 16;
+      small.height = 16;
+      const context = small.getContext('2d', { willReadFrequently: true });
+      if (context === null) return [];
+      context.drawImage(source, 0, 0, 16, 16);
+      const { data } = context.getImageData(0, 0, 16, 16);
+      const out: number[] = [];
+      for (let at = 0; at < data.length; at += 4)
+        out.push(((data[at] ?? 0) + (data[at + 1] ?? 0) + (data[at + 2] ?? 0)) / 3);
+      return out;
+    };
+    const a = grey(thumb);
+    const b = grey(main);
+    const diff =
+      a.reduce((sum, value, at) => sum + Math.abs(value - (b[at] ?? 0)), 0) / Math.max(a.length, 1);
+    return { thumb: thumb.width / thumb.height, main: main.width / main.height, diff };
+  }, index);
+}
+
+/** Bring page `index` into the main view and wait until its thumbnail shows the same page. */
+async function expectThumbnailMatchesPage(page: Page, index: number): Promise<void> {
+  await thumbs(page).nth(index).click();
+  await expect
+    .poll(
+      async () => {
+        const { thumb, main, diff } = await thumbnailVersusPage(page, index);
+        return Math.abs(thumb - main) < 0.05 && diff < 12;
+      },
+      { message: `thumbnail ${index + 1} shows the page the main view shows`, timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
+/** Open a second file in the same session: a new document tab beside the first. */
+async function openAnother(page: Page, name: string, bytes: Uint8Array): Promise<void> {
+  await page
+    .locator('input[type="file"][accept*="application/pdf"]')
+    .first()
+    .setInputFiles(pdfFile(name, bytes));
+  await expect(page.getByRole('button', { name, exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Opening the document…')).toHaveCount(0, { timeout: 30_000 });
+}
+
+test('thumbnails follow the page: a turn of an already-turned page, an insert, and a second file of the same length', async ({
+  page,
+}) => {
+  // Pages the file itself turns are the case that kept the old picture: the turn wrote a
+  // new state before the new document handle arrived, and the painted flag outlived it.
+  await open(page, 'turned.pdf', labelledPdf('Turned', 4, { rotations: [0, 90, 180, 270] }));
+  for (const index of [1, 2]) {
+    await thumbs(page).nth(index).click();
+    await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+    await expect(notice(page, '1 page(s) rotated')).toBeVisible();
+    await expectThumbnailMatchesPage(page, index);
+  }
+
+  await useAdvancedMode(page);
+  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('2');
+  await form.getByRole('spinbutton', { name: 'Page count to insert' }).fill('2');
+  await previewForm(form);
+  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+  await expect(form).toBeHidden({ timeout: 30_000 });
+  await expect(thumbs(page)).toHaveCount(6);
+  for (const index of [0, 1, 2, 3, 4, 5]) await expectThumbnailMatchesPage(page, index);
+
+  // Two freshly opened files are both state "source": a file of the same length kept the
+  // first file's pictures.
+  await openAnother(page, 'wide.pdf', labelledPdf('Wide', 6, { size: [842, 595] }));
+  for (const index of [0, 5]) await expectThumbnailMatchesPage(page, index);
 });

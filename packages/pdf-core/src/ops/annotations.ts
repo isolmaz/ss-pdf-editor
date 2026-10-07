@@ -42,9 +42,12 @@
  *
  * A mark's text travels as the annotation's popup (`contents` + `popupRef`),
  * which the worker writes as `/Contents` — what every reader shows as the note.
- * The body is prefixed with `pdf-editor-ann:<id>` so a re-read can tell our
+ * The annotation's name (`/NM`) is `pdf-editor-ann:<id>`, so a re-read can tell our
  * annotations from the document's own; that marker is also what makes the
- * acceptance round trip checkable.
+ * acceptance round trip checkable. The engine cannot write `/NM`, so its marks carry
+ * the marker at the head of `/Contents` for one step, and `settleEngineMarks` moves it
+ * into the name before the file leaves. Files written before kept the marker in
+ * `/Contents`; `markerOf` and `commentText` still read those.
  *
  * ## Rotation
  *
@@ -70,7 +73,8 @@ import {
   readName,
   readText,
   resolved,
-  saveRewrite,
+  saveIncremental,
+  text,
   visibleBox,
 } from '../engines/mupdf-write';
 import type { PdfDocumentHandle } from '../engines/pdfjs-handle';
@@ -78,7 +82,6 @@ import { note, type OperationContext, type OperationOutcome, throwIfAborted } fr
 
 /** pdf.js `AnnotationEditorType` values that can become new annotations. */
 const EDITOR_HIGHLIGHT = 9;
-const EDITOR_FREETEXT = 3;
 const EDITOR_INK = 15;
 
 /** pdf.js keys every **new** annotation with this prefix (`build/pdf.mjs:55`). */
@@ -127,9 +130,6 @@ export interface CommentReview {
   readonly author: string;
   readonly at: string;
 }
-
-/** Mark kinds the pdf.js writer cannot finish and the MuPDF step takes over. */
-export const OWNED_KINDS: readonly AnnotationKind[] = ['underline', 'strikeout', 'squiggly', 'shapes'];
 
 /**
  * A markup mark over text: one quad per selected line run.
@@ -257,7 +257,14 @@ export interface ExistingAnnotation {
   readonly kind: AnnotationKind | null;
   /** `/Rect` in PDF user space, lower-left first; `null` when absent or malformed. */
   readonly rect: readonly [number, number, number, number] | null;
+  /** The comment a reader wrote: `/Contents`, without a marker an older write put there. */
   readonly contents: string;
+  /**
+   * The session mark id this app wrote the annotation for — its `/NM` marker, or the
+   * one at the head of `/Contents` in a file written before the name carried it —
+   * and `null` for the document's own annotations.
+   */
+  readonly marker: string | null;
   readonly author: string;
   readonly modified: string | null;
   /** pdf.js `AnnotationType` (`20` = Widget, `16` = Popup), when the record has it. */
@@ -501,7 +508,11 @@ export interface StorageEntry {
   readonly fontSize?: number;
 }
 
-/** Marker prefix inside an annotation's `/Contents`; identifies our writes. */
+/**
+ * Marker prefix of the annotation name (`/NM`) this app gives its own writes. Files
+ * written before the name was used carry the marker at the head of `/Contents` instead,
+ * and are still read that way (`markerOf`, `commentText`).
+ */
 const MARKER_PREFIX = 'pdf-editor-ann:';
 
 export function markerFor(id: string): string {
@@ -509,13 +520,20 @@ export function markerFor(id: string): string {
 }
 
 /**
- * The comment a reader wrote, without this app's marker. `/Contents` carries the marker
- * ahead of the text so a later edit can find the annotation (`contentsFor`); it is an
- * identity, not words, and a comment list that printed it showed the user an opaque id.
+ * The comment a reader wrote, without a marker an older write put ahead of it in
+ * `/Contents`: that is an identity, not words, and every other reader printed it.
  */
 export function commentText(contents: string): string {
   const id = markerId(contents);
   return id === null ? contents : contents.replace(`${MARKER_PREFIX}${id}`, '').trim();
+}
+
+/**
+ * The marker of an annotation dictionary this app wrote: its `/NM`, or — for a file
+ * written before the name carried it — the marker at the head of its `/Contents`.
+ */
+export function markerOf(dict: PDFObject): string | null {
+  return markerId(readText(dict.get('NM')) ?? '') ?? markerId(readText(dict.get('Contents')) ?? '');
 }
 
 /** The id inside a marker line, or `null` when the annotation is not ours. */
@@ -528,11 +546,11 @@ export function markerId(contents: string): string | null {
 }
 
 /**
- * The comment body an annotation carries: our marker first, then the author's
- * text. A reader shows the whole string, which is honest — the id is what makes
- * the round trip checkable, and hiding it would make a re-read guesswork.
+ * The engine's (pdf.js's) `/Contents` for a mark it writes: the marker, then the
+ * author's text. The engine has no `/NM` to write, so the marker rides the comment for
+ * one step and `settleEngineMarks` moves it into `/NM` before the file leaves.
  */
-export function contentsFor(mark: AnnotationMark): string {
+export function taggedContents(mark: AnnotationMark): string {
   const body = mark.contents.trim();
   return body.length === 0 ? markerFor(mark.id) : `${markerFor(mark.id)} ${body}`;
 }
@@ -541,9 +559,9 @@ export function contentsFor(mark: AnnotationMark): string {
  * Storage entries for one mark.
  *
  * Text marks produce one entry (the worker accepts an arbitrary quad list), ink
- * produces one, notes are `/FreeText` shells whose comment carries the content —
- * and shapes produce **none**: the engine has no writer for them, so
- * `writeShapeAnnotations` builds those dictionaries itself.
+ * produces one — and notes and shapes produce **none**: the engine has no writer for
+ * them, so `writeNoteAnnotations` and `writeShapeAnnotations` build those dictionaries
+ * themselves.
  *
  * The geometry here is the mark's **stored** geometry: a mark's own `rotation` is
  * not baked in, because turning these fields is not the same as turning the mark —
@@ -563,8 +581,8 @@ export function storageEntriesFor(
     rotation: pageRotation,
     color: hexToRgb(mark.color).map((channel) => Math.round(channel * 255)),
     opacity: mark.opacity,
-    contents: contentsFor(mark),
-    popup: { contents: contentsFor(mark) },
+    contents: taggedContents(mark),
+    popup: { contents: taggedContents(mark) },
     creationDate: mark.createdAt,
     user: mark.author,
   } as const;
@@ -612,18 +630,9 @@ export function storageEntriesFor(
         },
       ];
     }
+    // A note is a `/Text` with its own icon, written by `writeNoteAnnotations`: the engine's
+    // only writer for it was an empty `/FreeText`, which draws nothing.
     case 'note':
-      return [
-        {
-          ...base,
-          annotationType: EDITOR_FREETEXT,
-          rect: markRect(mark, pageHeight),
-          // The visible text is empty on purpose: the note *is* the comment, and
-          // `FREETEXT` is drawn with a WinAnsi base font that cannot spell Turkish.
-          value: '',
-          fontSize: 10,
-        },
-      ];
     case 'shapes':
     // Typed text needs a font that spells Turkish, which the engine's writer does not
     // have: `annotation-freetext.ts` writes these with an embedded Noto Sans.
@@ -650,36 +659,40 @@ const RETAG_SUBTYPES: Readonly<Record<string, string>> = {
   squiggly: 'Squiggly',
 };
 
-export interface RetagOutcome extends OperationOutcome {
-  /** Marker lines of the annotations whose subtype was rewritten. */
+export interface SettleOutcome extends OperationOutcome {
+  /** Markers of the annotations whose subtype was rewritten. */
   readonly retagged: readonly string[];
 }
 
 /**
- * Rewrite the subtype of the text marks this session just wrote.
+ * Finish the marks the engine just wrote: move each marker into `/NM`, and rewrite the
+ * subtype of the text marks the engine can only write as highlights.
+ *
+ * The engine has no `/NM` to write, so its marks arrive with the marker at the head of
+ * `/Contents` (`taggedContents`). That is the one place every other reader prints, so the
+ * marker moves to the annotation name and `/Contents` — the annotation's and its popup's —
+ * keeps only the author's words (or goes, when there are none).
  *
  * The engine writes every quad-list mark as `/Highlight` — its highlight builder
  * hard-codes the subtype and `AnnotationEditorType` has no entry for the other
  * three (verified against 6.3.289). The geometry is already right, so the only
  * work left is the dictionary key: a reader draws the same `/QuadPoints` as a bar
  * through the middle of the line, at its baseline, or as the zigzag purely from
- * the subtype. Matching is by the `/Contents` marker line, never by page or
- * position, so an unrelated annotation is untouched.
+ * the subtype. Matching is by the marker, never by page or position, so an unrelated
+ * annotation is untouched.
  */
-export async function retagTextMarkup(
+export async function settleEngineMarks(
   bytes: Uint8Array,
   marks: readonly AnnotationMark[],
   context: OperationContext,
-): Promise<RetagOutcome> {
+): Promise<SettleOutcome> {
   const targets = new Map<string, AnnotationMark>();
-  for (const mark of marks) {
-    // The appearance built below is a bar or a zigzag inside the annotation's own
-    // box, drawn from the mark's stored geometry: a turned mark gets its appearance
-    // turned afterwards by `ops/annotation-transform`, together with the fields, so
-    // nothing is baked twice (`writeAnnotationsToFile`).
-    if (RETAG_SUBTYPES[mark.kind] !== undefined) targets.set(markerFor(mark.id), mark);
-  }
-  if (targets.size === 0) return { ...nothingToDo(bytes, 'retag'), retagged: [] };
+  // The appearance built below is a bar or a zigzag inside the annotation's own box,
+  // drawn from the mark's stored geometry: a turned mark gets its appearance turned
+  // afterwards by `ops/annotation-transform`, together with the fields, so nothing is
+  // baked twice (`writeAnnotationsToFile`).
+  for (const mark of marks) targets.set(mark.id, mark);
+  if (targets.size === 0) return { ...nothingToDo(bytes, 'settle'), retagged: [] };
 
   const { doc } = await openForWrite(bytes);
   try {
@@ -693,11 +706,16 @@ export async function retagTextMarkup(
         for (let position = 0; position < annots.length; position += 1) {
           const dict = resolved(annots.get(position));
           if (dict === null || !dict.isDictionary()) continue;
-          const text = readText(dict.get('Contents')) ?? undefined;
-          const id = text === undefined ? null : markerId(text);
-          const mark = id === null ? undefined : targets.get(markerFor(id));
-          if (mark === undefined || text === undefined) continue;
-          // Popup records can carry the parent's comment; never retag the sibling.
+          const id = markerId(readText(dict.get('Contents')) ?? '');
+          const mark = id === null ? undefined : targets.get(id);
+          if (mark === undefined) continue;
+          const body = mark.contents.trim();
+          if (body === '') dict.delete('Contents');
+          else dict.put('Contents', text(doc, body));
+          // A popup repeats its parent's comment: its words are cleaned, but it is not
+          // the mark, so it takes no name and is never retagged.
+          if (readName(dict.get('Subtype')) === 'Popup') continue;
+          dict.put('NM', text(doc, markerFor(mark.id)));
           if (readName(dict.get('Subtype')) !== 'Highlight') continue;
           const subtype = RETAG_SUBTYPES[mark.kind];
           if (subtype === undefined) continue;
@@ -737,7 +755,7 @@ export async function retagTextMarkup(
           const ap = doc.newDictionary();
           ap.put('N', appearance);
           dict.put('AP', ap);
-          retagged.push(text);
+          retagged.push(markerFor(mark.id));
         }
         context.onProgress?.({
           phase: 'annotate',
@@ -748,20 +766,27 @@ export async function retagTextMarkup(
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') throw error;
-      throw mapMupdfError(error, 'annotations.retag');
+      throw mapMupdfError(error, 'annotations.settle');
     }
-    const saved = saveRewrite(doc, 'annotations.retag');
+    // Every save of a highlight or an ink stroke passes through here, so the step is
+    // appended to the engine's own incremental update rather than rewriting the file:
+    // the bytes the reader opened, and a signature over them, stay as they were.
+    const incremental = doc.canBeSavedIncrementally();
+    const saved = saveIncremental(doc, 'annotations.settle');
     return {
       bytes: saved,
       retagged,
       report: {
         engine: 'mupdf',
-        steps: ['load', 'annotations.retag', 'save'],
-        notes: [note('changed', 'op.note.annotate.retagged', { count: retagged.length })],
+        steps: ['load', 'annotations.settle', 'save'],
+        notes:
+          retagged.length === 0
+            ? []
+            : [note('changed', 'op.note.annotate.retagged', { count: retagged.length })],
         inputBytes: bytes.byteLength,
         outputBytes: saved.byteLength,
         pageCount: pages.length,
-        incremental: false,
+        incremental,
       },
     };
   } finally {
@@ -1025,7 +1050,8 @@ export async function readAnnotations(
   handle: PdfDocumentHandle,
   context: OperationContext,
 ): Promise<readonly ExistingAnnotation[]> {
-  const result: ExistingAnnotation[] = [];
+  const pending: ExistingAnnotation[] = [];
+  const result = pending;
   for (let pageIndex = 0; pageIndex < handle.pageCount; pageIndex += 1) {
     throwIfAborted(context.signal);
     const page = await handle.raw.getPage(pageIndex + 1);
@@ -1064,13 +1090,16 @@ export async function readAnnotations(
       const state = nameOf(record.state);
       const stateModel = nameOf(record.stateModel);
       const created = asString(record.creationDate);
-      result.push({
-        id: asString(record.id) ?? `${pageIndex}-${result.length}`,
+      const id = asString(record.id) ?? `${pageIndex}-${result.length}`;
+      const contents = strOf(record.contentsObj) || (asString(record.contents) ?? '');
+      pending.push({
+        id,
         subtype,
         pageIndex,
         kind: kindForSubtype(subtype),
         rect,
-        contents: strOf(record.contentsObj) || (asString(record.contents) ?? ''),
+        contents: commentText(contents),
+        marker: markerId(contents),
         author: strOf(record.titleObj),
         modified: asString(record.modificationDate),
         ...(annotationType === undefined ? {} : { annotationType }),
@@ -1089,17 +1118,66 @@ export async function readAnnotations(
       });
     }
   }
-  return result;
+  if (result.length === 0) return result;
+  // pdf.js reports no `/NM`, so the names come from the file itself; an annotation whose
+  // name is not ours keeps the marker its `/Contents` may carry (an older write).
+  const names = await annotationNames(await handle.raw.getData(), context);
+  return result.map((annotation) => {
+    const named = names.get(`${annotation.pageIndex}|${annotation.id}`);
+    return named === undefined || named === annotation.marker ? annotation : { ...annotation, marker: named };
+  });
+}
+
+/**
+ * `page|17R` → the mark id an annotation's `/NM` names, for the annotations we wrote.
+ *
+ * A file that needs a password to be read gives no names: pdf.js opened it with the
+ * reader's password, but the bytes it holds are still encrypted and MuPDF refuses them.
+ * Such a file opens read-only, so its comments are listed from what pdf.js read, with the
+ * marker an older write put in `/Contents`, instead of failing the whole read.
+ */
+async function annotationNames(
+  bytes: Uint8Array,
+  context: OperationContext,
+): Promise<ReadonlyMap<string, string>> {
+  const names = new Map<string, string>();
+  const opened = await openForWrite(bytes).catch((error: unknown) => {
+    if (error instanceof ToolError && error.code === 'encrypted-unsupported') return null;
+    throw error;
+  });
+  if (opened === null) return names;
+  const { doc } = opened;
+  try {
+    for (const [pageIndex, page] of pageObjects(doc).entries()) {
+      throwIfAborted(context.signal);
+      const annots = annotsOf(doc, page);
+      if (annots === null) continue;
+      for (let position = 0; position < annots.length; position += 1) {
+        const entry = annots.get(position);
+        if (!entry.isIndirect()) continue;
+        const dict = resolved(entry);
+        if (dict === null || !dict.isDictionary()) continue;
+        const marker = markerId(readText(dict.get('NM')) ?? '');
+        if (marker !== null) names.set(`${pageIndex}|${referenceOf(entry)}`, marker);
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    throw mapMupdfError(error, 'annotations.names');
+  } finally {
+    doc.destroy();
+  }
+  return names;
 }
 
 /**
  * The reference ids the file now carries for the annotations we just wrote.
  *
- * The writers report the id *we* gave a mark (`pdf-editor-ann:<uuid>` inside
- * `/Contents`); a transform addresses an annotation by the object reference the
+ * The writers report the id *we* gave a mark (`pdf-editor-ann:<uuid>`, the annotation's
+ * `/NM`); a transform addresses an annotation by the object reference the
  * file gave it (`17R`), because that is the only stable identity a page's
  * `/Annots` array offers. The two are joined here on the marker line — the same
- * join `retagTextMarkup` matches on, and never on page order or position, so a
+ * join `settleEngineMarks` matches on, and never on page order or position, so a
  * marker that is not in the file is simply left out rather than guessed at.
  *
  * Used by `writeAnnotationsToFile` to turn the marks of a rotated selection: what
@@ -1125,12 +1203,11 @@ export async function markerTargets(
         if (!entry.isIndirect()) continue;
         const dict = resolved(entry);
         if (dict === null || !dict.isDictionary()) continue;
-        // A popup can carry its parent's comment — the same reason `retagTextMarkup`
+        // A popup can carry its parent's comment — the same reason `settleEngineMarks`
         // checks the subtype before touching a match. Resolving one here would hand
         // `transformPdfAnnotations` a `/Popup` target, which it must refuse.
         if (readName(dict.get('Subtype')) === 'Popup') continue;
-        const text = readText(dict.get('Contents'));
-        const marker = text === null ? null : markerId(text);
+        const marker = markerOf(dict);
         if (marker === null) continue;
         const id = wanted.get(`${pageIndex}|${markerFor(marker)}`);
         if (id === undefined) continue;
@@ -1160,10 +1237,9 @@ export function referenceOf(entry: PDFObject): string {
  * second time: the engine's writer appends unconditionally (`writeAnnotations`).
  */
 export function annotationIdsOf(existing: readonly ExistingAnnotation[]): readonly string[] {
-  return existing.flatMap((annotation) => {
-    const id = markerId(annotation.contents);
-    return id === null ? [annotation.id] : [annotation.id, id];
-  });
+  return existing.flatMap((annotation) =>
+    annotation.marker === null ? [annotation.id] : [annotation.id, annotation.marker],
+  );
 }
 
 /**

@@ -92,8 +92,8 @@ import { mapMupdfError } from '../engines/mupdf';
 import {
   annotsOf,
   openForWrite,
-  PRODUCER_LINE,
   pageObjects,
+  producerKeptNote,
   readName,
   readNumbers,
   resolved,
@@ -1307,7 +1307,7 @@ export async function transformPdfAnnotations(
         // line is still merged (metadata survives the rewrite) and still reported,
         // but it never stands in for the result.
         note('changed', 'ann.transformed', { count: transformed.length }),
-        note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
+        producerKeptNote(),
       ],
       inputBytes: bytes.byteLength,
       outputBytes: saved.byteLength,

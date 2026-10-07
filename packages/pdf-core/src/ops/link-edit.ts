@@ -67,8 +67,8 @@ import { mapMupdfError } from '../engines/mupdf';
 import {
   annotsOf,
   openForWrite,
-  PRODUCER_LINE,
   pageObjects,
+  producerKeptNote,
   readName,
   readNumbers,
   resolved,
@@ -345,11 +345,7 @@ function nothingToDo(
     report: {
       engine: 'mupdf',
       steps: ['load'],
-      notes: [
-        ...notes,
-        note('warning', 'op.note.link.nothing'),
-        note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
-      ],
+      notes: [...notes, note('warning', 'op.note.link.nothing'), producerKeptNote()],
       inputBytes: bytes.byteLength,
       outputBytes: bytes.byteLength,
       pageCount,
@@ -814,7 +810,7 @@ export async function applyLinkEdit(
     }
 
     result.steps.push('producer');
-    result.notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    result.notes.push(producerKeptNote());
     if (addedTotal > 0) result.notes.push(note('changed', 'op.note.link.added', { count: addedTotal }));
     if (removedTotal > 0) result.notes.push(note('changed', 'op.note.link.removed', { count: removedTotal }));
 

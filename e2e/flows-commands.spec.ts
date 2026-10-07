@@ -102,6 +102,28 @@ async function applyForm(form: ReturnType<Page['getByRole']>): Promise<void> {
   await expect(form).toBeHidden({ timeout: 60_000 });
 }
 
+test('a number field keeps the decimal the reader types, key by key', async ({ page }) => {
+  await open(page);
+  const form = await openForm(page, 'Optimize', 'Optimize / Compress');
+  await form.getByRole('radio', { name: 'Convert pages to image (lossy)' }).check();
+  const quality = form.getByRole('spinbutton', { name: 'Image quality' });
+  // Typed one key at a time, as a person types: `0.` is a half-typed number the input
+  // reports as empty, and the field once snapped it to the minimum, so `0.5` became 0.35.
+  for (const typed of ['0.5', '0.85']) {
+    await quality.selectText();
+    await quality.press('Backspace');
+    await quality.pressSequentially(typed);
+    await expect(quality).toHaveValue(typed);
+  }
+  // A cleared field is not a value: the run waits for a number instead of using the minimum.
+  await quality.selectText();
+  await quality.press('Backspace');
+  await expect(form.getByRole('button', { name: 'Preview', exact: true })).toBeDisabled();
+  await quality.pressSequentially('0.6');
+  await expect(quality).toHaveValue('0.6');
+  await expect(form.getByRole('button', { name: 'Preview', exact: true })).toBeEnabled();
+});
+
 test('optimize: lossless pass strips metadata, the image pass replaces the text layer by pictures', async ({
   page,
 }) => {

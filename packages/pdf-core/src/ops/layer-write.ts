@@ -44,7 +44,7 @@ import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
 import {
   openForWrite,
-  PRODUCER_LINE,
+  producerKeptNote,
   readName,
   readText,
   resolved,
@@ -251,10 +251,7 @@ function nothingToDo(bytes: Uint8Array, pageCount: number): OperationOutcome {
     report: {
       engine: 'mupdf',
       steps: ['load'],
-      notes: [
-        note('warning', 'op.note.layer.nothing'),
-        note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
-      ],
+      notes: [note('warning', 'op.note.layer.nothing'), producerKeptNote()],
       inputBytes: bytes.byteLength,
       outputBytes: bytes.byteLength,
       pageCount,
@@ -549,7 +546,7 @@ export async function applyLayerWrite(
     }
 
     edit.steps.push('producer');
-    edit.notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    edit.notes.push(producerKeptNote());
     throwIfAborted(context.signal);
     out = saveRewrite(doc, 'write layers');
   } finally {

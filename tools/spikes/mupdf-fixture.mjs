@@ -468,7 +468,7 @@ export function readFixture(mupdf, bytes) {
   return {
     doc,
     pageCount,
-    /** Every annotation dictionary on a page: its subtype, `/Contents` and whether it has a `/Measure`. */
+    /** Every annotation dictionary on a page: its subtype, `/NM`, `/Contents` and whether it has a `/Measure`. */
     annotations(pageIndex) {
       const annots = doc.findPage(pageIndex).get('Annots');
       const out = [];
@@ -477,8 +477,10 @@ export function readFixture(mupdf, bytes) {
         const dict = annots.get(at).resolve();
         const subtype = dict.get('Subtype');
         const contents = dict.get('Contents');
+        const name = dict.get('NM');
         out.push({
           subtype: subtype.isName() ? subtype.asName() : '?',
+          name: name.isString() ? name.asString() : '',
           contents: contents.isString() ? contents.asString() : '',
           hasMeasure: !dict.get('Measure').isNull(),
         });

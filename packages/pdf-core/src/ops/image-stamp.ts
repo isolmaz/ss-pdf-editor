@@ -59,7 +59,7 @@ const STAMP_NAMES: Readonly<Record<ImageStampRole, string>> = {
 export const MIN_STAMP_SIDE = 4;
 
 export interface ImageStampRequest {
-  /** Session-unique id; it is the marker in `/Contents`, so the stamp can be found again. */
+  /** Session-unique id; it is the marker in `/NM`, so the stamp can be found again. */
   readonly id: string;
   readonly pageIndex: number;
   /** Centre of the stamp in app space: unrotated page points, origin top-left, y down. */
@@ -186,7 +186,9 @@ export async function addImageStamp(
         T: text(doc, request.author),
         M: text(doc, now),
         CreationDate: text(doc, now),
-        Contents: text(doc, label.length > 0 ? `${markerFor(request.id)} ${label}` : markerFor(request.id)),
+        // The marker names the stamp; `/Contents` carries only the label a reader shows.
+        NM: text(doc, markerFor(request.id)),
+        ...(label.length > 0 ? { Contents: text(doc, label) } : {}),
         AP: { N: appearance },
       });
       annotsOf(doc, page, true)?.push(dict);

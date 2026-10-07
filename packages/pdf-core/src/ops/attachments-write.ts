@@ -45,7 +45,14 @@
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
-import { openForWrite, PRODUCER_LINE, readText, resolved, saveRewrite, text } from '../engines/mupdf-write';
+import {
+  openForWrite,
+  producerKeptNote,
+  readText,
+  resolved,
+  saveRewrite,
+  text,
+} from '../engines/mupdf-write';
 import {
   note,
   type OperationContext,
@@ -272,7 +279,7 @@ export async function addAttachments(
       throw mapMupdfError(error, 'add attachments');
     }
 
-    notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    notes.push(producerKeptNote());
     notes.push(note('changed', 'op.note.attach.added', { count: added.length }));
     throwIfAborted(context.signal);
     out = saveRewrite(doc, 'add attachments');
@@ -350,7 +357,7 @@ export async function removeAttachments(
       };
     }
 
-    notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    notes.push(producerKeptNote());
     notes.push(note('changed', 'op.note.attach.removed', { count: removed.length }));
     if (missing.length > 0) notes.push(note('warning', 'op.note.attach.missing', { count: missing.length }));
     throwIfAborted(context.signal);

@@ -13,7 +13,7 @@ import {
   serializeAnnotationsJson,
   toAppSpace,
 } from './annotation-data';
-import { type AnnotationMark, commentText, contentsFor } from './annotations';
+import { type AnnotationMark, commentText, taggedContents } from './annotations';
 import { serializeFdf } from './form-data';
 
 function note(): AnnotationMark {
@@ -130,12 +130,12 @@ describe('toAppSpace', () => {
 });
 
 describe('commentText', () => {
-  it('shows the words of a comment this app wrote, without its marker', () => {
-    expect(commentText(contentsFor(note()))).toBe('Kontrol et');
+  it('shows the words of a comment an older write tagged with its marker, without the marker', () => {
+    expect(commentText(taggedContents(note()))).toBe('Kontrol et');
   });
 
   it('shows nothing for a mark written without a comment', () => {
-    expect(commentText(contentsFor({ ...note(), contents: '' }))).toBe('');
+    expect(commentText(taggedContents({ ...note(), contents: '' }))).toBe('');
   });
 
   it('leaves a comment from another application as it is', () => {

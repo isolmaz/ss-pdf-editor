@@ -33,9 +33,10 @@ import { mapMupdfError } from '../engines/mupdf';
 import {
   annotsOf,
   openForWrite,
-  PRODUCER_LINE,
   pageObjects,
   pdfDate,
+  producerKeptNote,
+  saveIncremental,
   saveRewrite,
   text,
   visibleBox,
@@ -48,7 +49,6 @@ import {
   type AnnotationWriteHandle,
   annotationIdsOf,
   boxesOf,
-  contentsFor,
   type ExistingAnnotation,
   hexToRgb,
   isStrokedHighlight,
@@ -56,8 +56,7 @@ import {
   markerFor,
   markerTargets,
   markRect,
-  OWNED_KINDS,
-  retagTextMarkup,
+  settleEngineMarks,
   writeAnnotations,
 } from './annotations';
 import {
@@ -117,8 +116,8 @@ export interface ShapesOutcome extends OperationOutcome {
  *  - the box arrives in the module's page space (top-left origin, y downward), so
  *    it is flipped, inset by half the stroke width (a stroke centred on the
  *    boundary is clipped by the box), then translated;
- *  - the stroke is opaque per annotation but the `/CA` opacity rides the
- *    annotation dictionary, which is where readers read it.
+ *  - the opacity is written on the annotation's `/CA` and, through `/GS0`, in the
+ *    appearance itself, which is the half the readers actually paint.
  *
  * The geometry is the mark's stored one: a mark's own `rotation` is applied by
  * `writeAnnotationsToFile` after this step, through `transformPdfAnnotations`,
@@ -165,6 +164,9 @@ export async function writeShapeAnnotations(
           FormType: 1,
           BBox: [0, 0, (rect[2] ?? 0) - (rect[0] ?? 0), (rect[3] ?? 0) - (rect[1] ?? 0)],
           Matrix: [1, 0, 0, 1, 0, 0],
+          // The stroke's alpha rides the appearance too: pdf.js and PDFium paint the
+          // `/AP` and ignore the annotation's `/CA`, so a 40 % rectangle exported opaque.
+          Resources: { ExtGState: { GS0: { Type: 'ExtGState', CA: opacity, ca: opacity } } },
         });
         const dict = doc.addObject({
           ...commonFields(doc, page, mark),
@@ -205,6 +207,139 @@ export async function writeShapeAnnotations(
   }
 }
 
+export interface NotesOutcome extends OperationOutcome {
+  /** Marker lines of the notes appended. */
+  readonly written: readonly string[];
+}
+
+/** A note's icon never fades below this: a note nobody can find is no note at all. */
+const NOTE_MIN_OPACITY = 0.6;
+
+/**
+ * Append one sticky note (`/Text`) per note mark, with an icon the reader paints.
+ *
+ * A note used to go through the engine as an **empty** `/FreeText`, whose appearance
+ * types `()`: the comment survived in `/Contents`, but nothing was drawn, so the note was
+ * invisible in every other reader and in the app itself once the file was reopened. A
+ * `/Text` annotation is what a PDF calls a note — readers list it with the comments and
+ * open its `/Contents` on click — and the icon is drawn here as an appearance stream,
+ * because a reader that finds no `/AP` draws its own icon or nothing at all.
+ */
+export async function writeNoteAnnotations(
+  bytes: Uint8Array,
+  marks: readonly AnnotationMark[],
+  context: OperationContext,
+): Promise<NotesOutcome> {
+  const notes = marks.filter((mark) => mark.kind === 'note');
+  if (notes.length === 0) return { ...nothingToDo(bytes, 'notes'), written: [] };
+
+  const { doc } = await openForWrite(bytes);
+  try {
+    const pages = pageObjects(doc);
+    const written: string[] = [];
+    try {
+      for (const mark of notes) {
+        throwIfAborted(context.signal);
+        const page = pages[mark.pageIndex];
+        if (page === undefined) {
+          throw new ToolError('range-invalid', { engine: 'mupdf', pageIndex: mark.pageIndex });
+        }
+        const crop = visibleBox(page);
+        const rect = markRect({ ...mark, thickness: 0 }, crop.y + crop.height);
+        const width = (rect[2] ?? 0) - (rect[0] ?? 0);
+        const height = (rect[3] ?? 0) - (rect[1] ?? 0);
+        const opacity = Math.max(mark.opacity, NOTE_MIN_OPACITY);
+        const appearance = doc.addStream(noteAppearance(width, height, hexToRgb(mark.color)), {
+          Type: 'XObject',
+          Subtype: 'Form',
+          FormType: 1,
+          BBox: [0, 0, width, height],
+          Matrix: [1, 0, 0, 1, 0, 0],
+          Resources: { ExtGState: { GS0: { Type: 'ExtGState', CA: opacity, ca: opacity } } },
+        });
+        const dict = doc.addObject({
+          ...commonFields(doc, page, mark),
+          Subtype: 'Text',
+          Name: 'Comment',
+          Open: false,
+          Rect: rect,
+          C: [...hexToRgb(mark.color)],
+          CA: opacity,
+          AP: { N: appearance },
+        });
+        attach(doc, page, dict);
+        written.push(markerFor(mark.id));
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      throw mapMupdfError(error, 'annotations.notes');
+    }
+
+    // A note is appended, as the engine appends a highlight: adding a comment leaves the
+    // bytes the reader opened, and a signature over them, as they were.
+    const incremental = doc.canBeSavedIncrementally();
+    const saved = saveIncremental(doc, 'annotations.notes');
+    return {
+      bytes: saved,
+      written,
+      report: {
+        engine: 'mupdf',
+        steps: ['load', 'annotations.notes', 'save'],
+        notes: [note('changed', 'op.note.annotate.notes', { count: written.length })],
+        inputBytes: bytes.byteLength,
+        outputBytes: saved.byteLength,
+        pageCount: pages.length,
+        incremental,
+      },
+    };
+  } finally {
+    doc.destroy();
+  }
+}
+
+/**
+ * A note's icon in annotation space: a sheet in the mark's colour with its top-right
+ * corner folded, outlined dark enough to read on any page, and three lines of "text".
+ */
+function noteAppearance(width: number, height: number, color: readonly number[]): string {
+  const num = (value: number) => value.toFixed(3);
+  const inset = 0.75;
+  const fold = Math.min(width, height) * 0.3;
+  const left = inset;
+  const bottom = inset;
+  const right = width - inset;
+  const top = height - inset;
+  const lines: string[] = [];
+  for (const share of [0.62, 0.45, 0.28]) {
+    const y = num(height * share);
+    lines.push(
+      `${num(width * 0.2)} ${y} ${OP.MoveTo}`,
+      `${num(width * (share > 0.6 ? 0.55 : 0.75))} ${y} ${OP.LineTo}`,
+    );
+  }
+  return [
+    `/GS0 ${OP.SetGraphicsState}`,
+    `${num(color[0] ?? 1)} ${num(color[1] ?? 1)} ${num(color[2] ?? 0)} rg`,
+    `0.25 0.25 0.25 ${OP.StrokingColorRgb}`,
+    `1 ${OP.SetLineWidth}`,
+    `1 ${OP.SetLineJoinStyle}`,
+    `${num(left)} ${num(bottom)} ${OP.MoveTo}`,
+    `${num(right)} ${num(bottom)} ${OP.LineTo}`,
+    `${num(right)} ${num(top - fold)} ${OP.LineTo}`,
+    `${num(right - fold)} ${num(top)} ${OP.LineTo}`,
+    `${num(left)} ${num(top)} ${OP.LineTo}`,
+    `${OP.ClosePath} B`,
+    `${num(right - fold)} ${num(top)} ${OP.MoveTo}`,
+    `${num(right - fold)} ${num(top - fold)} ${OP.LineTo}`,
+    `${num(right)} ${num(top - fold)} ${OP.LineTo}`,
+    OP.StrokePath,
+    `0.75 ${OP.SetLineWidth}`,
+    ...lines,
+    OP.StrokePath,
+    '',
+  ].join('\n');
+}
+
 /** The fields every annotation this module writes carries, as MuPDF values. */
 function commonFields(doc: PDFDocument, page: PDFObject, mark: AnnotationMark): Record<string, unknown> {
   return {
@@ -215,7 +350,10 @@ function commonFields(doc: PDFDocument, page: PDFObject, mark: AnnotationMark): 
     Border: [0, 0, 0],
     T: text(doc, mark.author),
     M: text(doc, pdfDate(new Date(mark.createdAt))),
-    Contents: text(doc, contentsFor(mark)),
+    // The marker is the annotation's name; `/Contents` is what every reader prints, so it
+    // holds the author's words and nothing else.
+    NM: text(doc, markerFor(mark.id)),
+    ...(mark.contents.trim() === '' ? {} : { Contents: text(doc, mark.contents.trim()) }),
   };
 }
 
@@ -276,6 +414,7 @@ function shapeAppearance(
   const num = (value: number) => value.toFixed(3);
 
   const header = [
+    `/GS0 ${OP.SetGraphicsState}`,
     `${num(stroke)} ${OP.SetLineWidth}`,
     `1 ${OP.SetLineCapStyle}`,
     `${num(red)} ${num(green)} ${num(blue)} ${OP.StrokingColorRgb}`,
@@ -457,7 +596,7 @@ export async function writeStrokeHighlights(
         steps: ['load', 'annotations.highlights', 'save'],
         notes: [
           note('changed', 'op.note.annotate.highlights', { count: written.length }),
-          note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
+          producerKeptNote(),
         ],
         inputBytes: bytes.byteLength,
         outputBytes: saved.byteLength,
@@ -553,8 +692,9 @@ function markerAppearance(
  *  1. **Engine step** — text markup and ink go into the document through
  *     `saveDocument()`, which writes the dictionaries and their appearance
  *     streams and keeps the file incremental.
- *  2. **Subtype step** — underline / strikeout / squiggly are the same geometry
- *     under a different `/Subtype`, and the engine only writes `/Highlight`.
+ *  2. **Settle step** — the engine's marks get their marker as `/NM` (it can only put
+ *     it in `/Contents`), and underline / strikeout / squiggly, the same geometry
+ *     under a different `/Subtype`, are retagged: the engine only writes `/Highlight`.
  *  3. **Shape step** — squares, circles and lines have no engine writer at all.
  *  4. **Marker step** — a highlight painted as a stroke (the marker) is built
  *     here too, because the engine fills polygons and would paint the stroke's
@@ -564,9 +704,11 @@ function markerAppearance(
  * its marks are written as `/IRT` records (`ops/annotation-review.ts`): a reply needs
  * the reference its comment was given, which only exists once the comment is written.
  *
- * Steps 2 to 4 are MuPDF rewrites, so they end the incremental fast path
- * and the report says so; a session holding only marks the engine
- * can write keeps it.
+ * The settle step and the notes are appended to the engine's incremental update
+ * (`saveIncremental`), so a session of highlights, ink, text marks and notes keeps the
+ * bytes the reader opened, and a signature over them. The shape and marker steps, typed
+ * text, turns and replies are MuPDF rewrites: they end the incremental fast path, and
+ * the report says so — as it does when MuPDF could not append and rewrote instead.
  *
  * ## Rotation
  *
@@ -596,10 +738,12 @@ export async function writeAnnotationsToFile(
     (mark) =>
       mark.kind !== 'shapes' &&
       mark.kind !== 'freetext' &&
+      mark.kind !== 'note' &&
       !isStrokedHighlight(mark) &&
       !present.has(mark.id),
   );
   const shapes = marks.filter((mark) => mark.kind === 'shapes' && !present.has(mark.id));
+  const stickies = marks.filter((mark) => mark.kind === 'note' && !present.has(mark.id));
   // Typed text is written with its own font and appearance (`annotation-freetext.ts`);
   // a box the user left empty is not a mark and is not written.
   const texts = marks.filter(
@@ -608,7 +752,13 @@ export async function writeAnnotationsToFile(
   const steps: string[] = [];
   const notes: OperationNote[] = [];
 
-  if (engineMarks.length === 0 && shapes.length === 0 && markers.length === 0 && texts.length === 0) {
+  if (
+    engineMarks.length === 0 &&
+    shapes.length === 0 &&
+    stickies.length === 0 &&
+    markers.length === 0 &&
+    texts.length === 0
+  ) {
     const bytes = await handle.saveDocument();
     return {
       bytes,
@@ -625,6 +775,9 @@ export async function writeAnnotationsToFile(
   }
 
   let bytes: Uint8Array;
+  // Whether every step so far appended to the file it was given (`saveIncremental` falls
+  // back to a rewrite when MuPDF cannot append, and its report says so).
+  let appended = true;
   if (engineMarks.length > 0) {
     const written = await writeAnnotations(
       handle,
@@ -635,10 +788,11 @@ export async function writeAnnotationsToFile(
     steps.push(...written.report.steps);
     notes.push(...written.report.notes);
 
-    const retagged = await retagTextMarkup(bytes, engineMarks, context);
-    bytes = retagged.bytes;
-    steps.push(...retagged.report.steps);
-    notes.push(...retagged.report.notes);
+    const settled = await settleEngineMarks(bytes, engineMarks, context);
+    bytes = settled.bytes;
+    appended &&= settled.report.incremental;
+    steps.push(...settled.report.steps);
+    notes.push(...settled.report.notes);
   } else {
     bytes = await handle.saveDocument();
   }
@@ -648,6 +802,14 @@ export async function writeAnnotationsToFile(
     bytes = shaped.bytes;
     steps.push(...shaped.report.steps);
     notes.push(...shaped.report.notes);
+  }
+
+  if (stickies.length > 0) {
+    const stuck = await writeNoteAnnotations(bytes, stickies, context);
+    bytes = stuck.bytes;
+    appended &&= stuck.report.incremental;
+    steps.push(...stuck.report.steps);
+    notes.push(...stuck.report.notes);
   }
 
   if (texts.length > 0) {
@@ -747,6 +909,7 @@ export async function writeAnnotationsToFile(
     report: {
       engine:
         shapes.length > 0 ||
+        stickies.length > 0 ||
         markers.length > 0 ||
         texts.length > 0 ||
         turned.length > 0 ||
@@ -764,7 +927,7 @@ export async function writeAnnotationsToFile(
         texts.length === 0 &&
         turned.length === 0 &&
         answered.length === 0 &&
-        !engineMarks.some((mark) => OWNED_KINDS.includes(mark.kind)),
+        appended,
     },
   };
 }

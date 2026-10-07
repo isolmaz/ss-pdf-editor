@@ -311,6 +311,66 @@ export interface ProducedPdf {
 }
 
 /**
+ * The share of pixels (0–1) that are not white inside `rect` (PDF user space, an unturned
+ * page whose box starts at the origin) when MuPDF paints page `pageIndex` with its
+ * annotations — what another reader shows, not what the file merely declares. An
+ * annotation whose appearance draws nothing scores 0.
+ */
+export async function inkWithin(
+  bytes: Uint8Array,
+  pageIndex: number,
+  rect: readonly [number, number, number, number],
+): Promise<number> {
+  interface Pixmap {
+    getWidth(): number;
+    getHeight(): number;
+    getNumberOfComponents(): number;
+    getPixels(): Uint8ClampedArray;
+  }
+  interface RenderModule {
+    readonly Matrix: { readonly identity: unknown };
+    readonly ColorSpace: { readonly DeviceRGB: unknown };
+    readonly Document: {
+      openDocument(
+        bytes: Uint8Array,
+        magic: string,
+      ): {
+        loadPage(index: number): {
+          toPixmap(matrix: unknown, space: unknown, alpha: boolean, annots: boolean): Pixmap;
+        };
+        destroy(): void;
+      };
+    };
+  }
+  // The root does not declare `mupdf`; it is resolved from the workspace that does.
+  const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as RenderModule;
+  const doc = mupdf.Document.openDocument(bytes.slice(), 'application/pdf');
+  try {
+    const pixmap = doc
+      .loadPage(pageIndex)
+      .toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
+    const width = pixmap.getWidth();
+    const height = pixmap.getHeight();
+    const stride = pixmap.getNumberOfComponents();
+    const pixels = pixmap.getPixels();
+    const [x0, y0, x1, y1] = rect;
+    let inked = 0;
+    let total = 0;
+    for (let y = Math.max(0, Math.floor(height - y1)); y < Math.min(height, Math.ceil(height - y0)); y += 1) {
+      for (let x = Math.max(0, Math.floor(x0)); x < Math.min(width, Math.ceil(x1)); x += 1) {
+        const at = (y * width + x) * stride;
+        total += 1;
+        if ((pixels[at] ?? 255) < 235 || (pixels[at + 1] ?? 255) < 235 || (pixels[at + 2] ?? 255) < 235)
+          inked += 1;
+      }
+    }
+    return total === 0 ? 0 : inked / total;
+  } finally {
+    doc.destroy();
+  }
+}
+
+/**
  * Read the produced bytes with MuPDF's object model: every page's annotations by
  * subtype, the field name a widget carries, the form value the field still holds, the
  * Info title and producer, the embedded-file names and the top-level outline titles.
@@ -519,16 +579,26 @@ export async function readProducedEntry(
  * An N-page PDF whose every page carries one line of text, `<label> <number>`, so the
  * order of a produced file is readable from its text. Built byte by byte like the fixture
  * above: ASCII only, a computed cross-reference table.
+ *
+ * `rotations` gives page `i` its own `/Rotate` (a page the file already turns is the case
+ * a viewer gets wrong), `size` its `/MediaBox`; the text sits near the top-left corner of
+ * the unturned page either way, so a turned page's orientation is readable from it.
  */
-export function labelledPdf(label: string, pages: number): Uint8Array {
+export function labelledPdf(
+  label: string,
+  pages: number,
+  options: { readonly rotations?: readonly number[]; readonly size?: readonly [number, number] } = {},
+): Uint8Array {
+  const [width, height] = options.size ?? [595, 842];
   const bodies: string[] = ['<< /Type /Catalog /Pages 2 0 R >>', ''];
   const kids: number[] = [];
   bodies.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
   for (let index = 0; index < pages; index += 1) {
-    const content = `BT /F1 24 Tf 72 700 Td (${label} ${index + 1}) Tj ET\n`;
+    const content = `BT /F1 24 Tf 72 ${height - 142} Td (${label} ${index + 1}) Tj ET\n`;
+    const rotate = options.rotations?.[index] ?? 0;
     kids.push(bodies.length + 1);
     bodies.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${bodies.length + 2} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}]${rotate === 0 ? '' : ` /Rotate ${rotate}`} /Resources << /Font << /F1 3 0 R >> >> /Contents ${bodies.length + 2} 0 R >>`,
     );
     bodies.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
   }
@@ -544,4 +614,52 @@ export function labelledPdf(label: string, pages: number): Uint8Array {
   source += `xref\n0 ${bodies.length + 1}\n0000000000 65535 f \n${xref}`;
   source += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R >>\nstartxref\n${source.indexOf('xref\n')}\n%%EOF\n`;
   return new Uint8Array([...source].map((character) => character.charCodeAt(0)));
+}
+
+/**
+ * A one-page document carrying a sticky note (`/Text`, icon "Note") of its own, written by
+ * the pinned MuPDF: the annotation every reader draws with an icon.
+ */
+export async function textNotePdf(contents: string): Promise<Uint8Array> {
+  interface MupdfBuffer {
+    asUint8Array(): Uint8Array;
+    destroy(): void;
+  }
+  interface NoteModule {
+    readonly PDFDocument: {
+      openDocument(
+        bytes: Uint8Array,
+        magic: string,
+      ): {
+        loadPage(index: number): {
+          createAnnotation(type: string): {
+            setRect(rect: readonly number[]): void;
+            setContents(text: string): void;
+            setIcon(name: string): void;
+            update(): void;
+          };
+        };
+        saveToBuffer(options: string): MupdfBuffer;
+        destroy(): void;
+      };
+    };
+  }
+  // The root does not declare `mupdf`; it is resolved from the workspace that does.
+  const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as NoteModule;
+  const doc = mupdf.PDFDocument.openDocument(labelledPdf('Noted', 1), 'application/pdf');
+  try {
+    const note = doc.loadPage(0).createAnnotation('Text');
+    note.setRect([400, 600, 420, 620]);
+    note.setContents(contents);
+    note.setIcon('Note');
+    note.update();
+    const buffer = doc.saveToBuffer('');
+    try {
+      return new Uint8Array(buffer.asUint8Array());
+    } finally {
+      buffer.destroy();
+    }
+  } finally {
+    doc.destroy();
+  }
 }

@@ -116,6 +116,7 @@ async function stamps(bytes: Uint8Array) {
         name: readName(dict?.get('Name')),
         rect: readNumbers(dict?.get('Rect')),
         flags: dict?.get('F').asNumber(),
+        nm: dict?.get('NM').asString(),
         contents: dict?.get('Contents').asString(),
       };
     });
@@ -136,8 +137,9 @@ describe('addImageStamp', () => {
       rect: [70, 130, 130, 170],
       flags: 4,
     });
-    expect(stamp?.contents).toContain('stamp-1');
-    expect(stamp?.contents).toContain('Signature');
+    // The marker names the stamp; `/Contents` is the label a reader shows, nothing else.
+    expect(stamp?.nm).toBe('pdf-editor-ann:stamp-1');
+    expect(stamp?.contents).toBe('Signature');
     const shown = await render(out.bytes);
     // The 20×10 picture is scaled to 60×40 (stretched to the box): red on the left half, blue on the right.
     expect(shown.red).toEqual([70, 130, 99, 169]);

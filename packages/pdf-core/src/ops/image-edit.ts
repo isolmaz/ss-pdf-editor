@@ -27,8 +27,14 @@
 import type { PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
-import { openForWrite, pageObjects, readName, resolved, saveRewrite } from '../engines/mupdf-write';
-import { PRODUCER_LINE } from './metadata';
+import {
+  openForWrite,
+  pageObjects,
+  producerKeptNote,
+  readName,
+  resolved,
+  saveRewrite,
+} from '../engines/mupdf-write';
 import {
   note,
   type OperationContext,
@@ -397,10 +403,7 @@ export async function applyImageEdit(
       report: {
         engine: 'mupdf',
         steps: ['load'],
-        notes: [
-          note('warning', 'op.note.image.nothing'),
-          note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
-        ],
+        notes: [note('warning', 'op.note.image.nothing'), producerKeptNote()],
         inputBytes: bytes.byteLength,
         outputBytes: bytes.byteLength,
         pageCount: 0,
@@ -523,11 +526,7 @@ export async function applyImageEdit(
       const report: OperationReport = {
         engine: 'mupdf',
         steps: ['load'],
-        notes: [
-          ...notes,
-          note('warning', 'op.note.image.noneFound', { count: missing }),
-          note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
-        ],
+        notes: [...notes, note('warning', 'op.note.image.noneFound', { count: missing }), producerKeptNote()],
         inputBytes: bytes.byteLength,
         outputBytes: bytes.byteLength,
         pageCount,

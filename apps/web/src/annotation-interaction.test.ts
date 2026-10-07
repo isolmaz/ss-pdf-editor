@@ -19,7 +19,6 @@
  */
 
 import type { AnnotationMark, ExistingAnnotation } from 'pdf-core/ops/annotations';
-import { markerFor } from 'pdf-core/ops/annotations';
 import type { MeasureMark } from 'pdf-core/ops/measure';
 import type { MarkTarget } from 'pdf-ui/tools';
 import { describe, expect, it } from 'vitest';
@@ -86,7 +85,7 @@ function redaction(id: string, rect: readonly [number, number, number, number]):
   return { id, mark: { pageIndex: 0, space: 'app-v1', rect } };
 }
 
-/** The file's copy of one of our marks, as the reader reports it: `/Contents` and all. */
+/** The file's copy of one of our marks, as the reader reports it: named by its marker. */
 function persistedCopy(id: string, marker: string): ExistingAnnotation {
   return {
     id,
@@ -94,7 +93,8 @@ function persistedCopy(id: string, marker: string): ExistingAnnotation {
     pageIndex: 0,
     kind: 'highlight',
     rect: [10, 20, 30, 26],
-    contents: `${markerFor(marker)} a note`,
+    contents: 'a note',
+    marker,
     author: 'author',
     modified: null,
   };
@@ -268,7 +268,7 @@ describe('normalizePendingMarks', () => {
   });
 });
 
-/** An annotation the file carries that is *not* one of ours (no marker in `/Contents`). */
+/** An annotation the file carries that is *not* one of ours (no marker). */
 function fileAnnotation(id: string, overrides: Partial<ExistingAnnotation> = {}): ExistingAnnotation {
   return {
     id,
@@ -277,6 +277,7 @@ function fileAnnotation(id: string, overrides: Partial<ExistingAnnotation> = {})
     kind: 'highlight',
     rect: [10, 20, 30, 26],
     contents: 'a note',
+    marker: null,
     author: 'author',
     modified: null,
     ...overrides,

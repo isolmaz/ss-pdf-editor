@@ -1,9 +1,8 @@
 /**
  * Text the user types onto a page — the `/FreeText` annotation ("Metin ekle").
  *
- * pdf.js can write a `/FreeText` (`EDITOR_FREETEXT`), and the note mark already uses
- * that path — but only as an **empty** shell, because the engine draws the visible text
- * with a WinAnsi base font that has no `ş ğ ı İ` (`annotations.ts`, `storageEntriesFor`).
+ * pdf.js can write a `/FreeText`, but the engine draws the visible text with a WinAnsi
+ * base font that has no `ş ğ ı İ`.
  * Text the user can read on the page therefore cannot go through the engine: this module
  * writes the dictionary **and** its appearance stream itself, with the pinned Noto Sans
  * embedded, the same font every other writer that draws text uses (`engines/noto.ts`),
@@ -33,14 +32,13 @@ import {
   pageObjects,
   pdfDate,
   readName,
-  readText,
   resolved,
   saveRewrite,
   subsetEmbeddedFaces,
   text,
   visibleBox,
 } from '../engines/mupdf-write';
-import { type AnnotationMark, contentsFor, hexToRgb, markerFor, markerId } from './annotations';
+import { type AnnotationMark, hexToRgb, markerFor, markerOf } from './annotations';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 /** The size a new text box starts at, in points. */
@@ -118,8 +116,8 @@ export function freeTextSize(mark: AnnotationMark): number {
  *
  * The mark's `rect` fixes the box's top-left corner and its width (page space, top-left
  * origin); the height follows the wrapped text, so a box never cuts off the last line.
- * `/Contents` carries the session marker ahead of the text, the convention every mark
- * this app writes follows — it is how a later edit finds the annotation again.
+ * `/NM` carries the session marker and `/Contents` the text alone, the convention every
+ * mark this app writes follows — the name is how a later edit finds the annotation again.
  */
 export async function writeFreeTextAnnotations(
   bytes: Uint8Array,
@@ -220,7 +218,10 @@ export async function writeFreeTextAnnotations(
           CA: opacity,
           T: text(doc, mark.author),
           M: text(doc, pdfDate(new Date(mark.createdAt))),
-          Contents: text(doc, contentsFor(mark)),
+          // The typed words, and the marker as the annotation's name: `/Contents` is what
+          // every reader prints.
+          NM: text(doc, markerFor(mark.id)),
+          Contents: text(doc, mark.contents.trim()),
           AP: { N: appearance },
         });
         annotsOf(doc, page, true)?.push(dict);
@@ -271,7 +272,7 @@ async function verifyFreeText(
       for (let position = 0; position < annots.length; position += 1) {
         const dict = resolved(annots.get(position));
         if (dict === null || !dict.isDictionary() || readName(dict.get('Subtype')) !== 'FreeText') continue;
-        const id = markerId(readText(dict.get('Contents')) ?? '');
+        const id = markerOf(dict);
         const appearance = resolved(dict.get('AP'));
         // A stream is recognised on its reference (`engines/mupdf-write.ts`).
         if (id === null || appearance === null || !appearance.get('N').isStream()) continue;

@@ -69,8 +69,8 @@ import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
 import {
   openForWrite,
-  PRODUCER_LINE,
   pageObjects,
+  producerKeptNote,
   readNumbers,
   readText,
   resolved,
@@ -653,11 +653,7 @@ function nothingToDo(
     report: {
       engine: 'mupdf',
       steps: ['load'],
-      notes: [
-        ...notes,
-        note('warning', 'op.note.outline.nothing'),
-        note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }),
-      ],
+      notes: [...notes, note('warning', 'op.note.outline.nothing'), producerKeptNote()],
       inputBytes: bytes.byteLength,
       outputBytes: bytes.byteLength,
       pageCount,
@@ -858,7 +854,7 @@ export async function applyOutlineEdit(
     }
 
     steps.push('producer');
-    notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    notes.push(producerKeptNote());
     throwIfAborted(context.signal);
     out = saveRewrite(doc, 'edit outline');
   } finally {

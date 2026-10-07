@@ -129,6 +129,7 @@ describe('XFDF export of the file`s own annotations', () => {
     kind: null,
     rect: [100, 600, 124, 624],
     contents: '',
+    marker: null,
     author: 'Ayşe',
     modified: 'D:20261001093000Z',
     ...extra,

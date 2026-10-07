@@ -42,6 +42,7 @@ import {
   openForWrite,
   pageObjects,
   text as pdfText,
+  producerKeptNote,
   readText,
   resolved,
   saveRewrite,
@@ -646,7 +647,7 @@ async function stampOpened(
   if (emptyFileToken) notes.push(note('warning', 'op.note.stamp.fileTokenEmpty'));
   const untouched = total - stampPages.length;
   if (untouched > 0) notes.push(note('preserved', 'op.note.stamp.untouchedPages', { count: untouched }));
-  notes.push(note('preserved', 'op.note.metadata.producerKept'));
+  notes.push(producerKeptNote());
 
   const report: OperationReport = {
     engine: 'mupdf',

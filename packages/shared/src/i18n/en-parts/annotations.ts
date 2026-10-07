@@ -69,6 +69,7 @@ export const annotationsPart = {
   'op.note.annotate.retagged':
     '{count} comment(s) retagged to native format (underline / strikeout / squiggly).',
   'op.note.annotate.shapes': '{count} shape annotation(s) and appearance streams written.',
+  'op.note.annotate.notes': '{count} note(s) written as sticky notes with an icon.',
   'op.note.annotate.highlights': '{count} marker stroke(s) written with a stroke appearance.',
   'op.note.annotate.shapesPerspective':
     'Shapes generated with our own writer; scale and rotation may vary slightly in third-party viewers.',

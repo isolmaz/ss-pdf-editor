@@ -17,6 +17,7 @@ function annotation(id: string, extra: Partial<ExistingAnnotation> = {}): Existi
     kind: 'note',
     rect: [0, 0, 20, 20],
     contents: id,
+    marker: null,
     author: 'A',
     modified: null,
     ...extra,

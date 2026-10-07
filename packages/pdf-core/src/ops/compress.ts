@@ -26,9 +26,15 @@
 
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
-import { openForWrite, pageObjects, pdfNumber, resolved, saveRewrite } from '../engines/mupdf-write';
+import {
+  openForWrite,
+  pageObjects,
+  pdfNumber,
+  producerKeptNote,
+  resolved,
+  saveRewrite,
+} from '../engines/mupdf-write';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
-import { PRODUCER_LINE } from './metadata';
 import {
   formatBytes,
   note,
@@ -145,7 +151,7 @@ async function compressStructure(
     } else {
       notes.push(note('preserved', 'op.note.compress.infoKept'));
     }
-    notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+    notes.push(producerKeptNote());
     notes.push(note('preserved', 'op.note.compress.structureContent'));
 
     throwIfAborted(context.signal);
@@ -354,7 +360,7 @@ async function compressRaster(
   if (untouchedCount > 0)
     notes.push(note('preserved', 'op.note.compress.otherPages', { count: untouchedCount }));
   notes.push(note('preserved', 'op.note.compress.infoCopied'));
-  notes.push(note('preserved', 'op.note.metadata.producerKept', { producer: PRODUCER_LINE }));
+  notes.push(producerKeptNote());
   notes.push(...sizeNotes(bytes.byteLength, assembled.bytes.byteLength));
 
   const report: OperationReport = {
