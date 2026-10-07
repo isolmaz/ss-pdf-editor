@@ -155,7 +155,6 @@ export const tr = {
   'batch.folder.watch': 'Klasör İzle',
   'batch.folder.watching': 'Klasör izleniyor',
   'batch.folder.stop': 'İzlemeyi Durdur',
-  'batch.folder.unsupported': 'Bu tarayıcı klasör izlemeyi desteklemiyor.',
   'batch.folder.scanned': '{count} PDF dosyası kuyruğa eklendi.',
   'shell.open': 'Aç',
   'shell.openTabs': 'Açık belgeler',

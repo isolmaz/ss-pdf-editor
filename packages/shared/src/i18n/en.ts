@@ -143,7 +143,6 @@ export const en: Record<MessageKey, string> = {
   'batch.folder.watch': 'Watch Folder',
   'batch.folder.watching': 'Watching folder',
   'batch.folder.stop': 'Stop Watching',
-  'batch.folder.unsupported': 'This browser does not support folder watching.',
   'batch.folder.scanned': '{count} PDF files queued from folder.',
   'shell.open': 'Open',
   'shell.tasks': 'Tasks',
