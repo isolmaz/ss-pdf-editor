@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { csvToHtml, decodeText, parseCsv, sniffDelimiter, textToHtml } from './convert-text';
+import { csvToHtml, decodeText, MAX_CSV_ROWS, parseCsv, sniffDelimiter, textToHtml } from './convert-text';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
@@ -50,5 +50,32 @@ describe('convert-text', () => {
     );
     const tsv = csvToHtml(bytes('a;b\tc\n1\t2'), true).parts[0]?.html;
     expect(tsv).toContain('<th>a;b</th><th>c</th>');
+  });
+
+  it('falls back to a comma when no line gives a field count to sniff from', () => {
+    expect(sniffDelimiter('', null)).toBe(',');
+    // A lone opening quote parses to no row at all, so no delimiter scores.
+    expect(sniffDelimiter('"', null)).toBe(',');
+  });
+
+  it('notes a legacy-encoded CSV and decodes its Turkish letters', () => {
+    // 0xDE = Ş in Windows-1254, which is not valid UTF-8.
+    const { parts, notes } = csvToHtml(Uint8Array.from([0xde, 0x2c, 0x31]), false);
+    expect(parts[0]?.html).toBe('<table class="sheet"><tr><th>Ş</th><th>1</th></tr></table>');
+    expect(notes).toEqual([
+      { kind: 'changed', key: 'op.note.convert.encoding', params: { encoding: 'Windows-1254' } },
+    ]);
+  });
+
+  it('keeps the first rows of an oversized CSV and says how many there were', () => {
+    const { parts, notes } = csvToHtml(bytes('a,b\n'.repeat(MAX_CSV_ROWS + 1)), false);
+    expect((parts[0]?.html ?? '').split('<tr>').length - 1).toBe(MAX_CSV_ROWS);
+    expect(notes).toEqual([
+      {
+        kind: 'lost',
+        key: 'op.note.convert.csvTruncated',
+        params: { rows: MAX_CSV_ROWS, total: MAX_CSV_ROWS + 1 },
+      },
+    ]);
   });
 });

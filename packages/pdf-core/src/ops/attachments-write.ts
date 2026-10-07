@@ -102,7 +102,10 @@ function readNameTree(doc: PDFDocument): EmbeddedFilesTree {
 }
 
 /** The tree with every shell present, created where the document had none. */
-function ensureNameTree(doc: PDFDocument, tree: EmbeddedFilesTree): EmbeddedFilesTree {
+function ensureNameTree(
+  doc: PDFDocument,
+  tree: EmbeddedFilesTree,
+): EmbeddedFilesTree & { readonly entries: PDFObject } {
   const names = tree.names ?? tree.catalog.put('Names', doc.newDictionary());
   const embeddedFiles = tree.embeddedFiles ?? names.put('EmbeddedFiles', doc.newDictionary());
   const entries = tree.entries ?? embeddedFiles.put('Names', doc.newArray());
@@ -195,8 +198,12 @@ function isEmptyDictionary(object: PDFObject): boolean {
 
 /** Empty shells left behind by the last removal, dropped so the file stays tidy. */
 function pruneTree(tree: EmbeddedFilesTree): void {
-  const { catalog, names, embeddedFiles, entries } = tree;
-  if (names === null || embeddedFiles === null || entries === null) return;
+  const { catalog } = tree;
+  // Only called after `removeEntries` removed a pair, which needs the `/Names` array, which
+  // needs `/EmbeddedFiles`, which needs `/Names` in the catalog: all three levels exist.
+  const names = tree.names as PDFObject;
+  const embeddedFiles = tree.embeddedFiles as PDFObject;
+  const entries = tree.entries as PDFObject;
   if (entries.length === 0) embeddedFiles.delete('Names');
   if (isEmptyDictionary(embeddedFiles)) names.delete('EmbeddedFiles');
   if (isEmptyDictionary(names)) catalog.delete('Names');
@@ -250,7 +257,6 @@ export async function addAttachments(
       // `readNameTree` refuses a `/Kids` tree before anything is written.
       const tree = ensureNameTree(doc, readNameTree(doc));
       const entries = tree.entries;
-      if (entries === null) throw new ToolError('internal', { engine: 'mupdf', engineMessage: 'no tree' });
       const now = new Date();
       for (const [index, attachment] of attachments.entries()) {
         throwIfAborted(context.signal);

@@ -7,10 +7,13 @@
  * edited into an illegal shape instead of being refused.
  */
 
+import { PDFDocument } from 'mupdf';
+import { isToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { listPdfAttachments, readPdfAttachment } from '../attachments';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { addAttachments, removeAttachments } from './attachments-write';
+import { handPdf } from './forms.fixtures';
 
 const run = { signal: new AbortController().signal };
 const encode = (value: string) => new TextEncoder().encode(value);
@@ -208,5 +211,84 @@ describe('removeAttachments', () => {
     await expect(
       addAttachments(bytes, [{ name: 'x.txt', bytes: encode('X'), mime: 'text/plain' }], run),
     ).rejects.toMatchObject({ code: 'unsupported' });
+  });
+});
+
+describe('attachment edge cases', () => {
+  it('adds nothing and removes nothing for an empty request, handing back the same bytes', async () => {
+    const input = await blankPdf();
+    const added = await addAttachments(input, [], run);
+    expect(added.bytes).toBe(input);
+    expect(added.added).toEqual([]);
+    expect(added.report.notes.map((entry) => entry.key)).toEqual(['op.note.attach.nothing']);
+    const removed = await removeAttachments(input, [], run);
+    expect(removed.bytes).toBe(input);
+    expect(removed.removed).toEqual([]);
+    expect(removed.missing).toEqual([]);
+  });
+
+  it('reports a name as missing in a document that has no attachments at all', async () => {
+    const input = await blankPdf();
+    const out = await removeAttachments(input, ['a.txt'], run);
+    expect(out.bytes).toBe(input);
+    expect(out.missing).toEqual(['a.txt']);
+    expect(out.removed).toEqual([]);
+  });
+
+  it('removes every pair of a name the tree lists twice, leaving the other file', async () => {
+    const doc = new PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 200, 200], 0, {}, ''));
+    const pairs = doc.newArray();
+    for (const [name, body] of [
+      ['d.txt', 'one'],
+      ['d.txt', 'two'],
+      ['e.txt', 'kept'],
+    ] as const) {
+      pairs.push(doc.newString(name));
+      pairs.push(doc.addEmbeddedFile(name, 'text/plain', encode(body), new Date(0), new Date(0)));
+    }
+    const embedded = doc.newDictionary();
+    embedded.put('Names', pairs);
+    const names = doc.newDictionary();
+    names.put('EmbeddedFiles', embedded);
+    doc.getTrailer().get('Root').put('Names', names);
+    const input = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+
+    const out = await removeAttachments(input, ['d.txt'], run);
+    expect(out.removed).toEqual(['d.txt']);
+    expect(await listed(out.bytes)).toEqual([{ name: 'e.txt', description: '', text: 'kept' }]);
+  });
+
+  it('removes a file specification that is a direct dictionary without any embedded stream', async () => {
+    const doc = new PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 200, 200], 0, {}, ''));
+    const direct = doc.newDictionary();
+    direct.put('Type', doc.newName('Filespec'));
+    direct.put('F', doc.newString('d.txt'));
+    const pairs = doc.newArray();
+    pairs.push(doc.newString('d.txt'));
+    pairs.push(direct);
+    const embedded = doc.newDictionary();
+    embedded.put('Names', pairs);
+    const names = doc.newDictionary();
+    names.put('EmbeddedFiles', embedded);
+    doc.getTrailer().get('Root').put('Names', names);
+    const input = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+
+    const out = await removeAttachments(input, ['d.txt'], run);
+    expect(out.removed).toEqual(['d.txt']);
+    expect(await structure(out.bytes)).toMatchObject({ hasNames: false, hasEmbeddedFiles: false });
+  });
+
+  it('refuses a document whose trailer names no catalog', async () => {
+    const input = handPdf({ 2: '<</Type/Pages/Kids[]/Count 0>>' });
+    const failure = await addAttachments(
+      input,
+      [{ name: 'a.txt', bytes: encode('A'), mime: 'text/plain' }],
+      run,
+    ).catch((error: unknown) => error);
+    expect(isToolError(failure) && failure.code).toBe('corrupt-document');
   });
 });

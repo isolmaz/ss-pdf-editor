@@ -114,9 +114,7 @@ let tesseractModule: Promise<TesseractModule> | null = null;
  * object as `default`.
  *
  * A **failed** import is not cached: a dropped connection while the engine chunk
- * loads would otherwise make every later OCR run fail for the session. The slot is
- * cleared only while it still holds the attempt that failed — a blanket clear
- * would throw away a newer in-flight load.
+ * loads would otherwise make every later OCR run fail for the session.
  */
 export function loadTesseract(): Promise<TesseractModule> {
   if (tesseractModule !== null) return tesseractModule;
@@ -124,8 +122,10 @@ export function loadTesseract(): Promise<TesseractModule> {
     (module: { readonly default?: TesseractModule }) => module.default ?? (module as TesseractModule),
   );
   tesseractModule = attempt;
+  // Until this runs the slot holds `attempt` (a caller in between is handed `attempt`, never a
+  // new load), so clearing it unconditionally cannot discard a newer in-flight attempt.
   attempt.catch(() => {
-    if (tesseractModule === attempt) tesseractModule = null;
+    tesseractModule = null;
   });
   return attempt;
 }
@@ -289,7 +289,14 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
       engineMessage: 'no OCR language selected',
     });
   }
-  const entry = await acquireWorker(input.languages, input.quality);
+  let entry: WorkerEntry;
+  try {
+    entry = await acquireWorker(input.languages, input.quality);
+  } catch (error) {
+    // The start is where a missing core, language pack or worker script fails; those are the
+    // messages `TESSERACT_ERROR_CODES` names, so they have to reach it.
+    throw mapTesseractError(error, 'start');
+  }
   throwIfAborted(input.signal);
 
   entry.onProgress = input.onProgress;
@@ -312,7 +319,6 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
       ),
       input.signal,
     );
-    if (input.signal.aborted) throw abortError();
     return {
       words: collectWords(result.data, input.scale),
       confidence: result.data.confidence,
