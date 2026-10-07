@@ -511,7 +511,8 @@ function skipInlineImage(buffer: Uint8Array, from: number): number | null {
   let cursor = from;
   while (cursor + 1 < buffer.length) {
     if (buffer[cursor] === 0x45 && buffer[cursor + 1] === 0x49) {
-      const before = cursor === 0 ? 0x20 : (buffer[cursor - 1] as number);
+      // `from` is past the `BI` token, so there is a byte before the cursor.
+      const before = buffer[cursor - 1] as number;
       const after = cursor + 2 >= buffer.length ? 0x20 : (buffer[cursor + 2] as number);
       if (isWhitespace(before) && (isWhitespace(after) || isDelimiter(after))) return cursor + 2;
     }
@@ -591,7 +592,6 @@ export function readInstructions(buffer: Uint8Array): readonly Instruction[] | n
       token += String.fromCharCode(buffer[cursor] as number);
       cursor += 1;
     }
-    if (token === '') return null;
     if (NUMBER_TOKEN.test(token)) {
       if (operands.length === 0) start = tokenStart;
       operands.push({ kind: 'number', number: Number(token) });
@@ -1418,20 +1418,18 @@ function collectDrawnImages(
     const xobjects = dictOf(resources?.get('XObject'));
     if (xobjects === null) continue;
     const entry = xobjects.get(draw.name);
-    // A stream is a stream only by reference (`engines/mupdf-write.ts`).
+    // A stream is a stream only by reference (`engines/mupdf-write.ts`), so it has a number.
     if (entry.isNull() || !entry.isStream()) continue;
-    const dict = resolved(entry);
-    if (dict === null) continue;
+    const dict = resolved(entry) as PDFObject;
     const subtype = nameOf(dict.get('Subtype'));
     if (subtype === 'Image') {
-      if (!entry.isIndirect()) continue;
       const key = refName(entry);
       if (out.some((candidate) => candidate.ref === key)) continue;
       out.push({ ref: key, name: draw.name, dict });
       continue;
     }
     if (subtype === 'Form') {
-      const key = entry.isIndirect() ? refName(entry) : `${String(depth)}:${draw.name}`;
+      const key = refName(entry);
       if (visited.has(key)) continue;
       visited.add(key);
       const decoded = decodeStream(entry);
@@ -1583,7 +1581,8 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
       const existing = images.get(image.ref);
       if (existing === undefined) {
         images.set(image.ref, { name: image.name, pages: [pageIndex], dict: image.dict });
-      } else if (!existing.pages.includes(pageIndex)) {
+      } else {
+        // `drawn` lists an image once per page, so this page is new to it.
         existing.pages.push(pageIndex);
       }
     }
@@ -1610,7 +1609,7 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
   for (const [ref, image] of images) {
     const alt = textOf(image.dict.get('Alt'));
     listed.push({
-      pageIndex: image.pages[0] ?? 0,
+      pageIndex: image.pages[0] as number,
       name: image.name,
       ref,
       pages: [...image.pages],
@@ -2209,8 +2208,9 @@ export function figureClaims(
   for (const draw of scan.draws) {
     const entry = xobjects.get(draw.name);
     if (entry.isNull() || !entry.isStream()) continue;
-    const dict = resolved(entry);
-    if (dict === null || nameOf(dict.get('Subtype')) !== 'Image') continue;
+    // A stream resolves to itself.
+    const dict = resolved(entry) as PDFObject;
+    if (nameOf(dict.get('Subtype')) !== 'Image') continue;
     claims.push({ index: draw.index, role: 'Figure', alt: textOf(dict.get('Alt')) });
   }
   return claims;
@@ -2257,8 +2257,7 @@ export function claimsFor(
     for (const show of match.shows) owner.set(show, match.blockIndex);
   }
   for (const match of plan.matched.matches) {
-    const region = plan.regions[match.blockIndex];
-    if (region === undefined) continue;
+    const region = plan.regions[match.blockIndex] as BlockRegion;
     const role = planned(region.id, roles.get(Math.round(region.fontSize)) ?? 'P');
     // A block's shows are grouped into sequences that stay inside one text object and one
     // `q` level, with none of another block's text between them. A block that spans several
@@ -2289,11 +2288,8 @@ export function claimsFor(
     }
   }
   for (const figure of plan.draws) {
-    const range = widen(figure.index, figure.index);
-    if (range === null) {
-      skipped += 1;
-      continue;
-    }
+    // A `Do` is neither a `BT`/`ET` nor a `q`/`Q`, so its own range already opens and closes at one level.
+    const range = widen(figure.index, figure.index) as { readonly first: number; readonly last: number };
     const id = `f${String(figure.index)}`;
     candidates.push({
       ...range,
@@ -2517,7 +2513,12 @@ export async function setImageAlt(
   let pageCount: number;
   const notes: OperationNote[] = [];
   const steps: string[] = ['load'];
-  const applied: { readonly pageIndex: number; readonly name: string; readonly alt: string }[] = [];
+  const applied: {
+    readonly pageIndex: number;
+    readonly name: string;
+    readonly alt: string;
+    readonly number: number;
+  }[] = [];
   const appliedFields: { readonly name: string; readonly tooltip: string }[] = [];
   try {
     const pages = pageObjects(doc);
@@ -2543,7 +2544,7 @@ export async function setImageAlt(
         continue;
       }
       target.dict.put('Alt', text(doc, edit.alt));
-      applied.push({ pageIndex: edit.pageIndex, name: edit.name, alt: edit.alt });
+      applied.push({ pageIndex: edit.pageIndex, name: edit.name, alt: edit.alt, number: target.number });
     }
 
     if (applied.length === 0 && appliedFields.length === 0) {
@@ -2564,7 +2565,7 @@ export async function setImageAlt(
     }
 
     for (const entry of applied) {
-      const drawn = drawnPages(pages, entry.pageIndex, entry.name);
+      const drawn = drawnPages(pages, entry.number);
       notes.push(
         note('changed', A11Y_KEYS.altSet, {
           name: entry.name,
@@ -2626,22 +2627,21 @@ function findImage(
   pages: readonly PDFObject[],
   pageIndex: number,
   name: string,
-): { readonly number: number | null; readonly dict: PDFObject } | null {
+): { readonly number: number; readonly dict: PDFObject } | null {
   const page = Number.isInteger(pageIndex) ? pages[pageIndex] : undefined;
   if (page === undefined) return null;
   const resources = dictOf(page.getInheritable('Resources'));
   const xobjects = resources === null ? null : dictOf(resources.get('XObject'));
   const entry = xobjects?.get(name);
   if (entry === undefined || entry.isNull() || !entry.isStream()) return null;
-  const dict = resolved(entry);
-  if (dict === null || nameOf(dict.get('Subtype')) !== 'Image') return null;
-  return { number: entry.isIndirect() ? entry.asIndirect() : null, dict };
+  // A stream resolves to itself, and a stream is always an indirect object.
+  const dict = resolved(entry) as PDFObject;
+  if (nameOf(dict.get('Subtype')) !== 'Image') return null;
+  return { number: entry.asIndirect(), dict };
 }
 
-/** Every page whose content stream draws the same image object — the sharing fact. */
-function drawnPages(pages: readonly PDFObject[], pageIndex: number, name: string): readonly number[] {
-  const target = findImage(pages, pageIndex, name);
-  if (target === null || target.number === null) return [];
+/** Every page whose content stream draws the image object `number` — the sharing fact. */
+function drawnPages(pages: readonly PDFObject[], number: number): readonly number[] {
   const found: number[] = [];
   for (const [index, page] of pages.entries()) {
     const content = pageContent(page);
@@ -2650,7 +2650,7 @@ function drawnPages(pages: readonly PDFObject[], pageIndex: number, name: string
     if (instructions === null) continue;
     const { draws } = walkContent(instructions);
     for (const draw of draws) {
-      if (findImage(pages, index, draw.name)?.number === target.number) {
+      if (findImage(pages, index, draw.name)?.number === number) {
         found.push(index);
         break;
       }
