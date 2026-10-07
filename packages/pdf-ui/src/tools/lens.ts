@@ -19,8 +19,9 @@ export interface LensPointer {
 
 /** The bitmap the lens blits from, and where it sits on screen (client coordinates). */
 export interface LensBitmap {
-  readonly bitmap: HTMLCanvasElement;
-  rect: DOMRect;
+  /** The page canvas; only its pixel width matters to the geometry. */
+  readonly bitmap: { readonly width: number };
+  readonly rect: Pick<DOMRect, 'left' | 'top' | 'width'>;
 }
 
 export interface LensFrame {

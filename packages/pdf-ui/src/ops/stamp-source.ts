@@ -272,9 +272,9 @@ export async function jpegIsTurned(file: Blob): Promise<boolean> {
           if (view.getUint16(entry, little) === 0x0112) return view.getUint16(entry + 8, little) !== 1;
         }
         return false;
-      } catch (error) {
-        if (error instanceof RangeError) return true;
-        throw error;
+      } catch {
+        // Nothing in the block but `DataView` reads, and those throw only a `RangeError`.
+        return true;
       }
     }
     if (marker === 0xda) return false;
