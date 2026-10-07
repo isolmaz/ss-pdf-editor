@@ -12,7 +12,7 @@ import { pathToFileURL } from 'node:url';
 import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
-import { writeShapeAnnotations } from './annotation-shapes';
+import { writeAnnotationsToFile, writeShapeAnnotations } from './annotation-shapes';
 import {
   type AnnotationMark,
   type ExistingAnnotation,
@@ -24,7 +24,8 @@ import {
 
 const pdfjs = await loadPdfjs();
 pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
+  // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks.
+  createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
 ).href;
 
 const run = { signal: new AbortController().signal };
@@ -359,6 +360,53 @@ describe('settleEngineMarks appearance', () => {
     } finally {
       doc.destroy();
     }
+  });
+});
+
+describe('writeAnnotationsToFile', () => {
+  /** The session written over `input`, and whether every byte of `input` was kept. */
+  async function save(input: Uint8Array, session: AnnotationMark) {
+    const handle = await openWithPdfjs(input);
+    try {
+      const out = await writeAnnotationsToFile(handle, [session], run);
+      const kept =
+        out.bytes.byteLength > input.byteLength && input.every((byte, at) => out.bytes[at] === byte);
+      return { out, kept };
+    } finally {
+      await handle.destroy();
+    }
+  }
+
+  it('appends a highlight and a note to the file the reader opened, and says so', async () => {
+    for (const session of [
+      mark({ id: 'hl', kind: 'highlight' }),
+      mark({ id: 'nt', kind: 'note', rect: [40, 60, 64, 84] }),
+    ]) {
+      const input = await blank();
+      const { out, kept } = await save(input, session);
+      // An appended revision leaves the bytes a signature covers as they were; a rewrite
+      // re-serialises them and breaks it.
+      expect({ kind: session.kind, kept, incremental: out.report.incremental }).toEqual({
+        kind: session.kind,
+        kept: true,
+        incremental: true,
+      });
+      const written = (await annotationsOf(out.bytes)).find((entry) => entry.marker === session.id);
+      expect(written?.contents).toBe('Şişli notu');
+    }
+  });
+
+  it('says a shape rewrote the file, because it did', async () => {
+    const input = await blank();
+    const { out, kept } = await save(
+      input,
+      mark({ id: 'sq', kind: 'shapes', shape: 'square', rect: [40, 60, 200, 160] }),
+    );
+    expect({ kept, incremental: out.report.incremental, engine: out.report.engine }).toEqual({
+      kept: false,
+      incremental: false,
+      engine: 'mupdf',
+    });
   });
 });
 

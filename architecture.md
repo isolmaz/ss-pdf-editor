@@ -255,9 +255,10 @@ flowchart TD
 Contract points the router returns and the report shows:
 
 - `incremental` is true **only** for the single pdf.js `saveDocument` path on an
-  unencrypted input, including the static-XFA datasets sync that follows it, which MuPDF
-  appends as one more revision (`saveIncremental`). Any other writer ends the fast path and
-  says `incremental: false`.
+  unencrypted input, including the steps MuPDF appends to it as one more revision
+  (`saveIncremental`): the static-XFA datasets sync, and the annotation settle step and
+  sticky notes (`writeAnnotationsToFile`). Any other writer ends the fast path and says
+  `incremental: false`; so does an append MuPDF cannot make and turns into a rewrite.
 - `rewritesStructure` is true for redaction, writer steps and page composition — those
   normalise object numbering, compression and XMP.
 - `reprotects` is true when the input was encrypted and the user did not ask for
@@ -1543,7 +1544,9 @@ answers the page, the centre in app space and the upright size. Escape cancels i
 Every annotation this app writes is named `pdf-editor-ann:<id>` (`/NM`), and its
 `/Contents` — what every reader prints — holds the author's words alone. The engine (pdf.js)
 cannot write `/NM`, so its marks carry the marker at the head of `/Contents` for one step and
-`settleEngineMarks` moves it into the name before the file leaves; `readAnnotations` reads the
+`settleEngineMarks` moves it into the name before the file leaves. That step and the sticky
+notes are appended to the engine's incremental update, so adding a highlight or a note never
+rewrites the file; `readAnnotations` reads the
 names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation.marker`.
 Files written before the name carried it still have the marker in `/Contents`: `markerOf` and
 `commentText` read that too, and `viewer/marker-text.ts` watches the scroll container with a
