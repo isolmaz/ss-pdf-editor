@@ -168,6 +168,10 @@ export async function writeShapeAnnotations(
         });
         const dict = doc.addObject({
           ...commonFields(doc, page, mark),
+          // The stroke is the shape's border: a reader that rebuilds the appearance, and this
+          // app reopening the file, read the width from here, not from the stream.
+          Border: [0, 0, stroke],
+          BS: { Type: 'Border', W: stroke, S: 'S' },
           Subtype: subtype,
           Rect: rect,
           C: [...hexToRgb(mark.color)],

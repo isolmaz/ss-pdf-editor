@@ -122,6 +122,9 @@ describe('writeShapeAnnotations', () => {
     expect(byMarker('li')).toMatchObject({ subtype: 'Line', vertices: [50, 100, 300, 150] });
     // The second page's box starts at y = 50, so its top is at 450, not 500.
     expect(byMarker('p2')).toMatchObject({ pageIndex: 1, subtype: 'Square', rect: [-1, 399, 101, 451] });
+    // The stroke width is the annotation's border width, so a reader (and this app, reopening
+    // the file) reads back the thickness that was drawn; a mark without one is drawn at 2 pt.
+    expect(['sq', 'ci', 'li', 'p2'].map((id) => byMarker(id)?.thickness)).toEqual([2, 2, 4, 2]);
     const drawn = Object.values(await appearances(out.bytes));
     expect(drawn.map((entry) => entry.ap)).toEqual([true, true, true, true]);
     expect(drawn.map((entry) => entry.ca)).toEqual([0.5, 0.5, 0.5, 0.5]);
