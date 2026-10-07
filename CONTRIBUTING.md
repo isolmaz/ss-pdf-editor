@@ -41,7 +41,9 @@ suite against an unminified build of the editor, mapped back to the sources thro
 build's source maps and added to the unit figures statement by statement
 (`tools/coverage/report.mjs`). It prints a table per package and writes the report to
 `coverage/report/` (`html/index.html`); it rebuilds the production `dist/` before it exits.
-`pnpm coverage --skip-e2e` reports the unit suite alone. Code that runs in a web worker
+`pnpm coverage --skip-e2e` reports the unit suite alone. On a machine you are working on,
+`E2E_WORKERS=4` caps the browsers Playwright runs at once and `VITEST_MAX_WORKERS=8` the unit
+workers; both apply to `pnpm e2e`, `pnpm unit` and `pnpm coverage`. Code that runs in a web worker
 (Ghostscript) or in the service worker is not recorded by a page, so it is not in the
 browser figures.
 
