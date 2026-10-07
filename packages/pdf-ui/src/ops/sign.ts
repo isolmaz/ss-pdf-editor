@@ -225,17 +225,3 @@ export const signDialog: OperationDialogSpec = {
     };
   },
 };
-
-/** Kept for the shell's command layer: the signer a chosen container names, without signing. */
-export async function inspectContainer(
-  file: File,
-  password: string,
-): Promise<{
-  readonly commonName: string | null;
-  readonly issuer: string | null;
-  readonly notAfter: string | null;
-}> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const identity = await importPkcs12(bytes, password);
-  return describeCertificate(identity.certificate);
-}
