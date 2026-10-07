@@ -8,7 +8,31 @@
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import type { Page } from 'playwright/test';
+import {
+  appendRevision,
+  documentObjects,
+  latin1,
+  seal,
+  signatureDictionary,
+} from '../packages/pdf-core/src/ops/signature-status.fixtures';
 import { mutate } from '../packages/pdf-core/src/ops/tagged.fixtures';
+import { detachedCmsSignature } from '../packages/pdf-core/src/signature-cms';
+import {
+  CRL_REASON,
+  deltaIndicatorExtension,
+  extKeyUsageExtension,
+  issueCrl,
+  issueTimestampToken,
+  KP_TIME_STAMPING,
+  signatureValueOf,
+  withUnsigned,
+} from '../packages/pdf-core/src/signature-revocation.fixtures';
+import {
+  type CertificateFixture,
+  generateKey,
+  type IssueOptions,
+  issueCertificate,
+} from '../packages/pdf-core/src/signature-trust.fixtures';
 import { toolFixturePdf } from './tool-fixture';
 
 export interface EmbeddedSpec {
@@ -156,3 +180,226 @@ export async function ownerProtected(permissions: number): Promise<Uint8Array> {
     doc.destroy();
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Signed documents: real CMS over real byte ranges, built in Node
+ * ------------------------------------------------------------------ */
+
+const DAY = 86_400_000;
+
+/** A date `days` from now: the browser judges certificates against its own clock. */
+export const fromNow = (days: number): Date => new Date(Math.floor((Date.now() + days * DAY) / 1000) * 1000);
+
+export interface SigningPki {
+  readonly root: CertificateFixture;
+  readonly leaf: CertificateFixture;
+  readonly expiredLeaf: CertificateFixture;
+  readonly tsa: CertificateFixture;
+  readonly stranger: CertificateFixture;
+}
+
+/** One small PKI around the clock of the run: a root, leaves under it, a time-stamping authority. */
+let pkiOnce: Promise<SigningPki> | undefined;
+
+/** The same PKI for every caller of one worker: a root imported for one document must be the one that signed it. */
+export function signingPki(): Promise<SigningPki> {
+  pkiOnce ??= buildPki();
+  return pkiOnce;
+}
+
+async function buildPki(): Promise<SigningPki> {
+  const ec = () => generateKey({ kind: 'EC', curve: 'P-256' });
+  const ca = async (subject: string) =>
+    issueCertificate({
+      subject,
+      keyPair: await ec(),
+      notBefore: fromNow(-900),
+      notAfter: fromNow(900),
+      basicConstraints: { cA: true },
+      keyUsage: ['keyCertSign', 'cRLSign'],
+    });
+  const root = await ca('Panel Root CA');
+  const end = async (subject: string, extra: Partial<IssueOptions> = {}) =>
+    issueCertificate(
+      {
+        subject,
+        keyPair: await ec(),
+        notBefore: fromNow(-800),
+        notAfter: fromNow(800),
+        basicConstraints: { cA: false },
+        keyUsage: ['digitalSignature'],
+        ...extra,
+      },
+      root,
+    );
+  return {
+    root,
+    leaf: await end('Panel Signer'),
+    expiredLeaf: await end('Lapsed Signer', { notBefore: fromNow(-700), notAfter: fromNow(-30) }),
+    tsa: await end('Panel TSA', { extraExtensions: [extKeyUsageExtension([KP_TIME_STAMPING])] }),
+    stranger: await ca('Stranger CA'),
+  };
+}
+
+/** The product's own detached CMS by `signer`, carrying `chain`, claiming `signedAt`. */
+export function cmsBy(
+  signer: CertificateFixture,
+  chain: readonly CertificateFixture[],
+  signedAt: Date,
+): (covered: Uint8Array) => Promise<Uint8Array> {
+  return async (covered) =>
+    (
+      await detachedCmsSignature(
+        covered,
+        {
+          certificate: signer.der,
+          chain: chain.map((entry) => entry.der),
+          privateKey: signer.keyPair.privateKey,
+        },
+        { signedAt },
+      )
+    ).der;
+}
+
+const CAPACITY = 8192;
+
+export interface SignedOptions {
+  /** `ETSI.RFC3161` makes the signature a document timestamp; `null` writes no `/SubFilter`. */
+  readonly subFilter?: string | null;
+  /** `null` leaves the signature dictionary without a `/M` date. */
+  readonly date?: null;
+  /** `null` leaves the signature field without a `/T` name. */
+  readonly fieldName?: null;
+  /** Text added to the catalog (a `/DSS` entry). */
+  readonly catalogExtra?: string;
+  /** Extra indirect objects (the `/DSS` and its streams); numbers from 20. */
+  readonly extraObjects?: readonly { readonly number: number; readonly body: string }[];
+  /** Revisions appended after the signature: each adds an object. */
+  readonly revisions?: number;
+}
+
+/** A stream object body of raw bytes. */
+export const streamBody = (data: Uint8Array): string =>
+  `<< /Length ${data.length} >>\nstream\n${latin1(data)}\nendstream`;
+
+/** A one-page document with one signature field, sealed over its whole first revision. */
+export async function signedDocument(
+  produce: (covered: Uint8Array) => Promise<Uint8Array> | Uint8Array,
+  options: SignedOptions = {},
+): Promise<Uint8Array> {
+  const dictionary = signatureDictionary({
+    capacity: CAPACITY,
+    encoding: 'hex',
+    ...(options.subFilter === undefined ? {} : { subFilter: options.subFilter }),
+    ...(options.date === null ? { date: null } : {}),
+  });
+  const extra = options.extraObjects ?? [];
+  const written = appendRevision(new Uint8Array(), {
+    objects: [
+      ...documentObjects(dictionary, {
+        ...(options.catalogExtra === undefined ? {} : { catalogExtra: options.catalogExtra }),
+        ...(options.fieldName === null ? { fieldName: null } : {}),
+      }),
+      ...extra,
+    ],
+    size: 6 + extra.length + 20,
+  });
+  let bytes = await seal(
+    written.bytes,
+    { capacity: CAPACITY, encoding: 'hex', from: written.offsets.get(5) ?? 0 },
+    produce,
+  );
+  let previous = [...latin1(bytes).matchAll(/startxref\n(\d+)\n/g)].at(-1)?.[1];
+  for (let index = 0; index < (options.revisions ?? 0); index += 1) {
+    const number = 100 + index;
+    const next = appendRevision(bytes, {
+      objects: [{ number, body: `<< /Note (revision ${index + 1}) >>` }],
+      size: number + 1,
+      prev: Number(previous),
+    });
+    bytes = next.bytes;
+    previous = String(next.xrefAt);
+  }
+  return bytes;
+}
+
+/** A DER certificate or CRL as a PEM file's text. */
+export function pem(label: string, der: Uint8Array): string {
+  const lines =
+    Buffer.from(der)
+      .toString('base64')
+      .match(/.{1,64}/g) ?? [];
+  return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`;
+}
+
+/** A signature carrying a timestamp token by `tsa` over its own value, issued at `genTime`. */
+export function cmsWithTimestamp(
+  signer: CertificateFixture,
+  chain: readonly CertificateFixture[],
+  signedAt: Date,
+  tsa: CertificateFixture,
+  genTime: Date,
+): (covered: Uint8Array) => Promise<Uint8Array> {
+  return async (covered) => {
+    const cms = await cmsBy(signer, chain, signedAt)(covered);
+    const token = await issueTimestampToken({
+      tsa,
+      covered: signatureValueOf(cms),
+      genTime,
+      extraCertificates: chain,
+    });
+    return withUnsigned(cms, { timestampToken: token });
+  };
+}
+
+/** A CRL by `issuer` listing `revoked` (keyCompromise), valid from `thisUpdate` to `nextUpdate`. */
+export function crlBy(
+  issuer: CertificateFixture,
+  thisUpdate: Date,
+  nextUpdate: Date | undefined,
+  revoked: readonly { readonly cert: CertificateFixture; readonly at: Date }[] = [],
+  options: { readonly delta?: boolean } = {},
+): Promise<Uint8Array> {
+  return issueCrl({
+    issuer,
+    thisUpdate,
+    ...(nextUpdate === undefined ? {} : { nextUpdate }),
+    revoked: revoked.map((entry) => ({ ...entry, reason: CRL_REASON.keyCompromise })),
+    ...(options.delta === true ? { extensions: [deltaIndicatorExtension()] } : {}),
+  });
+}
+
+/** The /DSS of a document archiving CRLs: the catalog entry and the objects it names. */
+export function dssWithCrls(
+  crls: readonly Uint8Array[],
+): Pick<SignedOptions, 'catalogExtra' | 'extraObjects'> {
+  return {
+    catalogExtra: ' /DSS 20 0 R',
+    extraObjects: [
+      { number: 20, body: `<< /CRLs [${crls.map((_, index) => `${21 + index} 0 R`).join(' ')}] >>` },
+      ...crls.map((crl, index) => ({ number: 21 + index, body: streamBody(crl) })),
+    ],
+  };
+}
+
+/** Import a certificate file through the panel's "Import certificate" control. */
+export async function importRootFiles(
+  page: Page,
+  files: readonly { readonly name: string; readonly buffer: Buffer }[],
+): Promise<void> {
+  await page
+    .locator('input[type="file"][accept*=".crt"]')
+    .setInputFiles(files.map((file) => ({ ...file, mimeType: 'application/octet-stream' })));
+}
+
+/** Import CRL files through the panel's "Import CRL" control. */
+export async function importCrlFiles(
+  page: Page,
+  files: readonly { readonly name: string; readonly buffer: Buffer }[],
+): Promise<void> {
+  await page
+    .locator('input[type="file"][accept*=".crl"]')
+    .setInputFiles(files.map((file) => ({ ...file, mimeType: 'application/octet-stream' })));
+}
+
+export { issueTimestampToken };
