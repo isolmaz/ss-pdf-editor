@@ -47,6 +47,8 @@ interface FaultRule {
   readonly kind: 'fail' | 'hold';
   readonly message: string;
   times: number;
+  /** Matching calls still to let through before the rule starts to act. */
+  skip: number;
   held: number;
   fired: number;
   readonly gate: Promise<void>;
@@ -58,7 +60,14 @@ interface FaultTable {
   readonly rules: FaultRule[];
   /** Every pdf.js request the page sent, by action. */
   readonly requests: Record<string, number>;
-  arm(engine: FaultEngine, call: string, kind: 'fail' | 'hold', message: string, times: number): number;
+  arm(
+    engine: FaultEngine,
+    call: string,
+    kind: 'fail' | 'hold',
+    message: string,
+    times: number,
+    skip: number,
+  ): number;
   take(engine: FaultEngine, call: string, kinds: readonly ('fail' | 'hold')[]): FaultRule | null;
 }
 
@@ -70,7 +79,7 @@ function installTable(): void {
   const table: FaultTable = {
     rules,
     requests: {},
-    arm(engine, call, kind, message, times) {
+    arm(engine, call, kind, message, times, skip) {
       const gate = Promise.withResolvers<void>();
       rules.push({
         engine,
@@ -78,6 +87,7 @@ function installTable(): void {
         kind,
         message,
         times,
+        skip,
         held: 0,
         fired: 0,
         gate: gate.promise,
@@ -88,6 +98,10 @@ function installTable(): void {
     take(engine, call, kinds) {
       for (const rule of rules) {
         if (rule.engine === engine && rule.call === call && rule.times > 0 && kinds.includes(rule.kind)) {
+          if (rule.skip > 0) {
+            rule.skip -= 1;
+            continue;
+          }
           rule.times -= 1;
           rule.fired += 1;
           return rule;
@@ -254,23 +268,25 @@ async function arm(
   kind: 'fail' | 'hold',
   message: string,
   times: number,
+  skip = 0,
 ): Promise<number> {
   stateOf(page);
   if (page.url() === 'about:blank')
     throw new Error('in-page faults can only be armed after the first navigation');
   return page.evaluate(
-    ({ engine, call, kind, message, times }) => {
+    ({ engine, call, kind, message, times, skip }) => {
       const table: FaultTable = Reflect.get(window, '__engineFaults');
-      return table.arm(engine, call, kind, message, times);
+      return table.arm(engine, call, kind, message, times, skip);
     },
-    { engine, call, kind, message, times },
+    { engine, call, kind, message, times, skip },
   );
 }
 
 /**
  * The next `times` calls of `call` fail with `message` (MuPDF: an `Error` thrown by the call;
  * pdf.js: the request rejects with `UnknownErrorException`). For `module` on MuPDF the next load
- * of the engine file is refused by the network, and `message` is unused.
+ * of the engine file is refused by the network, and `message` is unused. `skip` lets that many
+ * matching calls through first (a flow whose earlier call must succeed).
  */
 export async function failNext(
   page: Page,
@@ -278,12 +294,13 @@ export async function failNext(
   call: string,
   message: string,
   times = 1,
+  skip = 0,
 ): Promise<void> {
   if (engine === 'mupdf' && call === 'module') {
     stateOf(page).failLoads += times;
     return;
   }
-  await arm(page, engine, call, 'fail', message, times);
+  await arm(page, engine, call, 'fail', message, times, skip);
 }
 
 /** How many times the rule armed by `failNext`/`holdNext` for this call has fired so far. */
