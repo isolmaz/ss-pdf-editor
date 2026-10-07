@@ -132,9 +132,8 @@ export function measureLineWidth(text: string, fontSize: number, metrics: FontMe
   const scale = fontSize / metrics.unitsPerEm;
   let total = 0;
   for (const character of text) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint === undefined) continue;
-    total += metrics.glyphAdvance(codePoint) * scale;
+    // A string iterator yields whole code points, never an empty string.
+    total += metrics.glyphAdvance(character.codePointAt(0) as number) * scale;
   }
   return total;
 }
@@ -213,14 +212,10 @@ function layoutPass(pass: PassOptions, text: string, fontSize: number): PassResu
   // Distance from the box's top edge to the current line's top edge.
   let top = 0;
   let overflow = false;
-  for (let index = 0; index < paragraphs.length; index += 1) {
-    const words = paragraphs[index];
-    if (words === undefined) continue;
+  for (const [index, words] of paragraphs.entries()) {
     if (index > 0) top += paragraphSpacing;
     const broken = breakParagraph(words, indent, box.width, fontSize, metrics, hyphenate, hyphenated);
-    for (let position = 0; position < broken.length; position += 1) {
-      const line = broken[position];
-      if (line === undefined) continue;
+    for (const [position, line] of broken.entries()) {
       const available = box.width - line.indent;
       const lastOfParagraph = position === broken.length - 1;
       // A justified line stretches its word spaces to reach the box's right edge, and
@@ -284,8 +279,9 @@ function breakParagraph(
   let lineWords: string[] = [];
   let lineWidth = 0;
   let lineIndent = indent;
+  // Only ever called with a non-empty line: words are never empty (`paragraphsOf`), every
+  // word ends up on the line before the next flush, and the last word is still on it.
   const flush = (): void => {
-    if (line === '') return;
     lines.push({
       text: line,
       words: lineWords,
@@ -298,9 +294,7 @@ function breakParagraph(
     lineWidth = 0;
     lineIndent = 0;
   };
-  for (let index = 0; index < words.length; index += 1) {
-    const entry = words[index];
-    if (entry === undefined) continue;
+  for (const entry of words) {
     // The current fragment of the word: hyphenation replaces it with the remainder,
     // so it is mutable while the entry it started from is not.
     let word = entry;
@@ -351,11 +345,9 @@ function hyphenateWord(
   metrics: FontMetrics,
 ): { readonly head: string; readonly rest: string } | null {
   const characters = [...word];
-  const limit = characters.length - MIN_HYPHEN_PART;
   let head = '';
-  for (let index = 0; index < limit; index += 1) {
-    const character = characters[index];
-    if (character === undefined) break;
+  // The last `MIN_HYPHEN_PART` code points always stay for the rest.
+  for (const character of characters.slice(0, characters.length - MIN_HYPHEN_PART)) {
     const candidate = `${head}${character}${HYPHEN}`;
     if (measureLineWidth(candidate, fontSize, metrics) > available) break;
     head += character;
