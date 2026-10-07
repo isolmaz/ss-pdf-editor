@@ -23,7 +23,7 @@ const PREAMBLE = '<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">';
 const POSTAMBLE = '</xdp:xdp>';
 
 /** The dynamic form's bytes. All content is ASCII, so the offsets recorded are the real ones. */
-export function dynamicXfaPdf(): Uint8Array {
+export function dynamicXfaPdf(template = XFA_TEMPLATE, datasets = XFA_DATASETS): Uint8Array {
   const stream = (body: string) => `<< /Length ${body.length} >>\nstream\n${body}\nendstream`;
   const placeholder = 'BT /F1 14 Tf 40 700 Td (Please wait...) Tj ET\n';
   const bodies = [
@@ -33,8 +33,8 @@ export function dynamicXfaPdf(): Uint8Array {
     stream(placeholder),
     '<< /Fields [] /XFA [(preamble) 6 0 R (template) 7 0 R (datasets) 8 0 R (postamble) 9 0 R] >>',
     stream(PREAMBLE),
-    stream(XFA_TEMPLATE),
-    stream(XFA_DATASETS),
+    stream(template),
+    stream(datasets),
     stream(POSTAMBLE),
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
   ];

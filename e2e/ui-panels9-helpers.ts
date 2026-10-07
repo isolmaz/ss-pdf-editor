@@ -513,3 +513,127 @@ export function printedJobs(page: Page): Promise<readonly (readonly PrintedSheet
     return Array.isArray(jobs) ? jobs : [];
   });
 }
+
+export interface SpeechVoiceSpec {
+  readonly name: string;
+  readonly lang: string;
+  readonly localService: boolean;
+}
+
+export interface SpokenUtterance {
+  readonly text: string;
+  readonly rate: number;
+  readonly voice: string | null;
+  readonly lang: string;
+}
+
+/**
+ * Stand in for the platform's speech engine, which an automated browser has no voices for: a
+ * `speechSynthesis` with the given voices that records every utterance (text, rate, voice,
+ * language) and every `cancel`/`pause`/`resume`, and speaks one utterance at a time until the
+ * test says it is done (`finishSpeaking`) or has failed (`failSpeaking`). Call before the page loads.
+ */
+export async function stubSpeech(page: Page, voices: readonly SpeechVoiceSpec[]): Promise<void> {
+  await page.addInitScript((installed) => {
+    interface Fake {
+      text: string;
+      voice: { name: string } | null;
+      lang: string;
+      rate: number;
+      onstart: (() => void) | null;
+      onend: (() => void) | null;
+      onerror: (() => void) | null;
+    }
+    const log = { utterances: [] as unknown[], events: [] as string[] };
+    Reflect.set(window, 'speechLog', log);
+    const queue: Fake[] = [];
+    let current: Fake | null = null;
+    let paused = false;
+    const next = () => {
+      if (current !== null || paused) return;
+      const upcoming = queue.shift();
+      if (upcoming === undefined) return;
+      current = upcoming;
+      upcoming.onstart?.();
+    };
+    class Utterance {
+      voice: { name: string } | null = null;
+      lang = '';
+      rate = 1;
+      onstart: (() => void) | null = null;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(public text: string) {}
+    }
+    const voiceObjects = installed.map((voice) => ({ ...voice, default: false, voiceURI: voice.name }));
+    const synthesis = {
+      getVoices: () => voiceObjects,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      get speaking() {
+        return current !== null;
+      },
+      get paused() {
+        return paused;
+      },
+      speak(utterance: Fake) {
+        log.utterances.push({
+          text: utterance.text,
+          rate: utterance.rate,
+          voice: utterance.voice?.name ?? null,
+          lang: utterance.lang,
+        });
+        queue.push(utterance);
+        setTimeout(next, 0);
+      },
+      cancel() {
+        log.events.push('cancel');
+        queue.length = 0;
+        current = null;
+        paused = false;
+      },
+      pause() {
+        log.events.push('pause');
+        paused = true;
+      },
+      resume() {
+        log.events.push('resume');
+        paused = false;
+        setTimeout(next, 0);
+      },
+    };
+    Object.defineProperty(window, 'speechSynthesis', { value: synthesis, configurable: true });
+    Reflect.set(window, 'SpeechSynthesisUtterance', Utterance);
+    Reflect.set(window, 'finishSpeaking', () => {
+      const done = current;
+      current = null;
+      done?.onend?.();
+      next();
+    });
+    Reflect.set(window, 'failSpeaking', () => {
+      const failed = current;
+      current = null;
+      failed?.onerror?.();
+    });
+  }, voices);
+}
+
+/** What the stubbed engine was asked to speak, in order, and the controls it was given. */
+export function speechLog(
+  page: Page,
+): Promise<{ utterances: readonly SpokenUtterance[]; events: readonly string[] }> {
+  return page.evaluate(() => {
+    const log: unknown = Reflect.get(window, 'speechLog');
+    return typeof log === 'object' && log !== null
+      ? (log as { utterances: SpokenUtterance[]; events: string[] })
+      : { utterances: [], events: [] };
+  });
+}
+
+/** The current utterance ends (`end`) or fails (`error`), as the engine would report it. */
+export async function endUtterance(page: Page, how: 'end' | 'error' = 'end'): Promise<void> {
+  await page.evaluate((outcome) => {
+    const action: unknown = Reflect.get(window, outcome === 'end' ? 'finishSpeaking' : 'failSpeaking');
+    if (typeof action === 'function') action();
+  }, how);
+}
