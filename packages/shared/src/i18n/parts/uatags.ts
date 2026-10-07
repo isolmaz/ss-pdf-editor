@@ -458,5 +458,4 @@ export const uatagsPart = {
   'tags.err.in-stream': 'Bu öğenin içeriği, bu düzenleyicinin yeniden yazmadığı bir form nesnesinin içinde.',
   'tags.err.duplicate-key': 'Bu grup zaten var.',
   'tags.err.root': 'Belge öğesi taşınamaz, gruplanamaz ya da kaldırılamaz.',
-  'tags.err.generic': 'Bu değişiklik yapılamıyor.',
 } as const;

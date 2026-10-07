@@ -38,7 +38,13 @@ import { tagDocument } from 'pdf-core/ops/accessibility';
 import { fixPdfUa } from 'pdf-core/ops/pdfua';
 import type { PageLayout, StructureView, TagCandidate, TagCandidates } from 'pdf-core/ops/structure';
 import { editStructure, readPageLayout, readStructure, readTagCandidates } from 'pdf-core/ops/structure';
-import type { StructEdit, StructNode, StructureModel, TableScope } from 'pdf-core/ops/structure-model';
+import type {
+  StructEdit,
+  StructEditError,
+  StructNode,
+  StructureModel,
+  TableScope,
+} from 'pdf-core/ops/structure-model';
 import {
   applyStructureEdits,
   EDITOR_ROLES,
@@ -46,7 +52,6 @@ import {
   findNode,
   nodePages,
   readingOrder,
-  StructEditError,
 } from 'pdf-core/ops/structure-model';
 import type { OperationContext, OperationNote } from 'pdf-core/ops/types';
 import type { MessageKey, Translator } from 'pdf-shared';
@@ -213,10 +218,6 @@ function elementKidsOf(model: StructureModel, parent: StructNode | null): readon
   return parent === null ? model.roots : elementKids(parent);
 }
 
-function errorKey(error: unknown): MessageKey | null {
-  return error instanceof StructEditError ? key(`tags.err.${error.reason}`) : null;
-}
-
 function TaggedEditor({
   t,
   bytes,
@@ -374,8 +375,9 @@ function TaggedEditor({
       try {
         applyStructureEdits(base, [...edits, ...next]);
       } catch (error) {
-        const message = errorKey(error);
-        onNotice?.(t(message ?? key('tags.err.generic')));
+        // The model is in memory: `applyStructureEdits` refuses with a StructEditError and nothing else.
+        const refusal = error as StructEditError;
+        onNotice?.(t(key(`tags.err.${refusal.reason}`)));
         return false;
       }
       setEdits((current) => [...current, ...next]);

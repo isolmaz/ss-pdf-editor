@@ -458,5 +458,4 @@ export const uatagsPart = {
   'tags.err.in-stream': "That element's content is inside a form object this editor does not rewrite.",
   'tags.err.duplicate-key': 'That group already exists.',
   'tags.err.root': 'The document element cannot be moved, grouped or removed.',
-  'tags.err.generic': 'That change is not possible.',
 } as const;
