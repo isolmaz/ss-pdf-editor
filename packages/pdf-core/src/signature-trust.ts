@@ -143,7 +143,12 @@ export interface TrustCheck {
   readonly path: readonly string[];
   /** The signer certificate's own validity window, against the machine's clock. */
   readonly validity: CertificateValidity;
-  /** `notAfter` of the signer certificate, ISO — what the user needs to see *with* the date. */
+  /**
+   * `notBefore` and `notAfter` of the signer certificate, ISO — what the user needs to see
+   * *with* the validity: a certificate not yet valid is valid from the first, any other until
+   * the second.
+   */
+  readonly notBefore: string | null;
   readonly notAfter: string | null;
   /** The first check that did not pass, or `null` for `'trusted'`. */
   readonly reason: TrustReason | null;
@@ -153,6 +158,7 @@ export const NO_TRUST: TrustCheck = {
   verdict: 'not-checked',
   path: [],
   validity: 'unknown',
+  notBefore: null,
   notAfter: null,
   reason: null,
 };
@@ -812,9 +818,17 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
   try {
     signer = Certificate.fromBER(input.signer.slice());
   } catch {
-    return { verdict: 'indeterminate', path: [], validity: 'unknown', notAfter: null, reason: 'malformed' };
+    return {
+      verdict: 'indeterminate',
+      path: [],
+      validity: 'unknown',
+      notBefore: null,
+      notAfter: null,
+      reason: 'malformed',
+    };
   }
   const validity = validityOf(signer, now);
+  const notBefore = signer.notBefore.value.toISOString();
   const notAfter = signer.notAfter.value.toISOString();
   const name = displayName(signer);
 
@@ -836,11 +850,11 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
   // An imported root that *is* the signer: trusted, with nothing to verify.
   for (const root of roots) {
     if (sameBytes(root.tbsView, signer.tbsView)) {
-      return { verdict: 'trusted', path: [name], validity, notAfter, reason: null };
+      return { verdict: 'trusted', path: [name], validity, notBefore, notAfter, reason: null };
     }
   }
   if (roots.length === 0) {
-    return { verdict: 'not-checked', path: [name], validity, notAfter, reason: 'no-roots' };
+    return { verdict: 'not-checked', path: [name], validity, notBefore, notAfter, reason: 'no-roots' };
   }
 
   const state: WalkState = {
@@ -853,13 +867,14 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
       verdict: 'trusted',
       path: found.map(displayName),
       validity,
+      notBefore,
       notAfter,
       reason: null,
     };
   }
 
   if (signer.issuer.isEqual(signer.subject)) {
-    return { verdict: 'self-signed', path: [name], validity, notAfter, reason: 'no-issuer' };
+    return { verdict: 'self-signed', path: [name], validity, notBefore, notAfter, reason: 'no-issuer' };
   }
   if (state.reachableFailure !== null) {
     const { reason, indeterminate } = state.reachableFailure;
@@ -867,10 +882,11 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
       verdict: indeterminate ? 'indeterminate' : 'untrusted',
       path: [name],
       validity,
+      notBefore,
       notAfter,
       reason,
     };
   }
   // A candidate existed but none of its paths reached an anchor: the chain stops short.
-  return { verdict: 'untrusted', path: [name], validity, notAfter, reason: 'no-issuer' };
+  return { verdict: 'untrusted', path: [name], validity, notBefore, notAfter, reason: 'no-issuer' };
 }

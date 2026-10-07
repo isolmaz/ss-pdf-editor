@@ -113,7 +113,8 @@ export interface SignatureVerification {
   readonly trustPath: readonly string[];
   /** The signer certificate's own window against the machine's clock. */
   readonly certificateValidity: CertificateValidity;
-  /** `notAfter` of the signer certificate, ISO; `null` when the CMS carried none. */
+  /** `notBefore` and `notAfter` of the signer certificate, ISO; `null` when the CMS carried none. */
+  readonly certificateNotBefore: string | null;
   readonly certificateNotAfter: string | null;
   /** Which check produced the trust verdict, or `null` when the chain was validated. */
   readonly trustReason: TrustReason | null;
@@ -592,6 +593,7 @@ const NO_TRUST: TrustCheck = {
   verdict: 'not-checked',
   path: [],
   validity: 'unknown',
+  notBefore: null,
   notAfter: null,
   reason: null,
 };
@@ -1201,6 +1203,7 @@ async function verifyOne(
     revocation: (facts.evidence?.revocation ?? 'indeterminate') as SignatureRevocation,
     trustPath: facts.trust.path,
     certificateValidity: facts.trust.validity,
+    certificateNotBefore: facts.trust.notBefore,
     certificateNotAfter: facts.trust.notAfter,
     trustReason: facts.trust.reason,
     timestamp: facts.evidence?.timestamp ?? null,
@@ -1303,6 +1306,7 @@ async function verifyTimestampEntry(
     changesAfterSigning: changes,
     trustPath: [],
     certificateValidity: 'unknown',
+    certificateNotBefore: null,
     certificateNotAfter: null,
     trustReason: null,
     reasonKey: verdictKey('unchecked', 'layout'),
@@ -1344,6 +1348,7 @@ async function verifyTimestampEntry(
     trustPath: timestamp.tsaPath,
     // The TSA certificate is judged at the token's own time (`signature-timestamp.ts`).
     certificateValidity: timestamp.status === 'valid' ? 'valid' : 'unknown',
+    certificateNotBefore: timestamp.tsaNotBefore,
     certificateNotAfter: timestamp.tsaNotAfter,
     trustReason: timestamp.tsaTrustReason,
     reasonKey: `props.sig.reason.timestamp.${timestamp.status}`,

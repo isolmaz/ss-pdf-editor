@@ -275,6 +275,9 @@ describe('certificate path validation', () => {
       verdict: 'untrusted',
       reason: 'validity',
       validity: 'not-yet-valid',
+      // The window is reported whole: a certificate not yet valid is shown with its first day.
+      notBefore: '2030-01-01T00:00:00.000Z',
+      notAfter: '2031-01-01T00:00:00.000Z',
     });
   });
 

@@ -92,7 +92,8 @@ export interface TimestampCheck {
   readonly tsaTrust: TrustVerdict;
   readonly tsaTrustReason: TrustReason | null;
   readonly tsaPath: readonly string[];
-  /** `notAfter` of the TSA certificate, ISO. */
+  /** `notBefore` and `notAfter` of the TSA certificate, ISO. */
+  readonly tsaNotBefore: string | null;
   readonly tsaNotAfter: string | null;
   /** The TSA certificate signed itself — a fact about the certificate, not a verdict. */
   readonly tsaSelfSigned: boolean;
@@ -118,6 +119,7 @@ function failure(
     tsaTrust: 'not-checked',
     tsaTrustReason: null,
     tsaPath: [],
+    tsaNotBefore: null,
     tsaNotAfter: null,
     tsaSelfSigned: false,
     tsaRevocation: [],
@@ -312,6 +314,7 @@ export async function verifyTimestampToken(input: VerifyTimestampInput): Promise
     tsaTrust: trust.verdict,
     tsaTrustReason: trust.reason,
     tsaPath: trust.path,
+    tsaNotBefore: tsa.notBefore.value.toISOString(),
     tsaNotAfter: tsa.notAfter.value.toISOString(),
     tsaSelfSigned: tsa.issuer.isEqual(tsa.subject),
     tsaRevocation,

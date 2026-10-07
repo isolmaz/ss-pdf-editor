@@ -436,6 +436,11 @@ function SignatureRow({
   readonly signature: SignatureVerification;
   readonly t: Translator;
 }) {
+  // A certificate not yet valid becomes valid on its first day; any other is valid until its last.
+  const certificateDate =
+    signature.certificateValidity === 'not-yet-valid'
+      ? signature.certificateNotBefore
+      : signature.certificateNotAfter;
   return (
     <li className={ROW_CLASS}>
       <div className="flex items-baseline gap-2">
@@ -520,7 +525,7 @@ function SignatureRow({
           {t('props.sig.chain', { path: signature.trustPath.join(' → ') })}
         </p>
       ) : null}
-      {signature.certificateNotAfter === null ? null : (
+      {certificateDate === null ? null : (
         <p
           className={
             signature.certificateValidity === 'expired' ? 'text-[11px] text-kumo-danger' : META_CLASS
@@ -533,11 +538,10 @@ function SignatureRow({
                 ? 'props.sig.certNotYet'
                 : // Judged at a trusted timestamp, a certificate that has since expired was still
                   // valid when the signature was made: say so rather than "valid until <past>".
-                  signature.validationTimeSource === 'timestamp' &&
-                    new Date(signature.certificateNotAfter) < new Date()
+                  signature.validationTimeSource === 'timestamp' && new Date(certificateDate) < new Date()
                   ? 'props.sig.certValidAtTimestamp'
                   : 'props.sig.certValidUntil',
-            { date: signature.certificateNotAfter.slice(0, 10) },
+            { date: certificateDate.slice(0, 10) },
           )}
         </p>
       )}
