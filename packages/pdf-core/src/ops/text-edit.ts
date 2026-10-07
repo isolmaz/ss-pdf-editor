@@ -85,7 +85,6 @@ import {
   embedFontFile,
   pdfNumber as num,
   openForWrite,
-  pageObjects,
   producerKeptNote,
   type StandardFace,
   saveRewrite,
@@ -95,7 +94,7 @@ import {
 } from '../engines/mupdf-write';
 import { notoSansBytes } from '../engines/noto';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
-import { IDENTITY, type Matrix, pageContent, readInstructions } from './accessibility';
+import { IDENTITY, type Instruction, type Matrix, pageContent, readInstructions } from './accessibility';
 import { scanContent } from './content-scan';
 import {
   note,
@@ -115,9 +114,16 @@ interface PageWork {
   readonly lines: readonly TextEditInsertLine[];
 }
 
+/** One page's planned work with the page's visible box, as the erase stage measured it. */
+interface MeasuredWork extends PageWork {
+  readonly box: UserBox;
+}
+
 /** What the erase stage read out of the page, before anything was removed. */
 interface ErasedPage {
   readonly pageIndex: number;
+  /** The page's work, measured: the rectangles that were erased and the lines drawn instead. */
+  readonly work: MeasuredWork;
   /** The text each rectangle covered, one entry per rectangle, in document order. */
   readonly covered: readonly string[];
   /** The page's own text before the edit — the baseline of the duplicate test. */
@@ -127,7 +133,8 @@ interface ErasedPage {
 interface EraseResult {
   readonly bytes: Uint8Array;
   readonly pageCount: number;
-  readonly boxes: ReadonlyMap<number, UserBox>;
+  /** Every planned page, measured, in ascending page order. */
+  readonly works: readonly MeasuredWork[];
   readonly erased: readonly ErasedPage[];
   readonly rectCount: number;
 }
@@ -205,10 +212,10 @@ export async function applyTextEdit(
   const erased = await eraseStage(mupdf, bytes, planned, context);
 
   throwIfAborted(context.signal);
-  const written = await writeStage(erased.bytes, planned, erased.boxes, request.fonts, context);
+  const written = await writeStage(erased.bytes, erased.works, request.fonts, context);
 
   throwIfAborted(context.signal);
-  const verification = await verifyPages(erased, planned, written.bytes, context);
+  const verification = await verifyPages(erased, written.bytes, context);
 
   const notes: OperationNote[] = [];
   const erasedStrings = verification.removed;
@@ -392,7 +399,7 @@ async function eraseStage(
 ): Promise<EraseResult> {
   const doc = openPdf(mupdf, bytes);
   const annotations: PDFAnnotation[] = [];
-  const boxes = new Map<number, UserBox>();
+  const works: MeasuredWork[] = [];
   const erased: ErasedPage[] = [];
   let rectCount = 0;
   let pageCount = 0;
@@ -413,7 +420,8 @@ async function eraseStage(
       const page = doc.loadPage(work.pageIndex);
       try {
         const box = readPageBox(page);
-        boxes.set(work.pageIndex, box);
+        const measured = { ...work, box };
+        works.push(measured);
         if (work.rects.length === 0) continue;
 
         const rotation = readPageRotation(page);
@@ -421,7 +429,12 @@ async function eraseStage(
         // Read the target text *before* the erase: those strings are the needles
         // the verification stage searches for in the produced file.
         const covered = readCoveredText(page, rects);
-        erased.push({ pageIndex: work.pageIndex, covered: covered.perRect, before: covered.pageText });
+        erased.push({
+          pageIndex: work.pageIndex,
+          work: measured,
+          covered: covered.perRect,
+          before: covered.pageText,
+        });
 
         for (const rect of rects) {
           // `setRect` only, like the proven path in `ops/redact.ts`. Setting
@@ -491,7 +504,7 @@ async function eraseStage(
     doc.destroy();
   }
   throwIfAborted(context.signal);
-  return { bytes: produced, pageCount, boxes, erased, rectCount };
+  return { bytes: produced, pageCount, works, erased, rectCount };
 }
 
 /** One text object to draw: where it starts (user space) and its `BT … ET`. */
@@ -524,6 +537,24 @@ function invertMatrix(matrix: Matrix): Matrix | null {
   return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
 }
 
+/** Where the text object holding instruction `index` ends (after its `ET`), or `null` when a new `BT` comes first or none closes it. */
+function endOfTextObjectAfter(instructions: readonly Instruction[], index: number): number | null {
+  for (const instruction of instructions.slice(index + 1)) {
+    if (instruction.operator === 'BT') return null;
+    if (instruction.operator === 'ET') return instruction.end;
+  }
+  return null;
+}
+
+/** Where the text object holding instruction `index` starts (its `BT`), or `null` when an `ET` comes first or none opens it. */
+function startOfTextObjectBefore(instructions: readonly Instruction[], index: number): number | null {
+  for (const instruction of instructions.slice(0, index).reverse()) {
+    if (instruction.operator === 'ET') return null;
+    if (instruction.operator === 'BT') return instruction.start;
+  }
+  return null;
+}
+
 /**
  * Draw `drawn` on `page` in reading order. Text that continues a line the page still has
  * part of goes into the content stream right after that line's text object (the run to its
@@ -544,8 +575,10 @@ function drawInReadingOrder(doc: PDFDocument, page: PDFObject, drawn: readonly D
     appendPageContent(doc, page, drawn.map((item) => `q ${item.text} Q`).join('\n'));
     return;
   }
-  const runs = scanContent(content.bytes, instructions).paints.filter(
-    (paint) => paint.kind === 'text' && paint.origin !== null && paint.ctm !== undefined,
+  const runs = scanContent(content.bytes, instructions).paints.flatMap((paint) =>
+    paint.kind === 'text' && paint.origin !== null && paint.ctm !== undefined
+      ? [{ index: paint.index, x: paint.origin.x, y: paint.origin.y, ctm: paint.ctm }]
+      : [],
   );
   const spliced: { readonly at: number; readonly order: number; readonly text: string }[] = [];
   const loose: DrawnText[] = [];
@@ -559,54 +592,29 @@ function drawInReadingOrder(doc: PDFDocument, page: PDFObject, drawn: readonly D
       continue;
     }
     const slack = LINE_ORIGIN_SLACK_EM * item.fontSize;
-    const level = runs.filter((run) => {
-      const origin = run.origin;
-      return (
-        origin !== null &&
-        Math.abs(origin.y - item.y) <= SAME_BASELINE_PT &&
-        origin.x >= span[0] - slack &&
-        origin.x <= span[1]
-      );
-    });
+    const level = runs.filter(
+      (run) => Math.abs(run.y - item.y) <= SAME_BASELINE_PT && run.x >= span[0] - slack && run.x <= span[1],
+    );
+    // The run to the left of the replacement (the nearest one), else the first run to its right.
     let anchor: (typeof runs)[number] | undefined;
-    let after = true;
     for (const run of level) {
-      const x = run.origin?.x ?? Number.NaN;
-      const best = anchor?.origin?.x ?? Number.NEGATIVE_INFINITY;
-      if (x <= item.x + SAME_BASELINE_PT && x >= best) anchor = run;
+      if (run.x <= item.x + SAME_BASELINE_PT && run.x >= (anchor?.x ?? Number.NEGATIVE_INFINITY))
+        anchor = run;
     }
+    const after = anchor !== undefined;
     if (anchor === undefined) {
-      after = false;
       for (const run of level) {
-        const x = run.origin?.x ?? Number.NaN;
-        const best = anchor?.origin?.x ?? Number.POSITIVE_INFINITY;
-        if (x < best) anchor = run;
+        if (run.x < (anchor?.x ?? Number.POSITIVE_INFINITY)) anchor = run;
       }
     }
-    const inverse = anchor?.ctm === undefined ? null : invertMatrix(anchor.ctm);
-    let at = -1;
-    if (anchor !== undefined && inverse !== null) {
-      if (after) {
-        for (let index = anchor.index + 1; index < instructions.length; index += 1) {
-          const operator = instructions[index]?.operator;
-          if (operator === 'BT') break;
-          if (operator === 'ET') {
-            at = instructions[index]?.end ?? -1;
-            break;
-          }
-        }
-      } else {
-        for (let index = anchor.index - 1; index >= 0; index -= 1) {
-          const operator = instructions[index]?.operator;
-          if (operator === 'ET') break;
-          if (operator === 'BT') {
-            at = instructions[index]?.start ?? -1;
-            break;
-          }
-        }
-      }
-    }
-    if (at < 0 || inverse === null) {
+    const inverse = anchor === undefined ? null : invertMatrix(anchor.ctm);
+    const at =
+      anchor === undefined || inverse === null
+        ? null
+        : after
+          ? endOfTextObjectAfter(instructions, anchor.index)
+          : startOfTextObjectBefore(instructions, anchor.index);
+    if (at === null || inverse === null) {
       loose.push(item);
       continue;
     }
@@ -678,8 +686,7 @@ function keptFonts(page: PDFObject, lines: readonly TextEditInsertLine[]): reado
  */
 async function writeStage(
   bytes: Uint8Array,
-  planned: readonly PageWork[],
-  boxes: ReadonlyMap<number, UserBox>,
+  works: readonly MeasuredWork[],
   fontUrls: Readonly<Record<string, string>>,
   context: OperationContext,
 ): Promise<WriteResult> {
@@ -688,8 +695,7 @@ async function writeStage(
   const fonts = new Map<string, LineFace>();
   const embeddedFonts = new Set<string>();
   const substitutions = new Set<string>();
-  const pages = planned.filter((page) => page.lines.length > 0);
-  const pageList = pageObjects(doc);
+  const pages = works.filter((work) => work.lines.length > 0);
   const total = pages.reduce((sum, page) => sum + page.lines.length, 0);
   let lineCount = 0;
   let justifiedLines = 0;
@@ -697,21 +703,14 @@ async function writeStage(
   try {
     for (const work of pages) {
       throwIfAborted(context.signal);
-      const page = pageList[work.pageIndex];
-      const box = boxes.get(work.pageIndex);
-      if (page === undefined || box === undefined) {
-        throw new ToolError('internal', {
-          engine: 'mupdf',
-          pageIndex: work.pageIndex,
-          engineMessage: 'page geometry was not read before the write step',
-        });
-      }
+      const page = doc.findPage(work.pageIndex);
+      const { box } = work;
       const resourceKeys = new Map<LineFace, string>();
       const drawn: DrawnText[] = [];
 
       for (const line of work.lines) {
+        // `planRequest` dropped the lines that draw nothing, so every line here has text or words.
         const words = line.words !== undefined && line.words.length > 0 ? line.words : null;
-        if (words === null && line.text === '') continue;
         const size = requireRange(line.fontSize, 1, 1000, 'fontSize');
         const [red, green, blue] = hexColour(line.color);
         const font = await lineFont(
@@ -827,7 +826,8 @@ async function lineFont(
     if (face === undefined) {
       const font = findFont(pageFonts(page), name);
       if (font !== null) {
-        face = { ref: font.ref, name: font.names[0] ?? name, font };
+        // `findFont` matched one of the font's names, so it has a first one: the page's own spelling.
+        face = { ref: font.ref, name: font.names[0] as string, font };
         fonts.set(key, face);
       }
     }
@@ -890,7 +890,6 @@ async function notoFace(
  */
 async function verifyPages(
   erased: EraseResult,
-  planned: readonly PageWork[],
   bytes: Uint8Array,
   context: OperationContext,
 ): Promise<VerificationResult> {
@@ -898,7 +897,7 @@ async function verifyPages(
   const failures: string[] = [];
   const removed: string[] = [];
   const added: string[] = [];
-  const inserted = planned.filter((page) => page.lines.length > 0);
+  const inserted = erased.works.filter((work) => work.lines.length > 0);
   const total = erased.erased.length + inserted.length;
   let done = 0;
 
@@ -915,44 +914,41 @@ async function verifyPages(
       // (i) nothing that started inside an erased rectangle may still be there.
       // Positional on purpose: it survives a phrase that legitimately occurs twice
       // on the page, where a plain substring test could not tell the copies apart.
-      const box = erased.boxes.get(page.pageIndex);
-      const work = planned.find((entry) => entry.pageIndex === page.pageIndex);
-      const rects = work?.rects ?? [];
-      if (box !== undefined) {
-        const userRects = rects.map((rect) => topLeftRectToUserSpace(box, rect));
-        /**
-         * The replacement is drawn *where the old line was*, so of course it starts
-         * inside an erased rectangle — that is what an edit is. The check therefore
-         * excludes the text this operation itself drew, and it identifies that text
-         * by its own content and baseline rather than by "anything in the rect":
-         * anything else inside the rect is leftover glyphs, which is exactly the
-         * defect `4c` exists to prevent. Without this the operation failed its own
-         * verification on every successful edit (measured: the dialog reported
-         * `page 0: text still starts inside an erased rectangle: “ÜSKÜDAR şubesi …”`).
-         */
-        // A justified line is drawn word by word, and a reader may report each word as
-        // an item of its own: every word placement is ours too.
-        const ours = (work?.lines ?? []).flatMap((line) => [
-          { text: searchableText(line.text), x: line.x, y: line.y },
-          ...(line.words ?? []).map((word) => ({ text: searchableText(word.text), x: word.x, y: line.y })),
-        ]);
-        for (const item of content.items) {
-          if (item.text.trim() === '') continue;
-          if (!userRects.some((rect) => insideRect(item.x, item.y, rect))) continue;
-          const text = searchableText(item.text);
-          const isOurs = ours.some(
-            (line) =>
-              text.length > 0 &&
-              line.text.length > 0 &&
-              (line.text.includes(text) || text.includes(line.text)) &&
-              Math.abs(line.x - item.x) <= INSERTED_MATCH_TOLERANCE_PT &&
-              Math.abs(box.height - line.y - item.y) <= INSERTED_MATCH_TOLERANCE_PT,
-          );
-          if (isOurs) continue;
-          failures.push(
-            `page ${page.pageIndex}: text still starts inside an erased rectangle: “${clipText(item.text)}”`,
-          );
-        }
+      const { work } = page;
+      const { box } = work;
+      const userRects = work.rects.map((rect) => topLeftRectToUserSpace(box, rect));
+      /**
+       * The replacement is drawn *where the old line was*, so of course it starts
+       * inside an erased rectangle — that is what an edit is. The check therefore
+       * excludes the text this operation itself drew, and it identifies that text
+       * by its own content and baseline rather than by "anything in the rect":
+       * anything else inside the rect is leftover glyphs, which is exactly the
+       * defect `4c` exists to prevent. Without this the operation failed its own
+       * verification on every successful edit (measured: the dialog reported
+       * `page 0: text still starts inside an erased rectangle: “ÜSKÜDAR şubesi …”`).
+       */
+      // A justified line is drawn word by word, and a reader may report each word as
+      // an item of its own: every word placement is ours too.
+      const ours = work.lines.flatMap((line) => [
+        { text: searchableText(line.text), x: line.x, y: line.y },
+        ...(line.words ?? []).map((word) => ({ text: searchableText(word.text), x: word.x, y: line.y })),
+      ]);
+      for (const item of content.items) {
+        if (item.text.trim() === '') continue;
+        if (!userRects.some((rect) => insideRect(item.x, item.y, rect))) continue;
+        const text = searchableText(item.text);
+        const isOurs = ours.some(
+          (line) =>
+            text.length > 0 &&
+            line.text.length > 0 &&
+            (line.text.includes(text) || text.includes(line.text)) &&
+            Math.abs(line.x - item.x) <= INSERTED_MATCH_TOLERANCE_PT &&
+            Math.abs(box.height - line.y - item.y) <= INSERTED_MATCH_TOLERANCE_PT,
+        );
+        if (isOurs) continue;
+        failures.push(
+          `page ${page.pageIndex}: text still starts inside an erased rectangle: “${clipText(item.text)}”`,
+        );
       }
 
       // (i′) the strings the rectangles covered are gone from the page's text. A
@@ -962,7 +958,7 @@ async function verifyPages(
       // The lines this operation drew are subtracted first: a replacement that
       // contains the old text (`2024` → `2024–2025`) puts the needle back on purpose.
       const before = searchableText(page.before);
-      const drawn = (work?.lines ?? []).map((line) => searchableText(line.text));
+      const drawn = work.lines.map((line) => searchableText(line.text));
       for (const needle of page.covered) {
         const wanted = searchableText(needle);
         if (wanted === '') continue;
@@ -1026,6 +1022,8 @@ async function verifyPages(
     }
     return { removed, added, pageCount: handle.pageCount };
   } catch (error) {
+    // A cancellation is the caller's own, as in the write stage — not an engine fault.
+    if (error instanceof Error && error.name === 'AbortError') throw error;
     // The reader's own failures travel through the shared mapper (the adapter's own
     // vocabulary is private); the checks above already are `ToolError`s and pass
     // through unchanged.
@@ -1101,9 +1099,8 @@ function searchableText(value: string): string {
   return value.replace(/\s+/gu, '');
 }
 
-/** Non-overlapping occurrences of `needle` in `haystack`. */
+/** Non-overlapping occurrences of the non-empty `needle` in `haystack`. */
 function countOccurrences(haystack: string, needle: string): number {
-  if (needle === '') return 0;
   let total = 0;
   let from = 0;
   for (;;) {
