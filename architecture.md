@@ -1490,10 +1490,9 @@ space.
 repo-wide search finds no `createContext`/`useContext`. The only module-level state is
 what a preference needs — theme and locale in `localStorage`, and the interface mode stored by
 `apps/web/src/interface-mode.ts` and handed down by the shell as a prop. There is no module-level
-translator. Text comes from a `t: Translator` prop, and a few surfaces take it as optional
-(`t?: Translator`): `ThemeSelector` and `LanguageSelector` in `pdf-ui`, and `UpdateBanner` in
-`apps/web`. Without `t` they use fallback text of their own (Turkish strings in the theme
-selector, `Language` as the language selector's label).
+translator. Text comes from a required `t: Translator` prop on every surface; none carries
+fallback text of its own. `ThemeSelector` and `LanguageSelector` render one layout (the
+segmented control the settings dialog shows).
 
 Document state lives in `pdf-model`; UI state lives in `apps/web/src/App.tsx`; engine
 state lives inside the pdf.js viewer. The **one reverse channel** is the viewer's

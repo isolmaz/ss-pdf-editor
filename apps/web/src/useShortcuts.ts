@@ -405,11 +405,15 @@ function isEditing(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
-/** Widgets that own the navigation keys (Home, End, Page Up/Down) while the focus is inside them. */
-const COMPOSITE_WIDGETS = '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"]';
+/**
+ * Widgets that own the navigation keys (Home, End, Page Up/Down) while the focus is inside them:
+ * the ARIA composite roles, and a list that walks its own rows (`data-owns-page-keys`).
+ */
+const COMPOSITE_WIDGETS =
+  '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"],[role="tablist"],[data-owns-page-keys]';
 
 /**
- * Whether the focus sits in a composite widget (a menu bar, a menu, the thumbnail list):
+ * Whether the focus sits in a composite widget (a menu bar, a menu, the thumbnail list, a dock's tabs):
  * those handle the page-navigation keys themselves, and the shell answering first (it
  * listens in the capture phase) would stop the widget from ever seeing them.
  */

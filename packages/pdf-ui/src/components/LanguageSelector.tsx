@@ -113,18 +113,16 @@ export function useLocale(): {
 }
 
 export interface LanguageSelectorProps {
-  readonly t?: Translator;
-  readonly variant?: 'segmented' | 'icon' | 'badge';
+  readonly t: Translator;
   readonly className?: string;
 }
 
-export function LanguageSelector({ t, variant = 'segmented', className = '' }: LanguageSelectorProps) {
+export function LanguageSelector({ t, className = '' }: LanguageSelectorProps) {
   const { locale, setLocale } = useLocale();
-  const current = localeInfo(locale);
-  const label = t ? t('lang.select') : 'Language';
+  const label = t('lang.select');
 
   // Two languages toggle; more than that is a list.
-  if (LOCALES.length > 3 || ((variant === 'icon' || variant === 'badge') && LOCALES.length > 2)) {
+  if (LOCALES.length > 3) {
     return (
       <label
         className={`flex h-7 items-center gap-1 rounded-md border border-kumo-line bg-kumo-base px-2 text-xs font-semibold text-kumo-strong ${className}`}
@@ -145,23 +143,6 @@ export function LanguageSelector({ t, variant = 'segmented', className = '' }: L
           ))}
         </select>
       </label>
-    );
-  }
-
-  if (variant === 'icon' || variant === 'badge') {
-    const index = LOCALES.findIndex((info) => info.id === locale);
-    const next = LOCALES[(index + 1) % LOCALES.length] ?? LOCALES[0];
-    return (
-      <button
-        type="button"
-        title={`${current?.nativeName ?? locale} → ${next.nativeName}`}
-        aria-label={label}
-        onClick={() => setLocale(next.id)}
-        className={`flex h-7 items-center gap-1 rounded-md border border-kumo-line bg-kumo-base px-2 text-xs font-semibold text-kumo-strong hover:bg-kumo-recessed transition-colors ${className}`}
-      >
-        <Globe size={14} className="text-pdf-accent" />
-        <span className="uppercase">{locale}</span>
-      </button>
     );
   }
 

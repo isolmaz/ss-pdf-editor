@@ -4740,13 +4740,8 @@ export function App({ store }: AppProps) {
         openSignature,
         addImage: pickImage,
         measure: (mode) => {
-          // The ruler's own sub-mode; `null` puts the tool away. It is the same one
-          // canonical value the rail and the palette write, so stopping the ruler from
-          // its strip and arming it from the menu cannot leave two answers behind.
-          if (mode === null) {
-            if (canvasToolRef.current === 'measure') setCanvasTool('select');
-            return;
-          }
+          // The ruler's own sub-mode: the same one canonical value the rail and the palette
+          // write, so arming it from the menu cannot leave two answers behind.
           setMeasureSubMode(mode);
           setCanvasTool('measure');
         },

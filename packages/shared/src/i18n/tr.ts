@@ -132,8 +132,6 @@ export const tr = {
   'theme.light': 'Açık Tema',
   'theme.dark': 'Koyu Tema',
   'theme.system': 'Sistem Teması',
-  'theme.cycle.title': '{current} ({next} moduna geç)',
-  'theme.cycle.aria': '{current} tema',
   'setting.theme.light': 'Açık Tema',
   'setting.theme.dark': 'Koyu Tema',
   'setting.theme.system': 'Sistem Teması',

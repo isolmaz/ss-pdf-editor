@@ -89,7 +89,7 @@ export interface CommandHost {
   /** Pick an image file and click where it goes on the page. */
   readonly addImage: () => void;
   /** Arm the ruler in one of its three modes (`ops/measure.ts`). */
-  readonly measure: (mode: 'distance' | 'perimeter' | 'area' | null) => void;
+  readonly measure: (mode: 'distance' | 'perimeter' | 'area') => void;
   /** Which measure mode is armed, for the menu's check mark. */
   readonly measureMode: 'distance' | 'perimeter' | 'area' | null;
   /** Open a right-dock tab; the comparison and the accessibility check live there. */

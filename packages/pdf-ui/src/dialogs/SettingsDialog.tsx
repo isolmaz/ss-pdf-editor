@@ -114,10 +114,10 @@ export function SettingsDialog({
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pe-1">
           <Section title={t('settings.section.appearance')}>
             <Row label={t('settings.language')}>
-              <LanguageSelector t={t} variant="segmented" />
+              <LanguageSelector t={t} />
             </Row>
             <Row label={t('settings.theme')}>
-              <ThemeSelector t={t} variant="segmented" />
+              <ThemeSelector t={t} />
             </Row>
           </Section>
 

@@ -120,8 +120,6 @@ export const en: Record<MessageKey, string> = {
   'theme.light': 'Light Theme',
   'theme.dark': 'Dark Theme',
   'theme.system': 'System Theme',
-  'theme.cycle.title': '{current} (switch to {next})',
-  'theme.cycle.aria': '{current} theme',
   'setting.theme.light': 'Light Theme',
   'setting.theme.dark': 'Dark Theme',
   'setting.theme.system': 'System Theme',

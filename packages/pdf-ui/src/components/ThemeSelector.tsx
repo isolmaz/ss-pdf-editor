@@ -1,6 +1,6 @@
 import { Desktop, Moon, Sun } from '@phosphor-icons/react';
 import type { Translator } from 'pdf-shared';
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -43,16 +43,8 @@ export function applyTheme(mode: ThemeMode): void {
 export function useTheme(): {
   theme: ThemeMode;
   setTheme: (mode: ThemeMode) => void;
-  resolvedTheme: 'light' | 'dark';
 } {
   const [theme, setThemeState] = useState<ThemeMode>(() => getStoredTheme());
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => {
-    const current = getStoredTheme();
-    if (current === 'light' || current === 'dark') return current;
-    return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light';
-  });
 
   const setTheme = useCallback((next: ThemeMode) => {
     setThemeState(next);
@@ -62,17 +54,13 @@ export function useTheme(): {
   useEffect(() => {
     const onThemeChange = (e: Event) => {
       const custom = e as CustomEvent<{ theme: ThemeMode; resolved: 'light' | 'dark' }>;
-      if (custom.detail) {
-        setThemeState(custom.detail.theme);
-        setResolvedTheme(custom.detail.resolved);
-      }
+      if (custom.detail) setThemeState(custom.detail.theme);
     };
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const onMediaChange = () => {
       if (getStoredTheme() === 'system') {
         const nextResolved = media.matches ? 'dark' : 'light';
-        setResolvedTheme(nextResolved);
         document.documentElement.style.colorScheme = nextResolved;
         document.documentElement.dataset.mode = nextResolved;
       }
@@ -86,112 +74,44 @@ export function useTheme(): {
     };
   }, []);
 
-  return { theme, setTheme, resolvedTheme };
+  return { theme, setTheme };
 }
 
 export interface ThemeSelectorProps {
-  readonly t?: Translator;
-  readonly variant?: 'icon' | 'segmented';
+  readonly t: Translator;
   readonly className?: string;
 }
 
-export function ThemeSelector({ t, variant = 'icon', className = '' }: ThemeSelectorProps) {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+export function ThemeSelector({ t, className = '' }: ThemeSelectorProps) {
+  const { theme, setTheme } = useTheme();
 
-  const getLabel = (mode: ThemeMode) => {
-    if (t) {
-      if (mode === 'light') return t('theme.light');
-      if (mode === 'dark') return t('theme.dark');
-      return t('theme.system');
-    }
-    return mode === 'light' ? 'Açık' : mode === 'dark' ? 'Koyu' : 'Sistem';
-  };
-
-  const cycleTheme = () => {
-    if (theme === 'system') setTheme('light');
-    else if (theme === 'light') setTheme('dark');
-    else setTheme('system');
-  };
-
-  if (variant === 'segmented') {
-    return (
-      <div
-        className={`flex items-center gap-0.5 rounded-lg border border-kumo-line bg-kumo-recessed p-0.5 text-xs select-none ${className}`}
-      >
-        <button
-          type="button"
-          aria-pressed={theme === 'light'}
-          title={getLabel('light')}
-          onClick={() => setTheme('light')}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 font-medium transition-all ${
-            theme === 'light'
-              ? 'bg-kumo-base text-kumo-strong'
-              : 'text-kumo-subtle hover:text-kumo-default hover:bg-kumo-base/50'
-          }`}
-        >
-          <Sun size={14} />
-          <span>{getLabel('light')}</span>
-        </button>
-
-        <button
-          type="button"
-          aria-pressed={theme === 'dark'}
-          title={getLabel('dark')}
-          onClick={() => setTheme('dark')}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 font-medium transition-all ${
-            theme === 'dark'
-              ? 'bg-kumo-base text-kumo-strong'
-              : 'text-kumo-subtle hover:text-kumo-default hover:bg-kumo-base/50'
-          }`}
-        >
-          <Moon size={14} />
-          <span>{getLabel('dark')}</span>
-        </button>
-
-        <button
-          type="button"
-          aria-pressed={theme === 'system'}
-          title={getLabel('system')}
-          onClick={() => setTheme('system')}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 font-medium transition-all ${
-            theme === 'system'
-              ? 'bg-kumo-base text-kumo-strong'
-              : 'text-kumo-subtle hover:text-kumo-default hover:bg-kumo-base/50'
-          }`}
-        >
-          <Desktop size={14} />
-          <span>{getLabel('system')}</span>
-        </button>
-      </div>
-    );
-  }
-
-  // Icon variant: compact button with intuitive cycle & descriptive tooltip
-  const currentIcon =
-    theme === 'system' ? (
-      <Desktop size={16} />
-    ) : resolvedTheme === 'dark' ? (
-      <Moon size={16} />
-    ) : (
-      <Sun size={16} />
-    );
-
-  const nextModeText =
-    theme === 'system' ? getLabel('light') : theme === 'light' ? getLabel('dark') : getLabel('system');
+  const modes: readonly { readonly mode: ThemeMode; readonly label: string; readonly icon: ReactNode }[] = [
+    { mode: 'light', label: t('theme.light'), icon: <Sun size={14} /> },
+    { mode: 'dark', label: t('theme.dark'), icon: <Moon size={14} /> },
+    { mode: 'system', label: t('theme.system'), icon: <Desktop size={14} /> },
+  ];
 
   return (
-    <button
-      type="button"
-      onClick={cycleTheme}
-      className={`flex size-8 items-center justify-center rounded-md text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong transition-colors ${className}`}
-      title={
-        t
-          ? t('theme.cycle.title', { current: getLabel(theme), next: nextModeText })
-          : `${getLabel(theme)} (${nextModeText} moduna geç)`
-      }
-      aria-label={t ? t('theme.cycle.aria', { current: getLabel(theme) }) : `${getLabel(theme)} tema`}
+    <div
+      className={`flex items-center gap-0.5 rounded-lg border border-kumo-line bg-kumo-recessed p-0.5 text-xs select-none ${className}`}
     >
-      {currentIcon}
-    </button>
+      {modes.map(({ mode, label, icon }) => (
+        <button
+          key={mode}
+          type="button"
+          aria-pressed={theme === mode}
+          title={label}
+          onClick={() => setTheme(mode)}
+          className={`flex items-center gap-1.5 rounded-md px-2 py-1 font-medium transition-all ${
+            theme === mode
+              ? 'bg-kumo-base text-kumo-strong'
+              : 'text-kumo-subtle hover:text-kumo-default hover:bg-kumo-base/50'
+          }`}
+        >
+          {icon}
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
   );
 }
