@@ -42,7 +42,7 @@ type MoveKind = 'next' | 'previous' | 'first' | 'last';
 /** Page keys, resolved before the shell's own bindings get a chance (`apps/web/src/useShortcuts.ts`). */
 const PAGE_KEYS: Readonly<Record<string, MoveKind>> = {
   ArrowRight: 'next',
-  Space: 'next',
+  ' ': 'next',
   PageDown: 'next',
   ArrowLeft: 'previous',
   PageUp: 'previous',
@@ -173,8 +173,13 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
       const current = viewerRef.current;
       if (current === null || fitted === null) return;
       if (Math.abs(current.getZoom() - fitted) > 1e-6) return;
+      const dom = findViewerDom(current);
+      const shown = dom === null ? 0 : pageIndexAtTop(dom);
       current.setZoom('page-width');
       fitted = current.getZoom();
+      // pdf.js keeps the old scroll fraction through a rescale, which leaves the
+      // page cut off at the top; "the page fills the screen" needs it aligned.
+      current.goToPage(shown);
     };
     const sizes = new ResizeObserver(refit);
     if (container !== null) sizes.observe(container);
