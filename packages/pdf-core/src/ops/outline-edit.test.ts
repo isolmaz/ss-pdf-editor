@@ -7,16 +7,9 @@
  * point of a rotated page, and a malformed tree rewritten instead of refused.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs, openWithPdfjs, type PdfOutlineEntry } from '../engines/pdfjs-handle';
+import { openWithPdfjs, type PdfOutlineEntry } from '../engines/pdfjs-handle';
 import { applyOutlineEdit, type OutlineNodeInput } from './outline-edit';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 

@@ -16,22 +16,17 @@
  * engine cannot be made to lose a form field. The bytes, the reader, the reference handle
  * and the verifier are real in every case.
  *
- * Two environment notes, neither of them product behaviour:
- *
- *  - pdf.js points `GlobalWorkerOptions.workerSrc` at a browser-relative path
- *    (`/engines/pdfjs/pdf.worker.mjs`) that a Node process cannot resolve, and without a
- *    worker it refuses to parse anything. The file inside the installed package is used
- *    instead, resolved through pdf-core's own dependency link so no dependency is added
- *    to the workspace.
- *  - MuPDF writes the fixtures, loaded from the installed package through pdf-core's own
- *    dependency link for the same reason: the adapter imports it by the served URL.
+ * One environment note, not product behaviour: MuPDF writes the fixtures, loaded from the
+ * installed package through pdf-core's own dependency link, because the adapter imports it
+ * by the served URL. (pdf.js's worker is pointed at the installed package by
+ * `vitest.setup.ts`, for every suite.)
  */
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import type { PdfDocumentHandle } from 'pdf-core';
 import type { Mupdf } from 'pdf-core/engines/mupdf';
-import { loadPdfjs, openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
+import { openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
 import { readFormFields } from 'pdf-core/ops/forms';
 import { encodeEngineValues, type JsonValue, SessionStore } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
@@ -52,11 +47,6 @@ const mupdf = (await import(
 )) as Mupdf;
 /** MuPDF's document class, as pdf-core's adapter types it (this workspace does not declare mupdf). */
 type PDFDocument = InstanceType<Mupdf['PDFDocument']>;
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(coreRequire.resolve('pdf-core')).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-).href;
-
 /** The step ids a rotate, delete or insert actually journals (`save-plan.ts`). */
 const COMPOSE_STEPS = ['pdfjs.extractPages', 'metadata', 'save'];
 

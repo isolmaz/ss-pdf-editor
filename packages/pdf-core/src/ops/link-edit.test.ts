@@ -6,16 +6,9 @@
  * removed link whose object stays in the file, and a no-op that rewrites the document.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
+import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { applyLinkEdit } from './link-edit';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 

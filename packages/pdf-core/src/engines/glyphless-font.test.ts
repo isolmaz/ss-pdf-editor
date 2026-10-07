@@ -5,18 +5,10 @@
  * must extract in reading order. The font program itself must be a well-formed TrueType.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { visualOrder } from '../ops/ocr';
 import { embedGlyphless, glyphlessFontProgram } from './glyphless-font';
-import { loadPdfjs, openWithPdfjs } from './pdfjs-handle';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks.
-  createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-).href;
+import { openWithPdfjs } from './pdfjs-handle';
 
 /** A page with one invisible line per entry, each drawn in the glyph-less font. */
 async function pageWith(lines: readonly string[]): Promise<Uint8Array> {

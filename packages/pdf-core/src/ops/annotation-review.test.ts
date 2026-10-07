@@ -6,20 +6,13 @@
  * a popup/widget/link, and a state the thread reader does not see as the comment's own.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import type { PDFObject } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
-import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
+import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { writeCommentReview } from './annotation-review';
 import { commentThreads } from './annotation-threads';
 import { type ExistingAnnotation, readAnnotations, referenceOf } from './annotations';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 

@@ -7,17 +7,10 @@
  * edited into an illegal shape instead of being refused.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { listPdfAttachments, readPdfAttachment } from '../attachments';
-import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
+import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { addAttachments, removeAttachments } from './attachments-write';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 const encode = (value: string) => new TextEncoder().encode(value);

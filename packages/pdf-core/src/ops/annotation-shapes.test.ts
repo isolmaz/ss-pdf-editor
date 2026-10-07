@@ -7,11 +7,9 @@
  * whose session marker is lost (the next edit can no longer find it).
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
+import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { writeAnnotationsToFile, writeShapeAnnotations } from './annotation-shapes';
 import {
   type AnnotationMark,
@@ -21,12 +19,6 @@ import {
   readAnnotations,
   settleEngineMarks,
 } from './annotations';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks.
-  createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 

@@ -5,18 +5,9 @@
  * it cannot embed), a page of the wrong paper, and an empty scan that returns an empty file.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs } from '../engines/pdfjs-handle';
 import { FIT_LONG_SIDE_PT, type ScanPageInput, scanPagesToPdf } from './scan';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks.
-  createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 
