@@ -39,8 +39,9 @@ The OCR specs generate their own inputs (a scan rendered from known printed line
 so they run on a clean checkout.
 
 Every spec imports `test` and `expect` from `e2e/test.ts`, not from `playwright/test`: its automatic
-fixture fails a test whose page logged a console error or threw an uncaught exception. A test that
-provokes an error on purpose names it with `test.use({ allowedErrors: [/…/] })`.
+fixture fails a test when any page of its browser context (a second window, the print window too)
+logged a console error or threw an uncaught exception. A test that provokes an error on purpose
+names it with `test.use({ allowedErrors: [/…/] })`.
 
 - A bug fix comes with a regression test that fails without the fix.
 - A test must check behaviour, and must fail when that behaviour breaks.
