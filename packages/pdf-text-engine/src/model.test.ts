@@ -339,3 +339,48 @@ describe('buildTextPage — paragraph blocks', () => {
     expect(centred.map((item) => [item.text, item.align])).toEqual([['abcdefghij\nabcd', 'center']]);
   });
 });
+
+describe('buildTextPage — glyph colour and a right-aligned paragraph', () => {
+  const glyphAt = (ch: string, x: number, y: number, color?: string): CharInput => ({
+    ch,
+    quad: [x, y - 8, x + 5, y + 2],
+    origin: [x, y],
+    size: SIZE,
+    fontName: 'Helvetica',
+    ...(color === undefined ? {} : { color }),
+  });
+  const lineAt = (text: string, x: number, baseline: number, color?: string) => {
+    const chars = [...text].map((ch, index) => glyphAt(ch, x + index * 5, baseline, color));
+    return { chars, quad: [x, baseline - 8, x + text.length * 5, baseline + 2] as const, baseline };
+  };
+
+  it('keeps a glyph colour the extractor reported and leaves it off when none was', () => {
+    const built = buildTextPage({
+      pageIndex: 0,
+      width: 595,
+      height: 842,
+      rotation: 0,
+      blocks: [
+        { quad: [72, 90, 200, 104], lines: [lineAt('ab', 72, 100, '#ff0000'), lineAt('cd', 72, 114)] },
+      ],
+    }).blocks[0];
+    const glyphs = built?.lines.flatMap((line) => line.words.flatMap((word) => word.glyphs)) ?? [];
+    expect(glyphs.map((glyph) => [glyph.ch, glyph.color])).toEqual([
+      ['a', '#ff0000'],
+      ['b', '#ff0000'],
+      ['c', undefined],
+      ['d', undefined],
+    ]);
+  });
+
+  it('calls lines flush right and ragged left right-aligned', () => {
+    const built = buildTextPage({
+      pageIndex: 0,
+      width: 595,
+      height: 842,
+      rotation: 0,
+      blocks: [{ quad: [72, 90, 200, 120], lines: [lineAt('abcdefgh', 72, 100), lineAt('abcd', 92, 114)] }],
+    }).blocks[0];
+    expect(built?.align).toBe('right');
+  });
+});

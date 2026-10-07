@@ -247,9 +247,8 @@ function rankCandidates(
 function missingGlyphsOf(text: string, metrics: FontMetrics): readonly string[] {
   const missing: string[] = [];
   for (const character of text) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint === undefined) continue;
-    if (metrics.hasGlyph(codePoint)) continue;
+    // A string iterator yields whole code points, never an empty string.
+    if (metrics.hasGlyph(character.codePointAt(0) as number)) continue;
     if (!missing.includes(character)) missing.push(character);
   }
   return missing;
@@ -394,23 +393,14 @@ export function metricsFor(glyphs: GlyphSource, bytes: Uint8Array, text?: string
   const font = readFontHeader(bytes);
   const glyphAdvance = (codePoint: number): number =>
     Math.round(glyphs.advanceGlyph(glyphs.encodeCharacter(codePoint)) * font.unitsPerEm);
-  const hasGlyph = (codePoint: number): boolean => glyphs.encodeCharacter(codePoint) !== 0;
-  const missing: string[] = [];
-  if (text !== undefined) {
-    for (const character of text) {
-      const codePoint = character.codePointAt(0);
-      if (codePoint === undefined) continue;
-      if (hasGlyph(codePoint)) continue;
-      if (!missing.includes(character)) missing.push(character);
-    }
-  }
-  return {
+  const metrics: FontMetrics = {
     unitsPerEm: font.unitsPerEm,
     glyphAdvance,
     ascender: font.ascender,
     descender: font.descender,
     lineGap: font.lineGap,
-    hasGlyph,
-    missing,
+    hasGlyph: (codePoint) => glyphs.encodeCharacter(codePoint) !== 0,
+    missing: [],
   };
+  return text === undefined ? metrics : { ...metrics, missing: missingGlyphsOf(text, metrics) };
 }
