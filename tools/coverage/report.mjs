@@ -14,8 +14,9 @@
  * 4. The browser coverage is mapped back to the sources through the build's source maps with
  *    `ast-v8-to-istanbul` — the converter the unit suite's provider uses — and its counts are
  *    added to the unit result's statements, functions and branches, met by where each starts
- *    (`addBrowserCounts`). An unminified bundle keeps the statements and branches the sources
- *    have, so both sides count the same things.
+ *    or, failing that, by the lines each covers (`meet`, `addBrowserCounts`). An unminified
+ *    bundle keeps the statements and branches the sources have, so both sides count the same
+ *    things.
  *
  * Output: `coverage/report/` (HTML in `html/`, `coverage-summary.json`, `coverage-final.json`)
  * and a per-package table on the console. Web workers (Ghostscript) and the service worker
@@ -136,45 +137,73 @@ async function convertBrowserCoverage() {
 }
 
 /**
- * Adds a browser conversion's counts to the unit structure of the same file. Both sides map
- * their statements back through a source map, and the two maps agree on where a statement,
- * function or branch starts but rarely on where it ends (measured: start positions meet for
- * 97 % of statements, end positions for 4 %), so items are met by their start. The unit side
- * counts every source file, so its structure is the denominator; a browser item with no unit
- * counterpart is dropped rather than counted.
+ * Meets each unit item with the browser items of one conversion and calls `add(unitId,
+ * browserId)` for every pair; returns the browser ids that met one. Items are met by where they
+ * start: both sides map back through a source map, and the two maps agree on starts far more
+ * often than on ends. Where they do not (measured: a declaration starts at its initialiser on
+ * the unit side and at its name on the browser side, `const x = lazy(…)` at `lazy` against
+ * `x`), a unit item no browser item starts at is met by the browser item over the same lines,
+ * but only when that item is the only one over those lines on each side, so no count can land
+ * on a neighbour.
+ */
+function meet(unit, browser, add) {
+  const group = (items, key) => {
+    const groups = new Map();
+    for (const item of items) {
+      const ids = groups.get(item[key]);
+      if (ids === undefined) groups.set(item[key], [item.id]);
+      else ids.push(item.id);
+    }
+    return groups;
+  };
+  const browserStarts = group(browser, 'at');
+  const browserLines = group(browser, 'lines');
+  const unitLines = group(unit, 'lines');
+  const used = new Set();
+  for (const item of unit) {
+    const sameLines = browserLines.get(item.lines) ?? [];
+    const matches =
+      browserStarts.get(item.at) ??
+      (unitLines.get(item.lines)?.length === 1 && sameLines.length === 1 ? sameLines : []);
+    for (const id of matches) {
+      add(item.id, id);
+      used.add(id);
+    }
+  }
+  return used;
+}
+
+/**
+ * Adds a browser conversion's counts to the unit structure of the same file, statement,
+ * function and branch, met as `meet` describes. The unit side counts every source file, so its
+ * structure is the denominator; a browser item with no unit counterpart is dropped rather than
+ * counted.
  */
 function addBrowserCounts(merged, browserFile, tally) {
   const start = ({ line, column }) => `${line}:${column}`;
-  const sum = (entries) => {
-    const counts = new Map();
-    for (const [where, count] of entries) counts.set(where, (counts.get(where) ?? 0) + count);
-    return counts;
+  const lines = (loc) => `${loc.start.line}-${loc.end.line}`;
+  const items = (map, describe) => Object.entries(map).map(([id, entry]) => ({ id, ...describe(entry) }));
+  const statement = (loc) => ({ at: start(loc.start), lines: lines(loc) });
+  const fn = (entry) => ({ at: start(entry.loc.start), lines: lines(entry.loc) });
+  const branch = (entry) => {
+    const shape = `${entry.type} ${entry.locations.length}`;
+    return { at: `${start(entry.loc.start)} ${shape}`, lines: `${lines(entry.loc)} ${shape}` };
   };
-  const statements = sum(
-    Object.entries(browserFile.statementMap).map(([id, loc]) => [start(loc.start), browserFile.s[id]]),
+  const met = meet(
+    items(merged.statementMap, statement),
+    items(browserFile.statementMap, statement),
+    (unitId, browserId) => {
+      merged.s[unitId] += browserFile.s[browserId];
+    },
   );
-  const functions = sum(
-    Object.entries(browserFile.fnMap).map(([id, fn]) => [start(fn.loc.start), browserFile.f[id]]),
-  );
-  const branches = new Map(
-    Object.entries(browserFile.branchMap).map(([id, branch]) => [
-      `${start(branch.loc.start)} ${branch.type} ${branch.locations.length}`,
-      browserFile.b[id],
-    ]),
-  );
-  for (const [id, loc] of Object.entries(merged.statementMap))
-    merged.s[id] += statements.get(start(loc.start)) ?? 0;
-  for (const [id, fn] of Object.entries(merged.fnMap))
-    merged.f[id] += functions.get(start(fn.loc.start)) ?? 0;
-  for (const [id, branch] of Object.entries(merged.branchMap)) {
-    const counts = branches.get(`${start(branch.loc.start)} ${branch.type} ${branch.locations.length}`);
-    if (counts !== undefined) merged.b[id] = merged.b[id].map((count, at) => count + counts[at]);
-  }
-  const unitStarts = new Set(Object.values(merged.statementMap).map((loc) => start(loc.start)));
-  for (const loc of Object.values(browserFile.statementMap)) {
-    tally.browserStatements += 1;
-    if (unitStarts.has(start(loc.start))) tally.met += 1;
-  }
+  meet(items(merged.fnMap, fn), items(browserFile.fnMap, fn), (unitId, browserId) => {
+    merged.f[unitId] += browserFile.f[browserId];
+  });
+  meet(items(merged.branchMap, branch), items(browserFile.branchMap, branch), (unitId, browserId) => {
+    merged.b[unitId] = merged.b[unitId].map((count, at) => count + browserFile.b[browserId][at]);
+  });
+  tally.browserStatements += Object.keys(browserFile.statementMap).length;
+  tally.met += met.size;
 }
 
 const merged = structuredClone(unit);
