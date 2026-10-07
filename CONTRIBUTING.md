@@ -60,6 +60,11 @@ add `--no-deps` (`pnpm e2e e2e/offline.spec.ts --no-deps`); without it the whole
 
 - A bug fix comes with a regression test that fails without the fix.
 - A test must check behaviour, and must fail when that behaviour breaks.
+- A guard against a misbehaving engine or a hostile file stays even when no real file reaches
+  it, and is tested by fault injection: a `*.faults.test.ts` next to the operation wraps
+  `loadMupdf` in a proxy that makes the engine misbehave at the step under test (see
+  `packages/pdf-core/src/ops/structure.faults.test.ts`). Code that nothing can reach is
+  deleted instead; coverage-ignore comments are not used.
 - Update the affected documentation in the same commit.
 
 ## Adding a language
