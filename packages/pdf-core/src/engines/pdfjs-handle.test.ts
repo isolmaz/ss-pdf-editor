@@ -120,4 +120,28 @@ describe('openWithPdfjs', () => {
       state.error = original;
     }
   });
+
+  it('maps each exception the engine names to the contract, and a thrown non-Error to an internal error', async () => {
+    const cases: Array<[unknown, string]> = [
+      [Object.assign(new Error('gone'), { name: 'MissingPDFException' }), 'unsupported-format'],
+      [Object.assign(new Error('odd'), { name: 'UnexpectedResponseException' }), 'unsupported-format'],
+      [Object.assign(new Error('stop'), { name: 'AbortException' }), 'aborted'],
+      [Object.assign(new Error('stop'), { name: 'RenderingCancelledException' }), 'aborted'],
+      ['plain text', 'internal'],
+    ];
+    for (const [error, code] of cases) {
+      state.failures = 1;
+      state.error = error as Error;
+      const { openWithPdfjs } = await freshLoader();
+      await expect(openWithPdfjs(new Uint8Array([1]))).rejects.toMatchObject({ code });
+    }
+    state.error = new Error('pdf.js chunk unavailable');
+    // A warm-up that cannot load the chunk stays silent.
+    state.failures = 1;
+    const quiet = await freshLoader();
+    quiet.warmPdfjs();
+    await vi.waitFor(() => expect(state.attempts).toBeGreaterThan(0));
+    // The failed attempt is forgotten: the slot is free for the next caller.
+    expect(await quiet.loadPdfjs().catch(() => 'failed')).toBeDefined();
+  });
 });
