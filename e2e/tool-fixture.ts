@@ -233,6 +233,16 @@ interface MupdfLike {
   };
 }
 
+/** The zero-based page whose dictionary `target` (a destination's page reference) is, else `null`. */
+function pageIndexOf(doc: PdfDocumentLike, target: PdfObjectLike): number | null {
+  if (target.isNull()) return null;
+  const wanted = target.resolve().toString();
+  for (let index = 0; index < doc.countPages(); index += 1) {
+    if (doc.findPage(index).resolve().toString() === wanted) return index;
+  }
+  return null;
+}
+
 /** A PDF name without its slash; `''` when the value is not a name. */
 function nameOf(value: PdfObjectLike): string {
   if (value.isNull()) return '';
@@ -295,6 +305,10 @@ export interface ProducedAnnotation {
   readonly borderWidth: number | null;
   /** The `/Dest` a `/Link` carries, as the file spells it, for the internal-destination fixture. */
   readonly destPageRef: string | null;
+  /** The zero-based page that `/Dest`'s first entry is; `null` without a `/Dest` or when it names no page. */
+  readonly destPageIndex: number | null;
+  /** The `/A /URI` a web `/Link` carries; `null` when the annotation has no URI action. */
+  readonly uri: string | null;
 }
 
 export interface ProducedPdf {
@@ -403,6 +417,9 @@ export async function readProducedPdf(bytes: Uint8Array): Promise<ProducedPdf> {
           color: numbersOf(dict.get('C')),
           borderWidth: borderStyle.isNull() ? null : numberOf(borderStyle.resolve().get('W')),
           destPageRef: dest.isNull() ? null : dest.toString(),
+          destPageIndex:
+            dest.isNull() || !dest.resolve().isArray() ? null : pageIndexOf(doc, dest.resolve().get(0)),
+          uri: textOf(dict.get('A', 'URI')) || null,
         });
       }
     }

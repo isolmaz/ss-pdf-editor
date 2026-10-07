@@ -1094,8 +1094,11 @@ test.describe('the marks the tools create', () => {
     const kinds = read.annotations.map((annotation) => annotation.subtype);
     expect(kinds).toContain('Highlight');
     // Three strokes this session drew, plus the file's own two.
-    expect(kinds.filter((subtype) => subtype === 'Ink').length).toBeGreaterThanOrEqual(3);
-    expect(kinds).toContain('FreeText');
+    expect(kinds.filter((subtype) => subtype === 'Ink').length).toBe(5);
+    // The session's own note reaches the file as a sticky note carrying the comment the user typed; the fixture's FreeText
+    // note (a different body) is not what this reads.
+    const roundTripNote = read.annotations.filter((annotation) => annotation.contents === 'Round trip note');
+    expect(roundTripNote.map((annotation) => annotation.subtype)).toEqual(['Text']);
     expect(kinds).toContain('Square');
     expect(kinds.filter((subtype) => subtype === 'Measure').length).toBe(0);
 
