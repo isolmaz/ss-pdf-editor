@@ -4,8 +4,11 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
+import { toolFixturePdf } from './tool-fixture';
 import { encodePng, exportBytes, pageFrame, toClient } from './ui-helpers';
 import { ofSubtype, readAnnotations, type WrittenAnnotation } from './ui-layers-helpers';
 
@@ -87,4 +90,88 @@ export async function download(
   const path = test.info().outputPath(name);
   await file.saveAs(path);
   return { name: file.suggestedFilename(), text: readFileSync(path, 'utf8'), path };
+}
+
+/** `mupdf` is a dependency of `packages/pdf-core`, not of the repository root. */
+const coreRequire = createRequire(new URL('../packages/pdf-core/package.json', import.meta.url));
+
+interface DictEntry {
+  isNull(): boolean;
+  isString(): boolean;
+  isName(): boolean;
+  asString(): string;
+  asName(): string;
+  resolve(): DictEntry;
+  get(...path: (string | number)[]): DictEntry;
+  readonly length: number;
+}
+
+interface PdfFile {
+  countPages(): number;
+  findPage(index: number): DictEntry;
+  destroy(): void;
+}
+
+interface MupdfModule {
+  readonly PDFDocument: {
+    openDocument(bytes: Uint8Array, magic: string): { asPDF(): PdfFile | null };
+  };
+}
+
+/** The `/DA` default-appearance string of every `/FreeText` of an exported file, in page order. */
+export async function freeTextAppearances(bytes: Uint8Array): Promise<readonly string[]> {
+  const mupdf: MupdfModule = await import(pathToFileURL(coreRequire.resolve('mupdf')).href);
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('the produced file is not a PDF');
+  try {
+    const found: string[] = [];
+    for (let index = 0; index < doc.countPages(); index += 1) {
+      const annots = doc.findPage(index).get('Annots');
+      if (annots.isNull()) continue;
+      const list = annots.resolve();
+      for (let at = 0; at < list.length; at += 1) {
+        const dict = list.get(at).resolve();
+        const subtype = dict.get('Subtype');
+        const raw = dict.get('DA');
+        if (subtype.isNull() || raw.isNull()) continue;
+        const kind = subtype.resolve();
+        const entry = raw.resolve();
+        if (kind.isName() && kind.asName() === 'FreeText' && entry.isString()) found.push(entry.asString());
+      }
+    }
+    return found;
+  } finally {
+    doc.destroy();
+  }
+}
+
+interface LinkablePage {
+  createLink(rect: [number, number, number, number], uri: string): unknown;
+}
+
+interface LinkableDocument {
+  loadPage(index: number): LinkablePage;
+  saveToBuffer(options: string): { asUint8Array(): Uint8Array };
+  destroy(): void;
+}
+
+interface LinkableMupdf {
+  readonly PDFDocument: { openDocument(bytes: Uint8Array, magic: string): LinkableDocument };
+}
+
+/** Where the external link of {@link linkedFixture} sits, in page points (origin bottom-left). */
+export const EXTERNAL_LINK = { rect: [100, 500, 250, 520], uri: 'https://example.com/linked-page' } as const;
+
+/** The tool fixture with an external `/URI` link on page 1, added by MuPDF. */
+export async function linkedFixture(): Promise<Uint8Array> {
+  const mupdf: LinkableMupdf = await import(pathToFileURL(coreRequire.resolve('mupdf')).href);
+  const doc = mupdf.PDFDocument.openDocument(toolFixturePdf().slice(), 'application/pdf');
+  try {
+    const [left, bottom, right, top] = EXTERNAL_LINK.rect;
+    // MuPDF's page space has its origin top-left.
+    doc.loadPage(0).createLink([left, 842 - top, right, 842 - bottom], EXTERNAL_LINK.uri);
+    return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  } finally {
+    doc.destroy();
+  }
 }
