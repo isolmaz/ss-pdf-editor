@@ -623,6 +623,7 @@ The limits are defined once, in
 | `pnpm lint` / `check` / `format` | Biome: lint / lint and format check / format write |
 | `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions |
 | `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`) |
+| `pnpm coverage [--skip-e2e]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits) |
 | `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
 | `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
 | `pnpm verify:assets` | Re-hashes every pinned file |

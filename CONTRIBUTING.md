@@ -35,6 +35,16 @@ pnpm build && pnpm assemble:dist
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
 ```
 
+`pnpm coverage` measures what the two suites execute together, on the sources under
+`packages/*/src` and `apps/*/src`: the unit suite under V8 coverage, then the whole Playwright
+suite against an unminified build of the editor, mapped back to the sources through the
+build's source maps and added to the unit figures statement by statement
+(`tools/coverage/report.mjs`). It prints a table per package and writes the report to
+`coverage/report/` (`html/index.html`); it rebuilds the production `dist/` before it exits.
+`pnpm coverage --skip-e2e` reports the unit suite alone. Code that runs in a web worker
+(Ghostscript) or in the service worker is not recorded by a page, so it is not in the
+browser figures.
+
 The OCR specs generate their own inputs (a scan rendered from known printed lines, and a text PDF),
 so they run on a clean checkout.
 

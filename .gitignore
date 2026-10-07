@@ -11,6 +11,9 @@ public/fonts/
 playwright-report/
 test-results/
 
+# `pnpm coverage` output
+/coverage/
+
 # Keys and environment files must never be committed
 .env*
 *.pem
