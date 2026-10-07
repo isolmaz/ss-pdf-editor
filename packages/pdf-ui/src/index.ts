@@ -9,7 +9,6 @@ export {
   type LanguageSelectorProps,
   useLocale,
 } from './components/LanguageSelector';
-export { type InterfaceMode, ModeSelector, type ModeSelectorProps } from './components/ModeSelector';
 export {
   applyTheme,
   getStoredTheme,
@@ -22,6 +21,7 @@ export { BatchDialog, type BatchDialogProps } from './dialogs/BatchDialog';
 export { ExportDialog, type ExportDialogProps, type ExportOptions } from './dialogs/ExportDialog';
 export { OperationForm, type OperationFormProps } from './dialogs/OperationForm';
 export { OperationReportPanel, type OperationReportPanelProps } from './dialogs/ReportPanel';
+export type { InterfaceMode } from './dialogs/SettingsDialog';
 export type {
   DialogParams,
   DialogResultKind,

@@ -1488,13 +1488,12 @@ space.
 
 `pdf-ui` is a controlled React library: **props and callbacks, no context, no store**. A
 repo-wide search finds no `createContext`/`useContext`. The only module-level state is
-what a preference needs — theme and locale in `localStorage`, the interface mode owned by
-`apps/web/src/interface-mode.ts` and announced on `window`. There is no module-level
+what a preference needs — theme and locale in `localStorage`, and the interface mode stored by
+`apps/web/src/interface-mode.ts` and handed down by the shell as a prop. There is no module-level
 translator. Text comes from a `t: Translator` prop, and a few surfaces take it as optional
-(`t?: Translator`): `ThemeSelector`, `LanguageSelector`, `ModeSelector` and `ExportDialog` in
-`pdf-ui`, and `UpdateBanner` in `apps/web`. Without `t` they use fallback text of their own
-(Turkish strings in the theme and mode selectors, `Language` as the language selector's
-label, the message key itself in `ExportDialog`).
+(`t?: Translator`): `ThemeSelector` and `LanguageSelector` in `pdf-ui`, and `UpdateBanner` in
+`apps/web`. Without `t` they use fallback text of their own (Turkish strings in the theme
+selector, `Language` as the language selector's label).
 
 Document state lives in `pdf-model`; UI state lives in `apps/web/src/App.tsx`; engine
 state lives inside the pdf.js viewer. The **one reverse channel** is the viewer's

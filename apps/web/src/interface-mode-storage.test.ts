@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MODE_CHANGE_EVENT, readStoredMode, storeMode } from './interface-mode';
+import { readStoredMode, storeMode } from './interface-mode';
 
 /** A `localStorage` whose every call fails, as a blocked or full store does. */
 const blockedStorage = {
@@ -32,14 +32,14 @@ describe('the stored interface mode', () => {
     expect(readStoredMode()).toBe('simple');
   });
 
-  it('announces the choice on the window even when persisting it fails', () => {
-    vi.stubGlobal('localStorage', blockedStorage);
-    const seen: unknown[] = [];
-    vi.stubGlobal('dispatchEvent', (event: CustomEvent<{ mode: string }>) => {
-      seen.push([event.type, event.detail.mode]);
-      return true;
+  it('contains a full storage on write: the call returns and the earlier choice stays stored', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => 'advanced',
+      setItem: () => {
+        throw new DOMException('full', 'QuotaExceededError');
+      },
     });
-    storeMode('advanced');
-    expect(seen).toEqual([[MODE_CHANGE_EVENT, 'advanced']]);
+    storeMode('simple');
+    expect(readStoredMode()).toBe('advanced');
   });
 });

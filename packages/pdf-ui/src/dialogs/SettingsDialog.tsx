@@ -3,7 +3,6 @@ import type { MessageKey, Translator } from 'pdf-shared';
 import type { ReactNode } from 'react';
 import { Button } from '../components/Button';
 import { LanguageSelector } from '../components/LanguageSelector';
-import type { InterfaceMode } from '../components/ModeSelector';
 import { ThemeSelector } from '../components/ThemeSelector';
 
 /**
@@ -18,6 +17,9 @@ import { ThemeSelector } from '../components/ThemeSelector';
  * with the current state — "Simple mode" on a button read as "switch to simple mode", and
  * nothing said that an advanced mode existed.
  */
+/** The interface mode; `apps/web/src/interface-mode.ts` owns its storage and its change event. */
+export type InterfaceMode = 'simple' | 'advanced';
+
 export interface SettingsDialogProps {
   readonly t: Translator;
   readonly onClose: () => void;

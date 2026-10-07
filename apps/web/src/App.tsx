@@ -183,7 +183,7 @@ import { isMarkupTool, type MarkupTool, ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
 import { createOpfsDraftStorage, readAppFile, writeAppFile } from './drafts';
 import { compressionPresets } from './export-presets';
-import { MODE_CHANGE_EVENT, readStoredMode, storeMode } from './interface-mode';
+import { readStoredMode, storeMode } from './interface-mode';
 import {
   addAttachments,
   addImageStamp,
@@ -697,19 +697,8 @@ export function App({ store }: AppProps) {
   const [images, setImages] = useState<readonly PdfImageInfo[] | null>(null);
   /** The left dock's visible tab, so a menu or palette command can open a view. */
   const [leftTab, setLeftTab] = useState<DocumentPanelTab>('pages');
-  /**
-   * Simple or advanced (`interface-mode.ts`). Read once on mount and kept in step with
-   * the `pdf-mode-change` event, so the header switch and this state cannot disagree.
-   */
+  /** Simple or advanced (`interface-mode.ts`): read once on mount, changed only by `changeMode`. */
   const [mode, setMode] = useState<InterfaceMode>(readStoredMode);
-  useEffect(() => {
-    const onChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ mode?: InterfaceMode }>).detail;
-      if (detail?.mode === 'simple' || detail?.mode === 'advanced') setMode(detail.mode);
-    };
-    globalThis.addEventListener?.(MODE_CHANGE_EVENT, onChange);
-    return () => globalThis.removeEventListener?.(MODE_CHANGE_EVENT, onChange);
-  }, []);
   const changeMode = useCallback((next: InterfaceMode) => {
     storeMode(next);
     setMode(next);
