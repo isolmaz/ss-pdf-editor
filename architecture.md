@@ -632,6 +632,10 @@ parsing. There is no OS keychain integration.
 **Verification (`ops/signature-status.ts`).** Signatures are found by **scanning the raw
 bytes** for `/ByteRange` and the `/Contents` whose own offset falls inside the gap; a scan
 entry is only accepted when its integers agree with the object graph's (read with MuPDF).
+MuPDF hands numbers over as 32-bit floats, so above 2^24 (a file over 16 MiB) "agree" means
+the scanned integers round to what the object graph read; the scan's exact integers are what
+is hashed, and ranges that differ but round alike pair with nothing (`unchecked`). Only a
+top-level `/Prev` of each trailer is followed when the revisions are counted.
 A file whose bytes never name `/ByteRange` is answered without loading an engine — the
 verdicts are asked for as soon as a document opens. The ASN.1 walk is
 hand-rolled and bounded (64 signatures, 1 024 revisions, 4 096 nodes). Two cryptographic
