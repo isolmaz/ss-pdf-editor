@@ -64,6 +64,8 @@ export default defineConfig({
     {
       name: 'service-worker',
       grep: /@service-worker/,
+      // Runs once the rest has passed. A targeted run of these tests alone takes `--no-deps`,
+      // or the whole chromium project runs first.
       dependencies: ['chromium'],
       use: {
         // No extra launch flags. Cross-origin isolation comes from the response headers
