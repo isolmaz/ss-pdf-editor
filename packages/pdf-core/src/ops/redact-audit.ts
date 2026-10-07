@@ -349,7 +349,7 @@ interface ObjectIndex {
 function scanObjects(text: string): ObjectIndex {
   const definitions: ObjectDefinition[] = [];
   for (const match of text.matchAll(DEFINITION)) {
-    definitions.push({ offset: match.index ?? 0, number: Number(match[1]) });
+    definitions.push({ offset: match.index, number: Number(match[1]) });
   }
   const referenced = new Set<number>();
   for (const match of text.matchAll(REFERENCE)) referenced.add(Number(match[1]));
@@ -368,7 +368,11 @@ function findOrphans(text: string, objects: ObjectIndex): { readonly count: numb
   let first = -1;
   for (const definition of objects.definitions) {
     if (objects.referenced.has(definition.number)) continue;
-    if (STRUCTURAL_TYPE.test(text.slice(definition.offset, definition.offset + TYPE_WINDOW))) continue;
+    // The window stops at the definition's own `endobj`: a short orphan followed by an xref
+    // stream must not be read as that xref stream.
+    const window = text.slice(definition.offset, definition.offset + TYPE_WINDOW);
+    const own = window.indexOf('endobj');
+    if (STRUCTURAL_TYPE.test(own < 0 ? window : window.slice(0, own))) continue;
     if (first < 0) first = definition.number;
     count += 1;
   }
@@ -376,25 +380,12 @@ function findOrphans(text: string, objects: ObjectIndex): { readonly count: numb
 }
 
 /**
- * Where a byte offset sits: the object definition that encloses it, or the offset
- * itself when the occurrence is outside every definition (a trailer, a free gap).
- * Binary search, because a large file has thousands of definitions and every finding
- * asks once.
+ * Where a byte offset sits: the object definition that encloses it (the last one that
+ * starts at or before it), or the offset itself when the occurrence is outside every
+ * definition (a header, a free gap). The definitions are in file order, and the audit asks
+ * for at most one location per finding.
  */
 function locate(objects: ObjectIndex, offset: number): string {
-  let low = 0;
-  let high = objects.definitions.length - 1;
-  let enclosing = -1;
-  while (low <= high) {
-    const middle = (low + high) >> 1;
-    const definition = objects.definitions[middle];
-    if (definition === undefined) break;
-    if (definition.offset <= offset) {
-      enclosing = definition.number;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return enclosing < 0 ? `byte ${offset}` : `object ${enclosing} 0 R`;
+  const enclosing = objects.definitions.findLast((definition) => definition.offset <= offset);
+  return enclosing === undefined ? `byte ${offset}` : `object ${enclosing.number} 0 R`;
 }

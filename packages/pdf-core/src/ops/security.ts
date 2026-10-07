@@ -168,25 +168,27 @@ export async function protectDocument(
   throwIfAborted(context.signal);
 
   const doc = openPdf(mupdf, bytes);
-  // The incoming bytes may already be password-locked. Writing an encrypted
-  // document without decrypting it produces streams the engine itself cannot
-  // read back (measured: "aes padding out of range"), so authenticate first —
-  // and the new passwords are never treated as the old credential.
-  if (doc.needsPassword()) {
-    const auth = doc.authenticatePassword(options.oldPassword ?? '');
-    if (auth === 0) {
-      throw new ToolError('wrong-password', {
-        engine: 'mupdf',
-        engineMessage: 'the document is password-locked and the supplied password does not open it',
-      });
-    }
-  }
   let produced: Uint8Array;
-  // The authenticated input's own facts, captured while the handle is open:
-  // re-protecting must not change what the document carries.
-  const pageCount = doc.countPages();
-  const before = samplePageTexts(doc, pageCount);
+  let pageCount: number;
+  let before: string[];
   try {
+    // The incoming bytes may already be password-locked. Writing an encrypted
+    // document without decrypting it produces streams the engine itself cannot
+    // read back (measured: "aes padding out of range"), so authenticate first —
+    // and the new passwords are never treated as the old credential.
+    if (doc.needsPassword()) {
+      const auth = doc.authenticatePassword(options.oldPassword ?? '');
+      if (auth === 0) {
+        throw new ToolError('wrong-password', {
+          engine: 'mupdf',
+          engineMessage: 'the document is password-locked and the supplied password does not open it',
+        });
+      }
+    }
+    // The authenticated input's own facts, captured while the handle is open:
+    // re-protecting must not change what the document carries.
+    pageCount = doc.countPages();
+    before = samplePageTexts(doc, pageCount);
     context.onProgress?.({ phase: 'encrypt', labelKey: 'op.progress.encrypt', done: 0, total: 1 });
     produced = savePdf(doc, encryptOptions);
   } catch (error) {
