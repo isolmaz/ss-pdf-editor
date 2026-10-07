@@ -125,23 +125,28 @@ export async function exportText(
 
   // The adapter hands pdf.js a disposable copy, so the master buffer is safe.
   const handle = await openWithPdfjs(bytes, { signal: context.signal });
-  const pageCount = handle.pageCount;
-  const ordered = [...options.pages].sort((a, b) => a - b);
-  for (const page of ordered) {
-    if (!Number.isSafeInteger(page) || page < 0 || page >= pageCount) {
-      throw new ToolError('range-invalid', {
-        engine: 'model',
-        engineMessage: 'page index out of bounds',
-        pageIndex: page,
-      });
-    }
-  }
-
   const emptyPages: number[] = [];
   const bodies: { readonly pageNumber: number; readonly text: string }[] = [];
-  context.onProgress?.({ phase: 'text', labelKey: 'op.progress.textExport', done: 0, total: ordered.length });
 
   try {
+    const pageCount = handle.pageCount;
+    const ordered = [...options.pages].sort((a, b) => a - b);
+    for (const page of ordered) {
+      if (!Number.isSafeInteger(page) || page < 0 || page >= pageCount) {
+        throw new ToolError('range-invalid', {
+          engine: 'model',
+          engineMessage: 'page index out of bounds',
+          pageIndex: page,
+        });
+      }
+    }
+    context.onProgress?.({
+      phase: 'text',
+      labelKey: 'op.progress.textExport',
+      done: 0,
+      total: ordered.length,
+    });
+
     for (const [index, pageIndex] of ordered.entries()) {
       throwIfAborted(context.signal);
       let text: string;
