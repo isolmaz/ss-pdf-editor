@@ -34,13 +34,12 @@ export interface SnapshotMenuProps {
   /** The interface language's translator: the panel's words follow the shell's locale. */
   readonly t: Translator;
   /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
-  readonly onNotice?: (message: string) => void;
+  readonly onNotice: (message: string) => void;
 }
 
 type SnapshotState =
   | { readonly kind: 'preparing' }
-  | { readonly kind: 'ready'; readonly blob: Blob; readonly name: string }
-  | { readonly kind: 'failed'; readonly message: string };
+  | { readonly kind: 'ready'; readonly blob: Blob; readonly name: string };
 
 /**
  * The clipboard action exists only where the async clipboard can take a PNG;
@@ -151,11 +150,6 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
 
   const notice = useCallback((message: string) => {
     const { onNotice: report, onClose: close } = handlers.current;
-    if (report === undefined) {
-      // No notice channel: the panel carries the message so nothing fails silently.
-      setSnapshot({ kind: 'failed', message });
-      return;
-    }
     report(message);
     close();
   }, []);
@@ -261,11 +255,6 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
     >
       <p className="text-xs font-semibold text-kumo-strong">{t('tools.snapshot')}</p>
       <canvas ref={previewRef} className="pdf-tools-snapshot-preview self-center rounded-sm" />
-      {snapshot.kind === 'failed' ? (
-        <p role="status" className="text-xs text-kumo-warning">
-          {snapshot.message}
-        </p>
-      ) : null}
       <div className="flex flex-col gap-1">
         {canCopyImage() ? (
           <Button icon={Copy} disabled={!ready} onClick={() => void copyToClipboard()}>

@@ -443,8 +443,15 @@ function number(value: FieldValue | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/**
+ * The steps this surface can edit. `image` is engine-only: an image step names a
+ * `/Resources /XObject` entry of *one* document, which a rule set for a queue cannot know
+ * before it opens the file (`ops/batch.ts` documents the same boundary).
+ */
+type OfferedStepKind = Exclude<BatchStepKind, 'image'>;
+
 /** One step's field values as the operation's own params. */
-function stepParams(kind: BatchStepKind, values: DialogParams): BatchStep['params'] {
+function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['params'] {
   switch (kind) {
     case 'pages':
       return { pages: pageSelection(values.pages, 'pages') };
@@ -505,12 +512,6 @@ function stepParams(kind: BatchStepKind, values: DialogParams): BatchStep['param
             skipFirst: flag(values.skipFirst),
           };
     }
-    case 'image':
-      // The engine carries a full image step; this surface does not offer one, and
-      // the reason is in the intro: an image step names a `/Resources /XObject` entry
-      // of *one* document, which a rule set for a queue cannot know before it opens
-      // the file (`ops/batch.ts` documents the same boundary).
-      throw new Error('image');
     case 'metadata':
       return {
         patch: {
@@ -584,8 +585,9 @@ const DEFAULT_STEPS: Readonly<Record<BatchStepKind, boolean>> = {
   protect: false,
 };
 
-/** The steps this surface can edit; `image` is engine-only (see `stepParams`). */
-const OFFERED_STEPS: readonly BatchStepKind[] = BATCH_STEP_KINDS.filter((kind) => kind !== 'image');
+const OFFERED_STEPS: readonly OfferedStepKind[] = BATCH_STEP_KINDS.filter(
+  (kind): kind is OfferedStepKind => kind !== 'image',
+);
 
 export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDialogProps) {
   const [files, setFiles] = useState<readonly File[]>([]);
