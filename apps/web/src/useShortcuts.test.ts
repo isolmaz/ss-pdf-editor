@@ -4,9 +4,10 @@
  * and replace on `Ctrl+H` that way.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   chordLabel,
+  inCompositeWidget,
   SHELL_SHORTCUT_GROUPS,
   SHELL_SHORTCUTS,
   type ShellShortcuts,
@@ -159,5 +160,31 @@ describe('printed chords', () => {
     // No two neighbouring groups share a menu group: a group is one run of the table.
     const names = SHELL_SHORTCUT_GROUPS.map((group) => group.group);
     expect(names.every((name, index) => index === 0 || name !== names[index - 1])).toBe(true);
+  });
+});
+
+describe('composite widgets', () => {
+  /** A DOM element whose `closest` answers for the role selector the way a real tree would. */
+  class FakeElement {
+    constructor(private readonly roles: readonly string[]) {}
+    closest(selector: string): FakeElement | null {
+      return this.roles.some((role) => selector.includes(`[role="${role}"]`)) ? this : null;
+    }
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("treats the focus inside a menu bar, menu, list, tree or grid as the widget's own", () => {
+    vi.stubGlobal('Element', FakeElement);
+    for (const role of ['menubar', 'menu', 'listbox', 'tree', 'grid']) {
+      expect(inCompositeWidget(new FakeElement([role]) as unknown as EventTarget), role).toBe(true);
+    }
+  });
+
+  it('leaves the focus on plain elements and on no target to the shell', () => {
+    vi.stubGlobal('Element', FakeElement);
+    expect(inCompositeWidget(new FakeElement(['button']) as unknown as EventTarget)).toBe(false);
+    expect(inCompositeWidget(null)).toBe(false);
+    expect(inCompositeWidget({} as EventTarget)).toBe(false);
   });
 });
