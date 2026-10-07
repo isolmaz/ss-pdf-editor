@@ -107,10 +107,6 @@ export interface ImageEditRequest {
   readonly dropMask?: boolean;
 }
 
-function refuse(message: string, path: string): never {
-  throw new ToolError('unsupported', { engine: 'mupdf', path, engineMessage: message });
-}
-
 /** One `/Resources /XObject` entry: its key, its object number and its dictionary. */
 interface XObjectEntry {
   readonly name: string;
@@ -350,14 +346,16 @@ export async function readImageData(
     }
 
     const rgba = new Uint8Array(width * height * 4);
+    // `samples` holds at least `width * height * colors` bytes (checked above), so every index read
+    // below is inside it.
     for (let pixel = 0; pixel < width * height; pixel += 1) {
       const at = pixel * 4;
       if (colors === 3) {
-        rgba[at] = samples[pixel * 3] ?? 0;
-        rgba[at + 1] = samples[pixel * 3 + 1] ?? 0;
-        rgba[at + 2] = samples[pixel * 3 + 2] ?? 0;
+        rgba[at] = samples[pixel * 3] as number;
+        rgba[at + 1] = samples[pixel * 3 + 1] as number;
+        rgba[at + 2] = samples[pixel * 3 + 2] as number;
       } else {
-        const grey = samples[pixel] ?? 0;
+        const grey = samples[pixel] as number;
         rgba[at] = grey;
         rgba[at + 1] = grey;
         rgba[at + 2] = grey;
@@ -417,12 +415,16 @@ export async function applyImageEdit(
   let pageCount: number;
   const notes: OperationNote[] = [];
   const steps: string[] = ['load'];
-  const replaced: { readonly pageIndex: number; readonly name: string; readonly number: number }[] = [];
+  const replaced: {
+    readonly pageIndex: number;
+    readonly name: string;
+    readonly number: number;
+    readonly sharedWith: number;
+  }[] = [];
   try {
     const pages = pageObjects(doc);
     pageCount = pages.length;
     const dropMask = request.dropMask !== false;
-    const shared: number[] = [];
     let dropped = 0;
     let missing = 0;
 
@@ -435,7 +437,7 @@ export async function applyImageEdit(
         total: request.replacements.length,
       });
       const page = pages[replacement.pageIndex];
-      if (!Number.isInteger(replacement.pageIndex) || page === undefined) {
+      if (page === undefined) {
         throw new ToolError('value-out-of-range', {
           engine: 'mupdf',
           path: 'request.replacements.pageIndex',
@@ -477,8 +479,6 @@ export async function applyImageEdit(
           { cause: error },
         );
       }
-      if (!produced.isStream())
-        refuse('the embedded image did not produce a stream', 'request.replacements.data');
 
       const oldMask = [target.dict.get('SMask'), target.dict.get('Mask')].find((value) => value.isIndirect());
       const sharedWith = usageCount(pages, target.ref.asIndirect());
@@ -509,8 +509,8 @@ export async function applyImageEdit(
         pageIndex: replacement.pageIndex,
         name: replacement.name,
         number: target.ref.asIndirect(),
+        sharedWith,
       });
-      shared.push(sharedWith);
     }
 
     context.onProgress?.({
@@ -534,10 +534,11 @@ export async function applyImageEdit(
       return { bytes, report };
     }
 
-    for (const [index, entry] of replaced.entries()) {
+    for (const entry of replaced) {
       notes.push(note('changed', 'op.note.image.replaced', { name: entry.name, page: entry.pageIndex + 1 }));
-      const count = shared[index] ?? 1;
-      if (count > 1) notes.push(note('warning', 'op.note.image.shared', { name: entry.name, count }));
+      if (entry.sharedWith > 1) {
+        notes.push(note('warning', 'op.note.image.shared', { name: entry.name, count: entry.sharedWith }));
+      }
     }
     if (dropped > 0) notes.push(note('lost', 'op.note.image.maskDropped', { count: dropped }));
     if (missing > 0) notes.push(note('warning', 'op.note.image.notFound', { count: missing }));
@@ -583,10 +584,9 @@ async function verifyOutput(
   try {
     opened = await openForWrite(produced);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
     throw new ToolError('verification-failed', {
       engine: 'mupdf',
-      engineMessage: `produced file does not re-open: ${message}`,
+      engineMessage: `produced file does not re-open: ${String(error)}`,
     });
   }
   const { doc } = opened;
@@ -599,9 +599,9 @@ async function verifyOutput(
       });
     }
     for (const entry of replaced) {
-      const page = pages[entry.pageIndex];
-      const named =
-        page === undefined ? undefined : imageEntries(page).find((item) => item.name === entry.name);
+      // The page count matches (checked above) and a replaced page index was inside it.
+      const page = pages[entry.pageIndex] as PDFObject;
+      const named = imageEntries(page).find((item) => item.name === entry.name);
       if (named === undefined) {
         throw new ToolError('verification-failed', {
           engine: 'mupdf',

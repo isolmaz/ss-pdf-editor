@@ -370,3 +370,149 @@ describe('prepareForPdfA on a file with everything PDF/A forbids', () => {
     });
   });
 });
+
+describe('prepareForPdfA on structures an untrusted file can carry', () => {
+  const stream = (body: string, dict = '') => `<</Length ${body.length}${dict}>>\nstream\n${body}\nendstream`;
+  const page = (annots: string, extra = '') =>
+    `<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Annots${annots}${extra}>>`;
+  const file = (objects: Record<number, string>, catalog = '') =>
+    handPdf({
+      1: `<</Type/Catalog/Pages 2 0 R${catalog}>>`,
+      2: '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+      ...objects,
+    });
+  const annotationsOf = async (bytes: Uint8Array) => {
+    const doc = openPdf(await loadMupdf(), bytes);
+    try {
+      const annots = doc.findPage(0).get('Annots');
+      return [...Array(annots.length).keys()].map((at) => annots.get(at).resolve().get('Subtype').asName());
+    } finally {
+      doc.destroy();
+    }
+  };
+
+  it('treats annotations with no /F, no /Subtype, a non-number /F or a non-number /Rect as the format defaults, and counts Print before it finds an annotation undrawable', async () => {
+    const bytes = file({
+      3: page('[10 0 R 11 0 R 12 0 R 13 0 R 14 0 R]'),
+      // No /F at all: Print is switched on.
+      10: '<</Type/Annot/Subtype/Link/Rect[1 1 9 9]>>',
+      // /F that is not a number counts as 0: Print is switched on over it.
+      11: '<</Type/Annot/Subtype/Link/Rect[1 1 9 9]/F/x>>',
+      // No /Subtype: the annotation cannot be drawn and is removed as "?".
+      12: '<</Type/Annot/Rect[1 1 9 9]>>',
+      // A /Rect that is not numbers is an empty rectangle: nothing to draw, nothing removed.
+      13: '<</Type/Annot/Subtype/Square/Rect[/a /a /a /a]/F 4>>',
+      // No /F, no appearance: drawn, and not flagged as hidden.
+      14: '<</Type/Annot/Subtype/Square/Rect[20 20 80 80]/C[1 0 0]>>',
+    });
+    const prepared = await prepareForPdfA(bytes, 1, run);
+    expect([...prepared.counters.annotationsRemoved]).toEqual([['?', 1]]);
+    // The annotation with no /F and the one with a bad /F, the one with no /Subtype (flagged before it is found undrawable) and the square.
+    expect(prepared.counters).toMatchObject({ printFlagged: 4, appearancesDrawn: 1 });
+    expect(await annotationsOf(prepared.bytes)).toEqual(['Link', 'Link', 'Square', 'Square']);
+  });
+
+  it('reads nested fields: a direct field, a kid chain deeper than 24 levels, a malformed /Fields', async () => {
+    const chain: Record<number, string> = {};
+    for (let depth = 0; depth < 30; depth += 1) {
+      chain[100 + depth] =
+        `<</FT/Sig/T(n${depth})/Kids[${101 + depth} 0 R]${depth === 26 ? '/V 40 0 R' : ''}>>`;
+    }
+    const bytes = file(
+      {
+        3: '<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>',
+        30: '<</Fields[<</FT/Sig/V 40 0 R/Kids[<</V 40 0 R>>]>> 100 0 R]>>',
+        40: '<</Type/Sig>>',
+        ...chain,
+      },
+      '/AcroForm 30 0 R',
+    );
+    const prepared = await prepareForPdfA(bytes, 1, run);
+    // The direct signature field and its direct kid; the chain's signature sits below the depth limit.
+    expect(prepared.counters.signaturesInvalidated).toBe(2);
+    const malformed = await prepareForPdfA(
+      file(
+        { 3: '<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>', 30: '<</Fields 5>>' },
+        '/AcroForm 30 0 R',
+      ),
+      1,
+      run,
+    );
+    expect(malformed.counters.signaturesInvalidated).toBe(0);
+  });
+
+  it('names an attachment by /UF, else /F, else "?", and ignores a name tree of the wrong type', async () => {
+    const bytes = file(
+      {
+        3: page('[10 0 R 11 0 R 12 0 R]'),
+        10: '<</Type/Annot/Subtype/FileAttachment/Rect[1 1 9 9]/F 4/FS<</F(plain.txt)>>>>',
+        11: '<</Type/Annot/Subtype/FileAttachment/Rect[1 1 9 9]/F 4/FS<</Type/Filespec>>>>',
+        12: '<</Type/Annot/Subtype/FileAttachment/Rect[1 1 9 9]/F 4/FS<</UF(ü.txt)/F(x.txt)>>>>',
+      },
+      '/Names<</JavaScript 5/EmbeddedFiles<</Names[(n) 13 0 R]>>>>',
+    );
+    const prepared = await prepareForPdfA(bytes, 1, run);
+    expect(prepared.counters.attachmentsRemoved).toEqual(['n', 'ü.txt', '?', 'plain.txt']);
+    expect(prepared.counters.actionsRemoved).toBe(1);
+  });
+
+  it('keeps a Names dictionary that has no scripts, and describes a filespec without /EF', async () => {
+    const bytes = file(
+      { 3: page('[]'), 13: '<</Type/Filespec/F(a.txt)>>' },
+      '/Names<</EmbeddedFiles<</Names[(a.txt) 13 0 R]>>>>',
+    );
+    const prepared = await prepareForPdfA(bytes, 3, run);
+    expect(prepared.counters).toMatchObject({ actionsRemoved: 0, attachmentsKept: 1 });
+    const doc = openPdf(await loadMupdf(), prepared.bytes);
+    try {
+      expect(doc.loadNameTree('EmbeddedFiles')['a.txt']?.resolve().get('AFRelationship').asName()).toBe(
+        'Unspecified',
+      );
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('visits a direct outline item and the items below it', async () => {
+    const bytes = file(
+      {
+        3: page('[]'),
+        40: '<</Type/Outlines/First<</Title(a)/A<</S/Launch>>>>>>',
+      },
+      '/Outlines 40 0 R',
+    );
+    expect((await prepareForPdfA(bytes, 1, run)).counters.actionsRemoved).toBe(1);
+  });
+
+  it('survives a script name tree that loops, and an action chain whose array holds nothing forbidden', async () => {
+    const bytes = file(
+      {
+        3: page('[]'),
+        6: '<</Kids[6 0 R]>>',
+        20: '<</S/GoTo/Next[<</S/URI>> 99 0 R]>>',
+      },
+      '/Names<</JavaScript 6 0 R>>/OpenAction 20 0 R',
+    );
+    const prepared = await prepareForPdfA(bytes, 1, run);
+    // The tree cannot be counted, so the removal counts as one script; the open action stays.
+    expect(prepared.counters.actionsRemoved).toBe(1);
+    const doc = openPdf(await loadMupdf(), prepared.bytes);
+    try {
+      expect(doc.getTrailer().get('Root').get('OpenAction').isNull()).toBe(false);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('draws nothing for a font that no text uses and gives each used font one ToUnicode', async () => {
+    const bytes = file({
+      3: '<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Resources<</Font<</A 10 0 R/B 11 0 R/C 12 0 R>>>>/Contents 13 0 R>>',
+      10: '<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding<</Type/Encoding/BaseEncoding/WinAnsiEncoding/Differences[65/Euro 66/uniFFFF]>>>>',
+      11: '<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>',
+      12: '<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>',
+      13: stream('BT /A 12 Tf (AB) Tj /B 12 Tf (x) Tj /C 12 Tf (y) Tj ET'),
+    });
+    const prepared = await prepareForPdfA(bytes, 1, run);
+    expect(prepared.counters.toUnicodeAdded).toBe(3);
+  });
+});

@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
 import { convertToPdfA } from './pdfa';
+import { plain, rich, withUnreadableContent } from './pdfa.fixtures';
 import { checkPdfA } from './pdfa-check';
 
 const run = { signal: new AbortController().signal };
@@ -85,30 +86,7 @@ describe('convertToPdfA', () => {
 
   it('converts a file that claims the part but could not be fully checked, instead of calling it compliant', async () => {
     const compliant = (await convertToPdfA(await source(), { part: 2 }, run)).bytes;
-    // A second content stream MuPDF cannot decode (a predictor row width that overflows),
-    // appended incrementally so the PDF/A claim and metadata stay as they were.
-    const mupdf = await loadMupdf();
-    const doc = openPdf(mupdf, compliant);
-    let damaged: Uint8Array;
-    try {
-      const page = doc.findPage(0);
-      const unreadable = doc.addRawStream(new Uint8Array([0x78, 0x9c, 3, 0, 0, 0, 0, 1]), {});
-      unreadable.put('Filter', doc.newName('FlateDecode'));
-      const parms = doc.newDictionary();
-      parms.put('Predictor', 12);
-      parms.put('Columns', 2147483647);
-      parms.put('Colors', 32);
-      parms.put('BitsPerComponent', 16);
-      unreadable.put('DecodeParms', parms);
-      const contents = doc.newArray();
-      contents.push(page.get('Contents'));
-      contents.push(unreadable);
-      page.put('Contents', contents);
-      damaged = new Uint8Array(doc.saveToBuffer('incremental').asUint8Array());
-    } finally {
-      doc.destroy();
-    }
-
+    const damaged = await withUnreadableContent(compliant);
     const check = await checkPdfA(damaged);
     expect(check).toMatchObject({ verdict: 'claims-and-meets', violations: 0, targetFromClaim: true });
     expect(check.unchecked).toEqual(expect.arrayContaining(['fonts', 'device-colour']));
@@ -124,5 +102,102 @@ describe('convertToPdfA', () => {
     await expect(convertToPdfA(locked, { part: 2 }, run)).rejects.toMatchObject({
       code: 'encrypted-unsupported',
     });
+  });
+
+  const keysOf = (notes: readonly { readonly key: string }[]) => notes.map((entry) => entry.key);
+
+  it('converts to PDF/A-1b and tells what was flattened, removed, drawn, dropped and lost on the way', async () => {
+    const progress: string[] = [];
+    const outcome = await convertToPdfA(
+      rich(),
+      { part: 1 },
+      {
+        signal: run.signal,
+        onProgress: (event) =>
+          progress.push(`${event.phase}${event.done === undefined ? '' : `:${event.done}/${event.total}`}`),
+      },
+    );
+    expect(progress).toEqual(['prepare', 'convert', 'convert:1/1', 'verify']);
+    const notes = new Map(outcome.report.notes.map((entry) => [entry.key, entry.params]));
+    expect(keysOf(outcome.report.notes)).toEqual([
+      'op.note.pdfa.converted',
+      'op.note.pdfa.colour',
+      'op.note.pdfa.fontsSubstituted',
+      'op.note.pdfa.transparencyFlattened',
+      'op.note.pdfa.formsFlattened',
+      'op.note.pdfa.widgetsRemoved',
+      'op.note.pdfa.signatures',
+      'op.note.pdfa.actionsRemoved',
+      'op.note.pdfa.attachmentsRemoved',
+      'op.note.pdfa.annotationsRemoved',
+      'op.note.pdfa.printFlagged',
+      'op.note.pdfa.appearancesDrawn',
+      'op.note.pdfa.annotationsDropped',
+      'op.note.pdfa.lost.tags',
+      'op.note.pdfa.lost.layers',
+      'op.note.pdfa.producer',
+      'op.note.pdfa.textLoss',
+      'op.note.pdfa.pictureKept',
+      'op.note.pdfa.verified',
+      'op.note.pdfa.limits',
+    ]);
+    expect(notes.get('op.note.pdfa.attachmentsRemoved')).toEqual({
+      count: 2,
+      names: 'f.txt, f.txt',
+      level: 'PDF/A-1b',
+    });
+    expect(notes.get('op.note.pdfa.annotationsRemoved')).toEqual({
+      count: 2,
+      types: 'FileAttachment ×1, Sound ×1',
+    });
+    expect(notes.get('op.note.pdfa.annotationsDropped')).toEqual({ count: 2, types: 'Square ×1, Link ×1' });
+    expect(notes.get('op.note.pdfa.producer')).toEqual({ producer: expect.stringContaining('Ghostscript') });
+    // The constant alpha is flattened to a picture in part 1: the text is gone as text, and the report says so.
+    expect(notes.get('op.note.pdfa.textLoss')).toEqual({ percent: '0 %', pages: '1' });
+    expect(outcome.measures.textDiffers).toEqual([0]);
+    expect(outcome.measures.wordRecall).toBe(0);
+  });
+
+  it('converts to PDF/A-3b keeping the attachments, and reports the text and picture as kept', async () => {
+    const outcome = await convertToPdfA(rich(), { part: 3 }, run);
+    expect(keysOf(outcome.report.notes)).toEqual([
+      'op.note.pdfa.converted',
+      'op.note.pdfa.colour',
+      'op.note.pdfa.fontsSubstituted',
+      'op.note.pdfa.formsFlattened',
+      'op.note.pdfa.widgetsRemoved',
+      'op.note.pdfa.signatures',
+      'op.note.pdfa.actionsRemoved',
+      'op.note.pdfa.attachmentsKept',
+      'op.note.pdfa.annotationsRemoved',
+      'op.note.pdfa.printFlagged',
+      'op.note.pdfa.appearancesDrawn',
+      'op.note.pdfa.lost.tags',
+      'op.note.pdfa.producer',
+      'op.note.pdfa.textKept',
+      'op.note.pdfa.pictureKept',
+      'op.note.pdfa.verified',
+      'op.note.pdfa.limits',
+    ]);
+    const kept = outcome.report.notes.find((entry) => entry.key === 'op.note.pdfa.textKept');
+    expect(kept?.params).toEqual({ percent: '100 %', pages: 1 });
+    expect(outcome.measures.wordRecall).toBe(1);
+    expect(outcome.measures.pictureDiffers).toEqual([]);
+  });
+
+  it('says so when the file was written with an owner password only, and has too few words to judge its text', async () => {
+    const mupdf = await loadMupdf();
+    const doc = openPdf(mupdf, plain({ text: 'Two words' }));
+    const locked = new Uint8Array(
+      doc.saveToBuffer('encrypt=aes-128,owner-password=o,user-password=').asUint8Array(),
+    );
+    doc.destroy();
+    const outcome = await convertToPdfA(locked, { part: 2 }, run);
+    const keys = keysOf(outcome.report.notes);
+    expect(keys).toContain('op.note.pdfa.encryptionRemoved');
+    expect(keys).not.toContain('op.note.pdfa.textKept');
+    expect(keys).not.toContain('op.note.pdfa.textLoss');
+    expect(outcome.measures.wordRecall).toBeNull();
+    expect(outcome.measures.textDiffers).toEqual([]);
   });
 });

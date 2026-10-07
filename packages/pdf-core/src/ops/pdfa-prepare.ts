@@ -91,15 +91,14 @@ const FORBIDDEN_SUBTYPES: ReadonlySet<string> = new Set([
   'Projection',
 ]);
 
-function dictionaryAt(parent: PDFObject | null, name: string): PDFObject | null {
-  if (parent === null) return null;
+function dictionaryAt(parent: PDFObject, name: string): PDFObject | null {
   const value = resolved(parent.get(name));
   return value?.isDictionary() === true ? value : null;
 }
 
-function numberAt(parent: PDFObject, name: string): number | null {
+function numberAt(parent: PDFObject, name: string, fallback: number): number {
   const value = resolved(parent.get(name));
-  return value?.isNumber() === true ? value.asNumber() : null;
+  return value?.isNumber() === true ? value.asNumber() : fallback;
 }
 
 /** Whether an action (or a chain of them through `/Next`) holds a type PDF/A forbids. */
@@ -198,10 +197,11 @@ function findMissingToUnicode(doc: PDFDocument): ToUnicodeWork[] {
       const id = font.ref.asIndirect();
       if (seen.has(id)) continue;
       seen.add(id);
-      // `codes` is code point to code; the CMap wants the other way round.
+      // `codes` is code point to code, and holds at least one entry (`pageFonts` drops a font with
+      // none); both are unique, so inverting it for the CMap loses nothing.
       const byCode = new Map<number, number>();
-      for (const [point, code] of font.codes) if (!byCode.has(code)) byCode.set(code, point);
-      if (byCode.size > 0) work.push({ id, cmap: toUnicodeCMap(byCode) });
+      for (const [point, code] of font.codes) byCode.set(code, point);
+      work.push({ id, cmap: toUnicodeCMap(byCode) });
     }
   }
   return work;
@@ -386,7 +386,7 @@ function cleanPages(doc: PDFDocument, part: PdfAPartNumber, tally: Tally): void 
         tally.actionsRemoved += 1;
       }
       // Print on; a hidden, invisible or no-view annotation stays as it is and is left out.
-      const flags = numberAt(annotation, 'F') ?? 0;
+      const flags = numberAt(annotation, 'F', 0);
       if ((flags & 4) === 0 && (flags & (1 | 2 | 32)) === 0) {
         annotation.put('F', flags | 4);
         tally.printFlagged += 1;
@@ -441,12 +441,12 @@ function drawMissingAppearances(doc: PDFDocument, tally: Tally): number {
     if (annotations === null || !annotations.isArray()) continue;
     const needing: number[] = [];
     for (let at = 0; at < annotations.length; at += 1) {
-      const annotation = resolved(annotations.get(at));
-      if (annotation === null || !annotation.isDictionary()) continue;
+      // `cleanPages` has already dropped every entry that is not a dictionary.
+      const annotation = annotations.get(at).resolve();
       const subtype = readName(annotation.get('Subtype')) ?? '?';
       if (subtype === 'Popup' || subtype === 'Link' || subtype === 'Widget') continue;
       if (hasAppearance(annotation) || isEmptyRect(annotation)) continue;
-      const flags = numberAt(annotation, 'F') ?? 0;
+      const flags = numberAt(annotation, 'F', 0);
       if ((flags & (1 | 2 | 32)) !== 0) continue; // hidden: left out by the engine
       // An annotation written inline in `/Annots` becomes an object of its own first. Loading the
       // page synthesises appearances into a scratch copy of whatever it touches, so an inline
@@ -463,14 +463,15 @@ function drawMissingAppearances(doc: PDFDocument, tally: Tally): number {
       for (const at of needing.reverse()) {
         const target = annotations.get(at);
         const id = target.asIndirect();
-        const wrapper = wrappers.find((entry) => entry.getObject().asIndirect() === id);
-        let ok = false;
-        if (wrapper !== undefined) {
-          ok = drawAppearance(wrapper, () => hasAppearance(resolved(target) ?? target));
-        }
+        // The page lists every annotation of its `/Annots`, so the one wanted is always among them.
+        const ok = wrappers.some(
+          (entry) =>
+            entry.getObject().asIndirect() === id &&
+            drawAppearance(entry, () => hasAppearance(target.resolve())),
+        );
         if (ok) drawn += 1;
         else {
-          removedAnnotation(tally, readName(resolved(target)?.get('Subtype')) ?? '?');
+          removedAnnotation(tally, readName(target.resolve().get('Subtype')) ?? '?');
           annotations.delete(at);
         }
       }

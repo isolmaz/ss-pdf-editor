@@ -305,9 +305,9 @@ const MIME_BY_FORMAT: Record<ImageExportFormat, string> = {
  * The earlier writer described 6 and 8 as pdf-lib rotations of +90 and +270, which is the
  * anticlockwise direction in PDF space: an orientation 6 photo came out upside down.
  */
-const ORIENTATION_MATRIX: Readonly<
-  Record<number, readonly [number, number, number, number, number, number]>
-> = {
+type OrientationMatrix = readonly [number, number, number, number, number, number];
+
+const ORIENTATION_MATRIX: Readonly<Record<number, OrientationMatrix>> = {
   1: [1, 0, 0, 1, 0, 0],
   2: [-1, 0, 0, 1, 1, 0],
   3: [-1, 0, 0, -1, 1, 1],
@@ -403,8 +403,8 @@ function placeImage(
 
 /** A content-stream number: four decimals at most, no trailing zeros. */
 function num(value: number): string {
-  const fixed = value.toFixed(4).replace(/\.?0+$/, '');
-  return fixed === '-0' ? '0' : fixed;
+  // `Number` drops the trailing zeros, and the sign of a negative zero (`-0.0000`).
+  return Number(value.toFixed(4)).toString();
 }
 
 /**
@@ -413,7 +413,8 @@ function num(value: number): string {
  * clipped to it first.
  */
 function paintOperators(footprint: Box, orientation: number, clip: Box | null): string {
-  const [a, b, c, d, e, f] = ORIENTATION_MATRIX[orientation] ?? ORIENTATION_MATRIX[1] ?? [1, 0, 0, 1, 0, 0];
+  // The orientation is 1 … 8 (`orientationFromTiff` admits nothing else, and the default is 1).
+  const [a, b, c, d, e, f] = ORIENTATION_MATRIX[orientation] as OrientationMatrix;
   const { x, y, width, height } = footprint;
   const matrix = [a * width, b * height, c * width, d * height, e * width + x, f * height + y];
   const operators = ['q'];
@@ -466,17 +467,23 @@ function readExifOrientation(bytes: Uint8Array): ExifOrientation | null {
   let offset = 2;
   while (offset + 4 <= bytes.length) {
     if (bytes[offset] !== 0xff) return null;
-    const marker = bytes[offset + 1];
-    if (marker === undefined) return null;
+    // The loop condition keeps `offset + 3` inside the file, so these reads are in bounds.
+    const marker = bytes[offset + 1] as number;
     // Start of scan / end of image: everything from here on is entropy-coded
     // data, so no metadata segment can follow.
     if (marker === 0xda || marker === 0xd9) return null;
     // Fill bytes and the segment-less markers (TEM, RSTn, SOI) carry no length.
-    if (marker === 0xff || marker === 0x01 || marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) {
+    // A marker may be preceded by any number of `0xFF` fill bytes: skip one, and the next byte is read
+    // as the marker (`FF FF E1` is a fill byte and then APP1).
+    if (marker === 0xff) {
+      offset += 1;
+      continue;
+    }
+    if (marker === 0x01 || marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) {
       offset += 2;
       continue;
     }
-    const length = ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0);
+    const length = ((bytes[offset + 2] as number) << 8) | (bytes[offset + 3] as number);
     if (length < 2 || offset + 2 + length > bytes.length) return null;
     if (marker === 0xe1 && hasExifMagic(bytes, offset + 4)) {
       return orientationFromTiff(bytes, offset + 10, offset + 2 + length);
@@ -497,20 +504,10 @@ function orientationFromTiff(bytes: Uint8Array, start: number, end: number): Exi
   const bigEndian = bytes[start] === 0x4d && bytes[start + 1] === 0x4d;
   if (!littleEndian && !bigEndian) return null;
 
-  const u16 = (at: number): number => {
-    const low = bytes[at] ?? 0;
-    const high = bytes[at + 1] ?? 0;
-    return littleEndian ? low | (high << 8) : (low << 8) | high;
-  };
-  const u32 = (at: number): number => {
-    const first = bytes[at] ?? 0;
-    const second = bytes[at + 1] ?? 0;
-    const third = bytes[at + 2] ?? 0;
-    const fourth = bytes[at + 3] ?? 0;
-    return littleEndian
-      ? (first | (second << 8) | (third << 16) | (fourth << 24)) >>> 0
-      : ((first << 24) | (second << 16) | (third << 8) | fourth) >>> 0;
-  };
+  // Every read below is bounded by `end`, which is inside the file, so none can throw.
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const u16 = (at: number): number => view.getUint16(at, littleEndian);
+  const u32 = (at: number): number => view.getUint32(at, littleEndian);
 
   if (u16(start + 2) !== 0x002a) return null;
   const directory = start + u32(start + 4);
