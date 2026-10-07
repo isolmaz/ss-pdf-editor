@@ -35,10 +35,18 @@ pnpm build && pnpm assemble:dist
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
 ```
 
-The OCR specs need two real documents that are not in the repository: put a scanned PDF
-with no text layer at `e2e/fixtures/local/scanned.pdf` and a PDF that carries text at
-`e2e/fixtures/local/text.pdf` (the folder is ignored). Without them those specs skip and
-say why.
+The OCR specs generate their own inputs (a scan rendered from known printed lines, and a text PDF),
+so they run on a clean checkout.
+
+Every spec imports `test` and `expect` from `e2e/test.ts`, not from `playwright/test`: its automatic
+fixture fails a test when any page of its browser context (a second window, the print window too)
+logged a console error or threw an uncaught exception. A test that provokes an error on purpose
+names it with `test.use({ allowedErrors: [/…/] })`.
+
+A test that installs, updates or reloads through the service worker is tagged `@service-worker`
+(`test('…', { tag: '@service-worker' }, …)`): those run in their own Playwright project once the rest
+of the suite has passed, because their timing depends on an idle machine. To run one of them alone,
+add `--no-deps` (`pnpm e2e e2e/offline.spec.ts --no-deps`); without it the whole suite runs first.
 
 - A bug fix comes with a regression test that fails without the fix.
 - A test must check behaviour, and must fail when that behaviour breaks.

@@ -731,9 +731,9 @@ pnpm worker:deploy:dry      # same, with --dry-run
 ## Offline use
 
 - **Scope.** `public/sw.js` is scoped to `/editor/` and caches static assets only.
-- **Shell.** The editor's start page, the scripts it starts with and its Turkish and
-  English text are cached when the worker installs, so a reload without a network still
-  shows a working home screen.
+- **Shell.** The editor's start page, the scripts it starts with, its Turkish and
+  English text and its interface fonts are cached when the worker installs, so a reload
+  without a network still shows a working home screen in its own typefaces.
 - **On request only.** The rest is precached only when you ask for it, in
   Settings → Offline use.
   It covers the shell, pdf.js, MuPDF and the fonts. It does not fetch OCR, although the

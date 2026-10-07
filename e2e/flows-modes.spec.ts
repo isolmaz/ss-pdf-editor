@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from 'playwright/test';
-import { expect, test } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { makeSignerContainer, readSignature, SIGNER } from './signer-fixture';
+import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
 
 /**
@@ -153,10 +153,9 @@ async function deployableOrigin(upstream: string): Promise<{
   };
 }
 
-test('a new release raises the update banner; Refresh activates its worker and reloads the page', async ({
-  page,
-  baseURL,
-}) => {
+test('a new release raises the update banner; Refresh activates its worker and reloads the page', {
+  tag: '@service-worker',
+}, async ({ page, baseURL }) => {
   const site = await deployableOrigin(baseURL ?? 'http://localhost:4178');
   try {
     await page.goto(`${site.origin}/editor/`);

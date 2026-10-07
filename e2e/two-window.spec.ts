@@ -1,7 +1,7 @@
 import type { Page } from 'playwright/test';
-import { expect, test } from 'playwright/test';
 import { fixturePdf } from './fixture-pdf';
 import { useAdvancedMode } from './settings';
+import { expect, test } from './test';
 
 /**
  * Two windows on one vault.

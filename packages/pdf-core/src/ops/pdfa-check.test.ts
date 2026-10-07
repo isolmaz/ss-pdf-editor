@@ -88,7 +88,15 @@ describe('checkPdfA', () => {
     expect(failed(report)).toEqual(['trailer', 'xmp', 'xmp-claim', 'device-colour']);
     expect(rule(report, 'xmp')?.samples[0]?.detail).toBe('the catalog has no /Metadata stream');
     expect(rule(report, 'device-colour')?.samples[0]?.detail).toBe('DeviceRGB');
-    expect(report.notChecked.length).toBeGreaterThan(0);
+    expect(report.notChecked).toEqual([
+      'pdfa.notChecked.fontPrograms',
+      'pdfa.notChecked.iccBody',
+      'pdfa.notChecked.syntax',
+      'pdfa.notChecked.xmpValues',
+      'pdfa.notChecked.embeddedPdf',
+      'pdfa.notChecked.accessibility',
+      'pdfa.notChecked.limits',
+    ]);
   });
 
   it('accepts a PDF/A-2b file, takes its target from the claim and skips the rules its part has not', async () => {

@@ -1,5 +1,5 @@
 import type { Page } from 'playwright/test';
-import { expect, test } from 'playwright/test';
+import { expect, test } from './test';
 
 /**
  * Flows of the marketing site (`apps/site`, served at `/` and `/en/`). The editor itself
@@ -138,30 +138,40 @@ test('section anchors scroll to their section and the FAQ expands', async ({ pag
   await expect(page.getByText('Tüm belge işleme gücü')).toBeVisible();
 });
 
-test('an unknown path gets the styled 404 page with working exits', async ({ page }) => {
-  await page.goto('/boyle-bir-sayfa-yok');
-  expect(await page.evaluate(async () => (await fetch('/boyle-bir-sayfa-yok')).status)).toBe(404);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sayfa Bulunamadı');
-  await page.getByRole('link', { name: 'Ana Sayfaya Dön', exact: true }).click();
-  await at(page, '/');
-  await page.goto('/boyle-bir-sayfa-yok');
-  await page.getByRole('link', { name: 'PDF Düzenleyiciyi Başlat', exact: true }).click();
-  await at(page, '/editor/');
-});
+test.describe('the 404 page', () => {
+  // Each test asks for a page that does not exist: the 404 response is the subject, and
+  // the only console error it may leave.
+  test.use({
+    allowedErrors: [
+      /status of 404 \(Not Found\) \(http:\/\/localhost:\d+\/(en\/)?(boyle-bir-sayfa-yok|no-such-page)\)$/,
+    ],
+  });
 
-test('an unknown path under /en/ gets the English 404 page, whose exits stay in English', async ({
-  page,
-}) => {
-  // The host serves the nearest 404.html: `/en/404.html` here, the Turkish one at the root.
-  await page.goto('/en/no-such-page');
-  expect(await page.evaluate(async () => (await fetch('/en/no-such-page')).status)).toBe(404);
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page Not Found');
-  await page.getByRole('link', { name: 'Back to Home', exact: true }).click();
-  await at(page, '/en/');
-  await page.goto('/en/no-such-page');
-  await page.getByRole('link', { name: 'Launch the PDF Editor', exact: true }).click();
-  await at(page, '/editor/');
+  test('an unknown path gets the styled 404 page with working exits', async ({ page }) => {
+    await page.goto('/boyle-bir-sayfa-yok');
+    expect(await page.evaluate(async () => (await fetch('/boyle-bir-sayfa-yok')).status)).toBe(404);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sayfa Bulunamadı');
+    await page.getByRole('link', { name: 'Ana Sayfaya Dön', exact: true }).click();
+    await at(page, '/');
+    await page.goto('/boyle-bir-sayfa-yok');
+    await page.getByRole('link', { name: 'PDF Düzenleyiciyi Başlat', exact: true }).click();
+    await at(page, '/editor/');
+  });
+
+  test('an unknown path under /en/ gets the English 404 page, whose exits stay in English', async ({
+    page,
+  }) => {
+    // The host serves the nearest 404.html: `/en/404.html` here, the Turkish one at the root.
+    await page.goto('/en/no-such-page');
+    expect(await page.evaluate(async () => (await fetch('/en/no-such-page')).status)).toBe(404);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page Not Found');
+    await page.getByRole('link', { name: 'Back to Home', exact: true }).click();
+    await at(page, '/en/');
+    await page.goto('/en/no-such-page');
+    await page.getByRole('link', { name: 'Launch the PDF Editor', exact: true }).click();
+    await at(page, '/editor/');
+  });
 });
 
 test('the stored theme applies before first paint and survives a reload', async ({ page }) => {

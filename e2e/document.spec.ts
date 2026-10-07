@@ -1,5 +1,5 @@
-import { expect, test } from 'playwright/test';
 import { fixturePdf } from './fixture-pdf';
+import { expect, test } from './test';
 
 /**
  * Opening a document.

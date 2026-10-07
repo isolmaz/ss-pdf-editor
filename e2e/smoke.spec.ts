@@ -1,6 +1,6 @@
 import type { Page } from 'playwright/test';
-import { expect, test } from 'playwright/test';
 import { useDarkTheme, useLanguage } from './settings';
+import { expect, test } from './test';
 
 /**
  * The shell a user meets first.

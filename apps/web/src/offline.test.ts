@@ -132,22 +132,39 @@ describe('requiredCapabilities', () => {
 });
 
 describe('the shipped path list matches the pinned assets', () => {
+  const pins = JSON.parse(readFileSync('tools/asset-pins.json', 'utf8')) as {
+    engines: Record<string, { files: { path: string }[] }>;
+  };
+  const offline = allOfflinePaths({ version: VERSION, capabilities: OFFLINE_CAPABILITIES });
+
   it('names only paths that exist in tools/asset-pins.json', () => {
     // The list is data (so the worker and the build can read it), which means nothing but
     // this test stops it from drifting away from the assets the repository actually pins.
-    const pins = JSON.parse(readFileSync('tools/asset-pins.json', 'utf8')) as {
-      engines: Record<string, { files: { path: string }[] }>;
-    };
     const pinned = new Set<string>();
     for (const engine of Object.values(pins.engines)) {
       for (const file of engine.files) pinned.add(`/${file.path}`);
     }
-    // Shell entries are build outputs, not pinned engine assets.
-    const shell = new Set(OFFLINE_CAPABILITIES.core);
-    const missing = allOfflinePaths({ version: VERSION, capabilities: OFFLINE_CAPABILITIES }).filter(
-      (path) => !pinned.has(path) && !shell.has(path),
-    );
+    // The shell's pages and scripts are build outputs, not pinned engine assets. The
+    // interface fonts it caches are pinned, so they are checked like every other asset.
+    const shell = new Set(OFFLINE_CAPABILITIES.core.filter((path) => !path.startsWith('/fonts/')));
+    // An empty list would satisfy the check below for nothing.
+    expect(offline.length).toBeGreaterThan(0);
+    expect(pinned.size).toBeGreaterThan(0);
+    const missing = offline.filter((path) => !pinned.has(path) && !shell.has(path));
     expect(missing).toEqual([]);
+  });
+
+  it('lists every pinned file the OCR and MuPDF capabilities need', () => {
+    // The optional `lang/best/` packs are downloaded on demand, not cached ahead of time.
+    const needed = [
+      ...(pins.engines.tesseract?.files ?? [])
+        .map((file) => `/${file.path}`)
+        .filter((path) => !path.includes('/lang/best/')),
+      ...(pins.engines.mupdf?.files ?? []).map((file) => `/${file.path}`),
+    ];
+    expect(needed.length).toBeGreaterThan(0);
+    const listed = new Set(offline);
+    expect(needed.filter((path) => !listed.has(path))).toEqual([]);
   });
 });
 

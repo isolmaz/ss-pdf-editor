@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Download, Page } from 'playwright/test';
-import { expect, test } from 'playwright/test';
 import { useAdvancedMode } from './settings';
+import { expect, test } from './test';
 import { labelledPdf, readProducedEntry, readProducedPageTexts } from './tool-fixture';
 
 /**

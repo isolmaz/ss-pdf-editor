@@ -124,3 +124,167 @@ describe('planTextEdit with a wider substitute face', () => {
     expect(request.insert[0]?.lines.map((line) => line.text)).toEqual(LIST);
   });
 });
+
+/** A block whose lines have exactly the given ink boxes (one line each). */
+function blockOfRects(id: string, lineRects: readonly Rect[]): TextBlock {
+  const base = block(id, ['x']);
+  const lines = lineRects.map((rect) => ({ text: 'x', rect, words: [], baseline: rect[3] }));
+  const rect: Rect = [
+    Math.min(...lineRects.map((r) => r[0])),
+    Math.min(...lineRects.map((r) => r[1])),
+    Math.max(...lineRects.map((r) => r[2])),
+    Math.max(...lineRects.map((r) => r[3])),
+  ];
+  return { ...base, rect, lines, text: lines.map((line) => line.text).join('\n') };
+}
+
+function eraseOf(target: TextBlock, ...others: TextBlock[]): readonly Rect[] {
+  const request = planTextEdit(
+    { page: pageOf(target, ...others), blockId: target.id, replacement: '' },
+    ORIGINAL,
+  );
+  return request.erase[0]?.rects ?? [];
+}
+
+function expectRects(actual: readonly Rect[], expected: readonly Rect[]): void {
+  expect(actual.length).toBe(expected.length);
+  expected.forEach((rect, index) => {
+    rect.forEach((value, axis) => {
+      expect(actual[index]?.[axis]).toBeCloseTo(value, 6);
+    });
+  });
+}
+
+describe('planTextEdit erase rects', () => {
+  const LINE: Rect = [100, 100, 200, 112];
+  const own = () => blockOfRects('b0', [LINE]);
+
+  it('pads a lone line by 3 pt on every side', () => {
+    expectRects(eraseOf(own()), [[97, 97, 203, 115]]);
+  });
+
+  it.each<[string, Rect, Rect]>([
+    ['a neighbour touching the band edge below', [202, 112, 300, 124], [97, 97, 201, 115]],
+    ['a neighbour touching the band edge above', [202, 88, 300, 100], [97, 97, 201, 115]],
+    ['a neighbour touching the line on the right', [200, 100, 260, 112], [97, 97, 200, 115]],
+    ['a neighbour touching the line on the left', [40, 100, 100, 112], [100, 97, 203, 115]],
+    ['a neighbour touching the line from below', [100, 112, 200, 124], [97, 97, 203, 112]],
+    ['a neighbour close below', [100, 114, 200, 124], [97, 97, 203, 113]],
+    ['a neighbour touching the line from above', [200, 40, 260, 100], [97, 100, 200, 115]],
+    ['a neighbour above that only touches in x', [200, 0, 260, 98], [97, 99, 203, 115]],
+  ])('caps the pad against %s', (_name, neighbour, expected) => {
+    expectRects(eraseOf(own(), blockOfRects('b1', [neighbour])), [expected]);
+  });
+
+  it('ignores a neighbour that is out of the line band, however near in x', () => {
+    expectRects(eraseOf(own(), blockOfRects('b1', [[202, 0, 300, 50]])), [[97, 97, 203, 115]]);
+  });
+
+  it('ignores a neighbour that is out of the line column, however near in y', () => {
+    expectRects(eraseOf(own(), blockOfRects('b1', [[300, 0, 400, 98]])), [[97, 97, 203, 115]]);
+  });
+
+  it('grows a zero-width line to 0.1 pt when neighbours cap its pad to nothing', () => {
+    const thin = blockOfRects('b0', [[100, 100, 100, 112]]);
+    const left = blockOfRects('b1', [[40, 100, 100, 112]]);
+    const right = blockOfRects('b2', [[100, 100, 160, 112]]);
+    expectRects(eraseOf(thin, left, right), [[99.95, 97, 100.05, 115]]);
+  });
+
+  it('grows a zero-height line to 0.1 pt when neighbours cap its pad to nothing', () => {
+    const flat = blockOfRects('b0', [[100, 100, 200, 100]]);
+    const above = blockOfRects('b1', [[100, 50, 200, 100]]);
+    const below = blockOfRects('b2', [[100, 100, 200, 150]]);
+    expectRects(eraseOf(flat, above, below), [[97, 99.95, 203, 100.05]]);
+  });
+
+  it('merges lines whose padded boxes overlap, and only those', () => {
+    expectRects(
+      eraseOf(
+        blockOfRects('b0', [
+          [100, 100, 200, 112],
+          [100, 114, 200, 126],
+        ]),
+      ),
+      [[97, 97, 203, 129]],
+    );
+  });
+
+  it('merges padded boxes that merely touch', () => {
+    expectRects(
+      eraseOf(
+        blockOfRects('b0', [
+          [100, 100, 200, 112],
+          [0, 100, 94, 112],
+        ]),
+      ),
+      [[-3, 97, 203, 115]],
+    );
+  });
+
+  it('keeps lines side by side on one row as separate rects', () => {
+    expectRects(
+      eraseOf(
+        blockOfRects('b0', [
+          [100, 100, 150, 112],
+          [300, 100, 350, 112],
+        ]),
+      ),
+      [
+        [97, 97, 153, 115],
+        [297, 97, 353, 115],
+      ],
+    );
+  });
+});
+
+describe('planTextEdit box fitting and justification', () => {
+  const TEXT = 'abcdefghi '.repeat(4).trim();
+  const WIDE_PAGE = { ...pageOf(), width: 2000 };
+  const run = (
+    blocks: TextBlock[],
+    options: { align?: 'left' | 'right' | 'center' | 'justify' },
+    replacement = TEXT,
+    page: TextPage = pageOf(...blocks),
+  ) => planTextEdit({ page, blockId: 'b0', replacement, options }, WIDER).insert[0]?.lines ?? [];
+  // 40 chars: 234 pt in the original face, 248.04 pt in the wider one.
+  const own = () => block('b0', [TEXT]);
+
+  it('widens right for left text, left for right text and both ways for centred text', () => {
+    expect(run([own()], { align: 'left' })[0]?.x).toBeCloseTo(72, 6);
+    expect(run([own()], { align: 'center' })[0]?.x).toBeCloseTo(64.98, 6);
+    expect(run([own()], { align: 'right' })[0]?.x).toBeCloseTo(57.96, 6);
+  });
+
+  it('does not widen across a block that touches the right edge', () => {
+    const list = own();
+    const touching = block('b1', ['N'], list.rect[2], 100);
+    expect(run([list, touching], { align: 'left' }).length).toBe(2);
+  });
+
+  it('does not widen right-aligned text into a block close on its left', () => {
+    const list = own();
+    const beside = blockOfRects('b1', [[10, 100, 68, 112]]);
+    expect(run([list, beside], { align: 'right' }).length).toBe(2);
+  });
+
+  it('ignores a block above that merely sits beside the box horizontally', () => {
+    const list = own();
+    const above = blockOfRects('b1', [[list.rect[2] + 4, 40, list.rect[2] + 50, 90]]);
+    expect(run([list, above], { align: 'left' }).length).toBe(1);
+  });
+
+  it('wraps text longer than 1.25 times the line even when the page has the room', () => {
+    const list = own();
+    const longer = `${TEXT} and keeps running well past where the line used to end`;
+    const lines = run([list], { align: 'left' }, longer, { ...WIDE_PAGE, blocks: [list] });
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) expect(line.x + (line.width ?? 0)).toBeLessThanOrEqual(list.rect[2] + 0.01);
+  });
+
+  it('carries word placements for justified text only', () => {
+    const words = 'one two three four';
+    expect(run([own()], { align: 'justify' }, words)[0]?.words).toBeDefined();
+    expect(run([own()], { align: 'left' }, words)[0]?.words).toBeUndefined();
+  });
+});

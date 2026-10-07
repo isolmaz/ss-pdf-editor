@@ -365,6 +365,68 @@ describe('buildMarkTargets over the session’s own marks', () => {
   });
 });
 
+describe('buildMarkTargets geometry of the session’s own marks', () => {
+  const only = (input: Parameters<typeof targetsOf>[0]) => targetsOf(input)[0];
+
+  it('gives a text mark one box per line run, and a shape, note or typed text its rect', () => {
+    const lines: [number, number, number, number][] = [
+      [10, 20, 90, 26],
+      [10, 30, 50, 36],
+    ];
+    expect(only({ annotations: [highlight('h', lines)] })?.boxes).toEqual(lines);
+
+    const rect: [number, number, number, number] = [5, 5, 15, 15];
+    for (const kind of ['shapes', 'note', 'freetext'] as const) {
+      const withRect = { ...highlight('r', lines), kind, rect };
+      expect(only({ annotations: [withRect] })?.boxes, kind).toEqual([rect]);
+      // Without a rect it is the first quad; without any geometry, no box at all.
+      expect(only({ annotations: [{ ...highlight('q', lines), kind }] })?.boxes, kind).toEqual([lines[0]]);
+      expect(only({ annotations: [{ ...highlight('e', []), kind }] })?.boxes, kind).toEqual([]);
+    }
+  });
+
+  it('keeps a turned mark without geometry reachable, and leaves a stray trailing stroke value in place', () => {
+    const bare = { ...highlight('bare', []), rotation: 90 as const };
+    const noStrokes = only({ annotations: [bare] });
+    expect(noStrokes?.boxes).toEqual([]);
+    expect(noStrokes && 'paths' in noStrokes).toBe(false);
+    expect(only({ annotations: [{ ...bare, strokes: [] }] })?.paths).toEqual([]);
+
+    const odd = { ...ink('i', [10, 10, 30, 20], [[10, 15, 30, 15, 99]]), rotation: 90 as const };
+    expect(only({ annotations: [odd] })?.paths).toEqual([[20, 5, 20, 25, 99]]);
+  });
+
+  it('gives a measurement without points no box, and one with points its bounding box', () => {
+    expect(only({ measures: [measurement('m0', [])] })?.boxes).toEqual([]);
+    expect(
+      only({
+        measures: [
+          measurement('m1', [
+            [10, 20],
+            [30, 40],
+          ]),
+        ],
+      })?.boxes,
+    ).toEqual([[10, 20, 30, 40]]);
+  });
+
+  it('offers resize handles only for a placed stamp', () => {
+    const resizable = (annotation: ExistingAnnotation, pageTop: number | null = PAGE_TOP) =>
+      buildMarkTargets({
+        annotations: [],
+        measures: [],
+        redactions: [],
+        existing: [annotation],
+        pageTop: () => pageTop,
+        labelFor: (_family, messageKey) => messageKey,
+      })[0]?.resizable;
+    expect(resizable(fileAnnotation('s', { subtype: 'Stamp', kind: null }))).toBe(true);
+    expect(resizable(fileAnnotation('s', { subtype: 'Stamp', kind: null }), null)).toBeUndefined();
+    expect(resizable(fileAnnotation('s', { subtype: 'Stamp', kind: null, rect: null }))).toBeUndefined();
+    expect(resizable(fileAnnotation('h', { subtype: 'Highlight' }))).toBeUndefined();
+  });
+});
+
 describe('planMarkRemoval', () => {
   it('splits a selection by family, drops keys that name nothing, and counts what is left', () => {
     const input = {

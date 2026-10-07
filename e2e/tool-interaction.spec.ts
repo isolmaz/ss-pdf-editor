@@ -18,8 +18,8 @@
 
 import { readFileSync } from 'node:fs';
 import type { Locator, Page } from 'playwright/test';
-import { expect, test } from 'playwright/test';
 import { useAdvancedMode, useDarkTheme } from './settings';
+import { expect, test } from './test';
 import {
   FIXTURE_PAGE,
   FORM_FIELD,

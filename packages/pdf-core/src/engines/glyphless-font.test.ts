@@ -85,7 +85,12 @@ describe('glyph-less font', () => {
     }
     expect(sum).toBe(0xb1b0afba);
     const mupdf = await import('mupdf');
-    expect(() => new mupdf.Font('GlyphLessFont', program)).not.toThrow();
+    const font = new mupdf.Font('GlyphLessFont', program);
+    expect(font.getName()).toBe('GlyphLessFont');
+    // The cmap maps nothing (the PDF's CIDToGIDMap does), so every code point is glyph 0.
+    expect([0x41, 0x5d1, 0xffff].map((code) => font.encodeCharacter(code))).toEqual([0, 0, 0]);
+    // Two glyphs, each half an em wide; a glyph id past `numGlyphs` has no advance.
+    expect([0, 1, 2, 5].map((glyph) => font.advanceGlyph(glyph))).toEqual([0.5, 0.5, 0, 0]);
   });
 
   it('extracts Arabic, Hebrew and CJK back as the same Unicode through MuPDF and pdf.js', async () => {
@@ -98,8 +103,10 @@ describe('glyph-less font', () => {
   it('keeps a right-to-left word in reading order only when it is written in visual order', async () => {
     // Logical order written as is comes back reversed: the reason `visualOrder` exists.
     const logical = await pageWith([HEBREW]);
-    expect(await mupdfText(logical)).not.toEqual([HEBREW]);
-    expect(visualOrder(HEBREW)).toBe([...HEBREW].reverse().join(''));
+    expect(await mupdfText(logical)).toEqual(['םלוע םולש']);
+    const visual = await pageWith(['םלוע םולש']);
+    expect(await mupdfText(visual)).toEqual([HEBREW]);
+    expect(visualOrder(HEBREW)).toBe('םלוע םולש');
     expect(visualOrder('Çarşı 123')).toBe('Çarşı 123');
   });
 

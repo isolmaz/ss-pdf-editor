@@ -363,6 +363,7 @@ export function ToolsRailPanel({
             >
               <button
                 type="button"
+                aria-expanded={isExpanded}
                 onClick={() => toggleGroup(group.id)}
                 className="flex w-full items-center justify-between px-2.5 py-2 text-start hover:bg-kumo-recessed/40 transition-colors"
               >
