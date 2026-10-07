@@ -137,6 +137,8 @@ export interface MarkTransform {
 const TURN_COS: Readonly<Record<QuarterTurn, number>> = { 0: 1, 90: 0, 180: -1, 270: 0 };
 const TURN_SIN: Readonly<Record<QuarterTurn, number>> = { 0: 0, 90: 1, 180: 0, 270: -1 };
 
+const QUARTER_TURNS: readonly QuarterTurn[] = [0, 90, 180, 270];
+
 /** `value` as one of the four turns, or a failure naming where the bad number came from. */
 function quarterTurn(value: number, path: string): QuarterTurn {
   if (!Number.isFinite(value) || value % 90 !== 0) {
@@ -146,17 +148,8 @@ function quarterTurn(value: number, path: string): QuarterTurn {
       engineMessage: `a turn must be 0, 90, 180 or 270 degrees, got ${String(value)}`,
     });
   }
-  const normalised = ((value % 360) + 360) % 360;
-  switch (normalised) {
-    case 0:
-    case 90:
-    case 180:
-    case 270:
-      return normalised;
-    /* c8 ignore next 2 -- `value % 90 === 0` above leaves nothing else to reach */
-    default:
-      throw new ToolError('unsupported', { engine: 'ui', path, engineMessage: `bad turn ${String(value)}` });
-  }
+  // A finite multiple of 90 reduced modulo 360 is 0, 90, 180 or 270: the index is in range.
+  return QUARTER_TURNS[(((value % 360) + 360) % 360) / 90] as QuarterTurn;
 }
 
 /** A point turned clockwise about `(cx, cy)` in a y-down space. */
@@ -200,7 +193,7 @@ function storedPoints(mark: AnnotationMark): readonly (readonly [number, number]
   for (const quad of mark.quads) addBox(quad);
   for (const stroke of mark.strokes ?? []) {
     for (let index = 0; index + 1 < stroke.length; index += 2) {
-      points.push([stroke[index] ?? 0, stroke[index + 1] ?? 0]);
+      points.push([stroke[index] as number, stroke[index + 1] as number]);
     }
   }
   return points;
@@ -256,7 +249,7 @@ export function transformPoint(
   bounds: MarkBox,
   transform: MarkTransform,
 ): { readonly x: number; readonly y: number } {
-  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = bounds;
+  const [x0, y0, x1, y1] = bounds;
   const { dx, dy, rotation } = checkedTransform(transform);
   const turned = turnPoint(point.x, point.y, (x0 + x1) / 2, (y0 + y1) / 2, rotation);
   return { x: turned.x + dx, y: turned.y + dy };
@@ -269,10 +262,10 @@ function placeRun(
 ): number[] {
   const moved: number[] = [];
   for (let index = 0; index + 1 < run.length; index += 2) {
-    const point = place(run[index] ?? 0, run[index + 1] ?? 0);
+    const point = place(run[index] as number, run[index + 1] as number);
     moved.push(point.x, point.y);
   }
-  if (run.length % 2 === 1) moved.push(run[run.length - 1] ?? 0);
+  if (run.length % 2 === 1) moved.push(run[run.length - 1] as number);
   return moved;
 }
 
@@ -281,18 +274,14 @@ function placeBox(
   box: MarkBox,
   place: (x: number, y: number) => { readonly x: number; readonly y: number },
 ): MarkBox {
-  const bounds = boundsOfPoints([
-    (() => {
-      const corner = place(box[0], box[1]);
-      return [corner.x, corner.y] as const;
-    })(),
-    (() => {
-      const corner = place(box[2], box[3]);
-      return [corner.x, corner.y] as const;
-    })(),
-  ]);
-  /* c8 ignore next -- two finite corners always bound a box */
-  return bounds ?? box;
+  const first = place(box[0], box[1]);
+  const second = place(box[2], box[3]);
+  return [
+    Math.min(first.x, second.x),
+    Math.min(first.y, second.y),
+    Math.max(first.x, second.x),
+    Math.max(first.y, second.y),
+  ];
 }
 
 /** `mark` with `rotation` replaced by `turn`; a turn of 0 leaves no key at all. */
@@ -389,12 +378,17 @@ function referenceId(ref: Reference): string {
  */
 function idOf(value: PDFObject | null | undefined): string | null {
   if (value === null || value === undefined || !value.isIndirect()) return null;
-  const match = MUPDF_REFERENCE.exec(value.toString());
-  return referenceId(
-    match === null
-      ? { objectNumber: value.asIndirect(), generationNumber: 0 }
-      : { objectNumber: Number(match[1]), generationNumber: Number(match[2]) },
-  );
+  return indirectId(value);
+}
+
+/**
+ * The pdf.js id of a value known to be indirect. MuPDF spells every indirect reference
+ * `N G R` (`toString` of a stream or an `addObject` result alike), so the match
+ * cannot fail for a value that answered `isIndirect()`.
+ */
+function indirectId(value: PDFObject): string {
+  const match = MUPDF_REFERENCE.exec(value.toString()) as RegExpExecArray;
+  return referenceId({ objectNumber: Number(match[1]), generationNumber: Number(match[2]) });
 }
 
 /** The reference an id names, or `null` when the id is not an object reference. */
@@ -405,9 +399,7 @@ function parseReferenceId(id: string): Reference | null {
   if (!Number.isSafeInteger(objectNumber) || objectNumber <= 0) return null;
   const digits = match[2] as string;
   const generationNumber = digits.length === 0 ? 0 : Number.parseInt(digits, 10);
-  return Number.isSafeInteger(generationNumber) && generationNumber >= 0
-    ? { objectNumber, generationNumber }
-    : null;
+  return Number.isSafeInteger(generationNumber) ? { objectNumber, generationNumber } : null;
 }
 
 /** One target, judged without the document: a page and a canonical reference id. */
@@ -509,7 +501,7 @@ function inkListsOf(value: PDFObject | null | undefined): number[][] | null {
 function boxOf(value: PDFObject | null | undefined): MarkBox | null {
   const numbers = numbersOf(value);
   if (numbers === null || numbers.length !== 4) return null;
-  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = numbers;
+  const [x0, y0, x1, y1] = numbers as [number, number, number, number];
   return [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)];
 }
 
@@ -541,26 +533,27 @@ interface WrittenGeometry {
   readonly line: number[] | null;
 }
 
-/** The turn's centre: the box around every geometric point the annotation has. */
-function pivotOf(geometry: ReadGeometry): { readonly x: number; readonly y: number } | null {
-  const points: (readonly [number, number])[] = [];
-  const addBox = (box: MarkBox | null): void => {
-    if (box === null) return;
-    points.push([box[0], box[1]], [box[2], box[3]]);
-  };
+/** The turn's centre: the box around every geometric point the annotation has, `/Rect` first. */
+function pivotOf(geometry: ReadGeometry & { readonly rect: MarkBox }): {
+  readonly x: number;
+  readonly y: number;
+} {
+  const points: (readonly [number, number])[] = [
+    [geometry.rect[0], geometry.rect[1]],
+    [geometry.rect[2], geometry.rect[3]],
+  ];
   const addRun = (run: readonly number[] | null): void => {
     if (run === null) return;
     for (let index = 0; index + 1 < run.length; index += 2) {
-      points.push([run[index] ?? 0, run[index + 1] ?? 0]);
+      points.push([run[index] as number, run[index + 1] as number]);
     }
   };
-  addBox(geometry.rect);
   addRun(geometry.quadPoints);
   for (const run of geometry.inkLists ?? []) addRun(run);
   addRun(geometry.vertices);
   addRun(geometry.line);
-  const bounds = boundsOfPoints(points);
-  if (bounds === null) return null;
+  // The rect's two corners are in `points`, so there is a box.
+  const bounds = boundsOfPoints(points) as MarkBox;
   return { x: (bounds[0] + bounds[2]) / 2, y: (bounds[1] + bounds[3]) / 2 };
 }
 
@@ -580,8 +573,8 @@ function normaliseQuad(group: readonly number[]): number[] {
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
   for (let index = 0; index + 1 < group.length; index += 2) {
-    const x = group[index] ?? 0;
-    const y = group[index + 1] ?? 0;
+    const x = group[index] as number;
+    const y = group[index + 1] as number;
     minX = Math.min(minX, x);
     maxX = Math.max(maxX, x);
     minY = Math.min(minY, y);
@@ -675,7 +668,7 @@ interface AppearanceFrame {
 function entriesOf(dict: PDFObject): [string, PDFObject][] {
   const entries: [string, PDFObject][] = [];
   dict.forEach((value, key) => {
-    if (typeof key === 'string') entries.push([key, value]);
+    entries.push([String(key), value]);
   });
   return entries;
 }
@@ -747,7 +740,7 @@ function wrapStream(
   source: PDFObject,
   frame: AppearanceFrame,
 ): { readonly ref: PDFObject; readonly wrapped: WrappedAppearance } {
-  const box = boxOf(resolved(source)?.get('BBox')) ?? frame.rect;
+  const box = boxOf(source.resolve().get('BBox')) ?? frame.rect;
   const boxWidth = box[2] - box[0];
   const boxHeight = box[3] - box[1];
   const rectWidth = frame.rect[2] - frame.rect[0];
@@ -791,7 +784,7 @@ function wrapStream(
   header.put('Resources', resources);
   // Stored plain and deflated by the save (`MUPDF_REWRITE_OPTIONS`).
   const ref = doc.addStream(`q\n${formatMatrix(matrix)} cm\n/${CONTENT_STREAM_NAME} Do\nQ\n`, header);
-  return { ref, wrapped: { original: idOf(source) ?? 'direct', boundingBox: bbox } };
+  return { ref, wrapped: { original: indirectId(source), boundingBox: bbox } };
 }
 
 /** The wrapper streams a written `/AP` holds, in the order `rewriteAppearance` wrote them. */
@@ -807,12 +800,11 @@ function readAppearance(appearance: PDFObject): ReadAppearance[] {
   const found: ReadAppearance[] = [];
   const readStream = (value: PDFObject): void => {
     if (!value.isStream()) return;
-    const stream = resolved(value);
-    if (stream === null) return;
+    const stream = value.resolve();
     const resources = resolved(stream.get('Resources'));
     const xobjects = resources === null ? null : resolved(resources.get('XObject'));
     found.push({
-      ref: idOf(value) ?? 'direct',
+      ref: indirectId(value),
       form: xobjects === null ? null : idOf(xobjects.get(CONTENT_STREAM_NAME)),
       boundingBox: boxOf(stream.get('BBox')),
     });
@@ -889,22 +881,21 @@ function pageDigest(page: PDFObject): string {
 
 /** The form's fields and their values — the facts a widget survives with. */
 function formDigest(doc: PDFDocument): string {
-  const catalog = resolved(doc.getTrailer().get('Root'));
-  const formRef = catalog === null ? null : catalog.get('AcroForm');
+  const formRef = doc.getTrailer().get('Root').resolve().get('AcroForm');
   const form = resolved(formRef);
-  if (formRef === null || form === null || !form.isDictionary()) return 'none';
+  if (form === null || !form.isDictionary()) return 'none';
   const fields = resolved(form.get('Fields'));
   const entries: unknown[] = [];
   if (fields?.isArray() === true) {
     for (let index = 0; index < fields.length; index += 1) {
       const entry = fields.get(index);
       const dict = resolved(entry);
-      const isDict = dict?.isDictionary() === true;
+      const field = dict?.isDictionary() === true ? dict : null;
       entries.push({
         id: idOf(entry),
-        name: isDict && dict !== null ? textOf(dict.get('T')) : '',
-        value: isDict && dict !== null ? textOf(dict.get('V')) : '',
-        fieldType: isDict && dict !== null ? nameOf(dict.get('FT')) : '',
+        name: field === null ? '' : textOf(field.get('T')),
+        value: field === null ? '' : textOf(field.get('V')),
+        fieldType: field === null ? '' : nameOf(field.get('FT')),
       });
     }
   }
@@ -986,7 +977,19 @@ function findOnPage(
 function numbersClose(actual: readonly number[] | null, expected: readonly number[] | null): boolean {
   if (actual === null || expected === null) return actual === expected;
   if (actual.length !== expected.length) return false;
-  return actual.every((value, index) => Math.abs(value - (expected[index] ?? 0)) <= EPSILON);
+  return actual.every((value, index) => Math.abs(value - (expected[index] as number)) <= EPSILON);
+}
+
+/** Two sets of ink strokes are the same: both absent, or the same runs to within `EPSILON`. */
+function inkListsClose(
+  actual: readonly (readonly number[])[] | null,
+  expected: readonly (readonly number[])[] | null,
+): boolean {
+  if (actual === null || expected === null) return actual === expected;
+  return (
+    actual.length === expected.length &&
+    actual.every((run, index) => numbersClose(run, expected[index] as number[]))
+  );
 }
 
 /** Whether the geometry a produced file carries is what the call wrote. */
@@ -998,10 +1001,7 @@ function geometryMatches(dict: PDFObject, written: WrittenGeometry): boolean {
     numbersClose(read.quadPoints, written.quadPoints) &&
     numbersClose(read.vertices, written.vertices) &&
     numbersClose(read.line, written.line) &&
-    (read.inkLists === null || written.inkLists === null
-      ? read.inkLists === written.inkLists
-      : read.inkLists.length === written.inkLists.length &&
-        read.inkLists.every((run, index) => numbersClose(run, written.inkLists?.[index] ?? null)))
+    inkListsClose(read.inkLists, written.inkLists)
   );
 }
 
@@ -1040,11 +1040,12 @@ function verifyTarget(doc: PDFDocument, page: PDFObject, target: TargetExpectati
     );
   }
   for (const [index, want] of target.wrapped.entries()) {
-    const got = appearances[index];
-    if (got === undefined || got.form !== want.original) {
+    // The counts were compared above, so every wanted appearance has a counterpart.
+    const got = appearances[index] as ReadAppearance;
+    if (got.form !== want.original) {
       throw verificationFailed(
         `appearance ${index} of annotation ${target.id} does not paint the original stream ` +
-          `(${String(got?.form)} vs ${want.original})`,
+          `(${String(got.form)} vs ${want.original})`,
         target.pageIndex,
       );
     }
@@ -1089,22 +1090,22 @@ async function verifyTransform(produced: Uint8Array, expected: TransformExpectat
       throw verificationFailed(`produced file has ${pages.length} pages, expected ${expected.pageCount}`);
     }
     for (const [index, page] of pages.entries()) {
-      if (pageDigest(page) !== (expected.pages[index] ?? '')) {
+      // `pages.length` equals `expected.pageCount`, which is the length of both per-page lists.
+      if (pageDigest(page) !== (expected.pages[index] as string)) {
         throw verificationFailed(`page ${index + 1} lost content, a box or its rotation`, index);
       }
       const ids = pageIds(doc, page);
-      const before = expected.pageIds[index] ?? [];
+      const before = expected.pageIds[index] as readonly string[];
       if (ids.length !== before.length || ids.some((id, position) => id !== before[position])) {
         throw verificationFailed(
           `page ${index + 1} annotation list changed: [${ids.join(', ')}] vs [${before.join(', ')}]`,
           index,
         );
       }
-      const untouched = expected.untouched.get(index);
-      if (untouched === undefined) continue;
-      for (const [id, digest] of untouched) {
-        const { position, dict } = findOnPage(doc, page, id);
-        if (position < 0) continue;
+      // The transform filled `untouched` for every page it opened, and this file has the same pages.
+      for (const [id, digest] of expected.untouched.get(index) as ReadonlyMap<string, string>) {
+        // The id list matched above, so `id` is on the page.
+        const { dict } = findOnPage(doc, page, id);
         if (dict === null || annotationDigest(dict) !== digest) {
           throw verificationFailed(
             `annotation ${id} on page ${index + 1} changed although it was not a target`,
@@ -1116,14 +1117,8 @@ async function verifyTransform(produced: Uint8Array, expected: TransformExpectat
     if (formDigest(doc) !== expected.form)
       throw verificationFailed('the form or one of its field values changed');
     for (const target of expected.targets) {
-      const page = pages[target.pageIndex];
-      if (page === undefined) {
-        throw verificationFailed(
-          `page ${target.pageIndex + 1} is missing from the produced file`,
-          target.pageIndex,
-        );
-      }
-      verifyTarget(doc, page, target);
+      // `resolveTarget` accepted `target.pageIndex` against the same page count.
+      verifyTarget(doc, pages[target.pageIndex] as PDFObject, target);
     }
   } finally {
     doc.destroy();
@@ -1190,7 +1185,7 @@ export async function transformPdfAnnotations(
 ): Promise<AnnotationTransformOutcome> {
   throwIfAborted(context.signal);
   const targets = planTargets(request);
-  const transform = checkedTransform(request?.transform);
+  const transform = checkedTransform(request.transform);
   if (targets.length === 0 || (transform.dx === 0 && transform.dy === 0 && transform.rotation === 0)) {
     return nothingToDo(bytes);
   }
@@ -1224,14 +1219,14 @@ export async function transformPdfAnnotations(
         const { dict, subtype } = resolveTarget(doc, pages, target);
         const geometry = readGeometry(dict);
         const rect = geometry.rect;
-        const pivot = pivotOf(geometry);
-        if (rect === null || pivot === null) {
+        if (rect === null) {
           throw new ToolError('selection-empty', {
             engine: 'mupdf',
             pageIndex: target.pageIndex,
             engineMessage: `annotation ${target.id} on page ${target.pageIndex + 1} carries no geometry to move`,
           });
         }
+        const pivot = pivotOf({ ...geometry, rect });
         // A selected object has its own geometry/appearance expectations below.
         // Only the remaining objects must match their original digest unchanged.
         untouched.get(target.pageIndex)?.delete(target.id);

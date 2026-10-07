@@ -127,7 +127,8 @@ function decodeQuads(values: readonly string[]): readonly MarkBox[] {
       .map((part) => Number.parseFloat(part))
       .filter((number) => Number.isFinite(number));
     if (numbers.length < 4) continue;
-    boxes.push([numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0, numbers[3] ?? 0]);
+    // At least four numbers were read, so the first four exist.
+    boxes.push([numbers[0] as number, numbers[1] as number, numbers[2] as number, numbers[3] as number]);
   }
   return boxes;
 }
@@ -432,9 +433,10 @@ function annotationsFromRecords(records: readonly FormDataRecord[], format: stri
       continue;
     }
     sawAnnotation = true;
-    const index = Number.parseInt(match[1] ?? '', 10);
-    const field = match[2] ?? '';
-    if (!Number.isFinite(index) || field.length === 0) continue;
+    // Both groups took part in the match; a digit run long enough to overflow is not an index.
+    const index = Number.parseInt(match[1] as string, 10);
+    const field = match[2] as string;
+    if (!Number.isFinite(index)) continue;
     const fields = perMark.get(index) ?? new Map<string, string | readonly string[] | boolean>();
     fields.set(field, record.value);
     perMark.set(index, fields);
@@ -449,8 +451,8 @@ function annotationsFromRecords(records: readonly FormDataRecord[], format: stri
   }
   const marks: AnnotationMark[] = [];
   let skipped = 0;
-  for (const index of [...perMark.keys()].sort((a, b) => a - b)) {
-    const mark = markFromRecords(perMark.get(index) ?? new Map());
+  for (const [, fields] of [...perMark.entries()].sort(([a], [b]) => a - b)) {
+    const mark = markFromRecords(fields);
     if (mark === null) skipped += 1;
     else marks.push(mark);
   }
@@ -470,8 +472,9 @@ export function parseAnnotationData(bytes: Uint8Array): AnnotationDataResult {
     // first — a file that has neither is refused by both readers, loudly.
     try {
       return parseAnnotationsFdf(bytes);
-    } catch (error) {
-      if (!(error instanceof ToolError)) throw error;
+    } catch {
+      // `parseFdf` and the record reader refuse with a `ToolError` and nothing else;
+      // the Acrobat reader then answers for the same bytes with its own refusal.
       return parseAcrobatCommentsFdf(bytes);
     }
   }
@@ -624,12 +627,24 @@ function quadsOf(value: PdfValue | undefined, rect: readonly number[]): readonly
   const points = numbersOf(value);
   const boxes: MarkBox[] = [];
   for (let at = 0; at + 7 < points.length; at += 8) {
-    const xs = [points[at] ?? 0, points[at + 2] ?? 0, points[at + 4] ?? 0, points[at + 6] ?? 0];
-    const ys = [points[at + 1] ?? 0, points[at + 3] ?? 0, points[at + 5] ?? 0, points[at + 7] ?? 0];
+    // `at + 7 < points.length` bounds every read.
+    const xs = [
+      points[at] as number,
+      points[at + 2] as number,
+      points[at + 4] as number,
+      points[at + 6] as number,
+    ];
+    const ys = [
+      points[at + 1] as number,
+      points[at + 3] as number,
+      points[at + 5] as number,
+      points[at + 7] as number,
+    ];
     boxes.push([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
   }
   if (boxes.length > 0) return boxes;
-  if (rect.length === 4) return [[rect[0] ?? 0, rect[1] ?? 0, rect[2] ?? 0, rect[3] ?? 0]];
+  if (rect.length === 4)
+    return [[rect[0] as number, rect[1] as number, rect[2] as number, rect[3] as number]];
   return [];
 }
 
@@ -672,7 +687,9 @@ function markFromAcrobat(index: number, entry: CommentEntry): AnnotationMark | n
     createdAt: isoFromAcrobatDate(date),
     ...(mapped.shape === undefined ? {} : { shape: mapped.shape }),
     ...(mapped.kind === 'ink' ? { strokes: strokesOf(dictionary.InkList) } : {}),
-    ...(rect.length === 4 ? { rect: [rect[0] ?? 0, rect[1] ?? 0, rect[2] ?? 0, rect[3] ?? 0] as const } : {}),
+    ...(rect.length === 4
+      ? { rect: [rect[0] as number, rect[1] as number, rect[2] as number, rect[3] as number] as const }
+      : {}),
   };
 }
 
@@ -710,17 +727,11 @@ function readCommentEntries(tokens: readonly FdfToken[]): {
     if (value === undefined) continue;
     let dictionary: Record<string, PdfValue> | null = null;
     if (value.kind === 'dict-open') {
-      const read = readValue(tokens, index + 3);
-      dictionary =
-        typeof read.value === 'object' && read.value !== null && !Array.isArray(read.value)
-          ? (read.value as Record<string, PdfValue>)
-          : null;
+      // A `<<` token always reads as a dictionary.
+      dictionary = readValue(tokens, index + 3).value as Record<string, PdfValue>;
     } else if (value.kind === 'string' && value.text.trimStart().startsWith('<<')) {
-      const inner = readValue(tokenizePdfSource(value.text), 0);
-      dictionary =
-        typeof inner.value === 'object' && inner.value !== null && !Array.isArray(inner.value)
-          ? (inner.value as Record<string, PdfValue>)
-          : null;
+      // The text starts with `<<`, so its first token opens a dictionary.
+      dictionary = readValue(tokenizePdfSource(value.text), 0).value as Record<string, PdfValue>;
     }
     if (dictionary === null) {
       // A `/T`-`/V` record that is not an annotation: counted, never silently dropped.
