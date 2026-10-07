@@ -222,7 +222,8 @@ function detectEdges(gray: GrayImage): EdgeMap {
         if (dx === 0 && dy === 0) continue;
         const nx = x + dx;
         const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        // Every pixel on the stack is an edge pixel, and those lie in 1..size-2 (the Sobel
+        // pass skips the border), so all eight neighbours are inside the picture.
         const j = ny * width + nx;
         if (edge[j] === 0 && (thin[j] as number) >= low) {
           edge[j] = 1;

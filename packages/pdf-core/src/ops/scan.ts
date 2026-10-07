@@ -106,13 +106,8 @@ export async function scanPagesToPdf(
     await handle.destroy();
   }
 
-  const skipped = composed.report.notes.filter((entry) => entry.kind === 'warning');
-  if (skipped.length > 0) {
-    throw new ToolError('verification-failed', {
-      engine: 'mupdf',
-      engineMessage: `a scanned page could not be embedded: ${skipped.map((entry) => entry.key).join(', ')}`,
-    });
-  }
+  // No check for the writer's "could not embed" warnings is needed here: each one skips its
+  // picture without adding a page (`images.ts`), so the page count above already fails for it.
   const notes: OperationNote[] = [
     ...composed.report.notes,
     note('changed', 'op.note.scan.pages', { count: options.pages.length }),

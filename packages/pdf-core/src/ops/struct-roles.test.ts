@@ -21,6 +21,15 @@ describe('struct-roles', () => {
     expect(resolveRole('H1', { H1: 'P' })).toBe('H1');
   });
 
+  it('gives up on a chain longer than 32 hops, even one that would end in a standard type', () => {
+    const chain: Record<string, string> = {};
+    for (let index = 0; index < 40; index += 1) chain[`R${index}`] = index === 39 ? 'P' : `R${index + 1}`;
+    expect(resolveRole('R39', chain)).toBe('P');
+    expect(resolveRole('R9', chain)).toBe('P');
+    expect(resolveRole('R8', chain)).toBeNull();
+    expect(resolveRole('R0', chain)).toBeNull();
+  });
+
   it('offers only standard types in the editor, with no duplicates', () => {
     expect(EDITOR_ROLES.every((role) => STANDARD_ROLES.has(role))).toBe(true);
     expect(new Set(EDITOR_ROLES).size).toBe(EDITOR_ROLES.length);

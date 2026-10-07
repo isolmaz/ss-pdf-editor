@@ -169,8 +169,8 @@ export async function writeCommentReview(
         annotsOf(doc, page, true)?.push(dict);
       }
     } catch (error) {
-      if (error instanceof ToolError) throw error;
       if (error instanceof Error && error.name === 'AbortError') throw error;
+      // `mapMupdfError` hands a `ToolError` back unchanged.
       throw mapMupdfError(error, 'annotations.review');
     }
     saved = saveRewrite(doc, 'annotations.review');
@@ -231,8 +231,9 @@ async function verifyReview(
     const missing: string[] = [];
     for (const record of records) {
       throwIfAborted(context.signal);
-      const page = pages[record.pageIndex];
-      const annots = page === undefined ? null : annotsOf(doc, page);
+      // The writer refused a record whose page is missing, so every page index is valid here.
+      const page = pages[record.pageIndex] as PDFObject;
+      const annots = annotsOf(doc, page);
       let found = false;
       let parentPresent = false;
       for (let position = 0; annots !== null && position < annots.length; position += 1) {

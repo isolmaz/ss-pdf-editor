@@ -745,6 +745,92 @@ describe('applyTextEdit placement in reading order', () => {
     expect(await texts(out.bytes)).toEqual(['Alpha', 'Gamma', 'Other', 'Omega']);
   });
 
+  it('appends the replacement when the run it would precede is shown outside any text object', async () => {
+    // Shown after an ET, and shown with no BT at all: no `BT` stands before either run.
+    for (const content of [
+      'BT /F 14 Tf 40 100 Td (Head) Tj ET /F 14 Tf 1 0 0 1 40 200 Tm (Alpha) Tj',
+      '/F 14 Tf 1 0 0 1 40 200 Tm (Alpha) Tj',
+    ]) {
+      const out = await applyTextEdit(
+        await contentPage(content),
+        insertOnly([spanned('Zeta', 20, [20, 200])]),
+        run,
+      );
+      expect((await texts(out.bytes)).at(-1)).toBe('Zeta');
+    }
+  });
+
+  it('appends the replacement when a new text object opens before the one that holds its anchor closes', async () => {
+    const out = await applyTextEdit(
+      await contentPage('BT /F 14 Tf 40 200 Td (Alpha) Tj BT /F 14 Tf 140 200 Td (Gamma) Tj ET'),
+      insertOnly([spanned('Mid', 100, [40, 200])]),
+      run,
+    );
+    expect((await texts(out.bytes)).at(-1)).toBe('Mid');
+  });
+
+  it('reads past paths and other painting while it looks for the line to follow', async () => {
+    const out = await applyTextEdit(
+      await contentPage(`0 0 50 50 re f ${ROW}`),
+      insertOnly([spanned('Delta', 140, [40, 200])]),
+      run,
+    );
+    expect(await texts(out.bytes)).toContain('Delta');
+  });
+
+  it('goes past other operators between the anchor and the end of its text object', async () => {
+    const out = await applyTextEdit(
+      await contentPage(
+        'BT /F 14 Tf 40 200 Td (Alpha) Tj 0 0 1 rg 0 Tc ET BT /F 14 Tf 40 100 Td (Other) Tj ET',
+      ),
+      insertOnly([spanned('Beta', 100, [40, 200])]),
+      run,
+    );
+    expect(await texts(out.bytes)).toEqual(['Alpha', 'Beta', 'Other']);
+  });
+
+  it('appends the replacement to a page whose /Contents entry is not a stream', async () => {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    const font = doc.addObject({
+      Type: 'Font',
+      Subtype: 'Type1',
+      BaseFont: 'Helvetica',
+      Encoding: 'WinAnsiEncoding',
+    });
+    doc.insertPage(0, doc.addPage([0, 0, 400, 300], 0, { Font: { F: font } }, ''));
+    const contents = doc.newArray();
+    contents.push(doc.addStream('BT /F 14 Tf 40 200 Td (Alpha) Tj ET', {}));
+    contents.push(doc.newInteger(3));
+    doc.findPage(0).put('Contents', contents);
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const out = await applyTextEdit(bytes, insertOnly([spanned('Beta', 100, [40, 200])]), run);
+    expect((await texts(out.bytes)).at(-1)).toBe('Beta');
+  });
+
+  it('draws on a page that has no content stream at all', async () => {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 400, 300], 0, {}, ''));
+    doc.findPage(0).delete('Contents');
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const out = await applyTextEdit(bytes, insertOnly([spanned('Solo', 100, [40, 200])]), run);
+    expect(await texts(out.bytes)).toEqual(['Solo']);
+  });
+
+  it('accepts an erase of text that appears elsewhere on the page too, when exactly the covered one is gone', async () => {
+    const out = await applyTextEdit(
+      await contentPage(
+        'BT /F 14 Tf 40 200 Td (Alpha) Tj ET BT /F 14 Tf 140 200 Td (Alpha) Tj ET BT /F 14 Tf 40 100 Td (Other) Tj ET',
+      ),
+      { erase: [{ pageIndex: 0, rects: [[135, 82, 200, 104]] }], insert: [], fonts: {} },
+      run,
+    );
+    expect(await texts(out.bytes)).toEqual(['Alpha', 'Other']);
+  });
+
   it('appends the replacement when the matrix in force at its anchor cannot be inverted', async () => {
     // `0 0 0 1 0 100 cm` maps every point to x = 0: no matrix undoes it.
     const content =

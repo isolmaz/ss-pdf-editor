@@ -189,6 +189,23 @@ describe('editStructure', () => {
       editStructure(await untaggedFixture(), [{ op: 'role', key: 'o1', role: 'P' }], run),
     ).rejects.toMatchObject({ code: 'unsupported' });
   });
+
+  it('refuses to take an element out of a parent the file holds as a direct dictionary', async () => {
+    const { bytes } = await buildTagged({
+      pages: [{ content: tagged('P', 0, 'BT /F1 12 Tf 10 100 Td (Alpha) Tj ET') }],
+      tree: [{ s: 'Document', direct: true, k: [{ s: 'P', k: [0] }] }],
+    });
+    const model = (await readStructure(bytes, run)).model;
+    const document = model.roots[0];
+    const kid = document?.kids[0];
+    if (document === undefined || kid === undefined || kid.kind !== 'element')
+      throw new Error('unexpected model');
+    expect(document.key.startsWith('o')).toBe(false);
+    expect(kid.node.key.startsWith('o')).toBe(true);
+    await expect(editStructure(bytes, [{ op: 'artifact', key: kid.node.key }], run)).rejects.toMatchObject({
+      code: 'selection-empty',
+    });
+  });
 });
 
 /* ------------------------------------------------------------------ *

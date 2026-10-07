@@ -618,7 +618,8 @@ function drawInReadingOrder(doc: PDFDocument, page: PDFObject, drawn: readonly D
       loose.push(item);
       continue;
     }
-    const plain = inverse.every((value, index) => Math.abs(value - (IDENTITY[index] ?? 0)) < 1e-9);
+    // `inverse` and `IDENTITY` both have six entries, so every index is inside `IDENTITY`.
+    const plain = inverse.every((value, index) => Math.abs(value - (IDENTITY[index] as number)) < 1e-9);
     const cm = plain ? '' : `${inverse.map(num).join(' ')} cm `;
     spliced.push({ at, order, text: `\nq ${cm}${TEXT_STATE_RESET} ${item.text} Q\n` });
   }
@@ -1054,8 +1055,8 @@ function readCoveredText(
         if (c.trim() === '') return;
         for (const [index, rect] of rects.entries()) {
           if (coveredShare(quad, rect) < HALF_COVERED) continue;
-          const buffer = buffers[index];
-          if (buffer !== undefined) buffer.push(c);
+          // `buffers` was made with one entry per rectangle, and `index` counts those rectangles.
+          (buffers[index] as string[]).push(c);
         }
       },
     });

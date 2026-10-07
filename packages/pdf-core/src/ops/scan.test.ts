@@ -119,4 +119,28 @@ describe('scanPagesToPdf', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
     expect(progress).toEqual([]);
   });
+
+  it('refuses a scan in which a picture could not be embedded instead of returning a page short', async () => {
+    const good = await jpegPage('scan-001.jpg', 300, 400, 30);
+    const damaged: ScanPageInput = {
+      name: 'scan-002.jpg',
+      bytes: new Uint8Array([0xff, 0xd8, 0xff, 1, 2]),
+      width: 10,
+      height: 10,
+    };
+    const failure = await scanPagesToPdf({ pages: [good, damaged], pageSize: 'a4' }, run).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: 'verification-failed' });
+    expect((failure as ToolError).details.engineMessage).toBe('2 scanned page(s) became 1 page(s)');
+  });
+
+  it('refuses a fit page whose picture has not the proportions it was declared with', async () => {
+    const page = await jpegPage('scan-001.jpg', 300, 400, 30);
+    const failure = await scanPagesToPdf(
+      { pages: [{ ...page, width: 400, height: 300 }], pageSize: 'fit' },
+      run,
+    ).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'verification-failed', details: { pageIndex: 0 } });
+  });
 });

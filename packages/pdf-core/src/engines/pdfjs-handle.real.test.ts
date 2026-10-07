@@ -142,6 +142,32 @@ describe('openWithPdfjs', () => {
     expect((await failureOf(opening)).code).toBe('aborted');
   });
 
+  it('settles with the aborted code, within a short time, when the signal fires while the document loads', async () => {
+    // Node runs pdf.js's worker in this thread, so terminating it mid-load rejects a task of the
+    // worker's own as an unhandled rejection (a real browser's worker keeps that to itself).
+    // The test takes the process listeners over for its duration and checks that this is the only
+    // thing that was rejected.
+    const previous = process.listeners('unhandledRejection');
+    process.removeAllListeners('unhandledRejection');
+    const stray: unknown[] = [];
+    const collect = (reason: unknown) => stray.push(reason);
+    process.on('unhandledRejection', collect);
+    try {
+      const controller = new AbortController();
+      const failure = await failureOf(
+        openWithPdfjs(document(), { signal: controller.signal, onProgress: () => controller.abort() }),
+      );
+      expect(failure.code).toBe('aborted');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(stray.map((reason) => (reason instanceof Error ? reason.message : String(reason)))).toEqual(
+        stray.length === 0 ? [] : ['Worker was terminated'],
+      );
+    } finally {
+      process.off('unhandledRejection', collect);
+      for (const listener of previous) process.on('unhandledRejection', listener);
+    }
+  }, 5000);
+
   it('asks for a password, and says whether it was needed or wrong', async () => {
     const asked: string[] = [];
     const missing = await failureOf(
