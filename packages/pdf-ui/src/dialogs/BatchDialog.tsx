@@ -1127,15 +1127,13 @@ function BatchReportList({
               <p className="text-xs text-kumo-subtle">{text('batch.report.skipped')}</p>
             ) : null}
             {result.status === 'done'
-              ? result.steps.map((step) =>
-                  step.report === null ? null : (
-                    <OperationReportPanel
-                      key={`${result.name}-${step.kind}-${step.report.steps.join('|')}`}
-                      t={t}
-                      report={step.report}
-                    />
-                  ),
-                )
+              ? result.steps.map((step) => (
+                  <OperationReportPanel
+                    key={`${result.name}-${step.kind}-${step.report.steps.join('|')}`}
+                    t={t}
+                    report={step.report}
+                  />
+                ))
               : null}
           </li>
         ))}

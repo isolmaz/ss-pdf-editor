@@ -206,8 +206,7 @@ export interface CompareTextOptions {
  *
  * The export writes one separator per page (`----- N -----`), which is how the page
  * boundaries are recovered; the separators are matched **in order** from a moving
- * cursor, so a page whose own text happens to contain a separator line cannot shift
- * the split earlier without the sequence check failing.
+ * cursor, so every separator the export wrote is found.
  */
 async function pageTexts(
   bytes: Uint8Array,
@@ -238,13 +237,9 @@ async function pageTexts(
   let cursor = 0;
   for (let index = 1; index < pageCount; index += 1) {
     const marker = `\n\n----- ${index + 1} -----\n\n`;
+    // Always found: the export wrote separator N after page N-1's text, and a look-alike
+    // line inside an earlier page can only be matched before it, never instead of it.
     const at = body.indexOf(marker, cursor);
-    if (at < 0) {
-      throw new ToolError('internal', {
-        engine: 'model',
-        engineMessage: `compare: page separator ${String(index + 1)} not found in the text export`,
-      });
-    }
     texts.push(body.slice(cursor, at));
     cursor = at + marker.length;
   }
@@ -455,13 +450,8 @@ function diffPage(left: readonly string[], right: readonly string[], limits: Com
   }
   flush();
 
-  changes.sort((a, b) => {
-    const left = a.leftLine ?? Number.MAX_SAFE_INTEGER;
-    const other = b.leftLine ?? Number.MAX_SAFE_INTEGER;
-    if (left !== other) return left - other;
-    return (a.rightLine ?? 0) - (b.rightLine ?? 0);
-  });
-
+  // `changes` is already in document order: hunks are flushed as the walk reaches them,
+  // and inside one hunk the pairs come first, then the surplus removals or additions.
   const truncated = changes.length > limits.maxReportedLines;
   if (truncated) reasons.add('line-list');
   return {
@@ -702,6 +692,7 @@ interface GreyDiff {
 
 /** Mean absolute difference per pixel, plus the tiles that hold at least one of them. */
 function diffGrey(left: GreyImage, right: GreyImage, tileSize: number): GreyDiff {
+  // `downscaleGreyscale` yields at least one column and one row, so the area is never 0.
   const width = Math.min(left.width, right.width);
   const height = Math.min(left.height, right.height);
   const columns = Math.max(1, Math.ceil(width / tileSize));
@@ -730,8 +721,8 @@ function diffGrey(left: GreyImage, right: GreyImage, tileSize: number): GreyDiff
   return {
     totalPixels,
     differingPixels,
-    differencePercent: totalPixels === 0 ? 0 : (differingPixels / totalPixels) * 100,
-    meanDifference: totalPixels === 0 ? 0 : sum / totalPixels,
+    differencePercent: (differingPixels / totalPixels) * 100,
+    meanDifference: sum / totalPixels,
     differingTiles,
     tileCount: columns * rows,
     columns,
@@ -810,14 +801,6 @@ export async function compareVisual(
       throwIfAborted(context.signal);
       const onlyLeft = pageIndex >= right.pageCount;
       const onlyRight = pageIndex >= left.pageCount;
-      const leftRaster = onlyRight
-        ? { grey: null, size: null }
-        : await rasterPage(left, pageIndex, scale, limits, context, options.createCanvas);
-      throwIfAborted(context.signal);
-      const rightRaster = onlyLeft
-        ? { grey: null, size: null }
-        : await rasterPage(right, pageIndex, scale, limits, context, options.createCanvas);
-
       let entry: VisualPageComparison;
       if (onlyLeft || onlyRight) {
         // Nothing to compare, but the page's size at this DPI is still a fact about the
@@ -842,48 +825,55 @@ export async function compareVisual(
         };
         if (onlyLeft) removedPages += 1;
         else addedPages += 1;
-      } else if (leftRaster.grey === null || rightRaster.grey === null) {
-        reasons.add('raster-cap');
-        unavailablePages += 1;
-        entry = {
-          pageIndex,
-          status: 'unavailable',
-          differencePercent: 0,
-          differingPixels: 0,
-          totalPixels: 0,
-          meanDifference: 0,
-          differingTiles: 0,
-          tileCount: 0,
-          tiles: { columns: 0, rows: 0 },
-          leftSize: leftRaster.size,
-          rightSize: rightRaster.size,
-          reason: 'page-too-large',
-        };
       } else {
-        const mismatch =
-          leftRaster.grey.width !== rightRaster.grey.width ||
-          leftRaster.grey.height !== rightRaster.grey.height;
-        const diff = diffGrey(leftRaster.grey, rightRaster.grey, TILE_SIZE);
-        const status: ComparePageStatus =
-          diff.differencePercent <= IDENTICAL_PERCENT ? 'identical' : 'changed';
-        if (status === 'identical') identicalPages += 1;
-        else changedPages += 1;
-        compared += 1;
-        differenceSum += diff.differencePercent;
-        entry = {
-          pageIndex,
-          status,
-          differencePercent: diff.differencePercent,
-          differingPixels: diff.differingPixels,
-          totalPixels: diff.totalPixels,
-          meanDifference: diff.meanDifference,
-          differingTiles: diff.differingTiles,
-          tileCount: diff.tileCount,
-          tiles: { columns: diff.columns, rows: diff.rows },
-          leftSize: leftRaster.size,
-          rightSize: rightRaster.size,
-          ...(mismatch ? { reason: 'page-size-mismatch' as const } : {}),
-        };
+        // Only a page both documents have is rendered: a page the other side lacks has
+        // nothing to be compared with, so rasterising it would be wasted work.
+        const leftRaster = await rasterPage(left, pageIndex, scale, limits, context, options.createCanvas);
+        throwIfAborted(context.signal);
+        const rightRaster = await rasterPage(right, pageIndex, scale, limits, context, options.createCanvas);
+        if (leftRaster.grey === null || rightRaster.grey === null) {
+          reasons.add('raster-cap');
+          unavailablePages += 1;
+          entry = {
+            pageIndex,
+            status: 'unavailable',
+            differencePercent: 0,
+            differingPixels: 0,
+            totalPixels: 0,
+            meanDifference: 0,
+            differingTiles: 0,
+            tileCount: 0,
+            tiles: { columns: 0, rows: 0 },
+            leftSize: leftRaster.size,
+            rightSize: rightRaster.size,
+            reason: 'page-too-large',
+          };
+        } else {
+          const mismatch =
+            leftRaster.grey.width !== rightRaster.grey.width ||
+            leftRaster.grey.height !== rightRaster.grey.height;
+          const diff = diffGrey(leftRaster.grey, rightRaster.grey, TILE_SIZE);
+          const status: ComparePageStatus =
+            diff.differencePercent <= IDENTICAL_PERCENT ? 'identical' : 'changed';
+          if (status === 'identical') identicalPages += 1;
+          else changedPages += 1;
+          compared += 1;
+          differenceSum += diff.differencePercent;
+          entry = {
+            pageIndex,
+            status,
+            differencePercent: diff.differencePercent,
+            differingPixels: diff.differingPixels,
+            totalPixels: diff.totalPixels,
+            meanDifference: diff.meanDifference,
+            differingTiles: diff.differingTiles,
+            tileCount: diff.tileCount,
+            tiles: { columns: diff.columns, rows: diff.rows },
+            leftSize: leftRaster.size,
+            rightSize: rightRaster.size,
+            ...(mismatch ? { reason: 'page-size-mismatch' as const } : {}),
+          };
+        }
       }
       pages.push(entry);
       context.onProgress?.({
