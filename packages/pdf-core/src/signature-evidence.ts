@@ -25,7 +25,6 @@
 
 import type { BaseBlock } from 'asn1js';
 import { fromBER } from 'asn1js';
-import type { Attribute, SignerInfo } from 'pkijs';
 import { ContentInfo, SignedData } from 'pkijs';
 
 const OID_SIGNING_TIME = '1.2.840.113549.1.9.5';
@@ -62,13 +61,9 @@ function copyOf(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   return new Uint8Array(bytes);
 }
 
-/** The DER of an asn1js value, or `null` when it cannot be re-encoded. */
-function derOf(block: BaseBlock): Uint8Array | null {
-  try {
-    return new Uint8Array(block.toBER(false));
-  } catch {
-    return null;
-  }
+/** The DER of an asn1js value. A block that was parsed always re-encodes, so this cannot fail. */
+function derOf(block: BaseBlock): Uint8Array {
+  return new Uint8Array(block.toBER(false));
 }
 
 /** The length the first TLV of `bytes` declares: `/Contents` is zero-padded past it. */
@@ -112,15 +107,9 @@ function readArchival(value: BaseBlock | undefined, into: { crls: Uint8Array[]; 
     // `[n] EXPLICIT SEQUENCE OF …`: the context tag wraps one SEQUENCE whose members are items.
     const list = membersOf(section)[0];
     for (const item of membersOf(list).slice(0, MAX_ITEMS)) {
-      const der = derOf(item);
-      if (der !== null) (tagNumber === 0 ? into.crls : into.ocsps).push(der);
+      (tagNumber === 0 ? into.crls : into.ocsps).push(derOf(item));
     }
   }
-}
-
-/** The attribute values of one type among signed and unsigned attributes. */
-function attributesOf(signer: SignerInfo): readonly Attribute[] {
-  return [...(signer.signedAttrs?.attributes ?? []), ...(signer.unsignedAttrs?.attributes ?? [])];
 }
 
 /**
@@ -149,8 +138,7 @@ export function readSignatureEvidence(contents: Uint8Array): SignatureEvidence |
     try {
       if ('tbsView' in entry) crls.push(new Uint8Array(entry.toSchema().toBER(false)));
       else if (entry.otherRevInfoFormat === OID_OCSP_RESPONSE_FORMAT) {
-        const der = derOf(entry.otherRevInfo as BaseBlock);
-        if (der !== null) ocsps.push(der);
+        ocsps.push(derOf(entry.otherRevInfo as BaseBlock));
       }
     } catch {
       // Skipped, like any other unreadable revocation entry.
@@ -160,14 +148,15 @@ export function readSignatureEvidence(contents: Uint8Array): SignatureEvidence |
   const tokens: Uint8Array[] = [];
   let signingTime: Date | null = null;
   const signer = signedData.signerInfos.find((info) => info.signedAttrs !== undefined);
-  if (signer !== undefined) {
-    for (const attribute of attributesOf(signer)) {
-      const [value] = attribute.values;
+  if (signer?.signedAttrs !== undefined) {
+    for (const attribute of [...signer.signedAttrs.attributes, ...(signer.unsignedAttrs?.attributes ?? [])]) {
+      // pkijs leaves `values` unset when the attribute carries an empty SET.
+      const values: readonly unknown[] = attribute.values ?? [];
+      const [value] = values;
       if (value === undefined) continue;
       if (attribute.type === OID_TIMESTAMP_TOKEN) {
-        for (const token of attribute.values.slice(0, MAX_ITEMS)) {
-          const der = derOf(token as BaseBlock);
-          if (der !== null) tokens.push(der);
+        for (const token of values.slice(0, MAX_ITEMS)) {
+          tokens.push(derOf(token as BaseBlock));
         }
       } else if (attribute.type === OID_REVOCATION_ARCHIVAL) {
         readArchival(value as BaseBlock, { crls, ocsps });

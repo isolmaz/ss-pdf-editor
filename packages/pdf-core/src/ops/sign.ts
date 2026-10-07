@@ -53,7 +53,11 @@ import {
 
 /** The `/Contents` reservation, in bytes; the placeholder is twice that in hex characters. */
 const CONTENTS_RESERVATION = 16 * 1024;
-/** Fixed width of every `/ByteRange` number, so writing the real values cannot move a byte. */
+/**
+ * Fixed width of every `/ByteRange` number, so writing the real values cannot move a byte.
+ * Ten digits hold every offset a file can have here: the engine's memory ends at 4 GiB, far
+ * below 10^10, so the zero-padded numbers always have the placeholder's width.
+ */
 const RANGE_DIGITS = 10;
 
 export interface SignatureFieldRequest {
@@ -198,9 +202,8 @@ function createSignatureField(
   if (rect !== undefined) dict.put('AP', { N: appearance(doc, rect, lines) });
   annotsOf(doc, page, true)?.push(dict);
 
-  const catalog = resolved(doc.getTrailer().get('Root'));
-  if (catalog === null)
-    throw new ToolError('corrupt-document', { engine: 'mupdf', engineMessage: 'no /Root' });
+  // Every PDF the engine opens has a catalog: a file without one is refused at open.
+  const catalog = doc.getTrailer().get('Root');
   if (resolved(catalog.get('AcroForm'))?.isDictionary() !== true) catalog.put('AcroForm', doc.addObject({}));
   const acroForm = dictionaryIn(doc, catalog, 'AcroForm');
   arrayIn(doc, acroForm, 'Fields').push(dict);
@@ -279,8 +282,7 @@ export async function signPdf(
       });
     }
     pageCount = doc.countPages();
-    const catalog = resolved(doc.getTrailer().get('Root'));
-    const form = catalog === null ? null : resolved(catalog.get('AcroForm'));
+    const form = resolved(doc.getTrailer().get('Root').get('AcroForm'));
     if (resolved(form?.get('Fields'))?.isArray() === true) {
       context.onProgress?.({ phase: 'sign', labelKey: 'op.progress.sign.prepare', done: 0, total: 1 });
     }
@@ -361,12 +363,6 @@ export async function signPdf(
   const rangeText =
     `[${String(range[0]).padStart(RANGE_DIGITS, '0')} ${String(range[1]).padStart(RANGE_DIGITS, '0')} ` +
     `${String(range[2]).padStart(RANGE_DIGITS, '0')} ${String(range[3]).padStart(RANGE_DIGITS, '0')}]`;
-  if (rangeText.length !== rangePlaceholderText.length) {
-    throw new ToolError('internal', {
-      engine: 'mupdf',
-      engineMessage: `the /ByteRange text changed length (${rangeText.length} vs ${rangePlaceholderText.length})`,
-    });
-  }
   produced.set(ascii(rangeText), rangeAt);
 
   // The signed content: the two segments the range names, concatenated.
@@ -409,7 +405,7 @@ export async function signPdf(
       engine: 'mupdf',
       engineMessage:
         `the produced signature does not verify: integrity "${ours.integrity}", coverage "${ours.coverage}", ` +
-        `reason "${ours.reasonKey}", signer ${ours.signer === null ? 'unreadable' : `"${ours.signer}"`}, ` +
+        `reason "${ours.reasonKey}", signer ${JSON.stringify(ours.signer)}, ` +
         `subFilter "${ours.subFilter}"`,
     });
   }

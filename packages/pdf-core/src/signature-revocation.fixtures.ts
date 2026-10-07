@@ -269,3 +269,11 @@ export async function signedCms(
   );
   return der;
 }
+
+/** `cms` re-encoded after `change` edited its parsed `SignedData` (the signature value stays). */
+export function withEditedCms(cms: Uint8Array, change: (signedData: SignedData) => void): Uint8Array {
+  const signedData = readSignedData(cms);
+  if (signedData === null) throw new Error('fixture CMS does not parse');
+  change(signedData);
+  return wrapSignedData(signedData);
+}

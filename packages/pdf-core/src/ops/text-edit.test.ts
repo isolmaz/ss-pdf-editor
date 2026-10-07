@@ -38,6 +38,25 @@ async function page(): Promise<Uint8Array> {
   return bytes;
 }
 
+/** A 900×800 page with one line of 40 pt text near the top. */
+async function tallPage(): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = new mupdf.PDFDocument();
+  const font = doc.addObject({
+    Type: 'Font',
+    Subtype: 'Type1',
+    BaseFont: 'Helvetica',
+    Encoding: 'WinAnsiEncoding',
+  });
+  doc.insertPage(
+    0,
+    doc.addPage([0, 0, 900, 800], 0, { Font: { F: font } }, 'BT /F 40 Tf 40 700 Td (Eski satir) Tj ET'),
+  );
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
 /** Lines MuPDF extracts, with their boxes in displayed space, and the fonts the page uses. */
 async function read(bytes: Uint8Array) {
   const mupdf = await import('mupdf');
@@ -132,5 +151,57 @@ describe('applyTextEdit', () => {
       ['İki', 40],
       ['kelime', 200],
     ]);
+  });
+
+  describe('a paragraph that runs off the page', () => {
+    /** 17 words at 40 pt in five lines; the first four are justified word by word. */
+    const ROWS = [
+      ['Bu', 'metin', 'uzun', 'bir'],
+      ['paragraf', 'olarak', 'sayfaya', 'yerleştirilir'],
+      ['ve', 'iki', 'yana', 'yaslanır'],
+      ['sonra', 'son', 'satır', 'kısa'],
+      ['kalır'],
+    ];
+    const paragraph = (firstBaseline: number) =>
+      ROWS.map((row, index) => ({
+        text: row.join(' '),
+        x: 40,
+        y: firstBaseline + index * 50,
+        fontSize: 40,
+        color: '#000000',
+        fontId: 'noto',
+        width: 520,
+        ...(row.length > 1 ? { words: row.map((word, at) => ({ text: word, x: 40 + at * 130 })) } : {}),
+      }));
+    const edit = (bytes: Uint8Array, firstBaseline: number) =>
+      applyTextEdit(
+        bytes,
+        {
+          erase: [{ pageIndex: 0, rects: [[35, 60, 300, 110]] }],
+          insert: [{ pageIndex: 0, lines: paragraph(firstBaseline) }],
+          fonts: {},
+        },
+        run,
+      );
+
+    it('is verified when every line lies on the page, justified or not', async () => {
+      const out = await edit(await tallPage(), 100);
+      expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.textEdit.verifiedInserted');
+      const texts = (await read(out.bytes)).map((entry) => entry.text);
+      expect(texts).toContain('kalır');
+    });
+
+    it('is refused, naming exactly the lines pdf.js cannot report, when its last lines fall below the page', async () => {
+      // The page is 800 pt high: baselines at 700 and 750 are on it, 800 is on its edge and
+      // 850 and 900 are off it. pdf.js does not report text drawn outside the page, so those
+      // lines are not extractable — the same words are, once they are moved up.
+      await expect(edit(await tallPage(), 700)).rejects.toMatchObject({
+        code: 'verification-failed',
+        details: {
+          engineMessage:
+            'page 0: inserted text is not extractable: “sonra son satır kısa” · page 0: inserted text is not extractable: “kalır”',
+        },
+      });
+    });
   });
 });

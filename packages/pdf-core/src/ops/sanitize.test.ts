@@ -461,7 +461,15 @@ describe('sanitizeDocument', () => {
 
     const controller = new AbortController();
     controller.abort();
-    await expect(sanitizeDocument(input, ALL, { signal: controller.signal })).rejects.toThrow();
+    // The guard at the top refuses before the scan reports its first progress: no work ran.
+    const progress: unknown[] = [];
+    await expect(
+      sanitizeDocument(input, ALL, {
+        signal: controller.signal,
+        onProgress: (entry) => progress.push(entry),
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(progress).toEqual([]);
   });
 
   it('rewrites a file whose earlier revision still holds an attachment a later update freed', async () => {
