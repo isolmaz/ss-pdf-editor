@@ -22,7 +22,8 @@ const WINDOW_LOCK = 'pdf-editor.vault.window.';
 /**
  * A lock manager that records what is held, like `navigator.locks` seen from every window of
  * one origin (Node has none). `delayGrant` makes a request wait a turn before it is
- * granted, as a real manager does when another holder is ahead.
+ * granted, as a real manager does when another holder is ahead. `options` is read on each
+ * call, so a test can make the manager fail part-way through.
  */
 function fakeLocks(options: { delayGrant?: boolean; failQuery?: boolean } = {}) {
   const held = new Map<symbol, string>();
@@ -274,6 +275,77 @@ describe('a probe waits for every window the lock manager lists, not for a timer
     vi.advanceTimersByTime(1);
     await probing;
     expect(outcome).toBe(false);
+  });
+
+  it('stops waiting for a listed window once its lock is gone, and a failed re-query changes nothing', async () => {
+    const options = { failQuery: false };
+    const locks = fakeLocks(options);
+    vi.stubGlobal('navigator', { locks });
+    const ghost = Symbol('closing');
+    locks.held.set(ghost, `${WINDOW_LOCK}closing`);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const asker = channel();
+    let outcome: boolean | undefined;
+    const probing = asker.probe().then((value) => {
+      outcome = value;
+    });
+    await turn();
+    // The lock manager cannot be asked: the window it listed stays awaited.
+    options.failQuery = true;
+    locks.held.delete(ghost);
+    vi.advanceTimersByTime(250);
+    await turn();
+    await turn();
+    expect(outcome).toBeUndefined();
+    // It can again, and the closed window no longer holds a lock: the probe is complete.
+    options.failQuery = false;
+    vi.advanceTimersByTime(250);
+    await probing;
+    expect(outcome).toBe(true);
+  });
+
+  it('keeps waiting for a listed window whose lock is still held, and stops asking once it answers', async () => {
+    const locks = fakeLocks();
+    vi.stubGlobal('navigator', { locks });
+    locks.held.set(Symbol('slow'), `${WINDOW_LOCK}slow`);
+    const slow = bareWindow('slow');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const asker = channel();
+    let outcome: boolean | undefined;
+    const probing = asker.probe().then((value) => {
+      outcome = value;
+    });
+    const probe = await slow.nextProbe();
+    for (let round = 0; round < 4; round += 1) {
+      vi.advanceTimersByTime(250);
+      await turn();
+      await turn();
+    }
+    expect(outcome).toBeUndefined();
+    const queries = vi.spyOn(locks, 'query');
+    slow.answer(['src-slow'], probe.probeId);
+    await probing;
+    expect(outcome).toBe(true);
+    vi.advanceTimersByTime(1_000);
+    await turn();
+    expect(queries).not.toHaveBeenCalled();
+    slow.close();
+  });
+
+  it('reports false when the probing window closes while a re-query is in flight, even if that query finds no window', async () => {
+    const locks = fakeLocks();
+    vi.stubGlobal('navigator', { locks });
+    const ghost = Symbol('closing');
+    locks.held.set(ghost, `${WINDOW_LOCK}closing`);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const asker = channel();
+    const probing = asker.probe();
+    await turn();
+    locks.held.delete(ghost);
+    vi.advanceTimersByTime(250);
+    asker.close();
+    expect(await probing).toBe(false);
+    await turn();
   });
 
   it('reports false when the probing window is closed while it waits', async () => {

@@ -36,6 +36,9 @@
  * open it holds a `navigator.locks` lock named after its id; a probe asks the lock manager
  * which windows are alive (`locks.query()`) and completes only when each of them has
  * answered *that* probe, however long it takes — the outcome no longer depends on timing.
+ * A window that closes while the probe waits never answers, but the lock manager drops
+ * its lock: the probe asks again every `RECHECK_MS` and stops waiting for a window whose
+ * lock is gone (a tab closed a moment ago can still be listed by the first query).
  * A window that is listed but stays silent for `LIVE_PEER_LIMIT_MS` (a frozen tab) makes
  * the probe report `false`, and the sweep refuses to run rather than guess. Only where
  * there is no lock manager does the probe fall back to a fixed `PROBE_WINDOW_MS` wait.
@@ -46,6 +49,9 @@ const PROBE_WINDOW_MS = 250;
 
 /** How long a probe waits for a window the lock manager lists as alive before it gives up. */
 const LIVE_PEER_LIMIT_MS = 10_000;
+
+/** How often a waiting probe asks the lock manager again, so a window that closed meanwhile stops holding it open. */
+const RECHECK_MS = 250;
 
 /** Every open window holds `WINDOW_LOCK_PREFIX + id`; the set of such locks is the set of live windows. */
 const WINDOW_LOCK_PREFIX = 'pdf-editor.vault.window.';
@@ -201,6 +207,23 @@ function createVaultChannel(): VaultChannel {
     }
   };
 
+  /**
+   * While probe `probeId` waits, asks the lock manager again every `RECHECK_MS` and stops
+   * waiting for any window whose lock is gone: it closed, so it will never answer. The loop
+   * ends with the probe; a failed query changes nothing and the next one tries again.
+   */
+  const dropClosedWindows = (awaiting: Set<string>, probeId: string): void => {
+    setTimeout(() => {
+      if (pending?.probeId !== probeId) return;
+      void liveWindows().then((live) => {
+        if (pending?.probeId !== probeId) return;
+        if (live !== null) for (const peer of [...awaiting]) if (!live.has(peer)) awaiting.delete(peer);
+        if (awaiting.size === 0) endProbe(true);
+        else dropClosedWindows(awaiting, probeId);
+      });
+    }, RECHECK_MS);
+  };
+
   if (channel !== null) {
     channel.onmessage = (event: MessageEvent<unknown>) => {
       const data = event.data;
@@ -255,6 +278,7 @@ function createVaultChannel(): VaultChannel {
         live === null || live.size > 0
           ? waitFor(live, live === null ? PROBE_WINDOW_MS : LIVE_PEER_LIMIT_MS, probeId)
           : Promise.resolve(true);
+      if (live !== null && live.size > 0) dropClosedWindows(live, probeId);
       channel.postMessage({ windowId: id, keys: lastAnnouncement, at: Date.now(), probe: true, probeId });
       return await answered;
     },
