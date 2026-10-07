@@ -78,6 +78,25 @@ async function settle(page: Page, manifests: number): Promise<void> {
     .toBe(true);
 }
 
+/**
+ * Wait until the lock manager, seen from `page`, lists `count` editor windows. A closed tab's
+ * window lock can outlive `page.close()` for a while on a loaded machine; until it goes, a
+ * probe rightly counts the tab as a live window that does not answer.
+ */
+async function liveWindows(page: Page, count: number): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const snapshot = await navigator.locks.query();
+          return (snapshot.held ?? []).filter((lock) => lock.name?.startsWith('pdf-editor.vault.window.'))
+            .length;
+        }),
+      { timeout: 60_000 },
+    )
+    .toBe(count);
+}
+
 /** Run a palette command by name, leaving the simple mode first when it is hidden. */
 async function runCommand(page: Page, label: string): Promise<void> {
   // The default mode is simple, and the vault commands are advanced-only. Switching
@@ -182,6 +201,7 @@ test.describe('two windows on one vault', () => {
     // Once the keeper is gone, a window that never heard its announcement has nothing
     // protecting the blob: the next sweep removes it and says so.
     await keeper.close();
+    await liveWindows(sweeper, 1);
     const third = await context.newPage();
     await openFixture(third, 'third.pdf');
     await settle(third, 2);

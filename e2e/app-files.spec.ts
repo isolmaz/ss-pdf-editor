@@ -4,10 +4,10 @@ import {
   installPickers,
   notice,
   openApp,
+  openStaged,
   readFile,
   rewriteFile,
   rotateCurrentPage,
-  settled,
   stageFile,
 } from './app-helpers';
 import { expect, test } from './test';
@@ -30,8 +30,7 @@ test('Ctrl+O opens the picked file and Ctrl+S writes the rotated page back over 
   await page.goto('/editor/');
   const original = labelledPdf('Picked', 2);
   await stageFile(page, 'open', 'picked.pdf', original);
-  await page.keyboard.press('Control+o');
-  await settled(page);
+  await openStaged(page);
 
   await rotateCurrentPage(page);
   // Save is enabled once the inspection of the new version has finished.
@@ -51,8 +50,7 @@ test('Save stops with a conflict when the file changed after it was opened, and 
   await installPickers(page);
   await page.goto('/editor/');
   await stageFile(page, 'open', 'shared.pdf', labelledPdf('Shared', 2));
-  await page.keyboard.press('Control+o');
-  await settled(page);
+  await openStaged(page);
 
   // Another program replaces the file while the document is open.
   const elsewhere = labelledPdf('Elsewhere', 3);
@@ -124,8 +122,7 @@ test('a file whose write permission is refused is reported, and nothing is writt
     });
     picks.open.push(refusing);
   });
-  await page.keyboard.press('Control+o');
-  await settled(page);
+  await openStaged(page);
   await rotateCurrentPage(page);
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -197,8 +194,7 @@ test('closing a document that has its own file offers Save and close, which writ
   await installPickers(page);
   await page.goto('/editor/');
   await stageFile(page, 'open', 'inplace.pdf', labelledPdf('Inplace', 2));
-  await page.keyboard.press('Control+o');
-  await settled(page);
+  await openStaged(page);
   await rotateCurrentPage(page);
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled({ timeout: 30_000 });
   await page

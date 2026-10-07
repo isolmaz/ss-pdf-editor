@@ -33,6 +33,23 @@ export async function settled(page: Page): Promise<void> {
   await expect(page.getByText('Opening the document…')).toHaveCount(0, { timeout: 30_000 });
 }
 
+/**
+ * Open the file staged for the open picker with Ctrl+O and wait for it to show. The press is
+ * repeated until the picker has taken the handle: one that lands before the shell has
+ * attached its shortcuts does nothing, and a repeat after the take is a cancelled picker.
+ */
+export async function openStaged(page: Page): Promise<void> {
+  await expect(async () => {
+    await page.keyboard.press('Control+o');
+    const waiting = await page.evaluate(() => {
+      const picks: { open: unknown[] } = Reflect.get(window, '__picks');
+      return picks.open.length;
+    });
+    expect(waiting).toBe(0);
+  }).toPass({ timeout: 30_000 });
+  await settled(page);
+}
+
 /** Open bytes through the home screen's file input; `advanced` switches the interface mode afterwards. */
 export async function openApp(
   page: Page,
