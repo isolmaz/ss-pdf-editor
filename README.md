@@ -91,7 +91,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   every tool out by task; pick a tool first and the editor asks for the file when the tool
   needs one. A file that does not open drops the tool, so it never runs on a later document.
 - **Viewer.** pdf.js's own viewer stack drives continuous virtualised scrolling, text
-  selection and search with match highlighting.
+  selection and search with match highlighting. With the hand tool a link in the page is
+  followed: an internal one goes to its page, an external one opens in a new browser tab, so
+  the open document and its unsaved changes stay where they are.
 - **View modes.** You get single-page, book and full-screen presentation modes, a
   magnifier lens, and a snapshot tool that combines the visible pages into one PNG.
 - **Reading mode.** The page is shown as a text column. Read-aloud uses only speech voices
