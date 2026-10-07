@@ -403,3 +403,113 @@ export async function importCrlFiles(
 }
 
 export { issueTimestampToken };
+
+export interface LabelRange {
+  /** The 0-based page the numbering starts on. */
+  readonly from: number;
+  /** `D` decimal, `r` lower roman, `A` upper letters… */
+  readonly style?: string;
+  readonly prefix?: string;
+}
+
+/** `base` with a `/PageLabels` number tree: the labels other readers show for its pages. */
+export async function withPageLabels(base: Uint8Array, ranges: readonly LabelRange[]): Promise<Uint8Array> {
+  return mutate(base, (doc) => {
+    const numbers = doc.newArray();
+    for (const range of ranges) {
+      numbers.push(doc.newInteger(range.from));
+      const entry = doc.newDictionary();
+      if (range.style !== undefined) entry.put('S', doc.newName(range.style));
+      if (range.prefix !== undefined) entry.put('P', doc.newString(range.prefix));
+      numbers.push(entry);
+    }
+    const labels = doc.newDictionary();
+    labels.put('Nums', numbers);
+    doc.getTrailer().get('Root').resolve().put('PageLabels', labels);
+  });
+}
+
+export interface OutlineSpec {
+  readonly title: string;
+  /** 1-based page the entry goes to; `null` leaves it without a destination. */
+  readonly page: number | null;
+  readonly children?: readonly OutlineSpec[];
+}
+
+/** `base` with a bookmark tree, written with MuPDF's outline iterator. */
+export async function withOutline(base: Uint8Array, entries: readonly OutlineSpec[]): Promise<Uint8Array> {
+  return mutate(base, (doc) => {
+    const iterator = doc.outlineIterator();
+    const write = (level: readonly OutlineSpec[]): void => {
+      for (const entry of level) {
+        iterator.insert({
+          title: entry.title,
+          open: true,
+          uri: entry.page === null ? undefined : `#page=${entry.page}`,
+        });
+        if (entry.children !== undefined && entry.children.length > 0) {
+          iterator.prev();
+          iterator.down();
+          write(entry.children);
+          iterator.up();
+          iterator.next();
+        }
+      }
+    };
+    write(entries);
+  });
+}
+
+/** `base` with the given page boxes (`[width, height]` per page, origin zero). */
+export async function withPageSizes(
+  base: Uint8Array,
+  sizes: readonly (readonly [number, number])[],
+): Promise<Uint8Array> {
+  return mutate(base, (doc) => {
+    for (const [index, [width, height]] of sizes.entries()) {
+      const box = doc.newArray();
+      for (const value of [0, 0, width, height]) box.push(doc.newInteger(value));
+      doc.findPage(index).put('MediaBox', box);
+    }
+  });
+}
+
+export interface PrintedSheet {
+  /** The inline CSS size the sheet pins (`''` when the stylesheet decides, as in "fit"). */
+  readonly styleWidth: string;
+  readonly styleHeight: string;
+  /** The raster the page was drawn into. */
+  readonly naturalWidth: number;
+  readonly naturalHeight: number;
+}
+
+/**
+ * Stand in for the browser's print dialog, which no automated browser can show: `window.print`
+ * records the sheets in the document at that moment and then reports the job as over
+ * (`afterprint`), as a closed dialog does. Everything before that call is the editor's own.
+ * Call before the page loads.
+ */
+export async function spyOnPrint(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const jobs: unknown[] = [];
+    Reflect.set(window, 'printJobs', jobs);
+    window.print = () => {
+      const sheets = [...document.querySelectorAll<HTMLImageElement>('.pdf-print-root img')].map((image) => ({
+        styleWidth: image.style.width,
+        styleHeight: image.style.height,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight,
+      }));
+      jobs.push(sheets);
+      setTimeout(() => window.dispatchEvent(new Event('afterprint')), 0);
+    };
+  });
+}
+
+/** The sheets of every print job so far, one list per `window.print()` call. */
+export function printedJobs(page: Page): Promise<readonly (readonly PrintedSheet[])[]> {
+  return page.evaluate(() => {
+    const jobs: unknown = Reflect.get(window, 'printJobs');
+    return Array.isArray(jobs) ? jobs : [];
+  });
+}
