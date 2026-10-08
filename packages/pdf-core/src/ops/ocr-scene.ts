@@ -5,20 +5,26 @@
  * Both halves work on the rendered page (`RgbaImage`) next to tesseract's word boxes
  * (`OcrWord`, page points, y down):
  *
- *  - `ocrTextBoxes`: one `TextBox` per tesseract paragraph, lines as tesseract broke them. The
- *    font size comes from the ink extent of the line (calibrated on Noto Sans and Arial), the
- *    colour from the ink of the word against its local background, bold from the stroke width
- *    against the page's. A word the engine was unsure of is a run of its own carrying a `note`.
+ *  - `ocrTextBoxes`: lines are tesseract's, cut where a column gutter or the edge of a picture
+ *    region runs through them; paragraphs are regrouped from the lines' geometry (alignment,
+ *    spacing, size, region) and ordered column by column. The font size comes from the heights
+ *    of the line's words by what they hold (capitals and ascenders, x-height, descenders;
+ *    calibrated on Noto Sans and Arial) and is the median of them, the colour from the ink of the
+ *    word against its local background, bold from the stroke width against the page's. A word
+ *    with a letter or digit the engine was unsure of is a run of its own carrying a `note`.
  *  - `ocrBackground`: the words are erased from the image (filled with the background around
  *    them); what still differs from the page colour afterwards (a card, a photo, a logo) is cut
  *    out as one picture per connected region, and everything else is the page colour.
+ *    `misreadWords` / `dropMisreads` name what tesseract made of an icon or a chart (symbols,
+ *    stems, low-confidence letters) lying over a picture: not text, it stays in the picture;
+ *    `dropDuplicates` keeps the surer of two words read at the same place.
  *
  * `OcrWord.confidence` is tesseract's 0–100 (the adapter passes it through); `lowConfidence`
  * is a fraction, 0.90 for "flag below 90 %", the threshold measured in `docs/ocr-evaluation.md`.
  */
 
 import type { OcrWord } from '../engines/tesseract';
-import type { TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
+import type { RunFit, TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
 import type { Box } from './page-layout';
 
 export interface RgbaImage {
@@ -35,15 +41,41 @@ export interface RgbaImage {
  * ------------------------------------------------------------------ */
 
 /**
- * The ink extent of a line (the top of its tallest ascender to the bottom of its deepest
- * descender) ÷ the font size. Measured on 10, 14 and 24 pt renders: Noto Sans 1.00, Arial's
- * metric twin (Helvetica) 0.965; the middle puts both within 2.5 % (before the half-point rounding).
+ * How much of the font size the ink of a word spans above and below its baseline: capitals,
+ * digits and ascenders reach `ASCENDER`, a word of x-height letters only `X_HEIGHT`, a capital
+ * with a mark (İ Ğ Ö Ü) `MARKED`, and descenders go `DESCENDER` below. Measured on 10, 14 and
+ * 24 pt renders: Noto Sans ascender 0.76 + descender 0.24, Arial's metric twin (Helvetica)
+ * 0.73 + 0.22; the middles put both within 3 % (before the half-point rounding).
  */
+const ASCENDER = 0.745;
+const X_HEIGHT = 0.53;
+const MARKED = 0.92;
+const DESCENDER = 0.235;
+/** Fallback for a line of nothing but symbols: the ink extent ÷ size, and the baseline above the bottom (× size). */
 const INK_EXTENT = 0.98;
-
-/** A line's baseline sits this far below the ink top (× size) and this far above the ink bottom. */
-const ASCENT = 0.75;
 const DESCENT = 0.22;
+
+/** A tesseract line is cut where two words are further apart than this × the line's size. */
+const GUTTER = 1.5;
+/** Lines of one paragraph: baselines this × the size apart (at most, at least), sizes within the ratios. */
+const MAX_LEADING = 2;
+const MIN_LEADING = 0.7;
+const SAME_SIZE_LOW = 0.75;
+const SAME_SIZE_HIGH = 1.33;
+/** …and left edges or centres at most this × the size apart. */
+const ALIGN = 0.8;
+
+/** A symbol-only word is a misread graphic when tesseract is less sure than this (0–100). */
+const MISREAD_CONFIDENCE = 60;
+/** …a word of letters only, when less sure than this; a single stem, when taller than this × the page's median word. */
+const MISREAD_LETTERS = 25;
+const TALL_STEM = 1.5;
+const STEM_ASPECT = 0.35;
+/** Words of at most two characters this close to the left or right edge of the page (× its width) are scanner marks. */
+const EDGE_BAND = 0.03;
+const TALL_SYMBOL = 1.5;
+/** Two words overlapping by more than this share of the smaller one are one word read twice. */
+const DUPLICATE_OVERLAP = 0.3;
 
 /** Word's natural line is about this × size; where the first baseline sits inside the line. */
 const SINGLE_LINE = 1.2;
@@ -83,6 +115,8 @@ const DIFFERENCE = 12;
 const MERGE_GAP = 3;
 /** A region smaller than this on both sides (points) is noise. */
 const MIN_REGION = 8;
+/** A region is a solid fill (a card, a band, a photo) when this share of its box differs from the page colour; the rest is marks. */
+const SOLID_FILL = 0.5;
 
 /* ------------------------------------------------------------------ *
  * pixels
@@ -248,35 +282,147 @@ const quantile = (values: readonly number[], q: number): number => {
   return sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)] as number;
 };
 
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/** A symbol, or one letter or digit alone in punctuation — "(O)", "[x]": what tesseract makes of a bullet or an icon. */
+const SYMBOLIC = /^[^\p{L}\p{N}]*(?:[\p{L}\p{N}][^\p{L}\p{N}]+)?$/u;
+/** Words made of x-height letters and low punctuation only; İ Ğ Ö Ü… reach higher than the capitals; descenders. */
+const X_ONLY = /^[acemnopqrsuvwxyzgıçş.,:;\-_+=<>~]+$/;
+const MARKED_CAPITAL = /[İĞÖÜÂÊÎÔÛ]/;
+const HAS_DESCENDER = /[gjpqyçşÇŞQ,;()[\]{}|/@]/;
+
+/** What tesseract makes of a round icon: a ringed letter or a registered-mark sign. */
+const ICON_GLYPH = /[()®©○●◯◎]/;
+
+const medianHeight = (words: readonly OcrWord[]): number => median(words.map((word) => word.y1 - word.y0));
+
+/**
+ * The words that are not text but what tesseract made of a graphic: a symbol or a letter alone in
+ * punctuation it is below 60 % sure of, or a ringed one like (O) or ® taller than 1.5 × the page's
+ * typical word (an icon, a bullet); a word of one or two characters, taller than 1.5 × the typical word and
+ * narrower than 0.35 × its height (a bar of a chart, a speck); a word of letters only it is below 25 % sure of (a level icon read as DUKE). A misread
+ * word that lies over a picture region is dropped (`dropMisreads`), so the graphic stays in the
+ * picture.
+ */
+export function misreadWords(words: readonly OcrWord[]): Set<OcrWord> {
+  const typical = words.length === 0 ? Infinity : medianHeight(words);
+  return new Set(
+    words.filter(
+      (word) =>
+        (SYMBOLIC.test(word.text) &&
+          (word.confidence < MISREAD_CONFIDENCE ||
+            (ICON_GLYPH.test(word.text) && word.y1 - word.y0 > TALL_SYMBOL * typical))) ||
+        (word.text.length <= 2 &&
+          word.y1 - word.y0 > TALL_STEM * typical &&
+          word.x1 - word.x0 < STEM_ASPECT * (word.y1 - word.y0)) ||
+        (word.confidence < MISREAD_LETTERS && /^\p{L}+$/u.test(word.text)),
+    ),
+  );
+}
+
+/** Words without the one- and two-character ones in the outer 3 % of the page width: the dark scanner edge and its specks. */
+export function dropEdgeMarks(words: readonly OcrWord[], pageWidth: number): OcrWord[] {
+  const band = EDGE_BAND * pageWidth;
+  return words.filter((word) => !(word.text.length <= 2 && (word.x0 < band || word.x1 > pageWidth - band)));
+}
+
+/** Words without any that overlap a surer word by more than half of their own box: one word read twice. */
+export function dropDuplicates(words: readonly OcrWord[]): OcrWord[] {
+  const kept: OcrWord[] = [];
+  for (const word of [...words].sort((a, b) => b.confidence - a.confidence)) {
+    const area = (word.x1 - word.x0) * (word.y1 - word.y0);
+    const twice = kept.some((other) => {
+      const across = Math.min(word.x1, other.x1) - Math.max(word.x0, other.x0);
+      const down = Math.min(word.y1, other.y1) - Math.max(word.y0, other.y0);
+      return (
+        across > 0 &&
+        down > 0 &&
+        across * down > DUPLICATE_OVERLAP * Math.min(area, (other.x1 - other.x0) * (other.y1 - other.y0))
+      );
+    });
+    if (!twice) kept.push(word);
+  }
+  return words.filter((word) => kept.includes(word));
+}
+
+/** The font size one word's height gives, by what its text holds; none for a word of symbols. */
+function wordSize(word: OcrWord): number | undefined {
+  if (word.size !== undefined) return word.size;
+  if (!LETTER_OR_DIGIT.test(word.text)) return undefined;
+  let top = ASCENDER;
+  if (MARKED_CAPITAL.test(word.text)) top = MARKED;
+  else if (X_ONLY.test(word.text)) top = X_HEIGHT;
+  const bottom = HAS_DESCENDER.test(word.text) ? DESCENDER : 0;
+  return (word.y1 - word.y0) / (top + bottom);
+}
+
+/** The size of a line of words: the median of the words' own, else what the ink extent gives. */
+function lineSize(words: readonly OcrWord[]): number {
+  const sizes = words.flatMap((word) => wordSize(word) ?? []);
+  if (sizes.length > 0) return median(sizes);
+  const top = Math.min(...words.map((word) => word.y0));
+  const bottom = Math.max(...words.map((word) => word.y1));
+  return (bottom - top) / INK_EXTENT;
+}
+
+/** The baseline (page y) of a line: tesseract's where it found one, else the median of the words' bottoms less their descenders. */
+function baselineOf(words: readonly OcrWord[], size: number): number {
+  const found = words.find((word) => word.baseline !== undefined)?.baseline;
+  if (found !== undefined) return (found.y0 + found.y1) / 2;
+  const bottoms = words
+    .filter((word) => wordSize(word) !== undefined)
+    .map((word) => word.y1 - (HAS_DESCENDER.test(word.text) ? DESCENDER * size : 0));
+  return bottoms.length > 0 ? median(bottoms) : Math.max(...words.map((word) => word.y1)) - DESCENT * size;
+}
+
 interface Line {
   readonly words: readonly OcrWord[];
   readonly x0: number;
   readonly x1: number;
   readonly y0: number;
   readonly y1: number;
-  /** The size the ink extent alone gives. */
-  readonly extentSize: number;
+  /** The font size the words' heights give, before it is rounded or snapped to the paragraph's. */
+  readonly size: number;
+  readonly baseline: number;
+  /** The picture region the words lie in (−1: on the page itself). */
+  readonly region: number;
 }
 
-function toLine(words: readonly OcrWord[]): Line {
+function toLine(words: readonly OcrWord[], region: number): Line {
   const sorted = [...words].sort((a, b) => a.x0 - b.x0);
-  const y0 = Math.min(...sorted.map((word) => word.y0));
-  const y1 = Math.max(...sorted.map((word) => word.y1));
+  const size = lineSize(sorted);
   return {
     words: sorted,
     x0: Math.min(...sorted.map((word) => word.x0)),
     x1: Math.max(...sorted.map((word) => word.x1)),
-    y0,
-    y1,
-    extentSize: (y1 - y0) / INK_EXTENT,
+    y0: Math.min(...sorted.map((word) => word.y0)),
+    y1: Math.max(...sorted.map((word) => word.y1)),
+    size,
+    baseline: baselineOf(sorted, size),
+    region,
   };
 }
 
-/** The baseline (page y) of a line: tesseract's where it found one, else from the ink extent. */
-function baselineOf(line: Line, size: number): number {
-  const found = line.words.find((word) => word.baseline !== undefined)?.baseline;
-  if (found !== undefined) return (found.y0 + found.y1) / 2;
-  return (line.y0 + ASCENT * size + (line.y1 - DESCENT * size)) / 2;
+/** The index of the smallest region containing the centre of a word, −1 where there is none. */
+function regionIndex(regions: readonly Box[]): (word: OcrWord) => number {
+  const bySize = regions
+    .map((box, index) => ({ box, index, area: (box[2] - box[0]) * (box[3] - box[1]) }))
+    .sort((a, b) => a.area - b.area);
+  return (word) => {
+    const x = (word.x0 + word.x1) / 2;
+    const y = (word.y0 + word.y1) / 2;
+    const hit = bySize.find(({ box }) => x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]);
+    return hit === undefined ? -1 : hit.index;
+  };
+}
+
+/** The words without the `misread` ones that lie over a picture region (an icon, a chart). */
+export function dropMisreads(
+  words: readonly OcrWord[],
+  regions: readonly Box[],
+  misread: ReadonlySet<OcrWord>,
+): OcrWord[] {
+  const within = regionIndex(regions);
+  return words.filter((word) => !(misread.has(word) && within(word) >= 0));
 }
 
 /** One word's run attributes, before neighbouring words are merged. */
@@ -285,6 +431,9 @@ interface Token {
   readonly bold: boolean;
   readonly color: Rgb;
   readonly note: string | undefined;
+  /** The word's box, page points from the left. */
+  readonly x0: number;
+  readonly x1: number;
 }
 
 const sameColour = (a: Rgb, b: Rgb): boolean =>
@@ -292,16 +441,138 @@ const sameColour = (a: Rgb, b: Rgb): boolean =>
   Math.abs(a[1] - b[1]) <= SAME_COLOUR &&
   Math.abs(a[2] - b[2]) <= SAME_COLOUR;
 
-/** The runs of a line: neighbours with the same look are one run; a noted word stands alone. */
-function runsOf(tokens: readonly Token[], size: number, font: string): TextRun[] {
-  const runs: { run: TextRun; color: Rgb }[] = [];
+/** The advance (em) of a Unicode value in a stand-in family (Arial, Times New Roman, Courier New), `undefined` where unknown. */
+export type Advance = (family: string, bold: boolean, unicode: number) => number | undefined;
+
+/** The stand-in families a scan's text is set in, sans first: it wins unless another is clearly closer. */
+const FAMILIES = ['Arial', 'Times New Roman', 'Courier New'] as const;
+/** A family replaces Arial when the spread of its word-width ratios is under this × Arial's. */
+const SWITCH_SPREAD = 0.8;
+/** Words (3 or more letters or digits) needed before the page's family is judged. */
+const MIN_WORDS = 8;
+/** Advance of a character the family has no glyph for, em. */
+const FALLBACK_ADVANCE = 0.5;
+
+const advanceOf = (advance: Advance, family: string, bold: boolean, code: number): number =>
+  advance(family, bold, code) ?? FALLBACK_ADVANCE;
+
+/**
+ * The family the page's words are set in: for each stand-in, the ratio of every word's box width
+ * to the width the family gives it at its line's size; the family whose ratios agree best (the
+ * median distance from their median, in log) is the one — a typewriter's words are all
+ * 0.6 em a letter, a serif's are not Arial's.
+ */
+function pickFamily(lines: readonly Line[], advance: Advance): string {
+  let best: string = FAMILIES[0];
+  let bestSpread = Infinity;
+  for (const family of FAMILIES) {
+    const logs: number[] = [];
+    for (const line of lines) {
+      for (const word of line.words) {
+        if ((word.text.match(/[\p{L}\p{N}]/gu) ?? []).length < 3) continue;
+        let em = 0;
+        for (const char of word.text) em += advanceOf(advance, family, false, char.codePointAt(0) as number);
+        logs.push(Math.log((word.x1 - word.x0) / (em * line.size)));
+      }
+    }
+    if (logs.length < MIN_WORDS) return FAMILIES[0];
+    const centre = median(logs);
+    const spread = median(logs.map((value) => Math.abs(value - centre)));
+    if (family === FAMILIES[0] || spread < SWITCH_SPREAD * bestSpread) {
+      best = family;
+      bestSpread = spread;
+    }
+  }
+  return best;
+}
+
+/** A line whose height-based size exceeds the one its word widths give by this factor has an inflated height (a speck joined the box). */
+const INFLATED = 1.3;
+/** …and is set at the width-based size × this. */
+const INFLATED_KEEP = 1.1;
+
+/**
+ * The size of a line: its heights' (`line.size`), unless the words are much narrower than that
+ * size lets `family` set them — a box that grew over a speck or an accent of the line below —
+ * then a little over what the widths give.
+ */
+function sizeOf(line: Line, family: string, advance: Advance | undefined): number {
+  if (advance === undefined) return line.size;
+  const sizes: number[] = [];
+  for (const word of line.words) {
+    if ((word.text.match(/[\p{L}\p{N}]/gu) ?? []).length < 3) continue;
+    let em = 0;
+    for (const char of word.text) em += advanceOf(advance, family, false, char.codePointAt(0) as number);
+    sizes.push((word.x1 - word.x0) / em);
+  }
+  if (sizes.length === 0) return line.size;
+  const byWidth = median(sizes);
+  return line.size > INFLATED * byWidth ? INFLATED_KEEP * byWidth : line.size;
+}
+
+/** A word box this much narrower or wider than the word's natural width is not trusted (a misread, a box grown over a mark): its letters are set at the natural pitch from the box's left edge. */
+const FIT_LOW = 0.75;
+const FIT_HIGH = 1.35;
+
+/** One piece of a run's text: a word with the page positions of its box ends, or a space (`NaN`). */
+interface Part {
+  readonly text: string;
+  readonly x0: number;
+  readonly x1: number;
+}
+
+/** Where the scan has each character of a run: a word's letters spread over its box by their advances, spaces unplaced. */
+function fitOf(
+  parts: readonly Part[],
+  family: string,
+  bold: boolean,
+  size: number,
+  advance: Advance,
+): RunFit {
+  const advances: number[] = [];
+  const starts: number[] = [];
+  const ends: number[] = [];
+  for (const part of parts) {
+    const ems = [...part.text].map((char) => advanceOf(advance, family, bold, char.codePointAt(0) as number));
+    const total = ems.reduce((sum, em) => sum + em, 0);
+    const natural = total * size;
+    const width = part.x1 - part.x0;
+    const span = width < FIT_LOW * natural || width > FIT_HIGH * natural ? natural : width;
+    let seen = 0;
+    for (const em of ems) {
+      advances.push(em);
+      starts.push(part.x0 + (span * seen) / total);
+      seen += em;
+      ends.push(part.x0 + (span * seen) / total);
+    }
+  }
+  return { advances, starts, ends, hscale: 1 };
+}
+
+/** The runs of a line: neighbours with the same look are one run; a noted word stands alone. With `advance`, each run carries where the scan has its letters. */
+function runsOf(
+  tokens: readonly Token[],
+  size: number,
+  family: string,
+  advance: Advance | undefined,
+): TextRun[] {
+  const metrics = advance !== undefined && advance(family, false, 97) !== undefined ? advance : undefined;
+  const space: Part = { text: ' ', x0: Number.NaN, x1: Number.NaN };
+  const runs: { run: TextRun; color: Rgb; parts: Part[] }[] = [];
   for (const [index, token] of tokens.entries()) {
     const last = runs[runs.length - 1];
+    const word: Part = { text: token.text, x0: token.x0, x1: token.x1 };
     let text = token.text;
+    let lead = false;
     if (index > 0 && last !== undefined) {
       // The space belongs to the run before, unless that run is a noted word.
-      if (last.run.note === undefined) last.run = { ...last.run, text: `${last.run.text} ` };
-      else text = ` ${text}`;
+      if (last.run.note === undefined) {
+        last.run = { ...last.run, text: `${last.run.text} ` };
+        last.parts.push(space);
+      } else {
+        text = ` ${text}`;
+        lead = true;
+      }
     }
     if (
       last !== undefined &&
@@ -311,12 +582,13 @@ function runsOf(tokens: readonly Token[], size: number, font: string): TextRun[]
       sameColour(last.color, token.color)
     ) {
       last.run = { ...last.run, text: last.run.text + text };
+      last.parts.push(word);
       continue;
     }
     runs.push({
       run: {
         text,
-        font,
+        font: family,
         size,
         bold: token.bold,
         italic: false,
@@ -325,58 +597,146 @@ function runsOf(tokens: readonly Token[], size: number, font: string): TextRun[]
         ...(token.note === undefined ? {} : { note: token.note }),
       },
       color: token.color,
+      parts: lead ? [space, word] : [word],
     });
   }
-  return runs.map((entry) => entry.run);
-}
-
-interface Group {
-  readonly lines: Map<number, OcrWord[]>;
-}
-
-/** Words → paragraphs → lines, in the order tesseract gave them; a word without indices stands alone. */
-function groupWords(words: readonly OcrWord[]): Line[][] {
-  const paragraphs = new Map<string, Group>();
-  for (const [index, word] of words.entries()) {
-    const paragraph = `${word.block ?? 0}:${word.paragraph ?? `alone${index}`}`;
-    let group = paragraphs.get(paragraph);
-    if (group === undefined) {
-      group = { lines: new Map() };
-      paragraphs.set(paragraph, group);
-    }
-    const key = word.line ?? -1 - index;
-    const line = group.lines.get(key);
-    if (line === undefined) group.lines.set(key, [word]);
-    else line.push(word);
-  }
-  return [...paragraphs.values()].map((group) =>
-    [...group.lines.values()].map(toLine).sort((a, b) => a.y0 - b.y0),
+  return runs.map(({ run, parts }) =>
+    metrics === undefined ? run : { ...run, fit: fitOf(parts, family, run.bold, size, metrics) },
   );
 }
 
 /**
- * The text boxes of a recognised page: one per tesseract paragraph. `flagged` lists the words
- * whose confidence is below `lowConfidence`; each is a run of its own with a `note`.
+ * Tesseract's lines, cut where the gap between two words is wider than a column gutter
+ * (`GUTTER` × the size) or where one word lies in another region than the one before. A word
+ * without a line index stands alone.
+ */
+function groupLines(words: readonly OcrWord[], regionOf: (word: OcrWord) => number): Line[] {
+  const found = new Map<string, OcrWord[]>();
+  for (const [index, word] of words.entries()) {
+    const key = word.line === undefined ? `alone${index}` : `${word.line}`;
+    const line = found.get(key);
+    if (line === undefined) found.set(key, [word]);
+    else line.push(word);
+  }
+  const lines: Line[] = [];
+  for (const members of found.values()) {
+    const sorted = [...members].sort((a, b) => a.x0 - b.x0);
+    const reach = GUTTER * lineSize(sorted);
+    let piece: OcrWord[] = [];
+    let right = -Infinity;
+    for (const word of sorted) {
+      if (piece.length > 0 && (word.x0 - right > reach || regionOf(word) !== regionOf(piece[0] as OcrWord))) {
+        lines.push(toLine(piece, regionOf(piece[0] as OcrWord)));
+        piece = [];
+      }
+      piece.push(word);
+      right = piece.length === 1 ? word.x1 : Math.max(right, word.x1);
+    }
+    lines.push(toLine(piece, regionOf(piece[0] as OcrWord)));
+  }
+  return lines;
+}
+
+/** Whether `line` carries on the paragraph whose last line is `last`: same region, aligned, a line below at a similar size. */
+function continues(last: Line, line: Line): boolean {
+  if (last.region !== line.region) return false;
+  const high = Math.max(last.size, line.size);
+  const leading = line.baseline - last.baseline;
+  const ratio = line.size / last.size;
+  if (leading < MIN_LEADING * high || leading > MAX_LEADING * high) return false;
+  if (ratio < SAME_SIZE_LOW || ratio > SAME_SIZE_HIGH) return false;
+  const reach = ALIGN * high;
+  return (
+    Math.abs(line.x0 - last.x0) <= reach ||
+    Math.abs((line.x0 + line.x1) / 2 - (last.x0 + last.x1) / 2) <= reach
+  );
+}
+
+/** Lines, top to bottom, into paragraphs: each line joins the nearest paragraph above it that it continues. */
+function groupParagraphs(lines: readonly Line[]): Line[][] {
+  const paragraphs: Line[][] = [];
+  for (const line of [...lines].sort((a, b) => a.baseline - b.baseline || a.x0 - b.x0)) {
+    let best: Line[] | undefined;
+    let nearest = Infinity;
+    for (const paragraph of paragraphs) {
+      const last = paragraph[paragraph.length - 1] as Line;
+      const leading = line.baseline - last.baseline;
+      if (leading < nearest && continues(last, line)) {
+        best = paragraph;
+        nearest = leading;
+      }
+    }
+    if (best === undefined) paragraphs.push([line]);
+    else best.push(line);
+  }
+  return paragraphs;
+}
+
+const boundsOf = (lines: readonly Line[]): Box => [
+  Math.min(...lines.map((line) => line.x0)),
+  Math.min(...lines.map((line) => line.y0)),
+  Math.max(...lines.map((line) => line.x1)),
+  Math.max(...lines.map((line) => line.y1)),
+];
+
+/**
+ * Reading order by recursive cuts: items are split at the widest gap that no box crosses,
+ * horizontal (top part first) or vertical (left part first) — a column gutter outweighs the
+ * space between a heading and its list, so a sidebar is read before the main column — and what
+ * no gap divides is read top to bottom. A tie goes to the horizontal gap.
+ */
+function readingOrder<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
+  if (items.length < 2) return [...items];
+  let cut: { sorted: T[]; at: number; gap: number } | undefined;
+  for (const axis of [1, 0] as const) {
+    const sorted = [...items].sort((a, b) => boxOf(a)[axis] - boxOf(b)[axis]);
+    let end = boxOf(sorted[0] as T)[axis + 2] as number;
+    for (let at = 1; at < sorted.length; at += 1) {
+      const box = boxOf(sorted[at] as T);
+      const gap = (box[axis] as number) - end;
+      if (gap > 0 && (cut === undefined || gap > cut.gap)) cut = { sorted, at, gap };
+      end = Math.max(end, box[axis + 2] as number);
+    }
+  }
+  if (cut !== undefined) {
+    return [
+      ...readingOrder(cut.sorted.slice(0, cut.at), boxOf),
+      ...readingOrder(cut.sorted.slice(cut.at), boxOf),
+    ];
+  }
+  return [...items].sort((a, b) => boxOf(a)[1] - boxOf(b)[1] || boxOf(a)[0] - boxOf(b)[0]);
+}
+
+/**
+ * The text boxes of a recognised page: one per paragraph, in reading order. `regions` are the
+ * boxes of the solid regions `ocrBackground` found (cards, bands, photos; not loose marks): lines and paragraphs never cross their edge.
+ * `flagged` lists the words with a letter or digit whose confidence is below `lowConfidence`;
+ * each is a run of its own with a `note`. With `advance` the page is set in the stand-in family
+ * whose letter widths fit the word boxes best (`font` names one instead) and every run carries
+ * where the scan has its letters, so the writer places each word where the scan has it.
  */
 export function ocrTextBoxes(
   words: readonly OcrWord[],
   image: RgbaImage,
   lowConfidence: number,
-  font = 'Arial',
+  regions: readonly Box[] = [],
+  advance?: Advance,
+  font?: string,
 ): { boxes: TextBox[]; flagged: { text: string; confidence: number }[] } {
   const flagged: { text: string; confidence: number }[] = [];
   const inks = new Map<OcrWord, WordInk>();
-  const paragraphs = groupWords(words);
+  const paragraphs = readingOrder(groupParagraphs(groupLines(words, regionIndex(regions))), boundsOf);
   const lineStroke = new Map<Line, number>();
   const sizes = new Map<Line, number>();
+  const family = font ?? (advance === undefined ? FAMILIES[0] : pickFamily(paragraphs.flat(), advance));
 
   for (const lines of paragraphs) {
     const upper = quantile(
-      lines.map((line) => line.extentSize),
+      lines.map((line) => sizeOf(line, family, advance)),
       0.75,
     );
     for (const line of lines) {
-      const own = line.extentSize;
+      const own = sizeOf(line, family, advance);
       const size = own >= SIZE_SNAP_LOW * upper && own <= SIZE_SNAP_HIGH * upper ? upper : own;
       const rounded = Math.max(1, Math.round(size * 2) / 2);
       sizes.set(line, rounded);
@@ -400,17 +760,19 @@ export function ocrTextBoxes(
       const size = sizes.get(line) as number;
       const bold = pageStroke > 0 && (lineStroke.get(line) as number) >= BOLD_RATIO * pageStroke;
       const tokens = line.words.map((word): Token => {
-        const low = word.confidence / 100 < lowConfidence;
+        const low = word.confidence / 100 < lowConfidence && !SYMBOLIC.test(word.text);
         if (low) flagged.push({ text: word.text, confidence: word.confidence / 100 });
         return {
           text: word.text,
           bold,
           color: (inks.get(word) as WordInk).color,
           note: low ? `Low OCR confidence (${Math.round(word.confidence)} %)` : undefined,
+          x0: word.x0,
+          x1: word.x1,
         };
       });
-      baselines.push(baselineOf(line, size));
-      textLines.push({ runs: runsOf(tokens, size, font) });
+      baselines.push(line.baseline);
+      textLines.push({ runs: runsOf(tokens, size, family, advance) });
     }
     const firstSize = sizes.get(lines[0] as Line) as number;
     const gaps = baselines.slice(1).map((baseline, index) => baseline - (baselines[index] as number));
@@ -498,7 +860,7 @@ function commonColor(data: Uint8Array): Rgb {
 export function ocrBackground(
   image: RgbaImage,
   words: readonly OcrWord[],
-): { pageColor: number; regions: { box: Box; rgba: RgbaImage }[] } {
+): { pageColor: number; regions: { box: Box; rgba: RgbaImage; solid: boolean }[] } {
   const { width, height, scale } = image;
   const data = new Uint8Array(image.data);
 
@@ -525,7 +887,7 @@ export function ocrBackground(
   }
   const grown = dilate(mask, width, height, Math.max(1, Math.round(MERGE_GAP * scale)));
 
-  const regions: { box: Box; rgba: RgbaImage }[] = [];
+  const regions: { box: Box; rgba: RgbaImage; solid: boolean }[] = [];
   const stack = new Int32Array(width * height);
   for (let start = 0; start < grown.length; start += 1) {
     if (grown[start] === 0) continue;
@@ -534,6 +896,7 @@ export function ocrBackground(
     let maxX = -1;
     let maxY = -1;
     let top = 0;
+    let inked = 0;
     stack[top++] = start;
     grown[start] = 0;
     while (top > 0) {
@@ -541,6 +904,7 @@ export function ocrBackground(
       const x = at % width;
       const y = (at - x) / width;
       if (mask[at] === 1) {
+        inked += 1;
         minX = Math.min(minX, x);
         maxX = Math.max(maxX, x);
         minY = Math.min(minY, y);
@@ -577,6 +941,7 @@ export function ocrBackground(
     regions.push({
       box: [x0 / scale, y0 / scale, x1 / scale, y1 / scale],
       rgba: { width: cropWidth, height: y1 - y0, data: crop, scale },
+      solid: inked >= SOLID_FILL * (maxX - minX + 1) * (maxY - minY + 1),
     });
   }
   return { pageColor: rgbNumber(page), regions };

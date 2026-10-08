@@ -39,6 +39,8 @@ export type OcrWord = {
   readonly block?: number;
   readonly paragraph?: number;
   readonly line?: number;
+  /** The font size the word was written with (page points), for words read from a text layer: its box is the em box, not ink. */
+  readonly size?: number;
   /** The baseline of the word's line in page points, when tesseract found one. */
   readonly baseline?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
 };

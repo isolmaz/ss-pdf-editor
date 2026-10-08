@@ -128,8 +128,14 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(boxes[0]?.top).toBeLessThan(100);
     expect(xml.match(/<w:commentRangeStart /g)).toHaveLength(2); // the DrawingML text and its VML fallback
     expect(xml.match(/<w:commentReference /g)).toHaveLength(2);
-    expect(xml).toMatch(
-      /<w:commentRangeStart w:id="0"\/><w:r>(?:(?!<\/w:r>).)*<w:t xml:space="preserve">world<\/w:t><\/w:r><w:commentRangeEnd w:id="0"\/><w:r><w:rPr><w:rStyle w:val="CommentReference"\/><\/w:rPr><w:commentReference w:id="0"\/><\/w:r>/,
+    // The word's letters may be spaced to the scan's box, so its text can be several runs: they are what is commented.
+    const noted =
+      /<w:commentRangeStart w:id="0"\/>((?:<w:r>(?:(?!<\/w:r>).)*<\/w:r>)+)<w:commentRangeEnd w:id="0"\/><w:r><w:rPr><w:rStyle w:val="CommentReference"\/><\/w:rPr><w:commentReference w:id="0"\/><\/w:r>/.exec(
+        xml,
+      );
+    expect(noted).not.toBeNull();
+    expect(Array.from((noted?.[1] ?? '').matchAll(/<w:t [^>]*>([^<]*)<\/w:t>/g), (m) => m[1]).join('')).toBe(
+      'world',
     );
 
     // Comments part, relationship and content type.
@@ -177,6 +183,38 @@ describe('exact layout: a scanned page read by OCR', () => {
     const zip = await JSZip.loadAsync(result.file.bytes);
     expect(zip.file('word/comments.xml')).toBeNull();
     expect(await text(zip, '[Content_Types].xml')).not.toContain('comments');
+    expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrLowConfidence')).toBe(false);
+  });
+
+  it('drops symbol-only guesses over a picture, keeps those on the page, and flags neither', async () => {
+    const guess = (text: string, x0: number, y0: number): OcrWord => ({
+      text,
+      x0,
+      y0,
+      x1: x0 + 10,
+      y1: y0 + 12,
+      confidence: 30,
+      block: 2,
+      paragraph: 2,
+      line: 2,
+    });
+    // '*' lies over the dark panel (x 40–240, y 200–300 of the 400 × 500 page), '•' on the page colour
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => [...words([96, 95, 97]), guess('*', 100, 250), guess('•', 300, 60)],
+        },
+      },
+      run,
+    );
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    expect(xml).toContain('•');
+    expect(xml).not.toContain('*');
+    expect(zip.file('word/comments.xml')).toBeNull();
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrLowConfidence')).toBe(false);
   });
 
