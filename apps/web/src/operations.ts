@@ -752,9 +752,14 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'an embedded image is drawn content',
   },
   {
-    steps: ['mupdf:redact', 'applyRedactions'],
+    steps: ['mupdf:redact'],
     mayChange: ['pageContent', 'textContent', 'annotations'],
-    why: 'redaction removes glyphs from the content stream and can remove the annotations it covers',
+    why: 'the text editor erases the old glyphs through a MuPDF redaction pass, which also deletes the links it touches',
+  },
+  {
+    steps: ['applyRedactions'],
+    mayChange: ['pageContent', 'textContent', 'annotations', 'formFieldCount', 'formFieldValues'],
+    why: 'redaction removes glyphs from the content stream and removes every annotation and form field widget whose rectangle meets a mark; removing a field changes the field count, and the values of the fields that go with it',
   },
   {
     steps: ['text.draw'],

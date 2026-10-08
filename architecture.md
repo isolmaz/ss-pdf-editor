@@ -1097,9 +1097,10 @@ sequenceDiagram
     M->>M: createAnnotation('Redact') + setRect(rectToPageSpace(box, rotation))
     M->>M: structured-text coverage probe (empty marks are reported)
     M->>M: applyRedactions(black_boxes=false, lineArt=remove-if-touched, image/text method)
+    M->>M: sweep annotations + form fields under the marks (ops/redact-annots.ts)
     M->>M: save garbage=compact,compress,clean (single revision, no /Prev)
     M->>V: produced bytes
-    V-->>UI: re-opened, per-glyph check; a glyph >=50% covered fails verification
+    V-->>UI: re-opened, per-glyph check, annotation check; a glyph >=50% covered, or any annotation under a mark, fails verification
     UI->>A: needles read from the pre-redaction text inside the marks
     A-->>UI: residual terms, earlier revisions, orphan objects, structural markers
 ```
@@ -1115,11 +1116,30 @@ Details that matter:
 - Line art touched by a mark is removed, because a rule that runs through the box would
   reveal where the covered text started and ended. (Text replacement uses the opposite
   setting — a different operation with a different contract.)
+- `applyRedactions` erases page content and deletes the links it touches — nothing else. Measured
+  in the built app: a text field under a mark kept its `/V` and appearance, a sticky note kept its
+  `/Contents`, both stayed on the page and in `/AcroForm /Fields`, and the report still said the
+  content was gone. `ops/redact-annots.ts` therefore sweeps each marked page after the erase, in
+  PDF user space (the mark is flipped into the page box once; an annotation's `/Rect` is already
+  there whatever `/Rotate` says). Every annotation except `/Redact` whose `/Rect` shares area
+  with a mark — touching along an edge is not sharing — is removed whole: widgets, comments,
+  markup, stamps. A removed annotation takes its popup (`/Parent`) and its replies (`/IRT`, and
+  their replies) with it; a popup that goes alone clears its surviving owner's `/Popup`. A removed
+  widget leaves `/AcroForm /Fields` or its parent's `/Kids` (the walk starts at `/Fields`, so a
+  wrong `/Parent` does not matter) and `/CO`; a field left without a kid is dropped, one that still
+  has a widget outside the marks keeps its value. The removed objects are **deleted**, not just
+  unlinked, because a structure tree's `/OBJR` or a surviving dictionary that still pointed at
+  them would keep the secret in the written file (those references read as null). The report
+  lists the counts (`op.note.redact.fieldsRemoved`, `op.note.redact.annotationsRemoved`; a mark
+  that only removed a field is not reported as empty) and `OPERATION_TABLE` declares
+  `formFieldCount`/`formFieldValues` for `applyRedactions`.
 - The write uses `garbage=compact,compress,clean`, measured to leave a single revision
   with the erased stream's object dropped and the survivors renumbered.
 - `verifyRedaction()` re-opens the **produced** bytes, inverts the page's actual transform
   and walks the structured text per character; a page where any non-whitespace glyph is
-  ≥ 50 % covered throws `verification-failed`.
+  ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
+  annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
+  page the same way, so a form field's value cannot hide behind a clean text check.
 - `auditRedactedDocument()` is a raw-byte scan and **documents its own blind spot**: it
   cannot see inside deflated streams or object streams. It emits a `/FlateDecode` row and
   suppresses the orphan-object verdict entirely when `/ObjStm` is present, instead of
@@ -2605,6 +2625,10 @@ shows.
   not edit per-element `/Lang`, and the annotation fix leaves a parent tree that is not a
   flat `Nums` array alone.
 - **The redaction audit** cannot see inside deflated or object streams and says so.
+- **Redaction and forms.** An annotation or field goes whole when its `/Rect` meets a mark
+  (a full-page overlay annotation that crosses a mark goes with it); the sweep reads `/Rect`,
+  not `/QuadPoints` or the drawn appearance. A hybrid form's XFA packets are not edited, so a
+  removed field's value can remain in the datasets.
 - **Text editing** handles horizontal text in a shipped face only; everything else is
   marked not editable or substituted, in the UI, before the user types.
 - **Find and replace** skips matches in text that is not editable and table cells with no

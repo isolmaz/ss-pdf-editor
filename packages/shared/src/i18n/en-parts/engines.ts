@@ -14,6 +14,9 @@ export const enginesPart = {
   'op.note.redact.metadataCleared': 'Metadata cleared.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
+  'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
+  'op.note.redact.annotationsRemoved':
+    '{count} annotation(s) (comments, markup) under the marked areas removed.',
   'op.progress.encrypt': 'Encrypting document',
   'op.progress.decrypt': 'Removing password',
   'op.progress.redact': 'Erasing areas',

@@ -405,8 +405,12 @@ nothing leaving the browser.
 
 - **True redaction.**
   - Marks become MuPDF redaction annotations, and `applyRedactions` removes the glyphs.
+  - MuPDF leaves form fields and annotations alone, so the writer removes every one whose
+    rectangle meets a mark: a field's widget (and the field itself, with its value), a note
+    or other markup with its popup and replies, a link. Their objects are deleted, so
+    neither a value nor a note's text stays in the file. The report counts what went.
   - The file is then rewritten with `garbage=compact,compress,clean`, and the output is
-    re-checked glyph by glyph.
+    re-checked glyph by glyph and for any annotation or field still under a mark.
   - An object-level audit reports any remaining terms, earlier revisions and leftover
     structure.
   - A staged mark stays an intent until you apply it. Saving while marks are still staged
@@ -691,6 +695,11 @@ The limits are defined once, in
   - The audit scans raw bytes, so it cannot see inside compressed streams or object
     streams.
   - It says so, and when object streams are present it skips the orphan-object verdict.
+- **Redaction and forms.**
+  - A comment or field is removed whole when its rectangle meets a mark; there is no partial
+    erase of a note.
+  - The XFA packets of a hybrid form are not edited, so a removed field's value can remain in
+    them.
 - **PDF/A.**
   - The checker is a subset of veraPDF. A clean result is not a certificate: font programs,
     ICC profile bodies, exact file syntax, XMP value formats and the accessibility rules of
