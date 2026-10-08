@@ -35,8 +35,11 @@ export interface ReadAloudApi {
 }
 
 export interface ReadAloudOptions {
-  /** BCP-47 language of the voice to look for; Turkish is the product language. */
-  readonly lang?: string;
+  /**
+   * Language of the voice to look for, matched as a prefix of the voice's tag (see
+   * `pickLocalVoice`): the document's own, or the interface's when it declares none.
+   */
+  readonly lang: string;
 }
 
 /** `null` outside a browser or without Web Speech: the caller then has nothing to offer. */
@@ -50,8 +53,8 @@ function speechSynthesisOrNull(): SpeechSynthesis | null {
  * and resets the controls, and unmounting always cancels — the engine's queue is
  * document-global, so a forgotten utterance would keep talking behind a closed pane.
  */
-export function useReadAloud(text: string, options: ReadAloudOptions = {}): ReadAloudApi {
-  const lang = options.lang ?? 'tr';
+export function useReadAloud(text: string, options: ReadAloudOptions): ReadAloudApi {
+  const { lang } = options;
   const [voices, setVoices] = useState<readonly SpeechSynthesisVoice[]>(
     () => speechSynthesisOrNull()?.getVoices() ?? [],
   );

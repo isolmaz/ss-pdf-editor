@@ -1,5 +1,7 @@
 /**
- * Reading mode's read-aloud: only a local voice in the product language may speak, the page is
+ * Reading mode's read-aloud: only a local voice in the document's language may speak (the
+ * fixtures here declare no `/Lang`, so it is the English interface's; `ui-read-aloud-lang.spec.ts`
+ * covers the choice), the page is
  * spoken sentence by sentence in order, and Pause, Resume, Stop, the rate and a change of page
  * act on the speech queue. The platform's speech engine is replaced by a recording stand-in
  * (it speaks nothing, but it is asked exactly what a real one would be), so what is asserted
@@ -15,7 +17,7 @@ import { endUtterance, speechLog, stubSpeech } from './ui-panels9-helpers';
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
 
-const LOCAL_TURKISH = { name: 'Local Turkish', lang: 'tr-TR', localService: true } as const;
+const LOCAL_ENGLISH = { name: 'Local English', lang: 'en-US', localService: true } as const;
 
 /** Page one reads as three sentences; page two as two. */
 const speechPdf = (): Uint8Array => labelledPdf('Alpha one. Beta two.', 2);
@@ -35,17 +37,17 @@ const rate = (page: Page): Locator => page.getByRole('slider', { name: 'Rate' })
 test.describe('no usable voice', () => {
   for (const [title, voices] of [
     ['no voice at all', []],
-    ['only a cloud voice in the language', [{ name: 'Cloud Turkish', lang: 'tr-TR', localService: false }]],
+    ['only a cloud voice in the language', [{ name: 'Cloud English', lang: 'en-US', localService: false }]],
     [
       'only a local voice in another language',
-      [{ name: 'Local English', lang: 'en-US', localService: true }],
+      [{ name: 'Local Turkish', lang: 'tr-TR', localService: true }],
     ],
   ] as const) {
     test(`${title}: nothing can be spoken, and the pane says why`, async ({ page }) => {
       await stubSpeech(page, voices);
       await openReading(page);
       await expect(
-        page.getByText('There is no local Turkish voice on this device; read-aloud is unavailable.'),
+        page.getByText('There is no local English voice on this device; read-aloud is unavailable.'),
       ).toBeVisible();
       await expect(read(page)).toBeDisabled();
       await expect(stop(page)).toBeDisabled();
@@ -59,12 +61,12 @@ test('Read speaks the page sentence by sentence with the local voice; the contro
   page,
 }) => {
   await stubSpeech(page, [
-    { name: 'Cloud Turkish', lang: 'tr-TR', localService: false },
-    { name: 'Regional Turkish', lang: 'tr-TR', localService: true },
-    { name: 'Plain Turkish', lang: 'tr', localService: true },
+    { name: 'Cloud English', lang: 'en-US', localService: false },
+    { name: 'Regional English', lang: 'en-US', localService: true },
+    { name: 'Plain English', lang: 'en', localService: true },
   ]);
   await openReading(page);
-  await expect(page.getByText('There is no local Turkish voice')).toHaveCount(0);
+  await expect(page.getByText('There is no local English voice')).toHaveCount(0);
   await expect(read(page)).toBeEnabled();
   // Nothing is playing: nothing to stop.
   await expect(stop(page)).toBeDisabled();
@@ -72,12 +74,12 @@ test('Read speaks the page sentence by sentence with the local voice; the contro
   await read(page).click();
   await expect(pause(page)).toBeVisible();
   await expect(stop(page)).toBeEnabled();
-  // The whole page is queued at once, in order; the voice is the local one whose tag is exactly "tr".
+  // The whole page is queued at once, in order; the voice is the local one whose tag is exactly "en".
   const { utterances } = await speechLog(page);
   expect(utterances).toEqual([
-    { text: 'Alpha one.', rate: 1, voice: 'Plain Turkish', lang: 'tr' },
-    { text: 'Beta two.', rate: 1, voice: 'Plain Turkish', lang: 'tr' },
-    { text: '1', rate: 1, voice: 'Plain Turkish', lang: 'tr' },
+    { text: 'Alpha one.', rate: 1, voice: 'Plain English', lang: 'en' },
+    { text: 'Beta two.', rate: 1, voice: 'Plain English', lang: 'en' },
+    { text: '1', rate: 1, voice: 'Plain English', lang: 'en' },
   ]);
 
   // The first two sentences end; while the last is being spoken the pane is still speaking.
@@ -90,7 +92,7 @@ test('Read speaks the page sentence by sentence with the local voice; the contro
 });
 
 test('Pause holds the speech and Read resumes it where it was; Stop ends it', async ({ page }) => {
-  await stubSpeech(page, [LOCAL_TURKISH]);
+  await stubSpeech(page, [LOCAL_ENGLISH]);
   await openReading(page);
   await read(page).click();
   await pause(page).click();
@@ -114,7 +116,7 @@ test('Pause holds the speech and Read resumes it where it was; Stop ends it', as
 test('changing the rate while speaking restarts at the sentence being spoken, at the new rate', async ({
   page,
 }) => {
-  await stubSpeech(page, [LOCAL_TURKISH]);
+  await stubSpeech(page, [LOCAL_ENGLISH]);
   await openReading(page);
   await expect(page.getByText('1.00×')).toBeVisible();
   await read(page).click();
@@ -126,8 +128,8 @@ test('changing the rate while speaking restarts at the sentence being spoken, at
   const { utterances } = await speechLog(page);
   // The first reading queued three; the restart queues what is left, from the second sentence.
   expect(utterances.slice(3)).toEqual([
-    { text: 'Beta two.', rate: 1.5, voice: 'Local Turkish', lang: 'tr-TR' },
-    { text: '1', rate: 1.5, voice: 'Local Turkish', lang: 'tr-TR' },
+    { text: 'Beta two.', rate: 1.5, voice: 'Local English', lang: 'en-US' },
+    { text: '1', rate: 1.5, voice: 'Local English', lang: 'en-US' },
   ]);
 
   // The ends of the range are the ends the pane offers.
@@ -145,7 +147,7 @@ test('changing the rate while speaking restarts at the sentence being spoken, at
 });
 
 test('an utterance that fails ends the speaking state', async ({ page }) => {
-  await stubSpeech(page, [LOCAL_TURKISH]);
+  await stubSpeech(page, [LOCAL_ENGLISH]);
   await openReading(page);
   await read(page).click();
   await expect(pause(page)).toBeVisible();
@@ -157,7 +159,7 @@ test('an utterance that fails ends the speaking state', async ({ page }) => {
 test('turning to another page stops the speech and the next Read speaks that page; closing the pane stops it too', async ({
   page,
 }) => {
-  await stubSpeech(page, [LOCAL_TURKISH]);
+  await stubSpeech(page, [LOCAL_ENGLISH]);
   await openReading(page);
   await read(page).click();
   await expect(pause(page)).toBeVisible();
@@ -186,7 +188,7 @@ test('turning to another page stops the speech and the next Read speaks that pag
 test('every paging key turns one page, a modified key and a key in the rate slider do not, and a page without text has nothing to read', async ({
   page,
 }) => {
-  await stubSpeech(page, [LOCAL_TURKISH]);
+  await stubSpeech(page, [LOCAL_ENGLISH]);
   await openPdf(page, 'speech.pdf', labelledPdf('Alpha one. Beta two.', 3));
   await menuItem(page, 'View', /Reading mode/);
   const pane = page.getByRole('region', { name: 'Reading mode' });
@@ -217,7 +219,7 @@ test('every paging key turns one page, a modified key and a key in the rate slid
 });
 
 test('a page whose words are only a picture says so and speaks nothing', async ({ page }) => {
-  await stubSpeech(page, [LOCAL_TURKISH]);
+  await stubSpeech(page, [LOCAL_ENGLISH]);
   await openPdf(page, 'scan.pdf', await scannedPdf([['Alpha one.']]));
   await menuItem(page, 'View', /Reading mode/);
   await expect(page.getByText('No readable text was found on this page.')).toBeVisible({ timeout: 30_000 });

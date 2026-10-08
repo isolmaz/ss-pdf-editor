@@ -30,11 +30,28 @@ export interface ReadingPaneProps {
   readonly onClose: () => void;
   /** The interface language's translator: the pane's words follow the shell's locale. */
   readonly t: Translator;
+  /**
+   * The language read-aloud looks a local voice for: the document's own when it declares
+   * one, else the interface's. A primary subtag ("de") matches every regional voice.
+   */
+  readonly lang: string;
   /** Current page, 0-based — the same number the shell tracks. */
   readonly pageNumber: number;
   readonly onPageChange: (page: number) => void;
   /** The shell's notice channel, for failures that belong in the status bar too. */
   readonly onNotice?: (message: string) => void;
+}
+
+/**
+ * The language's name in the interface language ("German", "Almanca"), for the sentence that
+ * says which voice is missing. A tag the platform cannot name is shown as it is.
+ */
+function languageName(lang: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: 'language' }).of(lang) ?? lang;
+  } catch {
+    return lang;
+  }
 }
 
 /** Widths of the loading skeleton's lines: fixed, so the pane never jumps while it fills. */
@@ -71,6 +88,7 @@ export function ReadingPane({
   open,
   onClose,
   t,
+  lang,
   pageNumber,
   onPageChange,
   onNotice,
@@ -85,6 +103,7 @@ export function ReadingPane({
         onPageChange={onPageChange}
         onClose={onClose}
         t={t}
+        lang={lang}
         {...(onNotice === undefined ? {} : { onNotice })}
       />
     </section>
@@ -97,6 +116,7 @@ interface ReadingBodyProps {
   readonly onPageChange: (page: number) => void;
   readonly onClose: () => void;
   readonly t: Translator;
+  readonly lang: string;
   readonly onNotice?: (message: string) => void;
 }
 
@@ -104,14 +124,14 @@ interface ReadingBodyProps {
  * The mounted half: everything that costs something (the engine read, the speech queue)
  * lives here, so closing the pane unmounts it and both stop.
  */
-function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, onNotice }: ReadingBodyProps) {
+function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, lang, onNotice }: ReadingBodyProps) {
   const region = useRef<HTMLDivElement | null>(null);
   const controller = useMemo(() => new AbortController(), []);
   useEffect(() => () => controller.abort(), [controller]);
 
   const { blocks, loading, error } = useReadingText(viewer, pageNumber, controller.signal);
   const text = useMemo(() => blocks.map((block) => block.text).join(' '), [blocks]);
-  const speech = useReadAloud(text);
+  const speech = useReadAloud(text, { lang });
 
   useEffect(() => {
     // The pane is where the user is looking, the notice is where the shell reports: a
@@ -176,7 +196,11 @@ function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, onNotice }:
             <SpeakerHigh size={14} aria-hidden="true" />
             {t('reading.voice')}
           </span>
-          {speech.available ? null : <span className="pdf-reading-hint">{t('reading.noLocalVoice')}</span>}
+          {speech.available ? null : (
+            <span className="pdf-reading-hint">
+              {t('reading.noLocalVoice', { language: languageName(lang, t.locale) })}
+            </span>
+          )}
           <Button
             shape="square"
             variant="ghost"

@@ -459,6 +459,17 @@ const TextLayer = lazy(async () => {
   return { default: module.TextLayer };
 });
 
+/**
+ * The primary language subtag of a catalog `/Lang` ("de-DE" → "de"), or `null` when the
+ * value is not a language tag (an empty string, "x-unknown"). The primary subtag is what
+ * a voice is matched on: a German document is read by any local German voice, not only by
+ * one of the same region.
+ */
+function primaryLanguage(declared: string): string | null {
+  const primary = declared.trim().split(/[-_]/)[0]?.toLowerCase() ?? '';
+  return /^[a-z]{2,3}$/.test(primary) ? primary : null;
+}
+
 export function App({ store }: AppProps) {
   const { theme, setTheme } = useTheme();
   const { locale } = useLocale();
@@ -857,6 +868,28 @@ export function App({ store }: AppProps) {
    */
   const [viewer, setViewer] = useState<ViewerApi | null>(null);
   const presentation = usePresentation(viewer);
+  /**
+   * The language the open document declares (catalog `/Lang`, which pdf.js reports as
+   * `info.Language`), as a primary subtag; `null` while unread or when it declares none.
+   * The viewer API is replaced with every document, so this follows the document on screen.
+   */
+  const [documentLanguage, setDocumentLanguage] = useState<string | null>(null);
+  useEffect(() => {
+    setDocumentLanguage(null);
+    if (viewer === null) return undefined;
+    let current = true;
+    void viewer.document.raw.getMetadata().then(
+      ({ info }) => {
+        if (!current) return;
+        const declared = (info as { readonly Language?: unknown } | null)?.Language;
+        setDocumentLanguage(typeof declared === 'string' ? primaryLanguage(declared) : null);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [viewer]);
 
   const activeTab = session.tabs.find((tab) => tab.id === session.activeId) ?? null;
   const activeHandle = activeTab === null ? null : (handles.current.get(activeTab.id) ?? null);
@@ -5912,6 +5945,7 @@ export function App({ store }: AppProps) {
             ) : null}
             <ReadingPane
               t={t}
+              lang={documentLanguage ?? locale}
               open={reading}
               onClose={() => setReading(false)}
               viewer={viewerApi.current}
