@@ -48,6 +48,7 @@ import {
   writeResult,
 } from './report';
 import { type FidelitySample, generatedSamples } from './samples';
+import { type ThresholdTable, thresholdFor } from './thresholds';
 
 interface Mode {
   id: string;
@@ -82,15 +83,7 @@ const listEnv = (name: string): string[] | undefined => {
 
 const thresholdTable = JSON.parse(
   readFileSync(new URL('./thresholds.json', import.meta.url), 'utf8'),
-) as Record<string, Record<string, Partial<Threshold>>>;
-
-function thresholdFor(mode: string, sample: string): Threshold {
-  const table = thresholdTable[mode] ?? {};
-  return {
-    ssim: table[sample]?.ssim ?? table.default?.ssim ?? null,
-    words: table[sample]?.words ?? table.default?.words ?? null,
-  };
-}
+) as ThresholdTable;
 
 async function loadSamples(): Promise<FidelitySample[]> {
   const origins = listEnv('FIDELITY_ORIGINS') ?? ['generated', 'public', 'local'];
@@ -284,7 +277,7 @@ for (const sample of samples) {
     test(`${sample.id} [${mode.id}]`, async ({ page }) => {
       const base = `${safeName(sample.id)}__${safeName(mode.id)}`;
       const docxPath = join(FIDELITY_DIR, `${base}.docx`);
-      const threshold = thresholdFor(mode.id, sample.id);
+      const threshold = thresholdFor(thresholdTable, mode.id, sample.id);
       const identity = {
         sample: sample.id,
         title: sample.title,

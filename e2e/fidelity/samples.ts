@@ -164,10 +164,10 @@ function buildCv(pdf: SamplePdf): void {
     { text: 'elif.celik@example.com', face: 'regular', color: LINK, uri: 'mailto:elif.celik@example.com' },
     { text: '  •  ', face: 'regular', color: MUTED },
     {
-      text: 'linkedin.com/in/elifcelik',
+      text: 'example.com/elif-celik',
       face: 'regular',
       color: LINK,
-      uri: 'https://www.linkedin.com/in/elifcelik',
+      uri: 'https://example.com/elif-celik',
     },
   ]);
   page.line(40, 138, 555.28, 138, { stroke: TEAL, lineWidth: 2 });

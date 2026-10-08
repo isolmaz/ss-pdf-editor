@@ -171,8 +171,11 @@ const QUOTES: ReadonlyArray<readonly [RegExp, string]> = [
  * `ı` on a Turkish machine, and a fold of `İ`/`ı` would hide exactly the bug being measured.
  */
 export function normalizeWords(text: string): string[] {
-  let t = text.normalize('NFKC').replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/g, '');
+  // Quotes and dashes first: NFKC would turn U+00B4 into a space + combining accent and
+  // U+2033 into two U+2032, which the mapping could then no longer recognise.
+  let t = text;
   for (const [pattern, replacement] of QUOTES) t = t.replace(pattern, replacement);
+  t = t.normalize('NFKC').replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/g, '');
   return t.split(/\s+/u).filter((word) => word.length > 0);
 }
 

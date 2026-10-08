@@ -57,7 +57,8 @@ and on manual dispatch:
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`.
 - **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test (below),
   with a LibreOffice installed from the official `.deb` tarball pinned by version and sha256. It
-  does not gate `deploy`; the report goes to the job summary and the `fidelity` artifact.
+  gates `deploy` like the jobs above (a `null` threshold is measured, not gated); the report goes
+  to the job summary and the `fidelity` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed: `wrangler deploy`
   with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
   `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or

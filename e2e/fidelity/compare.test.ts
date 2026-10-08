@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { compareWords, type Gray, joinHyphenation, normalizeWords, resizeBilinear, ssim } from './compare';
 
+describe('normalizeWords quotes', () => {
+  it('maps acute accent and double prime before NFKC', () => {
+    expect(normalizeWords('it\u00B4s')).toEqual(["it's"]);
+    expect(normalizeWords('it\u00B4s')).toEqual(normalizeWords("it's"));
+    expect(normalizeWords('12\u2033')).toEqual(['12"']);
+  });
+});
+
 /** A deterministic generator: the tests must not depend on `Math.random`. */
 function prng(seed: number): () => number {
   let s = seed >>> 0;
