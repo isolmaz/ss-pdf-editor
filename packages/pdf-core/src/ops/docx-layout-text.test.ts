@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import mammoth from 'mammoth';
 import { describe, expect, it } from 'vitest';
-import { loadMupdf } from '../engines/mupdf';
+import { loadMupdf, openPdf } from '../engines/mupdf';
 import {
   contentTypesXml,
   documentRelsXml,
@@ -696,7 +696,7 @@ describe('words written against words read back', () => {
 });
 
 describe('fitting each line to the PDF\u2019s glyph positions', () => {
-  /** Where Word draws every non-space character of the first text box: its pen x walked along the written runs. */
+  /** Where LibreOffice draws every non-space character of the first text box: its pen x walked along the written runs. */
   function penPositions(xmlText: string, advance: (c: string) => number): number[] {
     const content = /<w:txbxContent>(.*?)<\/w:txbxContent>/.exec(xmlText)?.[1] ?? '';
     const xs: number[] = [];
@@ -707,10 +707,13 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
       const size = Number(/<w:sz w:val="(\d+)"/.exec(match[1] as string)?.[1]) / 2;
       const spacing = Number(/<w:spacing w:val="(-?\d+)"/.exec(match[1] as string)?.[1] ?? 0) / 20;
       const hscale = Number(/<w:w w:val="(\d+)"/.exec(match[1] as string)?.[1] ?? 100) / 100;
+      const start = pen;
       for (const c of match[2] as string) {
         if (c !== ' ') xs.push(pen);
         pen += advance(c) * size * hscale + spacing;
       }
+      // LibreOffice truncates every portion to whole twips.
+      pen = start + Math.floor((pen - start) * 20) / 20;
     }
     return xs;
   }
@@ -765,9 +768,9 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
     const base = (chars[0] as LayoutChar).box[0];
     const firstLine = chars.filter((char) => Math.abs(char.baseline - (chars[0] as LayoutChar).baseline) < 1);
     for (const [k, char] of firstLine.entries()) {
-      // Word starts are exact; letters inside a word share one spacing, so a wide letter is off by a few hundredths.
+      // Word starts are exact; letters inside a word share one spacing, so a wide letter is off by a tenth of a point.
       const wordStart = k === 0 || (firstLine[k - 1] as LayoutChar).box[2] < char.box[0] - 1;
-      expect(Math.abs(base + (xs[k] as number) - char.box[0])).toBeLessThan(wordStart ? 0.03 : 0.12);
+      expect(Math.abs(base + (xs[k] as number) - char.box[0])).toBeLessThan(wordStart ? 0.03 : 0.15);
     }
   });
 
@@ -800,10 +803,7 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
       ),
     );
     doc.subsetFonts();
-    const reopened = mupdf.PDFDocument.openDocument(
-      doc.saveToBuffer('garbage=compact,compress').asUint8Array(),
-      'application/pdf',
-    );
+    const reopened = openPdf(mupdf, doc.saveToBuffer('garbage=compact,compress').asUint8Array());
     const fonts = await embedFonts(mupdf, reopened, [0], { signal: new AbortController().signal });
     const layout = readPageLayout(mupdf, reopened.loadPage(0), { images: false });
     const [box] = textBoxes(layout, [], (face) => fonts.faceOf(0, face)) as [TextBox];
@@ -830,6 +830,7 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
     expect(horizontalScale(50, 10)).toBe(1);
   });
 
+  const registry0 = () => new DocxRegistry();
   const fitted = (text: string, starts: number[], advances: number[]): TextRun =>
     run(text, {
       fit: { advances, starts, ends: starts.map((s, k) => s + (advances[k] as number) * 10), hscale: 1 },
@@ -844,6 +845,30 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
     // The pen is at 15.5 + 5 after "abcd"; the space has to end at 30: 30 − 20.5 − 2.5 = 7 pt.
     expect(spacing?.[4]).toBe(140);
     expect(spacing?.slice(5)).toEqual([0, 0]);
+  });
+
+  it('counts every portion as LibreOffice truncates it to whole twips, so the space takes the lost fraction', () => {
+    // "ab" is 99.746 + 100 twips: LibreOffice draws 199; the next word at 12.3 pt (246 twips) needs 47 − 50 = −3 of the space.
+    const starts = [0, 4.99, Number.NaN, 12.3];
+    const [spacing] = fitLine([fitted('ab c', starts, [0.49873, 0.5, 0.25, 0.5])], 1);
+    expect(spacing).toEqual([0, 0, -3, 0]);
+  });
+
+  it('puts the box where the first glyph lands on the PDF\u2019s origin: LibreOffice draws it 0.1 pt right of the frame', async () => {
+    const [box] = textBoxes(await layoutOf(line('courier', 10, 40, 400, 'Satır')), []) as [TextBox];
+    expect(box.box[0]).toBeCloseTo(39.9, 5);
+  });
+
+  it('writes a justified paragraph left-aligned: the fitted spacing already spreads its words, and LibreOffice would stretch them twice', () => {
+    const paragraph = { align: 'both' as const, lineHeight: 12, lines: [{ runs: [run('abc')] }] };
+    const xmlText = textBoxXml(
+      handMade({ paragraphs: [paragraph, { ...paragraph, align: 'right' as const }] }),
+      1,
+      registry0(),
+    );
+    expect(xmlText).toContain('<w:jc w:val="left"/>');
+    expect(xmlText).not.toContain('w:val="both"');
+    expect(xmlText).toContain('<w:jc w:val="right"/>');
   });
 
   it('leaves a word alone whose spacing would be more than half its size, and runs with no geometry', () => {
