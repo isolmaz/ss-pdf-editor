@@ -10,7 +10,8 @@
  * 2. The font programs are found in the page's resources (and its forms'): `FontFile2`
  *    (TrueType), `FontFile3` as a bare CFF (`Type1C`, `CIDFontType0C`) or a whole OpenType file.
  *    `FontFile` (Type 1) is not supported and keeps the Arial/Times fallback. The device's font
- *    is matched to the resource by `BaseFont` (the subset tag is ignored).
+ *    is matched to the resource by `BaseFont`, the subset tag included (two subsets of one
+ *    face are two programs); a name that carries no tag in the resources matches without it.
  * 3. `trueTypeForWord` / `cffForWord` (`docx-font-sfnt.ts`) rebuild each program as a small
  *    TrueType file whose `cmap` maps exactly those Unicode values to those glyphs. A font whose
  *    licence bits forbid embedding (OS/2 `fsType` 2), or one the builder cannot rebuild,
@@ -208,7 +209,8 @@ const untagged = (name: string): string => name.replace(/^[A-Z]{6}\+/, '');
 function sourceOf(font: PDFObject): { names: string[]; source: Source } | null {
   const names: string[] = [];
   const add = (name: string | null) => {
-    if (name !== null) names.push(untagged(name));
+    // The tagged name tells apart two subsets of one face; the stripped one is the fallback.
+    if (name !== null) names.push(name, untagged(name));
   };
   add(readName(font.get('BaseFont')));
   let owner = font;
@@ -388,7 +390,7 @@ export async function embedFonts(
       if (sources.size === 0) continue;
       const faces = new Map<string, number>();
       for (const [name, face] of drawnOnPage(mupdf, page)) {
-        const source = sources.get(untagged(name));
+        const source = sources.get(name) ?? sources.get(untagged(name));
         if (source === undefined) continue;
         let program = programs.get(source.key);
         if (program === undefined) {

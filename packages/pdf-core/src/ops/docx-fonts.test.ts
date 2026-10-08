@@ -22,15 +22,11 @@ const run: OperationContext = { signal: new AbortController().signal };
 const options = { pages: [0], baseName: 'plan.pdf', format: 'docx', docxLayout: 'layout' } as const;
 
 const root = createRequire(fileURLToPath(new URL('../../../../package.json', import.meta.url)));
-const notoRegular = (): Uint8Array =>
+const noto = (file: string): Uint8Array =>
   new Uint8Array(
-    readFileSync(
-      join(
-        dirname(root.resolve('@expo-google-fonts/noto-sans/package.json')),
-        '400Regular/NotoSans_400Regular.ttf',
-      ),
-    ),
+    readFileSync(join(dirname(root.resolve('@expo-google-fonts/noto-sans/package.json')), file)),
   );
+const notoRegular = (): Uint8Array => noto('400Regular/NotoSans_400Regular.ttf');
 
 /** A one-page PDF of `text` set in Noto Sans, embedded as a Type0 / Identity-H font (the fidelity samples' way). */
 async function notoPdf(text: string): Promise<Uint8Array> {
@@ -153,5 +149,60 @@ describe('exact layout with an embedded TrueType font', () => {
     } finally {
       font.destroy();
     }
+  });
+});
+
+describe('exact layout with two subsets of one face', () => {
+  /** Two Noto Sans programs (regular, bold) both named `…+NotoSans-Regular`, tagged `AAAAAA` and `BBBBBB`: `F0` draws "ab", `F1` "cd". */
+  async function twoSubsets(): Promise<Uint8Array> {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    const fonts = [
+      new mupdf.Font('NotoSans-Regular', notoRegular()),
+      new mupdf.Font('NotoSans-Regular', noto('700Bold/NotoSans_700Bold.ttf')),
+    ];
+    try {
+      const hex = (font: (typeof fonts)[number], text: string) =>
+        [...text]
+          .map((c) =>
+            font
+              .encodeCharacter(c.codePointAt(0) as number)
+              .toString(16)
+              .padStart(4, '0'),
+          )
+          .join('');
+      const objects = fonts.map((font) => doc.addFont(font));
+      const page = doc.addPage(
+        [0, 0, 400, 300],
+        0,
+        { Font: { F0: objects[0], F1: objects[1] } },
+        `BT /F0 18 Tf 40 200 Td <${hex(fonts[0] as (typeof fonts)[number], 'ab')}> Tj ET\n` +
+          `BT /F1 18 Tf 40 150 Td <${hex(fonts[1] as (typeof fonts)[number], 'cd')}> Tj ET\n`,
+      );
+      doc.insertPage(0, page);
+      doc.subsetFonts();
+      const resources = doc.findPage(0).get('Resources').get('Font');
+      for (const [index, key] of ['F0', 'F1'].entries()) {
+        const object = resources.get(key);
+        const name = doc.newName(`${index === 0 ? 'AAAAAA' : 'BBBBBB'}+NotoSans-Regular`);
+        object.put('BaseFont', name);
+        object.get('DescendantFonts').get(0).put('BaseFont', name);
+      }
+      return new Uint8Array(doc.saveToBuffer('garbage=compact,compress').asUint8Array());
+    } finally {
+      for (const font of fonts) font.destroy();
+      doc.destroy();
+    }
+  }
+
+  it('embeds one program per subset although the faces share a name', async () => {
+    const result = await exportOffice(await twoSubsets(), options, run);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const table = (await zip.file('word/fontTable.xml')?.async('string')) ?? '';
+    expect(table).toMatch(/<w:embedRegular [^>]*\/>/);
+    expect(table).toMatch(/<w:embedBold [^>]*\/>/);
+    expect(result.notes).toContainEqual(
+      expect.objectContaining({ key: 'op.note.exportOffice.fontsEmbedded', params: { count: 2 } }),
+    );
   });
 });

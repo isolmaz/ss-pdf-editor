@@ -16,8 +16,11 @@
  *   90) when the result is opaque and photographic (more than 256 colours), PNG otherwise.
  * - **Clips** are a stack. A clip that is an upright rectangle only shrinks the box content
  *   is cut to: a shape inside it stays as it is, a filled rectangle that sticks out is cut to
- *   it, any other shape that sticks out becomes a raster of its visible box. Every other
- *   clip (a curve, a stroked path, text, an image mask), a soft mask, a transparency group
+ *   it, any other shape that sticks out becomes a raster of its visible box. A clip that is a
+ *   straight-edged polygon but no rectangle (Antenna House wraps every table rule in one that
+ *   is a little wider than the rule) leaves a shape or picture alone when it lies wholly
+ *   inside the polygon (`POLYGON_SLACK` aside: the rule's ends and edges may be a hair beyond
+ *   its pointed ends) and rasters it otherwise. Every other clip (a curve, a stroked path, text, an image mask), a soft mask, a transparency group
  *   with a blend mode, a tiling pattern, a shading and a stencil image mask puts the
  *   content it covers in a raster *island* — Word has no equivalent. A group's alpha
  *   multiplies into what is drawn inside it. A knockout group with the normal blend mode
@@ -66,6 +69,8 @@ const MAX_SIDE = 2000;
 /** A picture with more colours than this is photographic: it goes out as JPEG. */
 const FLAT_COLOURS = 256;
 const JPEG_QUALITY = 90;
+/** A polygonal clip that cuts less than this (points) off the edge of a shape or picture does not count as cutting it. */
+const POLYGON_SLACK = 0.5;
 /** Strokes this thin are drawn this wide (a zero width is MuPDF's hairline). */
 const MIN_STROKE = 0.25;
 
@@ -98,8 +103,16 @@ function within(inner: Box, outer: Box): boolean {
   );
 }
 
+/** A clip path of straight edges: its closed rings and the fill rule that decides what is inside. */
+interface Polygon {
+  readonly rings: readonly (readonly Point[])[];
+  readonly evenOdd: boolean;
+}
+
 interface PathData {
   readonly segments: PathSegment[];
+  /** The rings of the path when it has no curve, else `null`. */
+  readonly rings: readonly (readonly Point[])[] | null;
   /** The box of every point, control points included. */
   readonly box: Box;
   /** The box when the path is one upright rectangle, else `null`. */
@@ -116,6 +129,7 @@ function readPath(path: Path, matrix: Matrix): PathData {
   let subpaths = 0;
   let curved = false;
   let ring: Point[] = [];
+  const rings: Point[][] = [];
   const grow = (to: Point): void => {
     x0 = Math.min(x0, to[0]);
     y0 = Math.min(y0, to[1]);
@@ -129,6 +143,7 @@ function readPath(path: Path, matrix: Matrix): PathData {
       grow(to);
       subpaths += 1;
       ring = [to];
+      rings.push(ring);
     },
     lineTo(x, y) {
       const to = apply(matrix, x, y);
@@ -150,7 +165,7 @@ function readPath(path: Path, matrix: Matrix): PathData {
       segments.push({ kind: 'close' });
     },
   });
-  if (segments.length === 0) return { segments, box: EMPTY, rect: null };
+  if (segments.length === 0) return { segments, rings: null, box: EMPTY, rect: null };
   const box: Box = [x0, y0, x1, y1];
   let rect: Box | null = null;
   if (subpaths === 1 && !curved) {
@@ -166,7 +181,7 @@ function readPath(path: Path, matrix: Matrix): PathData {
       if (horizontalFirst || verticalFirst) rect = box;
     }
   }
-  return { segments, box, rect };
+  return { segments, rings: curved ? null : rings, box, rect };
 }
 
 const cutRectangle = (box: Box): PathSegment[] => [
@@ -176,6 +191,60 @@ const cutRectangle = (box: Box): PathSegment[] => [
   { kind: 'line', to: [box[0], box[3]] },
   { kind: 'close' },
 ];
+
+/** Whether `point` is inside the rings of `polygon` (winding number, or parity for even-odd). */
+function inside(polygon: Polygon, point: Point): boolean {
+  let winding = 0;
+  for (const ring of polygon.rings) {
+    for (let at = 0; at < ring.length; at += 1) {
+      const [ax, ay] = ring[at] as Point;
+      const [bx, by] = ring[(at + 1) % ring.length] as Point;
+      if (ay <= point[1] === by <= point[1]) continue;
+      const crossing = ax + ((point[1] - ay) / (by - ay)) * (bx - ax);
+      if (crossing > point[0]) winding += by > ay ? 1 : -1;
+    }
+  }
+  return polygon.evenOdd ? winding % 2 !== 0 : winding !== 0;
+}
+
+/** Whether the segment `a`–`b` meets the (closed) `box`: Liang–Barsky, which also holds for a box with no height or width. */
+function meets(a: Point, b: Point, box: Box): boolean {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  let enter = 0;
+  let leave = 1;
+  for (const [p, q] of [
+    [-dx, a[0] - box[0]],
+    [dx, box[2] - a[0]],
+    [-dy, a[1] - box[1]],
+    [dy, box[3] - a[1]],
+  ] as const) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) enter = Math.max(enter, t);
+    else leave = Math.min(leave, t);
+    if (enter > leave) return false;
+  }
+  return true;
+}
+
+/** Whether `box` lies wholly inside the clip `polygon`: no edge of the polygon meets it and one corner is inside. */
+function covers(polygon: Polygon, box: Box): boolean {
+  if (!inside(polygon, [box[0], box[1]])) return false;
+  return !polygon.rings.some((ring) =>
+    ring.some((from, at) => meets(from, ring[(at + 1) % ring.length] as Point, box)),
+  );
+}
+
+/** `box` drawn in by `POLYGON_SLACK` on every side (to its middle, when it is thinner than that). */
+function settled(box: Box): Box {
+  const dx = Math.min(POLYGON_SLACK, (box[2] - box[0]) / 2);
+  const dy = Math.min(POLYGON_SLACK, (box[3] - box[1]) / 2);
+  return [box[0] + dx, box[1] + dy, box[2] - dx, box[3] - dy];
+}
 
 /** The average scale of a matrix: `sqrt|det|`. */
 const averageScale = (m: Matrix): number => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
@@ -461,6 +530,8 @@ interface Frame {
   readonly ignore: boolean;
   /** The product of the open groups' alphas. */
   readonly alpha: number;
+  /** The clips so far that are polygons but not rectangles: content must lie wholly inside each to stay a shape. */
+  readonly polygons: readonly Polygon[];
 }
 
 interface Island {
@@ -482,15 +553,20 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
   const place = (m: Matrix): Matrix => [m[0], m[1], m[2], m[3], m[4] - px0, m[5] - py0];
   const shifted = (r: Rect): Box => [r[0] - px0, r[1] - py0, r[2] - px0, r[3] - py0];
 
-  const frames: Frame[] = [{ box: EVERYWHERE, exact: true, ignore: false, alpha: 1 }];
+  const frames: Frame[] = [{ box: EVERYWHERE, exact: true, ignore: false, alpha: 1, polygons: [] }];
   const top = (): Frame => frames[frames.length - 1] as Frame;
-  const open = (box: Box | null, change: Partial<Pick<Frame, 'exact' | 'ignore' | 'alpha'>>): void => {
+  const open = (
+    box: Box | null,
+    change: Partial<Pick<Frame, 'exact' | 'ignore' | 'alpha'>>,
+    polygon?: Polygon,
+  ): void => {
     const parent = top();
     frames.push({
       box: box === null ? parent.box : (intersect(parent.box, box) ?? EMPTY),
       exact: change.exact === undefined ? parent.exact : parent.exact && change.exact,
       ignore: change.ignore ?? parent.ignore,
       alpha: change.alpha === undefined ? parent.alpha : parent.alpha * change.alpha,
+      polygons: polygon === undefined ? parent.polygons : [...parent.polygons, polygon],
     });
   };
   const close = (): void => {
@@ -630,11 +706,12 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
       contribute(visible, call);
       return;
     }
-    if (within(reach, frame.box)) {
+    const extent: Box = frame.polygons.length === 0 ? reach : settled(reach);
+    if (within(extent, frame.box) && frame.polygons.every((polygon) => covers(polygon, extent))) {
       emit({ kind: 'shape', box: data.box, segments: data.segments, fill: shapeFill, stroke }, reach);
       return;
     }
-    if (stroke === null && data.rect !== null) {
+    if (stroke === null && data.rect !== null && frame.polygons.length === 0) {
       const cut = intersect(data.rect, frame.box);
       if (cut !== null)
         emit({ kind: 'shape', box: cut, segments: cutRectangle(cut), fill: shapeFill, stroke }, cut);
@@ -650,9 +727,10 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     strokePath(path, stroke, ctm, colorspace, color, alpha) {
       addPath(path, ctm, null, stroke, colorOf(colorspace, color), alpha, nextCall());
     },
-    clipPath(path, _evenOdd, ctm) {
+    clipPath(path, evenOdd, ctm) {
       const data = readPath(path, place(ctm));
-      open(data.box, { exact: data.rect !== null });
+      if (data.rect !== null || data.rings === null) open(data.box, { exact: data.rect !== null });
+      else open(data.box, {}, { rings: data.rings, evenOdd });
     },
     clipStrokePath(path, stroke, ctm) {
       open(shifted(path.getBounds(stroke, ctm)), { exact: false });
@@ -719,11 +797,11 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
       const full = transformBox([0, 0, 1, 1], matrix);
       const visible = intersect(full, frame.box);
       if (visible === null || intersect(visible, pageBox) === null) return;
-      if (!frame.exact) {
+      const shown = intersect(visible, pageBox) as Box;
+      if (!frame.exact || !frame.polygons.every((polygon) => covers(polygon, settled(shown)))) {
         contribute(visible, call);
         return;
       }
-      const shown = intersect(visible, pageBox) as Box;
       if (everything !== null) {
         everything = unite(everything, shown);
         return;
