@@ -411,13 +411,21 @@ had to stay green. The moves, and the defects they fixed on the way:
   - **Drawings.** Curves, polygons that are not rectangles, shadings and pictures seed
     regions that grow over every mark they touch. A region holding a line of prose is left
     to the text, and so is one crossing a table or covering most of the page. The region is
-    rendered at 144 dpi as one picture, labels included, and its text leaves the flow. Above
+    rendered at 144 dpi as one picture without its text (`renderRegion` runs the page through a
+    device that hands everything but text to a draw device): the text on a drawing stays text
+    in the flow. A drawing that has text on it, like a raster picture that text stands on, is
+    anchored behind the text at its place on the page (`wp:anchor`, `behindDoc`, in a
+    paragraph one point high) and takes no room in the flow. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
   - **Word.** Each page is a section with the page's size, orientation and margins. Blocks
     are cut into paragraphs where a line ends short, a gap opens, the size changes or a
     bullet or a number (one or two digits and `.` or `)`, then a space) starts. A hyphen that
     breaks a word before a lower-case letter is removed, even when it is set in another style than
     the letters before it (the join reads the line's last characters across its runs).
+    Lines that share a row and follow each other along it (MuPDF cuts the dots of a leader into
+    a line each) are joined first. A character belongs to one table (ruled before spread, the
+    smallest first), so a nested or overlapping table does not write its words twice. An inline
+    picture is shrunk to fit the page's text area less one body-size line.
     Paragraphs of several lines that start a third of the way across are a second column,
     and alignment and indents are measured in a paragraph's own column. Sizes at least
     1.3× the body size (1.15× when bold) become `Heading1`–`3` by rank. `w:lang` is the

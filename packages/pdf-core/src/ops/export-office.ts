@@ -15,7 +15,8 @@
  *    own column on a two-column page. Ruled tables become Word tables with their merged
  *    cells, tables read from the spacing of the text borderless ones; pictures are placed
  *    inline at their size, and a vector drawing (a chart, a diagram) as one picture of its
- *    region. The package is written by hand (WordprocessingML is plain XML in a ZIP) and
+ *    region, drawn without its text. Text that stands on a drawing or a picture stays text,
+ *    and the picture is anchored behind it. The package is written by hand (WordprocessingML is plain XML in a ZIP) and
  *    read back with mammoth, an independent reader, whose words have to match the words
  *    written.
  *  - **XLSX**: one sheet per table (ruled or read from spacing), with merged cells and
@@ -234,6 +235,11 @@ interface Picture {
   readonly kind: 'picture';
   readonly box: Box;
   readonly png: Uint8Array;
+  /**
+   * Text stands on it: it is anchored at its place on the page, behind the text, and takes
+   * no room in the flow — inline it would push the text it carries to the next page.
+   */
+  readonly behind: boolean;
 }
 
 interface Grid {
@@ -283,6 +289,56 @@ function lineBox(chars: readonly LayoutChar[]): Box {
   return [x0, y0, x1, y1];
 }
 
+/** The row a line stands on: its middle and how far from it another line still shares the row. */
+function rowOf(chars: readonly LayoutChar[]): { middle: number; reach: number; box: Box } {
+  const box = lineBox(chars);
+  return { middle: (box[1] + box[3]) / 2, reach: (box[3] - box[1]) * 0.3, box };
+}
+
+/** Lines in reading order: by row from the top, and along a row from the left. */
+function byRow(a: readonly LayoutChar[], b: readonly LayoutChar[]): number {
+  const first = rowOf(a);
+  const second = rowOf(b);
+  if (Math.abs(first.middle - second.middle) <= Math.min(first.reach, second.reach)) {
+    return first.box[0] - second.box[0];
+  }
+  return first.middle - second.middle;
+}
+
+/**
+ * Lines that stand on one row and follow each other along it are one line. MuPDF cuts a
+ * line where the spacing opens, so the dots that lead from a label to its amount
+ * (`. . . . .`) come as a line each, and each would be a paragraph of its own.
+ */
+function joinRows(lines: readonly LayoutChar[][]): LayoutChar[][] {
+  const out: LayoutChar[][] = [];
+  for (const chars of lines) {
+    const last = out[out.length - 1];
+    if (last !== undefined) {
+      const before = rowOf(last);
+      const next = rowOf(chars);
+      const tail = last[last.length - 1] as LayoutChar;
+      const gap = next.box[0] - before.box[2];
+      if (
+        Math.abs(before.middle - next.middle) <= Math.min(before.reach, next.reach) &&
+        gap >= -1 &&
+        gap <= tail.size * 2
+      ) {
+        const spaced = tail.c === ' ' || chars[0]?.c === ' ' || gap < tail.size * 0.15;
+        const space: LayoutChar = {
+          ...tail,
+          c: ' ',
+          box: [before.box[2], tail.box[1], next.box[0], tail.box[3]],
+        };
+        out[out.length - 1] = [...last, ...(spaced ? [] : [space]), ...chars];
+        continue;
+      }
+    }
+    out.push([...chars]);
+  }
+  return out;
+}
+
 const HYPHENS = new Set(['-', '\u00AD', '\u2010']);
 
 /**
@@ -291,7 +347,7 @@ const HYPHENS = new Set(['-', '\u00AD', '\u2010']);
  * next line is wider than the line pitch so far, or at a bullet.
  */
 function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
-  const kept = lines.filter((chars) => chars.some((char) => char.c.trim() !== ''));
+  const kept = joinRows(lines.filter((chars) => chars.some((char) => char.c.trim() !== '')));
   if (kept.length === 0) return [];
   const boxes = kept.map(lineBox);
   const right = Math.max(...boxes.map((box) => box[2]));
@@ -427,11 +483,73 @@ function lostPictures(page: ReadPage): number {
   ).length;
 }
 
-/** One page as items in reading order: MuPDF's block order, each table where it starts. */
+/**
+ * The table each character of a page belongs to, when it lies inside one: ruled tables
+ * before tables read from spacing, the smallest first — a table drawn inside another one
+ * holds its own text, and a table read from spacing that runs across a ruled one leaves the
+ * ruled one's text to it. A character is in one table, so its word is written once.
+ */
+function ownersOf(page: ReadPage): Map<LayoutChar, LayoutTable> {
+  const area = (table: LayoutTable) => (table.box[2] - table.box[0]) * (table.box[3] - table.box[1]);
+  const bySize = (a: LayoutTable, b: LayoutTable) => area(a) - area(b);
+  const ranked = [...[...page.tables].sort(bySize), ...[...page.streams].sort(bySize)];
+  const owners = new Map<LayoutChar, LayoutTable>();
+  for (const block of page.layout.blocks) {
+    if (block.kind !== 'text') continue;
+    for (const line of block.lines) {
+      for (const char of line.chars) {
+        const table = ranked.find((candidate) => inside(char, candidate.box));
+        if (table !== undefined) owners.set(char, table);
+      }
+    }
+  }
+  return owners;
+}
+
+/**
+ * The lines of each cell of a table, from the characters it owns: a character goes to the
+ * cell it lies in, or the one nearest when it sits on an edge.
+ */
+function cellLines(page: ReadPage, table: LayoutTable, owners: Map<LayoutChar, LayoutTable>) {
+  const lines = new Map<TableCell, LayoutChar[][]>();
+  for (const block of page.layout.blocks) {
+    if (block.kind !== 'text') continue;
+    for (const line of block.lines) {
+      const parts = new Map<TableCell, LayoutChar[]>();
+      for (const char of line.chars) {
+        if (owners.get(char) !== table) continue;
+        const cell =
+          table.cells.find((candidate) => inside(char, candidate.box, 0)) ??
+          (table.cells.find((candidate) => inside(char, candidate.box, 1)) as TableCell);
+        parts.set(cell, [...(parts.get(cell) ?? []), char]);
+      }
+      for (const [cell, chars] of parts) lines.set(cell, [...(lines.get(cell) ?? []), chars]);
+    }
+  }
+  return lines;
+}
+
+/** Whether a character that is not in a table stands on a region (its centre is inside it). */
+function textOn(page: ReadPage, owners: Map<LayoutChar, LayoutTable>, box: Box): boolean {
+  return page.layout.blocks.some(
+    (block) =>
+      block.kind === 'text' &&
+      block.lines.some((line) =>
+        line.chars.some((char) => char.c.trim() !== '' && !owners.has(char) && inside(char, box, 0)),
+      ),
+  );
+}
+
+/**
+ * One page as items in reading order: MuPDF's block order, each table where it starts. The
+ * text on a drawing or a picture is text like any other; the drawing is rendered without it
+ * and, like a picture that text stands on, goes behind the text.
+ */
 function pageItems(page: ReadPage): Item[] {
   const items: Item[] = [];
   const tables = [...page.tables, ...page.streams];
-  const taken = [...tables.map((table) => table.box), ...page.figures.map((figure) => figure.box)];
+  const owners = ownersOf(page);
+  const taken = tables.map((table) => table.box);
   const placed = new Set<number>();
   for (const block of page.layout.blocks) {
     if (block.kind === 'image') {
@@ -442,12 +560,17 @@ function pageItems(page: ReadPage): Item[] {
         if (!placed.has(figure)) {
           placed.add(figure);
           const { box, png } = page.figures[figure] as { box: Box; png: Uint8Array };
-          items.push({ kind: 'picture', box, png });
+          items.push({ kind: 'picture', box, png, behind: textOn(page, owners, box) });
         }
         continue;
       }
       if (block.png !== null && !tables.some((table) => contains(table.box, block.box))) {
-        items.push({ kind: 'picture', box: block.box, png: block.png });
+        items.push({
+          kind: 'picture',
+          box: block.box,
+          png: block.png,
+          behind: textOn(page, owners, block.box),
+        });
       }
       continue;
     }
@@ -456,24 +579,22 @@ function pageItems(page: ReadPage): Item[] {
   }
   page.figures.forEach((figure, index) => {
     if (placed.has(index)) return;
-    const picture: Picture = { kind: 'picture', box: figure.box, png: figure.png };
+    const picture: Picture = {
+      kind: 'picture',
+      box: figure.box,
+      png: figure.png,
+      behind: textOn(page, owners, figure.box),
+    };
     const at = items.findIndex((item) => item.box[1] >= figure.box[1] - 1);
     if (at === -1) items.push(picture);
     else items.splice(at, 0, picture);
   });
   for (const table of tables) {
     const cells = new Map<string, readonly Paragraph[]>();
+    const lines = cellLines(page, table, owners);
     for (const cell of table.cells) {
-      const lines: LayoutChar[][] = [];
-      for (const block of page.layout.blocks) {
-        if (block.kind !== 'text') continue;
-        for (const line of block.lines) {
-          const chars = line.chars.filter((char) => inside(char, cell.box, 0.5));
-          if (chars.length > 0) lines.push(chars);
-        }
-      }
-      lines.sort((a, b) => lineBox(a)[1] - lineBox(b)[1]);
-      cells.set(`${cell.row}:${cell.column}`, blockParagraphs(lines));
+      const own = [...(lines.get(cell) ?? [])].sort(byRow);
+      cells.set(`${cell.row}:${cell.column}`, blockParagraphs(own));
     }
     const grid: Grid = { kind: 'table', box: table.box, table, cells };
     const at = items.findIndex((item) => item.box[1] >= table.box[1] - 1);
@@ -574,44 +695,74 @@ function paragraphXml(
   return `<w:p><w:pPr>${props.join('')}</w:pPr>${paragraph.runs.map(runXml).join('')}</w:p>`;
 }
 
+/** The picture's `a:graphic`, which an inline and an anchored drawing both hold. */
+function graphicXml(id: number, name: string, cx: number, cy: number): string {
+  return (
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="rIdImage${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+    '</a:graphicData></a:graphic>'
+  );
+}
+
+/**
+ * A picture as a paragraph. In the flow it is inline, at its size and indent, shrunk to the
+ * column and to `maxHeight` — a picture as tall as the page's text area, with the line it
+ * stands in, would not fit the page and be sent to the next. Behind the text it is anchored
+ * at its place on the page, in a paragraph one point high that carries the page break and
+ * the section like any other.
+ */
 function pictureXml(
   picture: Picture,
   column: Column,
   before: number,
   extra: string,
+  maxHeight: number,
   context: DocxContext,
 ): string {
   context.pictureId += 1;
   const id = context.pictureId;
   const name = `image${id}.png`;
   context.media.push({ name, png: picture.png });
+  const section = extra.includes('<w:sectPr') ? extra.slice(extra.indexOf('<w:sectPr')) : '';
+  const pageBreak = extra.includes('pageBreakBefore') ? '<w:pageBreakBefore/>' : '';
   let width = picture.box[2] - picture.box[0];
   let height = picture.box[3] - picture.box[1];
-  const room = column.right - column.left;
-  if (width > room) {
-    height *= room / width;
-    width = room;
+  if (picture.behind) {
+    const cx = Math.max(1, Math.round(width * EMU));
+    const cy = Math.max(1, Math.round(height * EMU));
+    return (
+      `<w:p><w:pPr>${pageBreak}<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>${section}</w:pPr>` +
+      `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${id}" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">` +
+      '<wp:simplePos x="0" y="0"/>' +
+      `<wp:positionH relativeFrom="page"><wp:posOffset>${Math.round(picture.box[0] * EMU)}</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="page"><wp:posOffset>${Math.round(picture.box[1] * EMU)}</wp:posOffset></wp:positionV>` +
+      `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>` +
+      `<wp:docPr id="${id}" name="Picture ${id}"/>` +
+      '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
+      `${graphicXml(id, name, cx, cy)}</wp:anchor></w:drawing></w:r></w:p>`
+    );
   }
+  const scale = Math.min(1, (column.right - column.left) / width, maxHeight / height);
+  width *= scale;
+  height *= scale;
   const cx = Math.max(1, Math.round(width * EMU));
   const cy = Math.max(1, Math.round(height * EMU));
   const left = Math.max(0, picture.box[0] - column.left);
   const props = [
-    extra.includes('pageBreakBefore') ? '<w:pageBreakBefore/>' : '',
+    pageBreak,
     `<w:spacing w:before="${Math.round(before * TWIPS)}" w:after="0"/>`,
     left >= 2 ? `<w:ind w:left="${Math.round(left * TWIPS)}"/>` : '',
-    extra.includes('<w:sectPr') ? extra.slice(extra.indexOf('<w:sectPr')) : '',
+    section,
   ].join('');
   return (
     `<w:p><w:pPr>${props}</w:pPr><w:r><w:drawing>` +
     `<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/>` +
     `<wp:docPr id="${id}" name="Picture ${id}"/>` +
     '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
-    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-    `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-    `<pic:blipFill><a:blip r:embed="rIdImage${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
-    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
-    '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+    `${graphicXml(id, name, cx, cy)}</wp:inline></w:drawing></w:r></w:p>`
   );
 }
 
@@ -732,7 +883,9 @@ function docxPage(
   context: DocxContext,
 ): string {
   const { width, height } = page.layout;
-  const boxes = items.map((item) => item.box);
+  // A picture behind the text is not in the flow: it sets neither the margins nor the columns.
+  const flow = items.filter((item) => item.kind !== 'picture' || !item.behind);
+  const boxes = flow.map((item) => item.box);
   const left = boxes.length > 0 ? Math.min(...boxes.map((box) => box[0])) : 72;
   const right = boxes.length > 0 ? Math.max(...boxes.map((box) => box[2])) : width - 72;
   const top = boxes.length > 0 ? Math.min(...boxes.map((box) => box[1])) : 72;
@@ -746,7 +899,7 @@ function docxPage(
     bottom: clamp(height - bottom, 18, 36),
   };
   const column: Column = { left: margins.left, right: width - margins.right };
-  const columnOf = textColumns(items, column);
+  const columnOf = textColumns(flow, column);
   const twips = (value: number) => Math.round(value * TWIPS);
   const sectPr =
     `<w:sectPr><w:pgSz w:w="${twips(width)}" w:h="${twips(height)}"${width > height ? ' w:orient="landscape"' : ''}/>` +
@@ -757,12 +910,15 @@ function docxPage(
   items.forEach((item, index) => {
     const breakBefore = index === 0 && !first ? 'pageBreakBefore' : '';
     const section = index === items.length - 1 && !last ? sectPr : '';
-    const before = clamp(item.box[1] - previousBottom, 0, MAX_GAP);
-    previousBottom = Math.max(previousBottom, item.box[3]);
+    const behind = item.kind === 'picture' && item.behind;
+    const before = behind ? 0 : clamp(item.box[1] - previousBottom, 0, MAX_GAP);
+    if (!behind) previousBottom = Math.max(previousBottom, item.box[3]);
     if (item.kind === 'paragraph') {
       out.push(paragraphXml(item, columnOf(item.box), before, breakBefore + section, context));
     } else if (item.kind === 'picture') {
-      out.push(pictureXml(item, columnOf(item.box), before, breakBefore + section, context));
+      // One line's room, a body size, is left under a picture that stands alone on a page.
+      const room = height - margins.top - margins.bottom - context.bodySize;
+      out.push(pictureXml(item, columnOf(item.box), before, breakBefore + section, room, context));
     } else {
       // A table cannot carry a page break or a section; a hairline paragraph does.
       if (breakBefore !== '')

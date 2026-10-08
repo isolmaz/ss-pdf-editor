@@ -924,6 +924,220 @@ describe('exportOffice → DOCX pictures', () => {
   });
 });
 
+describe('exportOffice → DOCX text on drawings and pictures', () => {
+  const red = { width: 4, height: 4, rgb: [255, 0, 0] } as const;
+  /** Every picture anchored behind the text, as `[x, y, width, height]` in points from the page's corner. */
+  const anchored = (document: string): [number, number, number, number][] =>
+    [
+      ...document.matchAll(
+        /<wp:anchor [^>]*behindDoc="1"[^>]*>.*?<wp:posOffset>(-?\d+)<\/wp:posOffset>.*?<wp:posOffset>(-?\d+)<\/wp:posOffset>.*?<wp:extent cx="(\d+)" cy="(\d+)"\/>/g,
+      ),
+    ].map((match) => [
+      Number(match[1]) / 12700,
+      Number(match[2]) / 12700,
+      Number(match[3]) / 12700,
+      Number(match[4]) / 12700,
+    ]);
+
+  it('keeps the text inside a drawing as text and puts the drawing behind it, taking no room of its own', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(50, 470, 'W'.repeat(50)),
+          // Two cards, each a drawing with a title and a figure written inside it.
+          circle(100, 350, 40),
+          courier(80, 352, 'Aktif'),
+          courier(80, 340, '12.480'),
+          circle(300, 350, 40),
+          courier(280, 352, 'Gelir'),
+          courier(280, 340, '1,92 M'),
+          courier(50, 250, 'after'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    expect((await paragraphs(file.bytes)).join(' ')).toBe(
+      `${'W'.repeat(50)} Aktif 12.480 Gelir 1,92 M after`,
+    );
+    // Each drawing is one picture at its own place on the page: 80 pt square, 60..140 and 260..340 across,
+    // 110..190 down from the top of a 500 pt page.
+    expect(anchored(document).sort((a, b) => a[0] - b[0])).toEqual([
+      [60, 110, 80, 80],
+      [260, 110, 80, 80],
+    ]);
+    expect(document).not.toContain('<wp:inline');
+    // The picture is a paragraph of a point's height, not a block of 80 pt in the flow.
+    const holders = bodyBlocks(document).filter((block) => block.includes('<wp:anchor'));
+    expect(holders).toHaveLength(2);
+    for (const holder of holders) expect(holder).toContain('w:line="20" w:lineRule="exact"');
+  });
+
+  it('keeps a drawing with no text as a picture in the flow, as before', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [courier(50, 470, 'W'.repeat(50)), circle(200, 300, 40), courier(50, 100, 'after')].join(
+          '\n',
+        ),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    expect(document).toContain('<wp:inline');
+    expect(document).not.toContain('<wp:anchor');
+  });
+
+  it('puts a picture behind the text that stands on it, so the text is not pushed to another page', async () => {
+    const bytes = await officeDocument([
+      {
+        images: { Im1: red },
+        content: [
+          // A picture over the whole page with a title and a line written on it.
+          picture('Im1', 0, 0, 400, 500),
+          courier(100, 400, 'Baslik'),
+          courier(100, 300, 'Alt yazi'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    expect(await paragraphs(file.bytes)).toEqual(['Baslik', 'Alt yazi']);
+    expect(anchored(document)).toEqual([[0, 0, 400, 500]]);
+    expect(document).not.toContain('<wp:inline');
+    // The text keeps its distance from the top of the page: the picture is not above it in the flow.
+    const [title] = await paragraphProps(file.bytes);
+    expect(title?.[0]).toContain('w:before="0"');
+  });
+
+  it('carries a page break and a section on the paragraph that holds a picture behind the text', async () => {
+    const bytes = await officeDocument([
+      { content: courier(50, 470, 'first') },
+      {
+        size: [300, 300],
+        images: { Im1: red },
+        content: [picture('Im1', 0, 0, 300, 300), courier(100, 150, 'on it')].join('\n'),
+      },
+      { content: courier(50, 470, 'last') },
+    ]);
+    const { file } = await exportOffice(bytes, { ...docxOptions, pages: [0, 1, 2] }, run);
+    const holder = bodyBlocks(await documentXml(file.bytes)).find((block) => block.includes('<wp:anchor'));
+    expect(holder).toMatch(/^<w:p><w:pPr><w:pageBreakBefore\/>/);
+    expect(await paragraphs(file.bytes)).toEqual(['first', 'on it', 'last']);
+  });
+
+  it('closes the section on the picture that is the last thing of a page', async () => {
+    const bytes = await officeDocument([
+      {
+        size: [300, 300],
+        images: { Im1: red },
+        // The picture is drawn last, so MuPDF reads it after the text.
+        content: [courier(100, 150, 'on it'), picture('Im1', 0, 0, 300, 300)].join('\n'),
+      },
+      { content: courier(50, 470, 'next') },
+    ]);
+    const { file } = await exportOffice(bytes, { ...docxOptions, pages: [0, 1] }, run);
+    const blocks = bodyBlocks(await documentXml(file.bytes));
+    const holder = blocks.find((block) => block.includes('<wp:anchor'));
+    expect(holder).toContain('<w:sectPr><w:pgSz w:w="6000" w:h="6000"/>');
+    expect(blocks.indexOf(holder ?? '')).toBeGreaterThan(
+      blocks.findIndex((block) => block.includes('on it')),
+    );
+  });
+
+  it('shrinks a picture that fills the page so that it fits it with its line, instead of sending it to a page of its own', async () => {
+    const bytes = await officeDocument([
+      { size: [300, 400], images: { Im1: red }, content: picture('Im1', 20, 18, 260, 364) },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    const [[width = 0, height = 0] = []] = [...document.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/g)].map(
+      (match) => [Number(match[1]) / 12700, Number(match[2]) / 12700],
+    );
+    const margins = /w:top="(\d+)" w:right="\d+" w:bottom="(\d+)"/.exec(document);
+    const room = 400 - (Number(margins?.[1]) + Number(margins?.[2])) / 20;
+    // Room for the picture and the line it stands in, and the proportions kept.
+    expect(height).toBeLessThan(room - 4);
+    expect(width / height).toBeCloseTo(260 / 364, 2);
+  });
+});
+
+describe('exportOffice → DOCX text in rows and tables', () => {
+  it('writes the text of a table drawn inside another table once, in the inner one', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(58, 420, 'Dis1'),
+          courier(158, 420, 'Dis2'),
+          courier(58, 370, 'Dis3'),
+          courier(158, 370, 'Dis4'),
+          courier(258, 370, 'Dis5'),
+          // A small grid inside the first cell of the large one.
+          courier(60, 396, 'Ic1'),
+          courier(100, 396, 'Ic2'),
+          courier(60, 384, 'Ic3'),
+          courier(100, 384, 'Ic4'),
+          gridOperators([50, 150, 250, 350], [440, 410, 350]),
+          gridOperators([55, 95, 135], [400, 390, 380]),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const words = (await paragraphs(file.bytes)).flatMap((text) => text.split(' '));
+    for (const word of ['Dis1', 'Dis2', 'Dis3', 'Dis4', 'Dis5', 'Ic1', 'Ic2', 'Ic3', 'Ic4']) {
+      expect(
+        words.filter((found) => found === word),
+        word,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('writes the text of a ruled table once when a table read from spacing runs across it', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          // Rows of two pieces far apart, read as a table from their spacing...
+          courier(50, 470, 'Ad'),
+          courier(350, 470, 'Soyad'),
+          courier(50, 458, 'Ali'),
+          courier(350, 458, 'Veli'),
+          courier(50, 446, 'Ayse'),
+          courier(350, 446, 'Fatma'),
+          // ...with a ruled table standing between them, inside the rows' span.
+          courier(158, 455, 'Sag1'),
+          courier(208, 455, 'Sag2'),
+          courier(158, 441, 'Sag3'),
+          courier(208, 441, 'Sag4'),
+          gridOperators([150, 200, 250], [466, 452, 438]),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const words = (await paragraphs(file.bytes)).flatMap((text) => text.split(' '));
+    for (const word of ['Ad', 'Soyad', 'Ali', 'Veli', 'Ayse', 'Fatma', 'Sag1', 'Sag2', 'Sag3', 'Sag4']) {
+      expect(
+        words.filter((found) => found === word),
+        word,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('keeps a line and the leader dots set after it, each dot a text of its own, as one line of one paragraph', async () => {
+    const dots = Array.from({ length: 6 }, (_unused, index) => courier(135 + index * 12, 400, '.'));
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(50, 430, 'Toplam tutar'),
+          courier(50, 400, 'Vergi dairesi'),
+          ...dots,
+          courier(50, 370, 'Son satir'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    expect(await paragraphs(file.bytes)).toEqual(['Toplam tutar', 'Vergi dairesi . . . . . .', 'Son satir']);
+  });
+});
+
 /** The sheets of an XLSX as `[name, sheet XML]`, in workbook order. */
 async function sheetsOfXlsx(bytes: Uint8Array): Promise<[string, string][]> {
   const zip = await JSZip.loadAsync(bytes);
