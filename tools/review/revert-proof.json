@@ -604,5 +604,13 @@
     "tests": ["e2e/ui-read-aloud-lang.spec.ts", "e2e/ui-read-aloud.spec.ts"],
     "run": ["e2e/ui-read-aloud-lang.spec.ts"],
     "filter": "is read with the local English voice|is read with the German voice"
+  },
+  {
+    "commit": "2c7b7612f5227c3f657f6bd60abe96bed3f0b5e1",
+    "title": "Read only a trailer's own /Prev key, past comments and name values",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/signature-status.test.ts"],
+    "run": ["packages/pdf-core/src/ops/signature-status.test.ts"],
+    "filter": "is commented out up to a|reads the key after a comment that ends the line|does not take /Prev as the key when it is"
   }
 ]

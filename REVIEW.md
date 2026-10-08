@@ -4,15 +4,15 @@ Every commit of `git log --reverse origin/main..HEAD` is listed below exactly on
 
 | Group | What | Commits |
 | --- | --- | --- |
-| 1 | Data integrity, security, signatures: wrong file or document content, lost data, verification | 21 |
+| 1 | Data integrity, security, signatures: wrong file or document content, lost data, verification | 22 |
 | 2 | Other behaviour fixes a user sees | 22 |
 | 3 | Code removed as unreachable, and refactors, without behaviour change | 23 |
-| 4 | Tooling, CI, coverage, docs | 13 |
-| 5 | Test-only | 20 |
+| 4 | Tooling, CI, coverage, docs | 19 |
+| 5 | Test-only | 25 |
 
 ## How to review
 
-1. Read groups 1 and 2 in full: 43 commits, each with the defect, the changed code and the test. The claim to check is that the named test fails without the fix. `revert-proof` below does that mechanically; your job is to judge that the test asserts the right thing.
+1. Read groups 1 and 2 in full: 44 commits, each with the defect, the changed code and the test. The claim to check is that the named test fails without the fix. `revert-proof` below does that mechanically; your job is to judge that the test asserts the right thing.
 2. Read the diff of group 3 for the "no behaviour change" claim only. The production line counts show where to spend time: `d486147` and `a73ecd1` are the large ones.
 3. Skim group 4. Sample group 5 for tests that cannot fail. A test is real when it asserts behaviour (a produced file read back, an exact message, an exact count) and fails when that behaviour breaks. Reject: `skip`, `only`, `todo`, `fixme`; coverage-ignore comments (`c8 ignore`, `v8 ignore`, `istanbul ignore`); assertions on text that is always there; a test that only runs code. A starting search over everything the branch adds:
 
@@ -24,7 +24,7 @@ git diff origin/main..HEAD -- '*.test.ts' '*.test.tsx' 'e2e/*.ts' | grep -nE '^\
 
 ## revert-proof
 
-`tools/review/revert-proof.json` lists every fix commit of groups 1 and 2 with the test files it touched (`tests`), the files that hold the proving tests (`run`, optional) and a name filter (`filter`) that selects only the proving tests. `kind` is `unit` (Vitest, 30 entries) or `e2e` (Playwright, 13 entries); `kind: "none"` would mark a fix with no automated proof (there is none). `testCommit` (optional) names a later commit that carries the test, and `note` says where an entry covers only part of its commit.
+`tools/review/revert-proof.json` lists every fix commit of groups 1 and 2 with the test files it touched (`tests`), the files that hold the proving tests (`run`, optional) and a name filter (`filter`) that selects only the proving tests. `kind` is `unit` (Vitest, 31 entries) or `e2e` (Playwright, 13 entries); `kind: "none"` would mark a fix with no automated proof (there is none). `testCommit` (optional) names a later commit that carries the test, and `note` says where an entry covers only part of its commit.
 
 ```
 node tools/review/revert-proof.mjs [--shard i/n] [--only <sha-prefix>]
@@ -38,7 +38,10 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - Office export (commit fbf6f4b): the U+FFFE/U+FFFF word count and the removal of `verifyXlsx` have no test named for them.
 - Vault sweep (a14e1fa) and menu-bar keys (5c1b56f): the manifest runs one of the two proofs, a unit test for the first and a browser spec for the second; the other is named in the entry's `note` or in its list below.
 
-## 1. Data integrity, security, signatures (21)
+## 1. Data integrity, security, signatures (22)
+
+- `2c7b761` Read only a trailer's own /Prev key, past comments and name values
+  The revision-chain reader of the signature check took the first `/Prev` text in a trailer: one inside a comment, or a name value spelled `/Prev`, was followed instead of the key, so the revisions written after a signature were miscounted or the chain fell back to counting `%%EOF` markers. Found by the independent review. **Test:** `packages/pdf-core/src/ops/signature-status.test.ts` “does not follow a /Prev that is commented out up to a line feed before the real one” and the five tests beside it.
 
 - `c8abeea` test(pdf-ui): the dialog operations run against real bytes, and a comma stays in a text field
   The form-fill parser split any value containing a comma into a multiple selection, so `Smith, John` left a text field unchanged. **Test:** `packages/pdf-ui/src/ops/forms.test.ts` “writes a comma-separated value to a text field as one string”.
@@ -110,7 +113,7 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - `ff1ba7a` Show the current document's size in the export dialog
   The export dialog's “This PDF (size)” always showed the size of the file as first opened, in KB whatever its size, so after compressing or deleting pages it showed the old figure. **Test:** `e2e/web-shell.spec.ts` “the export dialog gives the size of the document as it stands, not of the file first opened”.
 - `c892667` End the measure tool on Escape and keep the lens off the pointer's path
-  The shell never passed `onStop` to the measure layer, so the documented second Escape on an empty chain did nothing; the magnifier lens sat under the pointer and took pointer events itself, so the page saw the pointer leave. **Test:** `e2e/ui-layers-measure.spec.ts` “Escape on an empty chain ends the tool”; `e2e/ui-layers-viewer.spec.ts` “the lens follows the pointer over the page, shows the text under it magnified, and the wheel sets the magnification”.
+  The shell never passed `onStop` to the measure layer, so the documented second Escape on an empty chain did nothing; the magnifier lens sat under the pointer and took pointer events itself, so the page saw the pointer leave. The same commit passes `onProduced` to the print dialog, which makes its existing “Generate Printable PDF” button appear: it opens the imposed file as a new `print.pdf` tab, leaving the source as it was. **Test:** `e2e/ui-layers-measure.spec.ts` “Escape on an empty chain ends the tool”; `e2e/ui-layers-viewer.spec.ts` “the lens follows the pointer over the page, shows the text under it magnified, and the wheel sets the magnification”; the print button: `e2e/ui-print.spec.ts` “Generate Printable PDF: the file is a new A4 tab beside the source, which is left as it was, and the shell is free again” (added in `de51893`).
 - `eadf2b3` Keep a loaded batch ruleset when files are chosen afterwards
   Choosing files, or the first scan of a watched folder, after loading a batch ruleset silently discarded the ruleset, so the run used the dialog's own steps instead. **Test:** `e2e/ui-batch.spec.ts` “choosing files after loading a ruleset keeps the loaded ruleset”.
 - `0202311` Turn presentation pages with Space and start on the page being read
@@ -179,7 +182,20 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - `2524520` Drop the tag editor's unreachable generic refusal
   Removes `tags.err.generic` (“That change is not possible.”): `applyStructureEdits` refuses only with a `StructEditError`, so the notice is read from the refusal's reason directly. No behaviour change claimed; production code +10 −10 lines (the rest is tests).
 
-## 4. Tooling, CI, coverage, docs (13)
+## 4. Tooling, CI, coverage, docs (19)
+
+- `fd5376d` List the read-aloud fix and the CI and docs commits in the review guide
+  This guide. No product behaviour change.
+- `6a040ec` Ignore the revert-proof report
+  `.gitignore`. No product behaviour change.
+- `a6e2e4f` Let a revert-proof entry declare the throw or hang its fix removed
+  `tools/review/revert-proof.mjs` `failure` patterns, and the `testCommit` of the `8b4d213` and `dbb0d4f` entries. No product behaviour change.
+- `647e6d2` Pin the CI runners to Ubuntu 24.04
+  Workflows only. No product behaviour change.
+- `b854b36` Deploy only main's head, and roll back a smoke check that hangs
+  `.github/workflows/ci.yml` deploy job and `tools/deploy/smoke.mjs` runtime cap, from the independent review. No product behaviour change.
+- `2e6c60a` Correct the compression, save, privacy and contributor statements the review found false
+  Site pages, README and CONTRIBUTING. No product behaviour change.
 
 - `2667a9c` Run the whole suite on GitHub, deploy main after a smoke check, and check docs against the tree
   `.github/workflows/ci.yml`, `nightly.yml`, `revert-proof.yml`, `tools/deploy/smoke.mjs`, `tools/audit/docs-sync.mjs`, `pnpm coverage --min-lines`. No product behaviour change.
@@ -208,7 +224,18 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - `a22a4c9` Document browser engine fault injection and how the interface mode travels
   CONTRIBUTING.md and architecture.md: browser engine fault injection and how the interface mode travels. No product behaviour change.
 
-## 5. Test-only (20)
+## 5. Test-only (25)
+
+- `05d35d5` Make the refused-camera and window-resize browser tests independent of the host
+  The refused-permission tests relied on the browser refusing (a runner without a camera answers `NotFoundError`), and the resize test failed when it read page one while pdf.js swapped its canvas. Test-only; the `dbb0d4f` proof runs from here.
+- `fd0aa63` Test the degenerate-raster refusal on a strip the unfixed detector mistook for a sheet
+  The first test of `8b4d213` used a flat strip the unfixed detector also found nothing in. Test-only; the `8b4d213` proof runs from here.
+- `cb9e6bf` Close the update-banner tests' page before their origin
+  The tests closed their second origin while the reloaded page still warmed its lazy chunks, so the worker answered 503. Test-only.
+- `7d68e82` Make two pdf.js handle tests fail when their behaviour breaks
+  A retry test that accepted a cached rejection and a render-abort test that accepted a finished render, both found by the independent review. Test-only.
+- `de51893` Test that a generated print file opens beside an untouched source
+  Covers the print button `c892667` made reachable. Test-only.
 
 - `071d171` test: every suite runs pdf.js on its legacy worker, set once in the setup
   Six suites pointed pdf.js at its modern worker (needs `Math.sumPrecise`, missing in this Node), so pdf.js warned and skipped work while the tests passed; the legacy worker is now set once in `vitest.setup.ts`. Test-only.
