@@ -75,7 +75,7 @@ function derInteger(magnitude: Uint8Array): Uint8Array {
  *
  * Why this is not pkijs's `createCMSECDSASignature`: that helper drops at most **one** leading
  * zero octet of each half, so a scalar with two or more (about 1 signature in 500 on P-521,
- * 1 in 32 768 on P-256) comes out as an `INTEGER` with a redundant `0x00` — not DER, and
+ * 1 in 65 536 on P-256) comes out as an `INTEGER` with a redundant `0x00` — not DER, and
  * refused by every strict reader, this repository's own verifier included. The signature was
  * right and the file still read as invalid, at random.
  */
