@@ -822,6 +822,51 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
     expect(textBoxXml(box, 1, new DocxRegistry())).toContain('<w:w w:val="80"/>');
   });
 
+  it('does not read the slant of a synthetic oblique (a sheared text matrix) as a horizontal scale', async () => {
+    const mupdf = await loadMupdf();
+    const program = new Uint8Array(
+      readFileSync(
+        join(
+          dirname(createRequire(import.meta.url).resolve('@expo-google-fonts/noto-sans/package.json')),
+          '400Regular/NotoSans_400Regular.ttf',
+        ),
+      ),
+    );
+    const doc = new mupdf.PDFDocument();
+    const noto = new mupdf.Font('NotoSans-Regular', program);
+    const hexOf = (text: string) =>
+      [...text]
+        .map((c) =>
+          noto
+            .encodeCharacter(c.codePointAt(0) as number)
+            .toString(16)
+            .padStart(4, '0'),
+        )
+        .join('');
+    doc.insertPage(
+      0,
+      doc.addPage(
+        [0, 0, 400, 300],
+        0,
+        { Font: { F0: doc.addFont(noto) } },
+        // The same size and glyphs, upright and sheared by 0.3.
+        `BT /F0 18 Tf 40 200 Td <${hexOf('Istanbul agaclari')}> Tj ET\n` +
+          `BT /F0 18 Tf 1 0 0.3 1 40 150 Tm <${hexOf('Istanbul agaclari')}> Tj ET\n`,
+      ),
+    );
+    doc.subsetFonts();
+    const reopened = openPdf(mupdf, doc.saveToBuffer('garbage=compact,compress').asUint8Array());
+    const fonts = await embedFonts(mupdf, reopened, [0], { signal: new AbortController().signal });
+    const layout = readPageLayout(mupdf, reopened.loadPage(0), { images: false });
+    const boxes = textBoxes(layout, [], (face) => fonts.faceOf(0, face));
+    expect(boxes).toHaveLength(2);
+    for (const box of boxes) expect(box.paragraphs[0]?.lines[0]?.runs[0]?.fit?.hscale).toBe(1);
+    // The sheared line (the lower one) is set in italic, the upright one is not.
+    const [sheared, upright] = [...boxes].sort((a, b) => b.box[1] - a.box[1]) as [TextBox, TextBox];
+    expect(sheared.paragraphs[0]?.lines[0]?.runs[0]?.italic).toBe(true);
+    expect(upright.paragraphs[0]?.lines[0]?.runs[0]?.italic).toBe(false);
+  });
+
   it('reads the horizontal scale of embedded glyphs: whole percent, 1 inside 2 % or with nothing to compare', () => {
     expect(horizontalScale(9, 10)).toBe(0.81);
     expect(horizontalScale(10.1, 10)).toBe(1);

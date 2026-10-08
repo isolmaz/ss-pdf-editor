@@ -176,6 +176,30 @@ function serifFamilies(layout: PageLayout): ReadonlySet<string> {
 /** The embedded face (if any) of a MuPDF font name on the page being written. */
 export type FaceLookup = (face: string) => EmbeddedFace | undefined;
 
+/**
+ * How much wider than their advance a line's glyph boxes are because the PDF shears the text
+ * (a synthetic oblique is a skewed text matrix; the box of a sheared glyph reaches over by the
+ * slant): the mean of box width − pitch to the next glyph over the glyph pairs of the line, when
+ * most of them are wider than their pitch by over a tenth of the size; 0 for upright text.
+ */
+function shearOf(chars: readonly LayoutChar[]): number {
+  let pairs = 0;
+  let sheared = 0;
+  let excess = 0;
+  for (let at = 0; at + 1 < chars.length; at += 1) {
+    const char = chars[at] as LayoutChar;
+    const next = chars[at + 1] as LayoutChar;
+    if (isSpace(char) || isSpace(next) || next.baseline !== char.baseline) continue;
+    pairs += 1;
+    const over = char.box[2] - char.box[0] - (next.box[0] - char.box[0]);
+    if (over > 0.1 * char.size) {
+      sheared += 1;
+      excess += over;
+    }
+  }
+  return sheared > 0 && sheared * 2 >= pairs ? excess / sheared : 0;
+}
+
 /** Runs of a line: split on font, size (0.5 pt), weight, slant, colour and link. */
 function runsOf(
   chars: readonly LayoutChar[],
@@ -216,6 +240,7 @@ function runsOf(
   const runs: TextRun[] = [];
   /** Per run: the geometry of its characters and the sums `horizontalScale` compares. */
   const fits: { advances: number[]; starts: number[]; ends: number[]; drawn: number; natural: number }[] = [];
+  const shear = shearOf(chars);
   for (const item of items) {
     // A font the document embeds is named by its embedded family and set in the embedded face's own weight and slant.
     const face = item.source.face === undefined ? undefined : embedded?.(item.source.face);
@@ -226,7 +251,8 @@ function runsOf(
         mono: item.source.mono,
       });
     const bold = face?.bold ?? item.source.bold;
-    const italic = face?.italic ?? item.source.italic;
+    // A sheared line is an oblique the PDF makes itself: Word draws it as italic.
+    const italic = (face?.italic ?? item.source.italic) || shear > 0;
     const last = runs[runs.length - 1];
     let at = runs.length - 1;
     if (
@@ -263,7 +289,7 @@ function runsOf(
         (face === undefined ? standardAdvance(font, bold, italic, unicode) : undefined);
       const em = program ?? (item.space ? SPACE : width / source.size / codes.length);
       if (face !== undefined && program !== undefined && !item.space) {
-        fit.drawn += width / codes.length;
+        fit.drawn += Math.max(0, width - shear) / codes.length;
         fit.natural += program * source.size;
       }
       fit.advances.push(em);
