@@ -1,6 +1,6 @@
 {
   "generatedBy": "apps/web/src/offline.ts (canonical) — read by tools/assemble-dist.mjs",
-  "note": "Every path here is a same-origin static asset the engine adapters fetch. A capability is ready only when the cache holds every path in its list; see offline.ts for why a substring check is not a check.",
+  "note": "Every path here is a same-origin static asset the engine adapters fetch. A capability is ready only when the cache holds every path in its list; see offline.ts for why a substring check is not a check. `app` stays empty here: it is the editor's own hashed scripts and styles, which only the build knows, and tools/assemble-dist.mjs writes them into dist/offline-manifest.json.",
   "capabilities": {
     "core": [
       "/editor/",
@@ -23,6 +23,7 @@
       "/fonts/dm-sans/dm-sans-latin-700-normal.woff2",
       "/fonts/dm-sans/dm-sans-latin-ext-700-normal.woff2"
     ],
+    "app": [],
     "pdfjs": [
       "/engines/pdfjs/pdf.worker.mjs",
       "/engines/pdfjs/wasm/openjpeg.wasm",

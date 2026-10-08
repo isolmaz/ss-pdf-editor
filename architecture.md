@@ -2660,11 +2660,22 @@ Versioning is the interesting half:
   (`incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }))`): `tesseract`
   is cached on first use, and counting it made every finished preparation read as
   incomplete.
+- The editor's own code is a capability too, `app`: every file of the editor build (all of
+  `dist/editor/` but the source maps and the start page, which `core` lists). Its names are
+  hashed, so `offline-packages.json` keeps `app` empty — the assemble step refuses a
+  non-empty list — and `tools/assemble-dist.mjs` writes the real one into
+  `offline-manifest.json` from the build. The page loads its entry before the worker controls
+  it and imports each tool's chunk only when the tool opens, so nothing else caches them: a
+  first-visit user used to be told "ready" and then met a 503 on `pdf-<hash>.js` when opening
+  a PDF offline. Prepare fetches `app` and readiness requires it (`requiredCapabilities`);
+  install still holds only the shell above, so a first visit stays light.
 - A cache written under a different identity is not evidence for this build:
   `matchesBuild` is false and nothing may be called ready.
-- The worker only ever caches paths from the build's own manifest. A page cannot hand it an
-  arbitrary URL, and work started inside a message handler is registered with `waitUntil`,
-  so an interrupted preparation is reported rather than silently truncated.
+- The worker only ever caches paths from the build's own manifest. `PREPARE_PACKAGE` carries
+  capability *names*, never URLs, and the worker resolves them against the manifest, so a
+  page cannot hand it an arbitrary URL (a name the manifest lacks asks for nothing). Work
+  started inside a message handler is registered with `waitUntil`, so an interrupted
+  preparation is reported rather than silently truncated.
 
 Cross-origin isolation is what makes the measurement and OCR paths possible at all, which
 is why `/editor/*` carries COOP/COEP from the header file rather than from a browser flag:
@@ -2706,7 +2717,8 @@ the cache name, the manifest and the worker stamp together.
 ### 13.2 Assembling the distribution
 
 `tools/assemble-dist.mjs` composes `dist/` from exactly three inputs (`apps/site/dist` →
-root, `apps/web/dist` → `editor/`, `public/` → root), writes `offline-manifest.json`, stamps
+root, `apps/web/dist` → `editor/`, `public/` → root), writes `offline-manifest.json` (the pinned
+engine assets, every file of the editor build as `app`, and the catalogues as `shell`), stamps
 `sw.js`, copies `LICENSE`, and copies every bundled licence text out of the installed
 packages into `dist/licenses/`. Each of those steps is a **hard failure** when its input is missing:
 a missing `LICENSE`, a missing licence text, a missing `__CACHE_VERSION__` placeholder, or a

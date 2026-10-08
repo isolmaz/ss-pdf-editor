@@ -57,6 +57,10 @@ async function readManifest() {
  * The build's own interface catalogues (`shell` in the manifest). The entry fetches its
  * language at run time, so the crawl of `index.html` never names it, and a shell reloaded
  * offline without one paints raw message keys. Only `/editor/assets/` paths are taken.
+ *
+ * This is the part of the editor's code that install itself must hold. Every other chunk of
+ * the build — each tool's code, the dialogs, the engines' adapters — is the `app` capability,
+ * which Prepare fetches and readiness requires (`capabilities.app` in the manifest).
  */
 function shellPathsOf(manifest) {
   const list = manifest?.shell;
@@ -64,10 +68,16 @@ function shellPathsOf(manifest) {
   return list.filter((path) => typeof path === 'string' && path.startsWith('/editor/assets/'));
 }
 
-/** Every path any capability needs, so one preparation pass can fill the whole cache. */
-function pathsOf(manifest) {
+/**
+ * The paths the named capabilities need, or every capability's when no names are given, so
+ * one preparation pass can fill the whole cache. The page asks by name and never by URL: the
+ * `app` capability is the editor's own hashed chunks, which only the build's manifest can
+ * list, and a name that is not in the manifest asks for nothing.
+ */
+function pathsOf(manifest, names) {
   const paths = new Set();
-  for (const list of Object.values(manifest?.capabilities ?? {})) {
+  for (const [name, list] of Object.entries(manifest?.capabilities ?? {})) {
+    if (names !== undefined && !names.includes(name)) continue;
     if (!Array.isArray(list)) continue;
     for (const path of list) if (typeof path === 'string') paths.add(path);
   }
@@ -287,12 +297,9 @@ self.addEventListener('message', (event) => {
           event.ports[0]?.postMessage({ type: 'PREPARE_FAILED', error: 'offline manifest unavailable' });
           return;
         }
-        // Only the build's own list: an arbitrary URL from a page must never be able to
-        // put a response into this origin's static cache.
-        const wanted = new Set(pathsOf(manifest));
-        const requested = Array.isArray(data.urls)
-          ? data.urls.filter((url) => typeof url === 'string' && wanted.has(url))
-          : [...wanted];
+        // Only the build's own list: the page names capabilities, never URLs, so an
+        // arbitrary URL from a page can never put a response into this origin's static cache.
+        const requested = pathsOf(manifest, Array.isArray(data.capabilities) ? data.capabilities : undefined);
         const cache = await caches.open(CACHE_NAME);
         let count = 0;
         const failed = [];

@@ -905,7 +905,7 @@ how changes land.
 
 The same step also does the following:
 
-- writes `dist/offline-manifest.json`;
+- writes `dist/offline-manifest.json` (the pinned engine assets and every file of the editor build);
 - stamps the service-worker version;
 - copies `LICENSE` and every bundled licence text into `dist/licenses/`, indexed by
   `INDEX.json`.
@@ -941,15 +941,17 @@ pnpm worker:deploy:dry      # same, with --dry-run
   without a network still shows a working home screen in its own typefaces.
 - **On request only.** The rest is precached only when you ask for it, in
   Settings → Offline use.
-  It covers the shell, pdf.js, MuPDF and the fonts. It does not fetch OCR, although the
-  manifest lists a `tesseract` capability (the OCR engine and the Turkish and English
-  packs), and it does not fetch the PDF/A converter (15.5 MB of WebAssembly) either. The
-  service worker stores any file under `/engines/` the first time it is fetched, so the OCR
-  engine, a language pack and the converter are cached when you first use them online and
-  work offline after that.
+  It covers the shell, every script and style of the editor (each tool opens offline, even on
+  a device that never opened that tool online), pdf.js, MuPDF and the fonts. It does not
+  fetch OCR, although the manifest lists a `tesseract` capability (the OCR engine and the
+  Turkish and English packs), and it does not fetch the PDF/A converter (15.5 MB of
+  WebAssembly) either. The service worker stores any file under `/engines/` the first time
+  it is fetched, so the OCR engine, a language pack and the converter are cached when you
+  first use them online and work offline after that.
 - **Readiness.** It is checked path by path, for the same capabilities the preparation
-  fetches; OCR, cached on first use, is not counted against it. A half-downloaded pack is
-  reported as `missing`, with the missing paths named.
+  fetches; OCR, cached on first use, is not counted against it. The editor's own scripts
+  count (capability `app`): engines without a tool's code are not "ready". A half-downloaded
+  pack is reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
   reads an older cache.
 

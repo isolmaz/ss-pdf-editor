@@ -33,6 +33,7 @@ function manifest(capabilities: Partial<Record<OfflineCapability, readonly strin
     version: VERSION,
     capabilities: {
       core: ['/editor/'],
+      app: ['/editor/assets/index-a1.js', '/editor/assets/pdf-b2.js'],
       pdfjs: ['/engines/pdfjs/pdf.worker.mjs'],
       mupdf: ['/engines/mupdf/mupdf-wasm.wasm', '/engines/mupdf/mupdf.js'],
       tesseract: ['/engines/tesseract/worker.min.js', '/engines/tesseract/lang/fast/tur.traineddata.gz'],
@@ -81,6 +82,18 @@ describe('capabilityReadiness', () => {
     });
   });
 
+  it("is not ready while one of the editor's own chunks is missing, and names it", () => {
+    // A first visit that never opened a tool holds the entry and not that tool's chunk: the
+    // engines being cached says nothing about whether the editor can open a document.
+    const entryOnly = new Set(['/editor/assets/index-a1.js']);
+    expect(capabilityReadiness(manifest(), 'app', entryOnly)).toEqual({
+      ready: false,
+      missing: ['/editor/assets/pdf-b2.js'],
+    });
+    const all = new Set(['/editor/assets/index-a1.js', '/editor/assets/pdf-b2.js']);
+    expect(capabilityReadiness(manifest(), 'app', all)).toEqual({ ready: true, missing: [] });
+  });
+
   it('compares paths exactly, so a directory request is not the file inside it', () => {
     expect(capabilityReadiness(manifest(), 'core', new Set(['/editor']))).toEqual({
       ready: false,
@@ -105,6 +118,9 @@ describe('offlineReadiness', () => {
     expect(readiness.fullyReady).toBe(false);
     expect(readiness.capabilities.mupdf).toEqual({ ready: false, missing: ['/engines/mupdf/mupdf.js'] });
     expect(readiness.capabilities.pdfjs.ready).toBe(true);
+    // The editor's own chunks count as much as an engine does.
+    const noChunk = new Set(all.filter((path) => path !== '/editor/assets/pdf-b2.js'));
+    expect(offlineReadiness(manifest(), noChunk, VERSION).fullyReady).toBe(false);
   });
 
   it('refuses to count a cache written by another release', () => {
@@ -125,9 +141,16 @@ describe('offlineReadiness', () => {
 });
 
 describe('requiredCapabilities', () => {
-  it('always asks for MuPDF, because core editing writes with it, and OCR only when OCR is on', () => {
-    expect(requiredCapabilities({ ocr: false })).toEqual(['core', 'pdfjs', 'mupdf', 'fonts']);
-    expect(requiredCapabilities({ ocr: true })).toEqual(['core', 'pdfjs', 'mupdf', 'fonts', 'tesseract']);
+  it("always asks for the editor's own code and MuPDF, because core editing runs on both, and OCR only when OCR is on", () => {
+    expect(requiredCapabilities({ ocr: false })).toEqual(['core', 'app', 'pdfjs', 'mupdf', 'fonts']);
+    expect(requiredCapabilities({ ocr: true })).toEqual([
+      'core',
+      'app',
+      'pdfjs',
+      'mupdf',
+      'fonts',
+      'tesseract',
+    ]);
   });
 });
 
@@ -152,6 +175,11 @@ describe('the shipped path list matches the pinned assets', () => {
     expect(pinned.size).toBeGreaterThan(0);
     const missing = offline.filter((path) => !pinned.has(path) && !shell.has(path));
     expect(missing).toEqual([]);
+  });
+
+  it("leaves the editor's own chunks to the build, which is the only place their hashed names exist", () => {
+    // `tools/assemble-dist.mjs` refuses a non-empty list and writes the real one into the manifest.
+    expect(OFFLINE_CAPABILITIES.app).toEqual([]);
   });
 
   it('lists every pinned file the OCR and MuPDF capabilities need', () => {
@@ -240,13 +268,12 @@ describe('the page ↔ worker exchange', () => {
     expect(await requestOfflineReadiness()).toBeNull();
   });
 
-  it('asks for exactly the paths of the requested capabilities and reports what the worker did', async () => {
+  it("asks for the requested capabilities by name — the editor's own chunks included — and reports what the worker did", async () => {
     const received = stubWorker(() => ({ type: 'PREPARE_DONE', version: 'v7', count: 4, failed: ['/a', 5] }));
-    const result = await prepareOffline(['core', 'fonts']);
-    expect(received[0]).toEqual({
-      type: 'PREPARE_PACKAGE',
-      urls: [...OFFLINE_CAPABILITIES.core, ...OFFLINE_CAPABILITIES.fonts],
-    });
+    const result = await prepareOffline(['core', 'app', 'fonts']);
+    // Names, not URLs: the chunks of `app` are hashed, so only the build's manifest, which the
+    // worker reads, can say which files they are.
+    expect(received[0]).toEqual({ type: 'PREPARE_PACKAGE', capabilities: ['core', 'app', 'fonts'] });
     expect(result).toEqual({ version: 'v7', prepared: 4, failed: ['/a'] });
   });
 
@@ -316,5 +343,11 @@ describe('the page ↔ worker exchange', () => {
     stubWorker(() => ({ type: 'PREPARE_FAILED' }));
     const result = await prepareOffline(['fonts']);
     expect(result).toEqual({ version: null, prepared: 0, failed: [...OFFLINE_CAPABILITIES.fonts] });
+  });
+
+  it('never reports a failed preparation as empty, even when only build-listed capabilities were asked for', async () => {
+    // `app` has no path in the shipped list, so an empty `failed` would read as success.
+    stubWorker(() => ({ type: 'PREPARE_FAILED' }));
+    expect(await prepareOffline(['app'])).toEqual({ version: null, prepared: 0, failed: ['app'] });
   });
 });
