@@ -862,7 +862,9 @@ export type Advance = (family: string, bold: boolean, italic: boolean, unicode: 
 
 /** The stand-in families a scan's text is set in, sans first: it wins unless another is clearly closer. */
 const FAMILIES = ['Arial', 'Times New Roman', 'Courier New'] as const;
-/** A family replaces Arial when the spread of its word-width ratios is under this × Arial's. */
+/** The open fonts the app ships, tried after the stand-ins; one the `advance` has no metrics for is never picked. */
+const OPEN_FAMILIES = ['Noto Sans'] as const;
+/** A family replaces the best so far (Arial first) when the spread of its word-width ratios is under this × that one's. */
 const SWITCH_SPREAD = 0.8;
 /** Words (3 or more letters or digits) needed before the page's family is judged. */
 const MIN_WORDS = 8;
@@ -881,7 +883,8 @@ const advanceOf = (advance: Advance, family: string, bold: boolean, italic: bool
 function pickFamily(lines: readonly Line[], advance: Advance): string {
   let best: string = FAMILIES[0];
   let bestSpread = Infinity;
-  for (const family of FAMILIES) {
+  for (const family of [...FAMILIES, ...OPEN_FAMILIES]) {
+    if (advance(family, false, false, 97) === undefined) continue;
     const logs: number[] = [];
     for (const line of lines) {
       for (const word of line.words) {
@@ -895,7 +898,7 @@ function pickFamily(lines: readonly Line[], advance: Advance): string {
     if (logs.length < MIN_WORDS) return FAMILIES[0];
     const centre = median(logs);
     const spread = median(logs.map((value) => Math.abs(value - centre)));
-    if (family === FAMILIES[0] || spread < SWITCH_SPREAD * bestSpread) {
+    if (family === best || spread < SWITCH_SPREAD * bestSpread) {
       best = family;
       bestSpread = spread;
     }

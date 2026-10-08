@@ -39,6 +39,7 @@ import {
 } from './docx-layout-ocr';
 import { sceneItemXml } from './docx-layout-shapes';
 import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
+import { type OpenFont, openFontFiles } from './docx-ocr-font';
 import { DocxRegistry, type PageScene, type TextBox } from './layout-scene';
 import { readPageRaster, readPageScene } from './layout-scene-read';
 import { type OperationContext, throwIfAborted } from './types';
@@ -152,7 +153,10 @@ export async function writeLayoutDocx(
 ): Promise<LayoutDocx> {
   const mupdf = await loadMupdf();
   const registry = new DocxRegistry(WORD_Z_BASE);
-  const fonts = await embedFonts(mupdf, doc, pages, context);
+  const embedded = await embedFonts(mupdf, doc, pages, context);
+  /** The scan pages' text boxes, and the open font they may be set in. */
+  const scanBoxes: TextBox[] = [];
+  let openFont: OpenFont | null = null;
   const paragraphs: string[] = [];
   const allBoxes: TextBox[] = [];
   const scaled: { page: number; scale: number }[] = [];
@@ -188,10 +192,12 @@ export async function writeLayoutDocx(
     const scale = wordPageScale(scene.width, scene.height);
     if (scale < 1) scaled.push({ page: index + 1, scale });
     const section = pageSectionXml(scene.width * scale, scene.height * scale);
-    const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => fonts.faceOf(index, face));
+    const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face));
     const items = scan?.items ?? scene.items;
     if (scan !== null) {
       ocrPages.push(index + 1);
+      scanBoxes.push(...scan.boxes);
+      openFont = scan.open;
       for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
     }
     if (boxes.length === 0) textless.push(index + 1);
@@ -219,6 +225,7 @@ export async function writeLayoutDocx(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throwIfAborted(context.signal);
+  const fonts = openFont === null ? embedded : embedded.plus(openFontFiles(openFont, scanBoxes));
   context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
   // The last page's section is the body's own `w:sectPr`.
   const body = paragraphs.join('') + lastSection;

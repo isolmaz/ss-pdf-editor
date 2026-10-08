@@ -16,7 +16,8 @@
 import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
-import { provideStandardMetrics, standardAdvance } from './docx-fonts';
+import { provideStandardMetrics } from './docx-fonts';
+import { loadOpenFont, type OpenFont, ocrAdvance } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import { type ReadWord, refineWords } from './ocr-refine';
@@ -71,6 +72,8 @@ export interface ScanPage {
   readonly flagged: readonly Omit<FlaggedWord, 'page'>[];
   /** Pictures added (regions), for the totals. */
   readonly regions: number;
+  /** The open font the text may be set in (`OPEN_FONT`); `null` when it could not be loaded. */
+  readonly open: OpenFont | null;
 }
 
 const isVisible = (char: { readonly c: string; readonly invisible?: true }): boolean =>
@@ -271,8 +274,8 @@ export async function readScanPage(
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
   // dropped, and the page is erased again only if one lies outside.
   provideStandardMetrics(mupdf);
-  const advance = (family: string, bold: boolean, italic: boolean, unicode: number) =>
-    standardAdvance(family, bold, italic, unicode);
+  const open = await loadOpenFont(mupdf);
+  const advance = ocrAdvance(open);
   const misread = misreadWords(words);
   const text = words.filter((word) => !misread.has(word));
   const first = ocrBackground(image, [...text, ...duplicates]);
@@ -312,5 +315,6 @@ export async function readScanPage(
     boxes,
     flagged,
     regions: pictures.length,
+    open,
   };
 }

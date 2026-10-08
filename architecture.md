@@ -731,7 +731,11 @@ had to stay green. The moves, and the defects they fixed on the way:
          Times New Roman and
          Courier New whose per-word width ratios agree best (judged from 8 words of three
          letters up; Arial wins unless another's spread is under 0.8 × its), measured with
-         the metric-compatible standard fonts MuPDF carries (`standardAdvance`). Each word
+         the metric-compatible standard fonts MuPDF carries (`standardAdvance`). Noto Sans, the
+         one open text font the app ships (`public/fonts/noto`, SIL OFL, loaded through
+         `engines/noto.ts`), is a fourth candidate under the same rule (`docx-ocr-font.ts`); a
+         page set in it names it in its runs and the package embeds it (regular, and the shipped
+         semi-bold as the bold) like a PDF's own fonts (`EmbeddedFonts.plus`). Each word
          carries where the scan has its letters (`RunFit`), so the writer fits it like a PDF's
          text; a box more than 25 % narrower or 35 % wider than the word's natural width is
          not trusted and its letters are set at the natural pitch from its left edge. A word
