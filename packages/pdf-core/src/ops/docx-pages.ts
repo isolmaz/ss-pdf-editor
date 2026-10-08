@@ -27,6 +27,7 @@ import {
   type MediaExtension,
   PACKAGE_RELS,
   pageSectionXml,
+  TWIPS,
   wordDocumentXml,
   wordPageScale,
   XML_HEAD,
@@ -161,6 +162,13 @@ const STYLES_XML =
   '</w:styles>';
 
 /**
+ * A side of the page in points as Word keeps it: a whole number of twips. The section's
+ * `w:pgSz` and the picture's extent both come from this, so the picture is exactly the page
+ * (EMU = twips × 635) and the renderer never resamples it.
+ */
+const wordSide = (points: number): number => Math.round(points * TWIPS) / TWIPS;
+
+/**
  * One page's paragraph: the anchored picture, in a run and a paragraph a point high.
  * `name` is its file under `word/media/`; `section` is the page's `w:sectPr` for all but the
  * last page (the body carries that one).
@@ -173,8 +181,8 @@ function pageParagraphXml(image: PageImage, number: number, name: string, sectio
     rid: imageRelId(number),
     x: 0,
     y: 0,
-    width: image.width * image.scale,
-    height: image.height * image.scale,
+    width: wordSide(image.width * image.scale),
+    height: wordSide(image.height * image.scale),
   });
   return (
     '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>' +
@@ -185,7 +193,7 @@ function pageParagraphXml(image: PageImage, number: number, name: string, sectio
 /** The DOCX of the pictures: one section per page, each a picture the size of its page. */
 export async function pageImagesDocx(images: readonly PageImage[], title: string): Promise<Uint8Array> {
   const sections = images.map((image) =>
-    pageSectionXml(image.width * image.scale, image.height * image.scale),
+    pageSectionXml(wordSide(image.width * image.scale), wordSide(image.height * image.scale)),
   );
   const names = images.map((image, at) => `page${at + 1}.${image.extension}`);
   const last = images.length - 1;

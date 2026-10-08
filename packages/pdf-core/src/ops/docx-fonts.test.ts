@@ -206,3 +206,84 @@ describe('exact layout with two subsets of one face', () => {
     );
   });
 });
+
+describe('exact layout with a ligature glyph', () => {
+  /**
+   * Noto Sans, Identity-H, whose ToUnicode reads the fi ligature glyph (U+FB01's glyph) as the two
+   * characters "fi", as a PDF that was set with ligatures does; `show` is drawn from `o`, `f` and `fi`.
+   */
+  async function ligaturePdf(show: readonly ('o' | 'f' | 'fi')[]): Promise<Uint8Array> {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    const font = new mupdf.Font('NotoSans-Regular', notoRegular());
+    try {
+      const gid = (code: number): number => font.encodeCharacter(code);
+      const gids = { o: gid(0x6f), f: gid(0x66), fi: gid(0xfb01) };
+      const hex = (n: number): string => n.toString(16).padStart(4, '0');
+      const object = doc.addFont(font);
+      const page = doc.addPage(
+        [0, 0, 400, 300],
+        0,
+        { Font: { F0: object } },
+        `BT /F0 18 Tf 40 200 Td <${show.map((c) => hex(gids[c])).join('')}> Tj ET\n`,
+      );
+      doc.insertPage(0, page);
+      doc.subsetFonts();
+      const cmap =
+        '/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /Lig def /CMapType 2 def ' +
+        `1 begincodespacerange <0000> <FFFF> endcodespacerange 3 beginbfchar <${hex(gids.o)}> <006F> ` +
+        `<${hex(gids.f)}> <0066> <${hex(gids.fi)}> <00660069> endbfchar endcmap CMapName currentdict /CMap defineresource pop end end`;
+      doc.findPage(0).get('Resources').get('Font').get('F0').put('ToUnicode', doc.addStream(cmap, {}));
+      return new Uint8Array(doc.saveToBuffer('garbage=compact,compress').asUint8Array());
+    } finally {
+      font.destroy();
+      doc.destroy();
+    }
+  }
+
+  /** What the embedded program of the export has for "f" and "i": the advance of each (`undefined` when unmapped), and the program's own "f" and "fi" advances. */
+  async function embedded(show: readonly ('o' | 'f' | 'fi')[]): Promise<{
+    f: number | undefined;
+    i: number | undefined;
+    plain: number;
+    ligature: number;
+  }> {
+    const result = await exportOffice(await ligaturePdf(show), options, run);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const table = (await zip.file('word/fontTable.xml')?.async('string')) ?? '';
+    const key = /w:fontKey="(\{[^"]+\})"/.exec(table)?.[1] as string;
+    const odttf = await zip.file('word/fonts/font1.odttf')?.async('uint8array');
+    const mupdf = await loadMupdf();
+    const program = new mupdf.Font('Embedded', obfuscateFont(odttf as Uint8Array, key));
+    const original = new mupdf.Font('Original', notoRegular());
+    try {
+      const advance = (code: number): number | undefined => {
+        const gid = program.encodeCharacter(code);
+        return gid === 0 ? undefined : program.advanceGlyph(gid);
+      };
+      return {
+        f: advance(0x66),
+        i: advance(0x69),
+        plain: original.advanceGlyph(original.encodeCharacter(0x66)),
+        ligature: original.advanceGlyph(original.encodeCharacter(0xfb01)),
+      };
+    } finally {
+      program.destroy();
+      original.destroy();
+    }
+  }
+
+  it('keeps the plain "f" glyph for "f", not the ligature drawn first', async () => {
+    const seen = await embedded(['o', 'fi', 'f', 'o']);
+    expect(seen.plain).not.toBe(seen.ligature);
+    expect(seen.f).toBe(seen.plain);
+    // "i" is only ever drawn inside the ligature: no glyph of its own was seen, so none is mapped.
+    expect(seen.i).toBeUndefined();
+  });
+
+  it('maps no glyph for "f" when it is only ever drawn inside the ligature', async () => {
+    const seen = await embedded(['o', 'fi', 'o']);
+    expect(seen.f).toBeUndefined();
+    expect(seen.i).toBeUndefined();
+  });
+});
