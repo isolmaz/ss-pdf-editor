@@ -499,7 +499,7 @@
               <li>· Convert to PDF/A-2b (the default), PDF/A-3b or PDF/A-1b; the result opens in a new tab and the original stays open</li>
               <li>· A PDF/A check covering 20 rule groups also works on files you did not convert; it is not a full veraPDF validation and not a certificate</li>
               <li>· A file that breaks a rule is never handed over: the operation stops and says which rule failed</li>
-              <li>· Compression: a structural re-save or rasterising the images; if the file grows, the report says so</li>
+              <li>· Compression: a structural re-save (lossless) or turning pages into images (lossy; the text layer, links and annotations are lost); if the file grows, the report says so</li>
             </ul>
           </div>
 
@@ -723,7 +723,7 @@
               </svg>
               <div class="text-sm">
                 <strong class="font-semibold text-kumo-strong">Save Straight to Disk:</strong>
-                <span class="text-kumo-subtle"> You can write your documents directly back to the original file on your computer, or download them.</span>
+                <span class="text-kumo-subtle"> In Chromium-based browsers you can write your documents directly back to the original file on your computer; in every browser you can download a copy.</span>
               </div>
             </div>
 

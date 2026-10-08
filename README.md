@@ -219,7 +219,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Layers (OCG).
   - Header and footer, Bates numbering and watermarks.
 - **Printing.** N-up, booklet and poster imposition, plus a duplex print-sheet builder.
-- **Compression.** There are two modes: a structural re-save, or rasterising the images.
+- **Compression.** There are two modes: a structural re-save (lossless), or turning the
+  selected pages into images (lossy: their text layer, links, annotations and outline are lost).
   If the file grows, the report says so.
 
 ### Text
@@ -399,7 +400,7 @@ nothing leaving the browser.
     A tagged-PDF writer adds structure tags to the file and verifies the result, and
     `/Alt` and `/TU` writers set descriptions for images and form fields.
   - **PDF/UA.** A check modelled on the Matterhorn Protocol: 34 rules, each marked pass,
-    fail, needs-a-person or not applicable, with a Turkish or English explanation, how to
+    fail, needs-a-person, not applicable or not checked, with a Turkish or English explanation, how to
     fix it, and a link to the page or the element. It covers the tagged-PDF flag, the
     structure tree, title and `DisplayDocTitle`, `/Lang`, content marking, figure alt text,
     tables, headings, lists, links (`OBJR`), annotations, form tooltips, fonts (embedded,
@@ -754,7 +755,8 @@ are merged with a merge commit. [`REVIEW.md`](REVIEW.md) lists the commits by ri
 with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
 how changes land.
 
-- **`pnpm ci:verify`** runs the same checks as the `verify` job on your machine, in order:
+- **`pnpm ci:verify`** runs the checks of the `verify` job on your machine, in order (the job
+  also ends with `wrangler deploy --dry-run`, which is `pnpm worker:deploy:dry`):
   1. `install --frozen-lockfile`
   2. `typecheck`
   3. `check`

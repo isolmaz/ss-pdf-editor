@@ -22,7 +22,7 @@ pnpm dev                     # the editor on a local dev server
 ## Checks
 
 Every change must pass the local gates. `pnpm ci:verify` runs on your machine the checks of the
-`verify` job in CI; the individual commands are:
+`verify` job in CI except its final `wrangler deploy --dry-run` (`pnpm worker:deploy:dry`); the individual commands are:
 
 ```sh
 pnpm typecheck
@@ -128,7 +128,7 @@ The interface ships in Turkish and English. To add a language:
    (any subset of the keys in `tr.ts`; a missing key falls back, so a partial translation
    is usable).
 2. Add one entry to `LOCALES` in `packages/shared/src/i18n/locales.ts`: its BCP 47 `id`,
-   its own name, `dir` (`rtl` for Arabic, Hebrew, Persian, Urdu), `fallback: 'en'` and a
+   its own name (`nativeName`), its English name (`englishName`), `dir` (`rtl` for Arabic, Hebrew, Persian, Urdu), `fallback: 'en'` and a
    `load` that imports the file, so the dictionary is downloaded only when the language is
    chosen.
 
