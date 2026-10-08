@@ -113,9 +113,9 @@ interface MuPdfDocument extends MuDocument {
 /** The module's surface used here. */
 interface MuModule {
   readonly Matrix: { scale(x: number, y: number): number[] };
-  readonly ColorSpace: { readonly DeviceRGB: unknown };
+  readonly ColorSpace: { readonly DeviceRGB: unknown; readonly DeviceGray: unknown };
   readonly Font: new (name: string, data: Uint8Array) => MuFont;
-  readonly Image: new (source: MuPixmap | Uint8Array) => unknown;
+  readonly Image: new (source: MuPixmap | Uint8Array, mask?: unknown) => unknown;
   readonly Pixmap: new (colorspace: unknown, bbox: number[], alpha: boolean) => MuPixmap;
   readonly Document: {
     openDocument(bytes: Uint8Array, magic: string): MuDocument;
@@ -189,7 +189,20 @@ export interface ShapeStyle {
   readonly lineWidth?: number;
   /** Fill and stroke opacity, 0–1 (an `ExtGState` `ca`/`CA`). Opaque when omitted. */
   readonly opacity?: number;
+  /** Fill by the even-odd rule (nested subpaths make holes) instead of non-zero winding. */
+  readonly evenOdd?: boolean;
+  /** `[on, off]` dash lengths of the outline, in points. */
+  readonly dash?: readonly [number, number];
+  /** Line cap of the outline; butt when omitted. */
+  readonly cap?: 'round' | 'square';
 }
+
+/** One step of a free-form path, in top-left page space. */
+export type PathStep =
+  | readonly ['M', number, number]
+  | readonly ['L', number, number]
+  | readonly ['C', number, number, number, number, number, number]
+  | readonly ['Z'];
 
 /** How a straight line is stroked. */
 export interface LineStyle {
@@ -197,12 +210,18 @@ export interface LineStyle {
   readonly lineWidth?: number;
   /** `[on, off]` dash lengths in points. */
   readonly dash?: readonly [number, number];
+  /** Line cap; butt when omitted (round caps turn a `[0, gap]` dash into dots). */
+  readonly cap?: 'round' | 'square';
 }
 
 /** One text run's options. */
 export interface TextOptions {
   /** Stretch the run to exactly this width by widening its spaces (a justified line); a line that would need gaps wider than `MAX_SPACE_STRETCH` em stays left-aligned. */
   readonly justifyTo?: number;
+  /** Turn the run by this many degrees, counter-clockwise on the page, about `(x, y)`. */
+  readonly rotate?: number;
+  /** Fill opacity of the glyphs, 0–1. Opaque when omitted. */
+  readonly opacity?: number;
 }
 
 /** One page being drawn; `SamplePdf.save` turns it into a real page. */
@@ -241,11 +260,18 @@ export class PageBuilder {
     text: string,
     options: TextOptions = {},
   ): void {
-    const setup = `${rgb(color)} rg BT /${this.owner.fontName(face)} ${num(size)} Tf ${num(x)} ${num(this.flip(y))} Td`;
+    const angle = ((options.rotate ?? 0) * Math.PI) / 180;
+    const place =
+      options.rotate === undefined
+        ? `${num(x)} ${num(this.flip(y))} Td`
+        : `${num(Math.cos(angle))} ${num(Math.sin(angle))} ${num(-Math.sin(angle))} ${num(Math.cos(angle))} ${num(x)} ${num(this.flip(y))} Tm`;
+    const state = options.opacity === undefined ? '' : `q /${this.owner.opacityName(options.opacity)} gs `;
+    const close = options.opacity === undefined ? '' : ' Q';
+    const setup = `${state}${rgb(color)} rg BT /${this.owner.fontName(face)} ${num(size)} Tf ${place}`;
     const spaces = [...text].filter((character) => character === ' ').length;
     const extra = (options.justifyTo ?? 0) - this.owner.measure(face, size, text);
     if (options.justifyTo === undefined || spaces === 0 || extra / spaces > size * MAX_SPACE_STRETCH) {
-      this.ops.push(`${setup} ${this.owner.glyphHex(face, text)} Tj ET`);
+      this.ops.push(`${setup} ${this.owner.glyphHex(face, text)} Tj ET${close}`);
       return;
     }
     // A TJ number is subtracted from the pen position, in thousandths of the font size.
@@ -256,7 +282,7 @@ export class PageBuilder {
         ? `${this.owner.glyphHex(face, `${word} `)} ${adjust}`
         : this.owner.glyphHex(face, word),
     );
-    this.ops.push(`${setup} [${parts.join(' ')}] TJ ET`);
+    this.ops.push(`${setup} [${parts.join(' ')}] TJ ET${close}`);
   }
 
   /** A run whose **right** end sits at `xRight`. */
@@ -306,10 +332,14 @@ export class PageBuilder {
   /** Close the current path and paint it as `style` says. */
   private paint(style: ShapeStyle, path: string): void {
     const { fill, stroke } = style;
-    const operator = fill !== undefined && stroke !== undefined ? 'B' : fill !== undefined ? 'f' : 'S';
+    const star = style.evenOdd === true ? '*' : '';
+    const operator =
+      fill !== undefined && stroke !== undefined ? `B${star}` : fill !== undefined ? `f${star}` : 'S';
+    const dash = style.dash === undefined ? '' : ` [${num(style.dash[0])} ${num(style.dash[1])}] 0 d`;
+    const cap = style.cap === 'round' ? ' 1 J' : style.cap === 'square' ? ' 2 J' : '';
     const colors = [
       fill === undefined ? '' : `${rgb(fill)} rg`,
-      stroke === undefined ? '' : `${rgb(stroke)} RG ${num(style.lineWidth ?? 1)} w`,
+      stroke === undefined ? '' : `${rgb(stroke)} RG ${num(style.lineWidth ?? 1)} w${dash}${cap}`,
     ]
       .filter((part) => part !== '')
       .join(' ');
@@ -353,11 +383,75 @@ export class PageBuilder {
     this.roundRect(cx - radius, cy - radius, radius * 2, radius * 2, radius, style);
   }
 
+  /** An ellipse of radii `rx`, `ry` centred on `(cx, cy)`. */
+  ellipse(cx: number, cy: number, rx: number, ry: number, style: ShapeStyle): void {
+    const kx = rx * KAPPA;
+    const ky = ry * KAPPA;
+    this.path(
+      [
+        ['M', cx + rx, cy],
+        ['C', cx + rx, cy + ky, cx + kx, cy + ry, cx, cy + ry],
+        ['C', cx - kx, cy + ry, cx - rx, cy + ky, cx - rx, cy],
+        ['C', cx - rx, cy - ky, cx - kx, cy - ry, cx, cy - ry],
+        ['C', cx + kx, cy - ry, cx + rx, cy - ky, cx + rx, cy],
+        ['Z'],
+      ],
+      style,
+    );
+  }
+
+  /** A closed polygon through `points`. */
+  polygon(points: readonly (readonly [number, number])[], style: ShapeStyle): void {
+    const [first, ...rest] = points;
+    if (first === undefined) throw new Error('a polygon needs points');
+    this.path([['M', first[0], first[1]], ...rest.map(([x, y]) => ['L', x, y] as const), ['Z']], style);
+  }
+
+  /** A free-form path of lines and cubic Béziers; `['Z']` closes a subpath. */
+  path(steps: readonly PathStep[], style: ShapeStyle): void {
+    const text = steps
+      .map((step) => {
+        switch (step[0]) {
+          case 'M':
+            return `${num(step[1])} ${num(this.flip(step[2]))} m`;
+          case 'L':
+            return `${num(step[1])} ${num(this.flip(step[2]))} l`;
+          case 'C':
+            return `${num(step[1])} ${num(this.flip(step[2]))} ${num(step[3])} ${num(this.flip(step[4]))} ${num(step[5])} ${num(this.flip(step[6]))} c`;
+          default:
+            return 'h';
+        }
+      })
+      .join(' ');
+    this.paint(style, text);
+  }
+
+  /** A box painted with a two-colour axial gradient (an `sh` shading under a clip), `from` to `to` along `direction`. */
+  gradientRect(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    from: Rgb,
+    to: Rgb,
+    direction: 'horizontal' | 'vertical',
+  ): void {
+    const coords =
+      direction === 'horizontal'
+        ? [x, this.flip(y), x + width, this.flip(y)]
+        : [x, this.flip(y), x, this.flip(y + height)];
+    const name = this.owner.shadingName(coords, from, to);
+    this.ops.push(
+      `q ${num(x)} ${num(this.flip(y + height))} ${num(width)} ${num(height)} re W n /${name} sh Q`,
+    );
+  }
+
   /** A straight stroke from `(x1, y1)` to `(x2, y2)`. */
   line(x1: number, y1: number, x2: number, y2: number, style: LineStyle): void {
     const dash = style.dash === undefined ? '' : ` [${num(style.dash[0])} ${num(style.dash[1])}] 0 d`;
+    const cap = style.cap === 'round' ? ' 1 J' : style.cap === 'square' ? ' 2 J' : '';
     this.ops.push(
-      `q ${rgb(style.stroke)} RG ${num(style.lineWidth ?? 1)} w${dash} ${num(x1)} ${num(this.flip(y1))} m ${num(x2)} ${num(this.flip(y2))} l S Q`,
+      `q ${rgb(style.stroke)} RG ${num(style.lineWidth ?? 1)} w${dash}${cap} ${num(x1)} ${num(this.flip(y1))} m ${num(x2)} ${num(this.flip(y2))} l S Q`,
     );
   }
 
@@ -387,6 +481,8 @@ export class SamplePdf {
   private readonly imageObjects: MuPdfObject[] = [];
   private readonly imageIndex = new Map<MuPixmap, number>();
   private readonly opacityList: number[] = [];
+  private readonly shadingList: { readonly coords: number[]; readonly from: Rgb; readonly to: Rgb }[] = [];
+  private readonly masks = new Map<MuPixmap, MuPixmap>();
   private readonly advances = new Map<string, number>();
 
   private constructor(
@@ -435,11 +531,22 @@ export class SamplePdf {
     return `GS${index}`;
   }
 
+  /** The resource name of an axial shading from `from` to `to` along `coords` (PDF user space), registered on first use. */
+  shadingName(coords: number[], from: Rgb, to: Rgb): string {
+    this.shadingList.push({ coords, from, to });
+    return `Sh${this.shadingList.length - 1}`;
+  }
+
   /** The image-XObject index of a pixmap, added to the document on first use. */
   imageResource(pixmap: MuPixmap): number {
     let index = this.imageIndex.get(pixmap);
     if (index === undefined) {
-      this.imageObjects.push(this.doc.addImage(new this.mupdf.Image(pixmap)));
+      const mask = this.masks.get(pixmap);
+      const image =
+        mask === undefined
+          ? new this.mupdf.Image(pixmap)
+          : new this.mupdf.Image(pixmap, new this.mupdf.Image(mask));
+      this.imageObjects.push(this.doc.addImage(image));
       index = this.imageObjects.length - 1;
       this.imageIndex.set(pixmap, index);
     }
@@ -517,6 +624,39 @@ export class SamplePdf {
     return pixmap;
   }
 
+  /**
+   * Like `pixmap`, but each sample also has an alpha in 0–1: the picture is embedded with a
+   * soft mask (`/SMask`), so what is behind it shows through where alpha is below 1.
+   */
+  maskedPixmap(
+    width: number,
+    height: number,
+    paint: (x: number, y: number) => readonly [Rgb, number],
+  ): MuPixmap {
+    const alphas = new Float32Array(width * height);
+    const color = this.pixmap(width, height, (x, y) => {
+      const [value, alpha] = paint(x, y);
+      alphas[y * width + x] = alpha;
+      return value;
+    });
+    const mask = new this.mupdf.Pixmap(this.mupdf.ColorSpace.DeviceGray, [0, 0, width, height], false);
+    const samples = mask.getPixels();
+    const stride = mask.getStride();
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1)
+        samples[y * stride + x] = Math.round((alphas[y * width + x] ?? 1) * 255);
+    }
+    this.pixmaps.push(mask);
+    this.masks.set(color, mask);
+    return color;
+  }
+
+  /** Hand a pixmap MuPDF made elsewhere (a rendered snippet) to this document: `save` frees it with the others. */
+  adopt(pixmap: MuPixmap): MuPixmap {
+    this.pixmaps.push(pixmap);
+    return pixmap;
+  }
+
   /** The finished file; the builder is spent afterwards. */
   save(): Uint8Array {
     try {
@@ -528,7 +668,23 @@ export class SamplePdf {
       for (const [index, opacity] of this.opacityList.entries()) {
         extGState[`GS${index}`] = { Type: 'ExtGState', ca: opacity, CA: opacity };
       }
-      const resources = { Font: font, XObject: xobject, ExtGState: extGState };
+      const shading: Record<string, unknown> = {};
+      for (const [index, entry] of this.shadingList.entries()) {
+        shading[`Sh${index}`] = {
+          ShadingType: 2,
+          ColorSpace: 'DeviceRGB',
+          Coords: entry.coords,
+          Function: {
+            FunctionType: 2,
+            Domain: [0, 1],
+            C0: entry.from.map((channel) => channel / 255),
+            C1: entry.to.map((channel) => channel / 255),
+            N: 1,
+          },
+          Extend: [true, true],
+        };
+      }
+      const resources = { Font: font, XObject: xobject, ExtGState: extGState, Shading: shading };
       for (const [index, page] of this.pages.entries()) {
         const object = this.doc.addPage(
           [0, 0, page.width, page.height],
@@ -593,12 +749,85 @@ export async function extractPageTexts(bytes: Uint8Array): Promise<string[]> {
   }
 }
 
+/** What a poor scan adds to the clean render. Every effect is deterministic (a seeded generator). */
+export interface ScanDefects {
+  /** The sheet lies this many degrees counter-clockwise on the glass; the corners the page no longer covers are scanner-lid grey. */
+  readonly skewDegrees?: number;
+  /** Standard deviation of the gaussian sensor noise, in 0–255 sample units. */
+  readonly noiseSigma?: number;
+  /** 0–1: how much darker the dim corner is than the lit one (uneven illumination). */
+  readonly unevenLight?: number;
+}
+
+/** A tiny seeded generator (mulberry32), so a noisy scan is the same bytes every run. */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** The grey of the scanner lid showing past the page edge. */
+const LID: Rgb = [226, 226, 224];
+
+/** Apply `defects` to an RGB pixmap in place. */
+function degrade(pixmap: MuPixmap, defects: ScanDefects): void {
+  const width = pixmap.getWidth();
+  const height = pixmap.getHeight();
+  const stride = pixmap.getStride();
+  const samples = pixmap.getPixels();
+  const source = samples.slice();
+  const angle = ((defects.skewDegrees ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const centreX = width / 2;
+  const centreY = height / 2;
+  const dim = defects.unevenLight ?? 0;
+  const sigma = defects.noiseSigma ?? 0;
+  const random = seededRandom(20240607);
+  const gaussian = (): number => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      // the source position this output sample comes from: the output turned back by the skew
+      const dx = x - centreX;
+      const dy = y - centreY;
+      const sx = centreX + dx * cos - dy * sin;
+      const sy = centreY + dx * sin + dy * cos;
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const light = 1 - dim * (0.6 * (x / width) + 0.4 * (y / height) ** 2);
+      const grain = sigma === 0 ? 0 : gaussian() * sigma;
+      const at = y * stride + x * 3;
+      for (let channel = 0; channel < 3; channel += 1) {
+        let value: number = LID[channel] ?? 255;
+        if (x0 >= 0 && y0 >= 0 && x0 + 1 < width && y0 + 1 < height) {
+          const fx = sx - x0;
+          const fy = sy - y0;
+          const base = y0 * stride + x0 * 3 + channel;
+          const top = (source[base] ?? 0) * (1 - fx) + (source[base + 3] ?? 0) * fx;
+          const bottom = (source[base + stride] ?? 0) * (1 - fx) + (source[base + stride + 3] ?? 0) * fx;
+          value = top * (1 - fy) + bottom * fy;
+        }
+        samples[at + channel] = Math.max(0, Math.min(255, Math.round(value * light + grain)));
+      }
+    }
+  }
+}
+
 /**
  * A scan of a PDF: every page rendered at `dpi` into a JPEG and placed, full-page, in a new
  * document of the same page sizes. There is no text layer in the result and no vector content —
- * what a flatbed scanner (or a "print to image") produces.
+ * what a flatbed scanner (or a "print to image") produces. `defects` make it a poor scan.
  */
-export async function rasterizeToImagePdf(bytes: Uint8Array, dpi: number): Promise<Uint8Array> {
+export async function rasterizeToImagePdf(
+  bytes: Uint8Array,
+  dpi: number,
+  defects: ScanDefects = {},
+): Promise<Uint8Array> {
   const mupdf = await loadMupdfModule();
   const source = mupdf.Document.openDocument(bytes.slice(), 'application/pdf');
   const scan = new mupdf.PDFDocument();
@@ -615,6 +844,7 @@ export async function rasterizeToImagePdf(bytes: Uint8Array, dpi: number): Promi
         false,
         false,
       );
+      if (Object.keys(defects).length > 0) degrade(pixmap, defects);
       const image = scan.addImage(new mupdf.Image(pixmap.asJPEG(90)));
       pixmap.destroy();
       page.destroy();
@@ -629,6 +859,38 @@ export async function rasterizeToImagePdf(bytes: Uint8Array, dpi: number): Promi
     return copyOut(scan.saveToBuffer('garbage=compact,compress'));
   } finally {
     scan.destroy();
+    source.destroy();
+  }
+}
+
+/**
+ * Page `pageIndex` of a PDF rendered at `dpi` into an RGB pixmap (with `defects` applied), for
+ * a sample to embed as a picture. The caller hands it to `SamplePdf.adopt` (or `destroy`s it).
+ */
+export async function renderPageToPixmap(
+  bytes: Uint8Array,
+  dpi: number,
+  defects: ScanDefects = {},
+  pageIndex = 0,
+): Promise<MuPixmap> {
+  const mupdf = await loadMupdfModule();
+  const source = mupdf.Document.openDocument(bytes.slice(), 'application/pdf');
+  try {
+    const page = source.loadPage(pageIndex);
+    try {
+      const scale = dpi / 72;
+      const pixmap = page.toPixmap(
+        mupdf.Matrix.scale(scale, scale),
+        mupdf.ColorSpace.DeviceRGB,
+        false,
+        false,
+      );
+      if (Object.keys(defects).length > 0) degrade(pixmap, defects);
+      return pixmap;
+    } finally {
+      page.destroy();
+    }
+  } finally {
     source.destroy();
   }
 }
