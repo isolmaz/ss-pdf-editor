@@ -65,6 +65,15 @@ const SAME_SIZE_HIGH = 1.33;
 /** …and left edges or centres at most this × the size apart. */
 const ALIGN = 0.8;
 
+/** Lines on baselines at most this × the size apart are cells of one row. */
+const ROW_BAND = 0.5;
+/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre); rows need a column of figures too (`amountLike`: the left-most or the right-most cell of both rows for two cells, a figure under a figure for more)… */
+const TABLE_CELLS = 3;
+/** …and rows of three cells or more further apart than this × the size are not one table (rows are padded: twice the size is usual; two cells reach `MAX_LEADING` only: cards, paragraph breaks of two columns). */
+const TABLE_MAX_LEADING = 4;
+/** …and their cells hold this many words or fewer on average (a line of prose has more). */
+const TABLE_CELL_WORDS = 4;
+
 /** A symbol-only word is a misread graphic when tesseract is less sure than this (0–100). */
 const MISREAD_CONFIDENCE = 60;
 /** …a word of letters only, when less sure than this; a single stem, when taller than this × the page's median word. */
@@ -1081,6 +1090,100 @@ function groupLines(words: readonly OcrWord[], regionOf: (word: OcrWord) => numb
   return lines;
 }
 
+const rightmost = (row: readonly Line[]): Line =>
+  row.reduce((best, line) => (line.x1 > best.x1 ? line : best));
+const leftmost = (row: readonly Line[]): Line =>
+  row.reduce((best, line) => (line.x0 < best.x0 ? line : best));
+
+/** A cell of figures: more digits than letters (an amount, a quantity, a percentage, a date). */
+function amountLike(cell: Line): boolean {
+  const text = cell.words.map((word) => word.text).join('');
+  return (text.match(/\p{N}/gu)?.length ?? 0) > (text.match(/\p{L}/gu)?.length ?? 0);
+}
+
+/**
+ * Whether the cells of a row stand under the cells of the row above, as a table's do (see
+ * `tableRows`); `leading` is the distance from the lowest line above, which a wrapped cell
+ * brings closer than the row's own baseline.
+ */
+function gridPair(above: readonly Line[], below: readonly Line[], leading: number): boolean {
+  const size = Math.max(...above.map((line) => line.size), ...below.map((line) => line.size));
+  const cells = Math.min(above.length, below.length);
+  const need = cells >= TABLE_CELLS ? TABLE_CELLS : 2;
+  const reachDown = cells >= TABLE_CELLS ? TABLE_MAX_LEADING : MAX_LEADING;
+  if (leading > reachDown * size || cells < need) return false;
+  const reach = ALIGN * size;
+  const sameColumn = (over: Line, cell: Line) =>
+    over.region === cell.region &&
+    (Math.abs(over.x0 - cell.x0) <= reach ||
+      Math.abs(over.x1 - cell.x1) <= reach ||
+      Math.abs((over.x0 + over.x1) / 2 - (cell.x0 + cell.x1) / 2) <= reach);
+  // A table has a column of figures; side-by-side blocks of short lines (skill lists, label blocks) are columns. Two cells need it in the left-most or in the right-most cell of both rows; more cells, a figure under a figure.
+  const edge = (pick: (row: readonly Line[]) => Line) => amountLike(pick(above)) && amountLike(pick(below));
+  const figures =
+    need === 2
+      ? edge(rightmost) || edge(leftmost)
+      : below.some(
+          (cell) => amountLike(cell) && above.some((over) => amountLike(over) && sameColumn(over, cell)),
+        );
+  if (!figures) return false;
+  const stands = (cell: Line) => above.some((over) => sameColumn(over, cell));
+  const words = [...above, ...below].reduce((sum, cell) => sum + cell.words.length, 0);
+  return below.filter(stands).length >= need && words <= TABLE_CELL_WORDS * (above.length + below.length);
+}
+
+/**
+ * The tables of a page, as the lines that are their cells: rows are lines on one baseline (two
+ * or more), and consecutive rows whose cells stand under each other (`gridPair`) are one table.
+ * A line alone on its baseline keeps the table open only as the second line of a wrapped cell
+ * (it continues a cell of the row above, or such a line, as `continues` has it); any other line — a
+ * sub-heading — ends it.
+ * A column of single-line cells (an invoice's descriptions) looks like a paragraph of short
+ * lines to `groupParagraphs`; this is what tells it apart.
+ */
+function tableRows(lines: readonly Line[]): Line[][] {
+  const rows: Line[][] = [];
+  for (const line of [...lines].sort((a, b) => a.baseline - b.baseline)) {
+    const row = rows.find(
+      (cells) => Math.abs((cells[0] as Line).baseline - line.baseline) <= ROW_BAND * line.size,
+    );
+    if (row === undefined) rows.push([line]);
+    else row.push(line);
+  }
+  const tables: Line[][] = [];
+  let open = false;
+  let above: Line[] | undefined;
+  /** The cells of the last row and the lines that wrapped under them. */
+  let refs: Line[] = [];
+  let lowest = -Infinity;
+  for (const row of rows) {
+    const baseline = (row[0] as Line).baseline;
+    if (row.length > 1) {
+      if (above !== undefined && gridPair(above, row, baseline - lowest)) {
+        if (!open) tables.push([...above]);
+        (tables[tables.length - 1] as Line[]).push(...row);
+        open = true;
+      } else {
+        open = false;
+      }
+      above = row;
+      refs = [...row];
+    } else {
+      const line = row[0] as Line;
+      const wraps =
+        baseline - lowest <= MAX_LEADING * line.size && refs.some((cell) => continues(cell, line));
+      if (wraps) refs.push(line);
+      else {
+        open = false;
+        above = undefined;
+        refs = [];
+      }
+    }
+    lowest = baseline;
+  }
+  return tables;
+}
+
 /** Whether `line` carries on the paragraph whose last line is `last`: same region, aligned, a line below at a similar size. */
 function continues(last: Line, line: Line): boolean {
   if (last.region !== line.region) return false;
@@ -1096,8 +1199,8 @@ function continues(last: Line, line: Line): boolean {
   );
 }
 
-/** Lines, top to bottom, into paragraphs: each line joins the nearest paragraph above it that it continues. */
-function groupParagraphs(lines: readonly Line[]): Line[][] {
+/** Lines, top to bottom, into paragraphs: each line joins the nearest paragraph above it that it continues; a cell of a table starts its own. */
+function groupParagraphs(lines: readonly Line[], cells: ReadonlySet<Line>): Line[][] {
   const paragraphs: Line[][] = [];
   for (const line of [...lines].sort((a, b) => a.baseline - b.baseline || a.x0 - b.x0)) {
     let best: Line[] | undefined;
@@ -1105,7 +1208,7 @@ function groupParagraphs(lines: readonly Line[]): Line[][] {
     for (const paragraph of paragraphs) {
       const last = paragraph[paragraph.length - 1] as Line;
       const leading = line.baseline - last.baseline;
-      if (leading < nearest && continues(last, line)) {
+      if (leading < nearest && !cells.has(line) && continues(last, line)) {
         best = paragraph;
         nearest = leading;
       }
@@ -1247,7 +1350,23 @@ export function ocrTextBoxes(
   const inks = new Map<OcrWord, WordInk>();
   const lines = groupLines(words, regionIndex(regions));
   const typical = lines.length === 0 ? 0 : median(lines.map((line) => line.size));
-  const paragraphs = readingOrder(groupParagraphs(lines), boundsOf, typical, (paragraph) => paragraph.length);
+  const tables = tableRows(lines);
+  const cells = new Set(tables.flat());
+  const grouped = groupParagraphs(lines, cells);
+  // A table is one item of the reading order, read row by row inside; paragraphs are items of their own.
+  const units: Line[][][] = grouped
+    .filter((paragraph) => !cells.has(paragraph[0] as Line))
+    .map((paragraph) => [paragraph]);
+  for (const table of tables) {
+    const own = grouped.filter((paragraph) => table.includes(paragraph[0] as Line));
+    units.push(inRows(own, boundsOf));
+  }
+  const paragraphs = readingOrder(
+    units,
+    (unit) => boundsOf(unit.flat()),
+    typical,
+    (unit) => (unit.length === 1 ? (unit[0] as Line[]).length : 1),
+  ).flat();
   const lineStroke = new Map<Line, number>();
   const sizes = new Map<Line, number>();
   const slants = new Map<Line, boolean>();
