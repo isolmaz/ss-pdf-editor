@@ -469,7 +469,8 @@ export async function readScanPage(
   // A layer of replacement characters or turned lines says less than the picture: OCR reads it again when it can.
   const trusted = ocr === null || layerTrusted(scene);
   const useLayer = layer.length > 0 && trusted;
-  const scan = renderScan(mupdf, page, scanDpi(scene));
+  // The PNG goes to the recogniser only for a whole scan read by OCR; a mixed page sends its masked render.
+  const scan = renderScan(mupdf, page, scanDpi(scene), !mixed && !useLayer && ocr !== null);
   const masked = maskBoxes(scan.image, visible);
   const inked = inkBoxes(masked, pictureBoxes(scene));
   if (mixed && !useLayer && inked.length === 0) return null;
