@@ -83,7 +83,7 @@ export const homePart = {
   'home.noStarred': 'Henüz yıldızlanan bir belge yok.',
   'home.noMatch': 'Aramanızla eşleşen belge yok.',
   'home.privacyNotice':
-    'Belgeleriniz bu cihazdan çıkmaz. Bu liste yalnızca dosya adını, boyutunu ve sayfa sayısını saklar.',
+    'Belgeleriniz bu cihazdan çıkmaz. Bu liste yalnızca dosya adını, boyutunu, sayfa sayısını, son açılma zamanını ve yıldızlı olup olmadığını saklar.',
   'home.colName': 'Belge adı',
   'home.colPages': 'Sayfa',
   'home.colLastOpened': 'Son açılma',
