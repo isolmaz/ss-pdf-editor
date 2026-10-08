@@ -220,15 +220,15 @@ export function buildShapes(pdf: SamplePdf): void {
   page.path(
     [
       ['M', 450, 440],
-      ['C', 480, 380, 520, 500, 555, 420],
+      ['C', 480, 380, 520, 480, 555, 420],
     ],
     { stroke: ORANGE, lineWidth: 2.5 },
   );
   page.line(450, 440, 480, 380, { stroke: MUTED, lineWidth: 0.6, dash: [2, 2] });
-  page.line(555, 420, 520, 500, { stroke: MUTED, lineWidth: 0.6, dash: [2, 2] });
+  page.line(555, 420, 520, 480, { stroke: MUTED, lineWidth: 0.6, dash: [2, 2] });
   for (const [x, y] of [
     [480, 380],
-    [520, 500],
+    [520, 480],
   ] as const) {
     page.circle(x, y, 2.5, { fill: MUTED });
   }
@@ -451,7 +451,10 @@ export function buildChart(pdf: SamplePdf): void {
 // 3. text-in-image
 // ---------------------------------------------------------------------------
 
-/** A one-page snippet drawn, saved and rendered at `dpi` into a pixmap the target document adopts. */
+/**
+ * A one-page snippet drawn, saved and rendered at `dpi` into a pixmap the target document adopts.
+ * A snippet with `defects` is a scan-like picture and is embedded as a JPEG, like the scans.
+ */
 async function snippet(
   pdf: SamplePdf,
   width: number,
@@ -464,7 +467,8 @@ async function snippet(
   draw(source.addPage(width, height));
   const bytes = source.save();
   const [text = ''] = await extractPageTexts(bytes);
-  return { pixmap: pdf.adopt(await renderPageToPixmap(bytes, dpi, defects)), text };
+  const scanned = Object.keys(defects).length > 0;
+  return { pixmap: pdf.adopt(await renderPageToPixmap(bytes, dpi, defects), scanned), text };
 }
 
 /**

@@ -151,13 +151,13 @@ functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). 
 - **Thresholds.** `e2e/fidelity/thresholds.json` maps mode → `default` and per-sample overrides to
   `{ ssim, words }`. SSIM gates the worst page, word accuracy the whole document. `null` means
   measured, not gated: a run reports such a number without failing. `page-images` gates SSIM 0.95
-  by default and 0.97 for the graphics samples below; `layout` gates SSIM 0.95 and words 0.99 for each committed sample that reaches
-  them, a floor just under the measured value for the two that do not yet (`irs-fw4-2022`,
-  `usgs-fs2020-3042`), and measured floors for the scans read by OCR (`cv-scan`, `cards-scan`,
-  `nasa-tm-vacuum-1965`), and a floor 0.02 (SSIM) / 0.03 (words) under the measured value for each
-  graphics sample and its scans (words are not gated for a result under 10 %, nor in `flow` for a
-  scan); `flow` gates words only (0.05 under the measured value for the graphics samples). The text
-  inside pictures (below) is measured, never gated. A sample's own key, even `null`, wins over the
+  for every sample; `layout` gates SSIM 0.95 and words 0.99 for each committed sample that reaches
+  them (every generated page but `overlay`, whose SSIM is 0.93, gates its own SSIM at 0.91), a floor
+  just under the measured value for the two that do not yet (`irs-fw4-2022`, `usgs-fs2020-3042`),
+  and measured floors for the scans read by OCR (`cv-scan`, `cards-scan`, `shapes-scan`,
+  `invoice-scan`, `invoice-scan-rough`, `nasa-tm-vacuum-1965`); `flow` gates words only, for the
+  graphics samples 0.05 under the measured value (none for their scans, which flow does not read).
+  The text inside pictures (below) is measured, never gated. A sample's own key, even `null`, wins over the
   mode's `default`. To gate a number, set it a little
   under the lowest value measured on CI's LibreOffice, and say in the commit what it is.
 - **Local samples.** Every `*.pdf` in the folder e2e/fixtures/local (git-ignored, so absent from a fresh clone: the files are the
