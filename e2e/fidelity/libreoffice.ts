@@ -38,6 +38,14 @@ function registerCleanup(): void {
   });
 }
 
+/**
+ * LibreOffice's PDF export recompresses every picture as 90 % JPEG and caps it at 300 dpi by
+ * default. What is measured is the DOCX, not that recompression, so pictures are written
+ * losslessly at their own resolution.
+ */
+const PDF_EXPORT =
+  'pdf:writer_pdf_Export:{"UseLosslessCompression":{"type":"boolean","value":"true"},"ReduceImageResolution":{"type":"boolean","value":"false"}}';
+
 function convert(docxPath: string, outDir: string): Promise<string> {
   const command = binary();
   const expected = join(outDir, `${basename(docxPath, extname(docxPath))}.pdf`);
@@ -50,7 +58,7 @@ function convert(docxPath: string, outDir: string): Promise<string> {
     '--norestore',
     `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
     '--convert-to',
-    'pdf',
+    PDF_EXPORT,
     '--outdir',
     outDir,
     docxPath,
