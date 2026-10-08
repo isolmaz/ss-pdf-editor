@@ -1023,7 +1023,11 @@ function docxPage(
       const stands = items[index + 1] as Item;
       const lead = stands.box[1];
       const offset = 1 + Math.max(0, lead - (Math.max(previousBottom, top) + 1)) - (lead - top);
-      floor = Math.max(item.box[3], floor === 0 ? 0 : top + floor - previousBottom - before - offset);
+      // Only a picture beside the run's carries their feet: one that lies on a bigger picture (a
+      // photograph on a full-page background) ends above its foot, and the text after it is on
+      // the background, not under it.
+      const beside = active !== null && (item.box[0] >= active[2] || item.box[2] <= active[0]);
+      floor = Math.max(item.box[3], beside ? top + floor - previousBottom - before - offset : 0);
       previousBottom = Math.max(previousBottom, top) + 1;
       active = item.box;
     } else {

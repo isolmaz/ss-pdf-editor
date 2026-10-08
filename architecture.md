@@ -438,7 +438,9 @@ had to stay green. The moves, and the defects they fixed on the way:
     no text lands on white paper; a picture no item stands on (a stamp over a corner of two lines)
     stays inline where MuPDF read it. Only that run of items is laid out without the `MAX_GAP`
     clamp. The first item after the run starts at or under the feet of the run's pictures (those of
-    drawings side by side are all kept, each seen from the newest holder), also when it is another
+    drawings side by side, with no horizontal overlap, are all kept, each seen from the newest
+    holder; a picture that lies on a bigger one, a photograph on a full-page background, drops it:
+    the text after it is on the background, not under it), also when it is another
     column's and beside them in the PDF, since the flow would print it over the drawing; its gap
     below the feet is clamped again. Gaps
     inside the drawing's height are not clamped to `MAX_GAP`, and the first item below it starts

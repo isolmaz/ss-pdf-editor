@@ -970,6 +970,19 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
         /<wp:positionH[^>]*><wp:posOffset>(-?\d+)<\/wp:posOffset>.*?<wp:positionV relativeFrom="(\w+)"><wp:posOffset>(-?\d+)<\/wp:posOffset>.*?<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(
           block,
         );
+      const inline = /<wp:inline[^>]*><wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(block);
+      if (inline !== null) {
+        const left = Number(/<w:pgMar [^>]*w:left="(\d+)"/.exec(document)?.[1]) / 20;
+        pictures.push({
+          x: left + Number(/<w:ind w:left="(\d+)"/.exec(block)?.[1] ?? 0) / 20,
+          relative: 'inline',
+          top: y,
+          width: Number(inline[1]) / 12700,
+          height: Number(inline[2]) / 12700,
+        });
+        y += Number(inline[2]) / 12700;
+        continue;
+      }
       if (anchor === null) {
         const exact = /w:line="(\d+)" w:lineRule="exact"/.exec(block)?.[1];
         // A spacer paragraph has an exact height and no text.
@@ -1274,6 +1287,250 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
       (pictures[0]?.top ?? 0) + 120,
     );
   });
+
+  it('keeps a photograph on a full-page background, and the text under it, on one page', async () => {
+    const bytes = await officeDocument([
+      {
+        images: { Im1: red },
+        content: [
+          picture('Im1', 0, 0, 400, 500),
+          courier(40, 470, 'Title'),
+          // 200 x 100 pt, 70..170 pt from the top, with a caption on it.
+          picture('Im1', 100, 330, 200, 100),
+          courier(110, 410, 'Caption'),
+          courier(40, 150, 'Body one'),
+          courier(40, 100, 'Body two'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    const { pictures, texts, end } = flowOf(document);
+    const photo = pictures.find((entry) => entry.width === 200);
+    expect(pictures).toHaveLength(2);
+    expect(document).not.toContain('<w:pageBreakBefore/>');
+    expect(end).toBeLessThanOrEqual(500 - 18);
+    expect(texts.get('Body one') ?? 0).toBeGreaterThanOrEqual((photo?.top ?? 0) + 100);
+    expect(texts.get('Body two') ?? 0).toBeGreaterThan(texts.get('Body one') ?? 0);
+  });
+
+  /** A drawing (a picture) with labels on it, or a line of text, laid out on a 400 x 500 pt page. */
+  type Part =
+    | {
+        drawing: { x: number; top: number; w: number; h: number };
+        labels?: [string, number, number][];
+        /** What is drawn, when it is not the drawing itself: pictures that touch are one drawing. */
+        drawn?: [number, number, number, number][];
+      }
+    | { text: string; x: number; top: number };
+  const cardsPage = (parts: readonly Part[]) =>
+    parts.flatMap((part) =>
+      'drawing' in part
+        ? [
+            ...(part.drawn ?? [[part.drawing.x, part.drawing.top, part.drawing.w, part.drawing.h]]).map(
+              ([x, top, w, h]) => picture('Im1', x, 500 - top - h, w, h),
+            ),
+            ...(part.labels ?? []).map(([text, dx, dy]) =>
+              courier(part.drawing.x + dx, 490.7 - part.drawing.top - dy, text),
+            ),
+          ]
+        : [courier(part.x, 490.7 - part.top, part.text)],
+    );
+  const drawing = (
+    x: number,
+    top: number,
+    w: number,
+    h: number,
+    ...labels: [string, number, number][]
+  ): Part => ({
+    drawing: { x, top, w, h },
+    labels,
+  });
+  const say = (text: string, x: number, top: number): Part => ({ text, x, top });
+
+  /** Arrangements of drawings and text, and what the flow must keep of each. */
+  const ARRANGEMENTS: Record<string, Part[]> = {
+    single: [
+      say('Heading', 40, 30),
+      drawing(100, 100, 200, 100, ['Label A1', 10, 10], ['Label A2', 10, 40]),
+      say('After single', 40, 240),
+      say('Far after', 40, 320),
+    ],
+    'two side by side, the left one taller': [
+      drawing(10, 100, 100, 160, ['Left 1', 10, 10], ['Left 2', 10, 30]),
+      drawing(200, 110, 100, 60, ['Right 1', 10, 10], ['Right 2', 10, 30]),
+      say('After the pair', 40, 280),
+    ],
+    'two side by side, the right one taller': [
+      drawing(10, 100, 100, 60, ['Left 1', 10, 10], ['Left 2', 10, 30]),
+      drawing(200, 110, 100, 160, ['Right 1', 10, 10], ['Right 2', 10, 30]),
+      say('After the pair', 40, 290),
+    ],
+    'three in a row': [
+      drawing(10, 100, 90, 90, ['One 1', 10, 10], ['One 2', 10, 30]),
+      drawing(110, 100, 90, 190, ['Two 1', 10, 10], ['Two 2', 10, 30]),
+      drawing(210, 100, 90, 120, ['Three 1', 10, 10], ['Three 2', 10, 30]),
+      say('After the three', 40, 310),
+    ],
+    'two rows of two cards': [
+      drawing(10, 100, 150, 80, ['Card A1', 10, 10], ['Card A2', 10, 40]),
+      drawing(200, 110, 150, 70, ['Card B1', 10, 10], ['Card B2', 10, 40]),
+      drawing(10, 200, 150, 80, ['Card C1', 10, 10], ['Card C2', 10, 40]),
+      drawing(200, 210, 150, 70, ['Card D1', 10, 10], ['Card D2', 10, 40]),
+      say('After the grid', 40, 320),
+    ],
+    'two stacked': [
+      drawing(100, 80, 200, 70, ['Upper 1', 10, 10], ['Upper 2', 10, 40]),
+      drawing(100, 170, 200, 70, ['Lower 1', 10, 10], ['Lower 2', 10, 40]),
+      say('After the stack', 40, 260),
+    ],
+    'a photograph with a caption on a full-page background': [
+      drawing(0, 0, 400, 500, ['Title', 40, 20]),
+      drawing(100, 70, 200, 100, ['Caption', 10, 10]),
+      say('Body one', 40, 341),
+      say('Body two', 40, 391),
+    ],
+    'a photograph with no text on a full-page background': [
+      drawing(0, 0, 400, 500, ['Title', 40, 20]),
+      drawing(100, 70, 200, 100),
+      say('Body one', 40, 341),
+      say('Body two', 40, 391),
+    ],
+    'two cards on a full-page background': [
+      drawing(0, 0, 400, 500, ['Title', 40, 20]),
+      drawing(30, 100, 150, 120, ['Card A1', 10, 10], ['Card A2', 10, 40]),
+      drawing(220, 110, 150, 80, ['Card B1', 10, 10], ['Card B2', 10, 40]),
+      say('Body text', 40, 300),
+    ],
+    'a drawing with no text on it': [
+      say('Before', 40, 30),
+      drawing(100, 100, 200, 80),
+      say('After', 40, 220),
+    ],
+    // Pictures that overlap are one drawing, the union of both, whose labels belong to it.
+    'two pictures that overlap': [
+      {
+        drawing: { x: 40, top: 100, w: 240, h: 200 },
+        labels: [
+          ['Back 1', 10, 10],
+          ['Back 2', 10, 40],
+          ['Front 1', 200, 70],
+          ['Front 2', 200, 100],
+        ],
+        drawn: [
+          [40, 100, 160, 150],
+          [120, 150, 160, 150],
+        ],
+      },
+      say('After the overlap', 40, 320),
+    ],
+  };
+
+  for (const [name, parts] of Object.entries(ARRANGEMENTS)) {
+    it(`keeps the labels on their drawings, the text out of foreign ones and the page one page long: ${name}`, async () => {
+      const bytes = await officeDocument([{ images: { Im1: red }, content: cardsPage(parts).join('\n') }]);
+      const { file } = await exportOffice(bytes, docxOptions, run);
+      const { pictures, texts, end } = flowOf(await documentXml(file.bytes));
+      const failures: string[] = [];
+      const drawings = parts.flatMap((part) => ('drawing' in part ? [part] : []));
+      const lines = [
+        ...parts.flatMap((part) =>
+          'drawing' in part
+            ? (part.labels ?? []).map(([text, dx, dy]) => ({
+                text,
+                x: part.drawing.x + dx,
+                top: part.drawing.top + dy,
+              }))
+            : [part],
+        ),
+      ];
+      // The drawings of one size and place are told apart by their order down the page.
+      const flowOfDrawing = (entry: (typeof drawings)[number]) => {
+        const same = (a: { x: number; w: number; h: number }, b: { x: number; w: number; h: number }) =>
+          a.w === b.w && a.h === b.h && Math.abs(a.x - b.x) <= 1;
+        const rank = drawings.filter(
+          (other) => same(other.drawing, entry.drawing) && other.drawing.top < entry.drawing.top,
+        ).length;
+        return pictures
+          .filter((candidate) =>
+            same({ ...candidate, w: candidate.width, h: candidate.height }, entry.drawing),
+          )
+          .sort((a, b) => a.top - b.top)[rank];
+      };
+      // Every drawing is there, and every line of text.
+      for (const entry of drawings) {
+        if (flowOfDrawing(entry) === undefined)
+          failures.push(`no picture at ${entry.drawing.x},${entry.drawing.top}`);
+      }
+      for (const line of lines) if (!texts.has(line.text)) failures.push(`no text ${line.text}`);
+      const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0);
+      for (const entry of drawings) {
+        const at = flowOfDrawing(entry);
+        if (at === undefined) continue;
+        const { x, top, w, h } = entry.drawing;
+        for (const [text, , dy] of entry.labels ?? []) {
+          const label = (texts.get(text) ?? Number.NaN) - at.top;
+          if (Math.abs(label - dy) > 1.1)
+            failures.push(`${text} is ${label.toFixed(1)} under its drawing, not ${dy}`);
+        }
+        for (const line of lines) {
+          const flowTop = texts.get(line.text);
+          if (flowTop === undefined) continue;
+          const width = line.text.length * 6;
+          const onIt =
+            line.x + width / 2 >= x &&
+            line.x + width / 2 <= x + w &&
+            line.top + LINE / 2 >= top &&
+            line.top + LINE / 2 <= top + h;
+          if (onIt) continue;
+          const across = overlap(line.x, line.x + width, x, x + w) > 1;
+          // Not on the drawing: it keeps off it in the flow...
+          if (across && overlap(flowTop, flowTop + LINE, at.top, at.top + h) > 1.1) {
+            failures.push(`${line.text} is inside the drawing at ${x},${top}`);
+          }
+          // ...and under it when it is under it on the page, above it when it is above.
+          if (across && line.top >= top + h - 1 && flowTop < at.top + h - 1.1)
+            failures.push(`${line.text} is not under the drawing at ${x},${top}`);
+          if (across && line.top + LINE <= top + 1 && flowTop + LINE > at.top + 1.1)
+            failures.push(`${line.text} is not above the drawing at ${x},${top}`);
+        }
+        for (const other of drawings) {
+          const beside = flowOfDrawing(other);
+          const apart =
+            overlap(x, x + w, other.drawing.x, other.drawing.x + other.drawing.w) <= 0 ||
+            overlap(top, top + h, other.drawing.top, other.drawing.top + other.drawing.h) <= 0;
+          if (
+            other !== entry &&
+            apart &&
+            beside !== undefined &&
+            overlap(at.x, at.x + w, beside.x, beside.x + other.drawing.w) > 0 &&
+            overlap(at.top, at.top + h, beside.top, beside.top + other.drawing.h) > 1.1
+          ) {
+            failures.push(
+              `the drawings at ${x},${top} and ${other.drawing.x},${other.drawing.top} overlap in the flow`,
+            );
+          }
+        }
+      }
+      // Gaps stay clamped: between two lines, 48 pt, or what the PDF has, or a foot under the first.
+      const ordered = lines
+        .map((line) => ({ ...line, flowTop: texts.get(line.text) ?? Number.NaN }))
+        .sort((a, b) => a.flowTop - b.flowTop);
+      ordered.slice(1).forEach((next, index) => {
+        const previous = ordered[index] as (typeof ordered)[number];
+        const gap = next.flowTop - (previous.flowTop + LINE);
+        const foot = Math.max(
+          0,
+          ...pictures.map((entry) => entry.top + entry.height - (previous.flowTop + LINE)),
+        );
+        const pdfGap = Math.abs(next.top - (previous.top + LINE));
+        if (gap > Math.max(48, pdfGap) + foot + 1.1)
+          failures.push(`a gap of ${gap.toFixed(1)} between ${previous.text} and ${next.text}`);
+      });
+      if (end > 500 - 18) failures.push(`the flow ends at ${end.toFixed(1)}, off the page`);
+      expect(failures).toEqual([]);
+    });
+  }
 
   it('keeps a stamp over a corner of two lines of a paragraph where it is read, inline, not behind the last item of the page', async () => {
     const bytes = await officeDocument([
