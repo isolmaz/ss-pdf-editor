@@ -7,7 +7,7 @@ Every commit of `git log --reverse origin/main..HEAD` is listed below exactly on
 | 1 | Data integrity, security, signatures: wrong file or document content, lost data, verification | 22 |
 | 2 | Other behaviour fixes a user sees | 22 |
 | 3 | Code removed as unreachable, and refactors, without behaviour change | 23 |
-| 4 | Tooling, CI, coverage, docs | 19 |
+| 4 | Tooling, CI, coverage, docs | 20 |
 | 5 | Test-only | 25 |
 
 ## How to review
@@ -182,8 +182,10 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - `2524520` Drop the tag editor's unreachable generic refusal
   Removes `tags.err.generic` (“That change is not possible.”): `applyStructureEdits` refuses only with a `StructEditError`, so the notice is read from the refusal's reason directly. No behaviour change claimed; production code +10 −10 lines (the rest is tests).
 
-## 4. Tooling, CI, coverage, docs (19)
+## 4. Tooling, CI, coverage, docs (20)
 
+- `d63b2ce` List every commit since the first guide, and the /Prev fix's proof, in the review guide
+  This guide and `tools/review/revert-proof.json`. No product behaviour change.
 - `fd5376d` List the read-aloud fix and the CI and docs commits in the review guide
   This guide. No product behaviour change.
 - `6a040ec` Ignore the revert-proof report

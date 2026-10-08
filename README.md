@@ -220,7 +220,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Header and footer, Bates numbering and watermarks.
 - **Printing.** N-up, booklet and poster imposition, plus a duplex print-sheet builder.
 - **Compression.** There are two modes: a structural re-save (lossless), or turning the
-  selected pages into images (lossy: their text layer, links, annotations and outline are lost).
+  selected pages into images (lossy: their text layer, links and annotations are lost; the
+  outline still leads to them).
   If the file grows, the report says so.
 
 ### Text

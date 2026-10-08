@@ -36,6 +36,9 @@ test('dismissing the update banner hides it, keeps the page as it is, and leaves
       }),
     ).toBe(true);
   } finally {
+    // The page goes first: left alive, it idle-warms lazy chunks from an origin that is
+    // closing, and the worker answers those 503 (see `closeSite` in web-shell.spec.ts).
+    await page.close();
     await site.close();
   }
 });

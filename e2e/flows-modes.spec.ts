@@ -187,6 +187,9 @@ test('a new release raises the update banner; Refresh activates its worker and r
       }),
     ).toEqual({ waiting: null, active: 'activated' });
   } finally {
+    // The page goes first: left alive, it idle-warms lazy chunks from an origin that is
+    // closing, and the worker answers those 503 (see `closeSite` in web-shell.spec.ts).
+    await page.close();
     await site.close();
   }
 });
