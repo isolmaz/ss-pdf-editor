@@ -234,6 +234,35 @@ describe('exact layout: a scanned page read by OCR', () => {
       .join('');
     expect(written).toContain('Hello world today');
     expect(written).not.toContain('wor1d');
+    // world is written with the confidence the reread had (93), not the first read's (50): no comment for it
+    expect(zip.file('word/comments.xml')).toBeNull();
+  });
+
+  it('writes the reading the ink chose with the confidence it was read at: the first read, 60, over a reread of 85', async () => {
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => words([96, 60, 97]),
+          // the same shape (letters), a surer read, so it is taken — but the scan says world
+          readWord: async () => ({ text: 'wxrld', confidence: 85 }),
+        },
+      },
+      run,
+    );
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const written = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    expect(written).toContain('Hello world today');
+    const comments = await text(zip, 'word/comments.xml');
+    expect(comments).toContain('Low OCR confidence (60 %)');
+    expect(comments).not.toContain('85 %');
   });
 
   it('writes the words as text boxes, the page colour as a shape, the panel as a picture and one comment', async () => {

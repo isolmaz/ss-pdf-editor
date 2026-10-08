@@ -333,6 +333,26 @@ describe('ocrTextBoxes: grouping', () => {
     );
   });
 
+  it('anchors on the middle line at the pitch the lines are set at when the scan sets them tighter than the size: the drift is shared, not carried by the lines below', async () => {
+    // Three lines of 14 pt text 12 pt apart: Word sets them at the size (14), not at the 12 the scan has.
+    const drawn = [40, 52, 64];
+    const page = new Page(200, 100, WHITE);
+    for (const baseline of drawn) page.text('noto', 14, 10, baseline, BLACK, 'Hello');
+    const image = await page.render(3);
+    const words = drawn.map((baseline, at) =>
+      wordAt(image, 'Hello', [5, baseline - 11, 100, baseline + 1], {
+        line: at,
+        baseline: { x0: 10, y0: baseline, x1: 60, y1: baseline },
+      }),
+    );
+    const { boxes } = ocrTextBoxes(words, image, 0.9);
+    const box = boxes[0] as TextBox;
+    const lineHeight = box.paragraphs[0]?.lineHeight as number;
+    expect(lineHeight).toBeGreaterThan(12);
+    // the middle line's baseline is where the scan has it (52); the first runs above and the last below its own
+    expect(box.box[1] + 0.8 * lineHeight + lineHeight).toBeCloseTo(52, 6);
+  });
+
   it('lets a word without indices stand alone', () => {
     const words: OcrWord[] = [
       { text: 'a', x0: 10, y0: 10, x1: 20, y1: 22, confidence: 99 },

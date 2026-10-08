@@ -297,7 +297,7 @@ export async function readScanPage(
   const settled = settleReadings(mupdf, image, set.unsettled, set.family, open);
   if (settled.size > 0)
     set = setIn(
-      kept.map((word) => ({ ...word, text: settled.get(word) ?? word.text })),
+      kept.map((word) => ({ ...word, ...settled.get(word) })),
       open,
     );
   const { boxes, flagged } = set;

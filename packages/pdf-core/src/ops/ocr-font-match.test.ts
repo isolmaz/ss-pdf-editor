@@ -133,10 +133,11 @@ describe('chooseReadings', () => {
     alternatives: readonly string[],
     dpi = 200,
     name = 'Arial',
+    size = 11,
   ) => {
     const font = faces.get(name) as Font;
-    const { image, box } = renderWord(mupdf, font, scanned, { dpi, size: 11 });
-    return chooseReadings(mupdf, image, [{ text, alternatives, box, size: 11 }], font)[0];
+    const { image, box } = renderWord(mupdf, font, scanned, { dpi, size });
+    return chooseReadings(mupdf, image, [{ text, alternatives, box, size }], font)[0];
   };
 
   it('takes the reading whose drawing lies on the ink: 9020 for a scan that says so, %20 for one that does', () => {
@@ -159,6 +160,59 @@ describe('chooseReadings', () => {
     // the same word twice, or the settled one is right
     expect(choose('modern', 'modern', ['modern'])).toBe('modern');
     expect(choose('modern', 'modern', ['rnodern', 'madern'])).toBe('modern');
+  });
+
+  it('keeps a settled reading that is right when another differs by a letter and the ink boxes differ by a pixel', () => {
+    // a 1-px difference between the trimmed boxes of the drawing and of the scan (an anti-aliased
+    // tail, a side bearing) once cost the right text 0.15–0.25 against a wrong one of the same box
+    expect(choose('SQL', 'SQL', ['SOL'], 200, 'Arial', 11)).toBe('SQL');
+    expect(choose('Hamburg', 'Hamburg', ['Hamburq'], 200, 'Times New Roman', 9)).toBe('Hamburg');
+  });
+
+  it('keeps the right reading over the look-alikes of a face at the sizes and resolutions of a scan', () => {
+    const pairs = [
+      ['SQL', 'SOL'],
+      ['Hamburg', 'Hamburq'],
+      ['Hamburg', 'Harnburg'],
+      ['modern', 'rnodern'],
+      ['world', 'wor1d'],
+      ['Hello', 'He11o'],
+      ['Total', 'Tota1'],
+      ['clear', 'dear'],
+    ] as const;
+    const wrong: string[] = [];
+    for (const name of ['Arial', 'Times New Roman', 'Courier New', 'Noto Sans']) {
+      for (const dpi of [150, 200]) {
+        for (const size of [8, 9, 10, 11]) {
+          for (const [right, other] of pairs) {
+            if (choose(right, right, [other], dpi, name, size) !== right) {
+              wrong.push(`${name} ${dpi} dpi ${size} pt: ${right} -> ${other}`);
+            }
+          }
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+  }, 60000);
+
+  it('keeps the settled reading when no drawing lies on the ink at all, whatever it beats the others by', () => {
+    // Courier ink read in Helvetica: neither reading overlaps it by half, and one of them by 0.2 more than the other
+    const courier = faces.get('Courier New') as Font;
+    const { image, box } = renderWord(mupdf, courier, 'world', { dpi: 200, size: 11 });
+    const font = faces.get('Arial') as Font;
+    const read = (alternatives: readonly string[]) =>
+      chooseReadings(mupdf, image, [{ text: 'world', alternatives, box, size: 11 }], font)[0];
+    expect(read(['xxxxx'])).toBe('world');
+    // a clear winner that does lie on the ink still wins
+    const sans = renderWord(mupdf, font, 'world', { dpi: 200, size: 11 });
+    expect(
+      chooseReadings(
+        mupdf,
+        sans.image,
+        [{ text: 'xxxxx', alternatives: ['world'], box: sans.box, size: 11 }],
+        font,
+      ),
+    ).toEqual(['world']);
   });
 
   it('keeps the settled reading when the face lacks a glyph of it, or of the others, and when the paper is blank', () => {

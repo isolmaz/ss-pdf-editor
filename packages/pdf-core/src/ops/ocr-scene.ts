@@ -1467,11 +1467,11 @@ export function ocrTextBoxes(
       SQUEEZE_MARGIN * naturalWidth(textLines),
     );
     const x0 = centred ? centre - width / 2 : left;
-    // Every line says where the box would start for its own baseline at the paragraph's pitch; the
-    // middle of them stands, so one line whose baseline is off (a heading, a speck) does not carry the box.
-    const pitch = gaps.length === 0 ? 0 : median(gaps);
+    // Every line says where the box would start for its own baseline at the pitch the lines are set
+    // at (the line height, which is the scan's only when it is no tighter than the size); the middle
+    // of them stands, so one line whose baseline is off (a heading, a speck) does not carry the box.
     const top =
-      median(baselines.map((baseline, at) => baseline - at * pitch)) - BASELINE_IN_LINE * lineHeight;
+      median(baselines.map((baseline, at) => baseline - at * lineHeight)) - BASELINE_IN_LINE * lineHeight;
     const bottom = Math.max(top + lineHeight * lines.length, ...lines.map((line) => line.y1));
     const paragraph: TextParagraph = {
       align: centred ? 'center' : 'left',

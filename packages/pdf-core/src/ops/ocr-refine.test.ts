@@ -174,7 +174,11 @@ describe('refineWords', () => {
       reader(() => ({ text: 'gerçekleştirdim', confidence: 91 })).read,
       signal,
     );
-    expect(taken[0]).toMatchObject({ text: 'gerçekleştirdim', alternatives: ['gergeklestirdim'] });
+    expect(taken[0]).toMatchObject({
+      text: 'gerçekleştirdim',
+      confidence: 91,
+      alternatives: [{ text: 'gergeklestirdim', confidence: 80 }],
+    });
     // a reread of another shape is not taken (it could drop a dot), but the ink may still prefer it
     const refused = await refineWords(
       [word('%20', 80)],
@@ -183,7 +187,11 @@ describe('refineWords', () => {
       reader(() => ({ text: '9020', confidence: 99 })).read,
       signal,
     );
-    expect(refused[0]).toMatchObject({ text: '%20', confidence: 80, alternatives: ['9020'] });
+    expect(refused[0]).toMatchObject({
+      text: '%20',
+      confidence: 80,
+      alternatives: [{ text: '9020', confidence: 99 }],
+    });
     // a less sure reread of the same shape is another reading as well
     const unsure = await refineWords(
       [word('modern', 80)],
@@ -192,7 +200,11 @@ describe('refineWords', () => {
       reader(() => ({ text: 'rnodern', confidence: 60 })).read,
       signal,
     );
-    expect(unsure[0]).toMatchObject({ text: 'modern', alternatives: ['rnodern'] });
+    expect(unsure[0]).toMatchObject({
+      text: 'modern',
+      confidence: 80,
+      alternatives: [{ text: 'rnodern', confidence: 60 }],
+    });
     // English's capitals replace the first read's, which stays beside them
     const english = await refineWords(
       [word('SOL', 99)],
@@ -201,7 +213,11 @@ describe('refineWords', () => {
       reader(() => ({ text: 'SQL', confidence: 90 })).read,
       signal,
     );
-    expect(english[0]).toMatchObject({ text: 'SQL', alternatives: ['SOL'] });
+    expect(english[0]).toMatchObject({
+      text: 'SQL',
+      confidence: 99,
+      alternatives: [{ text: 'SOL', confidence: 99 }],
+    });
     // nothing differs (the same reading twice, or one with a space): no alternatives at all
     for (const answer of [
       { text: 'modern', confidence: 99 },

@@ -264,28 +264,31 @@ export async function refineWords(
     const whole = () => (crop ??= upscaledCrop(image, word, x0, x1));
     let text = word.text;
     let confidence = word.confidence;
-    // The readings that lost, for the ink to judge again once the typeface is known.
-    const others = new Set<string>();
+    // The readings that lost, each with the confidence it was read at, for the ink to judge again once the typeface is known.
+    const others = new Map<string, number>();
     if (confidence < SURE) {
       const again = await ask(whole(), 'all');
       if (again !== null && !/\s/.test(again.text)) {
         if (again.confidence > confidence && shapeOf(again.text) === shapeOf(text)) {
-          others.add(text);
+          others.set(text, confidence);
           text = again.text;
           confidence = again.confidence;
-        } else others.add(again.text);
+        } else others.set(again.text, again.confidence);
       }
     }
     if (options.englishAlone && /[A-Z]{2,}/.test(text)) {
       const english = await ask(whole(), 'english');
       if (english !== null) {
-        others.add(text);
+        others.set(text, confidence);
         text = withEnglishCapitals(text, english.text);
       }
     }
     others.delete(text);
     others.delete('');
-    const alternatives = others.size === 0 ? {} : { alternatives: [...others] };
+    const alternatives =
+      others.size === 0
+        ? {}
+        : { alternatives: [...others].map(([reading, sure]) => ({ text: reading, confidence: sure })) };
     if (text !== word.text || confidence !== word.confidence || others.size > 0)
       refined.set(index, [{ ...word, text, confidence, ...alternatives }]);
   }

@@ -107,7 +107,15 @@ describe('the open family of a scan', () => {
     serveFonts();
     const unsettled = (scan: Scan, text: string) => {
       const [x0, y0, x1, y1] = (scan.words[0] as (typeof scan.words)[number]).box;
-      const word: OcrWord = { text, alternatives: ['Quick'], x0, y0, x1, y1, confidence: 60 };
+      const word: OcrWord = {
+        text,
+        alternatives: [{ text: 'Quick', confidence: 88 }],
+        x0,
+        y0,
+        x1,
+        y1,
+        confidence: 60,
+      };
       return [{ word, size: 11 }];
     };
     // the stand-ins: Arial and Times New Roman are drawn in the base-14 faces behind them
@@ -118,7 +126,11 @@ describe('the open family of a scan', () => {
       const { mupdf, scan } = await scanIn(family);
       const [first] = unsettled(scan, 'Qu1ck');
       const chosen = settleReadings(mupdf, scan.image, [first as NonNullable<typeof first>], name, null);
-      expect(chosen.get((first as NonNullable<typeof first>).word), stand).toBe('Quick');
+      // the reading comes with the confidence it was read at, not the settled word's
+      expect(chosen.get((first as NonNullable<typeof first>).word), stand).toEqual({
+        text: 'Quick',
+        confidence: 88,
+      });
       // the settled reading is the right one: nothing changes
       const right = unsettled(scan, 'Quick');
       expect(settleReadings(mupdf, scan.image, right, name, null).size).toBe(0);
@@ -130,7 +142,7 @@ describe('the open family of a scan', () => {
     const open = (await chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))) as OpenFont;
     const [odd] = unsettled(scan, 'Qu1ck');
     const chosen = settleReadings(mupdf, scan.image, [odd as NonNullable<typeof odd>], open.name, open);
-    expect(chosen.get((odd as NonNullable<typeof odd>).word)).toBe('Quick');
+    expect(chosen.get((odd as NonNullable<typeof odd>).word)).toEqual({ text: 'Quick', confidence: 88 });
   });
 
   it('is none for a Helvetica scan or a Times scan: the stand-ins stay', async () => {

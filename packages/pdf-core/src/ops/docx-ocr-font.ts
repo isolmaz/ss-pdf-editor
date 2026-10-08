@@ -15,7 +15,7 @@
 
 import type { Font } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
-import type { OcrWord } from '../engines/tesseract';
+import type { OcrReading, OcrWord } from '../engines/tesseract';
 import { trueTypeForWord } from './docx-font-sfnt';
 import type { FontFile } from './docx-fonts';
 import { standardAdvance } from './docx-fonts';
@@ -191,7 +191,8 @@ const STANDARD_FACE: Readonly<Record<string, string>> = {
  * The words whose reading the ink settles: each `unsettled` word (one the second look read in
  * more than one way) is drawn in the page's face — `open`'s regular, or the stand-in `family` —
  * once per reading, and the reading that lies on the scan's ink best is the word's
- * (`chooseReadings`). Only the words that differ from what was settled are returned.
+ * (`chooseReadings`). Only the words that differ from what was settled are returned, with the
+ * reading and the confidence it was read at.
  */
 export function settleReadings(
   mupdf: Mupdf,
@@ -199,8 +200,8 @@ export function settleReadings(
   unsettled: readonly UnsettledWord[],
   family: string,
   open: OpenFont | null,
-): Map<OcrWord, string> {
-  const chosen = new Map<OcrWord, string>();
+): Map<OcrWord, OcrReading> {
+  const chosen = new Map<OcrWord, OcrReading>();
   if (unsettled.length === 0) return chosen;
   const own = open === null ? new mupdf.Font(STANDARD_FACE[family] ?? 'Helvetica') : null;
   try {
@@ -209,14 +210,21 @@ export function settleReadings(
       image,
       unsettled.map(({ word, size }) => ({
         text: word.text,
-        alternatives: word.alternatives as readonly string[],
+        alternatives: (word.alternatives as readonly OcrReading[]).map((reading) => reading.text),
         box: [word.x0, word.y0, word.x1, word.y1],
         size,
       })),
       open === null ? (own as Font) : open.regular.font,
     );
     for (const [at, { word }] of unsettled.entries()) {
-      if (texts[at] !== word.text) chosen.set(word, texts[at] as string);
+      if (texts[at] !== word.text) {
+        chosen.set(
+          word,
+          (word.alternatives as readonly OcrReading[]).find(
+            (reading) => reading.text === texts[at],
+          ) as OcrReading,
+        );
+      }
     }
   } finally {
     own?.destroy();
