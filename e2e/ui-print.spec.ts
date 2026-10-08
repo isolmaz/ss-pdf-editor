@@ -9,7 +9,7 @@
 import type { Locator, Page } from 'playwright/test';
 import { notice } from './app-helpers';
 import { expect, test } from './test';
-import { labelledPdf, readProducedPageTexts } from './tool-fixture';
+import { labelledPdf, readProducedEntry, readProducedPageTexts, readProducedPdf } from './tool-fixture';
 import { exportBytes, openPdf } from './ui-helpers';
 import {
   type PrintedSheet,
@@ -221,6 +221,57 @@ test('Generate Printable PDF: N-up puts several pages on a sheet and opens the f
   expect(texts[0]).toContain('Print 1');
   expect(texts[0]).toContain('Print 2');
   expect(texts[1]).toContain('Print 3');
+});
+
+test('Generate Printable PDF: the file is a new A4 tab beside the source, which is left as it was, and the shell is free again', async ({
+  page,
+}) => {
+  await openPdf(page, 'source.pdf', labelledPdf('Source', 3));
+  const panel = await openPrint(page);
+  await panel.getByRole('radio', { name: '2', exact: true }).check();
+  await panel.getByRole('button', { name: 'Generate Printable PDF' }).click();
+  await expect(notice(page, 'Print file ready: print.pdf')).toBeVisible({ timeout: 60_000 });
+  await expect(dialog(page)).toBeHidden();
+
+  // The file is the document on screen: two sheets, its own name in the tab list, the source beside it.
+  await expect(page.getByText('/ 2', { exact: true })).toBeVisible({ timeout: 30_000 });
+  const produced = await exportBytes(page, 'two-up.pdf');
+  expect((await readProducedPdf(produced)).pageCount).toBe(2);
+  // A4 portrait (595 × 842 pt), the sheet the dialog imposes on unless it is told otherwise.
+  for (const index of [0, 1]) {
+    const [left = 0, bottom = 0, right = 0, top = 0, ...rest] =
+      (await readProducedEntry(produced, index, 'MediaBox')).match(/[\d.]+/g)?.map(Number) ?? [];
+    expect(rest).toEqual([]);
+    expect(right - left).toBeCloseTo(595.28, 0);
+    expect(top - bottom).toBeCloseTo(841.89, 0);
+  }
+  const texts = (await readProducedPageTexts(produced)).map((text) => text.trim());
+  expect(texts[0]).toContain('Source 1');
+  expect(texts[0]).toContain('Source 2');
+  expect(texts[1]).toContain('Source 3');
+
+  // Two documents are open now; the file is a document of its own, not a step on the source.
+  await page
+    .getByRole('button', { name: /^print\.pdf/ })
+    .first()
+    .click();
+  await expect(page.getByRole('button', { name: 'Close tab' })).toHaveCount(2);
+  await page
+    .getByRole('button', { name: /^source\.pdf/ })
+    .first()
+    .click();
+  await expect(page.getByText('/ 3', { exact: true })).toBeVisible({ timeout: 30_000 });
+  const source = await exportBytes(page, 'source-after.pdf');
+  expect((await readProducedPdf(source)).pageCount).toBe(3);
+  expect((await readProducedPageTexts(source)).map((text) => text.trim())).toEqual([
+    expect.stringContaining('Source 1'),
+    expect.stringContaining('Source 2'),
+    expect.stringContaining('Source 3'),
+  ]);
+
+  // Nothing is left running: the dialog opens again on the source and offers the file again.
+  await openPrint(page);
+  await expect(dialog(page).getByRole('button', { name: 'Generate Printable PDF' })).toBeEnabled();
 });
 
 test('Generate Printable PDF: a booklet is a signature — four pages to a sheet, ordered front and back', async ({
