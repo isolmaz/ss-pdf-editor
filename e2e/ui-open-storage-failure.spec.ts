@@ -24,24 +24,43 @@ import { CANVAS, encodePng, openPdf } from './ui-helpers';
 test.use({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
 
 const SENTENCE =
-  'This document is open, but its recovery copy could not be stored: unsaved changes would not survive a closed tab or a crash. Browser storage is full.';
+  'This document is open, but its recovery copy could not be stored yet: until a draft save succeeds, unsaved changes would not survive a closed tab or a crash. Browser storage is full.';
 
-/** Make the next write of a `.pdf` file in the origin-private file system fail as a full store does. */
-async function failNextSourceWrite(page: Page): Promise<void> {
-  await page.evaluate(() => {
+/**
+ * Make writes of a `.pdf` file in the origin-private file system fail as a full store does: the
+ * next one only, or — `persist` — every one, which is storage that stays full. Every attempt is
+ * counted in `window.__sourceWriteAttempts`, so a test can tell the autosave has tried.
+ */
+async function failSourceWrites(page: Page, persist = false): Promise<void> {
+  await page.evaluate((persist) => {
     let armed = true;
+    Reflect.set(window, '__sourceWriteAttempts', 0);
     const original = FileSystemFileHandle.prototype.createWritable;
     FileSystemFileHandle.prototype.createWritable = function createWritable(
       this: FileSystemFileHandle,
       ...args: Parameters<FileSystemFileHandle['createWritable']>
     ) {
       if (armed && this.name.endsWith('.pdf')) {
-        armed = false;
+        Reflect.set(
+          window,
+          '__sourceWriteAttempts',
+          Number(Reflect.get(window, '__sourceWriteAttempts')) + 1,
+        );
+        if (!persist) armed = false;
         return Promise.reject(new DOMException('The quota has been exceeded.', 'QuotaExceededError'));
       }
       return original.apply(this, args);
     };
-  });
+  }, persist);
+}
+
+/** Wait until the application has tried to write a source at least `attempts` times. */
+async function waitForSourceWrites(page: Page, attempts: number): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => Number(Reflect.get(window, '__sourceWriteAttempts'))), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThanOrEqual(attempts);
 }
 
 const notices = (page: Page) => page.locator('[role="status"]');
@@ -63,7 +82,7 @@ test('a file whose recovery copy cannot be stored still opens, once, with the st
   page,
 }) => {
   await page.goto('/editor/');
-  await failNextSourceWrite(page);
+  await failSourceWrites(page);
   await openPdf(page, 'kept.pdf', labelledPdf('Kept', 3), { navigate: false, advanced: false });
 
   await expect(page.locator(CANVAS).first()).toBeVisible();
@@ -77,7 +96,7 @@ test('a picture converted to a tab whose recovery copy cannot be stored is opene
   page,
 }) => {
   await page.goto('/editor/');
-  await failNextSourceWrite(page);
+  await failSourceWrites(page);
   await page
     .locator('input[type="file"][accept*="application/pdf"]')
     .first()
@@ -159,4 +178,50 @@ test('the same for a produced document: nothing opens and the engine handle is r
   await expect.poll(() => requestCount(page, 'Terminate')).toBeGreaterThan(before);
   await expect(page.locator(CANVAS)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^photo\.pdf/ })).toHaveCount(0);
+});
+
+/**
+ * Storage that stays full: the autosave tries the same write 600 ms after the open and fails
+ * the same way. It must say the same thing — not "Could not write to the file." — and must not
+ * replace what the open already said (the operation's own success line stays beside it).
+ */
+test('storage that stays full: the autosave keeps the warning, and the file stays one tab', async ({
+  page,
+}) => {
+  await page.goto('/editor/');
+  await failSourceWrites(page, true);
+  await openPdf(page, 'full.pdf', labelledPdf('Full', 2), { navigate: false, advanced: false });
+  await expect(notices(page).filter({ hasText: SENTENCE })).toBeVisible();
+
+  // The open's own write, then the autosave's: both were refused.
+  await waitForSourceWrites(page, 2);
+  await page.waitForTimeout(500);
+  await expect(notices(page).filter({ hasText: SENTENCE })).toBeVisible();
+  await expect(notices(page).filter({ hasText: /Could not write to the file/ })).toHaveCount(0);
+  await expect(page.getByText('/ 2', { exact: true })).toBeVisible();
+  expect(await openDocuments(page)).toBe(1);
+});
+
+test('storage that stays full: a converted picture keeps its done line and the warning after the autosave', async ({
+  page,
+}) => {
+  await page.goto('/editor/');
+  await failSourceWrites(page, true);
+  await page
+    .locator('input[type="file"][accept*="application/pdf"]')
+    .first()
+    .setInputFiles({
+      name: 'photo.png',
+      mimeType: 'image/png',
+      buffer: encodePng(200, 100, () => [20, 120, 220]),
+    });
+  await expect(notices(page).filter({ hasText: SENTENCE })).toBeVisible({ timeout: 60_000 });
+
+  await waitForSourceWrites(page, 2);
+  await page.waitForTimeout(500);
+  const line = notices(page).filter({ hasText: SENTENCE });
+  await expect(line).toBeVisible();
+  await expect(line).toContainText('The image was opened as a PDF page in a new tab.');
+  await expect(notices(page).filter({ hasText: /Could not write to the file/ })).toHaveCount(0);
+  expect(await openDocuments(page)).toBe(1);
 });

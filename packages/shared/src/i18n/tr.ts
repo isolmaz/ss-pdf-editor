@@ -120,7 +120,8 @@ export const tr = {
   'draft.engineValuesLost':
     'Taslaktan gelen {count} form/not düzenlemesinin hiçbiri geri yüklenemedi; düzenlemeleri belgede yeniden yapın.',
   'draft.sourceNotStored':
-    'Belge açık, ancak kurtarma kopyası saklanamadı: kaydedilmemiş değişiklikler sekme kapatılırsa veya tarayıcı çökerse korunmaz. {reason}',
+    'Belge açık, ancak kurtarma kopyası henüz saklanamadı: bir taslak kaydı başarılı olana kadar kaydedilmemiş değişiklikler sekme kapatılırsa veya tarayıcı çökerse korunmaz. {reason}',
+  'draft.storageRefused': 'Tarayıcının depolama alanı yazmayı reddetti.',
   'viewer.singlePage': 'Tek sayfa',
   'viewer.book': 'Çift sayfa (kitap)',
   'viewer.fullscreen': 'Tam ekran',

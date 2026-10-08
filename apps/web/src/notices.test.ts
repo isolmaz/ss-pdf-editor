@@ -204,9 +204,9 @@ describe('storedCopyWarning', () => {
       'draft.sourceNotStored[error.out-of-memory.message]',
     );
     expect(storedCopyWarning(new DOMException('locked', 'NoModificationAllowedError'), t)).toBe(
-      'draft.sourceNotStored[error.write-failed.message]',
+      'draft.sourceNotStored[draft.storageRefused]',
     );
-    expect(storedCopyWarning('nope', t)).toBe('draft.sourceNotStored[error.write-failed.message]');
+    expect(storedCopyWarning('nope', t)).toBe('draft.sourceNotStored[draft.storageRefused]');
   });
 });
 

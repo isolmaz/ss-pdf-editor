@@ -134,14 +134,16 @@ export function failureNotices(error: unknown, fallback: MessageKey): readonly N
  * not part of opening: the tab stays, and this is what the user is told — with the
  * storage error's own reason, not an open failure's. The browser reports a full quota as
  * a `QuotaExceededError` DOMException, which is not a `ToolError`, so it is mapped here:
- * a full store is `quota-exceeded`, any other storage failure is `write-failed`.
+ * a full store is `quota-exceeded`, any other storage failure is named as the browser's
+ * storage refusing the write (`draft.storageRefused`), not as a file that could not be written.
+ * The same sentence is used by the autosave when it fails, so it is one wording everywhere.
  */
 export function storedCopyWarning(error: unknown, t: Translator): string {
   const reason: MessageKey = isToolError(error)
     ? error.messageKey
     : error instanceof Error && error.name === 'QuotaExceededError'
       ? 'error.quota-exceeded.message'
-      : 'error.write-failed.message';
+      : 'draft.storageRefused';
   return t('draft.sourceNotStored', { reason: t(reason) });
 }
 

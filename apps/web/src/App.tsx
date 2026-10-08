@@ -2037,9 +2037,16 @@ export function App({ store }: AppProps) {
           for (const tab of store.getSnapshot().tabs) await persistTabDraft(tab.id);
         })
         .catch((error) => {
-          const failure =
-            error instanceof ToolError ? error : new ToolError('write-failed', { engine: 'model' });
-          setNotice(`${tRef.current(failure.messageKey)} ${tRef.current(failure.hintKey)}`);
+          const translate = tRef.current;
+          if (error instanceof ToolError) {
+            setNotice(`${translate(error.messageKey)} ${translate(error.hintKey)}`);
+            return;
+          }
+          // The browser's storage refused the draft: the same sentence an open that could
+          // not store its recovery copy shows, and not again over a notice that already
+          // says it (the failure repeats on every change while the store stays full).
+          const warning = storedCopyWarning(error, translate);
+          setNotice((current) => (current?.includes(warning) === true ? current : warning));
         });
     }, 600);
     return () => clearTimeout(timer);
