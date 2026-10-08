@@ -36,10 +36,10 @@ export const PROSE = [
 ];
 
 export const MIXED = [
-  'İletişim: ibrahim.solmaz@ornek.com.tr ; Tel: +90 532 123 45 67 ; Faks: 0212 555 01 02',
+  'İletişim: ayse.yilmaz@ornek.com.tr ; Tel: +90 532 123 45 67 ; Faks: 0212 555 01 02',
   'Fatura No: 2025/00481 ; Tarih: 14.03.2025 ; Vade: 28.03.2025 ; Tutar: 12.450,75 TL',
   'Adres: Çiçek Sokak No: 12/4 Kadıköy / İstanbul 34710',
-  'Web: https://www.ornek-sirket.com.tr/hakkimizda ; GitHub: github.com/isolmaz',
+  'Web: https://www.ornek-sirket.com.tr/hakkimizda ; GitHub: github.com/ornek-sirket',
   'Sipariş kodu: TR-4471-ŞÇ ; Miktar: 3 adet ; Birim fiyat: 1.299,00 TL ; KDV %20',
   'Doğum tarihi: 02.11.1994 ; Doğum yeri: Gaziantep ; Medeni durum: Bekâr',
   'Toplam 128 sayfa, 14 tablo ve 36 şekil içeren raporun özeti 5 Mayıs 2024 tarihinde yayımlandı.',

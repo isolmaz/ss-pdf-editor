@@ -31,9 +31,9 @@ const SAMPLE = officeDocument([
 ]);
 
 /** The sample as a scan: its page rendered into one picture, plus `layer` as invisible text when given. */
-async function scanOf(layer?: string): Promise<Uint8Array> {
+async function scanOf(layer?: string, sample: Promise<Uint8Array> = SAMPLE): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
-  const source = mupdf.Document.openDocument((await SAMPLE).slice(), 'application/pdf');
+  const source = mupdf.Document.openDocument((await sample).slice(), 'application/pdf');
   const scan = new mupdf.PDFDocument();
   try {
     const pixmap = source
@@ -113,6 +113,104 @@ async function text(zip: JSZip, name: string): Promise<string> {
 }
 
 describe('exact layout: a scanned page read by OCR', () => {
+  it('keeps the first read when the second look cannot run, but stops when the export is cancelled', async () => {
+    const recognize = async () => words([96, 50, 97]);
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize,
+          readWord: async () => {
+            throw new Error('the second worker could not start');
+          },
+        },
+      },
+      run,
+    );
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const written = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    expect(written).toContain('Hello world today');
+    await expect(
+      exportOffice(
+        await scanOf(),
+        {
+          ...options,
+          ocr: {
+            lowConfidence: 0.9,
+            recognize,
+            readWord: async () => {
+              throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
+            },
+          },
+        },
+        run,
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('reads capitals with English alone only when the caller says that differs from all the languages', async () => {
+    const models: string[] = [];
+    const sure = async () => words([99, 99, 99]).map((w, at) => (at === 0 ? { ...w, text: 'SOL' } : w));
+    for (const englishAlone of [undefined, true]) {
+      models.length = 0;
+      await exportOffice(
+        await scanOf(),
+        {
+          ...options,
+          ocr: {
+            lowConfidence: 0.9,
+            recognize: sure,
+            readWord: async (_png, which) => {
+              models.push(which);
+              return null;
+            },
+            ...(englishAlone === undefined ? {} : { englishAlone }),
+          },
+        },
+        run,
+      );
+      expect(models).toEqual(englishAlone === true ? ['english'] : []);
+    }
+  });
+
+  it('reads the unsure word again on a crop of it and writes the surer reading', async () => {
+    const crops: { size: number; models: string }[] = [];
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => words([96, 50, 97]).map((w, at) => (at === 1 ? { ...w, text: 'worid' } : w)),
+          readWord: async (png, models) => {
+            crops.push({ size: png.length, models });
+            return { text: 'world', confidence: 93 };
+          },
+        },
+      },
+      run,
+    );
+    // Only the unsure word was read again, once.
+    expect(crops).toHaveLength(1);
+    expect(crops[0]?.models).toBe('all');
+    expect(crops[0]?.size).toBeGreaterThan(100);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const written = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    expect(written).toContain('Hello world today');
+  });
+
   it('writes the words as text boxes, the page colour as a shape, the panel as a picture and one comment', async () => {
     const seen: { scale: number; png: number }[] = [];
     const result = await exportOffice(
@@ -297,6 +395,40 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(xml).not.toContain('*');
     expect(zip.file('word/comments.xml')).toBeNull();
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrLowConfidence')).toBe(false);
+  });
+
+  it('reads a page with an underlined word again without the rule, and writes the word underlined', async () => {
+    // the link of the sample line, with a rule just under it
+    const underlined = officeDocument([
+      {
+        content: [
+          '1 1 1 rg 0 0 400 500 re f',
+          line('helvetica', 14, 60, 400, 'Hello world today'),
+          '0 0 0 rg 60 396 105 0.8 re f',
+        ].join('\n'),
+      },
+    ]);
+    const seen: number[] = [];
+    const result = await exportOffice(
+      await scanOf(undefined, underlined),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png) => {
+            seen.push(png.length);
+            return words([96, 95, 97]);
+          },
+        },
+      },
+      run,
+    );
+    // read twice: the second picture is the first without the rule, so it differs
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).not.toBe(seen[0]);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    expect(xml).toContain('<w:u w:val="single"/>');
   });
 
   it('reads an invisible text layer instead of calling the recogniser', async () => {

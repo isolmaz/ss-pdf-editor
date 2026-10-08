@@ -9,7 +9,13 @@
  * JSZip and the read-back check mammoth.
  */
 
-import { OCR_LANGUAGE_CODES_ALL, type OcrLanguageCode, recognizePage } from 'pdf-core/engines/tesseract';
+import {
+  OCR_LANGUAGE_CODES_ALL,
+  type OcrLanguageCode,
+  recognizePage,
+  recognizeWord,
+  terminateOcrWorkers,
+} from 'pdf-core/engines/tesseract';
 import {
   type CsvDelimiter,
   type DocxLayout,
@@ -129,27 +135,43 @@ export const exportOfficeDialog: OperationDialogSpec = {
                   scale,
                   languages,
                   quality: 'best',
+                  automaticLayout: true,
                   signal,
                 })
               ).words,
+            readWord: async (png: Uint8Array, models: 'all' | 'english', signal: AbortSignal) =>
+              await recognizeWord({
+                image: new Blob([png as unknown as BlobPart], { type: 'image/png' }),
+                languages: models === 'english' ? ['eng'] : languages,
+                quality: 'best',
+                signal,
+              }),
+            englishAlone: languages.length > 1 && languages.includes('eng'),
           }
         : undefined;
-    const result = await exportOffice(
-      context.bytes,
-      {
-        pages,
-        format,
-        docxLayout,
-        ...(ocr === undefined ? {} : { ocr }),
-        baseName: context.name,
-        csvDelimiter: delimiter,
-        sheetName: {
-          table: (n) => context.t('export.office.sheet.table', { n }),
-          page: (n) => context.t('export.office.sheet.page', { n }),
+    let result: Awaited<ReturnType<typeof exportOffice>>;
+    try {
+      result = await exportOffice(
+        context.bytes,
+        {
+          pages,
+          format,
+          docxLayout,
+          ...(ocr === undefined ? {} : { ocr }),
+          baseName: context.name,
+          csvDelimiter: delimiter,
+          sheetName: {
+            table: (n) => context.t('export.office.sheet.table', { n }),
+            page: (n) => context.t('export.office.sheet.page', { n }),
+          },
         },
-      },
-      { signal: context.signal, onProgress: context.onProgress },
-    );
+        { signal: context.signal, onProgress: context.onProgress },
+      );
+    } finally {
+      // The OCR workers (the page reader and the English-only one of the second look) each hold a wasm heap;
+      // the export is accountable for them, as `ocr.ts` is.
+      if (ocr !== undefined) await terminateOcrWorkers();
+    }
     return {
       files: [result.file],
       report: {

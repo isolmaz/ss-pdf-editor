@@ -592,23 +592,96 @@ had to stay green. The moves, and the defects they fixed on the way:
          blanks from the layer's characters, boxes from the baseline and size, confidence 100,
          no recognition run); else `OfficeExportOptions.ocr.recognize` (the UI passes
          `recognizePage`, Tesseract, quality `best`, the languages ticked in the form's
-         `ocrLanguages` field, default `tur`+`eng`) on the page rendered by MuPDF at the scan's
+         `ocrLanguages` field, default `tur`+`eng`, in automatic page segmentation (mode 3:
+         columns, blocks and lines are found, which the text boxes are built from; the 90 %
+         flag threshold of `docs/ocr-evaluation.md` was measured in the engine's default
+         single-block mode 6) on the page rendered by MuPDF at the scan's
          own resolution, that of its largest picture, bounded to 150–300 dpi and 200 when
-         unknown. Without `recognize` and without a layer `readScanPage` returns `null`, the
-         page keeps its pictures, and `ocrUnavailable` lists it.
-       - *Rules for what Tesseract returned.* `dropDuplicates` keeps the surer of two words
-         overlapping by more than 30 % of the smaller box; `dropEdgeMarks` drops words of one or two
-         characters in the outer 3 % of the page width (the scanner's dark edge);
-         `misreadWords` names what Tesseract made of an icon or a chart: a symbol or one
-         letter in punctuation under 60 % sure, a ringed or registered-mark glyph taller than
-         1.5 × the page's typical word, a one- or two-character stem taller than 1.5 × typical
-         and narrower than 0.35 × its height, and a word of letters only under 25 % sure.
-         `ocrBackground` runs a first time without them; a misread word that lies over a picture
-         region is dropped (`dropMisreads`), the graphic staying in the picture, and the
-         background is computed again when any was dropped; a misread word outside every region
-         stays text.
-       - *`ocrBackground`.* Each word's box (plus 0.15 × its height) is filled with the median
-         colour of the ring of pixels around it; the page colour is the commonest colour left
+         unknown (at most the page images' pixel budget, `cappedPerPoint`). Without `recognize`
+         and without a layer `readScanPage` returns `null`, the page keeps its pictures, and
+         `ocrUnavailable` lists it; a recogniser that throws (a language pack missing, offline,
+         a crashed worker) does the same, and only the reader's own cancel stops the export.
+       - *Underlines.* Rules under words make Tesseract misread them (a link's underline cuts
+         the descenders). `findUnderlines` looks, for every word of at least two letters or
+         digits and at least 1.2 × its height wide, at the rows from 0.35 × its height above its
+         bottom edge to 0.45 × below it: a stretch of rows inked over at least 90 % of the word's
+         width, at most 0.16 × its height thick (2 px at least), with plain rows (under 60 %
+         inked) on both sides, is a rule. It is followed left and right to where its ink ends (a
+         gap of 3 px ends it) and kept only when it lies under words and does not reach beyond
+         them by more than 0.8 × their median height (a divider or a card's border is longer),
+         when the words it lies under are one group (no two further apart than 1.5 × their
+         height: a link of several words, not the cells of a row a table border runs along) and
+         no line of the design meets either end of it (ink at least 0.7 × their height long
+         straight up or down from the end: the side or corner of a cell or a card). A ruled
+         table's borders stay in the picture.
+         When there are rules, `eraseRules` paints them out (their rows and one more on each
+         side, in the colour of the ring around them, except in columns a descender crosses) and
+         **the page is recognised a second time** on the cleaned image; the first read is kept if
+         the second fails. The rules are handed on to `ocrTextBoxes`: a word the rule lies under
+         (over at least 60 % of its width, at its bottom) is an `underline` run, written with
+         `<w:u w:val="single"/>` in the text colour. Only a page that has rules is read twice.
+       - *Second look* (`ocr-refine.ts`, only when `OcrOptions.readWord` is given; the UI passes
+         `recognizeWord`: one word as a single-word page, `best`). Each word of at least two
+         letters or digits is cropped from the page, drawn as large as makes it 100 px high but
+         at most three times (Catmull-Rom, grey, 6 px margin; a box whose crop would pass a
+         million pixels is not read) and treated in turn. The words that need it are taken in
+         this order — those with a gap in their ink, then the least sure, then the capitals —
+         and no more than 150 crops are read per page; words `misreadWords` would drop as a
+         graphic are not read. If the second look throws (a worker that crashed, no memory for
+         the English one), the first read stands; the reader's cancel still stops the export,
+         and the export releases its OCR workers when it is done:
+         1. *Split at ink gaps.* `inkRuns` finds the columns that hold ink (the lesser side of the
+            midpoint between the box's darkest and lightest pixel; none when they differ by less
+            than 60, or the box is under 10 px high); a gap of at least 0.4 × the box's height
+            splits the word ("+90 555 010 20 30" run together as "+905550102030"). Each piece is
+            read alone with all the languages and becomes a word of its own with the box of its
+            ink; one that is under 50 % sure or holds a space keeps the word whole.
+         2. *Reread.* A word under 95 % sure is read again with all the languages. The new
+            reading replaces it only if it is surer and has the same shape — letters as letters,
+            digits as digits, every other character as itself, no space — so a correction never
+            drops a dot or changes "HTML5" into "HTMLS".
+         3. *Capitals.* A word with a run of two capitals or more is read with English alone (when
+            English is among the languages but not the only one: `OcrOptions.englishAlone`): it
+            has no dictionary word "sol" to pull the Q of "SQL" to an O, and its capitals replace
+            the first reading's when both are the same length. Each read sets its own mode for
+            that call only (8 for a word, 3 for an export page) and the shared worker is left in
+            the engine's default single-block mode (6), which "Make searchable" reads in.
+       - *Rules for what Tesseract returned.* `dropDuplicates` keeps, of two words overlapping by
+         more than 30 % of the smaller box (one word read at two segmentations), the one whose
+         box is larger (the surer when equal); the dropped ones are still erased from the
+         background. `markWords` finds the marks Tesseract read as words of their own: a word of
+         one or two characters under half the height of a word of three or more characters,
+         lying above it (or below it) within 0.6 × that word's height (0.2 × overlapping it at
+         most) with its centre between 0.6 × that height left of the word's left edge and its
+         right edge, is the dot of an İ, an accent or a cedilla — if it is one character or
+         punctuation only, and no word of three or more characters stands on its own text line
+         (the "is" of a body line under a heading is a word); it is not text and is erased
+         with the word. `dropEdgeMarks` drops words of one or two characters in the outer 3 % of the page
+         width (the scanner's dark edge). `misreadWords` names what Tesseract made of an icon,
+         a chart or a rule of the design: a symbol or one letter in punctuation under 60 % sure,
+         or a ringed or registered-mark glyph taller than 1.5 × the page's typical word (neither
+         when a sure word of its line stands within 2 × the typical height on both sides: a
+         separator of the text, `|` `—` `•`); an opening bracket with at most one letter or
+         digit after it (`(`, `[x`: the corner of an external-link icon) that no closing bracket
+         follows on its line ("(5 pages)" is text); a symbol of one or two
+         characters other than `|`, taller than 1.3 × the words of its line and narrower than
+         0.5 × its height (a bar between items); a one- or two-character stem taller than
+         1.5 × typical and narrower than 0.35 × its height; and a word of letters only under
+         25 % sure. `ocrBackground` runs a first time without them; a misread word that lies
+         over a picture region is dropped (`dropMisreads`), the graphic staying in the picture,
+         and the background is computed again when any was dropped; a misread word outside
+         every region stays text.
+       - *`ocrBackground`.* Each word's box (plus 0.15 × its height on every side; 0.4 × above
+         for a word with İ Ğ Ö Ü Â Ê Î Ô Û, 0.4 × below for one with Ç Ş ç ş Ģ ģ, where the
+         mark can lie outside the box Tesseract gave the letters) is filled with the median
+         colour of the 3 px ring of pixels around it. A scan saved as JPEG has faint ripples up
+         to a block away from the ink, so `growOverRipples` then grows the box over them, one
+         side at a time and up to 16 px, while the next row or column holds nothing but pixels
+         within 17 levels of the fill (the ink of the next word, a rule or a card's edge is
+         stronger and stops it) and no stretch of 8 pt (or 0.8 of the box's side, if shorter)
+         lies at one level 3 or more off the fill: that is a band, a card or a highlight, which
+         the box must not paint into the page around it, not noise. The words dropped as duplicates or as marks are erased like
+         the rest. The page colour is the commonest colour left
          (16 levels a channel); pixels more than 12 levels from it form regions, joined when
          closer than 3 pt and dropped under 8 pt on both sides; each region is cropped from the
          erased image as one PNG, and is *solid* (a card, a band, a photo) when at least half
@@ -618,16 +691,44 @@ had to stay green. The moves, and the defects they fixed on the way:
        - *`ocrTextBoxes`.* Tesseract's lines are cut where two words are further apart than
          1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
          paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
-         ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart; paragraphs are
-         put in reading order by recursive cuts at the widest gap no box crosses (a column
-         gutter outweighs the space between a heading and its list; horizontal wins a tie).
+         ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart.
+         *Reading order* is by recursive cuts (`readingOrder`): the paragraphs are split at the
+         widest horizontal gap no box crosses (the part above first) and at the widest vertical
+         one (the part to the left first), a vertical cut counting only where the two parts
+         stand side by side, their vertical extents overlapping by a third of the shorter one
+         (columns, not a heading beside a block below it). The horizontal cut is made first when
+         its gap is at least 0.6 × the vertical one and at least 2.5 × the page's median line
+         size, so a column gutter still outweighs the space between a heading and its list (a
+         sidebar is read before the main column), a grid of cards is read row by row, and two
+         columns whose paragraph breaks line up (a blank line is about 1.5 × the size) are not
+         interleaved. Two exceptions keep the row first: a vertical gap narrower than a gutter
+         (1.5 × the size: the space between the cells of a table), and a vertical cut with no
+         paragraph of more than one line on one side (a column of line numbers or labels beside
+         a text is read along with it). What no gap divides is read in rows (`inRows`): top
+         to bottom, an item joining a row when it overlaps a member by half of the smaller
+         height, each row left to right.
          A line's size is the median of its words' sizes, each from the word's height by what
          it holds (capitals and ascenders 0.745, x-height letters 0.53, marked capitals 0.92,
          descenders 0.235 of the size; calibrated on Noto Sans and Arial); a height inflated by
          a speck (more than 1.3 × the size the word widths give) is set at 1.1 × the width-based
-         size. The
-         colour is the median of the word's ink pixels against its background, bold is a
-         stroke 1.3× the page's median. The family is the one of Arial, Times New Roman and
+         size; a line within 0.88–1.1 × of its paragraph's upper-quartile size is set at that
+         size, and sizes are rounded to half-points.
+         The colour is the median of the word's ink pixels (those at least 60 % as far from the
+         local background as its strongest pixel).
+         *Bold* is per word. The stroke of a word is the mean of the shortest 60 % of its
+         horizontal ink runs (ink: at least half the strongest contrast; the stems, not the
+         long bars and joins), in em. A word is bold when its own stroke is at least 1.22 × the
+         page's median line stroke (`BOLD_WORD`), judged only for a word with at least 60 ink
+         runs (`BOLD_EVIDENCE`); a word with fewer (a short one) is bold when its line is
+         (the line's pooled stroke at least 1.3 × the page's median, `BOLD_RATIO`) or when
+         the words on both sides of it are.
+         *Italic* is per line, from the sharpness of its ink under a shear: the ink mask of the
+         line's words is sheared back by each of the tangents 0, 0.05 … 0.35 (rows above the
+         middle moving left, undoing a lean to the right), and the sum of squared column sums
+         (largest when the stems stand in single columns) is compared. The line is italic when
+         the sharpest shear is at least 0.1 and its sharpness beats the unsheared reading's by
+         5 %; the line's runs are then italic and fitted with the italic face. The family is the one of Arial,
+         Times New Roman and
          Courier New whose per-word width ratios agree best (judged from 8 words of three
          letters up; Arial wins unless another's spread is under 0.8 × its), measured with
          the metric-compatible standard fonts MuPDF carries (`standardAdvance`). Each word
