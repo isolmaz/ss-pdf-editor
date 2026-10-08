@@ -154,11 +154,13 @@ export function tesseractLanguageUrl(code: OcrLanguageCode, quality: OcrQuality)
 }
 
 /**
- * One worker per language set + quality, kept between pages: worker startup, the
+ * A pool of workers per language set + quality, kept between pages: worker startup, the
  * 2.9 MiB wasm core instantiation and the traineddata load dominate a single page's
  * cost, so paying them per page would make a 20-page scan unusable. The cache is
  * keyed by what the worker was initialized with — a worker is not re-initializable
  * cheaply, and mixing language sets in one worker would silently degrade accuracy.
+ * A worker reads one thing at a time (a caller leases it, and gives it back): the pool
+ * holds one worker, or as many as `allowOcrWorkers` allows to read pages side by side.
  */
 interface WorkerEntry {
   readonly key: string;
@@ -168,11 +170,55 @@ interface WorkerEntry {
    * does (see `createWorkerEntry`).
    */
   worker: TesseractWorker;
-  /** Per-call sink, replaced by whichever `recognizePage` currently owns the worker. */
+  /** Per-call sink of whichever `recognizePage` currently holds the worker. */
   onProgress: ((fraction: number) => void) | undefined;
 }
 
-const workers = new Map<string, Promise<WorkerEntry>>();
+interface Pool {
+  /** Started workers, leased or idle. */
+  readonly workers: Set<WorkerEntry>;
+  readonly starting: Set<Promise<WorkerEntry>>;
+  readonly idle: WorkerEntry[];
+  /** Callers that found every worker busy and the pool full: each is woken when a worker is given back or lost. */
+  readonly waiting: Array<() => void>;
+  closed: boolean;
+}
+
+/** At most this many workers of a language set: each holds a wasm heap with the language models. */
+const MAX_POOL = 3;
+/** Machines reporting less memory (GiB, `navigator.deviceMemory`) than this read with one worker. */
+const MIN_MEMORY_FOR_POOL = 4;
+
+const pools = new Map<string, Pool>();
+/** The one pool that is allowed more than a worker (the page reader of an export), and how many. */
+let sized: { readonly key: string; readonly size: number } | null = null;
+
+/**
+ * How many workers (at most `MAX_POOL`) the readers of `languages` at `quality` may use at once,
+ * for pages read side by side; every other language set (the second look's English alone) has
+ * one. Until a caller asks, every set has one; `terminateOcrWorkers` takes it back.
+ */
+export function allowOcrWorkers(
+  count: number,
+  languages: readonly OcrLanguageCode[],
+  quality: OcrQuality,
+): void {
+  sized = { key: workerKey(languages, quality), size: Math.max(1, Math.min(MAX_POOL, Math.floor(count))) };
+}
+
+const sizeOf = (key: string): number => (sized?.key === key ? sized.size : 1);
+
+/**
+ * How many workers this machine reads pages with side by side: one per core but one, at most 3
+ * (each holds a wasm heap with the language models), at least 1; one on a machine that reports
+ * less than 4 GiB of memory.
+ */
+export function suggestedOcrWorkers(): number {
+  const { hardwareConcurrency, deviceMemory } =
+    (globalThis as { navigator?: { hardwareConcurrency?: number; deviceMemory?: number } }).navigator ?? {};
+  if ((deviceMemory ?? MIN_MEMORY_FOR_POOL) < MIN_MEMORY_FOR_POOL) return 1;
+  return Math.max(1, Math.min(MAX_POOL, (hardwareConcurrency ?? 1) - 1));
+}
 
 function workerKey(languages: readonly OcrLanguageCode[], quality: OcrQuality): string {
   return `${quality}|${[...languages].sort().join('+')}`;
@@ -235,34 +281,75 @@ async function createWorkerEntry(
   return entry;
 }
 
+function wake(pool: Pool): void {
+  pool.waiting.shift()?.();
+}
+
+/** Resumes when `wake` reaches the caller (the queue is first come, first served), or throws when `signal` aborts first — and then the caller is no longer in the queue to swallow a wake meant for the next one. */
+async function waitForWorker(pool: Pool, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) throw abortError();
+  await new Promise<void>((resolve, reject) => {
+    const resume = () => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      pool.waiting.splice(pool.waiting.indexOf(resume), 1);
+      reject(abortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    pool.waiting.push(resume);
+  });
+}
+
+/** A worker of the pool, started if it has room, else the next one given back; the caller has it to itself until `giveBack`. */
 async function acquireWorker(
   languages: readonly OcrLanguageCode[],
   quality: OcrQuality,
+  signal: AbortSignal,
 ): Promise<WorkerEntry> {
   const key = workerKey(languages, quality);
-  const cached = workers.get(key);
-  if (cached !== undefined) {
-    // A failed start (missing asset, worker crash) must not poison the cache.
-    try {
-      return await cached;
-    } catch (error) {
-      workers.delete(key);
-      throw error;
-    }
+  let pool = pools.get(key);
+  if (pool === undefined) {
+    pool = { workers: new Set(), starting: new Set(), idle: [], waiting: [], closed: false };
+    pools.set(key, pool);
   }
-  const pending = createWorkerEntry(languages, quality);
-  workers.set(key, pending);
-  try {
-    return await pending;
-  } catch (error) {
-    workers.delete(key);
-    throw error;
+  for (;;) {
+    const idle = pool.idle.pop();
+    if (idle !== undefined) return idle;
+    if (pool.workers.size + pool.starting.size < sizeOf(key)) {
+      const pending = createWorkerEntry(languages, quality);
+      pool.starting.add(pending);
+      try {
+        const entry = await pending;
+        pool.workers.add(entry);
+        return entry;
+      } finally {
+        // A failed start (missing asset, worker crash) frees its place: the next caller starts again.
+        pool.starting.delete(pending);
+        wake(pool);
+      }
+    }
+    await waitForWorker(pool, signal);
+    if (pool.closed) throw abortError();
   }
 }
 
-async function releaseWorker(entry: WorkerEntry): Promise<void> {
-  workers.delete(entry.key);
+/** The worker is free for the next caller. */
+function giveBack(entry: WorkerEntry): void {
+  const pool = pools.get(entry.key);
+  if (pool === undefined || !pool.workers.has(entry)) return;
   entry.onProgress = undefined;
+  pool.idle.push(entry);
+  wake(pool);
+}
+
+/** Terminate a worker and forget it (the abort of its caller); a waiting caller takes its place. */
+async function releaseWorker(entry: WorkerEntry): Promise<void> {
+  entry.onProgress = undefined;
+  const pool = pools.get(entry.key);
+  pool?.workers.delete(entry);
+  if (pool !== undefined) wake(pool);
   try {
     await entry.worker.terminate();
   } catch {
@@ -273,18 +360,24 @@ async function releaseWorker(entry: WorkerEntry): Promise<void> {
 
 /** Drop every cached worker — the operation's cleanup step. */
 export async function terminateOcrWorkers(): Promise<void> {
-  const pending = [...workers.values()];
-  workers.clear();
+  const dropped = [...pools.values()];
+  pools.clear();
+  sized = null;
   await Promise.all(
-    pending.map(async (entry) => {
-      try {
-        // Awaited, not fired and forgotten: `terminate()` resolves once the worker's wasm
-        // heap is actually released, and an OCR operation's caller treats this function's
-        // resolution as “the memory is back”. Returning early made that a lie.
-        await (await entry).worker.terminate().catch(() => undefined);
-      } catch {
-        // Never-started worker: nothing to terminate.
-      }
+    dropped.map(async (pool) => {
+      pool.closed = true;
+      for (const resume of pool.waiting.splice(0)) resume();
+      // Workers still starting are waited for, then terminated with the rest.
+      await Promise.allSettled(pool.starting);
+      await Promise.all(
+        [...pool.workers].map(async (entry) => {
+          // Awaited, not fired and forgotten: `terminate()` resolves once the worker's wasm
+          // heap is actually released, and an OCR operation's caller treats this function's
+          // resolution as “the memory is back”. Returning early made that a lie.
+          await entry.worker.terminate().catch(() => undefined);
+        }),
+      );
+      pool.workers.clear();
     }),
   );
 }
@@ -308,13 +401,17 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
   }
   let entry: WorkerEntry;
   try {
-    entry = await acquireWorker(input.languages, input.quality);
+    entry = await acquireWorker(input.languages, input.quality, input.signal);
   } catch (error) {
     // The start is where a missing core, language pack or worker script fails; those are the
     // messages `TESSERACT_ERROR_CODES` names, so they have to reach it.
+    if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapTesseractError(error, 'start');
   }
-  throwIfAborted(input.signal);
+  if (input.signal.aborted) {
+    giveBack(entry);
+    throw abortError();
+  }
 
   entry.onProgress = input.onProgress;
   const onAbort = () => {
@@ -347,7 +444,7 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
     throw mapTesseractError(error, 'recognize');
   } finally {
     input.signal.removeEventListener('abort', onAbort);
-    if (entry.onProgress === input.onProgress) entry.onProgress = undefined;
+    giveBack(entry);
   }
 }
 
@@ -376,7 +473,7 @@ async function inMode<T>(worker: TesseractWorker, mode: string, work: () => Prom
 
 /**
  * Read one cropped word as a word (single-word page segmentation) with the given languages.
- * The worker is the one page reads share, so the mode is put back afterwards. `null` when
+ * The worker is one of those page reads share, so the mode is put back afterwards. `null` when
  * the crop holds no text.
  */
 export async function recognizeWord(
@@ -385,9 +482,14 @@ export async function recognizeWord(
   throwIfAborted(input.signal);
   let entry: WorkerEntry;
   try {
-    entry = await acquireWorker(input.languages, input.quality);
+    entry = await acquireWorker(input.languages, input.quality, input.signal);
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapTesseractError(error, 'start');
+  }
+  if (input.signal.aborted) {
+    giveBack(entry);
+    throw abortError();
   }
   const onAbort = () => {
     void releaseWorker(entry);
@@ -411,6 +513,7 @@ export async function recognizeWord(
     throw mapTesseractError(error, 'recognize');
   } finally {
     input.signal.removeEventListener('abort', onAbort);
+    giveBack(entry);
   }
 }
 
