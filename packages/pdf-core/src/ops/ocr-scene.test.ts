@@ -667,7 +667,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         [
           ['A', 10, 30],
           ['B', 100, 130],
-          ['C', 200, 230],
+          ['3,00', 200, 230],
         ],
         0,
       ),
@@ -676,7 +676,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         [
           ['D', 10, 30],
           ['E', 100, 130],
-          ['F', 200, 230],
+          ['6,00', 200, 230],
         ],
         1,
       ),
@@ -685,7 +685,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         [
           ['G', 10, 30],
           ['H', 100, 130],
-          ['I', 200, 230],
+          ['9,00', 200, 230],
         ],
         2,
       ),
@@ -693,13 +693,13 @@ describe('ocrTextBoxes: tables read by row', () => {
     expect(ocrTextBoxes(padded, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
       'A',
       'B',
-      'C',
+      '3,00',
       'D',
       'E',
-      'F',
+      '6,00',
       'G',
       'H',
-      'I',
+      '9,00',
     ]);
   });
 
@@ -741,7 +741,14 @@ describe('ocrTextBoxes: tables read by row', () => {
       [0, 1].flatMap((at) =>
         row(
           top + at * 24,
-          [0, 1, 2].map((c) => [`${names}${at * 3 + c}`, 10 + c * 100, 40 + c * 100] as const),
+          [0, 1, 2].map(
+            (c) =>
+              [
+                c === 2 ? `${at * 3 + c + 1},00` : `${names}${at * 3 + c}`,
+                10 + c * 100,
+                40 + c * 100,
+              ] as const,
+          ),
           line + at,
         ),
       );
@@ -750,17 +757,96 @@ describe('ocrTextBoxes: tables read by row', () => {
     expect(order).toEqual([
       'a0',
       'a1',
-      'a2',
+      '3,00',
       'a3',
       'a4',
-      'a5',
+      '6,00',
       'Section',
       'b0',
       'b1',
-      'b2',
+      '3,00',
       'b3',
       'b4',
-      'b5',
+      '6,00',
+    ]);
+  });
+
+  it('reads a larger left-aligned sub-heading between two parts of a grid in place', () => {
+    const grid = (top: number, line: number) =>
+      [0, 1].flatMap((at) =>
+        row(
+          top + at * 24,
+          [
+            ['Item', 10, 50],
+            ['Qty', 110, 140],
+            ['1,00', 210, 240],
+          ],
+          line + at,
+        ),
+      );
+    const words = [...grid(10, 0), fake('Services', 10, 66, 90, 86, 9), ...grid(110, 10)];
+    const order = ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf);
+    expect(order.indexOf('Services')).toBe(6);
+    expect(order).toHaveLength(13);
+  });
+
+  it('keeps a wrapped line a little indented, its size shrunk by having no descenders, in its row', () => {
+    const wrapped = [
+      ...row(
+        100,
+        [
+          ['No', 10, 30],
+          ['Aciklama', 60, 120],
+          ['Adet', 180, 210],
+          ['Tutar', 250, 290],
+        ],
+        0,
+      ),
+      ...row(
+        124,
+        [
+          ['1', 10, 30],
+          ['Web', 60, 90],
+          ['2', 180, 210],
+          ['5,00', 250, 290],
+        ],
+        1,
+      ),
+      fake('Hgy', 70, 136, 100, 148, 9, 0),
+      ...row(
+        160,
+        [
+          ['2', 10, 30],
+          ['Alan', 60, 120],
+          ['1', 180, 210],
+          ['4,00', 250, 290],
+        ],
+        2,
+      ),
+    ];
+    const order = ocrTextBoxes(wrapped, blank(400), 0.9).boxes.flatMap(textOf);
+    expect(order.indexOf('Hgy')).toBeLessThan(order.indexOf('Alan'));
+    expect(order.indexOf('5,00')).toBeLessThan(order.indexOf('Alan'));
+  });
+
+  it('keeps three side-by-side lists of short lines column by column, without a column of figures', () => {
+    const list = (names: string[], x: number, first: number) =>
+      names.map((text, at) => fake(text, x, 10 + at * 14, x + 50, 22 + at * 14, first + at));
+    const words = [
+      ...list(['Java', 'Rust', 'Perl'], 10, 0),
+      ...list(['Docker', 'Nginx', 'Redis'], 100, 10),
+      ...list(['Linux', 'Mac', 'Win'], 190, 20),
+    ];
+    expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      'Java',
+      'Rust',
+      'Perl',
+      'Docker',
+      'Nginx',
+      'Redis',
+      'Linux',
+      'Mac',
+      'Win',
     ]);
   });
 
@@ -937,7 +1023,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         [
           ['A', 10, 30],
           ['B', 100, 130],
-          ['C', 200, 230],
+          ['3,00', 200, 230],
         ],
         0,
       ),
@@ -946,7 +1032,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         [
           ['D', 10, 30],
           ['E', 100, 130],
-          ['F', 200, 230],
+          ['6,00', 200, 230],
         ],
         1,
       ),
@@ -956,7 +1042,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         [
           ['G', 10, 30],
           ['H', 100, 130],
-          ['I', 200, 230],
+          ['9,00', 200, 230],
         ],
         3,
       ),
@@ -965,7 +1051,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         [
           ['J', 10, 30],
           ['K', 100, 130],
-          ['L', 200, 230],
+          ['12,00', 200, 230],
         ],
         4,
       ),
@@ -973,17 +1059,17 @@ describe('ocrTextBoxes: tables read by row', () => {
     expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
       'A',
       'B',
-      'C',
+      '3,00',
       'D',
       'E',
-      'F',
+      '6,00',
       'Between',
       'G',
       'H',
-      'I',
+      '9,00',
       'J',
       'K',
-      'L',
+      '12,00',
     ]);
   });
 

@@ -67,7 +67,7 @@ const ALIGN = 0.8;
 
 /** Lines on baselines at most this × the size apart are cells of one row. */
 const ROW_BAND = 0.5;
-/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre); rows of only two cells need a value column of figures too (`amountLike`)… */
+/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre); rows need a column of figures too (`amountLike`: the right-most cell of both rows for two cells, any cell for more)… */
 const TABLE_CELLS = 3;
 /** …and rows of three cells or more further apart than this × the size are not one table (rows are padded: twice the size is usual; two cells reach `MAX_LEADING` only: cards, paragraph breaks of two columns). */
 const TABLE_MAX_LEADING = 4;
@@ -1111,8 +1111,9 @@ function gridPair(above: readonly Line[], below: readonly Line[], leading: numbe
   const need = cells >= TABLE_CELLS ? TABLE_CELLS : 2;
   const reachDown = cells >= TABLE_CELLS ? TABLE_MAX_LEADING : MAX_LEADING;
   if (leading > reachDown * size || cells < need) return false;
-  // Two cells are a table only with a value column: two side-by-side blocks of short lines (a skill list, a label block) are columns.
-  if (need === 2 && !(amounts(above) && amounts(below))) return false;
+  // A table has a column of figures; side-by-side blocks of short lines (skill lists, label blocks) are columns. Two cells need it in the right-most cell of both rows.
+  const figures = need === 2 ? amounts(above) && amounts(below) : [...above, ...below].some(amountLike);
+  if (!figures) return false;
   const reach = ALIGN * size;
   const stands = (cell: Line) =>
     above.some(
@@ -1130,7 +1131,7 @@ function gridPair(above: readonly Line[], below: readonly Line[], leading: numbe
  * The tables of a page, as the lines that are their cells: rows are lines on one baseline (two
  * or more), and consecutive rows whose cells stand under each other (`gridPair`) are one table.
  * A line alone on its baseline keeps the table open only as the second line of a wrapped cell
- * (it starts under a cell of the row above, or under such a line); any other line — a
+ * (it continues a cell of the row above, or such a line, as `continues` has it); any other line — a
  * sub-heading — ends it.
  * A column of single-line cells (an invoice's descriptions) looks like a paragraph of short
  * lines to `groupParagraphs`; this is what tells it apart.
@@ -1164,12 +1165,8 @@ function tableRows(lines: readonly Line[]): Line[][] {
       refs = [...row];
     } else {
       const line = row[0] as Line;
-      const wraps = refs.some(
-        (cell) =>
-          cell.region === line.region &&
-          Math.abs(cell.x0 - line.x0) <= ALIGN * line.size &&
-          baseline - lowest <= MAX_LEADING * line.size,
-      );
+      const wraps =
+        baseline - lowest <= MAX_LEADING * line.size && refs.some((cell) => continues(cell, line));
       if (wraps) refs.push(line);
       else {
         open = false;
