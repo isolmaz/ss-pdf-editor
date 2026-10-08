@@ -444,4 +444,14 @@ describe('exact layout: what Word cannot draw', () => {
       params: { count: 2 },
     });
   });
+
+  it("counts neither an invisible layer's characters as unreadable nor its page as having text", async () => {
+    // Render mode 3: the same unreadable characters, drawn by nothing, on a page that is not a scan.
+    const hidden = line('courierMapped', 10, 50, 470, 'x\u0001y \u0001').replace('BT', 'BT 3 Tr');
+    const result = await exportOffice(await officeDocument([{ content: hidden }]), options, run);
+    expect(result.notes.some((note) => note.key === 'op.note.exportOffice.unreadable')).toBe(false);
+    expect(result.notes.find((note) => note.key === 'op.note.exportOffice.noText')).toMatchObject({
+      params: { pages: '1' },
+    });
+  });
 });

@@ -25,7 +25,7 @@ import { fitLine, horizontalScale, textBoxes, textBoxXml, wordsInBoxes } from '.
 import { wordFontName } from './export-office';
 import { line, officeDocument, picture } from './export-office-fixtures';
 import { DocxRegistry, type SceneLink, type TextBox, type TextRun } from './layout-scene';
-import { type LayoutChar, type PageLayout, readPageLayout } from './page-layout';
+import { type LayoutChar, type LayoutLine, type PageLayout, readPageLayout } from './page-layout';
 
 /** Page height of the fixtures: `line(…, y)` is from the bottom, the layout is from the top. */
 const PAGE = 500;
@@ -87,6 +87,16 @@ describe('grouping lines into text boxes', () => {
     expect(first.box[2]).toBeLessThan(220);
     expect(second.box[0]).toBeGreaterThanOrEqual(219);
     expect(first.paragraphs[0]?.lineHeight).toBeCloseTo(14, 1);
+  });
+
+  it('leaves out invisible text (render mode 3) on a page that is not a scan, keeping the visible text', async () => {
+    const hidden = line('courier', 12, 40, 300, 'Hiddenlayer secretword').replace('BT', 'BT 3 Tr');
+    const layout = await layoutOf([line('courier', 12, 40, 440, 'Header'), hidden].join('\n'));
+    const boxes = textBoxes(layout, []);
+    const all = boxes.flatMap((box) => textOf(box)).join('|');
+    expect(all).toBe('Header');
+    expect(all).not.toContain('secretword');
+    expect(wordsInBoxes(boxes)).toBe(1);
   });
 
   it('finds a centred title, a left, a justified and a right-aligned paragraph', async () => {
@@ -197,6 +207,53 @@ describe('grouping lines into text boxes', () => {
     expect(text).toContain('Deger');
     expect(text).not.toContain('Ad Deger');
   });
+
+  it('joins the cut pieces of a block of 1600 lines in well under a second, as it does a small one', () => {
+    const char = (c: string, x: number, y: number): LayoutChar => ({
+      c,
+      box: [x, y, x + 6, y + 12],
+      baseline: y + 10,
+      size: 10,
+      font: 'Arial',
+      bold: false,
+      italic: false,
+      mono: false,
+      serif: false,
+      color: 0,
+    });
+    const piece = (text: string, x: number, y: number): LayoutLine => ({
+      box: [x, y, x + 6 * text.length, y + 12],
+      dir: [1, 0],
+      chars: [...text].map((c, at) => char(c, x + 6 * at, y)),
+    });
+    const blockOf = (count: number): PageLayout => {
+      // Every third line is a justified one cut into two pieces (40…52 and 88…100) across a block 40…100 wide.
+      const lines: LayoutLine[] = [];
+      for (let row = 0; row < count; row += 1) {
+        const y = 10 + row * 14;
+        if (row % 3 === 2) lines.push(piece('aa', 40, y), piece('aa', 88, y));
+        else lines.push(piece('aaaaaaaaaa', 40, y));
+      }
+      return {
+        width: WIDTH,
+        height: 10 + count * 14,
+        blocks: [{ kind: 'text', box: [40, 10, 100, 10 + count * 14], lines }],
+        rulings: [],
+        marks: [],
+      };
+    };
+    const textOfAll = (layout: PageLayout) =>
+      textBoxes(layout, [])
+        .flatMap((box) => textOf(box))
+        .join('\n');
+    const expected = (count: number) =>
+      Array.from({ length: count }, (_, row) => (row % 3 === 2 ? 'aa aa' : 'aaaaaaaaaa')).join('\n');
+    expect(textOfAll(blockOf(6))).toBe(expected(6));
+    const start = performance.now();
+    const result = textOfAll(blockOf(1600));
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(result).toBe(expected(1600));
+  }, 120_000);
 
   it('joins two pieces only when together they span the block from edge to edge', async () => {
     const full = 'x'.repeat(50);

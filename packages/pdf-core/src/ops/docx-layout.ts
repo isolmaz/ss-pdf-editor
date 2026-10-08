@@ -192,7 +192,7 @@ export async function writeLayoutDocx(
     for (const block of scan === null ? scene.text.blocks : []) {
       if (block.kind !== 'text') continue;
       for (const line of block.lines) {
-        for (const char of line.chars) if (char.c === '\uFFFD') unreadable += 1;
+        for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
       }
     }
     const drawings = items.map((item) => sceneItemXml(item, scale, registry)).join('');
