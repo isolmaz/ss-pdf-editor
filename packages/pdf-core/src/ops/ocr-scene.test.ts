@@ -26,7 +26,23 @@ import {
  * ------------------------------------------------------------------ */
 
 type Rgb = readonly [number, number, number];
-type Face = 'noto' | 'notoBold' | 'helvetica';
+type Face =
+  | 'noto'
+  | 'notoBold'
+  | 'helvetica'
+  | 'helveticaBold'
+  | 'helveticaOblique'
+  | 'timesRoman'
+  | 'timesItalic';
+
+/** The base-14 font each face without a file is drawn in. */
+const BASE14: Partial<Record<Face, string>> = {
+  helvetica: 'Helvetica',
+  helveticaBold: 'Helvetica-Bold',
+  helveticaOblique: 'Helvetica-Oblique',
+  timesRoman: 'Times-Roman',
+  timesItalic: 'Times-Italic',
+};
 
 const FONT_FILES: Partial<Record<Face, string>> = {
   noto: '../../../../public/fonts/noto/NotoSans-Regular.ttf',
@@ -86,7 +102,7 @@ class Page {
     for (const face of this.used) {
       const file = FONT_FILES[face];
       if (file === undefined) {
-        const font = new mupdf.Font('Helvetica');
+        const font = new mupdf.Font(BASE14[face] as string);
         fonts[face] = doc.addSimpleFont(font);
         encoders.set(face, (text) => `(${text.replace(/[\\()]/g, '\\$&')})`);
       } else {
@@ -485,7 +501,8 @@ const ADVANCES: Record<string, (code: number) => number> = {
   'Times New Roman': (code) => 0.3 + (code % 7) * 0.1,
   'Courier New': () => 0.6,
 };
-const advance: Advance = (family, _bold, code) => (code === 0x17e ? undefined : ADVANCES[family]?.(code));
+const advance: Advance = (family, _bold, _italic, code) =>
+  code === 0x17e ? undefined : ADVANCES[family]?.(code);
 
 const WORDS = [
   'macros',
@@ -618,6 +635,36 @@ describe('ocrTextBoxes: colour and weight', () => {
     const dark = runsOf(boxes[1] as TextBox)[0]?.color as number;
     expect(hex(light)).toMatch(/^f[0-9a-f]f[0-9a-f]f[0-9a-f]$/);
     for (const channel of [dark >> 16, (dark >> 8) & 255, dark & 255]) expect(channel).toBeLessThan(70);
+  });
+
+  it('calls a Helvetica-Bold line bold and a regular one not, against a page of regular lines', async () => {
+    const page = new Page(300, 150, WHITE);
+    const body = 'The quick brown fox jumps over';
+    const faces: Face[] = ['helvetica', 'helvetica', 'helveticaBold', 'helvetica'];
+    for (const [index, face] of faces.entries()) page.text(face, 14, 10, 30 + index * 24, BLACK, body);
+    const image = await page.render(3);
+    const words = faces.map((_, index) =>
+      wordAt(image, body, [2, index * 24 + 14, 298, index * 24 + 38], { line: index, paragraph: 0 }),
+    );
+    const bold = ocrTextBoxes(words, image, 0.9).boxes[0]?.paragraphs[0]?.lines.map(
+      (line) => line.runs[0]?.bold,
+    );
+    expect(bold).toEqual([false, false, true, false]);
+  });
+
+  it('calls a Times-Italic or Helvetica-Oblique line italic and an upright one not', async () => {
+    const page = new Page(300, 150, WHITE);
+    const body = 'Hamburgefonstiv dolphin lilies';
+    const faces: Face[] = ['timesRoman', 'timesItalic', 'timesRoman', 'helveticaOblique', 'helvetica'];
+    for (const [index, face] of faces.entries()) page.text(face, 14, 10, 24 + index * 24, BLACK, body);
+    const image = await page.render(3);
+    const words = faces.map((_, index) =>
+      wordAt(image, body, [2, index * 24 + 8, 298, index * 24 + 32], { line: index, paragraph: 0 }),
+    );
+    const lines = ocrTextBoxes(words, image, 0.9).boxes.flatMap((box) =>
+      box.paragraphs.flatMap((paragraph) => paragraph.lines.map((line) => line.runs[0]?.italic)),
+    );
+    expect(lines).toEqual([false, true, false, true, false]);
   });
 
   it('reads a coloured word as its colour, and merges neighbours of the same look into one run', async () => {

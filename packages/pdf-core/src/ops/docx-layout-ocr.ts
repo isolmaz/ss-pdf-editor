@@ -228,8 +228,8 @@ export async function readScanPage(
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
   // dropped, and the page is erased again only if one lies outside.
   provideStandardMetrics(mupdf);
-  const advance = (family: string, bold: boolean, unicode: number) =>
-    standardAdvance(family, bold, false, unicode);
+  const advance = (family: string, bold: boolean, italic: boolean, unicode: number) =>
+    standardAdvance(family, bold, italic, unicode);
   const misread = misreadWords(words);
   const text = words.filter((word) => !misread.has(word));
   const first = ocrBackground(image, [...text, ...duplicates]);
