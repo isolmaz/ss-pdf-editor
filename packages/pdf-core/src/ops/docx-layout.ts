@@ -29,7 +29,7 @@ import {
   xml,
   zipped,
 } from './docx-drawing';
-import { embedFonts } from './docx-fonts';
+import { type EmbeddedFonts, embedFonts } from './docx-fonts';
 import {
   type FlaggedWord,
   isScanPage,
@@ -39,6 +39,7 @@ import {
 } from './docx-layout-ocr';
 import { sceneItemXml } from './docx-layout-shapes';
 import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
+import { type OpenFonts, openFontFiles, openFontsFor, releaseOpenFonts } from './docx-ocr-font';
 import { DocxRegistry, type PageScene, type TextBox } from './layout-scene';
 import { readPageRaster, readPageScene } from './layout-scene-read';
 import { type OperationContext, throwIfAborted } from './types';
@@ -81,6 +82,8 @@ export interface LayoutDocx {
     readonly pages: readonly number[];
     readonly flagged: readonly FlaggedWord[];
     readonly unavailable: readonly number[];
+    /** The open font families the scans' text is set in and the package carries (`docx-ocr-font.ts`). */
+    readonly families: readonly string[];
   };
 }
 
@@ -151,8 +154,31 @@ export async function writeLayoutDocx(
   ocr: OcrOptions | null = null,
 ): Promise<LayoutDocx> {
   const mupdf = await loadMupdf();
+  const embedded = await embedFonts(mupdf, doc, pages, context);
+  // The open families the scans are set in are named against the PDF's own fonts and loaded once.
+  const openFonts = openFontsFor(embedded.families);
+  try {
+    return await writePages(mupdf, doc, pages, title, language, context, ocr, embedded, openFonts);
+  } finally {
+    releaseOpenFonts(openFonts);
+  }
+}
+
+/** `writeLayoutDocx` after the PDF's fonts are embedded. */
+async function writePages(
+  mupdf: Mupdf,
+  doc: PDFDocument,
+  pages: readonly number[],
+  title: string,
+  language: string,
+  context: OperationContext,
+  ocr: OcrOptions | null,
+  embedded: EmbeddedFonts,
+  openFonts: OpenFonts,
+): Promise<LayoutDocx> {
   const registry = new DocxRegistry(WORD_Z_BASE);
-  const fonts = await embedFonts(mupdf, doc, pages, context);
+  /** The scan pages' text boxes, for the open families' faces. */
+  const scanBoxes: TextBox[] = [];
   const paragraphs: string[] = [];
   const allBoxes: TextBox[] = [];
   const scaled: { page: number; scale: number }[] = [];
@@ -174,7 +200,7 @@ export async function writeLayoutDocx(
     try {
       const scene = readSceneOf(mupdf, page);
       // `readScanPage` is done with the page when it first waits, so a page read beside this one can use the document.
-      const scan = isScanPage(scene) ? await readScanPage(mupdf, page, scene, ocr, signal) : null;
+      const scan = isScanPage(scene) ? await readScanPage(mupdf, page, scene, ocr, signal, openFonts) : null;
       return { scene, scan, unavailable: scan === null && isScanPage(scene) };
     } finally {
       page.destroy();
@@ -209,10 +235,11 @@ export async function writeLayoutDocx(
       const scale = wordPageScale(scene.width, scene.height);
       if (scale < 1) scaled.push({ page: index + 1, scale });
       const section = pageSectionXml(scene.width * scale, scene.height * scale);
-      const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => fonts.faceOf(index, face));
+      const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face));
       const items = scan?.items ?? scene.items;
       if (scan !== null) {
         ocrPages.push(index + 1);
+        scanBoxes.push(...scan.boxes);
         for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
       }
       if (boxes.length === 0) textless.push(index + 1);
@@ -245,6 +272,9 @@ export async function writeLayoutDocx(
     await Promise.allSettled(reading.values());
   }
   throwIfAborted(context.signal);
+  const open = [...openFonts.loaded.values()];
+  const openFiles = openFontFiles(open, scanBoxes);
+  const fonts = embedded.plus(openFiles);
   context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
   // The last page's section is the body's own `w:sectPr`.
   const body = paragraphs.join('') + lastSection;
@@ -294,6 +324,13 @@ export async function writeLayoutDocx(
     textless,
     unreadable,
     fonts: fonts.count,
-    ocr: { pages: ocrPages, flagged, unavailable },
+    ocr: {
+      pages: ocrPages,
+      flagged,
+      unavailable,
+      families: open
+        .filter((family) => openFiles.some((file) => file.family === family.name))
+        .map((family) => family.family),
+    },
   };
 }

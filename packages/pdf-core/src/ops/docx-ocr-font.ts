@@ -1,0 +1,229 @@
+/**
+ * The open font a rebuilt scan can be set in. A scan's text is set in Arial, Times New Roman or
+ * Courier New, whichever the word boxes fit best (`ocr-scene.ts`), unless the scan is clearly set
+ * in one of the open families the app ships (`ocr-font-catalog.ts`): the words are then drawn
+ * again in every candidate (`ocr-font-match.ts`) and the page uses that family by name, its own
+ * advances place the letters, and the package carries the faces the runs use — regular, bold,
+ * italic, bold italic — obfuscated like a PDF's fonts (`docx-fonts.ts`), so Word and LibreOffice
+ * draw the face the scan was set in rather than a stand-in. The families are SIL OFL: their
+ * `fsType` says installable, and is kept.
+ *
+ * The open family has to win twice, by {@link CLEAR_MARGIN}: over the runner-up (another open
+ * family may be nearly the same typeface) and over the best of the stand-ins (the app's default
+ * keeps its place on a draw). Offline, with a file missing, the page is set in the stand-ins.
+ */
+
+import type { Font } from 'mupdf';
+import type { Mupdf } from '../engines/mupdf';
+import { trueTypeForWord } from './docx-font-sfnt';
+import type { FontFile } from './docx-fonts';
+import { standardAdvance } from './docx-fonts';
+import type { TextBox } from './layout-scene';
+import { loadOpenFace, OPEN_FAMILIES, type OpenFaceStyle, type OpenFamily } from './ocr-font-catalog';
+import { type FaceCandidate, type MatchWord, matchFamily, varied } from './ocr-font-match';
+import type { Advance, MeasuredWord, RgbaImage } from './ocr-scene';
+
+/** Words OCR is at least this sure of (0–100) are drawn to tell the typeface. */
+const CONFIDENT = 90;
+/** An open family wins by this much (score, 0–1) over the runner-up and over the best stand-in. */
+export const CLEAR_MARGIN = 0.05;
+
+/** The stand-ins a scan is set in by default: Word's Arial, Times New Roman and Courier New (the base-14 faces behind them). */
+const STANDARD: readonly FaceCandidate[] = [
+  { family: 'Arial', kind: 'sans', bytes: null },
+  { family: 'Times New Roman', kind: 'serif', bytes: null },
+  { family: 'Courier New', kind: 'mono', bytes: null },
+];
+
+/** The faces a run can ask for, and the name Word's font table gives each. */
+const WEIGHTS = [
+  ['regular', 'Regular'],
+  ['bold', 'Bold'],
+  ['italic', 'Italic'],
+  ['boldItalic', 'Bold Italic'],
+] as const;
+type Weight = (typeof WEIGHTS)[number][0];
+
+/** One face of the family: the program, and MuPDF's reading of it for glyph ids and advances. */
+export interface OpenFace {
+  readonly bytes: Uint8Array;
+  readonly font: Font;
+}
+
+/** An open family as the page uses it; a face the family lacks (or that could not be fetched) is absent. */
+export interface OpenFont {
+  /** The name the runs and the font table carry: the catalog's, unless a font of the PDF already has it ("Roboto 2"). */
+  readonly name: string;
+  /** The catalog's name for the family. */
+  readonly family: string;
+  readonly regular: OpenFace;
+  readonly bold?: OpenFace;
+  readonly italic?: OpenFace;
+  readonly boldItalic?: OpenFace;
+}
+
+/** Which of the family's faces a run of `bold` and `italic` is drawn in: its own, else the nearest the family has (Word synthesises the rest). */
+function weightOf(open: OpenFont, bold: boolean, italic: boolean): Weight {
+  const order: readonly Weight[] = bold
+    ? italic
+      ? ['boldItalic', 'bold', 'italic', 'regular']
+      : ['bold', 'regular']
+    : italic
+      ? ['italic', 'regular']
+      : ['regular'];
+  return order.find((weight) => open[weight] !== undefined) as Weight;
+}
+
+/** The advance (em) in a stand-in, or in `open`'s own face of the weight; `undefined` for a glyph it lacks or a family it is not. */
+export function ocrAdvance(open: OpenFont | null): Advance {
+  return (family, bold, italic, unicode) => {
+    if (open === null || family !== open.name) return standardAdvance(family, bold, italic, unicode);
+    const { font } = open[weightOf(open, bold, italic)] as OpenFace;
+    const glyph = font.encodeCharacter(unicode);
+    return glyph === 0 ? undefined : font.advanceGlyph(glyph, 0);
+  };
+}
+
+const faceOf = async (
+  mupdf: Mupdf,
+  family: OpenFamily,
+  style: OpenFaceStyle,
+): Promise<OpenFace | undefined> => {
+  const bytes = await loadOpenFace(family, style);
+  return bytes === null ? undefined : { bytes, font: new mupdf.Font(family.name, bytes) };
+};
+
+/**
+ * The open families an export has chosen, for all its scan pages: each is loaded (parsed into
+ * MuPDF) once, and named so that no font the PDF's own pages embed has the same name, before any
+ * run is set in it. `releaseOpenFonts` frees the MuPDF fonts at the end of the export.
+ */
+export interface OpenFonts {
+  /** The names in use in the document: the PDF's embedded families, then the open families chosen. */
+  readonly names: Set<string>;
+  /** The families chosen, by catalog id. */
+  readonly loaded: Map<string, OpenFont>;
+  /** The families being loaded, by catalog id, for pages read side by side that pick the same one. */
+  readonly loading: Map<string, Promise<OpenFont>>;
+}
+
+/** No family chosen yet; `embedded` are the family names the PDF's own fonts are embedded under. */
+export const openFontsFor = (embedded: ReadonlySet<string>): OpenFonts => ({
+  names: new Set(embedded),
+  loaded: new Map(),
+  loading: new Map(),
+});
+
+/** Frees the MuPDF fonts of the families chosen. */
+export function releaseOpenFonts(fonts: OpenFonts): void {
+  for (const open of fonts.loaded.values()) {
+    for (const [weight] of WEIGHTS) open[weight]?.font.destroy();
+  }
+  fonts.loaded.clear();
+}
+
+/** `family` named `name`: the regular face (its bytes in hand) and the other faces the catalog has for it, as far as they load. */
+async function loadFamily(
+  mupdf: Mupdf,
+  family: OpenFamily,
+  name: string,
+  regularBytes: Uint8Array,
+): Promise<OpenFont> {
+  const [bold, italic, boldItalic] = await Promise.all(
+    WEIGHTS.slice(1).map(([weight]) => faceOf(mupdf, family, weight)),
+  );
+  return {
+    name,
+    family: family.name,
+    regular: { bytes: regularBytes, font: new mupdf.Font(family.name, regularBytes) },
+    ...(bold === undefined ? {} : { bold }),
+    ...(italic === undefined ? {} : { italic }),
+    ...(boldItalic === undefined ? {} : { boldItalic }),
+  };
+}
+
+/**
+ * The open family the scan is set in, or `null` to keep the stand-ins. The words OCR is sure of
+ * (regular ones: a candidate carries one program) are compared with every family whose regular
+ * face loads and with the three stand-ins; the family wins when it is ahead of the runner-up and
+ * of the best stand-in by {@link CLEAR_MARGIN}. With no such word nothing is fetched. A family
+ * is loaded and named once for the export (`fonts`).
+ */
+export async function chooseOpenFont(
+  mupdf: Mupdf,
+  image: RgbaImage,
+  words: readonly MeasuredWord[],
+  fonts: OpenFonts,
+): Promise<OpenFont | null> {
+  const confident: MatchWord[] = words.filter((word) => word.confidence >= CONFIDENT);
+  if (varied(confident).length === 0) return null;
+  const faces = await Promise.all(
+    OPEN_FAMILIES.map(async (family) => {
+      const bytes = await loadOpenFace(family, 'regular');
+      return bytes === null ? [] : [{ family: family.name, kind: family.kind, bytes }];
+    }),
+  );
+  const candidates = faces.flat();
+  if (candidates.length === 0) return null;
+  const match = matchFamily(mupdf, image, confident, [...STANDARD, ...candidates]);
+  const winner = OPEN_FAMILIES.find((family) => family.name === match.family);
+  if (winner === undefined) return null;
+  if (match.score - (match.runnerUp?.score ?? 0) < CLEAR_MARGIN) return null;
+  const standard = matchFamily(mupdf, image, confident, STANDARD);
+  if (match.score - standard.score < CLEAR_MARGIN) return null;
+  const chosen = fonts.loaded.get(winner.id) ?? fonts.loading.get(winner.id);
+  if (chosen !== undefined) return await chosen;
+  // Named and registered before the first wait, so a page read beside this one that picks the
+  // same family waits for this load instead of starting (and naming) another.
+  let name = winner.name;
+  for (let n = 2; fonts.names.has(name); n += 1) name = `${winner.name} ${n}`;
+  fonts.names.add(name);
+  const regular = candidates.find((each) => each.family === winner.name)?.bytes as Uint8Array;
+  const load = loadFamily(mupdf, winner, name, regular);
+  fonts.loading.set(winner.id, load);
+  try {
+    const open = await load;
+    fonts.loaded.set(winner.id, open);
+    return open;
+  } finally {
+    fonts.loading.delete(winner.id);
+  }
+}
+
+/**
+ * The font files the scan pages' text needs: for each family and each of its faces, the
+ * program with its `cmap` made to name the characters the runs set in it (the whole program is
+ * kept, outlines and tables, with the font's copyright and licence records), or nothing when no
+ * run is set in it.
+ */
+export function openFontFiles(fonts: readonly OpenFont[], boxes: readonly TextBox[]): FontFile[] {
+  const files: FontFile[] = [];
+  for (const open of fonts) {
+    const used = new Map<Weight, Set<number>>();
+    for (const box of boxes) {
+      for (const paragraph of box.paragraphs) {
+        for (const line of paragraph.lines) {
+          for (const run of line.runs) {
+            if (run.font !== open.name) continue;
+            const weight = weightOf(open, run.bold, run.italic);
+            const set = used.get(weight) ?? new Set<number>();
+            for (const char of run.text) set.add(char.codePointAt(0) as number);
+            used.set(weight, set);
+          }
+        }
+      }
+    }
+    for (const [weight, style] of WEIGHTS) {
+      const characters = used.get(weight);
+      if (characters === undefined) continue;
+      const { bytes, font } = open[weight] as OpenFace;
+      const map = [...characters].flatMap((unicode) => {
+        const gid = font.encodeCharacter(unicode);
+        return gid === 0 ? [] : [{ unicode, gid }];
+      });
+      const built = trueTypeForWord(bytes, map, { family: open.name, style }, { keepNotices: true });
+      if (built !== null) files.push({ family: open.name, style, bytes: built });
+    }
+  }
+  return files;
+}
