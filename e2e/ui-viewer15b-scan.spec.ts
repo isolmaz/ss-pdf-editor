@@ -23,6 +23,8 @@ interface CameraProbe {
 declare global {
   interface Window {
     __camera: CameraProbe;
+    /** While true, every OPFS write the page starts is refused. */
+    __failWrites: boolean;
   }
 }
 
@@ -112,6 +114,26 @@ async function openScan(page: Page): Promise<Locator> {
   return dialog;
 }
 
+/**
+ * Press "Create PDF" and wait for the dialog to go. The dialog closing is the product's own
+ * signal that the document is open; a sentence in the dialog is its signal that it is not,
+ * and that fails the test at once with the sentence instead of after a minute of waiting.
+ */
+async function createPdf(dialog: Locator): Promise<void> {
+  await dialog.getByRole('button', { name: 'Create PDF' }).click();
+  await expect
+    .poll(
+      async () => {
+        if ((await dialog.count()) === 0) return 'closed';
+        const alerts = await dialog.getByRole('alert').allInnerTexts();
+        if (alerts.length > 0) throw new Error(`the scan dialog stayed open and said: ${alerts.join(' ')}`);
+        return 'open';
+      },
+      { timeout: 60_000, message: 'the scan dialog closes once the PDF is open' },
+    )
+    .toBe('closed');
+}
+
 const outlinePoints = (dialog: Locator) =>
   dialog
     .getByTestId('scan-live-outline')
@@ -164,9 +186,54 @@ test('a sensor still much larger than the video is asked for at its full size an
   const requests = await page.evaluate(() => window.__camera.stillRequests);
   expect(requests).toEqual([{ imageWidth: 4000, imageHeight: 3000 }]);
   await dialog.getByRole('button', { name: 'Add page' }).click();
-  await dialog.getByRole('button', { name: 'Create PDF' }).click();
-  await expect(dialog).toHaveCount(0, { timeout: 60_000 });
+  await createPdf(dialog);
   expect((await readProducedPdf(await exportBytes(page, 'still.pdf'))).pageCount).toBe(1);
+});
+
+test('a shell that cannot open the PDF says so inside the dialog, which stays open for another try', async ({
+  page,
+}) => {
+  // The vault write of the scanned document fails, as a full or locked disk does; the
+  // shell's own notice would sit behind the modal and fade, leaving "Create PDF" silent.
+  await page.addInitScript(() => {
+    let failing = false;
+    Object.defineProperty(window, '__failWrites', {
+      get: () => failing,
+      set: (value: boolean) => {
+        failing = value;
+      },
+    });
+    const createWritable = FileSystemFileHandle.prototype.createWritable;
+    FileSystemFileHandle.prototype.createWritable = function failingWritable(
+      this: FileSystemFileHandle,
+      ...args: Parameters<typeof createWritable>
+    ) {
+      if (failing)
+        return Promise.reject(new DOMException('scripted: the disk is full', 'QuotaExceededError'));
+      return createWritable.apply(this, args);
+    };
+  });
+  await scriptCamera(page, { stillCapture: true });
+  await openPdf(page);
+  const dialog = await openScan(page);
+  const shutter = dialog.getByTestId('scan-shutter');
+  await expect(shutter).toBeEnabled({ timeout: 30_000 });
+  await shutter.click();
+  await expect(dialog.getByRole('heading', { name: 'Adjust the corners' })).toBeVisible({ timeout: 30_000 });
+  await dialog.getByRole('button', { name: 'Add page' }).click();
+  await page.evaluate(() => {
+    window.__failWrites = true;
+  });
+  const create = dialog.getByRole('button', { name: 'Create PDF' });
+  await create.click();
+  await expect(dialog.getByRole('alert')).toBeVisible({ timeout: 30_000 });
+  await expect(dialog).toBeVisible();
+  // Nothing is lost: with the disk back, the same click makes the PDF.
+  await page.evaluate(() => {
+    window.__failWrites = false;
+  });
+  await expect(create).toBeEnabled();
+  await createPdf(dialog);
 });
 
 test('a photo the browser cannot encode is reported on the camera screen and the shutter stays usable', async ({
