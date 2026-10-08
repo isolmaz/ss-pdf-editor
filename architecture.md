@@ -407,7 +407,13 @@ had to stay green. The moves, and the defects they fixed on the way:
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
     rule between two cells merges them). Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
-    every row ("stream"). Prose set in columns is told apart by its long pieces.
+    every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
+    blocks: two columns that each hold a text block of three or more lines with a median line
+    of 20 characters or more are two columns of text whose lines share baselines, not a table
+    (read row by row across them, a reader would take the columns in turn no more). A line is cut
+    into segments where a gap between visible characters is wider than about two spaces
+    (`lineSegments`), and a segment is placed — outside a table, in a table, in a cell — as a
+    whole, by its centre: no word is ever cut at the edge of a table or between two cells.
   - **Drawings.** Curves, polygons that are not rectangles, shadings and pictures seed
     regions that grow over every mark they touch. A region holding a line of prose is left
     to the text, and so is one crossing a table or covering most of the page. The region is
@@ -424,7 +430,9 @@ had to stay green. The moves, and the defects they fixed on the way:
     the letters before it (the join reads the line's last characters across its runs).
     Lines that share a row and follow each other along it (MuPDF cuts the dots of a leader into
     a line each) are joined first. A character belongs to one table (ruled before spread, the
-    smallest first), so a nested or overlapping table does not write its words twice. An inline
+    smallest first), so a nested or overlapping table does not write its words twice. Tables that
+    stand next to each other with nothing between them (a row of key caps drawn as grids) get a
+    hairline paragraph between them: Word and LibreOffice fuse tables that touch into one. An inline
     picture is shrunk to fit the page's text area less one body-size line.
     Paragraphs of several lines that start a third of the way across are a second column,
     and alignment and indents are measured in a paragraph's own column. Sizes at least

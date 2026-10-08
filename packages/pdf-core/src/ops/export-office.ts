@@ -45,11 +45,12 @@ import {
   findTextTables,
   inside,
   type LayoutChar,
-  type LayoutLine,
   type LayoutTable,
+  lineSegments,
   type PageLayout,
   readPageLayout,
   renderRegion,
+  segmentInside,
   type TableCell,
   textRows,
 } from './page-layout';
@@ -197,12 +198,6 @@ async function readPages(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   return out;
-}
-
-/** The characters of a line that lie outside every box (tables, figures) on the page. */
-function outside(line: LayoutLine, boxes: readonly Box[]): LayoutChar[] {
-  if (boxes.length === 0) return [...line.chars];
-  return line.chars.filter((char) => !boxes.some((box) => inside(char, box)));
 }
 
 /* ------------------------------------------------------------------ *
@@ -484,7 +479,9 @@ function lostPictures(page: ReadPage): number {
 }
 
 /**
- * The table each character of a page belongs to, when it lies inside one: ruled tables
+ * The table each character of a page belongs to, when it lies inside one — a segment of a
+ * line (`lineSegments`) goes whole, by its centre, so no word is cut at the edge of a
+ * table: ruled tables
  * before tables read from spacing, the smallest first — a table drawn inside another one
  * holds its own text, and a table read from spacing that runs across a ruled one leaves the
  * ruled one's text to it. A character is in one table, so its word is written once.
@@ -497,9 +494,10 @@ function ownersOf(page: ReadPage): Map<LayoutChar, LayoutTable> {
   for (const block of page.layout.blocks) {
     if (block.kind !== 'text') continue;
     for (const line of block.lines) {
-      for (const char of line.chars) {
-        const table = ranked.find((candidate) => inside(char, candidate.box));
-        if (table !== undefined) owners.set(char, table);
+      for (const segment of lineSegments(line.chars)) {
+        const table = ranked.find((candidate) => segmentInside(segment, candidate.box));
+        if (table === undefined) continue;
+        for (const char of segment) owners.set(char, table);
       }
     }
   }
@@ -516,12 +514,12 @@ function cellLines(page: ReadPage, table: LayoutTable, owners: Map<LayoutChar, L
     if (block.kind !== 'text') continue;
     for (const line of block.lines) {
       const parts = new Map<TableCell, LayoutChar[]>();
-      for (const char of line.chars) {
-        if (owners.get(char) !== table) continue;
+      for (const segment of lineSegments(line.chars)) {
+        if (segment.some((char) => owners.get(char) !== table)) continue;
         const cell =
-          table.cells.find((candidate) => inside(char, candidate.box, 0)) ??
-          (table.cells.find((candidate) => inside(char, candidate.box, 1)) as TableCell);
-        parts.set(cell, [...(parts.get(cell) ?? []), char]);
+          table.cells.find((candidate) => segmentInside(segment, candidate.box, 0)) ??
+          (table.cells.find((candidate) => segmentInside(segment, candidate.box, 1)) as TableCell);
+        parts.set(cell, [...(parts.get(cell) ?? []), ...segment]);
       }
       for (const [cell, chars] of parts) lines.set(cell, [...(lines.get(cell) ?? []), chars]);
     }
@@ -549,7 +547,6 @@ function pageItems(page: ReadPage): Item[] {
   const items: Item[] = [];
   const tables = [...page.tables, ...page.streams];
   const owners = ownersOf(page);
-  const taken = tables.map((table) => table.box);
   const placed = new Set<number>();
   for (const block of page.layout.blocks) {
     if (block.kind === 'image') {
@@ -574,7 +571,9 @@ function pageItems(page: ReadPage): Item[] {
       }
       continue;
     }
-    const lines = block.lines.map((line) => outside(line, taken)).filter((chars) => chars.length > 0);
+    const lines = block.lines
+      .map((line) => line.chars.filter((char) => !owners.has(char)))
+      .filter((chars) => chars.length > 0);
     items.push(...blockParagraphs(lines));
   }
   page.figures.forEach((figure, index) => {
@@ -929,6 +928,12 @@ function docxPage(
         out.push(
           `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="${twips(before)}" w:lineRule="exact"/></w:pPr></w:p>`,
         );
+      else if (out[out.length - 1]?.endsWith('</w:tbl>'))
+        // Tables with nothing between them are one table to Word and LibreOffice, whose
+        // columns are the sum of both: a hairline paragraph keeps them apart.
+        out.push(
+          '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr></w:p>',
+        );
       out.push(tableXml(item, column, context));
       if (section !== '') {
         out.push(
@@ -1176,15 +1181,11 @@ function sheetsOf(
   let textOutside = false;
   for (const page of pages) {
     if (page.tables.length > 0) {
+      const owners = ownersOf(page);
       textOutside ||= page.layout.blocks.some(
         (block) =>
           block.kind === 'text' &&
-          block.lines.some((line) =>
-            outside(
-              line,
-              [...page.tables, ...page.streams].map((table) => table.box),
-            ).some((char) => char.c.trim() !== ''),
-          ),
+          block.lines.some((line) => line.chars.some((char) => char.c.trim() !== '' && !owners.has(char))),
       );
       // The page's tables top to bottom, those without rules among them.
       const all = [...page.tables, ...page.streams].sort(

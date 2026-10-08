@@ -564,6 +564,28 @@ describe('exportOffice → DOCX tables', () => {
     expect(notes.find((entry) => entry.key === 'op.note.exportOffice.tables')?.params).toEqual({ count: 1 });
   });
 
+  it('separates tables that stand side by side with a hairline paragraph, which Word would otherwise fuse into one table', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(58, 425, 'a'),
+          courier(108, 425, 'b'),
+          courier(58, 405, 'c'),
+          courier(108, 405, 'd'),
+          courier(258, 425, 'e'),
+          courier(308, 425, 'f'),
+          courier(258, 405, 'g'),
+          courier(308, 405, 'h'),
+          gridOperators([50, 100, 150], [440, 420, 400]),
+          gridOperators([250, 300, 350], [440, 420, 400]),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const kinds = bodyBlocks(await documentXml(file.bytes)).map((block) => /^<w:(\w+)/.exec(block)?.[1]);
+    expect(kinds).toEqual(['tbl', 'p', 'tbl', 'sectPr']);
+  });
+
   it('keeps pages as sections: a table cannot carry a break or a section, so a hairline paragraph does', async () => {
     const xs = [50, 150, 250, 350];
     const cells = (ys: readonly number[]): string[] =>
@@ -1135,6 +1157,68 @@ describe('exportOffice → DOCX text in rows and tables', () => {
     ]);
     const { file } = await exportOffice(bytes, docxOptions, run);
     expect(await paragraphs(file.bytes)).toEqual(['Toplam tutar', 'Vergi dairesi . . . . . .', 'Son satir']);
+  });
+
+  it('joins the pieces that stand on one row into one line, in a paragraph and in a table cell, whatever order they come in', async () => {
+    // Each piece is a text of its own, a gap apart: MuPDF takes each for a line.
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(50, 430, 'Vergi'),
+          courier(95, 430, 'dairesi '),
+          courier(150, 430, '. '),
+          courier(180, 430, '.'),
+          // The pieces of one cell, the second given first.
+          courier(85, 405, 'Soyad'),
+          courier(58, 405, 'Ad'),
+          courier(58, 375, 'Alt'),
+          courier(258, 405, 'Sag'),
+          gridOperators([50, 250, 350], [420, 390, 360]),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const found = await paragraphs(file.bytes);
+    expect(found).toContain('Vergi dairesi . .');
+    expect(found).toContain('Ad Soyad');
+  });
+
+  it('puts a character whose centre lies a hair outside a table into the cell it is next to', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(58, 405, 'Ad'),
+          courier(158, 405, 'Soyad'),
+          // Six points wide, its centre 0.5 pt left of the table's frame.
+          courier(46.5, 405, 'x'),
+          gridOperators([50, 150, 250], [420, 390, 360]),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const words = (await paragraphs(file.bytes)).flatMap((text) => text.split(' '));
+    expect(words.filter((word) => word === 'x')).toHaveLength(1);
+    expect(words).toEqual(expect.arrayContaining(['Ad', 'Soyad']));
+  });
+
+  it('never cuts a line of text through a word at the edge of a table: it goes whole to the table or whole outside', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(58, 445, 'Ad'),
+          courier(158, 445, 'Soyad'),
+          // Mostly outside the table, its first words inside it...
+          courier(200, 420, 'Sosyal guvenlik numarasi'),
+          // ...and mostly inside, its last words outside.
+          courier(130, 405, 'Kimlik numaraniz burada'),
+          gridOperators([50, 150, 250], [460, 430, 400]),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const found = await paragraphs(file.bytes);
+    expect(found).toContain('Sosyal guvenlik numarasi');
+    expect(found).toContain('Kimlik numaraniz burada');
   });
 });
 
