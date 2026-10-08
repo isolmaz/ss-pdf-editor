@@ -1146,6 +1146,33 @@ describe('the signature value itself', () => {
     expect((await onlyVerdict(bytes)).integrity).toBe('valid');
   });
 
+  it('verifies the product-signed P-521 signature whose r starts with two zero octets', async () => {
+    // r < 2^521 sits in 66 octets, so its first octet is 0 or 1 and about one signature in
+    // a thousand also has a zero second octet: the integer is then 64 octets, not 65. The
+    // product signer used to write it with a redundant 0x00 — not DER — and this verifier
+    // rightly read the file as invalid. WebCrypto cannot be told which `r` to pick, so the
+    // signing is repeated until it picks one of that shape.
+    const signer = await identity('P-521');
+    const sign = crypto.subtle.sign.bind(crypto.subtle);
+    let attempts = 0;
+    const spy = vi.spyOn(crypto.subtle, 'sign').mockImplementation(async (algorithm, key, data) => {
+      for (;;) {
+        attempts += 1;
+        if (attempts > 100_000) throw new Error('no P-521 signature of the wanted shape in 100000 attempts');
+        const signature = await sign(algorithm, key, data);
+        const raw = new Uint8Array(signature);
+        if (raw[0] === 0 && raw[1] === 0 && (raw[2] ?? 0) < 0x80) return signature;
+      }
+    });
+    let bytes: Uint8Array;
+    try {
+      bytes = await signedPdf(cmsBy(signer, { digest: 'SHA-512' }));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await onlyVerdict(bytes)).toMatchObject({ integrity: 'valid', signer: 'Ayşe Signer' });
+  }, 60_000);
+
   const R = new Uint8Array(32).fill(0x11);
   it.each([
     ['not a SEQUENCE', () => Uint8Array.of(1, 2, 3)],
