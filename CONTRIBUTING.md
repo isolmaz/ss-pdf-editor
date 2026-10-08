@@ -77,7 +77,7 @@ a flaky test fails the night.
 own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests are
+`e2e-service-worker`, `behavior` and `fidelity` must pass, and force-pushes are blocked. Pull requests are
 merged with a merge commit, never squashed or rebased, so each commit keeps naming one fix and
 its test. A reviewer who did not write the change records PASS or FAIL on the pull request, and
 documentation that does not describe a behaviour change is a FAIL. [`REVIEW.md`](REVIEW.md), the

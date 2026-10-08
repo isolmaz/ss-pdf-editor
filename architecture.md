@@ -2452,7 +2452,7 @@ deploy scripts.
 
 The release path is a pull request, then GitHub Actions, then a deploy that only a push to
 `main` triggers. `main` is protected: a pull request is required, the required checks are
-`verify`, `e2e` (4 shards), `e2e-service-worker` and `behavior`, force-pushes are blocked, and
+`verify`, `e2e` (4 shards), `e2e-service-worker`, `behavior` and `fidelity`, force-pushes are blocked, and
 merges are merge commits.
 
 - `.github/workflows/ci.yml` runs on `pull_request`, `push` to `main` and `workflow_dispatch`.

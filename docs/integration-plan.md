@@ -9,7 +9,7 @@ second agent can verify; a step is done when its check holds, not when someone s
 2. GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and every push to
    `main`: `verify` (typecheck, Biome, unit suite, model audit, docs sync, build, asset pins,
    licences, dist), the whole Playwright suite in four shards, the service-worker tests, and
-   the signing/engine behaviour checks. All of them are required checks on `main`.
+   the signing/engine behaviour checks, and the PDF → Word fidelity test (`fidelity`). All of them are required checks on `main`.
 3. A reviewer that did not write the change reads it and records PASS or FAIL on the pull
    request. Documentation (README, CONTRIBUTING, architecture, site TR/EN) is part of the
    review: a behaviour change that is not reflected there is a FAIL.

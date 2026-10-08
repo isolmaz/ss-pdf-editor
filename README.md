@@ -773,7 +773,7 @@ Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flak
 fix's own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests
+`e2e-service-worker`, `behavior` and `fidelity` must pass, and force-pushes are blocked. Pull requests
 are merged with a merge commit. [`REVIEW.md`](REVIEW.md), the review guide of pull request #28, lists
 its commits by risk, each fix with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
 how changes land.
