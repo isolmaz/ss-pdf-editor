@@ -23,6 +23,7 @@
     "coverage": "node tools/coverage/report.mjs",
     "measure:model": "vitest run --config vitest.measure.config.ts",
     "e2e": "playwright test",
+    "fidelity": "node tools/fidelity/run.mjs",
     "fetch:engines": "node tools/fetch-engines.mjs",
     "verify:assets": "node tools/verify-assets.mjs",
     "check:licenses": "node tools/check-licenses.mjs",

@@ -21,6 +21,14 @@ import { defineConfig, devices } from 'playwright/test';
 const distEntry = fileURLToPath(new URL('./dist/editor/index.html', import.meta.url));
 const PORT = 4178;
 
+/**
+ * The PDF → Word fidelity harness (`e2e/fidelity/`, run by `pnpm fidelity`) is its own project,
+ * present only when `FIDELITY` is set: it needs LibreOffice, takes minutes and measures rather
+ * than gates, so `pnpm e2e` and `pnpm coverage` neither run nor list it.
+ */
+const fidelity = Boolean(process.env.FIDELITY);
+const FIDELITY_SPECS = '**/e2e/fidelity/**';
+
 export default defineConfig({
   testDir: './e2e',
   // OCR recognises rendered pages with a WASM engine; the spec narrows its own scope so
@@ -52,6 +60,7 @@ export default defineConfig({
       // in tens of seconds beside four workers rendering and recognising pages: those tests
       // run on their own, after this project.
       grepInvert: /@service-worker/,
+      testIgnore: FIDELITY_SPECS,
       use: {
         // No extra launch flags. Cross-origin isolation comes from the response headers
         // (`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy:
@@ -67,6 +76,7 @@ export default defineConfig({
     {
       name: 'service-worker',
       grep: /@service-worker/,
+      testIgnore: FIDELITY_SPECS,
       // Runs once the rest has passed. A targeted run of these tests alone takes `--no-deps`,
       // or the whole chromium project runs first.
       dependencies: ['chromium'],
@@ -82,6 +92,21 @@ export default defineConfig({
         channel: 'chromium',
       },
     },
+    ...(fidelity
+      ? [
+          {
+            name: 'fidelity',
+            testMatch: /fidelity\/.*\.spec\.ts/,
+            // One LibreOffice conversion and one measurement per test: a retry would only repeat
+            // a slow, deterministic failure.
+            retries: 0,
+            use: {
+              ...devices['Desktop Chrome'],
+              channel: 'chromium',
+            },
+          },
+        ]
+      : []),
   ],
   webServer: existsSync(distEntry)
     ? {
