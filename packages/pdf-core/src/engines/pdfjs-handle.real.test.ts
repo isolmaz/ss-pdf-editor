@@ -102,14 +102,17 @@ async function failureOf(task: Promise<unknown>): Promise<ToolError> {
 }
 
 /** A canvas whose 2D context accepts every call pdf.js makes to paint a page and draws nothing. */
-function fakeCanvas() {
+function fakeCanvas(onPaint?: (call: string) => void) {
   const target: Record<string | symbol, unknown> = {};
   const context: Record<string | symbol, unknown> = new Proxy(target, {
     get: (own, property) => {
       if (property in own) return own[property];
       if (property === 'canvas') return canvas;
       if (property === 'getTransform') return () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
-      return () => undefined;
+      return () => {
+        // The handle clears the canvas itself before pdf.js starts; anything else is pdf.js painting.
+        if (property !== 'setTransform' && property !== 'clearRect') onPaint?.(String(property));
+      };
     },
     set: (own, property, value) => {
       own[property] = value;
@@ -409,14 +412,20 @@ describe('renderPage', () => {
   it('cancels the render and reports aborted when the signal fires during it', async () => {
     await withHandle(document(), async (handle) => {
       const controller = new AbortController();
-      const rendering = handle.renderPage(0, fakeCanvas() as never, { scale: 1, signal: controller.signal });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      controller.abort();
-      const outcome = await rendering.then(
-        () => 'finished',
-        (error: unknown) => (isToolError(error) ? error.code : 'other'),
+      // The signal fires from inside pdf.js's first paint call, so the abort lands while the
+      // render is running — after the task exists and before it can complete.
+      let paints = 0;
+      const canvas = fakeCanvas(() => {
+        paints += 1;
+        if (paints === 1) controller.abort();
+      });
+      const failure = await failureOf(
+        handle.renderPage(0, canvas as never, { scale: 1, signal: controller.signal }),
       );
-      expect(['finished', 'aborted']).toContain(outcome);
+      expect(paints).toBeGreaterThan(0);
+      expect(failure.code).toBe('aborted');
+      // pdf.js reports the cancelled task it was told to stop, not an error of the handle's own.
+      expect(failure.cause).toMatchObject({ name: 'RenderingCancelledException' });
     });
   });
 });

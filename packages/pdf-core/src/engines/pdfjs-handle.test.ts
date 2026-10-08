@@ -139,9 +139,13 @@ describe('openWithPdfjs', () => {
     // A warm-up that cannot load the chunk stays silent.
     state.failures = 1;
     const quiet = await freshLoader();
+    const before = state.attempts;
     quiet.warmPdfjs();
-    await vi.waitFor(() => expect(state.attempts).toBeGreaterThan(0));
-    // The failed attempt is forgotten: the slot is free for the next caller.
-    expect(await quiet.loadPdfjs().catch(() => 'failed')).toBeDefined();
+    await vi.waitFor(() => expect(state.attempts).toBe(before + 1));
+    // The failed attempt is forgotten: the slot is free for the next caller, which makes a
+    // fresh attempt of its own (a remembered rejection would reject here without one).
+    const chunk = await quiet.loadPdfjs();
+    expect(chunk.GlobalWorkerOptions).toBe(state.options);
+    expect(state.attempts).toBe(before + 2);
   });
 });
