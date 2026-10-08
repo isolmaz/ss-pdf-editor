@@ -17,7 +17,9 @@
  *    inline at their size, and a vector drawing (a chart, a diagram) as one picture of its
  *    region. The package is written by hand (WordprocessingML is plain XML in a ZIP) and
  *    read back with mammoth, an independent reader, whose words have to match the words
- *    written.
+ *    written. `docxLayout: 'page-images'` writes a different Word file: each page one
+ *    picture of the page, exact but not editable (`ops/docx-pages.ts`); the XML both
+ *    writers share is in `ops/docx-drawing.ts`.
  *  - **XLSX**: one sheet per table (ruled or read from spacing), with merged cells and
  *    column widths. A page without any table becomes one sheet of its text rows, split at
  *    wide gaps and aligned on shared column starts. A value becomes a number only when it
@@ -31,12 +33,26 @@
  * first).
  */
 
-import JSZip from 'jszip';
 import type { PDFDocument } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { readText } from '../engines/mupdf-write';
 import { parseCsv } from './convert-text';
+import {
+  contentTypesXml,
+  corePropertiesXml,
+  documentRelsXml,
+  EMU,
+  imageRelId,
+  PACKAGE_RELS,
+  TWIPS,
+  wordDocumentXml,
+  XML_HEAD,
+  xml,
+  xmlSafe,
+  zipped,
+} from './docx-drawing';
+import { type PageImage, pageImagesDocx, renderPageImages } from './docx-pages';
 import {
   type Box,
   findFigures,
@@ -56,11 +72,18 @@ import { note, type OperationContext, type OperationNote, type OutputFile, throw
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'csv';
 export type CsvDelimiter = ',' | ';';
+/**
+ * How a Word file is built: `flow` reads the page as text, tables and pictures that reflow
+ * (editable); `page-images` draws each page as one picture of the page (exact, not editable).
+ */
+export type DocxLayout = 'flow' | 'page-images';
 
 export interface OfficeExportOptions {
   /** 0-based page indices, ascending. */
   readonly pages: readonly number[];
   readonly format: OfficeFormat;
+  /** Word only; `flow` when left out. */
+  readonly docxLayout?: DocxLayout;
   readonly baseName: string;
   readonly csvDelimiter?: CsvDelimiter;
   /** Sheet names in the reader's language: `table(1)` → `Table 1`, `page(3)` → `Page 3`. */
@@ -81,30 +104,10 @@ const MIME: Readonly<Record<OfficeFormat, string>> = {
 
 /** A gap larger than this before a paragraph is drawn as this (points); see `docxPage`. */
 const MAX_GAP = 48;
-/** Twentieths of a point (twips) and English Metric Units per point. */
-const TWIPS = 20;
-const EMU = 12700;
 
 /* ------------------------------------------------------------------ *
  * shared
  * ------------------------------------------------------------------ */
-
-/** The text without the control characters XML 1.0 cannot carry. */
-function xmlSafe(value: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the characters being removed
-  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
-}
-
-/** XML text: the five entities, and the control characters XML 1.0 cannot carry dropped. */
-function xml(value: string): string {
-  return xmlSafe(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 
 function words(text: string): number {
   const trimmed = text.trim();
@@ -608,7 +611,7 @@ function pictureXml(
     '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
     '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
     `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-    `<pic:blipFill><a:blip r:embed="rIdImage${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:blipFill><a:blip r:embed="${imageRelId(id)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
     `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
     '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
@@ -813,28 +816,6 @@ function stylesXml(bodySize: number, bodyFont: string, language: string): string
   );
 }
 
-function corePropertiesXml(title: string): string {
-  return (
-    `${XML_HEAD}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ` +
-    'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
-    'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
-    `<dc:title>${xml(title)}</dc:title></cp:coreProperties>`
-  );
-}
-
-const PACKAGE_RELS = (officeDocument: string) =>
-  `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="${officeDocument}"/>` +
-  '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
-  '</Relationships>';
-
-async function zipped(files: Readonly<Record<string, string | Uint8Array>>): Promise<Uint8Array> {
-  const zip = new JSZip();
-  // `[Content_Types].xml` first: some readers look for it at the start of the archive.
-  for (const [name, data] of Object.entries(files)) zip.file(name, data);
-  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-}
-
 /** The heading sizes of the whole document (half-points → level), largest first. */
 function headingSizes(paragraphs: readonly Paragraph[], bodySize: number): Map<number, number> {
   const sizes = new Set<number>();
@@ -885,30 +866,9 @@ async function writeDocx(
   const body = laid
     .map((entry, index) => docxPage(entry.page, entry.items, index === 0, index === laid.length - 1, docx))
     .join('');
-  const document =
-    `${XML_HEAD}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
-    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
-    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ' +
-    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
-    `xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}</w:body></w:document>`;
-  const documentRels =
-    `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-    '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
-    docx.media
-      .map(
-        (image, index) =>
-          `<Relationship Id="rIdImage${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${image.name}"/>`,
-      )
-      .join('') +
-    '</Relationships>';
-  const contentTypes =
-    `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
-    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-    '<Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>' +
-    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
-    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
-    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
-    '</Types>';
+  const document = wordDocumentXml(body);
+  const documentRels = documentRelsXml(docx.media.map((image) => image.name));
+  const contentTypes = contentTypesXml(['png']);
   const files: Record<string, string | Uint8Array> = {
     '[Content_Types].xml': contentTypes,
     '_rels/.rels': PACKAGE_RELS('word/document.xml'),
@@ -1273,6 +1233,41 @@ function writeCsv(
  * the operation
  * ------------------------------------------------------------------ */
 
+/**
+ * The Word file of page pictures, read back like the flowing one: the pictures hold no
+ * text, so the words mammoth finds must be none.
+ */
+async function writePageImages(
+  images: readonly PageImage[],
+  stem: string,
+  title: string,
+  context: OperationContext,
+): Promise<OfficeExportResult> {
+  context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
+  const bytes = await pageImagesDocx(images, title);
+  throwIfAborted(context.signal);
+  await verifyDocx(bytes, 0);
+  const file: OutputFile = { name: `${stem}.docx`, bytes, mime: MIME.docx };
+  const notes: OperationNote[] = [
+    note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: images.length }),
+    note('preserved', 'op.note.exportOffice.pageImages', {
+      dpi: Math.round(Math.min(...images.map((image) => image.dpi))),
+    }),
+  ];
+  const shrunk = images.filter((image) => image.scale < 1);
+  if (shrunk.length > 0) {
+    // The smallest factor, rounded, but never 100: a page that was shrunk was shrunk.
+    const percent = Math.min(99, Math.round(Math.min(...shrunk.map((image) => image.scale)) * 100));
+    notes.push(
+      note('changed', 'op.note.exportOffice.pageScaled', {
+        pages: shrunk.map((image) => image.index + 1).join(', '),
+        percent,
+      }),
+    );
+  }
+  return { file, steps: ['office.read', 'office.write', 'verify'], notes };
+}
+
 export async function exportOffice(
   bytes: Uint8Array,
   options: OfficeExportOptions,
@@ -1287,14 +1282,17 @@ export async function exportOffice(
   const doc = openPdf(mupdf, bytes);
   const steps: string[] = ['office.read'];
   const notes: OperationNote[] = [];
-  let pages: ReadPage[];
+  const asImages = options.format === 'docx' && options.docxLayout === 'page-images';
+  let pages: ReadPage[] = [];
+  let images: PageImage[] = [];
   let title: string;
   let language: string;
   try {
     title = doc.getMetaData('info:Title')?.trim() ?? '';
     // The catalog's `/Lang` (BCP 47, what Word's `w:lang` takes too), when the PDF has one.
     language = readText(doc.getTrailer().get('Root').get('Lang'))?.trim() ?? '';
-    pages = await readPages(doc, options.pages, options.format === 'docx', context);
+    if (asImages) images = await renderPageImages(doc, options.pages, context);
+    else pages = await readPages(doc, options.pages, options.format === 'docx', context);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapMupdfError(error, 'export-office');
@@ -1305,6 +1303,7 @@ export async function exportOffice(
 
   const stem = options.baseName.replace(/\.pdf$/i, '') || 'document';
   if (title === '') title = stem;
+  if (asImages) return writePageImages(images, stem, title, context);
   const textless = pages
     .filter((page) =>
       page.layout.blocks.every(

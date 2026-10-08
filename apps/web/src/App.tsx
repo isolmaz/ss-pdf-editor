@@ -3511,6 +3511,7 @@ export function App({ store }: AppProps) {
       compressionLevel?: string;
       imageFormat?: string;
       officeFormat?: 'docx' | 'xlsx' | 'csv';
+      officeLayout?: 'flow' | 'page-images';
     }) => {
       if (options.kind === 'pdf') {
         void exportActive();
@@ -3524,7 +3525,12 @@ export function App({ store }: AppProps) {
       } else if (options.kind === 'text') {
         openDialog('export-text');
       } else if (options.kind === 'office') {
-        openDialog('export-office', { format: options.officeFormat ?? 'docx' });
+        // The Word layout is the form's own field only while Word is the format.
+        const format = options.officeFormat ?? 'docx';
+        openDialog(
+          'export-office',
+          format === 'docx' ? { format, layout: options.officeLayout ?? 'flow' } : { format },
+        );
       }
     },
     [exportActive, openDialog],

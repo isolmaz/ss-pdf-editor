@@ -10,6 +10,8 @@ export interface ExportOptions {
   readonly compressionLevel?: 'high' | 'medium' | 'low';
   readonly imageFormat?: 'png' | 'jpg';
   readonly officeFormat?: 'docx' | 'xlsx' | 'csv';
+  /** Word only: flowing text, or one picture per page. */
+  readonly officeLayout?: 'flow' | 'page-images';
 }
 
 export interface ExportDialogProps {
@@ -27,6 +29,7 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
   const [compressionLevel, setCompressionLevel] = useState<'high' | 'medium' | 'low'>('medium');
   const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png');
   const [officeFormat, setOfficeFormat] = useState<'docx' | 'xlsx' | 'csv'>('docx');
+  const [officeLayout, setOfficeLayout] = useState<'flow' | 'page-images'>('flow');
   const formId = useId();
 
   const handleDownload = () => {
@@ -35,6 +38,7 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
       compressionLevel,
       imageFormat,
       officeFormat,
+      officeLayout,
     });
     onClose();
   };
@@ -180,34 +184,48 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
 
           {/* Option 5: Word, Excel or CSV */}
           <label
-            className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-all ${
+            className={`flex cursor-pointer flex-col gap-2 rounded-lg border p-3 transition-all ${
               selectedKind === 'office'
                 ? 'border-pdf-accent bg-pdf-accent/10 shadow-xs'
                 : 'border-kumo-line/80 bg-kumo-recessed/30 hover:bg-kumo-recessed/70'
             }`}
           >
-            <div className="flex items-center gap-3">
-              <input
-                type="radio"
-                name={`${formId}-export-kind`}
-                checked={selectedKind === 'office'}
-                onChange={() => setSelectedKind('office')}
-                className="size-4 text-pdf-accent accent-pdf-accent"
-              />
-              <span className="text-xs font-semibold text-kumo-strong">{t('export.office.option')}</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  name={`${formId}-export-kind`}
+                  checked={selectedKind === 'office'}
+                  onChange={() => setSelectedKind('office')}
+                  className="size-4 text-pdf-accent accent-pdf-accent"
+                />
+                <span className="text-xs font-semibold text-kumo-strong">{t('export.office.option')}</span>
+              </div>
+              <select
+                value={officeFormat}
+                disabled={selectedKind !== 'office'}
+                onChange={(e) => setOfficeFormat(e.target.value as 'docx' | 'xlsx' | 'csv')}
+                aria-label={t('export.office.format')}
+                className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <option value="docx">DOCX</option>
+                <option value="xlsx">XLSX</option>
+                <option value="csv">CSV</option>
+              </select>
             </div>
-            <select
-              value={officeFormat}
-              disabled={selectedKind !== 'office'}
-              onChange={(e) => setOfficeFormat(e.target.value as 'docx' | 'xlsx' | 'csv')}
-              aria-label={t('export.office.format')}
-              className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <option value="docx">DOCX</option>
-              <option value="xlsx">XLSX</option>
-              <option value="csv">CSV</option>
-            </select>
+            {selectedKind === 'office' && officeFormat === 'docx' && (
+              <select
+                value={officeLayout}
+                onChange={(e) => setOfficeLayout(e.target.value as 'flow' | 'page-images')}
+                aria-label={t('export.office.layout')}
+                className="w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold text-kumo-strong outline-none focus:border-pdf-accent"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <option value="flow">{t('export.office.layout.flow')}</option>
+                <option value="page-images">{t('export.office.layout.pageImages')}</option>
+              </select>
+            )}
           </label>
         </div>
 
