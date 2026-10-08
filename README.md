@@ -273,19 +273,71 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     their transparency; charts and drawings made of vector graphics are carried as pictures, their labels staying text over them.
     A picture that cannot be read, or one inside a table cell, is left out, and the report
     says how many.
-  - **Word layout.** Word has three layouts, chosen in the Export dialog and in the form.
-    *Text and pictures, exact layout* (the default) keeps the page as it looks: every paragraph
-    of text is an editable text box at its place, with its fonts, sizes, colours and links;
-    vector shapes (lines, rectangles, curves, fills and strokes) are Word shapes; pictures are
-    anchored where they sit; and the few regions Word cannot draw (gradients, complex clips)
-    are placed as pictures, rendered without the text above them so the text stays editable.
-    *Flowing text* (described above) is the one to edit at length. *One picture per page* draws
-    every page exactly as a viewer shows it (annotations and form fields included, on white
-    paper), at 200 dpi (lower only when a page would exceed 40 megapixels), and puts it in its own section as one picture anchored behind the text:
-    JPEG (quality 92) for a page that is at least half pictures (a photograph or scan), PNG otherwise. The look is exact, but the
-    text cannot be edited in Word. Word's pages stop at 22 inches (55.88 cm) a side, so in the
-    exact layout and in the picture layout a larger page is shrunk in proportion to fit, and the
-    report says which pages and by how much.
+  - **Word layout.** Word has three layouts, chosen in the Export dialog and in the form: *Text
+    and pictures, exact layout* (the default; "Metin + resim, tam düzen" in Turkish), *Flowing
+    text* (described above, the one to edit at length) and *One picture per page*. Word's pages
+    stop at 22 inches (55.88 cm) a side, so in the exact layout and in the picture layout a
+    larger page is shrunk in proportion to fit, text sizes and offsets with it, and the report
+    says which pages and by how much.
+    - **Exact layout.** Each page keeps the geometry it has in the PDF: a section of the page's
+      size with no margins, the drawing behind in paint order and the text boxes above it.
+      - **Fonts.** The fonts the page's visible text uses are embedded in the DOCX, so Word
+        draws the glyphs the PDF draws. TrueType and CFF programs (`FontFile2`, `FontFile3`)
+        are the PDF's own subsets, rebuilt as small TrueType files with a Unicode map of the
+        glyphs the pages show and a name table Word can use, and stored obfuscated as the
+        Word format asks (`.odttf`); a ligature glyph (such as "fi") is mapped only as the ligature, never
+        as its first letter. The licence flag is kept as the PDF has it: a font whose
+        embedding permission is "restricted" is not embedded, and neither is a Type 1 font or
+        one that cannot be rebuilt. Such a font is named by its kind, so Word draws a close
+        one: a family Windows ships (Calibri, Cambria, Segoe UI…) keeps its name, sans faces
+        become Arial, serif faces Times New Roman and monospaced faces Courier New (by name,
+        else by the font's own serif and monospace flags). The report says how many fonts were
+        embedded.
+      - **Text.** Lines are grouped into paragraphs (same size, regular line pitch, one
+        alignment; a bullet starts a new one) and paragraphs that stack evenly into one editable
+        text box, placed so that the first baseline lands on the PDF's, with exact line spacing
+        and no insets. Text turned a quarter turn is a vertical text box. Word sets sizes in
+        half-points and draws letters at the font's own advances, so every word carries a
+        character spacing (and a width scale where the face differs) that puts each letter, and
+        each space, where the PDF has it. A justified paragraph is written left-aligned: the
+        words are already fitted to their places, and Word's own justification would stretch
+        the fitted spaces a second time. The trade-off is that text you type into such a
+        paragraph is not justified again. Centred and right-aligned paragraphs keep their
+        alignment.
+      - **Shapes, pictures, links.** Lines, rectangles, curves, fills and strokes (colour,
+        transparency, dashes, caps, joins) are Word shapes (an upright rectangle is a Word
+        rectangle). Pictures are anchored where they sit, with their transform, soft mask and
+        clip applied (JPEG for an opaque photograph, PNG otherwise). `http:`, `https:` and
+        `mailto:` links are links on the text. What Word cannot draw is placed as a picture
+        instead, rendered without the text so the text stays editable: gradients, patterns,
+        soft masks, blend modes and clips that are curves, text or image masks (a clip with
+        straight edges is kept as shapes when the content lies inside it), and a page of more
+        than 1500 drawings as one picture. The report counts the text boxes, shapes,
+        pictures and those regions.
+      - **Scanned pages (OCR).** A page that shows pictures covering at least half of it and
+        no visible text is read with Tesseract, in the browser, with the best model, in the
+        languages ticked in the form (default Turkish and English; the 27 OCR languages are
+        offered). The page is rendered at the scan's own resolution (150–300 dpi). The words
+        become editable text boxes with the size, colour and bold measured from the scan and
+        the family (Arial, Times New Roman or Courier New) whose letter widths fit the words
+        best, each word at its scanned place. What OCR did not read (photos, logos, cards,
+        shading) is cut out as pictures behind the text, over a page-sized rectangle of the
+        page colour, and the words are erased from them. Icons and bullets that OCR made into
+        symbols, a word read twice and the specks along a scanner's edge are not text. When the
+        PDF already has an invisible OCR text layer (this app's OCR leaves one), its words are
+        used and OCR is not run. A word read with less than 90 % confidence is marked with a
+        Word comment, and the report lists those words by page. With no language ticked a scan
+        stays a picture and the report says so. How the engine and the 90 % threshold were
+        chosen: [docs/ocr-evaluation.md](docs/ocr-evaluation.md).
+    - **Flowing text** is described above.
+    - **One picture per page** draws every page exactly as a viewer shows it (annotations and
+      form fields included, on white paper) and puts it in its own section as one picture
+      anchored behind the text. The page is drawn at 200 dpi from its corner, at one scale on
+      both axes (fewer dpi only when a page would pass 40 megapixels), and the section and the
+      picture are the page's size to the twip, so the picture is the page pixel for pixel and a
+      scan is not resampled. It is JPEG (quality 92) for a page that is at least half pictures
+      (a photograph or scan), PNG otherwise. The look is exact, but the text cannot be edited in
+      Word.
   - **Excel (XLSX):** one sheet per table, with merged cells and the column widths of the
     rules. A page without any table becomes one sheet of its rows. A value becomes a number
     only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
@@ -412,6 +464,9 @@ nothing leaving the browser.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
     Right-to-left words come back in reading order.
+  - Why Tesseract and no other engine, and why words below 90 % confidence are the ones
+    flagged: [docs/ocr-evaluation.md](docs/ocr-evaluation.md). The same OCR reads scanned pages
+    for the exact Word layout (see [PDF to Word, Excel and CSV](#text)).
 - **Accessibility.** One panel with three views.
   - **Report.** The quick check reports facts only: no score and no conformance claim.
     A tagged-PDF writer adds structure tags to the file and verifies the result, and
