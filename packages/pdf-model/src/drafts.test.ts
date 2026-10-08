@@ -150,12 +150,12 @@ describe('parseDraft — the journal is read as a unit', () => {
 describe('encodeEngineValues — nothing is stored as something else', () => {
   it('round-trips plain values', async () => {
     const encoded = await encodeEngineValues([
-      ['field.1', { value: 'İbrahim', kind: 'text' }],
+      ['field.1', { value: 'İzmir', kind: 'text' }],
       ['field.2', { value: 3, flags: [true, null] }],
     ]);
     expect(encoded.dropped).toBe(0);
     expect(encoded.entries.map((item) => item.key)).toEqual(['field.1', 'field.2']);
-    expect(encoded.entries[0]?.value).toEqual({ value: 'İbrahim', kind: 'text' });
+    expect(encoded.entries[0]?.value).toEqual({ value: 'İzmir', kind: 'text' });
   });
 
   it('drops a typed array instead of projecting it into an index-keyed object', async () => {

@@ -12,8 +12,8 @@ export const WORK = process.env.OCRBENCH_DIR ?? path.join(tmpdir(), 'ocrbench');
 export const MODELS_DIR = path.join(WORK, 'models');
 export const TESTSET_DIR = path.join(WORK, 'testset');
 export const RESULTS_DIR = path.join(WORK, 'results');
-export const CV_PDF = path.join(REPO, 'e2e/fixtures/local/ibrahim_Solmaz_Ozgecmis.pdf');
-export const CV_GT = path.join(REPO, 'e2e/fixtures/local/ibrahim_Solmaz_Ozgecmis.gt.txt');
+export const CV_PDF = path.join(REPO, 'e2e/fixtures/local/owner-cv.pdf');
+export const CV_GT = path.join(REPO, 'e2e/fixtures/local/owner-cv.gt.txt');
 
 export function ensureDir(dir) {
   mkdirSync(dir, { recursive: true });

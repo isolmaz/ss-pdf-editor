@@ -97,7 +97,7 @@ Findings behind the numbers:
 
 - **PP-OCRv6** dictionary (18 708 entries small/medium, 6 904 tiny) contains every Turkish letter, so the weakness is
   the model, not the vocabulary: dotless `ı` and capital `İ` are frequently emitted as `i` / `I` (small: ı 91.6 %, İ 42.9 %,
-  so `uygulamasının` → `uygulamasinın`, `İbrahim` → `ibrahim`) and ALL-CAPS text gets 6.5 % CER. Tiny is unusable (17.8 % wrong words).
+  so `uygulamasının` → `uygulamasinın`, a word-initial `İ` → `i`) and ALL-CAPS text gets 6.5 % CER. Tiny is unusable (17.8 % wrong words).
 - **PP-OCRv5 latin mobile** is good on letters (ı 98.4 %) but on the CV it still turns `ı`→`i` in 12 words, misses the
   three-line education block in the CV's footer card and merges adjacent words (`ÜniversitesiYöntim`).
 - **PP-OCRv5 server rec** dictionary has **no `İ` and no `Ğ`** (checked in the shipped `inference.yml`), so it cannot be
@@ -113,7 +113,7 @@ Findings behind the numbers:
 ## Ground-truth audit
 
 Words that every engine got wrong on the CV were re-checked on 1818-px crops: `gerçekleştirdim.MSSQL` (the PDF really has
-no space after the full stop: GT correct), `HTML5` (correct), `Şub 2024 – Tem 2025` (the dash is an en dash: GT correct;
+no space after the full stop: GT correct), `HTML5` (correct), a month–month date range (the dash is an en dash: GT correct;
 scoring folds dashes anyway). **No corrections were needed to the CV transcript.**
 
 ## Low-confidence threshold (pooled over all 25 images; "flagged" = word confidence < θ)
