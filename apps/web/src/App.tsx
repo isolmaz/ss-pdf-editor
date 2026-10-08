@@ -5499,7 +5499,8 @@ export function App({ store }: AppProps) {
                 overlay={
                   viewer === null ? null : (
                     <>
-                      {redactionActive && viewer !== null ? (
+                      {/* A protected tab is read-only: no area can be marked on it. */}
+                      {redactionActive && !locked && viewer !== null ? (
                         <RedactionLayer
                           t={t}
                           viewer={viewer}
@@ -5712,7 +5713,7 @@ export function App({ store }: AppProps) {
                         // The rail emits the redaction tool today and offered the
                         // highlighter before it; anything else is not a canvas tool and
                         // must not silently arm one.
-                        if (tool === 'redact') setCanvasTool('redact');
+                        if (tool === 'redact') setCanvasTool(canEdit ? 'redact' : 'select');
                         else if (tool === 'highlight') setCanvasTool('highlight');
                       }}
                       onOpenPalette={() => setPaletteOpen(true)}
