@@ -806,7 +806,10 @@ function runXml(
       return `<w:r><w:rPr>${properties}</w:rPr><w:t xml:space="preserve">${xml(text)}</w:t></w:r>`;
     })
     .join('');
-  return run.link === null ? body : `<w:hyperlink r:id="${registry.addLink(run.link)}">${body}</w:hyperlink>`;
+  const linked =
+    run.link === null ? body : `<w:hyperlink r:id="${registry.addLink(run.link)}">${body}</w:hyperlink>`;
+  // A noted run (OCR: an unsure word) is a commented range; the break's copy of its last run (a blank) is not.
+  return run.note === undefined || run.text.trim() === '' ? linked : registry.commented(run.note, linked);
 }
 
 /** The line's runs; a line that is followed by a break ends in a space (mammoth would glue the words). */

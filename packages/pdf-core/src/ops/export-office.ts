@@ -54,7 +54,7 @@ import {
   xmlSafe,
   zipped,
 } from './docx-drawing';
-import { type LayoutDocx, writeLayoutDocx } from './docx-layout';
+import { type LayoutDocx, type OcrOptions, writeLayoutDocx } from './docx-layout';
 import { type PageImage, pageImagesDocx, renderPageImages } from './docx-pages';
 import {
   type Box,
@@ -89,6 +89,13 @@ export interface OfficeExportOptions {
   readonly format: OfficeFormat;
   /** Word only; `flow` when left out. */
   readonly docxLayout?: DocxLayout;
+  /**
+   * Exact layout only: reads the pages that are pictures without text. `recognize` gets the page
+   * as a PNG and its pixels per point, and returns the words (page points, confidence 0–100);
+   * a word below `lowConfidence` (0–1) is marked with a Word comment and listed in the report.
+   * Without it a scanned page stays a picture (and the report says OCR was not available).
+   */
+  readonly ocr?: OcrOptions;
   readonly baseName: string;
   readonly csvDelimiter?: CsvDelimiter;
   /** Sheet names in the reader's language: `table(1)` → `Table 1`, `page(3)` → `Page 3`. */
@@ -1305,6 +1312,27 @@ async function writePageImages(
   return { file, steps: ['office.read', 'office.write', 'verify'], notes };
 }
 
+/** Up to this many distinct flagged words are named in the report. */
+const MAX_FLAGGED_LISTED = 20;
+
+/** `word (1), other (2)`: the distinct flagged words with their page numbers, the first ones, then an ellipsis when there are more. */
+function flaggedList(flagged: readonly { readonly page: number; readonly text: string }[]): string {
+  const seen = new Set<string>();
+  const listed: string[] = [];
+  let more = false;
+  for (const word of flagged) {
+    const entry = `${word.text} (${word.page})`;
+    if (seen.has(entry)) continue;
+    if (listed.length === MAX_FLAGGED_LISTED) {
+      more = true;
+      break;
+    }
+    seen.add(entry);
+    listed.push(entry);
+  }
+  return listed.join(', ') + (more ? ', …' : '');
+}
+
 /**
  * The Word file of the exact layout, read back like the flowing one: the words mammoth finds
  * (it reads the text boxes' VML fallback) must be the words written.
@@ -1342,6 +1370,22 @@ async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExpo
   if (layout.unreadable > 0) {
     notes.push(note('lost', 'op.note.exportOffice.unreadable', { count: layout.unreadable }));
   }
+  if (layout.ocr.pages.length > 0) {
+    notes.push(note('changed', 'op.note.exportOffice.ocrPages', { pages: layout.ocr.pages.join(', ') }));
+  }
+  if (layout.ocr.flagged.length > 0) {
+    notes.push(
+      note('warning', 'op.note.exportOffice.ocrLowConfidence', {
+        count: layout.ocr.flagged.length,
+        words: flaggedList(layout.ocr.flagged),
+      }),
+    );
+  }
+  if (layout.ocr.unavailable.length > 0) {
+    notes.push(
+      note('warning', 'op.note.exportOffice.ocrUnavailable', { pages: layout.ocr.unavailable.join(', ') }),
+    );
+  }
   return { file, steps: ['office.read', 'office.write', 'verify'], notes };
 }
 
@@ -1372,8 +1416,9 @@ export async function exportOffice(
     // The catalog's `/Lang` (BCP 47, what Word's `w:lang` takes too), when the PDF has one.
     language = readText(doc.getTrailer().get('Root').get('Lang'))?.trim() ?? '';
     if (asImages) images = await renderPageImages(doc, options.pages, context);
-    else if (asLayout) layout = await writeLayoutDocx(doc, options.pages, title, language, context);
-    else pages = await readPages(doc, options.pages, options.format === 'docx', context);
+    else if (asLayout) {
+      layout = await writeLayoutDocx(doc, options.pages, title, language, context, options.ocr ?? null);
+    } else pages = await readPages(doc, options.pages, options.format === 'docx', context);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapMupdfError(error, 'export-office');
