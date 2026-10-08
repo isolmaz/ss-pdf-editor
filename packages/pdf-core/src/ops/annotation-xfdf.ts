@@ -222,7 +222,10 @@ function threadElements(
 
 /** One session mark (app space) as XFDF elements, or `null` when its page cannot be measured. */
 function markElements(mark: AnnotationMark, pageTop: number): string[] {
-  const rect = markRect(mark, pageTop);
+  // A stroked mark is written with `width` = its thickness or 2, and its rectangle must hold
+  // that same stroke, so the reader can take half of it back off (`markFromElement`).
+  const writesWidth = mark.kind === 'shapes' || mark.kind === 'ink' || (mark.strokes?.length ?? 0) > 0;
+  const rect = markRect(writesWidth ? { ...mark, thickness: mark.thickness ?? 2 } : mark, pageTop);
   const common = {
     page: String(mark.pageIndex),
     rect: rectText(rect),
@@ -476,6 +479,13 @@ function markFromElement(element: Element, kind: (typeof ELEMENT_KINDS)[string])
   const contents = contentsOf(element);
   const created = attr(element, 'creationdate') ?? attr(element, 'date');
   const width = numbers(attr(element, 'width'))[0];
+  // `rect` is the annotation's rectangle, which holds the whole stroke (`markRect` grows the
+  // box by half the stroke on every side): a stroked shape or ink box is the rectangle less
+  // that half, or a stroke wider than the rectangle collapses it to its centre.
+  const half = (width ?? 0) / 2;
+  const insetX = Math.min(half, (box[2] - box[0]) / 2);
+  const insetY = Math.min(half, (box[3] - box[1]) / 2);
+  const stroked: MarkBox = [box[0] + insetX, box[1] + insetY, box[2] - insetX, box[3] - insetY];
   const opacity = numbers(attr(element, 'opacity'))[0];
   const base = {
     id: attr(element, 'name') || crypto.randomUUID(),
@@ -508,7 +518,7 @@ function markFromElement(element: Element, kind: (typeof ELEMENT_KINDS)[string])
         .map((gesture) => numbers(gesture.textContent))
         .filter((stroke) => stroke.length >= 4 && stroke.length % 2 === 0);
       if (strokes.length === 0) return null;
-      return { ...base, quads: [box], strokes, thickness: width ?? 2 };
+      return { ...base, quads: [stroked], strokes, thickness: width ?? 2 };
     }
     case 'shapes': {
       if (kind.shape === 'line') {
@@ -520,7 +530,7 @@ function markFromElement(element: Element, kind: (typeof ELEMENT_KINDS)[string])
         return { ...base, quads: [box], shape: 'line', rect: ends };
       }
       // Every `shapes` entry of ELEMENT_KINDS names its shape; `line` returned above.
-      return { ...base, quads: [box], shape: kind.shape as 'square' | 'circle', rect: box };
+      return { ...base, quads: [stroked], shape: kind.shape as 'square' | 'circle', rect: stroked };
     }
     case 'freetext': {
       const appearance = childElements(element, 'defaultappearance')[0]?.textContent ?? '';
