@@ -20,7 +20,7 @@ jobs:
   revert-proof:
     name: revert-proof (${{ matrix.shard }}/6)
     if: contains(github.event.pull_request.labels.*.name, 'revert-proof') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     strategy:
       fail-fast: false

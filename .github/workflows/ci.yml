@@ -20,7 +20,7 @@ jobs:
   # failure is easy to locate, plus the docs-sync check and a dry run of the deployment.
   verify:
     name: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,7 +56,7 @@ jobs:
   e2e:
     name: e2e (${{ matrix.shard }}/4)
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -114,7 +114,7 @@ jobs:
   e2e-service-worker:
     name: e2e-service-worker
     needs: e2e
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       E2E_WORKERS: 2
@@ -168,7 +168,7 @@ jobs:
   behavior:
     name: behavior
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -209,7 +209,7 @@ jobs:
     name: deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [verify, e2e, e2e-service-worker, behavior]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment:
       name: production

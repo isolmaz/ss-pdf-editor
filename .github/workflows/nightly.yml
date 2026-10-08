@@ -18,7 +18,7 @@ jobs:
   # and restores the production build; it exits 1 under the floor, after the report is written.
   coverage:
     name: coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       E2E_WORKERS: 2
@@ -68,7 +68,7 @@ jobs:
   # passes on one run and fails on the other fails the job.
   flaky:
     name: flaky (${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
