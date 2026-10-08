@@ -334,6 +334,43 @@ describe('layout scene: rasters', () => {
     close(cutLine.box, [100, 348, 200, 352]);
   });
 
+  describe('a polygonal clip that is no rectangle', () => {
+    /** A hexagon around the rule (100…200, 200): wider than it, pointed at the ends (Antenna House's clip of a table rule). */
+    const HEXAGON = '100.1 200 m 98 198 l 200 198 l 200 200 l 200 202 l 98 202 l h W n';
+    const kinds = async (content: string) =>
+      (await sceneOf(await contentOnly(content))).scene.items.map((item) => item.kind);
+
+    it('keeps a hairline the polygon holds a shape', async () => {
+      expect(await kinds(`q ${HEXAGON} 0 G 0.5 w 100 200 m 200 200 l S Q`)).toEqual(['shape']);
+    });
+
+    it('rasters a stroke wider than the polygon, a fill that sticks out and a stroke that crosses an edge', async () => {
+      expect(await kinds(`q ${HEXAGON} 0 G 8 w 100 200 m 200 200 l S Q`)).toEqual(['raster']);
+      expect(await kinds(`q ${HEXAGON} 1 0 0 rg 150 190 20 20 re f Q`)).toEqual(['raster']);
+      expect(await kinds(`q ${HEXAGON} 0 G 0.5 w 100 200 m 100 230 l S Q`)).toEqual(['raster']);
+    });
+
+    it('follows the fill rule of the clip', async () => {
+      const rings = '90 90 120 120 re 120 120 60 60 re';
+      const line = '0 G 0.5 w 140 150 m 160 150 l S Q';
+      // Inside the hole of an even-odd clip nothing shows; with the winding rule it is inside.
+      expect(await kinds(`q ${rings} W* n ${line}`)).toEqual(['raster']);
+      expect(await kinds(`q ${rings} W n ${line}`)).toEqual(['shape']);
+    });
+
+    it('keeps a picture the polygon holds and rasters one it cuts', async () => {
+      const images = { Im1: { width: 2, height: 2, at: () => [255, 0, 0] as [number, number, number] } };
+      const picture = 'q 100 0 0 100 100 100 cm /Im1 Do Q';
+      const held = await sceneOfRaw({
+        content: `q 90 90 m 90 210 l 210 210 l 210 90 l 150 80 l h W n ${picture} Q`,
+        images,
+      });
+      expect(held.scene.items.map((item) => item.kind)).toEqual(['image']);
+      const cut = await sceneOfRaw({ content: `q 90 90 m 90 210 l 150 210 l h W n ${picture} Q`, images });
+      expect(cut.scene.items.map((item) => item.kind)).toEqual(['raster']);
+    });
+  });
+
   it('draws a blend-mode fill as a raster, and a tiling pattern fill', async () => {
     const { scene: blended } = await sceneOfRaw({
       content: '/GS1 gs 1 0 0 rg 100 100 100 100 re f',
