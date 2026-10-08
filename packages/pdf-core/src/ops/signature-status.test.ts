@@ -1795,6 +1795,45 @@ describe('a cross-reference chain this verifier cannot follow', () => {
     expect((await onlyVerdict(bytes)).changesAfterSigning).toBe(2);
   });
 
+  it.each([
+    ['a line feed', '\n'],
+    ['a carriage return', '\r'],
+  ])('does not follow a /Prev that is commented out up to %s before the real one', async (_title, eol) => {
+    const signer = await identity();
+    const bytes = await signedThenRevised(cmsBy(signer), [
+      DECOY,
+      {
+        trailer: (previous) => `<< /Size 106 /Root 1 0 R % /Prev 9${eol} /Prev ${previous} >>`,
+      },
+    ]);
+    expect((await onlyVerdict(bytes)).changesAfterSigning).toBe(2);
+  });
+
+  it('reads the key after a comment that ends the line, not text after it', async () => {
+    const signer = await identity();
+    const bytes = await signedThenRevised(cmsBy(signer), [
+      DECOY,
+      { trailer: (previous) => `<< /Size 106 % (\n/Root 1 0 R /Prev ${previous} >>` },
+    ]);
+    expect((await onlyVerdict(bytes)).changesAfterSigning).toBe(2);
+  });
+
+  it.each([
+    [
+      'a name value before the key',
+      (previous: number) => `<< /Size 106 /Root 1 0 R /Foo /Prev /Prev ${previous} >>`,
+    ],
+    ['the value of /Type', (previous: number) => `<< /Type /Prev /Size 106 /Root 1 0 R /Prev ${previous} >>`],
+    [
+      'the value of an entry after an indirect reference',
+      (previous: number) => `<< /Root 1 0 R /Foo /Prev /Prev ${previous} >>`,
+    ],
+  ])('does not take /Prev as the key when it is %s', async (_title, trailer) => {
+    const signer = await identity();
+    const bytes = await signedThenRevised(cmsBy(signer), [DECOY, { trailer }]);
+    expect((await onlyVerdict(bytes)).changesAfterSigning).toBe(2);
+  });
+
   it('reports at most 1024 revisions however many the file holds', async () => {
     const signer = await identity();
     const later = Array.from({ length: 1030 }, () => ({}) satisfies Later);

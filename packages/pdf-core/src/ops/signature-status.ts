@@ -321,20 +321,64 @@ function literalStringEnd(bytes: Uint8Array, at: number): number {
   return -1;
 }
 
+/** Whether `byte` ends a regular token: whitespace or a delimiter (§7.2.3). */
+function endsToken(byte: number): boolean {
+  return PDF_WHITESPACE.has(byte) || NAME_DELIMITERS.has(byte);
+}
+
+/** The end of the regular token (a number, a keyword or the text of a name) that starts at `at`. */
+function tokenEnd(bytes: Uint8Array, at: number): number {
+  let cursor = at;
+  while (cursor < bytes.length && !endsToken(bytes[cursor] ?? 0)) cursor += 1;
+  return cursor;
+}
+
+/** The end of the comment whose `%` sits at `at`: it runs to the next CR or LF, or to the end (§7.2.4). */
+function commentEnd(bytes: Uint8Array, at: number): number {
+  let cursor = at;
+  while (cursor < bytes.length && bytes[cursor] !== 0x0a && bytes[cursor] !== 0x0d) cursor += 1;
+  return cursor;
+}
+
+/** Whether the bytes from `start` to `end` are an unsigned decimal integer: the number part of an `n g R`. */
+function isDigits(bytes: Uint8Array, start: number, end: number): boolean {
+  return end > start && bytes.subarray(start, end).every((byte) => byte >= 0x30 && byte <= 0x39);
+}
+
+/** The end of the `g R` that follows the object number ending at `at`, or `at` when there is none. */
+function referenceEnd(bytes: Uint8Array, at: number): number {
+  const generationStart = skipWhitespace(bytes, at);
+  const generationEnd = tokenEnd(bytes, generationStart);
+  if (!isDigits(bytes, generationStart, generationEnd)) return at;
+  const markerAt = skipWhitespace(bytes, generationEnd);
+  return bytes[markerAt] === 0x52 && endsName(bytes, markerAt + 1) ? markerAt + 1 : at;
+}
+
 /**
  * The value of the `/Prev` entry of the dictionary that starts at `at`. Only a key of that
- * dictionary itself counts — never text inside a string, a nested dictionary or a longer name
- * such as `/Previous`. `null` when there is none or the dictionary cannot be read.
+ * dictionary itself counts — never text inside a string or a comment, a nested dictionary, a
+ * longer name such as `/Previous`, or a name that is the *value* of another entry. So the top
+ * level is read as alternating keys and values (a value is a number, `n g R`, name, string,
+ * array or dictionary). `null` when there is none or the dictionary cannot be read.
  */
 function dictionaryPrev(bytes: Uint8Array, at: number): number | null {
   let depth = 0;
+  let arrays = 0;
+  let expectKey = true;
   let cursor = at;
   while (cursor < bytes.length && cursor - at < DICT_WINDOW) {
-    const byte = bytes[cursor];
-    if (byte === 0x28) {
+    const byte = bytes[cursor] ?? 0x20;
+    // At the top level, a token that completes a value makes the next name a key again.
+    const topLevel = depth === 1 && arrays === 0;
+    if (PDF_WHITESPACE.has(byte)) {
+      cursor += 1;
+    } else if (byte === 0x25) {
+      cursor = commentEnd(bytes, cursor);
+    } else if (byte === 0x28) {
       const end = literalStringEnd(bytes, cursor);
       if (end < 0) return null;
       cursor = end;
+      if (topLevel) expectKey = true;
     } else if (byte === 0x3c && bytes[cursor + 1] === 0x3c) {
       depth += 1;
       cursor += 2;
@@ -342,20 +386,40 @@ function dictionaryPrev(bytes: Uint8Array, at: number): number | null {
       const close = indexOfAscii(bytes, '>', cursor + 1);
       if (close < 0) return null;
       cursor = close + 1;
+      if (topLevel) expectKey = true;
     } else if (byte === 0x3e && bytes[cursor + 1] === 0x3e) {
       depth -= 1;
       cursor += 2;
       if (depth === 0) return null;
-    } else if (
-      byte === 0x2f &&
-      depth === 1 &&
-      asciiAt(bytes, cursor, PREV_KEY.length) === PREV_KEY &&
-      endsName(bytes, cursor + PREV_KEY.length)
-    ) {
-      const number = readNumber(bytes, cursor + PREV_KEY.length);
-      return number === null ? null : number.value;
-    } else {
+      if (depth === 1 && arrays === 0) expectKey = true;
+    } else if (byte === 0x5b) {
+      arrays += 1;
       cursor += 1;
+    } else if (byte === 0x5d) {
+      arrays = Math.max(0, arrays - 1);
+      cursor += 1;
+      if (depth === 1 && arrays === 0) expectKey = true;
+    } else if (byte === 0x2f) {
+      const end = tokenEnd(bytes, cursor + 1);
+      if (topLevel && expectKey) {
+        if (end - cursor === PREV_KEY.length && asciiAt(bytes, cursor, PREV_KEY.length) === PREV_KEY) {
+          const number = readNumber(bytes, end);
+          return number === null ? null : number.value;
+        }
+        expectKey = false;
+      } else if (topLevel) {
+        expectKey = true;
+      }
+      cursor = end;
+    } else {
+      // A number, a keyword, or a stray delimiter that cannot start a value.
+      const end = tokenEnd(bytes, cursor);
+      if (end === cursor) {
+        cursor += 1;
+      } else {
+        cursor = isDigits(bytes, cursor, end) ? referenceEnd(bytes, end) : end;
+        if (topLevel && !expectKey) expectKey = true;
+      }
     }
   }
   return null;
