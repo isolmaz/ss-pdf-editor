@@ -22,7 +22,8 @@ export const enginesPart = {
   'op.progress.ocr.save': 'Writing text layer',
   'op.note.ocr.layerAdded': 'Invisible text layer of {words} word(s) added to {pages} page(s) ({dpi} DPI).',
   'op.note.ocr.skippedPages': '{count} page(s) with text skipped.',
-  'op.note.ocr.overwriteIsAdditive': 'Overwrite mode does not delete existing text; new layer is added.',
+  'op.note.ocr.overwriteIsAdditive':
+    '"Read again" does not delete existing text; the recognised words are added as a new layer.',
   'op.note.ocr.lowConfidence': 'Page {page}: low recognition confidence ({confidence}%).',
   'op.note.ocr.hiddenLayer': 'Text layer rendered invisibly; text is selectable and searchable.',
   'op.note.ocr.bestModel':
