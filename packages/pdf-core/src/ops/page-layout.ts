@@ -549,9 +549,32 @@ export function findFigures(layout: PageLayout, tables: readonly Box[]): Box[] {
 }
 
 /**
- * A region of the page as a picture, everything in it drawn — the drawing, its pictures and
- * its labels — on a transparent ground, at twice the page's resolution (144 dpi), capped at
- * `MAX_IMAGE_SIDE` on the long side.
+ * What a page paints besides text, as the device calls that carry it to a draw device. The
+ * clips of text stay: they open a clip that a later `popClip` closes.
+ */
+const PAINTING = [
+  'fillPath',
+  'strokePath',
+  'clipPath',
+  'clipStrokePath',
+  'clipText',
+  'clipStrokeText',
+  'fillShade',
+  'fillImage',
+  'fillImageMask',
+  'clipImageMask',
+  'popClip',
+  'beginMask',
+  'endMask',
+  'beginGroup',
+  'endGroup',
+] as const;
+
+/**
+ * A region of the page as a picture — the drawing and its pictures — on a transparent
+ * ground, at twice the page's resolution (144 dpi), capped at `MAX_IMAGE_SIDE` on the long
+ * side. The text on it is not drawn: it goes to Word as text, over the picture, so it can be
+ * read and edited (`pageItems`).
  */
 export function renderRegion(mupdf: Mupdf, page: Page, box: Box): Uint8Array {
   const [px0, py0] = page.getBounds();
@@ -565,18 +588,32 @@ export function renderRegion(mupdf: Mupdf, page: Page, box: Box): Uint8Array {
   );
   try {
     pixmap.clear();
-    const device = new mupdf.DrawDevice(
+    const target = new mupdf.DrawDevice(
       mupdf.Matrix.concat(
         mupdf.Matrix.translate(-(box[0] + px0), -(box[1] + py0)),
         mupdf.Matrix.scale(scale, scale),
       ),
       pixmap,
     );
+    // The page runs through a device of its own that hands everything but text on to the
+    // draw device. Shades and pictures come borrowed, as in `readPageLayout`.
+    const callbacks: Record<string, (...args: unknown[]) => void> = {};
+    for (const name of PAINTING) {
+      callbacks[name] = (...args) => {
+        for (const arg of args) {
+          if (arg instanceof mupdf.Shade || arg instanceof mupdf.Image) borrowed(arg);
+        }
+        (target[name] as (...forwarded: unknown[]) => void).apply(target, args);
+      };
+    }
+    const device = new mupdf.Device(callbacks as never);
     try {
       page.run(device, mupdf.Matrix.identity);
       device.close();
+      target.close();
     } finally {
       device.destroy();
+      target.destroy();
     }
     return pixmap.asPNG();
   } finally {

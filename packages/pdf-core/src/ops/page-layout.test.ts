@@ -352,6 +352,55 @@ describe('pictures in the layout', () => {
   });
 });
 
+describe('a region rendered without its text', () => {
+  it('paints every shape, shading and picture of the region but none of the text on it', async () => {
+    const bytes = await builtPage((mupdf, doc) => {
+      const shading = doc.addObject({
+        ShadingType: 2,
+        ColorSpace: 'DeviceRGB',
+        Coords: [0, 0, 100, 0],
+        BBox: [100, 100, 150, 130],
+        Extend: [true, true],
+        Function: { FunctionType: 2, Domain: [0, 1], C0: [0, 1, 0], C1: [0, 1, 0], N: 1 },
+      });
+      const picture = imageObject(mupdf, doc, {
+        width: 2,
+        height: 2,
+        samples: [255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0],
+        space: 'rgb',
+      });
+      return {
+        content: [
+          // A blue card with a clipped corner, a shading and a picture on it, and black text over all.
+          '0.2 0.4 0.8 rg 100 100 200 100 re f',
+          'q 250 100 50 50 re W n 1 1 0 rg 100 100 200 100 re f Q',
+          '/Sh sh',
+          'q 30 0 0 30 200 160 cm /Im Do Q',
+          '0 0 0 rg BT /F1 40 Tf 110 140 Td (HELLO) Tj ET',
+        ].join('\n'),
+        shadings: { Sh: shading },
+        xobjects: { Im: picture },
+      };
+    });
+    const { png } = await layoutOf(bytes);
+    const mupdf = await loadMupdf();
+    const card = decoded(mupdf, png([100, 300, 300, 400]));
+    const colours = new Set<string>();
+    let dark = 0;
+    for (let y = 0; y < card.height; y += 1) {
+      for (let x = 0; x < card.width; x += 1) {
+        const [r = 0, g = 0, b = 0, a = 0] = card.at(x, y);
+        if (a === 255 && r < 60 && g < 60 && b < 60) dark += 1;
+        colours.add(`${r >> 6},${g >> 6},${b >> 6}`);
+      }
+    }
+    // The card (blue), its clipped yellow corner, the shading (green) and the picture (red) are there...
+    for (const colour of ['0,1,3', '3,3,0', '0,3,0', '3,0,0']) expect(colours.has(colour), colour).toBe(true);
+    // ...and the black of the letters is not.
+    expect(dark).toBe(0);
+  });
+});
+
 describe('what the page draws, as marks', () => {
   const marksOf = async (bytes: Uint8Array) =>
     (await layoutOf(bytes)).layout.marks.map((mark) => ({ box: mark.box.map(Math.round), seed: mark.seed }));
