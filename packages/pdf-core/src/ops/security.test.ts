@@ -71,6 +71,24 @@ async function textOf(bytes: Uint8Array, index: number, password = ''): Promise<
   return text;
 }
 
+/** A one-page document carrying a PAdES signature. */
+async function signed(): Promise<Uint8Array> {
+  const keyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
+  const certificate = await issueCertificate({
+    subject: 'İmza Deneme',
+    keyPair,
+    notBefore: new Date(Date.UTC(2026, 0, 1)),
+    notAfter: new Date(Date.UTC(2027, 0, 1)),
+    keyUsage: ['digitalSignature'],
+  });
+  const out = await signPdf(
+    await build([TWO_LINES]),
+    { identity: { certificate: certificate.der, privateKey: keyPair.privateKey } },
+    run,
+  );
+  return out.bytes;
+}
+
 describe('protectDocument', () => {
   it('encrypts with AES-256 so the file asks for the password and every page survives', async () => {
     const source = await threePages();
@@ -155,23 +173,6 @@ describe('protectDocument', () => {
       key: 'op.note.security.signatureInvalidated',
     };
 
-    async function signed(): Promise<Uint8Array> {
-      const keyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
-      const certificate = await issueCertificate({
-        subject: 'İmza Deneme',
-        keyPair,
-        notBefore: new Date(Date.UTC(2026, 0, 1)),
-        notAfter: new Date(Date.UTC(2027, 0, 1)),
-        keyUsage: ['digitalSignature'],
-      });
-      const out = await signPdf(
-        await build([TWO_LINES]),
-        { identity: { certificate: certificate.der, privateKey: keyPair.privateKey } },
-        run,
-      );
-      return out.bytes;
-    }
-
     it('warns that the signature no longer validates, and still encrypts', async () => {
       const source = await signed();
       expect(await verifySignatures(source, run.signal)).toHaveLength(1);
@@ -191,6 +192,18 @@ describe('protectDocument', () => {
     it('warns for a password-locked signed input once its old password has opened it', async () => {
       const locked = await lock(await signed(), 'encrypt=aes-256,user-password=eski,owner-password=eski');
       const outcome = await protectDocument(locked, { ...OPTIONS, oldPassword: 'eski' }, run);
+      expect(outcome.report.notes).toContainEqual(SIGNATURE_NOTE);
+    });
+
+    it('warns for a signature only a page /Annots reaches, as verifySignatures counts it', async () => {
+      const mupdf = await loadMupdf();
+      const doc = mupdf.PDFDocument.openDocument(await signed(), 'application/pdf').asPDF();
+      if (doc === null) throw new Error('not a PDF');
+      doc.getTrailer().get('Root').get('AcroForm').put('Fields', []);
+      const annotsOnly = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+      doc.destroy();
+      expect(await verifySignatures(annotsOnly, run.signal)).toHaveLength(1);
+      const outcome = await protectDocument(annotsOnly, OPTIONS, run);
       expect(outcome.report.notes).toContainEqual(SIGNATURE_NOTE);
     });
 
@@ -370,6 +383,28 @@ describe('unlockDocument', () => {
       { kind: 'changed', key: 'op.note.security.protectionRemoved' },
       { kind: 'preserved', key: 'op.note.security.verified' },
     ]);
+  });
+
+  it('warns that the signature no longer validates when it removes the password from a signed file', async () => {
+    const locked = await lock(await signed(), 'encrypt=aes-256,user-password=gizli,owner-password=sahip');
+    const outcome = await unlockDocument(locked, 'gizli', run);
+    expect(outcome.report.notes).toEqual([
+      { kind: 'changed', key: 'op.note.security.protectionRemoved' },
+      { kind: 'lost', key: 'op.note.security.signatureInvalidatedUnlock' },
+      { kind: 'preserved', key: 'op.note.security.verified' },
+    ]);
+    expect((await inspectProtection(outcome.bytes)).encrypted).toBe(false);
+  });
+
+  it('does not warn when it unlocks an unsigned file', async () => {
+    const locked = await lock(
+      await build([TWO_LINES]),
+      'encrypt=aes-256,user-password=gizli,owner-password=sahip',
+    );
+    const outcome = await unlockDocument(locked, 'gizli', run);
+    expect(outcome.report.notes.map((entry) => entry.key)).not.toContain(
+      'op.note.security.signatureInvalidatedUnlock',
+    );
   });
 
   it('opens an owner-only file without a password', async () => {

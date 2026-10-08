@@ -961,7 +961,7 @@ function walkField(
  * tree first, then any widget annotation whose `/V` no field claimed (a producer that
  * keeps the widget outside `/Fields` still ships a signature a reader must show).
  */
-function collectSignatureFields(
+export function collectSignatureFields(
   doc: PDFDocument,
   signal: AbortSignal | undefined,
 ): readonly SignatureField[] {

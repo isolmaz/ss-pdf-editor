@@ -4,6 +4,8 @@ export const enginesPart = {
     'Document opens without password; permissions are restricted by owner password only.',
   'op.note.security.signatureInvalidated':
     'The document carries a digital signature. Encrypting rewrites the file, so the signature is no longer valid.',
+  'op.note.security.signatureInvalidatedUnlock':
+    'The document carries a digital signature. Removing the password rewrites the file, so the signature is no longer valid.',
   'op.note.security.verified': 'Output reopened and encryption verified.',
   'op.note.security.protectionRemoved': 'Password removed; output is unprotected.',
   'op.note.security.alreadyUnprotected': 'Document is already unencrypted; file unchanged.',

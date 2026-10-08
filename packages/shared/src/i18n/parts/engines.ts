@@ -15,6 +15,8 @@ export const enginesPart = {
     'Belge parolasız açılıyor; izinler yalnızca sahip parolasıyla sınırlanır.',
   'op.note.security.signatureInvalidated':
     'Belgede dijital imza var. Şifreleme dosyayı yeniden yazdığı için imza artık geçerli olmayacak.',
+  'op.note.security.signatureInvalidatedUnlock':
+    'Belgede dijital imza var. Parolayı kaldırmak dosyayı yeniden yazdığı için imza artık geçerli olmayacak.',
   'op.note.security.verified': 'Çıktı yeniden açılıp şifreleme doğrulandı.',
   'op.note.security.protectionRemoved': 'Parola kaldırıldı; çıktı korumasız.',
   'op.note.security.alreadyUnprotected': 'Belge zaten şifresiz; dosya değiştirilmedi.',

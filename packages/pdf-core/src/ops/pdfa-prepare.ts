@@ -217,8 +217,7 @@ function addToUnicode(doc: PDFDocument, work: readonly ToUnicodeWork[]): void {
  * Inventory and clean-up
  * ------------------------------------------------------------------ */
 
-/** Signature fields that carry a signature (`/V` set), counted through the AcroForm field tree. */
-export function countSignatures(catalog: PDFObject): number {
+function countSignatures(catalog: PDFObject): number {
   const form = dictionaryAt(catalog, 'AcroForm');
   if (form === null) return 0;
   let count = 0;
