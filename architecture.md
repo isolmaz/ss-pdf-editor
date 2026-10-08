@@ -592,7 +592,10 @@ had to stay green. The moves, and the defects they fixed on the way:
          blanks from the layer's characters, boxes from the baseline and size, confidence 100,
          no recognition run); else `OfficeExportOptions.ocr.recognize` (the UI passes
          `recognizePage`, Tesseract, quality `best`, the languages ticked in the form's
-         `ocrLanguages` field, default `tur`+`eng`) on the page rendered by MuPDF at the scan's
+         `ocrLanguages` field, default `tur`+`eng`, in automatic page segmentation (mode 3:
+         columns, blocks and lines are found, which the text boxes are built from; the 90 %
+         flag threshold of `docs/ocr-evaluation.md` was measured in the engine's default
+         single-block mode 6) on the page rendered by MuPDF at the scan's
          own resolution, that of its largest picture, bounded to 150–300 dpi and 200 when
          unknown (at most the page images' pixel budget, `cappedPerPoint`). Without `recognize`
          and without a layer `readScanPage` returns `null`, the page keeps its pictures, and
@@ -640,8 +643,9 @@ had to stay green. The moves, and the defects they fixed on the way:
          3. *Capitals.* A word with a run of two capitals or more is read with English alone (when
             English is among the languages but not the only one: `OcrOptions.englishAlone`): it
             has no dictionary word "sol" to pull the Q of "SQL" to an O, and its capitals replace
-            the first reading's when both are the same length. The word reader leaves the shared
-            worker in single-block mode (6), the engine's default, for the next page read.
+            the first reading's when both are the same length. Each read sets its own mode for
+            that call only (8 for a word, 3 for an export page) and the shared worker is left in
+            the engine's default single-block mode (6), which "Make searchable" reads in.
        - *Rules for what Tesseract returned.* `dropDuplicates` keeps, of two words overlapping by
          more than 30 % of the smaller box (one word read at two segmentations), the one whose
          box is larger (the surer when equal); the dropped ones are still erased from the
