@@ -76,8 +76,9 @@ Branch `main` is protected: a pull request is required, `verify`, `e2e` (all fou
 `e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests are
 merged with a merge commit, never squashed or rebased, so each commit keeps naming one fix and
 its test. A reviewer who did not write the change records PASS or FAIL on the pull request, and
-documentation that does not describe a behaviour change is a FAIL. [`REVIEW.md`](REVIEW.md) lists
-the commits by risk, each fix with the test that proves it; how changes land is in
+documentation that does not describe a behaviour change is a FAIL. [`REVIEW.md`](REVIEW.md), the
+review guide of pull request #28, lists its commits by risk, each fix with the test that
+proves it, and is the model for a large pull request's guide; how changes land is in
 [`docs/integration-plan.md`](docs/integration-plan.md).
 
 ### Tests and coverage

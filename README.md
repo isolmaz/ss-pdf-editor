@@ -722,7 +722,7 @@ tools/              dist assembly, engine pins, licence audit, regression and do
 e2e/                Playwright specs for the editor flows and the site, and the engine
                     fault injection (engine-faults.ts)
 docs/               integration-plan.md; media/ holds the README clips
-REVIEW.md           the commits of the branch by risk, each fix with its proving test
+REVIEW.md           the review guide of PR #28: its commits by risk, each fix with its test
 .github/            workflows (CI, nightly, revert-proof), issue and pull request templates
 ```
 
@@ -752,8 +752,8 @@ fix's own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
 `e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests
-are merged with a merge commit. [`REVIEW.md`](REVIEW.md) lists the commits by risk, each fix
-with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
+are merged with a merge commit. [`REVIEW.md`](REVIEW.md), the review guide of pull request #28, lists
+its commits by risk, each fix with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
 how changes land.
 
 - **`pnpm ci:verify`** runs the checks of the `verify` job on your machine, in order (the job
