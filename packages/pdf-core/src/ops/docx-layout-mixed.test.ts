@@ -154,6 +154,29 @@ const blackBox =
     doc.loadPage(0).getObject().put('Annots', annotations);
   };
 
+/** A half-transparent red Square annotation over `rect` (PDF space): drawn by an appearance with `ca` 0.5. */
+const redGlass =
+  (rect: [number, number, number, number]) =>
+  (doc: PDFDocument): void => {
+    const [x0, y0, x1, y1] = rect;
+    const appearance = doc.addStream(`/G0 gs 1 0 0 rg 0 0 ${x1 - x0} ${y1 - y0} re f`, {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, x1 - x0, y1 - y0],
+      Resources: { ExtGState: { G0: { Type: 'ExtGState', ca: 0.5 } } },
+    });
+    const annotation = doc.addObject({
+      Type: 'Annot',
+      Subtype: 'Square',
+      Rect: rect,
+      F: 4,
+      AP: { N: appearance },
+    });
+    const annotations = doc.newArray();
+    annotations.push(annotation);
+    doc.loadPage(0).getObject().put('Annots', annotations);
+  };
+
 /** A typed header over the scan's top (baseline 30 pt from the top). */
 const HEADER = 'BT /F1 14 Tf 60 470 Td (Typed header) Tj ET';
 
@@ -738,6 +761,50 @@ describe('exact layout: what the reader sees is what OCR reads', () => {
       const first = seen[0] ?? { png: new Uint8Array(), scale: 1 };
       // the black box is in the picture the recogniser reads (the paragraph's tint is red 217 there)
       expect(await redAt(first.png, first.scale, 150, at)).toBeLessThan(30);
+    }
+  });
+
+  it('draws a translucent annotation over a scan once: in the picture, not again as a shape above it', async () => {
+    const seen: { png: Uint8Array; scale: number }[] = [];
+    const result = await exportOffice(
+      await scanWith('', PARAGRAPH, 'q 400 0 0 500 0 0 cm', { annotate: redGlass([50, 360, 250, 412]) }),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png, scale) => {
+            seen.push({ png, scale });
+            return paragraphWords();
+          },
+        },
+      },
+      run,
+    );
+    const first = seen[0] ?? { png: new Uint8Array(), scale: 1 };
+    // the glass is in the picture OCR reads: the tint's red 217 is lifted toward 255 by the red
+    expect(await redAt(first.png, first.scale, 150, 110)).toBeGreaterThan(228);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    expect(await (zip.file('word/document.xml') as JSZip.JSZipObject).async('string')).not.toContain(
+      '<a:alpha',
+    );
+  });
+
+  it('keeps the words of a layer over faint print, drops those under a patch', async () => {
+    for (const grey of ['0.75 0.75 0.75', '0.8 0.8 0.8']) {
+      const faint = officeDocument([
+        {
+          content: [
+            '1 1 1 rg 0 0 400 500 re f',
+            line('helvetica', 14, 60, 400, 'Hello world today', grey),
+          ].join('\n'),
+        },
+      ]);
+      const result = await exportOffice(
+        await scanWith('BT /F1 14 Tf 3 Tr 60 400 Td (Hello world today) Tj ET', faint),
+        { ...options, ocr: { lowConfidence: 0.9, recognize: async () => [] } },
+        run,
+      );
+      expect(occurrences((await written(result.file.bytes)).replaceAll(' ', ''), 'Helloworldtoday')).toBe(2);
     }
   });
 

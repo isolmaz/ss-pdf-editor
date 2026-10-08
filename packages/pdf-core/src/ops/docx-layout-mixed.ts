@@ -37,8 +37,10 @@ const MAX_INK: number = 0.3;
 const INK_CONTRAST = 64;
 /** A word's box is grown by this share of its height to take in the antialiased edges of its glyphs. */
 const WORD_PAD = 0.2;
-/** A word whose box has less ink than this share is under a patch. */
-const COVERED_INK = 0.005;
+/** A box is flat when its pixels are within this much of their commonest tone (faint scanned text is 50 or more off paper) … */
+const FLAT = 16;
+/** … and a word is under a patch when less than this share of its box is not flat. */
+const COVERED_SHARE = 0.005;
 /** Rows (of the sampled grid) of blank space that end a band. */
 const MIN_GAP = 3;
 /** A picture of text has ink in at least this many bands of rows. */
@@ -312,10 +314,10 @@ export function wordsInPicture(image: RgbaImage, words: readonly OcrWord[], box:
   return text ? inside : [];
 }
 
-/** The share of the pixels of `box` (page points) in `image` that differ from the box's own commonest tone by more than `INK_CONTRAST`. */
-function inkShare(image: RgbaImage, box: Box): number | null {
+/** The share of the pixels of `box` (page points) in `image` that differ from the box's own commonest tone by more than `FLAT`; `null` for a box off the image. */
+function nonFlatShare(image: RgbaImage, box: Box): number | null {
   const [x0, y0, x1, y1] = pixelsOf(image, box, 0);
-  const bins = new Array<number>(16).fill(0);
+  const bins = new Array<number>(256).fill(0);
   const tones: number[] = [];
   for (let y = y0; y < y1; y += 1) {
     for (let x = x0; x < x1; x += 1) {
@@ -325,22 +327,22 @@ function inkShare(image: RgbaImage, box: Box): number | null {
         0.587 * (image.data[at + 1] as number) +
         0.114 * (image.data[at + 2] as number);
       tones.push(tone);
-      const bin = Math.min(15, tone >> 4);
+      const bin = Math.round(tone);
       bins[bin] = (bins[bin] as number) + 1;
     }
   }
   if (tones.length === 0) return null;
-  const background = (bins.indexOf(Math.max(...bins)) + 0.5) * 16;
-  return tones.filter((tone) => Math.abs(tone - background) > INK_CONTRAST).length / tones.length;
+  const background = bins.indexOf(Math.max(...bins));
+  return tones.filter((tone) => Math.abs(tone - background) > FLAT).length / tones.length;
 }
 
 /**
- * The words of a text layer that show something in the render: a word whose box is flat (no ink
- * at all) lies under a patch (an opaque annotation, a picture drawn over the scan) and is what
+ * The words of a text layer that show something in the render: a word whose box is flat (no mark
+ * of any contrast, however faint the print) lies under a patch (an opaque annotation, a picture drawn over the scan) and is what
  * the reader cannot see, so it is not text of the page.
  */
 export const dropCovered = (words: readonly OcrWord[], image: RgbaImage): OcrWord[] =>
-  words.filter((word) => (inkShare(image, [word.x0, word.y0, word.x1, word.y1]) ?? 1) >= COVERED_INK);
+  words.filter((word) => (nonFlatShare(image, [word.x0, word.y0, word.x1, word.y1]) ?? 1) >= COVERED_SHARE);
 
 /**
  * Whether a picture, from its own pixels (composited over white; `image.scale` is not read), may

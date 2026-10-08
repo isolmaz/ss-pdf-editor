@@ -35,6 +35,7 @@ import {
 import { chooseOpenFont, type OpenFonts, ocrAdvance } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
+import { readPageScene } from './layout-scene-read';
 import { type ReadWord, refineWords } from './ocr-refine';
 import {
   dropDuplicates,
@@ -426,6 +427,24 @@ export async function readPictureText(
 }
 
 /**
+ * The page's own vector shapes, to stay above the pictures. The render holds the annotations
+ * and form fields (it is drawn as the reader sees it), so on a page that has some the shapes
+ * are read again without them: a translucent annotation is drawn once, in the picture.
+ */
+function shapesOnPage(mupdf: Mupdf, page: Page, scene: PageScene): SceneShape[] {
+  const shapes = (items: readonly SceneItem[]): SceneShape[] =>
+    items.filter((item): item is SceneShape => item.kind === 'shape');
+  if (!(page instanceof mupdf.PDFPage) || page.getAnnotations().length + page.getWidgets().length === 0) {
+    return shapes(scene.items);
+  }
+  try {
+    return shapes(readPageScene(mupdf, page, true).items);
+  } catch {
+    return shapes(scene.items);
+  }
+}
+
+/**
  * The scan page rebuilt: words from the invisible layer if there is one it can trust, else from
  * `ocr.recognize` (`null`: there is none or it failed, and the page has no layer — the caller
  * keeps the page as it was). The page's vector shapes stay above the pictures.
@@ -512,7 +531,7 @@ export async function readScanPage(
     }),
   );
   return {
-    items: [background, ...pictures, ...scene.items.filter((item) => item.kind === 'shape')],
+    items: [background, ...pictures, ...shapesOnPage(mupdf, page, scene)],
     boxes,
     flagged,
     regions: pictures.length,
