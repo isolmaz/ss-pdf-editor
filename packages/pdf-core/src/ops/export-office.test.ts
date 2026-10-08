@@ -257,6 +257,10 @@ describe('exportOffice', () => {
       expect(wordFontName(serif)).toBe('Times New Roman');
     }
     expect(wordFontName('CourierStd')).toBe('Courier New');
+    // A foundry's prefix does not hide the family.
+    expect(wordFontName('ITCFranklinGothicStd')).toBe('Arial');
+    expect(wordFontName('ITCGaramond')).toBe('Times New Roman');
+    expect(wordFontName('ITCCourierStd')).toBe('Courier New');
     for (const kept of ['SegoeUI', 'TrebuchetMS', 'CalibriLight', 'NotoSans', 'Verdana']) {
       expect(wordFontName(kept, { serif: true, mono: false })).toBe(kept.replace(/([a-z])([A-Z])/g, '$1 $2'));
     }

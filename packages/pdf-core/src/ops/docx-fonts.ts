@@ -28,7 +28,7 @@ import type { Mupdf } from '../engines/mupdf';
 import { readName, resolved } from '../engines/mupdf-write';
 import { XML_HEAD, xml } from './docx-drawing';
 import { cffForWord, type FontNames, type GlyphMapping, trueTypeForWord } from './docx-font-sfnt';
-import { fontFamily } from './page-layout';
+import { BOLD_NAME, fontFamily } from './page-layout';
 import { type OperationContext, throwIfAborted } from './types';
 
 /* ------------------------------------------------------------------ *
@@ -282,7 +282,7 @@ function drawnOnPage(mupdf: Mupdf, page: PDFPage): Map<string, Drawn> {
       face = {
         unicode: new Map(),
         advance: new Map(),
-        bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
+        bold: font.isBold() || BOLD_NAME.test(name),
         italic: font.isItalic() || /italic|oblique/i.test(name),
       };
       drawn.set(name, face);

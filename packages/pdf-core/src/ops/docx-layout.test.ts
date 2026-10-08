@@ -133,13 +133,9 @@ type AnchorKind = 'shape' | 'picture' | 'text';
 /** The anchors (DrawingML only — the VML fallback has none) in document order, with what they hold. */
 function anchors(document: Document): { kind: AnchorKind; z: number; text: string }[] {
   return all(document, WP, 'anchor').map((anchor) => {
-    const data = all(anchor, A, 'graphicData')[0] as Element;
     const isText = all(anchor, WPS, 'cNvSpPr')[0]?.getAttribute('txBox') === '1';
-    const kind: AnchorKind = isText
-      ? 'text'
-      : data.getAttribute('uri')?.endsWith('/picture') === true
-        ? 'picture'
-        : 'shape';
+    // A picture is a rectangle filled with it.
+    const kind: AnchorKind = isText ? 'text' : all(anchor, A, 'blipFill').length > 0 ? 'picture' : 'shape';
     return {
       kind,
       z: Number(anchor.getAttribute('relativeHeight')),

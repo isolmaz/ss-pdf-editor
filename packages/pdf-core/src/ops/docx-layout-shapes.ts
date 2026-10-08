@@ -19,7 +19,7 @@
  *   not nest, fill differently from even-odd; that cannot be written in DrawingML.
  */
 
-import { anchoredPictureXml, EMU, pageAnchorHeadXml } from './docx-drawing';
+import { EMU, pageAnchorHeadXml } from './docx-drawing';
 import type {
   DocxRegistry,
   PathSegment,
@@ -50,6 +50,12 @@ export function sceneItemXml(item: SceneItem, scale: number, registry: DocxRegis
  * pictures
  * ------------------------------------------------------------------ */
 
+/**
+ * A picture is a rectangle filled with the picture, like every other drawing here: LibreOffice
+ * keeps a `pic:pic` in front of the shapes of the page whatever their `relativeHeight` (the
+ * translucent panels laid over a photo were hidden behind it, SSIM 0.88 → 0.97), while shapes
+ * stack among themselves by it.
+ */
 function pictureRun(
   item: SceneImage | SceneRaster,
   label: string,
@@ -60,16 +66,27 @@ function pictureRun(
   const relativeHeight = registry.nextZ();
   const id = registry.nextDrawingId();
   const [x0, y0, x1, y1] = item.box;
-  return `<w:r>${anchoredPictureXml({
-    id,
-    name: `${label} ${id}`,
-    rid,
-    x: x0 * scale,
-    y: y0 * scale,
-    width: (x1 - x0) * scale,
-    height: (y1 - y0) * scale,
-    relativeHeight,
-  })}</w:r>`;
+  const cx = Math.max(1, Math.round((x1 - x0) * scale * EMU));
+  const cy = Math.max(1, Math.round((y1 - y0) * scale * EMU));
+  return (
+    '<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>' +
+    pageAnchorHeadXml(
+      id,
+      `${label} ${id}`,
+      relativeHeight,
+      Math.round(x0 * scale * EMU),
+      Math.round(y0 * scale * EMU),
+      cx,
+      cy,
+    ) +
+    '<wp:cNvGraphicFramePr/>' +
+    `<a:graphic><a:graphicData uri="${WPS_URI}"><wps:wsp><wps:cNvSpPr/>` +
+    `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
+    `<a:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>` +
+    '<a:ln><a:noFill/></a:ln></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic>' +
+    '</wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>'
+  );
 }
 
 /* ------------------------------------------------------------------ *

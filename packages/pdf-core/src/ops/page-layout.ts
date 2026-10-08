@@ -120,6 +120,12 @@ const MIN_RULE = 6;
 /** A filled rectangle thinner than this is drawn as a line. */
 const HAIRLINE = 2.5;
 
+/**
+ * Whether a font's name says it is bold, for a font whose flags do not: Bold, Black, Heavy,
+ * SemiBold, Demi, and the foundries' `-Dem` (`ITCFranklinGothicStd-Dem`).
+ */
+export const BOLD_NAME = /bold|black|heavy|semibold|demi|[-,\s]dem(?![a-z])/i;
+
 /** `ABCDEF+Arial-BoldMT` → `Arial`; `TimesNewRomanPS-ItalicMT` → `TimesNewRomanPS`. */
 export function fontFamily(name: string): string {
   const bare = name.replace(/^[A-Z]{6}\+/, '');
@@ -400,7 +406,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         const face = {
           font: fontFamily(name),
           face: name,
-          bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
+          bold: font.isBold() || BOLD_NAME.test(name),
           italic: font.isItalic() || /italic|oblique/i.test(name),
           mono: font.isMono(),
           serif: font.isSerif(),

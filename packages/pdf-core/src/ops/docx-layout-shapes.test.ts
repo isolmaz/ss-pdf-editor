@@ -570,7 +570,14 @@ describe('sceneItemXml: pictures', () => {
     const anchor = one(first, 'wp:anchor');
     expect(anchor.getAttribute('behindDoc')).toBe('1');
     expect(names(first)).toEqual(['w:r']);
-    expect(names(kids(first)[0] as Element)).toEqual(['w:drawing']);
+    const alternate = kids(kids(first)[0] as Element)[0] as Element;
+    expect(names(kids(first)[0] as Element)).toEqual(['mc:AlternateContent']);
+    expect(names(alternate)).toEqual(['mc:Choice']);
+    expect(names(kids(alternate)[0] as Element)).toEqual(['w:drawing']);
+    // A rectangle filled with the picture: a shape, so that it stacks with the page's other shapes.
+    expect(one(first, 'a:prstGeom').getAttribute('prst')).toBe('rect');
+    expect(one(first, 'a:blipFill').parentNode?.nodeName).toBe('wps:spPr');
+    expect(first.getElementsByTagName('pic:pic').length).toBe(0);
     expect(names(anchor)).toEqual([
       'wp:simplePos',
       'wp:positionH',
@@ -649,7 +656,7 @@ describe('a Word file made of scene items', () => {
     const anchors = Array.from(doc.getElementsByTagName('wp:anchor') as unknown as ArrayLike<Element>);
     expect(anchors).toHaveLength(3);
     expect(anchors.map((a) => Number(a.getAttribute('relativeHeight')))).toEqual([1, 2, 3]);
-    expect(doc.getElementsByTagName('a:prstGeom').length).toBe(2); // the rectangle and the picture's frame
+    expect(doc.getElementsByTagName('a:prstGeom').length).toBe(2); // the rectangle and the picture's rectangle
     expect(doc.getElementsByTagName('a:cubicBezTo').length).toBe(4);
     const rels = (await opened.file('word/_rels/document.xml.rels')?.async('string')) as string;
     expect(rels).toContain('Id="rIdImage1"');

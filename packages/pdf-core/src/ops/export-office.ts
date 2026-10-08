@@ -164,10 +164,10 @@ const FAMILY_NAMES: Readonly<Record<string, string>> = {
 const KEPT =
   /^(?:calibri|cambria|candara|corbel|constantia|consolas|segoe|verdana|georgia|tahoma|trebuchet|noto)/;
 const SANS =
-  /^(?:helvetica|arial|univers|frutiger|myriad|nimbussans|liberationsans|swiss|avenir|futura|gillsans|lato|roboto|opensans|sourcesans|ptsans|franklin)/;
+  /^(?:itc|adobe|ms|mt|lt)?(?:helvetica|arial|univers|frutiger|myriad|nimbussans|liberationsans|swiss|avenir|futura|gillsans|lato|roboto|opensans|sourcesans|ptsans|franklin)/;
 const SERIF =
-  /^(?:times|minion|garamond|nimbusroman|liberationserif|palatino|bookman|baskerville|caslon|bodoni|didot|centuryschool|newcentury|charter|sabon|utopia)/;
-const MONO = /^(?:courier|nimbusmono|liberationmono|lucidaconsole)/;
+  /^(?:itc|adobe|ms|mt|lt)?(?:times|minion|garamond|nimbusroman|liberationserif|palatino|bookman|baskerville|caslon|bodoni|didot|centuryschool|newcentury|charter|sabon|utopia)/;
+const MONO = /^(?:itc|adobe|ms|mt|lt)?(?:courier|nimbusmono|liberationmono|lucidaconsole)/;
 
 /** What the font's own flags say, for a family the table does not know. */
 export interface FontKind {
