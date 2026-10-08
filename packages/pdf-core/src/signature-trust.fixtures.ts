@@ -161,7 +161,10 @@ export async function generateKey(spec: KeySpec): Promise<CryptoKeyPair> {
   return await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: spec.curve }, true, ['sign', 'verify']);
 }
 
-/** The `rawToDer` half of the ECDSA pair: exactly what `signature-cms` does when signing. */
+/**
+ * The `rawToDer` half of the ECDSA pair, written independently of `signature-cms`'s
+ * `ecdsaSignatureToDer` (via pkijs's `Integer.convertToDER`) so the two can check each other.
+ */
 export function ecdsaRawToDer(raw: Uint8Array): Uint8Array {
   if (raw.length % 2 !== 0) throw new Error('an ECDSA signature is an even number of bytes');
   const half = raw.length / 2;
