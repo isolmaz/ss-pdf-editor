@@ -150,6 +150,7 @@ describe('exportOffice, Word as one picture per page', () => {
       'op.note.exportOffice.pageImages',
     ]);
     expect(notes[0]?.params).toEqual({ format: 'DOCX', pages: 2 });
+    expect(notes[1]?.params).toEqual({ dpi: 200 });
   });
 
   it('carries each page’s section in its own paragraph but the last, whose section is the body’s', async () => {
@@ -282,13 +283,17 @@ describe('exportOffice, Word as one picture per page', () => {
 
   it('keeps a page within 40 megapixels', async () => {
     // 2400 pt square: 6667 px a side at 200 dpi, 44 megapixels.
-    const { file } = await exportOffice(
+    const { file, notes } = await exportOffice(
       await officeDocument([{ size: [2400, 2400], content: '' }]),
       { ...options, pages: [0] },
       run,
     );
     const zip = await JSZip.loadAsync(file.bytes);
     const rendered = await decoded(zip, 'word/media/page1.png');
+    // floor(2400 * sqrt(40e6 / 2400^2)) = 6324 px over 2400 pt: 189.7, reported as 190 dpi.
+    expect(notes.find((entry) => entry.key === 'op.note.exportOffice.pageImages')?.params).toEqual({
+      dpi: 190,
+    });
     expect(rendered.width).toBe(rendered.height);
     expect(rendered.width * rendered.height).toBeLessThanOrEqual(40_000_000);
     expect(rendered.width * rendered.height).toBeGreaterThan(39_900_000);

@@ -1255,7 +1255,9 @@ async function writePageImages(
   const file: OutputFile = { name: `${stem}.docx`, bytes, mime: MIME.docx };
   const notes: OperationNote[] = [
     note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: images.length }),
-    note('preserved', 'op.note.exportOffice.pageImages'),
+    note('preserved', 'op.note.exportOffice.pageImages', {
+      dpi: Math.round(Math.min(...images.map((image) => image.dpi))),
+    }),
   ];
   const shrunk = images.filter((image) => image.scale < 1);
   if (shrunk.length > 0) {

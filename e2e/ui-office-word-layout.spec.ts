@@ -17,7 +17,7 @@ import { labelledPdf } from './tool-fixture';
 import { openPdf, runCommand } from './ui-helpers';
 
 interface Package {
-  readonly files: Readonly<Record<string, unknown>>;
+  readonly files: Readonly<Record<string, { readonly dir: boolean }>>;
   file(name: string): { async(type: 'string'): Promise<string> } | null;
 }
 interface ZipReader {
