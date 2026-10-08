@@ -2556,7 +2556,8 @@ why. The rules:
 Check coverage and its honest edges: rotation and view box on every page; page text
 identity (size plus the head of the extracted text) positionally on every page up to 64
 pages and on first/middle/last above that; form names and values against the session's
-inventory; outline titles and page labels read from both documents. Two facts are reported
+inventory (fields that share a name, as a merge of two forms leaves them, are paired in
+document order); outline titles and page labels read from both documents. Two facts are reported
 `unsupported` **by construction** and never claimed: `annotations` (the reference's page
 annotations do not include the engine's pending annotation storage, so a count could not
 tell a dropped annotation from one this run is writing) and `signatures` (validity needs
