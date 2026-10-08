@@ -97,7 +97,9 @@ build's source maps and added to the unit figures statement by statement
 with an error when the total line coverage is under 98 % (the nightly run does this). On a machine
 you are working on, `E2E_WORKERS=4` caps the browsers Playwright runs at once and
 `VITEST_MAX_WORKERS=8` the unit workers; both apply to `pnpm e2e`, `pnpm unit` and
-`pnpm coverage`. Code that runs in a web worker (Ghostscript) or in the service worker is not
+`pnpm coverage`. Playwright serves `dist/` on port 4178 and, outside CI, reuses a server already
+listening there; when two checkouts run their suites at once, give each its own `E2E_PORT` so
+neither tests the other's build. Code that runs in a web worker (Ghostscript) or in the service worker is not
 recorded by a page, so it is not in the browser figures.
 
 The OCR specs generate their own inputs (a scan rendered from known printed lines, and a text PDF),

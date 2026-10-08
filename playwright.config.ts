@@ -19,7 +19,9 @@ import { defineConfig, devices } from 'playwright/test';
  */
 
 const distEntry = fileURLToPath(new URL('./dist/editor/index.html', import.meta.url));
-const PORT = 4178;
+// `E2E_PORT` moves the preview server off 4178, so two checkouts can run their suites at once
+// without one testing the other's build (a running server on the port is reused locally).
+const PORT = Number(process.env.E2E_PORT ?? 4178);
 
 /**
  * The PDF → Word fidelity harness (`e2e/fidelity/`, run by `pnpm fidelity`) is its own project,
@@ -110,7 +112,7 @@ export default defineConfig({
   ],
   webServer: existsSync(distEntry)
     ? {
-        command: 'pnpm preview',
+        command: `pnpm preview --port ${PORT}`,
         url: `http://localhost:${PORT}/editor/`,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

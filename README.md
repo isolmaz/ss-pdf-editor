@@ -699,7 +699,7 @@ The limits are defined once, in
 | `pnpm dev` | Vite dev server for the editor (`pnpm --filter site dev` for the landing, port 5175) |
 | `pnpm build` | Builds the landing (`apps/site/dist`), then the editor (`apps/web/dist`) |
 | `pnpm assemble:dist` | Composes the deployable `dist/` |
-| `pnpm preview` | Serves `dist/` under the production headers (port 4178) |
+| `pnpm preview` | Serves `dist/` under the production headers (port 4178, or `--port N`; Playwright passes `E2E_PORT`) |
 | `pnpm typecheck` | `tsc -b` over the workspace |
 | `pnpm lint` / `check` / `format` | Biome: lint / lint and format check / format write |
 | `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions; `VITEST_MAX_WORKERS=N` caps the unit workers |
