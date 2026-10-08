@@ -3836,11 +3836,10 @@ export function App({ store }: AppProps) {
    * operation, with its own language choice and report, not a second recogniser.
    */
   const handleScanDocument = useCallback(
-    async (result: ScannedDocument) => {
-      if (busyRef.current || cancelRef.current !== null) {
-        refuseBusy();
-        return;
-      }
+    async (result: ScannedDocument): Promise<string | undefined> => {
+      // The scanner is a modal: a notice set here would sit behind it, so a refusal or a
+      // failure is returned to the dialog, which shows it where the user is looking.
+      if (busyRef.current || cancelRef.current !== null) return t('op.busy');
       const controller = new AbortController();
       cancelRef.current = controller;
       setBusy(true);
@@ -3851,8 +3850,8 @@ export function App({ store }: AppProps) {
         setScanOpen(false);
         setNotice(appendWarning(t('scan.opened', { count: result.pageCount, name: result.name }), warning));
       } catch (error) {
-        if (controller.signal.aborted) return;
-        setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
+        if (controller.signal.aborted) return undefined;
+        return noticeLine(failureNotices(error, 'error.internal.message'), t);
       } finally {
         if (cancelRef.current === controller) {
           cancelRef.current = null;
@@ -3861,8 +3860,9 @@ export function App({ store }: AppProps) {
       }
       // After the gate is released: `openDialog` refuses while an operation is running.
       if (opened && result.offerOcr) window.setTimeout(() => openDialog('ocr'), 0);
+      return undefined;
     },
-    [openDialog, openProducedTab, refuseBusy, setBusy, t],
+    [openDialog, openProducedTab, setBusy, t],
   );
 
   /**
