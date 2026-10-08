@@ -1210,6 +1210,16 @@ function inRows<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
   return rows.flatMap((row) => row.sort((a, b) => boxOf(a)[0] - boxOf(b)[0]));
 }
 
+/** A word as the page sets it: its box (page points, y down), the size, weight and slant of its run, and how sure OCR was (0–100). */
+export interface MeasuredWord {
+  readonly text: string;
+  readonly box: Box;
+  readonly size: number;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly confidence: number;
+}
+
 /**
  * The text boxes of a recognised page: one per paragraph, in reading order. `regions` are the
  * boxes of the solid regions `ocrBackground` found (cards, bands, photos; not loose marks): lines and paragraphs never cross their edge.
@@ -1217,6 +1227,7 @@ function inRows<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
  * each is a run of its own with a `note`. With `advance` the page is set in the stand-in family
  * whose letter widths fit the word boxes best (`font` names one instead) and every run carries
  * where the scan has its letters, so the writer places each word where the scan has it.
+ * `measured` lists the words as they were set, for whoever judges the typeface.
  */
 export function ocrTextBoxes(
   words: readonly OcrWord[],
@@ -1226,8 +1237,13 @@ export function ocrTextBoxes(
   advance?: Advance,
   font?: string,
   rules: readonly Rule[] = [],
-): { boxes: TextBox[]; flagged: { text: string; confidence: number }[] } {
+): {
+  boxes: TextBox[];
+  flagged: { text: string; confidence: number }[];
+  measured: MeasuredWord[];
+} {
   const flagged: { text: string; confidence: number }[] = [];
+  const measured: MeasuredWord[] = [];
   const inks = new Map<OcrWord, WordInk>();
   const lines = groupLines(words, regionIndex(regions));
   const typical = lines.length === 0 ? 0 : median(lines.map((line) => line.size));
@@ -1284,6 +1300,14 @@ export function ocrTextBoxes(
           (own[at] === undefined && (lineBold || (own[at - 1] === true && own[at + 1] === true)));
         const low = word.confidence / 100 < lowConfidence && !SYMBOLIC.test(word.text);
         if (low) flagged.push({ text: word.text, confidence: word.confidence / 100 });
+        measured.push({
+          text: word.text,
+          box: [word.x0, word.y0, word.x1, word.y1],
+          size,
+          bold,
+          italic,
+          confidence: word.confidence,
+        });
         return {
           text: at === 0 && line.words.length > 1 && BULLET_LIKE.test(word.text) ? '\u2022' : word.text,
           bold,
@@ -1322,7 +1346,7 @@ export function ocrTextBoxes(
     };
     boxes.push({ box: [x0, top, x0 + width, bottom], rotation: 0, paragraphs: [paragraph] });
   }
-  return { boxes, flagged };
+  return { boxes, flagged, measured };
 }
 
 /* ------------------------------------------------------------------ *

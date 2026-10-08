@@ -422,20 +422,37 @@ export interface EmbeddedFonts {
   readonly count: number;
   /** The embedded face for a MuPDF font name (`LayoutChar.face`) on page `pageIndex`, or `undefined`. */
   faceOf(pageIndex: number, face: string): EmbeddedFace | undefined;
+  /** The family names the programs are embedded under (what a run's `w:rFonts` names). */
+  readonly families: ReadonlySet<string>;
   /** The `word/…` parts to add to the package (empty when nothing is embedded). */
   readonly files: Readonly<Record<string, string | Uint8Array>>;
   /** `[Content_Types].xml` / `word/_rels/document.xml.rels` with the font parts added. */
   contentTypes(base: string): string;
   documentRels(base: string): string;
+  /**
+   * The same fonts with `extra` added (Word-ready programs the document's text is set in by
+   * name, like the open font of a scan, which is named so that it does not clash with a family
+   * of `families`); one whose family and style is already embedded is left out.
+   */
+  plus(extra: readonly FontFile[]): EmbeddedFonts;
+}
+
+/** A Word-ready font program and the family and style it is embedded under. */
+export interface FontFile {
+  readonly family: string;
+  readonly style: FontNames['style'];
+  readonly bytes: Uint8Array;
 }
 
 /** Nothing embedded. */
 const NONE: EmbeddedFonts = {
   count: 0,
+  families: new Set(),
   faceOf: () => undefined,
   files: {},
   contentTypes: (base) => base,
   documentRels: (base) => base,
+  plus: (extra) => (extra.length === 0 ? NONE : packageFonts(extra, () => undefined)),
 };
 
 /**
@@ -492,7 +509,7 @@ export async function embedFonts(
 
   // Names: the first program of a family and style keeps the family, later ones are "Family 2", "Family 3", …
   const taken = new Set<string>();
-  const built = new Map<number, { family: string; style: Style; bytes: Uint8Array }>();
+  const built = new Map<number, FontFile>();
   for (const [key, program] of programs) {
     const style = styleOf(program.bold, program.italic);
     const base = fontFamily(program.baseName);
@@ -504,12 +521,30 @@ export async function embedFonts(
     built.set(key, { family, style, bytes });
   }
   if (built.size === 0) return NONE;
+  return packageFonts([...built.values()], (pageIndex, face) => {
+    const key = used.get(pageIndex)?.get(face);
+    const entry = key === undefined ? undefined : built.get(key);
+    if (entry === undefined) return undefined;
+    const program = programs.get(key as number) as Program;
+    return {
+      family: entry.family,
+      bold: entry.style.startsWith('Bold'),
+      italic: entry.style.endsWith('Italic'),
+      advance(unicode) {
+        const gid = program.unicode.get(unicode);
+        return gid === undefined ? undefined : program.advance.get(gid);
+      },
+    };
+  });
+}
 
+/** The package parts for `entries`: the font table, the obfuscated programs, the settings, and how they are declared. */
+function packageFonts(entries: readonly FontFile[], faceOf: EmbeddedFonts['faceOf']): EmbeddedFonts {
   const byFamily = new Map<string, Map<Style, { rid: string; key: string }>>();
   const files: Record<string, string | Uint8Array> = {};
   const rels: string[] = [];
   let number = 0;
-  for (const entry of built.values()) {
+  for (const entry of entries) {
     number += 1;
     const rid = `rIdFont${number}`;
     const guid = guidOf(entry.bytes, number);
@@ -544,22 +579,9 @@ export async function embedFonts(
     `${XML_HEAD}<w:settings ${WORD_NS}><w:embedTrueTypeFonts/><w:saveSubsetFonts/></w:settings>`;
 
   return {
-    count: built.size,
-    faceOf(pageIndex, face) {
-      const key = used.get(pageIndex)?.get(face);
-      const entry = key === undefined ? undefined : built.get(key);
-      if (entry === undefined) return undefined;
-      const program = programs.get(key as number) as Program;
-      return {
-        family: entry.family,
-        bold: entry.style.startsWith('Bold'),
-        italic: entry.style.endsWith('Italic'),
-        advance(unicode) {
-          const gid = program.unicode.get(unicode);
-          return gid === undefined ? undefined : program.advance.get(gid);
-        },
-      };
-    },
+    count: entries.length,
+    families: new Set(entries.map((entry) => entry.family)),
+    faceOf,
     files,
     contentTypes: (base) =>
       base
@@ -578,6 +600,12 @@ export async function embedFonts(
         `<Relationship Id="rIdFontTable" Type="${REL_FONT_TABLE}" Target="fontTable.xml"/>` +
           `<Relationship Id="rIdSettings" Type="${REL_SETTINGS}" Target="settings.xml"/></Relationships>`,
       ),
+    plus(extra) {
+      const fresh = extra.filter(
+        (file) => !entries.some((entry) => entry.family === file.family && entry.style === file.style),
+      );
+      return fresh.length === 0 ? this : packageFonts([...entries, ...fresh], faceOf);
+    },
   };
 }
 
