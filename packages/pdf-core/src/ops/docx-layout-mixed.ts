@@ -33,12 +33,21 @@ const MIN_INK = 0.003;
 const MAX_INK: number = 0.3;
 /** A pixel is ink when its luminance is this far from the picture's background. */
 const INK_CONTRAST = 64;
+/** A word's box is grown by this share of its height to take in the antialiased edges of its glyphs. */
+const WORD_PAD = 0.2;
 /** A picture is searched for text when it covers at least this share of the page … */
 const MIN_PICTURE = 0.02;
-/** … and its words stand when there are at least this many … */
-const MIN_PICTURE_WORDS = 3;
-/** … read with at least this mean confidence (0–100). */
-const PICTURE_CONFIDENCE = 60;
+/**
+ * … and its words stand when a picture of text is what it is, which these floors say, set from
+ * what OCR made of pictures of each kind (words / lines / mean confidence / share of the ink
+ * under the words): a scanned letter 77 / 12 / 96 / 1.0, a price table 14 / 5 / 93 / 0.25, a
+ * rastered form 94 / 17 / 94 / 0.20, a diagram 84 / 23 / 76 / 0.18 and a chart 70 / 24 / 87 /
+ * 0.14 with its axis labels, a logo 4 / 3 / 83 / 1.0.
+ */
+const MIN_PICTURE_WORDS = 8;
+const MIN_PICTURE_LINES = 2;
+const PICTURE_CONFIDENCE = 80;
+const MIN_TEXT_INK = 0.15;
 /** A masked box drops the OCR words overlapping it by more than this share of the word. */
 const MASKED_SHARE = 0.5;
 /** An unsure word this close to a masked box (pixels) is a sliver of a glyph the mask cut. */
@@ -188,6 +197,68 @@ export function inkBoxes(image: RgbaImage, boxes: readonly Box[]): Box[] {
   });
 }
 
+/** What tells a picture of text from a logo, a chart or a photograph that has a few words in it. */
+export interface PictureStats {
+  readonly words: number;
+  /** Mean confidence of the words, 0–100. */
+  readonly confidence: number;
+  /** Distinct text lines the words are on. */
+  readonly lines: number;
+  /** The share of the picture's ink that lies under the words' boxes. */
+  readonly inkInWords: number;
+  /** The share of the picture that is its commonest tone: paper, or a flat panel. */
+  readonly paper: number;
+}
+
+/** The statistics of `words` (those in `box`) over the picture's pixels in `image`. */
+export function pictureStats(image: RgbaImage, box: Box, words: readonly OcrWord[]): PictureStats {
+  const [x0, y0, x1, y1] = pixelsOf(image, box, 0);
+  const width = Math.max(0, x1 - x0);
+  const height = Math.max(0, y1 - y0);
+  const luminance = new Float32Array(width * height);
+  const bins = new Array<number>(16).fill(0);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const at = ((y0 + y) * image.width + x0 + x) * 4;
+      const value =
+        0.299 * (image.data[at] as number) +
+        0.587 * (image.data[at + 1] as number) +
+        0.114 * (image.data[at + 2] as number);
+      luminance[y * width + x] = value;
+      const bin = Math.min(15, value >> 4);
+      bins[bin] = (bins[bin] as number) + 1;
+    }
+  }
+  const common = Math.max(...bins);
+  const background = (bins.indexOf(common) + 0.5) * 16;
+  const covered = new Uint8Array(width * height);
+  for (const word of words) {
+    const pad = WORD_PAD * (word.y1 - word.y0);
+    const [wx0, wy0, wx1, wy1] = pixelsOf(
+      image,
+      [word.x0 - pad, word.y0 - pad, word.x1 + pad, word.y1 + pad],
+      0,
+    );
+    for (let y = Math.max(y0, wy0); y < Math.min(y1, wy1); y += 1) {
+      for (let x = Math.max(x0, wx0); x < Math.min(x1, wx1); x += 1) covered[(y - y0) * width + x - x0] = 1;
+    }
+  }
+  let ink = 0;
+  let under = 0;
+  for (let at = 0; at < luminance.length; at += 1) {
+    if (Math.abs((luminance[at] as number) - background) <= INK_CONTRAST) continue;
+    ink += 1;
+    under += covered[at] as number;
+  }
+  return {
+    words: words.length,
+    confidence: words.reduce((sum, word) => sum + word.confidence, 0) / Math.max(1, words.length),
+    lines: new Set(words.map((word) => word.line)).size,
+    inkInWords: ink === 0 ? 0 : under / ink,
+    paper: luminance.length === 0 ? 0 : common / luminance.length,
+  };
+}
+
 /** The pictures of a page big enough to hold text a reader would want: at least 2 % of the page. */
 export function textPictures(scene: PageScene): SceneImage[] {
   return scene.items.filter(
@@ -197,20 +268,30 @@ export function textPictures(scene: PageScene): SceneImage[] {
   );
 }
 
-/**
- * The words that lie in `box` (their centre does), when there are enough of them and they were
- * read surely: a few unsure words are what OCR makes of a photograph or a logo.
- */
-export function wordsInPicture(words: readonly OcrWord[], box: Box): OcrWord[] {
-  const inside = words.filter(
+/** The words whose centre lies in `box`. */
+export const wordsIn = (words: readonly OcrWord[], box: Box): OcrWord[] =>
+  words.filter(
     (word) =>
       (word.x0 + word.x1) / 2 >= box[0] &&
       (word.x0 + word.x1) / 2 <= box[2] &&
       (word.y0 + word.y1) / 2 >= box[1] &&
       (word.y0 + word.y1) / 2 <= box[3],
   );
-  const sure = inside.reduce((sum, word) => sum + word.confidence, 0) / Math.max(1, inside.length);
-  return inside.length >= MIN_PICTURE_WORDS && sure >= PICTURE_CONFIDENCE ? inside : [];
+
+/**
+ * The words in `box` when the picture is one of text (`pictureStats` says so): enough surely
+ * read words that cover most of its ink. A few words are what OCR makes of a logo, a chart's
+ * labels or a sign in a photograph, and those pictures stay pictures.
+ */
+export function wordsInPicture(image: RgbaImage, words: readonly OcrWord[], box: Box): OcrWord[] {
+  const inside = wordsIn(words, box);
+  const stats = pictureStats(image, box, inside);
+  const text =
+    stats.words >= MIN_PICTURE_WORDS &&
+    stats.lines >= MIN_PICTURE_LINES &&
+    stats.confidence >= PICTURE_CONFIDENCE &&
+    stats.inkInWords >= MIN_TEXT_INK;
+  return text ? inside : [];
 }
 
 /**

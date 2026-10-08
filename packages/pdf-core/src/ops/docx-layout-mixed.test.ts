@@ -19,6 +19,7 @@ import {
   isScanPage,
   layerTrusted,
   maskBoxes,
+  pictureStats,
   textPictures,
   visibleBoxes,
   wordsInPicture,
@@ -44,6 +45,33 @@ const SAMPLE = officeDocument([
     ].join('\n'),
   },
 ]);
+/**
+ * A tinted page of three lines of four words each, in Courier 12 (7.2 pt a letter): what a
+ * scanned letter shows, where the sample's dark panel is a picture that is not text.
+ */
+const PARAGRAPH = officeDocument([
+  {
+    content: [
+      '0.85 0.92 1 rg 0 0 400 500 re f',
+      ...[0, 1, 2].map((row) => line('courier', 12, 60, 400 - 20 * row, 'aaaa bbbb cccc dddd')),
+    ].join('\n'),
+  },
+]);
+/** Where the twelve words of the paragraph are (page points, y down), as tesseract would box them. */
+const paragraphWords = (confidence = 92): OcrWord[] =>
+  [0, 1, 2].flatMap((row) =>
+    [0, 1, 2, 3].map((column) => ({
+      ...word(
+        'abcd'[column]?.repeat(4) ?? '',
+        60 + 36 * column,
+        60 + 36 * column + 28.8,
+        91 + 20 * row,
+        103 + 20 * row,
+        confidence,
+      ),
+      line: row + 1,
+    })),
+  );
 /** A scan with nothing on it but the tint. */
 const BLANK = officeDocument([{ content: '0.85 0.92 1 rg 0 0 400 500 re f' }]);
 
@@ -162,7 +190,7 @@ describe('exact layout: real text over a scan', () => {
   it('keeps the typed header once as text and makes the scanned words text boxes', async () => {
     const seen: { png: Uint8Array; scale: number }[] = [];
     const result = await exportOffice(
-      await scanWith(HEADER),
+      await scanWith(HEADER, PARAGRAPH),
       {
         ...options,
         ocr: {
@@ -170,7 +198,7 @@ describe('exact layout: real text over a scan', () => {
           recognize: async (png, scale) => {
             seen.push({ png, scale });
             // the header's own word, which the masked render cannot show, is among them
-            return [...scanned(), word('Typed', 60, 95, 20, 34)];
+            return [...paragraphWords(), word('Typed', 60, 95, 20, 34)];
           },
         },
       },
@@ -186,7 +214,7 @@ describe('exact layout: real text over a scan', () => {
     // Each box is written twice (DrawingML and its fallback), so once as text is twice here.
     expect(occurrences(body, 'Typed')).toBe(2);
     expect(occurrences(body.replaceAll(' ', ''), 'Typedheader')).toBe(2);
-    expect(occurrences(body.replaceAll(' ', ''), 'Helloworldtoday')).toBe(2);
+    expect(occurrences(body.replaceAll(' ', ''), 'aaaabbbbccccdddd')).toBe(6);
     expect(result.notes.find((note) => note.key === 'op.note.exportOffice.ocrMixedPages')?.params).toEqual({
       pages: '1',
     });
@@ -195,6 +223,25 @@ describe('exact layout: real text over a scan', () => {
     // The scan stays behind as a picture, the page colour as a shape.
     const zip = await JSZip.loadAsync(result.file.bytes);
     expect(Object.keys(zip.files).some((name) => name.startsWith('word/media/'))).toBe(true);
+  });
+
+  it('leaves a page as it was when its picture is not text: a diagram, a few words of a logo, unsure reads', async () => {
+    // the sample's dark panel and tint lie under these "words", so almost none of the picture's ink is text
+    const diagram = paragraphWords();
+    for (const found of [
+      diagram,
+      paragraphWords().slice(0, 7),
+      paragraphWords(60),
+      paragraphWords().slice(0, 4),
+    ]) {
+      const result = await exportOffice(
+        await scanWith(HEADER),
+        { ...options, ocr: { lowConfidence: 0.9, recognize: async () => found } },
+        run,
+      );
+      expect(occurrences(await written(result.file.bytes), 'Typed')).toBe(2);
+      expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrMixedPages')).toBe(false);
+    }
   });
 
   it('leaves a page as it was when the picture holds nothing but the typed text', async () => {
@@ -294,19 +341,22 @@ describe('exact layout: real text over a scan', () => {
 });
 
 describe('exact layout: text inside a picture on a page of vector text', () => {
-  /** The sample's picture at half size, in the lower middle of the page: x 100–300, y 150–400 from the top. */
+  /** The paragraph's page at half size, in the lower middle of the page: x 100–300, y 150–400 from the top. */
   const placement = 'q 200 0 0 250 100 100 cm';
-  /** Where the picture's line of text lies on the page (the sample's 60…165 × 89…103 halved, shifted by the picture's corner). */
-  const inPicture = (confidence = 90): OcrWord[] => [
-    word('Hello', 130, 146, 194, 201, confidence),
-    word('world', 148, 165, 194, 201, confidence),
-    word('today', 167, 182, 194, 201, confidence),
-  ];
+  /** The twelve words of the picture, on the page (the picture's 0.5 scale and corner). */
+  const inPicture = (confidence = 92): OcrWord[] =>
+    paragraphWords(confidence).map((entry) => ({
+      ...entry,
+      x0: 100 + entry.x0 / 2,
+      x1: 100 + entry.x1 / 2,
+      y0: 150 + entry.y0 / 2,
+      y1: 150 + entry.y1 / 2,
+    }));
 
   it('makes the words of the picture text boxes, keeps the typed header once and the picture behind', async () => {
     const seen: Uint8Array[] = [];
     const result = await exportOffice(
-      await scanWith(HEADER, SAMPLE, placement),
+      await scanWith(HEADER, PARAGRAPH, placement),
       {
         ...options,
         ocr: {
@@ -323,7 +373,7 @@ describe('exact layout: text inside a picture on a page of vector text', () => {
     expect(seen).toHaveLength(1);
     const body = (await written(result.file.bytes)).replaceAll(' ', '');
     expect(occurrences(body, 'Typedheader')).toBe(2);
-    expect(occurrences(body, 'Helloworldtoday')).toBe(2);
+    expect(occurrences(body, 'aaaabbbbccccdddd')).toBe(6);
     expect(body).not.toContain('stray');
     expect(result.notes.find((note) => note.key === 'op.note.exportOffice.ocrMixedPages')?.params).toEqual({
       pages: '1',
@@ -333,14 +383,16 @@ describe('exact layout: text inside a picture on a page of vector text', () => {
     expect(Object.keys(zip.files).some((name) => name.startsWith('word/media/'))).toBe(true);
   });
 
-  it('leaves the page as it was for a picture without ink, unsure words, too few words, or no recogniser', async () => {
+  it('leaves the picture as it was when it has no ink, few or unsure words, or ink that is not text', async () => {
     let calls = 0;
     const cases: [Promise<Uint8Array>, () => Promise<OcrWord[]>][] = [
       [scanWith(HEADER, BLANK, placement), async () => inPicture()],
-      [scanWith(HEADER, SAMPLE, placement), async () => inPicture(40)],
-      [scanWith(HEADER, SAMPLE, placement), async () => inPicture().slice(0, 2)],
+      [scanWith(HEADER, PARAGRAPH, placement), async () => inPicture(60)],
+      [scanWith(HEADER, PARAGRAPH, placement), async () => inPicture().slice(0, 7)],
+      // a logo or a chart: words, but the ink is the emblem and the bars (the sample's dark panel)
+      [scanWith(HEADER, SAMPLE, placement), async () => inPicture()],
       [
-        scanWith(HEADER, SAMPLE, placement),
+        scanWith(HEADER, PARAGRAPH, placement),
         async () => {
           throw new Error('the language pack could not be fetched');
         },
@@ -353,9 +405,8 @@ describe('exact layout: text inside a picture on a page of vector text', () => {
           ...options,
           ocr: {
             lowConfidence: 0.9,
-            recognize: async (...args) => {
+            recognize: async () => {
               calls += 1;
-              void args;
               return recognize();
             },
           },
@@ -364,11 +415,11 @@ describe('exact layout: text inside a picture on a page of vector text', () => {
       );
       const body = (await written(result.file.bytes)).replaceAll(' ', '');
       expect(occurrences(body, 'Typedheader')).toBe(2);
-      expect(body).not.toContain('Helloworldtoday');
+      expect(body).not.toContain('aaaabbbb');
       expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrMixedPages')).toBe(false);
     }
     // the blank picture is not even read
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
   });
 });
 
@@ -550,21 +601,57 @@ describe('mixed page helpers', () => {
     expect(textPictures(await sceneOf(await SAMPLE))).toHaveLength(0);
   });
 
-  it('takes the words of a picture only when there are enough and they are sure', () => {
-    const box: [number, number, number, number] = [100, 100, 200, 200];
-    const at = (x: number, confidence: number) => word('w', x, x + 10, 140, 150, confidence);
-    const sure = [at(110, 90), at(130, 80), at(150, 70)];
-    expect(wordsInPicture([...sure, at(300, 90)], box)).toEqual(sure);
-    expect(wordsInPicture([at(110, 90), at(130, 80), at(300, 90)], box)).toEqual([]);
-    expect(wordsInPicture([at(110, 50), at(130, 50), at(150, 50)], box)).toEqual([]);
-    expect(wordsInPicture([], box)).toEqual([]);
-    // above, below and left of the box
+  /** A white page of 100 × 100 with black bars where text is: `rows` rows of ink 4 high, x 10…90. */
+  const barred = (rows: number): RgbaImage => {
+    const page = image(100, 100, [255, 255, 255]);
+    for (let row = 0; row < rows; row += 1)
+      for (let y = 10 + 10 * row; y < 14 + 10 * row; y += 1)
+        for (let x = 10; x < 90; x += 1) page.data.set([0, 0, 0], (y * 100 + x) * 4);
+    return page;
+  };
+  const wordOn = (row: number, column: number, confidence = 90): OcrWord => ({
+    ...word('w', 10 + 10 * column, 18 + 10 * column, 8 + 10 * row, 16 + 10 * row, confidence),
+    line: row,
+  });
+  const wholePage: [number, number, number, number] = [0, 0, 100, 100];
+
+  it('measures a picture: the words, their lines and confidence, and how much of the ink is under them', () => {
+    const rows = [0, 1];
+    const words = rows.flatMap((row) => [0, 1, 2, 3, 4, 5, 6, 7].map((column) => wordOn(row, column)));
+    const stats = pictureStats(barred(2), wholePage, words);
+    expect(stats).toMatchObject({ words: 16, lines: 2, confidence: 90 });
+    expect(stats.inkInWords).toBeCloseTo(1, 1);
+    expect(stats.paper).toBeGreaterThan(0.8);
+    // the same words over ink that is elsewhere
+    expect(pictureStats(barred(6), wholePage, words).inkInWords).toBeLessThan(0.4);
+    // no words, no ink, a box off the image
+    expect(pictureStats(image(100, 100, [255, 255, 255]), wholePage, []).inkInWords).toBe(0);
+    expect(pictureStats(barred(2), [200, 200, 300, 300], []).paper).toBe(0);
+  });
+
+  it('takes the words of a picture only when there are enough, on lines, sure, and over most of its ink', () => {
+    const rows = [0, 1];
+    const eight = rows.flatMap((row) => [0, 1, 2, 3].map((column) => wordOn(row, column)));
+    expect(wordsInPicture(barred(2), eight, wholePage)).toEqual(eight);
+    // a word outside the box is not taken
+    const outside = { ...wordOn(0, 0), x0: 300, x1: 310 };
+    expect(wordsInPicture(barred(2), [...eight, outside], wholePage)).toEqual(eight);
+    // seven words, unsure words, one line, ink elsewhere
+    expect(wordsInPicture(barred(2), eight.slice(0, 7), wholePage)).toEqual([]);
     expect(
       wordsInPicture(
-        [word('w', 110, 120, 50, 60), word('w', 110, 120, 250, 260), word('w', 10, 20, 140, 150)],
-        box,
+        barred(2),
+        eight.map((entry) => ({ ...entry, confidence: 70 })),
+        wholePage,
       ),
     ).toEqual([]);
+    const oneLine = [0, 1, 2, 3, 4, 5, 6, 7].map((column) => wordOn(0, column));
+    expect(wordsInPicture(barred(2), oneLine, wholePage)).toEqual([]);
+    expect(wordsInPicture(barred(8), eight, wholePage)).toEqual([]);
+    expect(wordsInPicture(barred(2), [], wholePage)).toEqual([]);
+    // above, below and left of the box
+    const away = [word('w', 110, 120, 50, 60), word('w', 110, 120, 250, 260), word('w', 10, 20, 140, 150)];
+    expect(wordsInPicture(barred(2), away, [100, 100, 200, 200])).toEqual([]);
   });
 
   it('drops words on a masked box and unsure slivers next to one, and keeps the rest', () => {

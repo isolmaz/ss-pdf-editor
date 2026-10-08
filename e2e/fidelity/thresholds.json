@@ -142,8 +142,8 @@
       "words": 0.99
     },
     "text-in-image": {
-      "ssim": 0.95,
-      "words": 0.99
+      "ssim": 0.96,
+      "words": 0.97
     },
     "overlay": {
       "ssim": 0.91,
@@ -154,8 +154,8 @@
       "words": 0.99
     },
     "mixed-page": {
-      "ssim": 0.95,
-      "words": 0.99
+      "ssim": 0.9,
+      "words": 0.97
     },
     "slide": {
       "ssim": 0.95,

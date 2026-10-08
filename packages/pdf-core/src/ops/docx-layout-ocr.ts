@@ -66,8 +66,6 @@ export interface OcrOptions {
 const MIN_DPI = 150;
 const MAX_DPI = 300;
 const DEFAULT_DPI = 200;
-/** A mixed page whose scanned words are read with a lower mean confidence than this (0–100) is a picture, not text. */
-const MIXED_CONFIDENCE = 50;
 /** Words from a text layer are as sure as the layer's author. */
 const LAYER_CONFIDENCE = 100;
 
@@ -356,7 +354,7 @@ export async function readPictureText(
   const found = new Map<SceneImage, OcrWord[]>();
   for (const picture of candidates) {
     if (!inked.includes(picture.box)) continue;
-    const inside = wordsInPicture(text, picture.box);
+    const inside = wordsInPicture(read.image, text, picture.box);
     if (inside.length > 0) found.set(picture, inside);
   }
   if (found.size === 0) return null;
@@ -409,12 +407,14 @@ export async function readScanPage(
   const useLayer = layer.length > 0 && trusted;
   const scan = renderScan(mupdf, page, scanDpi(scene));
   const masked = maskBoxes(scan.image, visible);
-  if (mixed && !useLayer && inkBoxes(masked, pictureBoxes(scene)).length === 0) return null;
+  const inked = inkBoxes(masked, pictureBoxes(scene));
+  if (mixed && !useLayer && inked.length === 0) return null;
   let image = masked;
   let words: readonly OcrWord[] = layer;
   let duplicates: readonly OcrWord[] = [];
   let rules: readonly Rule[] = [];
   let reread = false;
+  let fromOcr = false;
   if (!useLayer && ocr !== null) {
     throwIfAborted(signal);
     const read = await readWords(mupdf, masked, mixed ? pngOf(mupdf, masked) : scan.png, ocr, signal);
@@ -422,13 +422,15 @@ export async function readScanPage(
     if (read !== null) {
       ({ words, duplicates, rules, image } = read);
       reread = layer.length > 0;
+      fromOcr = true;
     }
   }
   if (mixed) {
     words = dropMasked(words, visible, image.scale);
+    // Only a page whose pictures hold text is rebuilt: with a logo or a chart in them it stays as it was.
     if (
       words.length === 0 ||
-      words.reduce((sum, word) => sum + word.confidence, 0) / words.length < MIXED_CONFIDENCE
+      (fromOcr && !inked.some((box) => wordsInPicture(image, words, box).length > 0))
     ) {
       return null;
     }
