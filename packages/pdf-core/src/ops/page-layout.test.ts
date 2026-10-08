@@ -780,3 +780,68 @@ describe('tables from spacing, in the cases that are not tables', () => {
     ]);
   });
 });
+
+describe('lattice tables with missing rules', () => {
+  const rule = (x0: number, y0: number, x1: number, y1: number) => `${x0} ${y0} m ${x1} ${y1} l S`;
+
+  it('completes the grid at an outer border that is not drawn, and leaves those sides blank', async () => {
+    // Two row rules and one column rule that runs past them: the table has no frame.
+    const bytes = await fixturePage(
+      [
+        ...pieces(380, [58, 'A'], [158, 'B']),
+        ...pieces(350, [58, 'C'], [158, 'D']),
+        ...pieces(320, [58, 'E'], [158, 'F']),
+      ],
+      [STROKE, rule(50, 370, 250, 370), rule(50, 340, 250, 340), rule(150, 400, 150, 310)].join('\n'),
+    );
+    const [table] = findTables((await layoutOf(bytes)).layout);
+    expect(table?.xs.map(Math.round)).toEqual([50, 150, 250]);
+    expect(table?.ys.map(Math.round)).toEqual([100, 130, 160, 190]);
+    expect(cellTexts(table ?? { cells: [] })).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
+    const sides = (text: string) => table?.cells.find((cell) => cell.text === text)?.borders;
+    // The first row has no rule above it, the middle one has both, the last none below.
+    expect(sides('A')).toEqual({ top: false, bottom: true, left: false, right: true });
+    expect(sides('D')).toEqual({ top: true, bottom: true, left: true, right: false });
+    expect(sides('E')).toEqual({ top: true, bottom: false, left: false, right: true });
+  });
+
+  it('keeps the grid of a table whose rules reach its edges, without adding a line', async () => {
+    const [table] = findTables((await layoutOf(await reportPage())).layout);
+    expect(table?.xs).toHaveLength(4);
+    expect(table?.ys).toHaveLength(4);
+    expect(table?.cells.every((cell) => Object.values(cell.borders ?? {}).every(Boolean))).toBe(true);
+  });
+
+  it('does not merge a cell across a missing rule when that makes a hole in another merged cell', async () => {
+    const [x0, x1, x2, x3] = TABLE_XS;
+    const [y0, y1, y2, y3] = TABLE_YS;
+    const bytes = await fixturePage(
+      [
+        ...pieces(360, [58, 'A'], [158, 'B'], [258, 'C']),
+        ...pieces(330, [58, 'D'], [258, 'F']),
+        ...pieces(300, [58, 'G'], [158, 'H'], [258, 'I']),
+      ],
+      [
+        STROKE,
+        // The rule under B is missing, so B spans two rows; the rule between D and E is missing too.
+        rule(x0, y0, x3, y0),
+        `${x0} ${y1} m ${x1} ${y1} l S ${x2} ${y1} m ${x3} ${y1} l S`,
+        rule(x0, y2, x3, y2),
+        rule(x0, y3, x3, y3),
+        rule(x0, y0, x0, y3),
+        `${x1} ${y0} m ${x1} ${y1} l S ${x1} ${y2} m ${x1} ${y3} l S`,
+        rule(x2, y0, x2, y3),
+        rule(x3, y0, x3, y3),
+      ].join('\n'),
+    );
+    const [table] = findTables((await layoutOf(bytes)).layout);
+    const spans = (text: string) => {
+      const cell = table?.cells.find((candidate) => candidate.text === text);
+      return [cell?.rowSpan, cell?.columnSpan];
+    };
+    expect(spans('B')).toEqual([2, 1]);
+    expect(spans('D')).toEqual([1, 1]);
+    // Cells tile the grid: 3 × 3 minus the one under B.
+    expect(table?.cells).toHaveLength(8);
+  });
+});

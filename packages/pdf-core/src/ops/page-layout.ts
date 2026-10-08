@@ -79,6 +79,13 @@ export interface TableCell {
   readonly columnSpan: number;
   readonly box: Box;
   readonly text: string;
+  /** Which sides of the cell are drawn (a ruled table only): a side without a rule along it is left blank. */
+  readonly borders?: {
+    readonly top: boolean;
+    readonly right: boolean;
+    readonly bottom: boolean;
+    readonly left: boolean;
+  };
 }
 
 export interface LayoutTable {
@@ -724,14 +731,56 @@ function cluster(values: readonly number[]): number[] {
   return out.map((group) => group.reduce((sum, value) => sum + value, 0) / group.length);
 }
 
-function covers(rule: Ruling, horizontal: boolean, at: number, from: number, to: number): boolean {
+/** The share of a cell edge a rule has to run along for the cell to be split from its neighbour. */
+const SPLIT_SIDE = 0.6;
+/** The share of a cell side that rules have to cover for the side to be drawn. */
+const DRAWN_SIDE = 0.75;
+/** A table's outer edge further than this from its outermost rule is a border the page does not draw. */
+const OUTER_GAP = 6;
+
+function covers(
+  rule: Ruling,
+  horizontal: boolean,
+  at: number,
+  from: number,
+  to: number,
+  share = SPLIT_SIDE,
+): boolean {
   const position = horizontal ? rule.y0 : rule.x0;
   if (Math.abs(position - at) > SNAP * 2) return false;
   const start = horizontal ? rule.x0 : rule.y0;
   const end = horizontal ? rule.x1 : rule.y1;
   // The rule has to run along most of the cell edge, not just touch it.
   const overlap = Math.min(end, to) - Math.max(start, from);
-  return overlap >= (to - from) * 0.6;
+  return overlap >= (to - from) * share;
+}
+
+/**
+ * Completes a rule group's grid where its outer border is not drawn: the group's box is
+ * the extent of all its rules, and a side of it that no row or column line lies near gets an
+ * undrawn line, so the cells along it are cells of the grid (a column of a form whose rules
+ * stop at the first row line, a table framed on two sides only). The lines are added to
+ * `xs` and `ys` in place; no rule is added, so the cells' sides there are drawn blank.
+ */
+function completeOuterEdges(
+  horizontal: readonly Ruling[],
+  vertical: readonly Ruling[],
+  xs: number[],
+  ys: number[],
+): void {
+  const all = [...horizontal, ...vertical];
+  const x0 = Math.min(...all.map((rule) => rule.x0));
+  const x1 = Math.max(...all.map((rule) => rule.x1));
+  const y0 = Math.min(...all.map((rule) => rule.y0));
+  const y1 = Math.max(...all.map((rule) => rule.y1));
+  if (xs.length > 0) {
+    if ((xs[0] as number) - x0 > OUTER_GAP) xs.unshift(x0);
+    if (x1 - (xs[xs.length - 1] as number) > OUTER_GAP) xs.push(x1);
+  }
+  if (ys.length > 0) {
+    if ((ys[0] as number) - y0 > OUTER_GAP) ys.unshift(y0);
+    if (y1 - (ys[ys.length - 1] as number) > OUTER_GAP) ys.push(y1);
+  }
 }
 
 function textIn(lines: readonly LayoutLine[], box: Box): string {
@@ -799,6 +848,7 @@ export function findTables(layout: PageLayout): LayoutTable[] {
   for (const group of groups.values()) {
     const ys = cluster(group.h.map((rule) => rule.y0));
     const xs = cluster(group.v.map((rule) => rule.x0));
+    completeOuterEdges(group.h, group.v, xs, ys);
     if (xs.length < 3 || ys.length < 2) continue;
     const rows = ys.length - 1;
     const columns = xs.length - 1;
@@ -827,11 +877,32 @@ export function findTables(layout: PageLayout): LayoutTable[] {
         ) {
           rowSpan += 1;
         }
+        // A merged region is a rectangle: one that runs into a cell already placed is a
+        // missing rule that does not bound a whole region, and its cell stays single.
+        let clash = false;
+        for (let r = row; r < row + rowSpan; r += 1) {
+          for (let c = column; c < column + columnSpan; c += 1) {
+            if ((r !== row || c !== column) && covered.has(`${r}:${c}`)) clash = true;
+          }
+        }
+        if (clash) {
+          columnSpan = 1;
+          rowSpan = 1;
+        }
         for (let r = row; r < row + rowSpan; r += 1) {
           for (let c = column; c < column + columnSpan; c += 1) covered.add(`${r}:${c}`);
         }
-        const box: Box = [left, top, right, ys[row + rowSpan] as number];
-        cells.push({ row, column, rowSpan, columnSpan, box, text: textIn(lines, box) });
+        const foot = ys[row + rowSpan] as number;
+        const box: Box = [left, top, right, foot];
+        const side = (horizontal: boolean, at: number, from: number, to: number) =>
+          (horizontal ? group.h : group.v).some((rule) => covers(rule, horizontal, at, from, to, DRAWN_SIDE));
+        const borders = {
+          top: side(true, top, left, right),
+          bottom: side(true, foot, left, right),
+          left: side(false, left, top, foot),
+          right: side(false, right, top, foot),
+        };
+        cells.push({ row, column, rowSpan, columnSpan, box, text: textIn(lines, box), borders });
       }
     }
     // A frame around one paragraph, or rules under headings, is not a table.
