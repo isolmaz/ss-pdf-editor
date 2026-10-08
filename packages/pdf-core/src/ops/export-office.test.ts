@@ -1187,6 +1187,94 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
     expect(texts.get('after the cards') ?? 0).toBeGreaterThanOrEqual(foot - 0.1);
   });
 
+  it('keeps the text after two drawings side by side under the taller one, whichever is first', async () => {
+    const drawings = (left: boolean) => {
+      const tall = [circle(105, 290, 95), courier(80, 365, 'LA1'), courier(80, 345, 'LA2')];
+      const short = [circle(285, 340, 35), courier(270, 355, 'RB1'), courier(270, 335, 'RB2')];
+      // The taller drawing is 115..305 pt from the top; the text is 5 pt under its foot.
+      return [...(left ? [...tall, ...short] : [...short, ...tall]), courier(40, 181, 'after the cards')];
+    };
+    for (const left of [true, false]) {
+      const bytes = await officeDocument([{ content: drawings(left).join('\n') }]);
+      const { file } = await exportOffice(bytes, docxOptions, run);
+      const { pictures, texts } = flowOf(await documentXml(file.bytes));
+      expect(pictures).toHaveLength(2);
+      const tallest = pictures.find((entry) => entry.height === 190);
+      expect(tallest).toBeDefined();
+      const foot = (tallest?.top ?? 0) + 190;
+      // At or under the tallest drawing's foot, a clamped gap away from it.
+      expect(texts.get('after the cards') ?? 0).toBeGreaterThanOrEqual(foot);
+      expect(texts.get('after the cards') ?? 0).toBeLessThanOrEqual(foot + 48 + 1.1);
+      // Each drawing keeps its labels on it, 10 and 30 pt under its top.
+      for (const [card, names] of [
+        [tallest, ['LA1', 'LA2']],
+        [pictures.find((entry) => entry.height === 70), ['RB1', 'RB2']],
+      ] as const) {
+        names.forEach((name, row) => {
+          near((texts.get(name) ?? 0) - (card?.top ?? 0), 10 + row * 20 + 0.7);
+        });
+      }
+    }
+  });
+
+  it('keeps the text after three drawings in a row under the tallest, and each label on its own drawing', async () => {
+    // Three cards 100 pt apart: 90, 190 and 120 pt tall, the tallest in the middle, two labels each.
+    const card = (x: number, height: number, name: string) => [
+      circle(x + height / 2, 500 - 120 - height / 2, height / 2),
+      courier(x + height / 2 - 12, 500 - 140, `${name}1`),
+      courier(x + height / 2 - 12, 500 - 160, `${name}2`),
+    ];
+    const bytes = await officeDocument([
+      {
+        size: [700, 500],
+        content: [
+          ...card(10, 90, 'A'),
+          ...card(120, 190, 'B'),
+          ...card(330, 120, 'C'),
+          courier(40, 500 - 320, 'after the cards'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const { pictures, texts } = flowOf(await documentXml(file.bytes));
+    expect(pictures.map((entry) => entry.height)).toEqual([90, 190, 120]);
+    const [first, second, third] = pictures;
+    // The labels sit where the PDF has them, 20 and 40 pt under the top of a card (less the ascent).
+    for (const [name, card] of [
+      ['A', first],
+      ['B', second],
+      ['C', third],
+    ] as const) {
+      near((texts.get(`${name}1`) ?? 0) - (card?.top ?? 0), 140 - 120 - ASCENT);
+      near((texts.get(`${name}2`) ?? 0) - (card?.top ?? 0), 160 - 120 - ASCENT);
+    }
+    const foot = (second?.top ?? 0) + 190;
+    expect(texts.get('after the cards') ?? 0).toBeGreaterThanOrEqual(foot);
+    expect(texts.get('after the cards') ?? 0).toBeLessThanOrEqual(foot + 48 + 1.1);
+  });
+
+  it("puts the text of the next column under a drawing, not over it, when it comes after the drawing's own text", async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(40, 470, 'Intro'),
+          circle(100, 120, 60),
+          courier(80, 160, 'Chart'),
+          ...Array.from({ length: 3 }, (_, index) =>
+            courier(230, 470 - index * 14, `Right line ${index + 1}`),
+          ),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const { pictures, texts } = flowOf(await documentXml(file.bytes));
+    expect(pictures).toHaveLength(1);
+    expect(texts.get('Chart') ?? 0).toBeGreaterThan(pictures[0]?.top ?? 0);
+    expect(texts.get('Right line 1 Right line 2 Right line 3') ?? 0).toBeGreaterThanOrEqual(
+      (pictures[0]?.top ?? 0) + 120,
+    );
+  });
+
   it('keeps a stamp over a corner of two lines of a paragraph where it is read, inline, not behind the last item of the page', async () => {
     const bytes = await officeDocument([
       {

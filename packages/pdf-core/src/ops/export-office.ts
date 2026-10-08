@@ -999,29 +999,41 @@ function docxPage(
   const out: string[] = [];
   // `previousBottom` is where the flow stands, in the PDF's own coordinates. Gaps are clamped to
   // MAX_GAP, except for the run of items that stand on a picture behind the text, which keep the
-  // text on it where the PDF has it, and the first item after the run, which starts at or under the
-  // picture's foot when it is below it. An item that is not on the picture (another column's)
-  // ends the run and is laid out like any other.
+  // text on it where the PDF has it. The first item after the run starts at or under the feet of
+  // the run's pictures, whether it is below them in the PDF or beside them (another column's: the
+  // flow has no beside, and would print it over the picture). An item that is on none of them
+  // ends the run.
   let previousBottom = margins.top;
   let active: Box | null = null;
-  const planned = items.map((item) => {
+  // The lowest foot of the run's pictures, in the frame of the newest one; 0 outside a run.
+  let floor = 0;
+  const planned = items.map((item, index) => {
     const top = item.box[1];
     const standing = active !== null && !isBehind(item) && coveredBy(item.box, active) >= STANDS_ON;
-    const floor = active === null || standing ? 0 : active[3];
     let before = clamp(top - previousBottom, 0, MAX_GAP);
     if (standing) before = Math.max(0, top - previousBottom);
-    else if (top >= floor - 1 && floor > 0) {
+    // A picture beside the run's (its holder is not below their feet) starts a row of its own band.
+    else if (floor > 0 && (!isBehind(item) || top >= floor - 1)) {
       before = Math.max(0, floor - previousBottom) + clamp(top - Math.max(previousBottom, floor), 0, MAX_GAP);
     }
     if (isBehind(item)) {
-      // The holder is one point high and stands where the PDF has the picture.
+      // The holder is one point high; the first item on its picture follows it, as far below the
+      // picture's top in the flow as it is in the PDF, so the picture hangs `offset` from the
+      // holder. The feet of the pictures before it, from the holder, are seen from that offset.
+      const stands = items[index + 1] as Item;
+      const lead = stands.box[1];
+      const offset = 1 + Math.max(0, lead - (Math.max(previousBottom, top) + 1)) - (lead - top);
+      floor = Math.max(item.box[3], floor === 0 ? 0 : top + floor - previousBottom - before - offset);
       previousBottom = Math.max(previousBottom, top) + 1;
       active = item.box;
     } else {
       // On the picture the flow follows the PDF from item to item, whatever column it was
       // in before; elsewhere it only moves down.
       previousBottom = standing ? item.box[3] : Math.max(previousBottom, item.box[3]);
-      if (!standing) active = null;
+      if (!standing) {
+        active = null;
+        floor = 0;
+      }
     }
     return { item, before };
   });

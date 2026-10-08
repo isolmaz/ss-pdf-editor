@@ -436,9 +436,11 @@ had to stay green. The moves, and the defects they fixed on the way:
     it included. When the items on a drawing are not one run in the flow (another drawing's text
     comes between them) the drawing is an inline picture before the first of them instead, and
     no text lands on white paper; a picture no item stands on (a stamp over a corner of two lines)
-    stays inline where MuPDF read it. Only that run of items, and the first item after it when it
-    lies below the picture, are laid out without the `MAX_GAP` clamp; an item that is not on the
-    picture (another column's) ends the run, so the gaps of a two-column page stay clamped. Gaps
+    stays inline where MuPDF read it. Only that run of items is laid out without the `MAX_GAP`
+    clamp. The first item after the run starts at or under the feet of the run's pictures (those of
+    drawings side by side are all kept, each seen from the newest holder), also when it is another
+    column's and beside them in the PDF, since the flow would print it over the drawing; its gap
+    below the feet is clamped again. Gaps
     inside the drawing's height are not clamped to `MAX_GAP`, and the first item below it starts
     at or under its foot. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
