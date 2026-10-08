@@ -646,6 +646,16 @@ had to stay green. The moves, and the defects they fixed on the way:
             the first reading's when both are the same length. Each read sets its own mode for
             that call only (8 for a word, 3 for an export page) and the shared worker is left in
             the engine's default single-block mode (6), which "Make searchable" reads in.
+         4. *Other readings.* What lost in 2 and 3 stays with the word as `OcrWord.alternatives`: the
+            first read when a reread or the capitals replaced it, and a reread that was not taken
+            (another shape, or less sure). Once the page's face is known (the open family's regular
+            or the stand-in's base-14 face), `settleReadings` (`docx-ocr-font.ts`, `chooseReadings`
+            in `ocr-font-match.ts`) draws every reading of such a word at its box and size and
+            lays it over the ink of the scan like the family match does (shape, with the proportions
+            of the ink box, so a reading of another length cannot be stretched into place); a reading
+            other than the settled one replaces it only when it scores 0.15 higher
+            (`READING_MARGIN`: "9020" for "%20" where the scan has a 9, not "i" for "l"), and
+            the page is then set again. Only words the second look read have alternatives.
        - *Rules for what Tesseract returned.* `dropDuplicates` keeps, of two words overlapping by
          more than 30 % of the smaller box (one word read at two segmentations), the one whose
          box is larger (the surer when equal); the dropped ones are still erased from the
@@ -724,6 +734,9 @@ had to stay green. The moves, and the defects they fixed on the way:
          a speck (more than 1.3 × the size the word widths give) is set at 1.1 × the width-based
          size; a line within 0.88–1.1 × of its paragraph's upper-quartile size is set at that
          size, and sizes are rounded to half-points.
+         A paragraph's box starts where the middle of its lines' baselines says (each line's
+         baseline less its index × the paragraph's pitch, the median of them), so one line whose
+         baseline Tesseract misjudged does not carry the box.
          The colour is the median of the word's ink pixels (those at least 60 % as far from the
          local background as its strongest pixel).
          *Bold* is per word. The stroke of a word is the mean of the shortest 60 % of its

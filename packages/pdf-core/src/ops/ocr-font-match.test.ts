@@ -9,8 +9,8 @@ import { readFileSync } from 'node:fs';
 import type { Font } from 'mupdf';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadMupdf, type Mupdf } from '../engines/mupdf';
-import { type FaceCandidate, type MatchWord, matchFamily } from './ocr-font-match';
-import { renderScan } from './ocr-font-match.fixtures';
+import { chooseReadings, type FaceCandidate, type MatchWord, matchFamily } from './ocr-font-match';
+import { renderScan, renderWord } from './ocr-font-match.fixtures';
 
 const NOTO = new Uint8Array(
   readFileSync(new URL('../../../../public/fonts/noto/NotoSans-Regular.ttf', import.meta.url)),
@@ -123,5 +123,71 @@ describe('matchFamily', () => {
     expect(lone.family).toBe('Arial');
     expect(lone.runnerUp).toBeNull();
     expect(() => matchFamily(mupdf, image, words, [])).toThrow(RangeError);
+  });
+});
+
+describe('chooseReadings', () => {
+  const choose = (
+    scanned: string,
+    text: string,
+    alternatives: readonly string[],
+    dpi = 200,
+    name = 'Arial',
+  ) => {
+    const font = faces.get(name) as Font;
+    const { image, box } = renderWord(mupdf, font, scanned, { dpi, size: 11 });
+    return chooseReadings(mupdf, image, [{ text, alternatives, box, size: 11 }], font)[0];
+  };
+
+  it('takes the reading whose drawing lies on the ink: 9020 for a scan that says so, %20 for one that does', () => {
+    for (const dpi of [150, 200]) {
+      expect(choose('9020', '%20', ['9020'], dpi)).toBe('9020');
+      expect(choose('%20', '9020', ['%20'], dpi)).toBe('%20');
+    }
+  });
+
+  it("chooses among several readings, in the page's own face", () => {
+    expect(choose('world', 'wor1d', ['worid', 'world', 'wor1d.'])).toBe('world');
+    expect(choose('HTML5', 'HTMLS', ['HTML5'], 200, 'Arial')).toBe('HTML5');
+    expect(choose('Hamburg', 'Hamburg', ['Hamburq', 'Harnburg'], 150, 'Times New Roman')).toBe('Hamburg');
+    expect(choose('Hello', 'He11o', ['Hello'], 200, 'Noto Sans')).toBe('Hello');
+  });
+
+  it('keeps the settled reading when no other beats it by the margin', () => {
+    // m drawn for rn: at 150 dpi the two are too alike for the margin
+    expect(choose('modern', 'rnodern', ['modern'], 150)).toBe('rnodern');
+    // the same word twice, or the settled one is right
+    expect(choose('modern', 'modern', ['modern'])).toBe('modern');
+    expect(choose('modern', 'modern', ['rnodern', 'madern'])).toBe('modern');
+  });
+
+  it('keeps the settled reading when the face lacks a glyph of it, or of the others, and when the paper is blank', () => {
+    const font = faces.get('Arial') as Font;
+    const { image, box } = renderWord(mupdf, font, 'world', { dpi: 200, size: 11 });
+    const read = (text: string, alternatives: readonly string[], on = image) =>
+      chooseReadings(mupdf, on, [{ text, alternatives, box, size: 11 }], font)[0];
+    // the settled reading cannot be drawn: it stays, whatever the others
+    expect(read('漢字', ['world'])).toBe('漢字');
+    // an alternative that cannot be drawn is not a candidate
+    expect(read('wor1d', ['漢字'])).toBe('wor1d');
+    expect(read('wor1d', ['漢字', 'world'])).toBe('world');
+    // no ink to judge by
+    const blank = { ...image, data: new Uint8Array(image.data.length).fill(255) };
+    expect(read('wor1d', ['world'], blank)).toBe('wor1d');
+  });
+
+  it('answers for each word in turn', () => {
+    const font = faces.get('Arial') as Font;
+    const first = renderWord(mupdf, font, '9020', { dpi: 200, size: 11 });
+    const out = chooseReadings(
+      mupdf,
+      first.image,
+      [
+        { text: '%20', alternatives: ['9020'], box: first.box, size: 11 },
+        { text: '9020', alternatives: [], box: first.box, size: 11 },
+      ],
+      font,
+    );
+    expect(out).toEqual(['9020', '9020']);
   });
 });

@@ -43,6 +43,8 @@ export type OcrWord = {
   readonly size?: number;
   /** The baseline of the word's line in page points, when tesseract found one. */
   readonly baseline?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  /** The other readings of the word the second look saw (the first read, a reread that was not adopted): the ink decides between them and `text` (`ocr-font-match.ts`). */
+  readonly alternatives?: readonly string[];
 };
 
 /**

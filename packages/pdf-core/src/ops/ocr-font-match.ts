@@ -14,6 +14,10 @@
  * only (a candidate carries one program, bold and italic are synthesised by Word). The result is
  * the best family with the next best beside it; a caller that wants to keep its default unless
  * the evidence is clear looks at the difference between the two.
+ *
+ * The same drawing settles a word that has more than one reading (`chooseReadings`): each
+ * reading is drawn in the page's face at the word's box and laid over the ink, and the one that
+ * lies on it best is the word, when it beats the one OCR settled on by a clear margin.
  */
 
 import type { Font } from 'mupdf';
@@ -59,6 +63,8 @@ const MIN_CONTRAST = 48;
 const SHIFT = 2;
 /** The spread (natural log of the aspect ratio) over which the proportions stop agreeing. */
 const ASPECT_SPREAD = 0.1;
+/** A reading other than the settled one replaces it when its drawing scores this much (0–1) above the settled one's. */
+export const READING_MARGIN = 0.15;
 /** The glyphs sit this far (× size) above the pixmap's bottom, and the pixmap is this tall (× size). */
 const BASELINE = 0.5;
 const HEIGHT = 1.9;
@@ -146,7 +152,7 @@ function resampled(ink: Ink, width: number, height: number): Ink {
  * strongest differences (the top 2 % of them are full ink); cut to its bounding box. `null`
  * when the crop is off the page or has no ink to speak of.
  */
-function scanInk(image: RgbaImage, word: MatchWord): Ink | null {
+function scanInk(image: RgbaImage, word: Pick<MatchWord, 'box' | 'size'>): Ink | null {
   const margin = Math.ceil(word.size * image.scale * CROP_MARGIN);
   const x0 = Math.max(0, Math.floor(word.box[0] * image.scale) - margin);
   const y0 = Math.max(0, Math.floor(word.box[1] * image.scale) - margin);
@@ -326,4 +332,42 @@ export function matchFamily(
   } finally {
     for (const font of fonts) font.destroy();
   }
+}
+
+/** A word with other readings: its settled text, the others, its box (page points, y down) and the size it is set at. */
+export interface ReadingWord {
+  readonly text: string;
+  readonly alternatives: readonly string[];
+  readonly box: Box;
+  readonly size: number;
+}
+
+/**
+ * What each word reads, by its ink: every reading the `font` has the glyphs for is drawn at the
+ * word's size and box (`wordScore`: shape, with the proportions of the ink box, so a reading of
+ * another length cannot pass for the word by being stretched) and the best-scoring one wins —
+ * only when it beats the settled text by {@link READING_MARGIN}; a word on blank paper, or whose
+ * settled text the font cannot draw, keeps its text.
+ */
+export function chooseReadings(
+  mupdf: Mupdf,
+  image: RgbaImage,
+  words: readonly ReadingWord[],
+  font: Font,
+): string[] {
+  return words.map((word) => {
+    const shown = [word.text, ...word.alternatives].flatMap((reading) => {
+      const glyphs = glyphsOf(font, reading);
+      return glyphs === null ? [] : [{ reading, glyphs }];
+    });
+    const scan = shown.length > 1 && shown[0]?.reading === word.text ? scanInk(image, word) : null;
+    if (scan === null) return word.text;
+    const scores = shown.map(({ reading, glyphs }) =>
+      wordScore(scan, drawnInk(mupdf, font, glyphs, reading, word.size * image.scale)),
+    );
+    const best = scores.indexOf(Math.max(...scores));
+    return (scores[best] as number) - (scores[0] as number) >= READING_MARGIN
+      ? (shown[best] as (typeof shown)[number]).reading
+      : word.text;
+  });
 }

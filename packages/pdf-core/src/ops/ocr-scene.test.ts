@@ -309,6 +309,30 @@ describe('ocrTextBoxes: grouping', () => {
     expect(boxes[0]?.box[1]).toBeCloseTo(30 - 0.8 * 32, 6);
   });
 
+  it('anchors a paragraph on the middle of its lines: the glyphs of a synthetic scan land within a pixel although one baseline is off', async () => {
+    // Four lines 20 pt apart drawn on a page; tesseract fitted the first one's baseline 5 pt too high.
+    const drawn = [40, 60, 80, 100];
+    const page = new Page(200, 130, WHITE);
+    for (const baseline of drawn) page.text('noto', 14, 10, baseline, BLACK, 'Hello');
+    const image = await page.render(3);
+    const words = drawn.map((baseline, at) =>
+      wordAt(image, 'Hello', [5, baseline - 16, 100, baseline + 6], {
+        line: at,
+        baseline: { x0: 10, y0: at === 0 ? 35 : baseline, x1: 60, y1: at === 0 ? 35 : baseline },
+      }),
+    );
+    const { boxes } = ocrTextBoxes(words, image, 0.9);
+    expect(boxes).toHaveLength(1);
+    const box = boxes[0] as TextBox;
+    const paragraph = box.paragraphs[0];
+    expect(paragraph?.lines).toHaveLength(4);
+    expect(paragraph?.lineHeight).toBeCloseTo(20, 6);
+    // The first line sits where the scan has it (and the others follow at the pitch), to the pixel.
+    expect(Math.abs(box.box[1] + 0.8 * (paragraph?.lineHeight ?? 0) - 40)).toBeLessThanOrEqual(
+      1 / image.scale,
+    );
+  });
+
   it('lets a word without indices stand alone', () => {
     const words: OcrWord[] = [
       { text: 'a', x0: 10, y0: 10, x1: 20, y1: 22, confidence: 99 },

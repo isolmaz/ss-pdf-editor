@@ -15,13 +15,14 @@
 
 import type { Font } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
+import type { OcrWord } from '../engines/tesseract';
 import { trueTypeForWord } from './docx-font-sfnt';
 import type { FontFile } from './docx-fonts';
 import { standardAdvance } from './docx-fonts';
 import type { TextBox } from './layout-scene';
 import { loadOpenFace, OPEN_FAMILIES, type OpenFaceStyle, type OpenFamily } from './ocr-font-catalog';
-import { type FaceCandidate, type MatchWord, matchFamily, varied } from './ocr-font-match';
-import type { Advance, MeasuredWord, RgbaImage } from './ocr-scene';
+import { chooseReadings, type FaceCandidate, type MatchWord, matchFamily, varied } from './ocr-font-match';
+import type { Advance, MeasuredWord, RgbaImage, UnsettledWord } from './ocr-scene';
 
 /** Words OCR is at least this sure of (0–100) are drawn to tell the typeface. */
 const CONFIDENT = 90;
@@ -177,6 +178,50 @@ export async function chooseOpenFont(
   fonts.names.add(name);
   fonts.loaded.set(winner.id, open);
   return open;
+}
+
+/** The base-14 face behind each stand-in family of the scan's text. */
+const STANDARD_FACE: Readonly<Record<string, string>> = {
+  Arial: 'Helvetica',
+  'Times New Roman': 'Times-Roman',
+  'Courier New': 'Courier',
+};
+
+/**
+ * The words whose reading the ink settles: each `unsettled` word (one the second look read in
+ * more than one way) is drawn in the page's face — `open`'s regular, or the stand-in `family` —
+ * once per reading, and the reading that lies on the scan's ink best is the word's
+ * (`chooseReadings`). Only the words that differ from what was settled are returned.
+ */
+export function settleReadings(
+  mupdf: Mupdf,
+  image: RgbaImage,
+  unsettled: readonly UnsettledWord[],
+  family: string,
+  open: OpenFont | null,
+): Map<OcrWord, string> {
+  const chosen = new Map<OcrWord, string>();
+  if (unsettled.length === 0) return chosen;
+  const own = open === null ? new mupdf.Font(STANDARD_FACE[family] ?? 'Helvetica') : null;
+  try {
+    const texts = chooseReadings(
+      mupdf,
+      image,
+      unsettled.map(({ word, size }) => ({
+        text: word.text,
+        alternatives: word.alternatives as readonly string[],
+        box: [word.x0, word.y0, word.x1, word.y1],
+        size,
+      })),
+      open === null ? (own as Font) : open.regular.font,
+    );
+    for (const [at, { word }] of unsettled.entries()) {
+      if (texts[at] !== word.text) chosen.set(word, texts[at] as string);
+    }
+  } finally {
+    own?.destroy();
+  }
+  return chosen;
 }
 
 /**

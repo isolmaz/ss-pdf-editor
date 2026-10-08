@@ -164,6 +164,54 @@ describe('refineWords', () => {
     }
   });
 
+  it('keeps the readings that lost as alternatives: the first read, a reread of another shape, the capitals of the first read', async () => {
+    const ink = page([[10, 150]]);
+    // a surer reread that corrects letters is taken, and the first read stays as the other reading
+    const taken = await refineWords(
+      [word('gergeklestirdim', 80)],
+      ink,
+      encode,
+      reader(() => ({ text: 'gerçekleştirdim', confidence: 91 })).read,
+      signal,
+    );
+    expect(taken[0]).toMatchObject({ text: 'gerçekleştirdim', alternatives: ['gergeklestirdim'] });
+    // a reread of another shape is not taken (it could drop a dot), but the ink may still prefer it
+    const refused = await refineWords(
+      [word('%20', 80)],
+      ink,
+      encode,
+      reader(() => ({ text: '9020', confidence: 99 })).read,
+      signal,
+    );
+    expect(refused[0]).toMatchObject({ text: '%20', confidence: 80, alternatives: ['9020'] });
+    // a less sure reread of the same shape is another reading as well
+    const unsure = await refineWords(
+      [word('modern', 80)],
+      ink,
+      encode,
+      reader(() => ({ text: 'rnodern', confidence: 60 })).read,
+      signal,
+    );
+    expect(unsure[0]).toMatchObject({ text: 'modern', alternatives: ['rnodern'] });
+    // English's capitals replace the first read's, which stays beside them
+    const english = await refineWords(
+      [word('SOL', 99)],
+      ink,
+      encode,
+      reader(() => ({ text: 'SQL', confidence: 90 })).read,
+      signal,
+    );
+    expect(english[0]).toMatchObject({ text: 'SQL', alternatives: ['SOL'] });
+    // nothing differs (the same reading twice, or one with a space): no alternatives at all
+    for (const answer of [
+      { text: 'modern', confidence: 99 },
+      { text: 'mod ern', confidence: 99 },
+    ]) {
+      const same = await refineWords([word('modern', 80)], ink, encode, reader(() => answer).read, signal);
+      expect(same[0]).not.toHaveProperty('alternatives');
+    }
+  });
+
   it('reads nothing again that is sure, or has no two letters or digits', async () => {
     const { read, calls } = reader(() => ({ text: 'zz', confidence: 100 }));
     const input = [word('Merhaba', 96), word('—', 50), word('a', 50)];

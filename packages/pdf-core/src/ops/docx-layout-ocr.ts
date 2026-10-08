@@ -17,7 +17,7 @@ import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics } from './docx-fonts';
-import { chooseOpenFont, type OpenFonts, ocrAdvance } from './docx-ocr-font';
+import { chooseOpenFont, type OpenFont, type OpenFonts, ocrAdvance, settleReadings } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import { type ReadWord, refineWords } from './ocr-refine';
@@ -287,11 +287,19 @@ export async function readScanPage(
   const lowConfidence = ocr?.lowConfidence ?? 0;
   // Set in the stand-in that fits the word boxes best; the words as set tell whether the scan is
   // in one of the open families, and then the page is set again in that family's own advances.
-  let set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(null), undefined, rules);
+  const setIn = (read: readonly OcrWord[], open: OpenFont | null) =>
+    ocrTextBoxes(read, image, lowConfidence, solid, ocrAdvance(open), open?.name, rules);
+  let set = setIn(kept, null);
   const open = await chooseOpenFont(mupdf, image, set.measured, fonts);
-  if (open !== null) {
-    set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
-  }
+  if (open !== null) set = setIn(kept, open);
+  // A word the second look read two ways is drawn in the page's face once per reading; the
+  // ink that lies on the scan best is the word, and the page is set again with those.
+  const settled = settleReadings(mupdf, image, set.unsettled, set.family, open);
+  if (settled.size > 0)
+    set = setIn(
+      kept.map((word) => ({ ...word, text: settled.get(word) ?? word.text })),
+      open,
+    );
   const { boxes, flagged } = set;
   const background: SceneShape = {
     kind: 'shape',

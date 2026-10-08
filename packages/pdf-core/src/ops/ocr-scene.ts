@@ -1323,6 +1323,12 @@ export interface MeasuredWord {
   readonly confidence: number;
 }
 
+/** A word that has other readings (`OcrWord.alternatives`), with the size it was set at. */
+export interface UnsettledWord {
+  readonly word: OcrWord;
+  readonly size: number;
+}
+
 /**
  * The text boxes of a recognised page: one per paragraph, in reading order. `regions` are the
  * boxes of the solid regions `ocrBackground` found (cards, bands, photos; not loose marks): lines and paragraphs never cross their edge.
@@ -1330,7 +1336,8 @@ export interface MeasuredWord {
  * each is a run of its own with a `note`. With `advance` the page is set in the stand-in family
  * whose letter widths fit the word boxes best (`font` names one instead) and every run carries
  * where the scan has its letters, so the writer places each word where the scan has it.
- * `measured` lists the words as they were set, for whoever judges the typeface.
+ * `measured` lists the words as they were set, for whoever judges the typeface; `family` is the
+ * one they were set in and `unsettled` the words that have other readings, for whoever judges those.
  */
 export function ocrTextBoxes(
   words: readonly OcrWord[],
@@ -1344,9 +1351,12 @@ export function ocrTextBoxes(
   boxes: TextBox[];
   flagged: { text: string; confidence: number }[];
   measured: MeasuredWord[];
+  family: string;
+  unsettled: UnsettledWord[];
 } {
   const flagged: { text: string; confidence: number }[] = [];
   const measured: MeasuredWord[] = [];
+  const unsettled: UnsettledWord[] = [];
   const inks = new Map<OcrWord, WordInk>();
   const lines = groupLines(words, regionIndex(regions));
   const typical = lines.length === 0 ? 0 : median(lines.map((line) => line.size));
@@ -1427,6 +1437,7 @@ export function ocrTextBoxes(
           italic,
           confidence: word.confidence,
         });
+        if (word.alternatives !== undefined) unsettled.push({ word, size });
         return {
           text: at === 0 && line.words.length > 1 && BULLET_LIKE.test(word.text) ? '\u2022' : word.text,
           bold,
@@ -1456,7 +1467,11 @@ export function ocrTextBoxes(
       SQUEEZE_MARGIN * naturalWidth(textLines),
     );
     const x0 = centred ? centre - width / 2 : left;
-    const top = (baselines[0] as number) - BASELINE_IN_LINE * lineHeight;
+    // Every line says where the box would start for its own baseline at the paragraph's pitch; the
+    // middle of them stands, so one line whose baseline is off (a heading, a speck) does not carry the box.
+    const pitch = gaps.length === 0 ? 0 : median(gaps);
+    const top =
+      median(baselines.map((baseline, at) => baseline - at * pitch)) - BASELINE_IN_LINE * lineHeight;
     const bottom = Math.max(top + lineHeight * lines.length, ...lines.map((line) => line.y1));
     const paragraph: TextParagraph = {
       align: centred ? 'center' : 'left',
@@ -1465,7 +1480,7 @@ export function ocrTextBoxes(
     };
     boxes.push({ box: [x0, top, x0 + width, bottom], rotation: 0, paragraphs: [paragraph] });
   }
-  return { boxes, flagged, measured };
+  return { boxes, flagged, measured, family, unsettled };
 }
 
 /* ------------------------------------------------------------------ *

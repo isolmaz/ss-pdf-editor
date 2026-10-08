@@ -211,6 +211,31 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(written).toContain('Hello world today');
   });
 
+  it('lets the ink decide when the second look reads a word another way: wor1d for a scan of world', async () => {
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => words([96, 50, 97]).map((w, at) => (at === 1 ? { ...w, text: 'wor1d' } : w)),
+          // a digit for a letter is another shape: the reread is not taken as a correction, but it is kept as a reading
+          readWord: async () => ({ text: 'world', confidence: 93 }),
+        },
+      },
+      run,
+    );
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const written = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    expect(written).toContain('Hello world today');
+    expect(written).not.toContain('wor1d');
+  });
+
   it('writes the words as text boxes, the page colour as a shape, the panel as a picture and one comment', async () => {
     const seen: { scale: number; png: number }[] = [];
     const result = await exportOffice(
