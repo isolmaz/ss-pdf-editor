@@ -32,15 +32,16 @@
 
 import type { PDFPage as MupdfPage, PDFDocument } from 'mupdf';
 import { ToolError } from 'pdf-shared';
-import type {
-  BlockInput,
-  CharInput,
-  FontCandidate,
-  FontCatalog,
-  FontMetrics,
-  LineInput,
-  PageTextInput,
-  Rect,
+import {
+  type BlockInput,
+  type CharInput,
+  createFontCatalog,
+  type FontCandidate,
+  type FontCatalog,
+  type FontMetrics,
+  type LineInput,
+  type PageTextInput,
+  type Rect,
 } from 'pdf-text-engine';
 import { metricsFor } from 'pdf-text-engine/fonts';
 import { NOTO_ASSETS } from './assets';
@@ -92,6 +93,8 @@ interface MeasuredPage {
   readonly box: PageBox;
   readonly rotation: Rotation;
   readonly blocks: readonly BlockInput[];
+  /** Per block index, the colour most of its glyphs were drawn with; a block of whitespace only is absent. */
+  readonly colors: Readonly<Record<number, string>>;
 }
 
 /**
@@ -131,7 +134,7 @@ export async function readPageText(
     doc.destroy();
   }
   throwIfAborted(context.signal);
-  const glyphColors = blockColors(page.blocks);
+  const glyphColors = page.colors;
   // pdf.js is asked only when MuPDF reported no colour for some block; its answer is
   // one colour for the whole page, so a block MuPDF did colour keeps its own.
   const colors =
@@ -177,7 +180,7 @@ export async function readDocumentText(
         height: page.box.height,
         rotation: page.rotation,
         blocks: page.blocks,
-        colors: blockColors(page.blocks),
+        colors: page.colors,
       });
       onPage?.(read.length, pages.length);
     }
@@ -185,23 +188,6 @@ export async function readDocumentText(
   } finally {
     doc.destroy();
   }
-}
-
-/** Per block index, the colour most of its glyphs were drawn with; a block whose glyphs carry none is absent. */
-function blockColors(blocks: readonly BlockInput[]): Readonly<Record<number, string>> {
-  const colors: Record<number, string> = {};
-  for (const [index, block] of blocks.entries()) {
-    const counts = new Map<string, number>();
-    for (const line of block.lines) {
-      for (const char of line.chars) {
-        if (char.color === undefined || char.ch.trim() === '') continue;
-        counts.set(char.color, (counts.get(char.color) ?? 0) + 1);
-      }
-    }
-    const color = dominantColor(counts);
-    if (color !== null) colors[index] = color;
-  }
-  return colors;
 }
 
 /**
@@ -214,7 +200,7 @@ function readMupdfPage(doc: PDFDocument, pageIndex: number, box: PageBox, rotati
   try {
     const page = doc.loadPage(pageIndex);
     try {
-      return { box, rotation, blocks: readBlocks(page, box, rotation) };
+      return { box, rotation, ...readBlocks(page, box, rotation) };
     } finally {
       page.destroy();
     }
@@ -222,20 +208,6 @@ function readMupdfPage(doc: PDFDocument, pageIndex: number, box: PageBox, rotati
     if (isAbort(error)) throw error;
     throw mapMupdfError(error, 'readPageText');
   }
-}
-
-/**
- * A glyph's fill colour as MuPDF reports it (grey, RGB or CMYK components, `0 … 1`)
- * as `#rrggbb`, converted the way `fillColorOf` converts pdf.js's; `null` when the
- * walker reported none.
- */
-function glyphColor(color: readonly number[] | null | undefined): string | null {
-  if (color === null || color === undefined) return null;
-  const [c0 = 0, c1 = 0, c2 = 0, c3 = 0] = color;
-  if (color.length === 1) return hexColor(c0, c0, c0);
-  if (color.length === 3) return hexColor(c0, c1, c2);
-  if (color.length === 4) return hexColor((1 - c0) * (1 - c3), (1 - c1) * (1 - c3), (1 - c2) * (1 - c3));
-  return null;
 }
 
 /** `throwIfAborted`'s error, recognised so the mapping above never rewrites it. */
@@ -290,56 +262,83 @@ const STRUCTURED_TEXT_FLAGS = 'preserve-whitespace';
  * downwards — so each character's quad and baseline origin, and the line and block
  * boxes, are converted here and nowhere else.
  *
- * A line with no characters and a block with no lines are dropped: MuPDF emits a block
- * marker for whitespace-only content, and a block without glyphs has nothing to edit
- * (the model drops it again anyway). Characters are emitted **as reported**, whitespace
- * included — the model filters word-gap characters itself, and dropping them here would
- * erase the gaps it measures words by.
+ * Every block and line the walk reports holds at least one character (MuPDF opens a
+ * line with its first glyph; a text object with nothing to draw reports no block at
+ * all), and a block of whitespace only still reports its spaces. Characters are emitted
+ * **as reported**, whitespace included — the model filters word-gap characters itself,
+ * and dropping them here would erase the gaps it measures words by.
+ *
+ * `colors` is per block index: the colour most of the block's non-whitespace glyphs were
+ * drawn with. A block of whitespace only has none, and is absent from the map.
  */
-function readBlocks(page: MupdfPage, box: PageBox, rotation: Rotation): readonly BlockInput[] {
+function readBlocks(
+  page: MupdfPage,
+  box: PageBox,
+  rotation: Rotation,
+): { readonly blocks: readonly BlockInput[]; readonly colors: Readonly<Record<number, string>> } {
   const blocks: BlockInput[] = [];
-  let block: { quad: Rect; lines: LineInput[] } | null = null;
-  let line: { quad: Rect; chars: CharInput[] } | null = null;
+  const colors: Record<number, string> = {};
+  // The walk is strictly nested begin/end pairs, so each `begin…` starts the state its
+  // `end…` hands over.
+  let blockQuad: Rect = [0, 0, 0, 0];
+  let lines: LineInput[] = [];
+  let inks = new Map<string, number>();
+  let lineQuad: Rect = [0, 0, 0, 0];
+  let chars: CharInput[] = [];
+  let baseline = 0;
 
   const text = page.toStructuredText(STRUCTURED_TEXT_FLAGS);
   try {
     text.walk({
       beginTextBlock(bbox) {
-        block = { quad: cornersToUserRect(box, rotation, bbox, 2), lines: [] };
+        blockQuad = cornersToUserRect(box, rotation, [
+          [bbox[0], bbox[1]],
+          [bbox[2], bbox[3]],
+        ]);
+        lines = [];
+        inks = new Map();
       },
       beginLine(bbox) {
-        line = { quad: cornersToUserRect(box, rotation, bbox, 2), chars: [] };
+        lineQuad = cornersToUserRect(box, rotation, [
+          [bbox[0], bbox[1]],
+          [bbox[2], bbox[3]],
+        ]);
+        chars = [];
       },
-      onChar(ch, origin, font, size, quad, color) {
-        if (line === null) return;
-        const fill = glyphColor(color);
-        line.chars.push({
+      // The binding builds every glyph colour as an RGB triple (`colorFromNumber`), although
+      // its declared `Color` also allows grey and CMYK shapes.
+      onChar(ch, origin, font, size, quad, color: [number, number, number]) {
+        const at = pointToUser(box, rotation, origin);
+        if (chars.length === 0) baseline = at[1];
+        const fill = hexColor(color[0], color[1], color[2]);
+        if (ch.trim() !== '') inks.set(fill, (inks.get(fill) ?? 0) + 1);
+        chars.push({
           ch,
-          quad: cornersToUserRect(box, rotation, quad, 4),
-          origin: pointToUser(box, rotation, origin),
+          quad: cornersToUserRect(box, rotation, [
+            [quad[0], quad[1]],
+            [quad[2], quad[3]],
+            [quad[4], quad[5]],
+            [quad[6], quad[7]],
+          ]),
+          origin: at,
           size,
           fontName: font.getName(),
-          ...(fill === null ? {} : { color: fill }),
+          color: fill,
         });
       },
       endLine() {
-        if (line !== null) {
-          const first = line.chars[0];
-          if (block !== null && first !== undefined) {
-            block.lines.push({ chars: line.chars, quad: line.quad, baseline: first.origin[1] });
-          }
-        }
-        line = null;
+        lines.push({ chars, quad: lineQuad, baseline });
       },
       endTextBlock() {
-        if (block !== null && block.lines.length > 0) blocks.push(block);
-        block = null;
+        const color = dominantColor(inks);
+        if (color !== null) colors[blocks.length] = color;
+        blocks.push({ quad: blockQuad, lines });
       },
     });
   } finally {
     text.destroy();
   }
-  return blocks;
+  return { blocks, colors };
 }
 
 /**
@@ -375,28 +374,24 @@ function toUserY(box: PageBox, rotation: Rotation, u: number, v: number): number
   }
 }
 
+/** A MuPDF corner in page space: `[u, v]`. */
+type Corner = readonly [number, number];
+
 /**
- * A MuPDF box (`2` corners: `u0 v0 u1 v1`) or glyph quad (`4`: upper-left, upper-right,
- * lower-left, lower-right) → the ascending user-space rect it spans.
+ * The page-space corners of a MuPDF box (`u0 v0 u1 v1`) or glyph quad (upper-left,
+ * upper-right, lower-left, lower-right) → the ascending user-space rect they span.
  *
  * Every corner is converted and the result is bounded, which is the only correct
  * answer for a rotated or skewed glyph (under `/Rotate 90` the corner that was
  * upper-left is no longer the smallest `x`), and it keeps the quad's own shape out of
  * the model: the engine's `CharInput.quad` is a box, not a quad.
  */
-function cornersToUserRect(
-  box: PageBox,
-  rotation: Rotation,
-  values: readonly number[],
-  corners: number,
-): Rect {
+function cornersToUserRect(box: PageBox, rotation: Rotation, corners: readonly Corner[]): Rect {
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
-  for (let corner = 0; corner < corners; corner += 1) {
-    const u = component(values, corner * 2);
-    const v = component(values, corner * 2 + 1);
+  for (const [u, v] of corners) {
     const x = toUserX(box, rotation, u, v);
     const y = toUserY(box, rotation, u, v);
     minX = Math.min(minX, x);
@@ -408,20 +403,8 @@ function cornersToUserRect(
 }
 
 /** A page-space baseline origin → the same point in the app's page space. */
-function pointToUser(box: PageBox, rotation: Rotation, point: readonly number[]): readonly [number, number] {
-  const u = component(point, 0);
-  const v = component(point, 1);
+function pointToUser(box: PageBox, rotation: Rotation, [u, v]: Corner): Corner {
   return [toUserX(box, rotation, u, v), toUserY(box, rotation, u, v)];
-}
-
-/**
- * One number of a point, box or quad as MuPDF reports it. The walk hands over the
- * engine's own tuples, so an entry is always there; this reads past a shapes' extra
- * entries and never hands `undefined` to arithmetic.
- */
-function component(values: readonly number[], index: number): number {
-  const value = values[index];
-  return typeof value === 'number' ? value : 0;
 }
 
 /**
@@ -496,9 +479,7 @@ async function readTextColors(
       const textOps = idsOf(ids, TEXT_OP_NAMES);
       let current = DEFAULT_COLOR;
       const counts = new Map<string, number>();
-      for (let index = 0; index < fnArray.length; index += 1) {
-        const op = fnArray[index];
-        if (op === undefined) continue;
+      for (const [index, op] of fnArray.entries()) {
         if (fillOps.has(op)) {
           current = fillColorOf(argsArray[index] ?? []) ?? current;
           continue;
@@ -651,7 +632,7 @@ export async function readFontMetrics(bytes: Uint8Array, path: string): Promise<
       {
         engine: 'mupdf',
         path,
-        engineMessage: cause instanceof Error ? cause.message : String(cause),
+        engineMessage: messageOf(cause),
       },
       { cause },
     );
@@ -721,9 +702,7 @@ let textFonts: Promise<TextFontSet> | null = null;
 /**
  * A ready-to-use catalogue + metrics pair for the UI and the plan path: the faces this
  * app can embed (`TEXT_FONT_CANDIDATES`) with a coverage provider wired to their tables,
- * which is what `createFontCatalog(TEXT_FONT_CANDIDATES, provider)` builds. The object
- * is written out here instead of imported because pdf-core depends on `pdf-text-engine`
- * for its **types** only, and a catalogue is plain data.
+ * which is what `createFontCatalog(TEXT_FONT_CANDIDATES, provider)` builds.
  *
  * The two files are fetched once per session (as every engine asset is). A failed load
  * is not cached, so a retry once the assets are there works instead of remembering the
@@ -742,10 +721,7 @@ export async function loadTextFonts(): Promise<TextFontSet> {
 async function loadMetricsAndCatalog(): Promise<TextFontSet> {
   const metrics = await loadFontMetrics(TEXT_FONT_FILES);
   return {
-    catalog: {
-      candidates: TEXT_FONT_CANDIDATES,
-      metrics: (candidate: FontCandidate) => metrics[candidate.id] ?? null,
-    },
+    catalog: createFontCatalog(TEXT_FONT_CANDIDATES, (candidate) => metrics[candidate.id] ?? null),
     metrics,
   };
 }

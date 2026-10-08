@@ -649,7 +649,7 @@ async function main() {
       draftFor: model.draftFor,
       encodeEngineValues: model.encodeEngineValues,
       sourceKeyFor: model.sourceKeyFor,
-      tabPageCount: model.workingPageCount,
+      workingPageCount: model.workingPageCount,
       ToolError,
     };
     const persistTabDraft = callback('persistTabDraft', persistBindings);
@@ -1088,7 +1088,7 @@ async function main() {
         return { state: 'verified', checks: [], declared: [] };
       },
       sha256Hex: model.sha256Hex,
-      tabPageCount: model.workingPageCount,
+      workingPageCount: model.workingPageCount,
     };
     return {
       run: callback('prepareOutput', bindings),

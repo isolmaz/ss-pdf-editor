@@ -8,50 +8,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyStructureEdits,
-  EMPTY_MODEL,
   readingOrder,
   type StructContent,
   type StructEdit,
   StructEditError,
-  type StructKid,
-  type StructNode,
   type StructureModel,
   structureSignature,
 } from './structure-model';
-
-const mcid = (id: number, pageIndex = 0): StructKid => ({
-  kind: 'content',
-  item: { kind: 'mcid', mcid: id, pageIndex, inStream: false },
-});
-
-function el(
-  key: string,
-  role: string,
-  kids: readonly (StructKid | StructNode)[] = [],
-  extra: Partial<StructNode> = {},
-): StructNode {
-  return {
-    key,
-    role,
-    standard: role,
-    pageIndex: 0,
-    alt: null,
-    actualText: null,
-    lang: null,
-    scope: null,
-    colSpan: 1,
-    rowSpan: 1,
-    headers: [],
-    elementId: null,
-    editable: true,
-    kids: kids.map((kid): StructKid => ('kind' in kid ? kid : { kind: 'element', node: kid })),
-    ...extra,
-  };
-}
-
-function modelOf(...roots: StructNode[]): StructureModel {
-  return { ...EMPTY_MODEL, present: true, readable: true, roots, nodeCount: 0 };
-}
+import { el, mcid, modelOf } from './structure-model.fixtures';
 
 /** Document > H1, Sect > (P, P), Figure; every leaf owns one marked-content id on page 0. */
 function sample(): StructureModel {
@@ -175,6 +139,36 @@ describe('applyStructureEdits', () => {
     expect(reason([{ op: 'move', key: 'zz', parentKey: 'd', index: 0 }])).toBe('missing');
     const locked = modelOf(el('d', 'Document', [el('h', 'H1', [mcid(0)], { editable: false })]));
     expect(() => applyStructureEdits(locked, [{ op: 'role', key: 'h', role: 'P' }])).toThrow(StructEditError);
+  });
+
+  it('refuses to change the children of an element it cannot rewrite, as the target, the source or the group parent', () => {
+    // `x` is a direct (non-editable) element: its /K cannot be rewritten, so nothing may be
+    // moved into it, out of it, or grouped inside it.
+    const withDirect = (): StructureModel =>
+      modelOf(
+        el('d', 'Document', [
+          el('h', 'H1', [mcid(0)]),
+          el('x', 'Div', [el('p1', 'P', [mcid(1)]), el('p2', 'P', [mcid(2)])], { editable: false }),
+        ]),
+      );
+    const refusal = (edits: readonly StructEdit[]): string | null => {
+      try {
+        applyStructureEdits(withDirect(), edits);
+        return null;
+      } catch (error) {
+        return error instanceof StructEditError ? error.reason : null;
+      }
+    };
+    expect(refusal([{ op: 'move', key: 'h', parentKey: 'x', index: 0 }])).toBe('not-editable');
+    expect(refusal([{ op: 'move', key: 'p1', parentKey: 'd', index: 0 }])).toBe('not-editable');
+    expect(refusal([{ op: 'move', key: 'p2', parentKey: 'x', index: 0 }])).toBe('not-editable');
+    expect(refusal([{ op: 'group', keys: ['p1', 'p2'], role: 'L', newKey: 'n1' }])).toBe('not-editable');
+    // An editable element still moves among the siblings of its editable parent, past the direct one.
+    expect(
+      structureSignature(
+        applyStructureEdits(withDirect(), [{ op: 'move', key: 'h', parentKey: 'd', index: 2 }]),
+      ),
+    ).toBe('Document(Div(P(#0:1),P(#0:2)),H1(#0:0))');
   });
 
   it('applies a draft in order, never modifies its input and applies nothing when one edit fails', () => {

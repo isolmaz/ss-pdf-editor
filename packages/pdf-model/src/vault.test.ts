@@ -46,6 +46,9 @@ describe('keysForDraft', () => {
       'snapshot-2',
     ]);
     expect(keysForDraft(draft('b', 'src-only'))).toEqual(['src-only']);
+    // A draft written before snapshots were stored has no `snapshots` field at all.
+    const { snapshots: _none, ...older } = draft('c', 'src-older', ['ignored']);
+    expect(keysForDraft(older)).toEqual(['src-older']);
   });
 });
 

@@ -16,7 +16,6 @@ export const a11yPart = {
     'Page {page}: {matched} text linked to block, {ambiguous} by proximity, {unmatched} unlinked.',
   'op.note.a11y.headingGuess':
     'Headings estimated from font size and weight (body {body} pt, {count} heading(s)).',
-  'op.note.a11y.headingLevelCap': '{count} heading(s) capped: levels beyond 6 written as /P.',
   'op.note.a11y.orderFromContent':
     'Item order follows content stream; not reconciled with visual reading order.',
   'op.note.a11y.contentRewritten': 'Content stream rewritten on {pages} page(s) for marked content.',
@@ -94,7 +93,6 @@ export const a11yPart = {
   'panel.a11y.notChecked': 'Unaudited items',
   'panel.a11y.notes': 'Notes from this operation',
   'panel.a11y.tag': 'Tag document',
-  'panel.a11y.noLanguage': 'No language provided: /Lang will not be written and the report will state this.',
   'panel.a11y.alt': 'Figure alt text',
   'panel.a11y.alt.empty': 'No rendered figures found in this document.',
   'panel.a11y.alt.target': '{name} · page {pages}',

@@ -6,17 +6,10 @@
  * saying so, and a document without layers given a layer tree it never had.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
+import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { listPdfLayers, type PdfLayerNode } from '../layers';
 import { applyLayerWrite } from './layer-write';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 

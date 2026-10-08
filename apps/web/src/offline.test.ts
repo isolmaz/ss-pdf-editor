@@ -250,6 +250,68 @@ describe('the page ↔ worker exchange', () => {
     expect(result).toEqual({ version: 'v7', prepared: 4, failed: ['/a'] });
   });
 
+  it('reads a bare readiness reply as no version, no match and no capabilities, skipping entries that are not objects', async () => {
+    stubWorker(() => ({ type: 'READINESS_STATUS', capabilities: { core: 5, fonts: null } }));
+    expect(await requestOfflineReadiness()).toEqual({ version: null, matchesBuild: false, capabilities: {} });
+    stubWorker(() => ({ type: 'READINESS_STATUS', capabilities: 'none' }));
+    expect(await requestOfflineReadiness()).toEqual({ version: null, matchesBuild: false, capabilities: {} });
+  });
+
+  it('answers null when the worker replies with something that is not an object', async () => {
+    stubWorker(() => 'READINESS_STATUS');
+    expect(await requestOfflineReadiness()).toBeNull();
+    stubWorker(() => null);
+    expect(await requestOfflineReadiness()).toBeNull();
+  });
+
+  it('answers null when the worker never replies within the wait, closing its port', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const received: Record<string, unknown>[] = [];
+      vi.stubGlobal('navigator', {
+        serviceWorker: {
+          controller: { postMessage: (message: Record<string, unknown>) => received.push(message) },
+        },
+      });
+      const pending = requestOfflineReadiness();
+      vi.advanceTimersByTime(4_999);
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(await pending).toBeNull();
+      expect(received).toEqual([{ type: 'CHECK_READINESS' }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('answers null when the worker refuses the message', async () => {
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        controller: {
+          postMessage() {
+            throw new Error('worker is gone');
+          },
+        },
+      },
+    });
+    expect(await requestOfflineReadiness()).toBeNull();
+  });
+
+  it('reads a preparation reply that carries no version, count or failure list as nothing prepared', async () => {
+    stubWorker(() => ({ type: 'PREPARE_DONE', failed: 'all' }));
+    expect(await prepareOffline(['core'])).toEqual({ version: null, prepared: 0, failed: [] });
+  });
+
+  it('ignores a preparation reply of another kind', async () => {
+    stubWorker(() => ({ type: 'READINESS_STATUS' }));
+    expect(await prepareOffline(['core'])).toBeNull();
+  });
+
   it('reports every requested path as failed when the worker says the preparation failed', async () => {
     stubWorker(() => ({ type: 'PREPARE_FAILED' }));
     const result = await prepareOffline(['fonts']);

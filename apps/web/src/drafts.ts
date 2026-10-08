@@ -100,45 +100,46 @@ async function entries(path: string): Promise<string[]> {
   return names;
 }
 
+async function readDraftInventory(): Promise<DraftInventory> {
+  let names: string[];
+  try {
+    names = await entries(DRAFTS);
+  } catch {
+    return { drafts: [], unreadable: [], enumerationFailed: true };
+  }
+  const drafts: Draft[] = [];
+  const unreadable: string[] = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    // One unreadable file is *reported*, never fatal: a read that throws here would
+    // abort the whole inventory and make every remaining draft look absent, which is
+    // exactly the state a cleanup pass must not mistake for “nothing is referenced”.
+    try {
+      const bytes = await readFile(DRAFTS, name);
+      if (bytes === null) {
+        unreadable.push(name);
+        continue;
+      }
+      const parsed = parseDraft(JSON.parse(new TextDecoder().decode(bytes)) as unknown);
+      if (parsed !== null) drafts.push(parsed);
+      else unreadable.push(name);
+    } catch {
+      unreadable.push(name);
+    }
+  }
+  return { drafts, unreadable };
+}
+
 export function createOpfsDraftStorage(): DraftStorage {
   return {
     async writeDraft(draft: Draft): Promise<void> {
       await writeFile(DRAFTS, `${draft.id}.json`, JSON.stringify(draft));
     },
 
-    async readDraftInventory(): Promise<DraftInventory> {
-      let names: string[];
-      try {
-        names = await entries(DRAFTS);
-      } catch {
-        return { drafts: [], unreadable: [], enumerationFailed: true };
-      }
-      const drafts: Draft[] = [];
-      const unreadable: string[] = [];
-      for (const name of names) {
-        if (!name.endsWith('.json')) continue;
-        // One unreadable file is *reported*, never fatal: a read that throws here would
-        // abort the whole inventory and make every remaining draft look absent, which is
-        // exactly the state a cleanup pass must not mistake for “nothing is referenced”.
-        try {
-          const bytes = await readFile(DRAFTS, name);
-          if (bytes === null) {
-            unreadable.push(name);
-            continue;
-          }
-          const parsed = parseDraft(JSON.parse(new TextDecoder().decode(bytes)) as unknown);
-          if (parsed !== null) drafts.push(parsed);
-          else unreadable.push(name);
-        } catch {
-          unreadable.push(name);
-        }
-      }
-      return { drafts, unreadable };
-    },
+    readDraftInventory,
 
     async readDrafts(): Promise<readonly Draft[]> {
-      const inventory = await (this.readDraftInventory?.() ?? { drafts: [] });
-      return inventory.drafts;
+      return (await readDraftInventory()).drafts;
     },
 
     async deleteDraft(id: string): Promise<void> {

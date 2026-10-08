@@ -226,18 +226,13 @@ function existingPageTop(annotation: ExistingAnnotation, readPageTop: PageTopRea
 function pdfQuadsToAppBoxes(quadPoints: readonly number[], pageTop: number): readonly Box[] {
   const boxes: Box[] = [];
   for (let index = 0; index + 7 < quadPoints.length; index += 8) {
-    const xs = [
-      quadPoints[index] ?? 0,
-      quadPoints[index + 2] ?? 0,
-      quadPoints[index + 4] ?? 0,
-      quadPoints[index + 6] ?? 0,
-    ];
-    const ys = [
-      quadPoints[index + 1] ?? 0,
-      quadPoints[index + 3] ?? 0,
-      quadPoints[index + 5] ?? 0,
-      quadPoints[index + 7] ?? 0,
-    ];
+    // The loop bound (`index + 7 < length`) keeps all eight reads inside the array.
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let corner = 0; corner < 8; corner += 2) {
+      xs.push(quadPoints[index + corner] as number);
+      ys.push(quadPoints[index + corner + 1] as number);
+    }
     boxes.push(
       pdfRectToAppBox([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], pageTop),
     );
@@ -294,13 +289,18 @@ function rotatedBox(box: Box, bounds: Box, transform: MarkTransform): Box {
 function rotatedPath(path: readonly number[], bounds: Box, transform: MarkTransform): readonly number[] {
   const turned: number[] = [];
   for (let index = 0; index + 1 < path.length; index += 2) {
-    const point = transformPoint({ x: path[index] ?? 0, y: path[index + 1] ?? 0 }, bounds, transform);
+    // `index + 1 < length` keeps both reads inside the array.
+    const point = transformPoint(
+      { x: path[index] as number, y: path[index + 1] as number },
+      bounds,
+      transform,
+    );
     turned.push(point.x, point.y);
   }
   // A trailing odd value is not a point, so it is not turned — but it is kept where it
   // is, exactly as core's own run walk keeps it, so a target's path and a written mark's
   // path stay the same run even when the run was malformed to begin with.
-  if (path.length % 2 === 1) turned.push(path[path.length - 1] ?? 0);
+  if (path.length % 2 === 1) turned.push(path[path.length - 1] as number);
   return turned;
 }
 
@@ -516,10 +516,9 @@ export function withThreadRecords(
   for (const [rootId, thread] of threads) {
     const root = byId.get(rootId);
     if (root === undefined || !seen.has(markTargetKey('existing', root.id, root.pageIndex))) continue;
-    for (const id of thread.records) {
-      const record = byId.get(id);
-      if (record === undefined) continue;
-      const key = markTargetKey('existing', id, record.pageIndex);
+    for (const record of existing) {
+      if (!thread.records.includes(record.id)) continue;
+      const key = markTargetKey('existing', record.id, record.pageIndex);
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(key);

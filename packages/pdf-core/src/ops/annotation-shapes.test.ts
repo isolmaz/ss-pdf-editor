@@ -7,12 +7,18 @@
  * whose session marker is lost (the next edit can no longer find it).
  */
 
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import * as mupdf from 'mupdf';
-import { describe, expect, it } from 'vitest';
-import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
-import { writeAnnotationsToFile, writeShapeAnnotations } from './annotation-shapes';
+import { isToolError, type ToolError } from 'pdf-shared';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { openWithPdfjs } from '../engines/pdfjs-handle';
+import {
+  writeAnnotationsToFile,
+  writeNoteAnnotations,
+  writeShapeAnnotations,
+  writeStrokeHighlights,
+} from './annotation-shapes';
 import {
   type AnnotationMark,
   type ExistingAnnotation,
@@ -21,12 +27,6 @@ import {
   readAnnotations,
   settleEngineMarks,
 } from './annotations';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks.
-  createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 
@@ -122,6 +122,9 @@ describe('writeShapeAnnotations', () => {
     expect(byMarker('li')).toMatchObject({ subtype: 'Line', vertices: [50, 100, 300, 150] });
     // The second page's box starts at y = 50, so its top is at 450, not 500.
     expect(byMarker('p2')).toMatchObject({ pageIndex: 1, subtype: 'Square', rect: [-1, 399, 101, 451] });
+    // The stroke width is the annotation's border width, so a reader (and this app, reopening
+    // the file) reads back the thickness that was drawn; a mark without one is drawn at 2 pt.
+    expect(['sq', 'ci', 'li', 'p2'].map((id) => byMarker(id)?.thickness)).toEqual([2, 2, 4, 2]);
     const drawn = Object.values(await appearances(out.bytes));
     expect(drawn.map((entry) => entry.ap)).toEqual([true, true, true, true]);
     expect(drawn.map((entry) => entry.ca)).toEqual([0.5, 0.5, 0.5, 0.5]);
@@ -448,5 +451,407 @@ describe('markerTargets', () => {
     const highlight = read.find((entry) => entry.subtype === 'Highlight' && entry.marker === 'u1');
     // `s1` is on page 1, not page 2: a marker is only looked for on the page it names.
     expect(found).toEqual([{ pageIndex: 0, id: highlight?.id, markId: 'u1' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// refusals, stops and the paths of the whole save
+// ---------------------------------------------------------------------------
+
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  let outcome: { readonly error: unknown } | null = null;
+  try {
+    await promise;
+  } catch (error) {
+    outcome = { error };
+  }
+  if (outcome === null) throw new Error('the call resolved instead of rejecting');
+  return outcome.error;
+}
+
+async function toolErrorOf(promise: Promise<unknown>): Promise<ToolError> {
+  const error = await rejectionOf(promise);
+  if (!isToolError(error)) throw error;
+  return error;
+}
+
+const sketch = mark({
+  id: 'stroke',
+  kind: 'highlight',
+  quads: [[40, 100, 120, 100]],
+  strokes: [[40, 100, 80, 100, 120, 100]],
+  thickness: 8,
+});
+const shape = mark({ id: 'sq', kind: 'shapes', shape: 'square', rect: [40, 60, 200, 160] });
+const sticky = mark({ id: 'nt', kind: 'note', rect: [40, 60, 64, 84] });
+
+/** The writers that build their own dictionaries, each with a mark of its own kind. */
+const WRITERS = [
+  ['shapes', writeShapeAnnotations, shape],
+  ['notes', writeNoteAnnotations, sticky],
+  ['highlights', writeStrokeHighlights, sketch],
+] as const;
+
+/** An annotation's dictionary in a written file, found by the marker in its /NM. */
+function dictionaryOf(doc: mupdf.PDFDocument, id: string): mupdf.PDFObject {
+  for (let page = 0; page < doc.countPages(); page += 1) {
+    const annots = doc.findPage(page).get('Annots');
+    if (annots.isNull()) continue;
+    const array = annots.resolve();
+    for (let index = 0; index < array.length; index += 1) {
+      const dict = array.get(index).resolve();
+      const name = dict.get('NM');
+      if (!name.isNull() && name.asString() === markerFor(id)) return dict;
+    }
+  }
+  throw new Error(`no annotation named ${id}`);
+}
+
+function numbersIn(array: mupdf.PDFObject): number[] {
+  const out: number[] = [];
+  for (let index = 0; index < array.length; index += 1) out.push(array.get(index).asNumber());
+  return out;
+}
+
+describe.each(WRITERS)('the %s writer', (step, write, own) => {
+  it('leaves the file alone when it has no mark of its kind', async () => {
+    const input = await blank();
+    const other = mark({ id: 'other', kind: 'underline' });
+    const outcome = await write(input, [other], run);
+    expect(outcome.bytes).toBe(input);
+    expect(outcome.written).toEqual([]);
+    expect(outcome.report.steps).toEqual([`annotations.${step}.skipped`]);
+    expect(outcome.report.notes).toEqual([{ kind: 'warning', key: 'op.note.annotate.nothing' }]);
+  });
+
+  it('refuses a mark on a page the file does not have, naming the page', async () => {
+    const error = await toolErrorOf(write(await blank(), [{ ...own, pageIndex: 7 }], run));
+    expect(error.code).toBe('range-invalid');
+    expect(error.details.pageIndex).toBe(7);
+  });
+
+  it('stops at an aborted signal without rewriting the abort', async () => {
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(await rejectionOf(write(await blank(), [own], { signal: aborted.signal }))).toMatchObject({
+      name: 'AbortError',
+    });
+  });
+
+  it('refuses a mark whose colour is not #rrggbb and writes nothing', async () => {
+    const error = await toolErrorOf(write(await blank(), [{ ...own, color: 'red' }], run));
+    expect(error.code).toBe('internal');
+    expect(error.details.engineMessage).toBe('annotation colour is not #rrggbb: red');
+  });
+});
+
+describe('writeShapeAnnotations on shapes it cannot draw', () => {
+  it('refuses a shape kind it has no subtype for', async () => {
+    const error = await toolErrorOf(
+      writeShapeAnnotations(await blank(), [mark({ ...shape, shape: 'star' as 'square' })], run),
+    );
+    expect(error.code).toBe('unsupported-format');
+    expect(error.details.pageIndex).toBe(0);
+  });
+
+  it('draws a shape with no kind as a square', async () => {
+    const out = await writeShapeAnnotations(
+      await blank(),
+      [mark({ id: 'plain', kind: 'shapes', rect: [40, 60, 200, 160] })],
+      run,
+    );
+    const read = await annotationsOf(out.bytes);
+    expect(read.find((entry) => entry.marker === 'plain')?.subtype).toBe('Square');
+  });
+
+  it('refuses a shape with no rectangle', async () => {
+    const error = await toolErrorOf(
+      writeShapeAnnotations(await blank(), [mark({ id: 'bare', kind: 'shapes', quads: [] })], run),
+    );
+    expect(error.code).toBe('selection-empty');
+  });
+});
+
+describe('writeStrokeHighlights on strokes with little to follow', () => {
+  it('falls back to the padded rect for a stroke whose segments are all too short, and dots a lone point', async () => {
+    const out = await writeStrokeHighlights(
+      await blank(),
+      [
+        mark({
+          id: 'tiny',
+          kind: 'highlight',
+          quads: [[50, 100, 50.1, 100.1]],
+          strokes: [[50, 100, 50.1, 100.1]],
+          thickness: 8,
+        }),
+        mark({
+          id: 'dot',
+          kind: 'highlight',
+          quads: [[200, 300, 200, 300]],
+          strokes: [[200, 300], [5]],
+          thickness: 8,
+        }),
+      ],
+      run,
+    );
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      for (const id of ['tiny', 'dot']) {
+        const dict = dictionaryOf(doc, id);
+        const [left = 0, bottom = 0, right = 0, top = 0] = numbersIn(dict.get('Rect'));
+        // With no segment to follow, QuadPoints is the padded rect: upper edge first, then lower.
+        expect(numbersIn(dict.get('QuadPoints')), id).toEqual([
+          left,
+          top,
+          right,
+          top,
+          left,
+          bottom,
+          right,
+          bottom,
+        ]);
+      }
+      const dot = dictionaryOf(doc, 'dot').get('AP').get('N');
+      // A lone point is repeated as a zero-length segment so a round cap paints it.
+      expect(dot.readStream().asString()).toMatch(/^(\S+ \S+) m\n\1 l\nS$/m);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('gives a marker with no stored thickness the default width, padding its rect by half of it', async () => {
+    const out = await writeStrokeHighlights(
+      await blank(),
+      [mark({ id: 'thin', kind: 'highlight', quads: [[40, 100, 120, 100]], strokes: [[40, 100, 120, 100]] })],
+      run,
+    );
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      // The stroke is 6 points wide: a 3-point pad around the line at page y = 400.
+      expect(numbersIn(dictionaryOf(doc, 'thin').get('Rect'))).toEqual([37, 397, 123, 403]);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('follows a path with a quad per segment that is long enough, and skips a short one', async () => {
+    const out = await writeStrokeHighlights(
+      await blank(),
+      [
+        mark({
+          id: 'path',
+          kind: 'highlight',
+          quads: [[40, 100, 120, 100]],
+          strokes: [[40, 100, 40.2, 100, 120, 100]],
+          thickness: 8,
+        }),
+      ],
+      run,
+    );
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      // 40 → 40.2 is under the minimum; 40.2 → 120 is the one quad.
+      expect(dictionaryOf(doc, 'path').get('QuadPoints').length).toBe(8);
+    } finally {
+      doc.destroy();
+    }
+  });
+});
+
+/** The pinned regular face, as `fetch:engines` copies it from this package. */
+function notoRegular(): Uint8Array<ArrayBuffer> {
+  const require = createRequire(import.meta.url);
+  const file = require.resolve('@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf', {
+    paths: [process.cwd()],
+  });
+  return new Uint8Array(readFileSync(file));
+}
+
+describe('writeAnnotationsToFile in full', () => {
+  // Typed text embeds the font it fetches from the app's own origin; the real face is served here.
+  beforeEach(() => {
+    const font = notoRegular();
+    vi.stubGlobal('fetch', async () => new Response(font));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const stamped = (overrides: Partial<AnnotationMark> & Pick<AnnotationMark, 'id' | 'kind'>) =>
+    mark(overrides);
+  const typedBox = stamped({
+    id: 'tx',
+    kind: 'freetext',
+    rect: [40, 200, 200, 230],
+    contents: 'Merhaba',
+    color: '#000000',
+    opacity: 1,
+    fontSize: 12,
+  });
+
+  async function saveAll(marks: readonly AnnotationMark[], existing: readonly ExistingAnnotation[] = []) {
+    const handle = await openWithPdfjs(await blank());
+    try {
+      return await writeAnnotationsToFile(handle, marks, run, existing);
+    } finally {
+      await handle.destroy();
+    }
+  }
+
+  it('writes nothing, and says so, when there is no mark or every mark is already in the file', async () => {
+    const none = await saveAll([]);
+    expect(none.report).toMatchObject({ engine: 'pdfjs', steps: [], incremental: true, pageCount: 2 });
+    expect(none.report.notes).toEqual([{ kind: 'warning', key: 'op.note.annotate.nothing' }]);
+    const known = await saveAll(
+      [stamped({ id: 'old', kind: 'highlight' })],
+      [
+        {
+          id: '9R',
+          subtype: 'Highlight',
+          pageIndex: 0,
+          kind: 'highlight',
+          rect: null,
+          contents: '',
+          marker: 'old',
+          author: '',
+          modified: null,
+        },
+      ],
+    );
+    expect(known.report.steps).toEqual([]);
+    // An empty typed box is not a mark either.
+    expect(
+      (await saveAll([stamped({ id: 'empty', kind: 'freetext', rect: [1, 1, 5, 5], contents: '  ' })])).report
+        .steps,
+    ).toEqual([]);
+  });
+
+  it('writes typed text and a marker through their own writers, as a rewrite by MuPDF', async () => {
+    const out = await saveAll([typedBox, sketch]);
+    expect(out.report).toMatchObject({ engine: 'mupdf', incremental: false });
+    expect(out.report.steps).toEqual(expect.arrayContaining(['annotations.highlights']));
+    const read = await annotationsOf(out.bytes);
+    expect(read.filter((entry) => entry.kind !== null).map((entry) => [entry.subtype, entry.marker])).toEqual(
+      expect.arrayContaining([
+        ['FreeText', 'tx'],
+        ['Highlight', 'stroke'],
+      ]),
+    );
+  });
+
+  it('turns each written mark by its own rotation, one transform per distinct turn', async () => {
+    const out = await saveAll([
+      { ...shape, rotation: 90 },
+      { ...sticky, rotation: 90 },
+      stamped({ id: 'ci', kind: 'shapes', shape: 'circle', rect: [100, 200, 300, 260], rotation: 180 }),
+      stamped({ id: 'flat', kind: 'shapes', shape: 'square', rect: [100, 300, 300, 360] }),
+    ]);
+    expect(out.report.steps.filter((step) => step === 'annotations.transform')).toHaveLength(2);
+    const doc = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      const size = (id: string) => {
+        const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = numbersIn(dictionaryOf(doc, id).get('Rect'));
+        return [Math.round(x1 - x0), Math.round(y1 - y0)];
+      };
+      // The square was 162 × 102 with its stroke padding; a quarter turn swaps the sides.
+      expect(size('sq')).toEqual([102, 162]);
+      expect(size('ci')).toEqual([202, 62]);
+      expect(size('flat')).toEqual([202, 62]);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('refuses a rotation it cannot resolve, because the mark was never written', async () => {
+    const error = await toolErrorOf(
+      saveAll([
+        stamped({ id: 'void', kind: 'freetext', rect: [1, 1, 5, 5], contents: '', rotation: 90 }),
+        sticky,
+      ]),
+    );
+    expect(error.code).toBe('verification-failed');
+    expect(error.details.engineMessage).toBe(
+      'a written mark could not be resolved for its requested rotation',
+    );
+  });
+
+  it('stops between turns when the signal aborts', async () => {
+    const aborted = new AbortController();
+    const error = await rejectionOf(
+      writeAnnotationsToFile(
+        await openWithPdfjs(await blank()),
+        [
+          { ...shape, rotation: 90 },
+          { ...sticky, rotation: 180 },
+        ],
+        { signal: aborted.signal, onProgress: () => aborted.abort() },
+      ),
+    );
+    expect(error).toMatchObject({ name: 'AbortError' });
+  });
+
+  it('writes the replies and the review state of a comment as records that point at it', async () => {
+    const out = await saveAll([
+      {
+        ...sticky,
+        replies: [{ id: 'r1', author: 'Can', contents: 'agreed', createdAt: '2026-01-03T00:00:00.000Z' }],
+        review: { state: 'Accepted', author: 'Can', at: '2026-01-04T00:00:00.000Z' },
+      },
+      { ...shape, id: 'quiet', review: { state: 'None', author: '', at: '2026-01-04T00:00:00.000Z' } },
+      {
+        ...shape,
+        id: 'only-reply',
+        replies: [{ id: 'r2', author: 'Ece', contents: 'later', createdAt: '2026-01-05T00:00:00.000Z' }],
+        review: { state: 'None', author: '', at: '2026-01-04T00:00:00.000Z' },
+      },
+    ]);
+    expect(out.report.engine).toBe('mupdf');
+    const read = await annotationsOf(out.bytes);
+    const parent = read.find((entry) => entry.marker === 'nt');
+    const replies = read.filter((entry) => entry.inReplyTo === parent?.id);
+    expect(replies.map((entry) => [entry.contents, entry.state ?? null])).toEqual(
+      expect.arrayContaining([
+        ['agreed', null],
+        [expect.any(String), 'Accepted'],
+      ]),
+    );
+    const quiet = read.find((entry) => entry.marker === 'quiet');
+    expect(read.filter((entry) => entry.inReplyTo === quiet?.id)).toEqual([]);
+    const lone = read.find((entry) => entry.marker === 'only-reply');
+    expect(read.filter((entry) => entry.inReplyTo === lone?.id).map((entry) => entry.contents)).toEqual([
+      'later',
+    ]);
+  });
+
+  it('writes a review state alone for a comment with no replies', async () => {
+    const out = await saveAll([
+      { ...sticky, review: { state: 'Rejected', author: 'Can', at: '2026-01-04T00:00:00.000Z' } },
+    ]);
+    const read = await annotationsOf(out.bytes);
+    const parent = read.find((entry) => entry.marker === 'nt');
+    expect(read.filter((entry) => entry.inReplyTo === parent?.id).map((entry) => entry.state)).toEqual([
+      'Rejected',
+    ]);
+  });
+
+  it('refuses replies for a comment that was never written', async () => {
+    const error = await toolErrorOf(
+      saveAll([
+        sticky,
+        stamped({
+          id: 'void',
+          kind: 'freetext',
+          rect: [1, 1, 5, 5],
+          contents: '',
+          replies: [{ id: 'r', author: '', contents: 'x', createdAt: '2026-01-01T00:00:00.000Z' }],
+        }),
+      ]),
+    );
+    expect(error.code).toBe('verification-failed');
+    expect(error.details.engineMessage).toBe('the comment void could not be resolved for its replies');
   });
 });

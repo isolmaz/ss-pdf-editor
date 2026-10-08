@@ -454,7 +454,7 @@ export function embedFontFile(mupdf: Mupdf, doc: PDFDocument, name: string, byte
     encode(value) {
       let hex = '';
       for (const character of value) {
-        const glyph = font.encodeCharacter(character.codePointAt(0) ?? 0);
+        const glyph = font.encodeCharacter(character.codePointAt(0) as number);
         used.add(glyph);
         hex += glyph.toString(16).padStart(4, '0');
       }
@@ -464,13 +464,13 @@ export function embedFontFile(mupdf: Mupdf, doc: PDFDocument, name: string, byte
     covers(value) {
       for (const character of value) {
         if (/\s/.test(character)) continue;
-        if (font.encodeCharacter(character.codePointAt(0) ?? 0) === 0) return false;
+        if (font.encodeCharacter(character.codePointAt(0) as number) === 0) return false;
       }
       return true;
     },
     widthOfTextAtSize(value, size) {
       let units = 0;
-      for (const character of value) units += metrics.glyphAdvance(character.codePointAt(0) ?? 0);
+      for (const character of value) units += metrics.glyphAdvance(character.codePointAt(0) as number);
       return units * scale(size);
     },
     heightAtSize(size, heightOptions = {}) {
@@ -583,9 +583,13 @@ function winAnsiByte(codePoint: number): number | null {
   return WIN_ANSI_HIGH.get(codePoint) ?? null;
 }
 
-/** Whether WinAnsiEncoding has a code for every character of the text. */
+/**
+ * Whether WinAnsiEncoding has a code for every character of the text. (`codePointAt(0)` of a
+ * character taken from iterating a string is never `undefined`: the same holds for every
+ * `codePointAt(0) as number` in this file.)
+ */
 export function canEncodeWinAnsi(value: string): boolean {
-  return [...value].every((character) => winAnsiByte(character.codePointAt(0) ?? 0) !== null);
+  return [...value].every((character) => winAnsiByte(character.codePointAt(0) as number) !== null);
 }
 
 /** A standard-14 text face, drawn through WinAnsiEncoding; nothing is embedded. */
@@ -613,7 +617,7 @@ export function standardFace(mupdf: Mupdf, doc: PDFDocument, name: string): Stan
     encode(value) {
       let hex = '';
       for (const character of value) {
-        hex += (winAnsiByte(character.codePointAt(0) ?? 0) ?? 0x3f).toString(16).padStart(2, '0');
+        hex += (winAnsiByte(character.codePointAt(0) as number) ?? 0x3f).toString(16).padStart(2, '0');
       }
       return `<${hex}>`;
     },

@@ -74,7 +74,7 @@ export async function buildFlattenedXfa(
     bytes = saveRewrite(doc, 'xfa.flatten');
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
-    if (error instanceof ToolError) throw error;
+    // `mapMupdfError` hands a `ToolError` back unchanged.
     throw mapMupdfError(error, 'xfa.flatten');
   } finally {
     doc.destroy();
@@ -159,7 +159,7 @@ async function verify(bytes: Uint8Array, pages: readonly XfaRasterPage[]): Promi
       }
     }
   } catch (error) {
-    if (error instanceof ToolError) throw error;
+    // `mapMupdfError` hands a `ToolError` (the verification failures above) back unchanged.
     throw mapMupdfError(error, 'xfa.verify');
   } finally {
     doc.destroy();

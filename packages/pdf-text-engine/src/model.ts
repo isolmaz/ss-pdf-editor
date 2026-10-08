@@ -150,9 +150,7 @@ export function buildTextPage(input: PageTextInput): TextPage {
     });
   }
   const built: TextBlock[] = [];
-  for (let index = 0; index < blocks.length; index += 1) {
-    const source = blocks[index];
-    if (source === undefined) continue;
+  for (const [index, source] of blocks.entries()) {
     const block = buildBlock(source, index, input);
     if (block !== null) built.push(block);
   }
@@ -203,9 +201,9 @@ function areParagraphNeighbours(previous: TextBlock, block: TextBlock): boolean 
   if (blockOrientation(previous) !== 'horizontal' || blockOrientation(block) !== 'horizontal') return false;
   if (previous.style.fontName !== block.style.fontName) return false;
   if (Math.abs(previous.style.fontSize - block.style.fontSize) > MERGE_SIZE_TOLERANCE_PT) return false;
-  const last = previous.lines.at(-1);
-  const first = block.lines[0];
-  if (last === undefined || first === undefined) return false;
+  // Every built block has at least one line (`buildBlock` drops the others).
+  const last = previous.lines.at(-1) as TextLine;
+  const first = block.lines[0] as TextLine;
   const gap = first.baseline - last.baseline;
   const leading = Math.max(previous.style.leading, block.style.leading);
   if (!(gap > 0) || gap > leading * MERGE_GAP_RATIO) return false;
@@ -271,19 +269,14 @@ function buildLine(source: LineInput): TextLine | null {
 
   const words: TextWord[] = [];
   let glyphs: GlyphBox[] = [];
-  let lineRect: Rect | null = null;
   let previous: PositionedGlyph | null = null;
+  // Called only with glyphs collected: before the next glyph once one is held, and at the end.
   const flush = (): void => {
-    const word = wordOf(glyphs);
+    words.push(wordOf(glyphs));
     glyphs = [];
-    if (word === null) return;
-    words.push(word);
-    lineRect = lineRect === null ? word.rect : unionPair(lineRect, word.rect);
   };
 
-  for (let index = 0; index < positioned.length; index += 1) {
-    const glyph = positioned[index];
-    if (glyph === undefined) continue;
+  for (const [index, glyph] of positioned.entries()) {
     if (previous !== null) {
       const gapEm = WORD_GAP_EM * Math.max(previous.size, glyph.size);
       if (glyph.breakBefore || gapBetween(previous.rect, glyph.rect, direction) > gapEm) flush();
@@ -305,24 +298,21 @@ function buildLine(source: LineInput): TextLine | null {
     previous = glyph;
   }
   flush();
-  if (lineRect === null) return null;
   return {
     text: words.map((word) => word.text).join(' '),
-    rect: lineRect,
+    // At least one word: a glyph was positioned, and the flush above emitted it.
+    rect: words.map((word) => word.rect).reduce(unionPair),
     words,
     baseline: source.baseline,
   };
 }
 
-/** A word from its glyphs; `null` for an empty run. */
-function wordOf(glyphs: readonly GlyphBox[]): TextWord | null {
-  const head = glyphs[0];
-  if (head === undefined) return null;
+/** A word from its glyphs, of which there is at least one. */
+function wordOf(glyphs: readonly GlyphBox[]): TextWord {
+  const head = glyphs[0] as GlyphBox;
   let rect = head.rect;
   let text = head.ch;
-  for (let index = 1; index < glyphs.length; index += 1) {
-    const glyph = glyphs[index];
-    if (glyph === undefined) continue;
+  for (const glyph of glyphs.slice(1)) {
     rect = unionPair(rect, glyph.rect);
     text += glyph.ch;
   }
@@ -455,13 +445,10 @@ function styleFor(source: BlockInput): StyleFacts | null {
  * (18 pt at the 11 pt body size, an early engine spike).
  */
 function leadingOf(lines: readonly TextLine[], fontSize: number): number {
-  const gaps: number[] = [];
-  for (let index = 1; index < lines.length; index += 1) {
-    const previous = lines[index - 1];
-    const current = lines[index];
-    if (previous === undefined || current === undefined) continue;
-    gaps.push(Math.abs(current.baseline - previous.baseline));
-  }
+  // `lines[index]` is the line before `current`, which the slice started one later.
+  const gaps = lines
+    .slice(1)
+    .map((current, index) => Math.abs(current.baseline - (lines[index] as TextLine).baseline));
   const leading = median(gaps);
   return leading !== null && leading > 0 ? leading : fontSize * DEFAULT_LEADING_RATIO;
 }
@@ -471,12 +458,11 @@ function leadingOf(lines: readonly TextLine[], fontSize: number): number {
 function median(values: readonly number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((left, right) => left - right);
+  // `middle` is in range, and so is `middle - 1` for an even (hence ≥ 2) count.
   const middle = sorted.length >> 1;
-  if (sorted.length % 2 === 1) return sorted[middle] ?? null;
-  const lower = sorted[middle - 1];
-  const upper = sorted[middle];
-  if (lower === undefined || upper === undefined) return null;
-  return (lower + upper) / 2;
+  const upper = sorted[middle] as number;
+  if (sorted.length % 2 === 1) return upper;
+  return ((sorted[middle - 1] as number) + upper) / 2;
 }
 
 function colorOf(colors: Readonly<Record<number, string>> | undefined, index: number): string {
@@ -488,7 +474,8 @@ function colorOf(colors: Readonly<Record<number, string>> | undefined, index: nu
       engineMessage: `colour ${color} (expected #rrggbb)`,
     });
   }
-  return color.toLowerCase();
+  // The pattern admits lower-case hex only, so the colour is already in its stored form.
+  return color;
 }
 
 /**

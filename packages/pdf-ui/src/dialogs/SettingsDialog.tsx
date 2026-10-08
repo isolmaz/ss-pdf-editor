@@ -3,7 +3,6 @@ import type { MessageKey, Translator } from 'pdf-shared';
 import type { ReactNode } from 'react';
 import { Button } from '../components/Button';
 import { LanguageSelector } from '../components/LanguageSelector';
-import type { InterfaceMode } from '../components/ModeSelector';
 import { ThemeSelector } from '../components/ThemeSelector';
 
 /**
@@ -18,6 +17,9 @@ import { ThemeSelector } from '../components/ThemeSelector';
  * with the current state — "Simple mode" on a button read as "switch to simple mode", and
  * nothing said that an advanced mode existed.
  */
+/** The interface mode; `apps/web/src/interface-mode.ts` owns its storage and its change event. */
+export type InterfaceMode = 'simple' | 'advanced';
+
 export interface SettingsDialogProps {
   readonly t: Translator;
   readonly onClose: () => void;
@@ -91,11 +93,10 @@ export function SettingsDialog({
   return (
     <Dialog.Root
       open
-      onOpenChange={(open, details) => {
-        if (!open) {
-          details.cancel();
-          onClose();
-        }
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
+        details.cancel();
+        onClose();
       }}
     >
       <Dialog size="lg" className="pdf-floating-shadow flex max-h-[85vh] w-full flex-col gap-4 p-5">
@@ -113,10 +114,10 @@ export function SettingsDialog({
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pe-1">
           <Section title={t('settings.section.appearance')}>
             <Row label={t('settings.language')}>
-              <LanguageSelector t={t} variant="segmented" />
+              <LanguageSelector t={t} />
             </Row>
             <Row label={t('settings.theme')}>
-              <ThemeSelector t={t} variant="segmented" />
+              <ThemeSelector t={t} />
             </Row>
           </Section>
 

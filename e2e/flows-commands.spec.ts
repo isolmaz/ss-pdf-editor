@@ -429,9 +429,13 @@ test('link tool: two dragged rectangles become a web link and a page link in the
     expected.every((value, index) => Math.abs((rect[index] ?? Number.NaN) - value) < 8);
   const web = links.find((link) => near(link.rect, [72, 380, 272, 410]));
   const internal = links.find((link) => near(link.rect, [72, 320, 272, 350]));
-  expect(web).toBeDefined();
-  expect(web?.destPageRef).toBeNull();
-  expect(internal?.destPageRef).not.toBeNull();
+  if (web === undefined || internal === undefined) throw new Error('the drawn links are not in the file');
+  // The web link goes to the typed address and nowhere inside the document ...
+  expect(web.uri).toBe('https://example.com/docs');
+  expect(web.destPageRef).toBeNull();
+  // ... the page link has no address and its destination is the page the form asked for: page 2 (index 1).
+  expect(internal.uri).toBeNull();
+  expect(internal.destPageIndex).toBe(1);
 });
 
 test('edit menu: Select all picks every page, Rename renames the document and its export', async ({

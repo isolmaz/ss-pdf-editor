@@ -328,10 +328,12 @@ export function parseRuleSet(json: string): BatchRuleSet {
   try {
     parsed = JSON.parse(json);
   } catch (error) {
+    // `JSON.parse` only ever throws a `SyntaxError`.
+    const syntax = error as SyntaxError;
     throw new ToolError('unsupported-format', {
       engine: 'model',
       path: 'template',
-      engineMessage: `the template is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      engineMessage: `the template is not valid JSON: ${syntax.message}`,
     });
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -483,8 +485,8 @@ export interface BatchRunOptions {
 /** One step's outcome inside a successful item. */
 export interface BatchStepResult {
   readonly kind: BatchStepKind;
-  /** The operation's own report (`OperationReport`); `null` for a read-only step. */
-  readonly report: OperationReport | null;
+  /** The operation's own report (`OperationReport`); the text export builds its own. */
+  readonly report: OperationReport;
   readonly notes: readonly OperationNote[];
   /** Files the step produced instead of changing the document (the text export). */
   readonly files: readonly OutputFile[];
@@ -567,15 +569,8 @@ export async function runBatch(
   const validated = validateRuleSet(ruleSet);
   const plan = planBatch(validated.steps);
   const steps = plan.steps;
-  const firstStep = steps[0];
-  if (firstStep === undefined) {
-    // `validateRuleSet` refuses an empty rule set; this states the same invariant
-    // where the type system can see it, instead of asserting it away.
-    throw new ToolError('selection-empty', {
-      engine: 'model',
-      engineMessage: 'the rule set has no steps',
-    });
-  }
+  // In bounds by construction: `validateRuleSet` refuses a rule set without steps.
+  const firstStep = steps[0] as BatchStep;
   if (items.length === 0) {
     throw new ToolError('input-missing', {
       engine: 'model',
@@ -728,10 +723,8 @@ async function runItem(
       bytes = result.bytes;
       // The report describes the bytes this step produced, so it is also the page
       // count the *next* step's `'all'` has to mean.
-      if (result.report !== null) {
-        pageCount = result.report.pageCount;
-        measured = result.report.pageCount;
-      }
+      pageCount = result.report.pageCount;
+      measured = result.report.pageCount;
     } catch (error) {
       // An abort is the run's own cancellation, not a failure of the file: the
       // signal is authoritative, and a slow engine that threw for another reason
@@ -777,7 +770,7 @@ async function runItem(
 interface StepResult {
   readonly kind: BatchStepKind;
   readonly bytes: Uint8Array;
-  readonly report: OperationReport | null;
+  readonly report: OperationReport;
   readonly notes: readonly OperationNote[];
   readonly files: readonly OutputFile[];
 }
@@ -860,12 +853,15 @@ async function applyStep(
       return fromOutcome(step.kind, await applyImage(bytes, step.params, context));
     case 'metadata':
       return fromOutcome(step.kind, await writeMetadata(bytes, step.params, context));
-    case 'text-export':
+    case 'text-export': {
+      const documentPages = (await pages('all', 'text-export.pages')).length;
       return await runTextExport(
         bytes,
         { ...step.params, pages: await pages(step.params.pages, 'text-export.pages') },
+        documentPages,
         context,
       );
+    }
     case 'protect':
       return fromOutcome(step.kind, await protectDocument(bytes, step.params, context));
   }
@@ -889,16 +885,8 @@ async function composePages(
   ];
   const handle = await openWithPdfjs(bytes, { signal: context.signal });
   try {
-    const pageCount = handle.pageCount;
-    for (const page of params.pages) {
-      if (!Number.isSafeInteger(page) || page < 0 || page >= pageCount) {
-        throw new ToolError('range-invalid', {
-          engine: 'pdfjs',
-          pageIndex: page,
-          engineMessage: `page ${page} is outside the document's ${pageCount} pages`,
-        });
-      }
-    }
+    // The pages are validated twice already: against the item's page count when the
+    // selection was resolved, and against this live document inside `composeDocument`.
     return await composeDocument(
       {
         pageCount: params.pages.length,
@@ -934,27 +922,19 @@ async function applyImage(
     };
     return await applyImageEdit(bytes, request, context);
   }
-  if (params.targets.length === 0) {
+  const [firstTarget, ...otherTargets] = params.targets;
+  if (firstTarget === undefined) {
     throw new ToolError('selection-empty', {
       engine: 'model',
       engineMessage: 'the opacity step names no image',
     });
   }
-  let current = bytes;
-  const outcomes: OperationOutcome[] = [];
-  for (const target of params.targets) {
-    const outcome = await applyImageOpacity(current, target, context);
-    outcomes.push(outcome);
-    current = outcome.bytes;
-  }
-  const head = outcomes[0];
-  const tail = outcomes.at(-1);
-  if (head === undefined || tail === undefined) {
-    // `targets` was proven non-empty above; stated here so the fold needs no assertion.
-    throw new ToolError('internal', {
-      engine: 'model',
-      engineMessage: 'the opacity step folded no outcome',
-    });
+  const head = await applyImageOpacity(bytes, firstTarget, context);
+  const outcomes: OperationOutcome[] = [head];
+  let tail = head;
+  for (const target of otherTargets) {
+    tail = await applyImageOpacity(tail.bytes, target, context);
+    outcomes.push(tail);
   }
   return {
     bytes: tail.bytes,
@@ -981,6 +961,7 @@ async function applyImage(
 async function runTextExport(
   bytes: Uint8Array,
   params: TextExportOptions,
+  documentPages: number,
   context: OperationContext,
 ): Promise<StepResult> {
   if (params.pages.length === 0) {
@@ -1006,7 +987,8 @@ async function runTextExport(
       notes,
       inputBytes: bytes.length,
       outputBytes: bytes.length,
-      pageCount: params.pages.length,
+      // The document is untouched: its page count, not the number of pages exported.
+      pageCount: documentPages,
       incremental: true,
     },
     notes,

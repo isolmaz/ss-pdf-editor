@@ -8,6 +8,13 @@
  * and that bytes which are not a CMS answer `null` instead of an invented empty result.
  */
 
+import { Constructed, fromBER, Integer, OctetString, Sequence } from 'asn1js';
+import {
+  Attribute,
+  OtherCertificateFormat,
+  OtherRevocationInfoFormat,
+  SignedAndUnsignedAttributes,
+} from 'pkijs';
 import { describe, expect, it } from 'vitest';
 import { readSignatureEvidence, readSignedData } from './signature-evidence';
 import {
@@ -17,6 +24,7 @@ import {
   KP_TIME_STAMPING,
   signatureValueOf,
   signedCms,
+  withEditedCms,
   withUnsigned,
 } from './signature-revocation.fixtures';
 import { generateKey, issueCertificate } from './signature-trust.fixtures';
@@ -113,5 +121,112 @@ describe('readSignatureEvidence', () => {
     expect(readSignatureEvidence(new Uint8Array(0))).toBeNull();
     // A well-formed DER that is a different structure (an OCTET STRING).
     expect(readSignedData(new Uint8Array([0x04, 0x01, 0x00]))).toBeNull();
+  });
+});
+
+describe('readSignatureEvidence on unusual structures', () => {
+  it('reads an OCSP response from SignedData.crls and ignores another other-revocation format', async () => {
+    const { ca, signer } = await pki();
+    const ocsp = new Uint8Array([0x30, 0x03, 0x0a, 0x01, 0x00]);
+    const cms = withEditedCms(await signedCms(signer, [ca], day(3, 1)), (signedData) => {
+      signedData.crls = [
+        new OtherRevocationInfoFormat({
+          otherRevInfoFormat: '1.3.6.1.5.5.7.16.2',
+          otherRevInfo: fromBER(ocsp.slice().buffer).result,
+        }),
+        new OtherRevocationInfoFormat({
+          otherRevInfoFormat: '1.2.3.4',
+          otherRevInfo: fromBER(new Uint8Array([0x30, 0x00]).buffer).result,
+        }),
+      ];
+    });
+    const evidence = readSignatureEvidence(cms);
+    expect(evidence?.ocspResponses.map((der) => Array.from(der))).toEqual([Array.from(ocsp)]);
+    expect(evidence?.crls).toEqual([]);
+  });
+
+  it('reports no certificates for a CMS without any, and skips a certificate in another format', async () => {
+    const { ca, signer } = await pki();
+    const none = withEditedCms(await signedCms(signer, [ca], day(3, 1)), (signedData) => {
+      signedData.certificates = undefined;
+    });
+    expect(readSignatureEvidence(none)?.certificates).toEqual([]);
+
+    const other = withEditedCms(await signedCms(signer, [ca], day(3, 1)), (signedData) => {
+      signedData.certificates = [
+        new OtherCertificateFormat({ otherCertFormat: '1.2.3.4', otherCert: new Sequence() }),
+      ];
+    });
+    expect(readSignatureEvidence(other)?.certificates).toEqual([]);
+  });
+
+  it('reads nothing from a signer without signed attributes, not even an unsigned timestamp', async () => {
+    const { ca, signer, tsa } = await pki();
+    const cms = await signedCms(signer, [ca], day(3, 1));
+    const token = await issueTimestampToken({ tsa, covered: signatureValueOf(cms), genTime: day(3, 2) });
+    const bare = withEditedCms(withUnsigned(cms, { timestampToken: token }), (signedData) => {
+      const [info] = signedData.signerInfos;
+      if (info === undefined) throw new Error('fixture has no signer');
+      info.signedAttrs = undefined;
+    });
+    const evidence = readSignatureEvidence(bare);
+    expect(evidence?.timestampTokens).toEqual([]);
+    expect(evidence?.signingTime).toBeNull();
+    expect(evidence?.certificates).toHaveLength(2);
+  });
+
+  it('skips attributes without values and a signing time that is not a time', async () => {
+    const { ca, signer } = await pki();
+    const cms = withEditedCms(await signedCms(signer, [ca], day(3, 1)), (signedData) => {
+      const [info] = signedData.signerInfos;
+      if (info === undefined) throw new Error('fixture has no signer');
+      info.signedAttrs = new SignedAndUnsignedAttributes({
+        type: 0,
+        attributes: [
+          new Attribute({ type: '1.2.840.113549.1.9.16.2.14', values: [] }),
+          new Attribute({ type: '1.2.840.113549.1.9.5', values: [new Integer({ value: 5 })] }),
+        ],
+      });
+    });
+    const evidence = readSignatureEvidence(cms);
+    expect(evidence?.timestampTokens).toEqual([]);
+    expect(evidence?.signingTime).toBeNull();
+  });
+
+  it('reads only the CRL and OCSP sections of the Adobe archive, whatever else it holds', async () => {
+    const { ca, signer } = await pki();
+    const crl = await issueCrl({ issuer: ca, thisUpdate: day(4, 1) });
+    const ocsp = new Uint8Array([0x30, 0x03, 0x0a, 0x01, 0x00]);
+    const section = (tagClass: number, tagNumber: number, members: Sequence[]) =>
+      new Constructed({ idBlock: { tagClass, tagNumber }, value: members });
+    const archive = new Sequence({
+      value: [
+        new Integer({ value: 7 }), // a primitive member: no tag class 3
+        section(3, 2, [new Sequence()]), // `otherRevInfo [2]`: neither CRLs nor OCSP
+        section(2, 0, [new Sequence()]), // application class with a CRL's tag number
+        section(3, 0, []), // `[0]` with no list inside
+        section(3, 0, [new Sequence({ value: [fromBER(crl.slice().buffer).result] })]),
+        section(3, 1, [new Sequence({ value: [fromBER(ocsp.slice().buffer).result] })]),
+      ],
+    });
+    const base = await signedCms(signer, [ca], day(3, 1));
+    const cms = withEditedCms(base, (signedData) => {
+      const [info] = signedData.signerInfos;
+      if (info === undefined) throw new Error('fixture has no signer');
+      info.unsignedAttrs = new SignedAndUnsignedAttributes({
+        type: 1,
+        attributes: [
+          new Attribute({ type: '1.2.840.113583.1.1.8', values: [archive] }),
+          // Its value is a primitive: there are no members to read.
+          new Attribute({
+            type: '1.2.840.113583.1.1.8',
+            values: [new OctetString({ valueHex: ocsp.buffer })],
+          }),
+        ],
+      });
+    });
+    const evidence = readSignatureEvidence(cms);
+    expect(evidence?.crls.map((der) => Array.from(der))).toEqual([Array.from(crl)]);
+    expect(evidence?.ocspResponses.map((der) => Array.from(der))).toEqual([Array.from(ocsp)]);
   });
 });

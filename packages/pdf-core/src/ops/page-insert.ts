@@ -52,6 +52,7 @@
  *   `/Type /Page` misreads every document whose pages live in an object stream).
  */
 
+import type { PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import {
@@ -275,13 +276,8 @@ export function planReplace(
       planned.push({ position: page, source: 'document', page });
       continue;
     }
-    const replacement = replacements[slot];
-    if (replacement === undefined) {
-      throw new ToolError('selection-empty', {
-        engine: 'model',
-        engineMessage: `replacement ${slot} is missing`,
-      });
-    }
+    // `replacements` is as long as `pages`, and `slot` indexes `pages`.
+    const replacement = replacements[slot] as { readonly index: number };
     requireIndex(replacement.index, 0, Number.MAX_SAFE_INTEGER, 'replacement index');
     planned.push({ position: page, source: 'replacement', page: replacement.index, replacement: slot });
   }
@@ -305,9 +301,8 @@ export async function pageSizesOf(
     const pages = pageObjects(document);
     return pageIndices.map((index) => {
       requireIndex(index, 0, pages.length - 1, 'page');
-      const page = pages[index];
-      if (page === undefined) throw new ToolError('range-invalid', { engine: 'mupdf', pageIndex: index });
-      const display = pageGeometry(page).display;
+      // `requireIndex` bounded the index by the page count.
+      const display = pageGeometry(pages[index] as PDFObject).display;
       return { width: display.width, height: display.height };
     });
   } catch (error) {
@@ -563,7 +558,8 @@ export async function insertPages(
             // A document source hands over the whole file: the plan's 0-based slot is
             // the chosen page list's index, not the page itself.
             pages: inserted.map((page) =>
-              options.source.kind === 'document' ? (options.source.pages[page.page] ?? page.page) : page.page,
+              // The plan's slot indexes the chosen pages.
+              options.source.kind === 'document' ? (options.source.pages[page.page] as number) : page.page,
             ),
             positions: inserted.map((page) => page.position),
           },
@@ -573,12 +569,7 @@ export async function insertPages(
       {
         signal: context.signal,
         onProgress: (progress) =>
-          context.onProgress?.({
-            phase: 'place',
-            labelKey: 'insert.progress.place',
-            ...(progress.done === undefined ? {} : { done: progress.done }),
-            ...(progress.total === undefined ? {} : { total: progress.total }),
-          }),
+          context.onProgress?.({ ...progress, phase: 'place', labelKey: 'insert.progress.place' }),
       },
     );
     composed = outcome.bytes;
@@ -629,9 +620,11 @@ export async function replacePages(
   // all of its pages ascending as the engine requires.
   const groups = new Map<Uint8Array, { name: string; pages: number[]; positions: number[] }>();
   for (const page of plan) {
-    if (page.source !== 'replacement' || page.replacement === undefined) continue;
-    const replacement = options.replacements[page.replacement];
-    if (replacement === undefined) continue;
+    if (page.source !== 'replacement') continue;
+    // `planReplace` gives every replaced page the slot of its replacement.
+    const replacement = options.replacements[
+      page.replacement as number
+    ] as ReplacePagesOptions['replacements'][number];
     const group = groups.get(replacement.bytes) ?? { name: replacement.name, pages: [], positions: [] };
     group.pages.push(page.page);
     group.positions.push(page.position);
@@ -675,12 +668,7 @@ export async function replacePages(
       {
         signal: context.signal,
         onProgress: (progress) =>
-          context.onProgress?.({
-            phase: 'replace',
-            labelKey: 'replace.progress.replace',
-            ...(progress.done === undefined ? {} : { done: progress.done }),
-            ...(progress.total === undefined ? {} : { total: progress.total }),
-          }),
+          context.onProgress?.({ ...progress, phase: 'replace', labelKey: 'replace.progress.replace' }),
       },
     );
     composed = outcome.bytes;

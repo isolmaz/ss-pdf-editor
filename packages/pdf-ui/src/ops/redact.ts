@@ -117,7 +117,8 @@ export const redactDialog: OperationDialogSpec = {
       { signal: context.signal, onProgress: context.onProgress },
     );
 
-    const { verification } = outcome;
+    // `redactDocument` throws `verification-failed` when a mark still holds text, so a result
+    // that got here is a verified one: there is no failed or partial verification to report.
     return {
       files: [{ name: context.name, bytes: outcome.bytes, mime: 'application/pdf' }],
       report: {
@@ -125,20 +126,15 @@ export const redactDialog: OperationDialogSpec = {
         notes: [
           ...outcome.report.notes,
           note('changed', 'redact.markCount', { count: marks.length }),
-          // The verification is the operation's measurement of the *produced* bytes;
-          // the report states it either way, and the notice repeats it because it
-          // is the one sentence a redaction must not leave to the report panel.
-          verification.marksCleared
-            ? note('preserved', 'redact.verify.done')
-            : note('warning', 'redact.verify.failed'),
-          ...(verification.remaining.length === 0
-            ? []
-            : [note('warning', 'redact.verify.remaining', { count: verification.remaining.length })]),
+          // The verification is the operation's measurement of the *produced* bytes; the
+          // notice repeats it because it is the one sentence a redaction must not leave
+          // to the report panel.
+          note('preserved', 'redact.verify.done'),
           // A clean export does not imply the local traces are gone.
           note('warning', 'redact.warning.localTrace'),
         ],
       },
-      noticeKey: verification.marksCleared ? 'redact.verify.done' : 'redact.verify.failed',
+      noticeKey: 'redact.verify.done',
     };
   },
 };

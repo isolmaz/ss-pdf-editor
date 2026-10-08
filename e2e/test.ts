@@ -1,4 +1,8 @@
-import { test as base, expect } from 'playwright/test';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { mergeProcessCovs, type ScriptCov } from '@bcoe/v8-coverage';
+import { test as base, expect, type Page } from 'playwright/test';
 
 /**
  * The one `test` every spec uses: Playwright's, with an automatic referee that fails a
@@ -13,8 +17,29 @@ import { test as base, expect } from 'playwright/test';
  * A test that provokes an error on purpose — a damaged file, a wrong password — names
  * the messages it expects with `test.use({ allowedErrors: [/…/] })`; anything else
  * still fails it.
+ *
+ * With `E2E_COVERAGE` set to a directory (`pnpm coverage` sets it), every page of a test's
+ * browser context also records the V8 coverage of the editor's own scripts; each worker
+ * merges what its tests recorded and writes one file there when it ends. `tools/coverage/report.mjs`
+ * maps those files back to the sources and merges them with the unit suite's coverage.
  */
-export const test = base.extend<{ allowedErrors: readonly RegExp[]; pageErrors: readonly string[] }>({
+
+const coverageDir = process.env.E2E_COVERAGE;
+
+/** The editor's bundled scripts; the engines under `/engines/` are not this project's code. */
+const isEditorScript = (url: string): boolean => {
+  try {
+    const { pathname } = new URL(url);
+    return pathname.startsWith('/editor/assets/') && pathname.endsWith('.js');
+  } catch {
+    return false;
+  }
+};
+
+export const test = base.extend<
+  { allowedErrors: readonly RegExp[]; pageErrors: readonly string[] },
+  { v8Coverage: ScriptCov[][] }
+>({
   allowedErrors: [[], { option: true }],
   pageErrors: [
     async ({ context, allowedErrors }, use) => {
@@ -32,6 +57,57 @@ export const test = base.extend<{ allowedErrors: readonly RegExp[]; pageErrors: 
     },
     { auto: true },
   ],
+  v8Coverage: [
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's dependencies from this pattern; this one has none.
+    async ({}, use) => {
+      const recorded: ScriptCov[][] = [];
+      await use(recorded);
+      if (coverageDir === undefined || recorded.length === 0) return;
+      const merged = mergeProcessCovs(recorded.map((result) => ({ result })));
+      mkdirSync(coverageDir, { recursive: true });
+      writeFileSync(join(coverageDir, `e2e-${randomUUID()}.json`), JSON.stringify(merged));
+    },
+    { scope: 'worker' },
+  ],
+  context: async ({ context, v8Coverage }, use) => {
+    if (coverageDir === undefined) {
+      await use(context);
+      return;
+    }
+    // Every page of the context records, the test's `page` and the ones a test opens itself
+    // (two windows, the print window): coverage starts before `newPage` returns, so before the
+    // test can navigate, and is collected before a test's own `close()` would discard it.
+    const recording = new Set<Page>();
+    const collect = async (page: Page): Promise<void> => {
+      if (!recording.delete(page) || page.isClosed()) return;
+      const entries = await page.coverage.stopJSCoverage();
+      v8Coverage.push(
+        entries
+          .filter((entry) => isEditorScript(entry.url))
+          .map(({ scriptId, url, functions }) => ({ scriptId, url, functions })),
+      );
+    };
+    const record = async (page: Page): Promise<void> => {
+      if (recording.has(page)) return;
+      recording.add(page);
+      await page.coverage.startJSCoverage({ resetOnNavigation: false });
+      const close = page.close.bind(page);
+      page.close = async (options) => {
+        await collect(page);
+        return close(options);
+      };
+    };
+    const newPage = context.newPage.bind(context);
+    context.newPage = async () => {
+      const page = await newPage();
+      await record(page);
+      return page;
+    };
+    // A page the app opens (a popup) is recorded from its first event on, as early as it can be.
+    context.on('page', (page) => void record(page));
+    await use(context);
+    for (const page of [...recording]) await collect(page);
+  },
 });
 
 export { expect };

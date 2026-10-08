@@ -245,6 +245,8 @@ interface Region {
   readonly start: number;
   readonly end: number;
   readonly safe: boolean;
+  /** The `/Properties` name the region's `BDC` hides itself under. */
+  readonly property: string;
 }
 
 /**
@@ -259,26 +261,29 @@ function findRegions(
   const regions: Region[] = [];
   const stack: boolean[] = [];
   let hiddenDepth = 0;
-  let current: { start: number; textStart: number; shows: boolean; quote: boolean } | null = null;
+  let current: { start: number; textStart: number; shows: boolean; quote: boolean; property: string } | null =
+    null;
   let text = 0;
   let pathOpen = false;
   for (const [index, instruction] of instructions.entries()) {
     const operator = instruction.operator;
     if (operator === 'BDC') {
-      let hidden = false;
+      let hiddenBy: string | null = null;
       const property = nameOperand(instruction, 1);
       if (nameOperand(instruction, 0) === 'OC' && property !== null) {
         const entry = resourceEntry(resources, 'Properties', property);
         if (entry !== null) {
           const visibility = context.content.visibility(entry);
-          if (visibility === 'hidden') hidden = true;
+          if (visibility === 'hidden') hiddenBy = property;
           else if (visibility === 'unknown') context.sweep.undecided += 1;
         }
       }
-      stack.push(hidden);
-      if (hidden) {
+      stack.push(hiddenBy !== null);
+      if (hiddenBy !== null) {
         hiddenDepth += 1;
-        if (hiddenDepth === 1) current = { start: index, textStart: text, shows: false, quote: false };
+        if (hiddenDepth === 1) {
+          current = { start: index, textStart: text, shows: false, quote: false, property: hiddenBy };
+        }
       }
     } else if (operator === 'BMC') {
       stack.push(false);
@@ -288,7 +293,7 @@ function findRegions(
         if (hiddenDepth === 0 && current !== null) {
           const balanced = text === current.textStart && !pathOpen;
           const safe = balanced && !current.quote && !(current.shows && current.textStart !== 0);
-          regions.push({ start: current.start, end: index, safe });
+          regions.push({ start: current.start, end: index, safe, property: current.property });
           current = null;
         }
       }
@@ -307,7 +312,9 @@ function findRegions(
     }
   }
   // A region that never closes cannot be cut: where it would have ended is unknown.
-  if (current !== null) regions.push({ start: current.start, end: instructions.length, safe: false });
+  if (current !== null) {
+    regions.push({ start: current.start, end: instructions.length, safe: false, property: current.property });
+  }
   return regions;
 }
 
@@ -419,8 +426,7 @@ function processStream(
           if (inside.operator === 'Do' && name !== null) group.droppedXObjects.add(name);
           else noteUse(group, inside);
         }
-        const property = nameOperand(instruction, 1);
-        if (property !== null) group.droppedProperties.add(property);
+        group.droppedProperties.add(region.property);
         index = inner;
         continue;
       }
@@ -443,7 +449,7 @@ function processStream(
     if (instruction.operator === 'Do') {
       const name = nameOperand(instruction, 0);
       const entry = name === null ? null : resourceEntry(resources, 'XObject', name);
-      if (entry !== null && name !== null) {
+      if (name !== null && entry !== null) {
         const visibility = ocVisibility(context, entry);
         if (visibility === 'hidden') {
           context.sweep.found += 1;
@@ -619,23 +625,20 @@ function dropHiddenGroups(context: Context): number {
     });
   }
   // The catalog itself is walked without its `/OCProperties` entry but its other entries count.
-  const catalog = catalogOf(doc);
-  if (catalog !== null) {
-    referencesInside(
-      catalog,
-      (target) => {
-        if (content.hidden.has(target)) stillUsed.add(target);
-      },
-      (key) => key === 'OCProperties',
-    );
-  }
+  referencesInside(
+    root,
+    (target) => {
+      if (content.hidden.has(target)) stillUsed.add(target);
+    },
+    (key) => key === 'OCProperties',
+  );
   for (const number of content.hidden) if (!stillUsed.has(number)) doomed.add(number);
   if (doomed.size === 0) return 0;
 
   const properties = content.properties;
-  const configs: PDFObject[] = [];
-  const defaultConfig = dictionaryUnder(properties, 'D');
-  if (defaultConfig !== null) configs.push(defaultConfig);
+  // Something is hidden, and only the default configuration's lists and applications hide a
+  // group (`configure`), so `/D` is there.
+  const configs: PDFObject[] = [dictionaryUnder(properties, 'D') as PDFObject];
   const alternates = arrayUnder(properties, 'Configs');
   if (alternates !== null) {
     for (const entry of entriesOf(alternates)) {

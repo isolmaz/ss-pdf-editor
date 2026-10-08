@@ -301,7 +301,8 @@ function checkUri(uri: string, path: string): { readonly value: string; readonly
   if (trimmed.length === 0) refuse('link uri is empty', path);
 
   for (const character of trimmed) {
-    const code = character.codePointAt(0) ?? 0;
+    // Iterating a string by code point never yields an empty string.
+    const code = character.codePointAt(0) as number;
     if (code < 0x20 || code === 0x7f) {
       refuse(`link uri carries a control character (U+${code.toString(16).toUpperCase()})`, path);
     }
@@ -317,7 +318,8 @@ function checkUri(uri: string, path: string): { readonly value: string; readonly
   let value = '';
   let encoded = 0;
   for (const character of trimmed) {
-    const code = character.codePointAt(0) ?? 0;
+    // Iterating a string by code point never yields an empty string.
+    const code = character.codePointAt(0) as number;
     if (code > 0x7e || EXCLUDED_ASCII.has(character)) {
       for (const byte of textEncoder.encode(character)) {
         value += `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
@@ -638,14 +640,15 @@ function removeLinks(
   const doomed = new Set<number>();
   for (const [pageIndex, targets] of positions) {
     throwIfAborted(context.signal);
-    const page = pages[pageIndex];
-    const annots = page === undefined ? null : annotsOf(doc, page);
-    if (page === undefined || annots === null) continue;
+    // A page is in `positions` only after a link of its own was selected, so it exists and
+    // has an `/Annots` array.
+    const page = pages[pageIndex] as PDFObject;
+    const annots = annotsOf(doc, page) as PDFObject;
     const links = linksOnPage(doc, page);
     // Descending, so every position collected from the untouched array stays valid.
     for (const position of [...targets].sort((left, right) => right - left)) {
-      const link = links.find((entry) => entry.position === position);
-      if (link === undefined) continue;
+      // Every position was taken from this page's links, and nothing has been deleted before it.
+      const link = links.find((entry) => entry.position === position) as ExistingLink;
       annots.delete(position);
       if (link.number !== null) doomed.add(link.number);
       result.removedOn.set(pageIndex, (result.removedOn.get(pageIndex) ?? 0) + 1);
@@ -698,11 +701,9 @@ function addLinks(
       const requested = item.destination.pageIndex;
       const destinationIndex = Math.min(Math.max(requested, 0), Math.max(pages.length - 1, 0));
       if (destinationIndex !== requested) clamped += 1;
-      const destinationPage = pages[destinationIndex];
-      if (destinationPage === undefined) {
-        missingTargets += 1;
-        continue;
-      }
+      // The page being linked from exists, so there is at least one page, and the index
+      // is clamped into the page list.
+      const destinationPage = pages[destinationIndex] as PDFObject;
       const geometry = pageGeometry(destinationPage);
       const point =
         isFiniteNumber(item.destination.x) && isFiniteNumber(item.destination.y)
@@ -782,8 +783,8 @@ export async function applyLinkEdit(
       // both need it, and it has to be read before that page's first mutation.
       const touched = (pageIndex: number): void => {
         if (result.before.has(pageIndex)) return;
-        const page = pages[pageIndex];
-        result.before.set(pageIndex, page === undefined ? 0 : linksOnPage(doc, page).length);
+        // Only called for a page that was found.
+        result.before.set(pageIndex, linksOnPage(doc, pages[pageIndex] as PDFObject).length);
       };
 
       if (removes.length > 0) removeLinks(doc, pages, removes, result, touched, context);
@@ -795,8 +796,9 @@ export async function applyLinkEdit(
       // An `/Annots` array that no longer holds anything is a shell, not a fact — dropped
       // after the writes, so a page that lost its last link keeps no empty array.
       for (const [pageIndex] of result.before) {
-        const page = pages[pageIndex];
-        if (page !== undefined && annotsOf(doc, page)?.length === 0) page.delete('Annots');
+        // Only pages that were found are recorded in `before`.
+        const page = pages[pageIndex] as PDFObject;
+        if (annotsOf(doc, page)?.length === 0) page.delete('Annots');
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') throw error;

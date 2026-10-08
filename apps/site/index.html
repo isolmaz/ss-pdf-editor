@@ -6,7 +6,7 @@
     <title>SsPdfEditor — %100 Yerel, %100 Ücretsiz Tarayıcı Tabanlı PDF Düzenleyici</title>
     <meta
       name="description"
-      content="Belgeleriniz cihazınızdan ayrılmaz: %100 yerel ve %100 ücretsiz PDF okuma, açıklama, form doldurma, vektörel redaksiyon ve imzalama."
+      content="Belgeleriniz cihazınızdan ayrılmaz: %100 yerel ve %100 ücretsiz PDF okuma, düzenleme, açıklama, form doldurma, 27 dilde OCR, vektörel redaksiyon ve imzalama."
     />
     <link rel="canonical" href="https://pdf.isolmaz.com/" />
     <link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
@@ -130,8 +130,8 @@
         </h1>
 
         <p class="mt-6 max-w-[62ch] text-balance text-base leading-relaxed text-kumo-subtle">
-          Acrobat sınıfı okuma, açıklama, form doldurma, sayfa yönetimi ve kalıcı redaksiyon. Dosya yükleme yok,
-          abonelik yok, hesap açmak yok. <strong>Tamamen yerel, sınırsız ve özgür.</strong>
+          Acrobat sınıfı okuma, metin düzenleme, açıklama, form doldurma, sayfa yönetimi, OCR, dönüştürme, dijital imza ve kalıcı redaksiyon. Dosya yükleme yok,
+          abonelik yok, hesap açmak yok. <strong>Tamamen yerel, kotasız ve özgür.</strong>
         </p>
 
         <!-- Action Row -->
@@ -226,19 +226,19 @@
         </div>
       </section>
 
-      <!-- Section 1: TÜM ANA ÖZELLİKLER (6 Comprehensive Domains) -->
+      <!-- Section 1: TÜM ANA ÖZELLİKLER (18 feature cards, same order as /en/) -->
       <section id="ozellikler" class="border-t border-kumo-line py-16 sm:py-20">
         <div class="max-w-[60ch]">
           <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
             Acrobat sınıfı tüm temel yetenekler
           </h2>
           <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
-            Okuma, sayfa düzenleme, form doldurma ve güvenlik araçları tek bir yerel arayüzde entegre edilmiştir.
+            Okuma, düzenleme, dönüştürme, OCR, form doldurma, imza ve güvenlik araçları tek bir yerel arayüzde bir araya gelir.
           </p>
         </div>
 
         <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <!-- Card 1: Okuma -->
+          <!-- Card 1: Reading -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -248,14 +248,14 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Gelişmiş Okuma & İnceleme</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Kesintisiz tek ve çift sayfa kitap görünümü</li>
-              <li>· Tam metin arama ve yer imleri (outline) gezintisi</li>
-              <li>· Yüksek çözünürlüklü büyüteç ve anlık görüntü aracı</li>
-              <li>· Yerel cihaz sesleriyle sesli okuma</li>
+              <li>· Kesintisiz kaydırma, tek sayfa, kitap ve tam ekran sunum modları</li>
+              <li>· Eşleşmeleri vurgulayan tam metin arama; küçük resimler, yer imleri (outline) ve belge sekmeleri</li>
+              <li>· Büyüteç ve görünen sayfaları tek bir PNG’de birleştiren anlık görüntü aracı</li>
+              <li>· Okuma modu ve sesli okuma: yalnızca belgenin (belirtmiyorsa arayüzün) diline uyan, cihazda kurulu sesler kullanılır; bulut sesi kullanılmaz</li>
             </ul>
           </div>
 
-          <!-- Card 2: Sayfa İşlemleri -->
+          <!-- Card 2: Pages -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -265,14 +265,49 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Kapsamlı Sayfa Yönetimi</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Sayfaları birleştirme (merge) ve bölme (split)</li>
-              <li>· Sayfa ayıklama (extract) ve gereksiz sayfaları silme</li>
-              <li>· 90° ve 180° kayıpsız sayfa döndürme</li>
-              <li>· Sürükle-bırak ile yeniden sıralama ve N-up dizgi</li>
+              <li>· Boş belge (A3, A4, A5, Letter, Legal); sayfa ekleme, silme, çoğaltma ve değiştirme</li>
+              <li>· Sürükleyerek yeniden sıralama ve 90° adımlarla döndürme</li>
+              <li>· Sayfa ayıklama (extract), bölme (split) ve istediğiniz sırayla birleştirme (merge)</li>
+              <li>· Sayfa kutuları ve otomatik kırpma, sayfa etiketleri</li>
             </ul>
           </div>
 
-          <!-- Card 3: Formlar -->
+          <!-- Card 3: Markup -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                <path d="M2 2l7.586 7.586" />
+                <circle cx="11" cy="11" r="2" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Açıklama, Not & Ölçüm</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Vurgulama (highlight), altı çizili, üstü çizili ve dalgalı işaretleme</li>
+              <li>· Yapışkan notlar, serbest el kalem, geometrik şekiller, damgalar, bağlantılar, görseller ve yazılan metin; her işareti taşıyın, döndürün, boyutlandırın veya silin</li>
+              <li>· Yazılan metne Noto Sans gömülür; Türkçe harfler her okuyucuda doğru görünür</li>
+              <li>· Mesafe, çevre ve alan ölçümü; sonuçlar gerçek PDF açıklamaları olarak yazılır</li>
+            </ul>
+          </div>
+
+          <!-- Card 4: Comments -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Yorumlar & İnceleme</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Yanıtlı yorum dizileri ve inceleme durumu (Kabul edildi, Reddedildi, İptal edildi, Tamamlandı)</li>
+              <li>· Yanıtlar ve durumlar gerçek PDF kayıtlarıdır; Acrobat, Foxit ve diğer okuyucular aynı diziyi gösterir</li>
+              <li>· XFDF, FDF ve JSON olarak içe ve dışa aktarma</li>
+              <li>· İçe aktarılan yorumlar düzenlenebilir işaretler olarak gelir</li>
+            </ul>
+          </div>
+
+          <!-- Card 5: Forms -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -284,33 +319,107 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Etkileşimli Form Doldurma</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· AcroForm metin kutuları, radyo düğmeleri, onay kutuları</li>
-              <li>· Açılır menüler ve form veri alanları</li>
-              <li>· Form alanlarını PDF içerisine kalıcı düzleştirme</li>
-              <li>· Form verisi içe ve dışa aktarımı</li>
+              <li>· AcroForm metin kutuları, radyo düğmeleri, onay kutuları ve açılır menüler</li>
+              <li>· Alan oluşturma, bayrak ayarlama ve basit hesaplamalar</li>
+              <li>· Düz bir formda alanları algılama: metin, onay kutusu, radyo grubu ve imza alanı önerilir, siz onaylarsınız</li>
+              <li>· Form alanlarını kalıcı düzleştirme; form verisini FDF veya JSON olarak içe ve dışa aktarma</li>
             </ul>
           </div>
 
-          <!-- Card 4: Açıklama -->
+          <!-- Card 6: XFA -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 19l7-7 3 3-7 7-3-3z" />
-                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-                <path d="M2 2l7.586 7.586" />
-                <circle cx="11" cy="11" r="2" />
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
               </svg>
             </div>
-            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Açıklama, Not & Çizim</h3>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">XFA Formları</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Metin vurgulama (highlight), altı ve üstü çizili işaretleme</li>
-              <li>· Yapışkan notlar ve yorum ekleme</li>
-              <li>· Serbest el çizim kalemi ve silgi</li>
-              <li>· Mimari ve teknik çizimler için mesafe/alan ölçümü</li>
+              <li>· Statik XFA: normal form gibi doldurulur ve XFA verisi de güncellenir; formun zaten taşıdığı imza, imzaladığı içeriği kapsamaya devam eder</li>
+              <li>· Dinamik XFA: pdf.js’in XFA oluşturucusuyla kendi penceresinde doldurun, girdiğiniz veriyi kaydedin ve XML olarak dışa aktarın</li>
+              <li>· XFA verisini Acrobat’ın “Veriyi dışa aktar” XML’i olarak içe ve dışa aktarma</li>
+              <li>· Normal bir PDF’e düzleştirme veya XFA’yı kaldırıp yalnızca AcroForm’u tutma; XFA betikleri ve hesaplamaları çalışmaz</li>
             </ul>
           </div>
 
-          <!-- Card 5: Redaksiyon -->
+          <!-- Card 7: Text -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="4 7 4 4 20 4 20 7" />
+                <line x1="9" y1="20" x2="15" y2="20" />
+                <line x1="12" y1="4" x2="12" y2="20" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Metin Düzenleme, Bul & Değiştir</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Paragrafı yerinde yeniden yazın; metin yeniden akar. Yalnızca yatay metin düzenlenebilir, düzenlenemeyen bloklar işaretlenir</li>
+              <li>· Tüm belgede bul ve değiştir (Ctrl+H): büyük/küçük harf, tam sözcük ve sayfa aralığı seçenekleriyle</li>
+              <li>· Eski glifler gerçekten silinir, sonuç ikinci bir PDF motoruyla denetlenir; yeni metin eskisinin boyutunda ve renginde çizilir</li>
+              <li>· I/ı ve İ/i ayrımı doğru çalışır: “istanbul”, “İSTANBUL” ile eşleşir; metin veya Markdown olarak dışa aktarma</li>
+            </ul>
+          </div>
+
+          <!-- Card 8: Convert -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="17 1 21 5 17 9" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <polyline points="7 23 3 19 7 15" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Dönüştürme & Oluşturma</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Word (DOCX), Excel (XLSX), PowerPoint (PPTX), HTML, metin/Markdown, CSV/TSV, EPUB ve FB2 dosyalarını tarayıcıda PDF’e dönüştürme</li>
+              <li>· PDF’i düzenlenebilir Word, Excel veya CSV dosyasına dönüştürme; Word ve CSV dosyası sunulmadan önce geri okunarak doğrulanır, Excel dosyası geri okunmaz; rapor neyin taşınmadığını söyler (Word çıktısında bırakılan resimlerin sayısı dahil)</li>
+              <li>· Sayfaları PNG, JPEG veya WebP görseli olarak dışa aktarma; görsellerden PDF oluşturma</li>
+              <li>· Dönüştürme içeriği korur, birebir görünümü değil; eski DOC, XLS, PPT, OpenDocument ve RTF dönüştürülmez</li>
+            </ul>
+          </div>
+
+          <!-- Card 9: Scan -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Kamerayla Belge Tarama</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Telefon veya dizüstü kamerasıyla ya da fotoğraf dosyalarından PDF oluşturma; görüntü cihazınızdan çıkmaz</li>
+              <li>· Sayfanın dört köşesi otomatik bulunur; bulunamazsa köşeleri kendiniz sürüklersiniz</li>
+              <li>· Sayfa perspektiften düzeltilir; dört görünüm: özgün renk, gri tonlama, siyah-beyaz ve geliştirilmiş</li>
+              <li>· Çok sayfalı tarama: yeniden sıralama, döndürme ve yeniden çekim; sonuç isterseniz OCR ile aranabilir hale gelir</li>
+            </ul>
+          </div>
+
+          <!-- Card 10: OCR -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+                <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+                <line x1="7" y1="8" x2="17" y2="8" />
+                <line x1="7" y1="12" x2="17" y2="12" />
+                <line x1="7" y1="16" x2="13" y2="16" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">OCR: 27 Dilde Metin Tanıma</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Taranmış sayfalara görünmez, seçilebilir ve aranabilir bir metin katmanı ekler; metin içeren sayfalar varsayılan olarak atlanır</li>
+              <li>· 27 dil: Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, İtalyanca, Portekizce, Hollandaca, Lehçe, Çekçe, Macarca, Romence, İsveççe, Azerice, Kürtçe (Kurmanci), Rusça, Ukraynaca, Bulgarca, Yunanca, Arapça, Farsça, İbranice, Hintçe, Çince (sadeleştirilmiş ve geleneksel), Japonca ve Korece</li>
+              <li>· Arapça, İbranice ve Çince-Japonca-Korece metin de aranabilir ve kopyalanabilir; sağdan sola sözcükler okuma sırasıyla gelir</li>
+              <li>· OCR motoru ve dil paketleri bu siteden sunulur; ilk kullanımda indirilir, sonrasında çevrimdışı da çalışır</li>
+            </ul>
+          </div>
+
+          <!-- Card 11: Redaction -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -318,28 +427,133 @@
                 <path d="M6 6l12 12" />
               </svg>
             </div>
-            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Kalıcı Vektörel Redaksiyon</h3>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Kalıcı Vektörel Redaksiyon & Temizleme</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· Yüzeysel siyah kutu boyaması DEĞİLDİR</li>
-              <li>· Metin operatörlerini ve glifleri PDF akışından siler</li>
-              <li>· Gizli bilgileri fiziksel olarak yok eder</li>
-              <li>· Meta veri ve görünmez katman temizliği</li>
+              <li>· Metin operatörlerini ve glifleri PDF akışından siler; çıktı glif glif yeniden denetlenir</li>
+              <li>· Nesne düzeyinde denetim raporu: kalan terimler, önceki revizyonlar ve artık yapı</li>
+              <li>· Temizleme (sanitize): betikler, ekler, meta veri, özel uygulama verisi, küçük resimler ve gizli katmanlar; sonuç yeniden okunup doğrulanır</li>
             </ul>
           </div>
 
-          <!-- Card 6: İmza & Şifre -->
+          <!-- Card 12: Signing -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M20 6L9 17l-5-5" />
               </svg>
             </div>
-            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Dijital İmza & Şifreleme</h3>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Dijital İmza & Doğrulama</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· PAdES B-B standardında yerel dijital imza ekleme</li>
-              <li>· RSA ve ECDSA sertifika zinciri doğrulama</li>
-              <li>· Standart AES parola şifreleme ve yetkilendirme</li>
-              <li>· Şifreli belgelerin kilidini yerel olarak açma</li>
+              <li>· PKCS#12 kimliğinizle, isteğe bağlı görünür damgalı PAdES B-B standardında yerel dijital imza</li>
+              <li>· Çizilmiş, yazılmış veya kâğıttan fotoğraflanmış imza ve paraf; bunlar sertifikalı imza değil, sayfadaki bir görseldir</li>
+              <li>· İmza doğrulama: bütünlük, güven, iptal ve kapsam ayrı ayrı bildirilir; RSA ve ECDSA anahtarları; güven yalnızca içe aktardığınız sertifikalara dayanır</li>
+              <li>· İptal bilgisi cihazınızdaki CRL’lerden ve PDF’e gömülü iptal verisinden okunur, ağdan çekilmez; RFC 3161 zaman damgaları çevrimdışı doğrulanır</li>
+            </ul>
+          </div>
+
+          <!-- Card 13: Encryption -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Şifreleme & Parola</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· AES-256 parola şifreleme ve izin ayarları; çıktı yeniden açılıp doğrulanır</li>
+              <li>· Parola korumalı dosya açılırken parola istenir ve belge salt okunur açılır; parola yalnızca bellekte tutulur</li>
+              <li>· Parolasını bildiğiniz belgenin korumasını kaldırma; “Kilidi açılmış kopya oluştur” düzenlenebilir bir kopyayı yeni sekmede açar</li>
+              <li>· Parola korumalı belgeler cihazda taslak, kaynak kopya veya dosya başvurusu bırakmaz (hassas oturum)</li>
+            </ul>
+          </div>
+
+          <!-- Card 14: Accessibility -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="4" r="2" />
+                <path d="M5 8l7 1 7-1" />
+                <path d="M12 9v6" />
+                <path d="M9 21l3-6 3 6" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Erişilebilirlik & PDF/UA</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Hızlı denetim raporu yalnızca olguları bildirir: puan ve uygunluk iddiası yoktur</li>
+              <li>· PDF/UA denetimi: Matterhorn Protokolü örnek alınmış 34 kural; her biri geçti, başarısız, elle denetle, uygulanamaz veya denetlenemedi olarak işaretlenir. Renk kontrastı ölçülmez</li>
+              <li>· Etiket (tag) ve okuma sırası düzenleyicisi; etiketsiz dosyaya yapı etiketleri yazma ve doğrulama</li>
+              <li>· Görseller için alternatif metin, form alanları için ipucu; başlık, dil ve sekme sırası için hızlı düzeltmeler</li>
+            </ul>
+          </div>
+
+          <!-- Card 15: PdfA -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="21 8 21 21 3 21 3 8" />
+                <rect x="1" y="3" width="22" height="5" />
+                <line x1="10" y1="12" x2="14" y2="12" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">PDF/A & Sıkıştırma</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· PDF/A-2b (varsayılan), PDF/A-3b veya PDF/A-1b’ye dönüştürme; sonuç yeni sekmede açılır, özgün belge açık kalır</li>
+              <li>· 20 kural grubunu kapsayan PDF/A denetimi, dönüştürülmemiş dosyalar için de çalışır; veraPDF doğrulamasının tamamı değildir ve sertifika yerine geçmez</li>
+              <li>· Bir kuralı bozan dosya asla teslim edilmez: işlem durur ve hangi kuralın başarısız olduğunu söyler</li>
+              <li>· Sıkıştırma: yapısal yeniden kayıt (kayıpsız) veya sayfaları görsele dönüştürme (kayıplı; metin katmanı, bağlantılar ve açıklamalar kaybolur); dosya büyürse rapor bunu söyler</li>
+            </ul>
+          </div>
+
+          <!-- Card 16: Structure -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Belge Yapısı & Damgalama</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Belge özellikleri ve XMP, yer imi (outline) düzenleme</li>
+              <li>· Ekler, katmanlar (OCG) ve bağlantılar (URI izin listesiyle sınırlı)</li>
+              <li>· Üstbilgi ve altbilgi, sayfa numarası, Bates numaralandırma</li>
+              <li>· Metin veya görsel filigran (watermark) ve damgalar</li>
+            </ul>
+          </div>
+
+          <!-- Card 17: Compare -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9" />
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <rect x="6" y="14" width="12" height="8" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Karşılaştırma, Toplu İşlem & Yazdırma</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· İki belgeyi metin veya piksel olarak karşılaştırma; rapor hangi yöntemin kullanıldığını her zaman söyler</li>
+              <li>· Toplu işlem: sıralı adımları bir seferde en fazla 256 dosyaya uygulayın, her dosya için ayrı rapor alın</li>
+              <li>· Yazdırma: sayfa aralıkları, N-up, kitapçık, poster ve dupleks sayfa düzenleri</li>
+            </ul>
+          </div>
+
+          <!-- Card 18: Workflow -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Çalışma Akışı</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Tüm araçları göreve göre sıralayan ana ekran; Ctrl+K komut paleti ile her araca ulaşım</li>
+              <li>· Geri al / yinele geçmişi; kaydedilmemiş çalışma için yerel taslaklar</li>
+              <li>· Orijinal dosyanın üzerine kaydetme (Chromium tabanlı tarayıcılar) veya kopya olarak dışa aktarma</li>
+              <li>· Basit ve gelişmiş arayüz kipleri, koyu tema, Türkçe ve İngilizce arayüz, çevrimdışı çalışma</li>
             </ul>
           </div>
         </div>
@@ -355,7 +569,7 @@
             Ücretli PDF programları ile karşılaştırın
           </h2>
           <p class="mt-3 text-base leading-relaxed text-kumo-subtle max-w-[48ch]">
-            Bizde var, onlarda yok: Temel farklar, özellikler ve planlanan geliştirmeler.
+            Gizlilik, fiyat ve temel özellikler yan yana.
           </p>
         </div>
 
@@ -512,7 +726,7 @@
               </svg>
               <div class="text-sm">
                 <strong class="font-semibold text-kumo-strong">Doğrudan Diske Kayıt:</strong>
-                <span class="text-kumo-subtle"> Belgelerinizi doğrudan bilgisayarınızdaki orijinal dosyaya yazabilir veya indirebilirsiniz.</span>
+                <span class="text-kumo-subtle"> Chromium tabanlı tarayıcılarda belgelerinizi doğrudan bilgisayarınızdaki orijinal dosyaya yazabilir; her tarayıcıda kopyasını indirebilirsiniz.</span>
               </div>
             </div>
 
@@ -523,6 +737,25 @@
               <div class="text-sm">
                 <strong class="font-semibold text-kumo-strong">Taslaklar Yalnızca Bu Tarayıcıda:</strong>
                 <span class="text-kumo-subtle"> Kaydedilmemiş çalışma kaybolmasın diye bu tarayıcıda taslak olarak tutulur; şifreli belgeler ve hassas oturumlar hiçbir taslak bırakmaz. Ne saklandığını <a class="text-kumo-strong underline" href="/gizlilik">Gizlilik</a> sayfası anlatır.</span>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Üçüncü Taraf İstek Yok:</strong>
+                <span class="text-kumo-subtle"> Motorlar ve yazı tipleri bu siteden sunulur; sıkı içerik güvenlik politikası (CSP) yalnızca kendi sitenize bağlantıya izin verir. Çerez ve analitik yoktur.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Açık Kaynak:</strong>
+                <span class="text-kumo-subtle"> Kaynak kodu <a class="text-kumo-strong underline" href="https://github.com/isolmaz/ss-pdf-editor" target="_blank" rel="noreferrer">GitHub’da</a> AGPL-3.0-or-later lisansıyla açıktır; ne yaptığını denetleyebilirsiniz.</span>
               </div>
             </div>
           </div>
@@ -585,8 +818,8 @@
               Düzenleyiciyi ilk açtığınızda uygulamanın kendisi tarayıcı önbelleğinize kaydedilir; PDF motorları, yazı
               tipleri ve her aracın kodu ise ilk kullanıldıklarında saklanır. PDF motorlarını ve yazı tiplerini
               <strong class="font-medium text-kumo-strong">Ayarlar → Çevrimdışı kullanım → Hazırla</strong> ile önceden
-              indirebilirsiniz. Bu cihazda daha önce kullandığınız araçlar uçak modunda da çalışır; OCR dil paketleri
-              ve PDF/A dönüştürücü de internetle bir kez kullanıldıktan sonra. Hiç açılmamış bir araç ilk kez
+              indirebilirsiniz. Bu cihazda daha önce kullandığınız araçlar uçak modunda da çalışır; OCR motoru ve dil
+              paketleri ile PDF/A dönüştürücü de internetle bir kez kullanıldıktan sonra. Hiç açılmamış bir araç ilk kez
               internet ister.
             </div>
           </details>
@@ -633,7 +866,7 @@
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
               Chrome veya Edge gibi masaüstü tarayıcılarda doğrudan orijinal dosyanızın üzerine kaydedebilirsiniz (Kaydet).
-              Firefox veya Safari'de ise tek tıkla düzenlenmiş yeni dosya olarak indirebilirsiniz (Dışa Aktar).
+              Firefox veya Safari'de ise tek tıkla düzenlenmiş yeni dosya olarak indirebilirsiniz (Dışa aktar).
             </div>
           </details>
 
@@ -659,6 +892,160 @@
               1.500 sayfanın üstünde düzenleyici sizi uyarır. Telefon ve tablette de aynı üst sınır geçerlidir, ancak
               300 sayfa veya 64 MB'ın üstündeki belgeler yalnızca görüntülenir. Toplu işlem bir seferde en fazla 256
               dosya alır.
+            </div>
+          </details>
+
+          <!-- FAQ 6 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Hangi dilleri destekliyor?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Arayüz Türkçe ve İngilizcedir; Ayarlar → Dil’den değiştirebilirsiniz. OCR ise 27 dilde çalışır (liste Özellikler bölümünde). OCR motoru ve her dil paketi bu siteden sunulur ve ilk kullanımda indirilir; sonrasında çevrimdışı da çalışır.
+            </div>
+          </details>
+
+          <!-- FAQ 7 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Word, Excel veya PowerPoint dosyalarını açabilir miyim?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Evet. DOCX, XLSX, PPTX, HTML, metin/Markdown, CSV/TSV, EPUB ve FB2 dosyaları açıldığında ya da düzenleyiciye bırakıldığında tarayıcıda PDF’e dönüştürülür ve yeni sekmede açılır; sonuç seçilip aranabilen gerçek metindir. Dönüştürme belgenin içeriğini korur, sayfa düzenini, yazı tiplerini ve biçimlendirmeyi birebir korumaz; her rapor neyin yaklaştırıldığını söyler. Eski DOC, XLS ve PPT biçimleri, OpenDocument ve RTF dönüştürülmez. PDF’ten Word, Excel veya CSV’ye aktarma da vardır; PDF paragrafları ve tabloları saklamadığından bunlar sayfadan yeniden kurulur ve hatalı olabilir.
+            </div>
+          </details>
+
+          <!-- FAQ 8 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Redaksiyon gerçekten kalıcı mı?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Evet. İşaretlenen metin siyah bir kutuyla örtülmez; PDF içeriğinden silinir, dosya yeniden yazılır ve çıktı glif glif yeniden denetlenir. Denetim raporu kalan terimleri, önceki revizyonları ve artık yapıyı listeler. Temizleme (sanitize) ise sayfada görünmeyenleri (betikler, ekler, meta veri, gizli katmanlar) kaldırır ve sonucu yeniden okuyarak doğrular; dijital imza bu işlemden sonra geçerli kalmaz. Sınır: denetim ham baytları tarar, sıkıştırılmış akışların içini göremez ve bunu raporda söyler.
+            </div>
+          </details>
+
+          <!-- FAQ 9 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Basit imza ile dijital imza arasındaki fark nedir?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Çizilmiş, yazılmış veya fotoğraflanmış imza sayfaya konan bir görseldir; kimin imzaladığını ya da belgenin sonradan değişip değişmediğini kanıtlamaz, iletişim kutusu da bunu söyler. Bunun için PKCS#12 kimliğinizle PAdES B-B imzası atın. Yeni imza zaman damgası ve iptal verisi taşımaz, çünkü sormak için bir ağ yoktur. Doğrulamada güven yalnızca içe aktardığınız sertifikalara dayanır ve iptal durumu yalnızca cihazınızdaki listelerden ve PDF’in kendi içine gömülü iptal verisinden okunur; hiçbiri yoksa yanıt “bilinmiyor” olur.
+            </div>
+          </details>
+
+          <!-- FAQ 10 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Telefonla belge tarayabilir miyim?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Evet: Dosya → Kamerayla tara (ana ekranda ve Ctrl+K paletinde de var). Telefonda arka kamera açılır, görüntü cihazınızdan çıkmaz ve kamera yalnızca tararken çalışır. Kamera yoksa ya da izin vermediyseniz fotoğraf dosyalarını seçebilirsiniz. Kamera güvenli bağlantı (https veya localhost) ister. Sayfa kenarlarından bulunur ve düzeltilir; çıktı arşiv kalitesinde çoğaltma için değildir. Oluşan PDF’i OCR ile aranabilir hale getirebilirsiniz.
+            </div>
+          </details>
+
+          <!-- FAQ 11 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>PDF/A ve erişilebilirlik denetimleri sertifika yerine geçer mi?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Hayır. PDF/A denetimi veraPDF kurallarının bir alt kümesidir (20 kural grubu); temiz sonuç sertifika değildir. PDF/A dönüştürmesi dosyanın tamamını yeniden yazar: dijital imzalar geçerliliğini yitirir, form alanları sayfaya düzleştirilir. Bir kuralı bozan dosya teslim edilmez. PDF/UA denetimi otomatiktir ve uygunluğu kanıtlayamaz: okuma sırası, alternatif metin kalitesi ve dil değişimleri için bir kişi gerekir; renk kontrastı ölçülmez.
+            </div>
+          </details>
+
+          <!-- FAQ 12 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Tarayıcıyı kapatırsam çalışmam kaybolur mu?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Kaydetmediğiniz değişiklikler taslak olarak yalnızca bu tarayıcının özel dosya alanında (OPFS) tutulur ve düzenleyiciyi yeniden açtığınızda geri gelir; belgenin sekmesini düzenleyicide kendiniz kapatırsanız taslağı da silinir. Parola korumalı belgeler ve hassas oturumlar taslak bırakmaz. Taslağı silmek güvenli silme değildir, diskteki baytların üzerine yazılmaz. Ne saklandığının tam listesi için <a class="text-kumo-strong underline" href="/gizlilik">Gizlilik</a> sayfasına bakın.
             </div>
           </details>
         </div>
@@ -796,8 +1183,8 @@
           <div class="space-y-3">
             <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Kurumsal</h2>
             <ul class="space-y-2 text-xs text-white/70">
-              <li><a class="transition-colors hover:text-white" href="/gizlilik">Gizlilik Politikası</a></li>
-              <li><a class="transition-colors hover:text-white" href="/kosullar">Kullanıcı Sözleşmesi</a></li>
+              <li><a class="transition-colors hover:text-white" href="/gizlilik">Gizlilik Bildirimi</a></li>
+              <li><a class="transition-colors hover:text-white" href="/kosullar">Kullanım Koşulları</a></li>
               <li><a class="transition-colors hover:text-white" href="#gizlilik">Sıfır Veri Taahhüdü</a></li>
               <li><a class="transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">İletişim</a></li>
             </ul>
@@ -819,8 +1206,8 @@
           <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
             <p>© 2026 SsPdfEditor. Tüm hakları saklıdır.</p>
             <div class="flex flex-wrap items-center gap-6">
-              <a class="transition-colors hover:text-white/90" href="/gizlilik">Gizlilik Politikası</a>
-              <a class="transition-colors hover:text-white/90" href="/kosullar">Kullanıcı Sözleşmesi</a>
+              <a class="transition-colors hover:text-white/90" href="/gizlilik">Gizlilik Bildirimi</a>
+              <a class="transition-colors hover:text-white/90" href="/kosullar">Kullanım Koşulları</a>
               <a class="transition-colors hover:text-white/90" href="#gizlilik">KVKK / Yerel Güvence</a>
             </div>
           </div>

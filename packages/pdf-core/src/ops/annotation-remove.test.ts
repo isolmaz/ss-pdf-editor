@@ -20,26 +20,16 @@
  *
  * The fixture is written with MuPDF's object model, the removal runs on the real MuPDF, and
  * every result is read back by the real pdf.js: the fixture is a file a reader could
- * open, not a hand-built dictionary graph. The
- * only environment note is Node's: pdf.js needs a worker script and cannot use the
- * browser-relative path the adapter installs, so the file inside the installed
- * package is used instead (the workaround `apps/web/src/operations.test.ts` documents).
+ * open, not a hand-built dictionary graph.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { isToolError, type ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs, openWithPdfjs } from '../engines/pdfjs-handle';
+import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { type RemoveAnnotationsRequest, removePdfAnnotations } from './annotation-remove';
 import { type ExistingAnnotation, readAnnotations } from './annotations';
 import type { OperationContext } from './types';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
-).href;
 
 const CONTEXT: OperationContext = { signal: new AbortController().signal };
 

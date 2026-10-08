@@ -114,7 +114,8 @@ interface FontAccumulator {
 function collectPageFonts(pageIndex: number, fonts: PDFObject, merged: Map<string, FontAccumulator>): void {
   const entries: [string, PDFObject][] = [];
   fonts.forEach((value, key) => {
-    if (typeof key === 'string') entries.push([key, value]);
+    // A dictionary's keys are names; the callback type also covers an array's indices.
+    entries.push([String(key), value]);
   });
   for (const [key, value] of entries) {
     const font = resolved(value);

@@ -121,8 +121,8 @@ async function measure(
   for (const index of textPages) {
     throwIfAborted(context.signal);
     const before = pageWords(source, index);
-    if (before.length < MIN_WORDS) continue;
-    const recall = wordRecall(before, pageWords(output, index));
+    // A page with too few words says nothing about the text; `wordRecall` is `null` only for none.
+    const recall = before.length < MIN_WORDS ? null : wordRecall(before, pageWords(output, index));
     if (recall === null) continue;
     wordsTotal += before.length;
     wordsFound += recall * before.length;
@@ -198,7 +198,8 @@ function preparationNotes(counters: PrepareCounters, part: PdfAPart): OperationN
 }
 
 function failedCount(report: PdfACheckReport, rule: string): number {
-  return report.rules.find((entry) => entry.id === rule)?.count ?? 0;
+  // `rules` lists every rule the checker has, so exactly one entry matches.
+  return report.rules.filter((entry) => entry.id === rule).reduce((sum, entry) => sum + entry.count, 0);
 }
 
 /**

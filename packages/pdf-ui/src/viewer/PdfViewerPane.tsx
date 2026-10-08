@@ -177,6 +177,12 @@ interface FindState {
 
 const INITIAL_FIND: FindState = { open: false, query: '', matches: 0, current: 0 };
 
+/**
+ * pdf.js `LinkTarget.BLANK`: an external link opens in a new tab. The default (none) would
+ * navigate the editor's own tab away from the open document and its unsaved marks.
+ */
+const LINK_TARGET_BLANK = 2;
+
 // pdf.js `FindState` (pdf_viewer.mjs): FOUND 0 · NOT_FOUND 1 · WRAPPED 2 · PENDING 3.
 const FIND_NOT_FOUND = 1;
 
@@ -547,7 +553,7 @@ export function PdfViewerPane({
       slots[slot].setAttribute('data-active-viewer', '');
 
       const eventBus = new EventBus();
-      const linkService = new PDFLinkService({ eventBus });
+      const linkService = new PDFLinkService({ eventBus, externalLinkTarget: LINK_TARGET_BLANK });
       const findController = new PDFFindController({ eventBus, linkService });
       const viewer = new PDFViewer({
         container,

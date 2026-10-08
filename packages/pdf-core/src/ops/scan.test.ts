@@ -5,18 +5,9 @@
  * it cannot embed), a page of the wrong paper, and an empty scan that returns an empty file.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs } from '../engines/pdfjs-handle';
 import { FIT_LONG_SIDE_PT, type ScanPageInput, scanPagesToPdf } from './scan';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks.
-  createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 
@@ -119,8 +110,37 @@ describe('scanPagesToPdf', () => {
     // And an aborted signal stops it before any work.
     const controller = new AbortController();
     controller.abort();
+    const progress: unknown[] = [];
     await expect(
-      scanPagesToPdf({ pages: [good], pageSize: 'a4' }, { signal: controller.signal }),
-    ).rejects.toThrow();
+      scanPagesToPdf(
+        { pages: [good], pageSize: 'a4' },
+        { signal: controller.signal, onProgress: (entry) => progress.push(entry) },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(progress).toEqual([]);
+  });
+
+  it('refuses a scan in which a picture could not be embedded instead of returning a page short', async () => {
+    const good = await jpegPage('scan-001.jpg', 300, 400, 30);
+    const damaged: ScanPageInput = {
+      name: 'scan-002.jpg',
+      bytes: new Uint8Array([0xff, 0xd8, 0xff, 1, 2]),
+      width: 10,
+      height: 10,
+    };
+    const failure = await scanPagesToPdf({ pages: [good, damaged], pageSize: 'a4' }, run).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: 'verification-failed' });
+    expect((failure as ToolError).details.engineMessage).toBe('2 scanned page(s) became 1 page(s)');
+  });
+
+  it('refuses a fit page whose picture has not the proportions it was declared with', async () => {
+    const page = await jpegPage('scan-001.jpg', 300, 400, 30);
+    const failure = await scanPagesToPdf(
+      { pages: [{ ...page, width: 400, height: 300 }], pageSize: 'fit' },
+      run,
+    ).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'verification-failed', details: { pageIndex: 0 } });
   });
 });

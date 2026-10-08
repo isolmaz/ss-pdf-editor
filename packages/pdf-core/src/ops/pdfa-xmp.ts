@@ -92,21 +92,26 @@ function elementChildren(node: Node): Element[] {
   return out;
 }
 
+/** An element's trimmed text (`textContent` is only `null` on a document or a doctype). */
+function textOf(element: Element): string {
+  return (element.textContent as string).trim();
+}
+
 /** The text values a property carries: a leaf's text, or the `rdf:li` items of a Bag/Seq/Alt. */
 function valuesOf(element: Element): string[] {
   const containers = elementChildren(element).filter(
-    (child) => child.namespaceURI === NS_RDF && ['Bag', 'Seq', 'Alt'].includes(child.localName ?? ''),
+    (child) => child.namespaceURI === NS_RDF && ['Bag', 'Seq', 'Alt'].includes(child.localName),
   );
   if (containers.length > 0) {
     const out: string[] = [];
     for (const container of containers) {
       for (const item of elementChildren(container)) {
-        if (item.localName === 'li') out.push((item.textContent ?? '').trim());
+        if (item.localName === 'li') out.push(textOf(item));
       }
     }
     return out;
   }
-  return [(element.textContent ?? '').trim()];
+  return [textOf(element)];
 }
 
 /** Every attribute on `element` that is a property (not `xmlns`, `rdf:about` or `xml:*`). */
@@ -114,11 +119,12 @@ function propertyAttributes(element: Element): { ns: string; local: string; valu
   const out: { ns: string; local: string; value: string }[] = [];
   const attributes = element.attributes;
   for (let index = 0; index < attributes.length; index += 1) {
-    const attribute = attributes.item(index);
-    if (attribute === null) continue;
+    // `index` is below `length`: `item` cannot answer `null` here.
+    const attribute = attributes.item(index) as Attr;
     const ns = attribute.namespaceURI;
-    if (ns === null || ns === NS_XMLNS || ns === NS_XML || ns === NS_RDF) continue;
-    out.push({ ns, local: attribute.localName ?? attribute.name, value: attribute.value });
+    // The parser answers `undefined` (not `null`) for an attribute without a namespace.
+    if (!ns || ns === NS_XMLNS || ns === NS_XML || ns === NS_RDF) continue;
+    out.push({ ns, local: attribute.localName, value: attribute.value });
   }
   return out;
 }
@@ -126,9 +132,11 @@ function propertyAttributes(element: Element): { ns: string; local: string; valu
 /** Namespaces the packet's extension schemas declare (`pdfaSchema:namespaceURI`). */
 function describedNamespaces(root: Element): Set<string> {
   const described = new Set<string>();
-  const visit = (element: Element): void => {
+  // Iterative: a packet nested deeper than the call stack must not be able to crash the reader.
+  const pending: Element[] = [root];
+  for (let element = pending.pop(); element !== undefined; element = pending.pop()) {
     if (element.namespaceURI === NS_PDFA_SCHEMA && element.localName === 'namespaceURI') {
-      const value = (element.textContent ?? '').trim();
+      const value = textOf(element);
       if (value !== '') described.add(value);
     }
     for (const attribute of propertyAttributes(element)) {
@@ -136,9 +144,8 @@ function describedNamespaces(root: Element): Set<string> {
         described.add(attribute.value.trim());
       }
     }
-    for (const child of elementChildren(element)) visit(child);
-  };
-  visit(root);
+    for (const child of elementChildren(element)) pending.push(child);
+  }
   return described;
 }
 
@@ -177,11 +184,16 @@ export function parseXmp(bytes: Uint8Array): XmpPacket {
   if (failed || root === null || root === undefined) return broken;
 
   const descriptions: Element[] = [];
-  const collect = (element: Element): void => {
-    if (element.namespaceURI === NS_RDF && element.localName === 'Description') descriptions.push(element);
-    else for (const child of elementChildren(element)) collect(child);
-  };
-  collect(root);
+  // Document order, iteratively (see `describedNamespaces`): children go on the stack reversed.
+  const pending: Element[] = [root];
+  for (let element = pending.pop(); element !== undefined; element = pending.pop()) {
+    if (element.namespaceURI === NS_RDF && element.localName === 'Description') {
+      descriptions.push(element);
+      continue;
+    }
+    const children = elementChildren(element);
+    for (let index = children.length - 1; index >= 0; index -= 1) pending.push(children[index] as Element);
+  }
 
   const properties = new Map<string, string[]>();
   const used = new Set<string>();
@@ -196,7 +208,7 @@ export function parseXmp(bytes: Uint8Array): XmpPacket {
       add(attribute.ns, attribute.local, [attribute.value]);
     for (const child of elementChildren(description)) {
       if (child.namespaceURI === null || child.namespaceURI === undefined) continue;
-      add(child.namespaceURI, child.localName ?? child.nodeName, valuesOf(child));
+      add(child.namespaceURI, child.localName, valuesOf(child));
     }
   }
 
@@ -214,7 +226,7 @@ export function parseXmp(bytes: Uint8Array): XmpPacket {
 /** One text property of the packet (`dc:title`'s default-language entry, `pdf:Producer`). */
 export function xmpText(packet: XmpPacket, ns: string, local: string): string | null {
   const values = packet.properties.get(`${ns}${local}`);
-  return values === undefined || values.length === 0 ? null : (values[0] ?? null);
+  return values === undefined || values.length === 0 ? null : (values[0] as string);
 }
 
 /** A list property (`dc:creator`) as its items. */

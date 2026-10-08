@@ -500,8 +500,8 @@ try {
    * accessibility, batch — are advanced. A run that never leaves the simple mode searches a
    * UI that deliberately does not offer them, which is what the four failures before this
    * check looked like. The way out is the user's own: the settings dialog's mode choice
-   * (`SettingsDialog.tsx`), which the shell stores and announces on `pdf-mode-change` so
-   * every surface re-filters. Seeding the storage key instead would
+   * (`SettingsDialog.tsx`), which the shell stores and hands to every surface, so each one
+   * re-filters. Seeding the storage key instead would
    * test a state the interface cannot reach; flipping the app's default would hide the
    * filter from the harness rather than exercise it.
    */
@@ -568,45 +568,82 @@ try {
     return `${measured} measure annotation(s) with a /Measure dictionary`;
   });
 
-  await check('compare: the panel reports a document against itself as identical', async () => {
-    await openPalette('Karşılaştırma');
-    // The panel's own controls, by their dictionary labels: the file input is a hidden
-    // element behind a button, and Playwright can set a hidden input directly.
-    const pick = page.getByRole('button', { name: /İkinci belgeyi seç/i }).first();
-    await pick.waitFor({ state: 'visible', timeout: 15_000 });
-    // The user's own path: the button opens the file chooser, and the chooser is answered
-    // here. Setting a hidden input directly picked another input in the shell.
-    const [chooser] = await Promise.all([
-      page.waitForEvent('filechooser', { timeout: 15_000 }),
-      pick.click(),
-    ]);
-    await chooser.setFiles(fixture);
-    await page.waitForTimeout(900);
-    const run = page.getByRole('button', { name: /Metni karşılaştır/i }).first();
-    if (await run.isDisabled()) throw new Error('the text run is disabled after picking a document');
-    await run.click();
-    await page.waitForTimeout(3500);
-    const panelText = await page.locator('body').innerText();
-    if (!/Aynı|Değişiklik yok|0,00/i.test(panelText)) {
-      throw new Error(`the panel did not report identical pages: ${panelText.slice(0, 200)}`);
-    }
-    return 'every page reported as unchanged against itself';
-  });
+  await check(
+    'compare: the panel reports the document against its own export as unchanged on every page',
+    async () => {
+      await openPalette('Karşılaştırma');
+      // The panel's own controls, by their dictionary labels: the file input is a hidden
+      // element behind a button, and Playwright can set a hidden input directly.
+      const pick = page.getByRole('button', { name: /İkinci belgeyi seç/i }).first();
+      await pick.waitFor({ state: 'visible', timeout: 15_000 });
+      // The user's own path: the button opens the file chooser, and the chooser is answered
+      // here. Setting a hidden input directly picked another input in the shell.
+      const [chooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 15_000 }),
+        pick.click(),
+      ]);
+      // The app's document has been edited since the fixture was written (page 1 carries the
+      // replacement), so "itself" is the file the previous check exported from the document as it is now.
+      await chooser.setFiles(join(fixtureDir, 'measured.pdf'));
+      await page.waitForTimeout(900);
+      const run = page.getByRole('button', { name: /Metni karşılaştır/i }).first();
+      if (await run.isDisabled()) throw new Error('the text run is disabled after picking a document');
+      await run.click();
+      // The comparison's own rows, one per page (`data-compare-row` in ComparePanel): the
+      // table is the result, so nothing else on the page can satisfy this.
+      const rows = page.locator('[data-compare-row^="text:"]');
+      await rows.first().waitFor({ state: 'visible', timeout: 30_000 });
+      const found = await rows.count();
+      if (found !== FIXTURE_PAGES) {
+        throw new Error(`the comparison has ${found} page row(s), the fixture has ${FIXTURE_PAGES}`);
+      }
+      for (let at = 0; at < found; at += 1) {
+        const row = rows.nth(at);
+        const label = await row.getAttribute('data-compare-row');
+        const cells = await row.locator('td').allInnerTexts();
+        // Cells: method, status, detail, jump. A page that changed says "Değişti" and counts lines.
+        if (cells[1]?.trim() !== 'Aynı' || !cells[2]?.includes('Değişiklik yok')) {
+          throw new Error(`${label} is not reported as unchanged: ${JSON.stringify(cells)}`);
+        }
+      }
+      // The two documents are the same file, so the page counts agree and no mismatch is named.
+      const results = await page.locator('body').innerText();
+      if (
+        !results.includes(`Sayfa sayısı: ${FIXTURE_PAGES} → ${FIXTURE_PAGES}`) ||
+        results.includes('Sayfa sayısı farkı')
+      ) {
+        throw new Error('the page counts of the two documents do not agree in the report');
+      }
+      return `all ${found} page rows report "Aynı" / "Değişiklik yok" against the same file`;
+    },
+  );
 
   await check('accessibility: the check names the missing structure on an untagged file', async () => {
     await openPalette('Erişilebilirlik');
     const checkButton = page.getByRole('button', { name: /^Denetle$/i }).first();
     await checkButton.waitFor({ state: 'visible', timeout: 15_000 });
     await checkButton.click();
-    // The check reads the whole document; give it the time a real user would, then read the
-    // report from the panel's own list rather than from the whole page.
-    await page.waitForTimeout(6000);
-    const text = await page.locator('body').innerText();
-    if (!/yapı|etiket|StructTree|Alt|dil/i.test(text)) {
-      throw new Error(`the report does not mention the structure tree: ${text.slice(0, 240)}`);
+    // The check reads the whole document: wait for the report's own rows, not for a fixed time.
+    // The rule under test is the structure tree's (`op.a11y.check.structTree`): on an untagged
+    // file its finding is the exact sentence below, listed under "Bulunan sorunlar".
+    const row = page.locator('li').filter({ hasText: /^Yapı ağacı \(\/StructTreeRoot\) yok\.$/ });
+    await row.first().waitFor({ state: 'visible', timeout: 60_000 });
+    if ((await row.count()) !== 1)
+      throw new Error(`the structure-tree finding is listed ${await row.count()} times`);
+    const group = await row.first().locator('xpath=ancestor::section[1]/h4').innerText();
+    if (group.trim() !== 'Bulunan sorunlar') {
+      throw new Error(
+        `the missing structure tree is reported under "${group.trim()}", not as a found problem`,
+      );
     }
-    const report = text.slice(text.indexOf('Erişilebilirlik'));
-    return report.replace(/\s+/g, ' ').slice(0, 160);
+    // The positive form of the same rule must be absent: a tree that was found says so differently.
+    if ((await page.getByText(/^Yapı ağacı var \(/).count()) !== 0) {
+      throw new Error('the report claims a structure tree while also reporting it missing');
+    }
+    const summary = await page.getByText(/^\d+ sayfa · \d+ bulgu · \d+ bilinmiyor$/).innerText();
+    if (!summary.includes(`${FIXTURE_PAGES} sayfa`))
+      throw new Error(`the report summary names another page count: ${summary}`);
+    return `structure tree reported missing under "${group.trim()}" (${summary})`;
   });
 
   await check('batch: a run over one file reports it and produces a download', async () => {

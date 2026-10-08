@@ -28,11 +28,14 @@ export default defineConfig({
   timeout: 300_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,
+  // `E2E_WORKERS` caps the browsers run at once (Playwright's default is half the cores), so a
+  // full run, `pnpm coverage` included, can leave room on a machine someone is working on.
+  ...(process.env.E2E_WORKERS === undefined ? {} : { workers: Number(process.env.E2E_WORKERS) }),
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   // `list` is the console reporter in both cases; with `CI` set (a build pipeline) the
-  // HTML report is written too, for reading a failed run afterwards. The gates run locally:
-  // this repository has no hosted CI workflow.
+  // HTML report is written too, for reading a failed run afterwards (the hosted workflow,
+  // `.github/workflows/ci.yml`, uploads it when a shard fails).
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   outputDir: 'test-results',
   use: {

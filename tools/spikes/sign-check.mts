@@ -35,7 +35,7 @@ const mupdf = (await import(
   ).href
 )) as typeof import('mupdf');
 
-/** The first signature widget of page 1: its field type, appearance, range and CMS. */
+/** The first signature widget of page 1: its rectangle, appearance, range and CMS. */
 function signatureOf(bytes: Uint8Array) {
   const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
   if (doc === null) throw new Error('not a PDF');
@@ -46,7 +46,13 @@ function signatureOf(bytes: Uint8Array) {
       if (dict.get('FT').isNull() || dict.get('FT').asName() !== 'Sig') continue;
       const value = dict.get('V').resolve();
       const range = value.get('ByteRange').resolve();
+      const rect = dict.get('Rect').resolve();
+      const appearance = dict.get('AP', 'N');
       return {
+        /** The widget's `/Rect`, as the file holds it. */
+        rect: Array.from({ length: rect.length }, (_unused, at) => rect.get(at).asNumber()),
+        /** The decoded content stream of the normal appearance: what the stamp draws. */
+        appearanceContent: appearance.isNull() ? '' : appearance.readStream().asString(),
         hasAppearance: !dict.get('AP').isNull(),
         range: Array.from({ length: range.length }, (_unused, at) => range.get(at).asNumber()),
         contents: new Uint8Array(value.get('Contents').asByteString()),
@@ -243,10 +249,19 @@ await check('visible: a signature with a stamp still verifies, and the stamp is 
   const signature = signatureOf(outcome.bytes);
   if (signature === null) throw new Error('no signature widget after the visible sign');
   if (!signature.hasAppearance) throw new Error('the visible field carries no /AP');
+  // The stamp sits where it was asked to: x 40, y 40, 240 × 70 → [40 40 280 110].
+  if (signature.rect.join(' ') !== '40 40 280 110')
+    throw new Error(`the widget /Rect reads [${signature.rect.join(' ')}], expected [40 40 280 110]`);
+  // ... and it draws the signer's common name and the date, as text strings of its own
+  // appearance stream (Helvetica, ASCII: `appearance()` in `ops/sign.ts`).
+  for (const line of [String(identity.commonName), '2026-09-16']) {
+    if (!signature.appearanceContent.includes(`(${line}) Tj`))
+      throw new Error(`the appearance does not draw "${line}": ${signature.appearanceContent.slice(0, 160)}`);
+  }
   const verdicts = await verifySignatures(outcome.bytes);
   if (verdicts[0]?.integrity !== 'valid')
     throw new Error(`visible signature integrity: ${String(verdicts[0]?.integrity)}`);
-  return `stamped field verifies (${outcome.bytes.byteLength} B)`;
+  return `stamped field at [${signature.rect.join(' ')}] draws the name and the date and verifies (${outcome.bytes.byteLength} B)`;
 });
 
 await check('forged: a rewritten messageDigest is caught by the signature itself', async () => {

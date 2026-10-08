@@ -24,5 +24,12 @@ export default defineConfig({
     environment: 'node',
     // MuPDF loads from the installed package in Node (`vitest.setup.ts`).
     setupFiles: ['./vitest.setup.ts'],
+    // `pnpm coverage` (`tools/coverage/report.mjs`): every source file counts, including the
+    // ones no test imports; tests, their fixture builders and declarations do not.
+    coverage: {
+      provider: 'v8',
+      include: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
+      exclude: ['**/*.test.{ts,tsx}', '**/*.fixtures.ts', '**/*-fixtures.ts', '**/*.d.ts'],
+    },
   },
 });

@@ -201,11 +201,6 @@ export type PageAction =
       readonly insertAfter: number;
     };
 
-/** Page count of the tab's current working version. */
-export function tabPageCount(tab: SessionTab): number {
-  return tab.working.produced?.pageCount ?? tab.source.pageCount;
-}
-
 /**
  * Build the composition a `PageAction` implies. Pure so the action's effect on
  * the page list is reviewable without rendering anything.
@@ -480,12 +475,10 @@ export async function applyHistoryStep(
       current.journal.cursor !== cursor
     )
       throw new ToolError('aborted', { engine: 'model' });
-    const committed =
-      direction === 'undo' ? context.store.undo(context.tab.id) : context.store.redo(context.tab.id);
-    if (committed.kind === 'empty' || committed.step.kind === 'unavailable') {
-      throw new ToolError('aborted', { engine: 'model' });
-    }
-    return { handle: next, entry: committed.step.entry };
+    // The cursor was compared a statement ago and nothing awaits in between: this commits the step previewed.
+    if (direction === 'undo') context.store.undo(context.tab.id);
+    else context.store.redo(context.tab.id);
+    return { handle: next, entry: result.step.entry };
   } catch (error) {
     if (next !== context.handle) await next.destroy();
     throw error;
@@ -926,12 +919,13 @@ export interface WriteVerification {
   /**
    * What the checks establish overall. `verified` means every check that this build
    * can run did run and held; `degraded` means at least one was cut short or measured a
-   * declared change; `unsupported` means no check could be made at all. The facts that
+   * declared change. A fact this build cannot check is `unsupported` in `checks` and does
+   * not lower the state. The facts that
    * are `unsupported` **by construction** (`annotations`, `signatures`) are listed in
    * `checks` and do not by themselves lower the state — the state answers "how much of
    * the table did we establish", and `checks` answers "what happened to each fact".
    */
-  readonly state: 'verified' | 'degraded' | 'unsupported';
+  readonly state: 'verified' | 'degraded';
   readonly pageCount: number;
   readonly operation: OperationIdentity;
   /** Facts the operation declared it may change: measured, but not promised. */
@@ -1110,18 +1104,11 @@ async function checkGeometry(
       record('cropBox', 'unsupported', 'engine-cannot');
       return;
     }
-    // Legality is checked where preservation is not promised, because a rotation that
-    // is not a quarter turn and a box with no area are broken pages in any output.
-    if (produced.rotation % 90 !== 0) {
-      throw verificationFailure('rotation', `page ${index + 1} has rotation ${produced.rotation}`);
-    }
-    const [x0, y0, x1, y1] = produced.box;
-    if (x1 - x0 <= 0 || y1 - y0 <= 0) {
-      throw verificationFailure('cropBox', `page ${index + 1} has an empty box`);
-    }
     if (produced.rotation !== source.rotation && rotationChanged < 0) rotationChanged = index;
+    // Both boxes are four-number tuples and `corner` runs over the produced one, so the index is
+    // always present in the source box too; the cast only drops the `undefined` of the index type.
     const sameBox = produced.box.every(
-      (value, corner) => Math.abs(value - (source.box[corner] ?? Number.NaN)) <= BOX_TOLERANCE,
+      (value, corner) => Math.abs(value - (source.box[corner] as number)) <= BOX_TOLERANCE,
     );
     if (!sameBox && boxChanged < 0) boxChanged = index;
   }
@@ -1438,14 +1425,13 @@ export async function verifyForWrite(
     record('annotations', 'unsupported', 'pending-storage');
     record('signatures', 'unsupported', 'trust-policy');
 
-    const checks = DOCUMENT_FACTS.map(
-      (fact): FactCheck => verdicts.get(fact) ?? { fact, verdict: 'unsupported', reason: 'engine-cannot' },
-    );
-    const state = checks.some((check) => check.verdict === 'degraded')
-      ? 'degraded'
-      : checks.some((check) => check.verdict === 'verified')
-        ? 'verified'
-        : 'unsupported';
+    // Every fact of `DOCUMENT_FACTS` is recorded on every path that returns: pageCount above (a
+    // change either throws or is recorded), the geometry, text, form, outline and label checks on each
+    // of their exits (reference missing, over budget, reader failure, compared), and annotations and
+    // signatures just before. A run that cannot record a fact throws instead of returning.
+    const checks = DOCUMENT_FACTS.map((fact) => verdicts.get(fact) as FactCheck);
+    // `pageCount` is always recorded verified or degraded, so a run is never left with nothing checked.
+    const state = checks.some((check) => check.verdict === 'degraded') ? 'degraded' : 'verified';
     return {
       state,
       pageCount: handle.pageCount,

@@ -126,9 +126,9 @@ function readRoleMap(root: PDFObject): Record<string, string> {
   const dict = dictOf(root.get('RoleMap'));
   if (dict === null) return map;
   dict.forEach((value, key) => {
-    if (typeof key !== 'string') return;
     const target = nameOf(value);
-    if (target !== null) map[key] = target;
+    // A dictionary's keys are names, so `String` only narrows the type.
+    if (target !== null) map[String(key)] = target;
   });
   return map;
 }
@@ -345,10 +345,6 @@ export function walkNodes(
 
 export function elementKids(node: StructNode): readonly StructNode[] {
   return node.kids.flatMap((kid) => (kid.kind === 'element' ? [kid.node] : []));
-}
-
-export function contentKids(node: StructNode): readonly StructContent[] {
-  return node.kids.flatMap((kid) => (kid.kind === 'content' ? [kid.item] : []));
 }
 
 export function findNode(
@@ -619,6 +615,14 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
         if (target === holder && parent !== holder) {
           throw new StructEditError('root', 'nothing is moved above the document element');
         }
+        // The move rewrites the /K of the parent it leaves and of the one it joins; an
+        // element the writer cannot address (a direct one) can be neither. The holder is
+        // not written as an element, so moves among the top-level elements stay allowed.
+        for (const changed of [parent, target]) {
+          if (changed !== holder && !changed.editable) {
+            throw new StructEditError('not-editable', `${changed.key} cannot take or give up children`);
+          }
+        }
         const from = rawIndexOf(parent, node.key);
         parent.kids.splice(from, 1);
         const at = rawPositionForElementIndex(target, edit.index);
@@ -632,6 +636,10 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
         const first = find(edit.keys[0] as string);
         const parent = first.parent;
         if (parent === null) throw new StructEditError('root', 'the root cannot be grouped');
+        // The wrapper replaces the members in the parent's /K, which must be writable.
+        if (parent !== holder && !parent.editable) {
+          throw new StructEditError('not-editable', `${parent.key} cannot take a new group`);
+        }
         const members: MutableNode[] = [];
         for (const key of edit.keys) {
           const located = find(key);
@@ -690,8 +698,6 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
         parent.kids.splice(rawIndexOf(parent, node.key), 1);
         break;
       }
-      default:
-        break;
     }
   }
 
@@ -704,7 +710,7 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
           : { kind: 'content', item: kid.item },
     ),
   });
-  const result = holder.kids.flatMap((kid) => (kid.kind === 'element' ? [finish(kid.node)] : []));
+  const result = elementKids(finish(holder));
   let count = 0;
   const tally = (node: StructNode): void => {
     count += 1;

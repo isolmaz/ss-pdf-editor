@@ -1,0 +1,616 @@
+[
+  {
+    "commit": "154ac35e69a49b9a8a93a2193958f442112ff0f4",
+    "title": "test(pdf-core): redaction, protection and CMS signing are tested end to end, and three defects go",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/redact-audit.test.ts",
+      "packages/pdf-core/src/ops/redact-find.test.ts",
+      "packages/pdf-core/src/ops/redact.fixtures.ts",
+      "packages/pdf-core/src/ops/redact.test.ts",
+      "packages/pdf-core/src/ops/security.faults.test.ts",
+      "packages/pdf-core/src/ops/security.test.ts",
+      "packages/pdf-core/src/signature-cms.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/ops/redact-audit.test.ts",
+      "packages/pdf-core/src/ops/security.test.ts",
+      "packages/pdf-core/src/signature-cms.test.ts"
+    ],
+    "filter": "in front of an xref stream|reports a page tree the engine cannot read as a tool error|re-protects a locked file only with its old password|refuses an RSA key whose hash is not the digest"
+  },
+  {
+    "commit": "a14e1fa4a2262658a31afaee105f09742d691a13",
+    "title": "fix(vault): a sweep waits for every open window to answer, not for 250 ms",
+    "kind": "unit",
+    "tests": ["apps/web/src/vault-channel.test.ts", "e2e/two-window.spec.ts"],
+    "run": ["apps/web/src/vault-channel.test.ts"],
+    "filter": "a probe waits for every window the lock manager lists",
+    "note": "The two-window browser spec (e2e/two-window.spec.ts) changed in the same commit covers the same fix end to end; the unit tests are what this manifest runs."
+  },
+  {
+    "commit": "c8abeeaf516a2ee7b6b7fc42d8a9a44257066234",
+    "title": "test(pdf-ui): the dialog operations run against real bytes, and a comma stays in a text field",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-ui/src/ops/convert.test.ts",
+      "packages/pdf-ui/src/ops/find-replace.test.ts",
+      "packages/pdf-ui/src/ops/forms.test.ts",
+      "packages/pdf-ui/src/ops/impose.test.ts",
+      "packages/pdf-ui/src/ops/link-add.test.ts",
+      "packages/pdf-ui/src/ops/outline-edit.test.ts",
+      "packages/pdf-ui/src/ops/pageboxes.test.ts",
+      "packages/pdf-ui/src/ops/pagelabels.test.ts",
+      "packages/pdf-ui/src/ops/pages.test.ts",
+      "packages/pdf-ui/src/ops/pdfa.test.ts",
+      "packages/pdf-ui/src/ops/properties.test.ts",
+      "packages/pdf-ui/src/ops/redact.test.ts",
+      "packages/pdf-ui/src/ops/scope.test.ts",
+      "packages/pdf-ui/src/ops/security.test.ts",
+      "packages/pdf-ui/src/ops/stamp.test.ts",
+      "packages/pdf-ui/src/ops/start.test.ts",
+      "packages/pdf-ui/src/ops/text-edit.test.ts",
+      "packages/pdf-ui/src/ops/xfa.test.ts",
+      "packages/pdf-ui/src/pdf-fixtures.ts",
+      "packages/pdf-ui/src/reading/text.test.ts"
+    ],
+    "run": ["packages/pdf-ui/src/ops/forms.test.ts"],
+    "filter": "writes a comma-separated value to a text field as one string"
+  },
+  {
+    "commit": "6f7c94ee67b02b90478a83ae6e5dffae82e7580f",
+    "title": "test(sign): signing, PKCS#12 import and signature evidence read hostile structures safely",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/engines/mupdf-write.test.ts",
+      "packages/pdf-core/src/ops/sanitize.test.ts",
+      "packages/pdf-core/src/ops/sign.faults.test.ts",
+      "packages/pdf-core/src/ops/sign.test.ts",
+      "packages/pdf-core/src/ops/text-edit.test.ts",
+      "packages/pdf-core/src/signature-evidence.test.ts",
+      "packages/pdf-core/src/signature-fields.test.ts",
+      "packages/pdf-core/src/signature-pkcs12.test.ts",
+      "packages/pdf-core/src/signature-revocation.fixtures.ts",
+      "packages/pdf-core/src/signature-validation.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/signature-evidence.test.ts"],
+    "filter": "skips attributes without values and a signing time that is not a time",
+    "failure": "TypeError: undefined is not iterable[\\s\\S]*readSignatureEvidence packages/pdf-core/src/signature-evidence\\.ts",
+    "note": "Before the fix a hostile attribute set crashed readSignatureEvidence: the declared failure is that crash, thrown from the product file."
+  },
+  {
+    "commit": "114efee21c6e13ff4c094e72acac8fbee9eb7a05",
+    "title": "fix(pdfa): parts 2 and 3 report unmanaged transparency, and every use of an image is read",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/accessibility.test.ts",
+      "packages/pdf-core/src/ops/pdfa-check.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/pdfa-check.test.ts"],
+    "filter": "wants parts 2 and 3 to name the blending space|reads every use of an image|as transparency on the page in parts 2 and 3"
+  },
+  {
+    "commit": "eb3751234c2479b28c304c1cb0173dae9d6f3b6b",
+    "title": "Fail closed on hostile certificate DER and cover trust, standards, sanitize",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/accessibility.faults.test.ts",
+      "packages/pdf-core/src/ops/accessibility.test.ts",
+      "packages/pdf-core/src/ops/form-detect-rules.test.ts",
+      "packages/pdf-core/src/ops/pdfa-check.faults.test.ts",
+      "packages/pdf-core/src/ops/sanitize-graph.test.ts",
+      "packages/pdf-core/src/ops/sanitize-layers.test.ts",
+      "packages/pdf-core/src/signature-revocation.fixtures.ts",
+      "packages/pdf-core/src/signature-revocation.test.ts",
+      "packages/pdf-core/src/signature-timestamp.test.ts",
+      "packages/pdf-core/src/signature-trust.fixtures.ts",
+      "packages/pdf-core/src/signature-trust.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/signature-trust.test.ts",
+      "packages/pdf-core/src/signature-revocation.test.ts",
+      "packages/pdf-core/src/ops/accessibility.test.ts"
+    ],
+    "filter": "DNS name constraints|IP address name constraints|directory name constraints|hostile DER inside certificate extensions|wider than 32 bits|DER that asn1js throws on|has no heading when all the text is too small"
+  },
+  {
+    "commit": "17b2b8f6e91683382794dcc34ea728611fbb42cc",
+    "title": "Count a looping action chain once when sanitising, and cover sanitize",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/sanitize.faults.test.ts",
+      "packages/pdf-core/src/ops/sanitize.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/sanitize.test.ts"],
+    "filter": "counts a script once when its /Next chain loops back on itself|counts each member of a two-action loop once|returns a document with no form untouched"
+  },
+  {
+    "commit": "ad0d195ee3ef63936eb9ad378b8ad6bcc3d5a5cd",
+    "title": "Keep neighbouring lines and paragraph alignment through find and replace",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/find-replace.test.ts"],
+    "run": ["packages/pdf-core/src/ops/find-replace.test.ts"],
+    "filter": "leaves the lines around a changed line whole|keeps a right-aligned paragraph ending at the same edge|keeps the lines of a right-aligned block ending at the right edge"
+  },
+  {
+    "commit": "4149d58ab46d1079318914e0c0cdb6c0375d2d19",
+    "title": "Follow only a real /Prev and count each signature once in signature status",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/signature-status.fixtures.ts",
+      "packages/pdf-core/src/ops/signature-status.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/signature-status.test.ts"],
+    "filter": "does not follow a /Prev that sits inside a string|reports a signature dictionary shared by several widgets once|reports a merged field and widget with an inline signature dictionary once|reads a trailer whose strings"
+  },
+  {
+    "commit": "59002eb3dc0a89122674beb0f94958a928253135",
+    "title": "Verify signatures of files larger than 16 MiB against their exact bytes",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/signature-status.test.ts"],
+    "run": ["packages/pdf-core/src/ops/signature-status.test.ts"],
+    "filter": "a signed file larger than 16 MiB|signatures whose /ByteRange the engine cannot tell apart"
+  },
+  {
+    "commit": "fbf6f4bd29e3e65f768741afb747c09f859ba5e5",
+    "title": "Join cross-style hyphens and start numbered paragraphs in Office export",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/export-office-fixtures.ts",
+      "packages/pdf-core/src/ops/export-office.faults.test.ts",
+      "packages/pdf-core/src/ops/export-office.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/export-office.test.ts"],
+    "filter": "joins a word broken by a hyphen|starts a paragraph at a bullet and at a numbered line"
+  },
+  {
+    "commit": "c88cb889e5dce976b5dc7f0ca5d0c43fb4e06c56",
+    "title": "Report pictures a Word export leaves out",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/export-office.faults.test.ts",
+      "packages/pdf-core/src/ops/export-office.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/ops/export-office.test.ts",
+      "packages/pdf-core/src/ops/export-office.faults.test.ts"
+    ],
+    "filter": "says so when a picture inside a ruled table is left out|leaves out a picture that MuPDF could not draw"
+  },
+  {
+    "commit": "b91ab0f2f59696b745ba08c45e0586c07e3f3386",
+    "title": "Tag documents in the interface's language, not always Turkish",
+    "kind": "e2e",
+    "tests": ["e2e/ui-tags.spec.ts"],
+    "run": ["e2e/ui-tags.spec.ts"],
+    "filter": "lists the blocks in drawing order"
+  },
+  {
+    "commit": "1127228ec95b3a44d44eabe5c4b80225b1850807",
+    "title": "Fix Office conversion attributes, form calculations and XFA data import",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/convert-ooxml.test.ts",
+      "packages/pdf-core/src/ops/forms.edge.test.ts",
+      "packages/pdf-core/src/ops/forms.faults.test.ts",
+      "packages/pdf-core/src/ops/forms.fixtures.ts",
+      "packages/pdf-core/src/ops/xfa-data.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/ops/convert-ooxml.test.ts",
+      "packages/pdf-core/src/ops/forms.edge.test.ts",
+      "packages/pdf-core/src/ops/xfa-data.test.ts"
+    ],
+    "filter": "shows a date for the built-in and custom date formats|formats runs: bold|refuses a duplicate attribute as corrupt|the calculator refuses|finds no data in an XDP or a datasets packet that has no xfa:data"
+  },
+  {
+    "commit": "f39beef80bbfd3d2522a7cae572cc30bcafede90",
+    "title": "Draw or really remove an inline annotation when preparing PDF/A",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/pdfa-prepare.test.ts"],
+    "run": ["packages/pdf-core/src/ops/pdfa-prepare.test.ts"],
+    "filter": "draws an annotation written inline in /Annots"
+  },
+  {
+    "commit": "b56dcd2bc1b6f904834ef221ac8bafa5606c780e",
+    "title": "Write a shape's stroke width as its border width",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/annotation-shapes.test.ts"],
+    "run": ["packages/pdf-core/src/ops/annotation-shapes.test.ts"],
+    "filter": "writes each shape where it was drawn"
+  },
+  {
+    "commit": "0e6ee6677426e37243714a75e3f2d1993109b1d1",
+    "title": "Fix EXIF orientation after fill bytes and XMP attribute reading",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/image-edit.edge.test.ts",
+      "packages/pdf-core/src/ops/image-edit.faults.test.ts",
+      "packages/pdf-core/src/ops/images.edge.test.ts",
+      "packages/pdf-core/src/ops/measure.edge.test.ts",
+      "packages/pdf-core/src/ops/measure.faults.test.ts",
+      "packages/pdf-core/src/ops/metadata.faults.test.ts",
+      "packages/pdf-core/src/ops/metadata.xmp.test.ts",
+      "packages/pdf-core/src/ops/pdfa-prepare.faults.test.ts",
+      "packages/pdf-core/src/ops/pdfa-prepare.test.ts",
+      "packages/pdf-core/src/ops/pdfa.faults.test.ts",
+      "packages/pdf-core/src/ops/pdfa.fixtures.ts",
+      "packages/pdf-core/src/ops/pdfa.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/ops/images.edge.test.ts",
+      "packages/pdf-core/src/ops/metadata.xmp.test.ts"
+    ],
+    "filter": "finds the block after fill bytes|ignores a malformed attribute without a value"
+  },
+  {
+    "commit": "4d3ccc3614ede344d33bf37e12585f4075f108fa",
+    "title": "Fix FDF strings, layer renames and duplicate annotation listings",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/engines/doc-fonts.edge.test.ts",
+      "packages/pdf-core/src/ops/annotation-remove.edge.test.ts",
+      "packages/pdf-core/src/ops/annotation-remove.faults.test.ts",
+      "packages/pdf-core/src/ops/annotation-remove.fixtures.ts",
+      "packages/pdf-core/src/ops/annotation-xfdf.edge.test.ts",
+      "packages/pdf-core/src/ops/convert.edge.test.ts",
+      "packages/pdf-core/src/ops/convert.faults.test.ts",
+      "packages/pdf-core/src/ops/form-data.edge.test.ts",
+      "packages/pdf-core/src/ops/layer-write.edge.test.ts",
+      "packages/pdf-core/src/ops/layer-write.faults.test.ts",
+      "packages/pdf-core/src/ops/layer-write.fixtures.ts",
+      "packages/pdf-core/src/ops/structure-model.edge.test.ts",
+      "packages/pdf-core/src/ops/structure-model.fixtures.ts",
+      "packages/pdf-core/src/ops/structure-model.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/ops/form-data.edge.test.ts",
+      "packages/pdf-core/src/ops/layer-write.edge.test.ts",
+      "packages/pdf-core/src/ops/annotation-remove.edge.test.ts",
+      "packages/pdf-core/src/engines/doc-fonts.edge.test.ts"
+    ],
+    "filter": "reads octal escapes of one|keeps a character outside Latin-1 that is written unescaped|removes an annotation the page lists twice|removes /AS once its last entry is empty|names a layer once when the request names it twice|runs state.*order and rename|does not take a glyph named like a property of every object"
+  },
+  {
+    "commit": "6f4b043ac954b00f26b431d0b8b0fbfcdb6b6a85",
+    "title": "Open external links in a new tab instead of leaving the editor",
+    "kind": "e2e",
+    "tests": ["e2e/ui-marks-annotations.spec.ts", "e2e/ui-marks-helpers.ts", "e2e/ui-marks-pane.spec.ts"],
+    "run": ["e2e/ui-marks-pane.spec.ts"],
+    "filter": "an external link opens in a new tab"
+  },
+  {
+    "commit": "dadbb010141f0dc1b5f2f6d43346d964cf6cb6a5",
+    "title": "Import XFA data into forms without a template and into the read datasets",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/xfa-form.faults.test.ts",
+      "packages/pdf-core/src/ops/xfa-form.fixtures.ts",
+      "packages/pdf-core/src/ops/xfa-form.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/xfa-form.test.ts"],
+    "filter": "binds fields by the shape of their names when the form has no template packet|writes the first datasets element of an XDP stream|keeps the imported data when the fill spells a check box value its own way",
+    "failure": "ToolError: \\[verification-failed\\] mupdf: the datasets hold \\d+ values, \\d+ were imported",
+    "note": "Before the fix the import wrote too few values and its own read-back refused the result: the declared failure is that refusal."
+  },
+  {
+    "commit": "5b382d552850fb1e6fac716dfca11c6dbf878ae2",
+    "title": "Keep the user's document in front when a draft restores while it opens",
+    "kind": "e2e",
+    "tests": ["e2e/recent-handles-gate.ts", "e2e/ui-recovery-race.spec.ts"],
+    "run": ["e2e/ui-recovery-race.spec.ts"],
+    "filter": "a draft restored while the user opens a document does not take the front from it"
+  },
+  {
+    "commit": "c83ff558d12882cdb28147816dc5aae77f4aee45",
+    "title": "Stop a vault sweep probe waiting for a window that closed",
+    "kind": "unit",
+    "tests": ["apps/web/src/vault-channel.test.ts"],
+    "run": ["apps/web/src/vault-channel.test.ts"],
+    "filter": "stops waiting for a listed window once its lock is gone|keeps waiting for a listed window whose lock is still held",
+    "failure": "Test timed out in \\d+ms",
+    "note": "Before the fix the probe waited out its full 10 s for a closed window: the declared failure is the test timing out on that wait."
+  },
+  {
+    "commit": "80e2dddce83b3b695c91fc4876703a7aa62b6e2f",
+    "title": "Cancel text edits cleanly during verification and test the text read path",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/text-edit.faults.test.ts",
+      "packages/pdf-core/src/ops/text-edit.test.ts",
+      "packages/pdf-core/src/text-source.faults.test.ts",
+      "packages/pdf-core/src/text-source.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/text-edit.test.ts"],
+    "filter": "is cancelled as an AbortError when the signal is aborted during the"
+  },
+  {
+    "commit": "5c1b56f548218db250420953f4d2525e34d98724",
+    "title": "fix(shortcuts): Home and End move inside the menu bar instead of turning the page",
+    "kind": "e2e",
+    "tests": [
+      "apps/web/src/useShortcuts.test.ts",
+      "e2e/app-files.spec.ts",
+      "e2e/app-helpers.ts",
+      "e2e/app-home.spec.ts",
+      "e2e/app-shortcuts.spec.ts"
+    ],
+    "run": ["e2e/app-shortcuts.spec.ts"],
+    "filter": "End on a focused menu trigger moves along the menu bar",
+    "note": "The unit test apps/web/src/useShortcuts.test.ts (\"treats the focus inside a menu bar, menu, list, tree or grid as the widget's own\") also covers it but imports the new inCompositeWidget, so on the parent it would fail to run, not fail an assertion; the browser spec is the proof."
+  },
+  {
+    "commit": "dbb0d4fd6bc0be79276661b86295d118e23d0e2d",
+    "title": "Keep the scan notice for an unreadable photo and label corner edits Apply",
+    "kind": "e2e",
+    "tests": [
+      "e2e/ui-helpers.ts",
+      "e2e/ui-scan-camera.spec.ts",
+      "e2e/ui-scan.spec.ts",
+      "e2e/ui-shell.spec.ts",
+      "e2e/ui-signature.spec.ts",
+      "e2e/ui-xfa-helpers.ts",
+      "e2e/ui-xfa.spec.ts"
+    ],
+    "run": ["e2e/ui-scan.spec.ts"],
+    "filter": "the refusal is named",
+    "testCommit": "05d35d5e280ddfa339e1336719e8bc03a2945b93",
+    "note": "The spec runs from 05d35d5, which scripts the refused camera permission; before that it relied on the host refusing, and a runner without a camera answers NotFoundError."
+  },
+  {
+    "commit": "4c0b5214c6c7c41a52bae4610766b7dae18ec03a",
+    "title": "List text-compare changes in document order and cover compare and batch",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/batch.faults.test.ts",
+      "packages/pdf-core/src/ops/batch.test.ts",
+      "packages/pdf-core/src/ops/compare.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/compare.test.ts", "packages/pdf-core/src/ops/batch.test.ts"],
+    "filter": "lists the changes in document order|keeps the page count of the document when a text export covers only some pages"
+  },
+  {
+    "commit": "5683185d319190f9c197849479f2538bb0590bae",
+    "title": "Report the scale a newly opened document is drawn at",
+    "kind": "e2e",
+    "tests": ["e2e/app-shortcuts.spec.ts"],
+    "run": ["e2e/app-shortcuts.spec.ts"],
+    "filter": "change the zoom the status bar reports"
+  },
+  {
+    "commit": "cfc159fd09e6d73ffdff913450c1152a5534d064",
+    "title": "Refuse tag moves and groups into an element whose children cannot be rewritten",
+    "kind": "unit",
+    "tests": [
+      "e2e/ui-tags.spec.ts",
+      "packages/pdf-core/src/ops/structure-model.test.ts",
+      "packages/pdf-core/src/ops/structure.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/ops/structure-model.test.ts",
+      "packages/pdf-core/src/ops/structure.test.ts"
+    ],
+    "filter": "refuses to change the children of an element it cannot rewrite|refuses a move into a direct element"
+  },
+  {
+    "commit": "f50f5edeac52e71aff582c6cf40823ace4b6a067",
+    "title": "Release the reader when a text export's page selection is refused",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/page-layout.test.ts",
+      "packages/pdf-core/src/ops/text-export.faults.test.ts",
+      "packages/pdf-core/src/ops/text-export.test.ts",
+      "packages/pdf-core/src/search.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/text-export.faults.test.ts"],
+    "filter": "releases the worker when the page selection is refused"
+  },
+  {
+    "commit": "9c22a1f329ebff858c07a9a2a7fa4ef93ddb5d09",
+    "title": "Show the start date of a certificate that is not yet valid",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/signature-trust.test.ts"],
+    "run": ["packages/pdf-core/src/signature-trust.test.ts"],
+    "filter": "enforces validity periods"
+  },
+  {
+    "commit": "e3cce13dfa397129650fccf9f614e63e7a583e7e",
+    "title": "Count unchanged pages once and refuse fractional poster tiles",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/ops/compose.faults.test.ts",
+      "packages/pdf-core/src/ops/compose.test.ts",
+      "packages/pdf-core/src/ops/impose.test.ts",
+      "packages/pdf-core/src/ops/link-edit.faults.test.ts",
+      "packages/pdf-core/src/ops/link-edit.test.ts",
+      "packages/pdf-core/src/ops/outline-edit.faults.test.ts",
+      "packages/pdf-core/src/ops/outline-edit.test.ts",
+      "packages/pdf-core/src/ops/page-boxes.faults.test.ts",
+      "packages/pdf-core/src/ops/page-boxes.test.ts",
+      "packages/pdf-core/src/ops/page-insert.faults.test.ts",
+      "packages/pdf-core/src/ops/page-insert.test.ts"
+    ],
+    "run": ["packages/pdf-core/src/ops/impose.test.ts", "packages/pdf-core/src/ops/page-boxes.test.ts"],
+    "filter": "refuses a fractional number of|counts a page whose crop already is the ink box once"
+  },
+  {
+    "commit": "ff1ba7af0ce72ecc5a98d9ac3fcc082770aef3ac",
+    "title": "Show the current document's size in the export dialog",
+    "kind": "e2e",
+    "tests": ["e2e/web-shell.spec.ts"],
+    "run": ["e2e/web-shell.spec.ts"],
+    "filter": "the export dialog gives the size of the document as it stands"
+  },
+  {
+    "commit": "c89266762b7e6ca91f669a374b9902a3d61d1f57",
+    "title": "End the measure tool on Escape and keep the lens off the pointer's path",
+    "kind": "e2e",
+    "tests": [
+      "e2e/ui-layers-annotations.spec.ts",
+      "e2e/ui-layers-helpers.ts",
+      "e2e/ui-layers-measure.spec.ts",
+      "e2e/ui-layers-menu.spec.ts",
+      "e2e/ui-layers-redact.spec.ts",
+      "e2e/ui-layers-viewer.spec.ts"
+    ],
+    "run": ["e2e/ui-layers-measure.spec.ts", "e2e/ui-layers-viewer.spec.ts"],
+    "filter": "Escape on an empty chain ends the tool|the lens follows the pointer over the page"
+  },
+  {
+    "commit": "eadf2b394f199b022d751035bb3c5b177b82ce1a",
+    "title": "Keep a loaded batch ruleset when files are chosen afterwards",
+    "kind": "e2e",
+    "tests": ["e2e/ui-batch.spec.ts"],
+    "run": ["e2e/ui-batch.spec.ts"],
+    "filter": "choosing files after loading a ruleset keeps the loaded ruleset"
+  },
+  {
+    "commit": "02023117e5175ef4913b12608a49c13edc6c0ddf",
+    "title": "Turn presentation pages with Space and start on the page being read",
+    "kind": "e2e",
+    "tests": ["e2e/ui-presentation.spec.ts"],
+    "run": ["e2e/ui-presentation.spec.ts"],
+    "filter": "the page keys turn one page each and stop at the ends|it starts on the page being looked at"
+  },
+  {
+    "commit": "eedf6dd2cf1224a0e2d10151741c1d9699dbf956",
+    "title": "Let dock tabs and the form list keep Home and End; drop unused selector layouts",
+    "kind": "e2e",
+    "tests": [
+      "e2e/ui-panels15-forms.spec.ts",
+      "e2e/ui-panels15-helpers.ts",
+      "e2e/ui-panels15-signatures.spec.ts",
+      "e2e/ui-panels15-tools.spec.ts",
+      "packages/pdf-ui/src/components/LanguageSelector.test.tsx",
+      "packages/pdf-ui/src/components/ThemeSelector.test.tsx"
+    ],
+    "run": ["e2e/ui-panels15-forms.spec.ts", "e2e/ui-panels15-tools.spec.ts"],
+    "filter": "Home and End walk to the first and last row instead of turning the page|Home and End on a dock tab move between tabs"
+  },
+  {
+    "commit": "9001bdafa38a13c790ca52c7d7c3f8dddf8de0b1",
+    "title": "Map OCR worker start failures to their reasons",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/attachments.test.ts",
+      "packages/pdf-core/src/engines/tesseract.worker.test.ts",
+      "packages/pdf-core/src/layers.test.ts",
+      "packages/pdf-core/src/ops/attachments-write.test.ts",
+      "packages/pdf-core/src/ops/convert-text.test.ts",
+      "packages/pdf-core/src/ops/ocr.faults.test.ts",
+      "packages/pdf-core/src/ops/page-labels.test.ts",
+      "packages/pdf-core/src/ops/split.test.ts",
+      "packages/pdf-core/src/ops/types.test.ts",
+      "packages/pdf-core/src/ops/xfa-flatten.faults.test.ts",
+      "packages/pdf-core/src/ops/xfa-flatten.test.ts",
+      "packages/pdf-core/src/ops/xfa.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/engines/tesseract.worker.test.ts",
+      "packages/pdf-core/src/ops/ocr.faults.test.ts"
+    ],
+    "filter": "names a missing language pack|does not keep a worker whose start failed"
+  },
+  {
+    "commit": "8d58a3bb53af1e5a9851dcad8adf4650e3fffbe4",
+    "title": "Settle an aborted pdf.js open; keep XMP parsing total; pdf-core at 99.9%",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/engines/mupdf-write.edge.test.ts",
+      "packages/pdf-core/src/engines/mupdf-write.faults.test.ts",
+      "packages/pdf-core/src/engines/mupdf.test.ts",
+      "packages/pdf-core/src/engines/pdfjs-handle.abort.test.ts",
+      "packages/pdf-core/src/engines/pdfjs-handle.real.test.ts",
+      "packages/pdf-core/src/ops/annotation-freetext.edge.test.ts",
+      "packages/pdf-core/src/ops/annotation-freetext.faults.test.ts",
+      "packages/pdf-core/src/ops/annotation-review.edge.test.ts",
+      "packages/pdf-core/src/ops/annotation-review.faults.test.ts",
+      "packages/pdf-core/src/ops/content-scan.edge.test.ts",
+      "packages/pdf-core/src/ops/create.faults.test.ts",
+      "packages/pdf-core/src/ops/image-opacity.edge.test.ts",
+      "packages/pdf-core/src/ops/image-stamp.edge.test.ts",
+      "packages/pdf-core/src/ops/image-stamp.faults.test.ts",
+      "packages/pdf-core/src/ops/images.canvas.test.ts",
+      "packages/pdf-core/src/ops/pdf-fonts.edge.test.ts",
+      "packages/pdf-core/src/ops/pdfa-xmp.edge.test.ts",
+      "packages/pdf-core/src/ops/pdfa-xmp.faults.test.ts",
+      "packages/pdf-core/src/ops/scan-browser.test.ts",
+      "packages/pdf-core/src/ops/scan-detect.edge.test.ts",
+      "packages/pdf-core/src/ops/scan-detect.test.ts",
+      "packages/pdf-core/src/ops/scan.test.ts",
+      "packages/pdf-core/src/ops/struct-roles.test.ts",
+      "packages/pdf-core/src/ops/structure.test.ts",
+      "packages/pdf-core/src/ops/text-edit.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/engines/pdfjs-handle.abort.test.ts",
+      "packages/pdf-core/src/engines/pdfjs-handle.real.test.ts",
+      "packages/pdf-core/src/ops/pdfa-xmp.edge.test.ts"
+    ],
+    "filter": "settles with the aborted code|settles an abort that fires while the parse is still pending|does not throw on a packet nested far deeper|ignores attributes without a namespace"
+  },
+  {
+    "commit": "8b4d2138592ddb4e52b06fd91f0868ad71e63f19",
+    "title": "Test sheet detection on crafted pictures; refuse a degenerate working raster",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/scan-detect.edge.test.ts"],
+    "run": ["packages/pdf-core/src/ops/scan-detect.edge.test.ts"],
+    "filter": "so long and thin that its working raster is under 16 px",
+    "testCommit": "fd0aa634ef2a8b41a48b9539deed0c7e9319cbde",
+    "note": "The proving input is from fd0aa63: the first version of the test used a flat strip, which the unfixed detector also found nothing in."
+  },
+  {
+    "commit": "8b758ebd5780da44a467e38b004c36352464fdc6",
+    "title": "Announce font list changes in the properties panel; drop unreachable mark paths",
+    "kind": "e2e",
+    "tests": ["e2e/ui-rest16c-marks.spec.ts", "e2e/ui-rest16c-properties.spec.ts"],
+    "run": ["e2e/ui-rest16c-properties.spec.ts"],
+    "filter": "undoing a watermark takes its font off the list"
+  },
+  {
+    "commit": "0686d9ec0bf4c2940ef1ed7d758ee52ddf63490e",
+    "title": "Make the snapshot tool reachable and measure attachment sizes",
+    "kind": "unit",
+    "tests": [
+      "apps/web/src/commands.test.ts",
+      "apps/web/src/interface-mode.test.ts",
+      "e2e/ui-attachments.spec.ts",
+      "e2e/ui-panels9-helpers.ts",
+      "e2e/ui-properties.spec.ts",
+      "e2e/ui-search.spec.ts",
+      "e2e/ui-snapshots.spec.ts"
+    ],
+    "run": ["apps/web/src/commands.test.ts"],
+    "filter": "lists each id once|runs.*for every command",
+    "note": "Proves the view.snapshot command. The attachment-size half of this commit is proven by the browser spec e2e/ui-properties.spec.ts, \"the size of an embedded file is measured from its payload\", which this entry does not run."
+  },
+  {
+    "commit": "43bcacd0057358c25234a49f901df172ca2533e5",
+    "title": "Give a progress bar without a step count no value to read out",
+    "kind": "unit",
+    "tests": [
+      "apps/web/src/components/ActivityOverlay.test.tsx",
+      "apps/web/src/components/HomeToolGrid.test.tsx",
+      "apps/web/src/operations.test.ts",
+      "e2e/web-shell.spec.ts"
+    ],
+    "run": ["apps/web/src/components/ActivityOverlay.test.tsx"],
+    "filter": "shows an indeterminate full bar"
+  },
+  {
+    "commit": "f2ec3811a5c0a640b52f172905164d7e2b5de4cd",
+    "title": "Read aloud in the document's language, or the interface's when it declares none",
+    "kind": "e2e",
+    "tests": ["e2e/ui-read-aloud-lang.spec.ts", "e2e/ui-read-aloud.spec.ts"],
+    "run": ["e2e/ui-read-aloud-lang.spec.ts"],
+    "filter": "is read with the local English voice|is read with the German voice"
+  },
+  {
+    "commit": "2c7b7612f5227c3f657f6bd60abe96bed3f0b5e1",
+    "title": "Read only a trailer's own /Prev key, past comments and name values",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/signature-status.test.ts"],
+    "run": ["packages/pdf-core/src/ops/signature-status.test.ts"],
+    "filter": "is commented out up to a|reads the key after a comment that ends the line|does not take /Prev as the key when it is"
+  }
+]

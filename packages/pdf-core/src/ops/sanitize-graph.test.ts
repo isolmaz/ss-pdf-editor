@@ -180,3 +180,139 @@ describe('sanitize graph', () => {
     }
   });
 });
+
+/** A handle that behaves as the real one, except where `override` answers instead. */
+function faulty<T extends object>(
+  target: T,
+  override: Partial<Record<string, (...args: never[]) => unknown>>,
+): T {
+  return new Proxy(target, {
+    get(real, property) {
+      const replacement = override[String(property)];
+      if (replacement !== undefined) return replacement;
+      const value: unknown = Reflect.get(real, property, real);
+      return typeof value === 'function' ? value.bind(real) : value;
+    },
+  });
+}
+
+describe('sanitize graph: objects MuPDF cannot read, and odd shapes', () => {
+  it('keeps only the string keys of a container, so an array has none', async () => {
+    const { doc, page } = await build();
+    try {
+      const mediaBox = arrayUnder(doc.newIndirect(page), 'MediaBox') as NonNullable<
+        ReturnType<typeof arrayUnder>
+      >;
+      expect(keysOf(mediaBox)).toEqual([]);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('counts an object MuPDF cannot read as unreadable, never as live and never as absent', async () => {
+    const { doc, pattern, page } = await build();
+    try {
+      const broken = faulty(doc, {
+        newIndirect: (number: number) => {
+          if (number === pattern) throw new Error('cannot read object');
+          return doc.newIndirect(number);
+        },
+      });
+      expect(liveObject(broken, pattern)).toBe('unreadable');
+      expect(liveObject(broken, page)).not.toBe('unreadable');
+
+      const visited = new Set<number>();
+      const stats = forEachDictionary(broken, (_dictionary, holder) => visited.add(holder));
+      expect(stats.unreadable).toBe(1);
+      expect(visited.has(pattern)).toBe(false);
+      expect(visited.has(page)).toBe(true);
+      // The sweep that skipped it is not "clean": the count is what the report carries.
+      const whole = forEachDictionary(doc, () => undefined);
+      expect(stats.live).toBe(whole.live - 1);
+
+      const reached = reachableObjects(broken);
+      expect(reached.unreadable).toBe(1);
+      expect(reached.reached.has(pattern)).toBe(true);
+      expect(reached.liveReached).toBe(reachableObjects(doc).liveReached - 1);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('reads an entry whose object cannot be read as nothing', async () => {
+    const { doc, page } = await build();
+    try {
+      const reference = doc.newIndirect(page);
+      const hostile = faulty(reference, {
+        isDictionary: () => {
+          throw new Error('cannot read object');
+        },
+      });
+      expect(hostile.isIndirect()).toBe(true);
+      expect(deref(hostile)).toBeNull();
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('skips an object that is neither a dictionary nor an array, and a reference to nothing', async () => {
+    const { doc, freed } = await build();
+    try {
+      doc.addObject(doc.newString('a lone string object'));
+      const lone = doc.addObject(doc.newInteger(7));
+      expect(liveObject(doc, lone.asIndirect())).not.toBeNull();
+      const visited: number[] = [];
+      forEachDictionary(doc, (_dictionary, holder) => visited.push(holder));
+      expect(visited).not.toContain(lone.asIndirect());
+
+      // The trailer points at a number nothing is stored under: reached, but not live.
+      doc.getTrailer().put('Ghost', doc.newIndirect(freed));
+      const { reached, liveReached } = reachableObjects(doc);
+      expect(reached.has(freed)).toBe(true);
+      expect(liveReached).toBeLessThan(reached.size);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('has no catalog for a trailer whose Root is not a dictionary, and reads a direct Root', async () => {
+    const { doc } = await build();
+    try {
+      const trailer = doc.getTrailer();
+      trailer.put('Root', doc.newInteger(3));
+      expect(catalogOf(doc)).toBeNull();
+      const direct = doc.newDictionary();
+      direct.put('Marker', doc.newInteger(1));
+      trailer.put('Root', direct);
+      expect(catalogOf(doc)).not.toBeNull();
+      // A direct Root has no object number, and the walk still runs.
+      expect(reachableObjects(doc, 'Marker').liveReached).toBe(0);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('refuses to go on when the run is aborted, after every 256 objects', async () => {
+    const doc = new mupdf.PDFDocument();
+    try {
+      doc.insertPage(0, doc.addPage([0, 0, 200, 200], 0, {}, ''));
+      const many = doc.newArray();
+      for (let index = 0; index < 300; index += 1) many.push(doc.addObject({ Index: index }));
+      doc.getTrailer().get('Root').put('Many', many);
+      const controller = new AbortController();
+      controller.abort();
+      expect(() => forEachDictionary(doc, () => undefined, controller.signal)).toThrow(
+        expect.objectContaining({ name: 'AbortError' }),
+      );
+      expect(() => reachableObjects(doc, undefined, controller.signal)).toThrow(
+        expect.objectContaining({ name: 'AbortError' }),
+      );
+      // The same documents walk to the end when the signal is live.
+      const live = new AbortController();
+      expect(forEachDictionary(doc, () => undefined, live.signal).live).toBeGreaterThan(300);
+      expect(reachableObjects(doc, undefined, live.signal).liveReached).toBeGreaterThan(300);
+    } finally {
+      doc.destroy();
+    }
+  });
+});

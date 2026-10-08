@@ -221,7 +221,7 @@ interface Tally {
 /** What one sweep found, over the whole document. */
 interface SweepResult {
   readonly tally: Tally;
-  readonly layers: LayerSweep | null;
+  readonly layers: LayerSweep;
   /** Objects present in the file that the trailer cannot reach. */
   readonly unused: number;
   readonly objects: number;
@@ -295,7 +295,7 @@ function sweep(
   doc: PDFDocument,
   options: SanitizeOptions,
   mutate: boolean,
-  signal?: AbortSignal,
+  signal: AbortSignal,
 ): SweepResult {
   const tally: Tally = {
     javascript: 0,
@@ -329,20 +329,29 @@ function sweep(
     const doomed = kind === 'active' ? options.javascript : kind === 'external' ? options.links : false;
     if (doomed) {
       // The action and every doomed action in the chain behind it go together.
+      // An action is counted once, however many times a looping chain comes back to it.
+      const seen = new Set<number>();
+      const countOnce = (entry: PDFObject, target: PDFObject): boolean => {
+        if (entry.isIndirect()) {
+          const number = entry.asIndirect();
+          if (seen.has(number)) return false;
+          seen.add(number);
+        }
+        const targetKind = actionKind(target);
+        if (targetKind === 'active' && options.javascript) tally.javascript += 1;
+        else if (targetKind === 'external' && options.links) tally.links += 1;
+        return true;
+      };
+      let entry = owner.get(key);
       let node: PDFObject | null = action;
       for (let step = 0; node !== null && step < ACTION_DEPTH; step += 1) {
-        const nodeKind = actionKind(node);
-        if (nodeKind === 'active' && options.javascript) tally.javascript += 1;
-        else if (nodeKind === 'external' && options.links) tally.links += 1;
-        const next = deref(node.get('Next'));
+        if (!countOnce(entry, node)) break;
+        entry = node.get('Next');
+        const next = deref(entry);
         if (next?.isArray() === true) {
           for (const item of entriesOf(next)) {
             const chained = deref(item);
-            if (chained?.isDictionary() === true) {
-              const chainedKind = actionKind(chained);
-              if (chainedKind === 'active' && options.javascript) tally.javascript += 1;
-              else if (chainedKind === 'external' && options.links) tally.links += 1;
-            }
+            if (chained?.isDictionary() === true) countOnce(item, chained);
           }
           node = null;
         } else {
@@ -515,9 +524,12 @@ function sweep(
   let widgetsLeft = 0;
   const pages = doc.countPages();
   for (let pageIndex = 0; pageIndex < pages; pageIndex += 1) {
-    if (signal !== undefined) throwIfAborted(signal);
+    throwIfAborted(signal);
     const page = doc.findPage(pageIndex);
-    const pageNumber = page.isIndirect() ? page.asIndirect() : -1;
+    // The object the sweep above names as holder of what hangs on the page. A page written in
+    // place (not valid, but seen) lives in its parent's `/Kids`: that is the holder then.
+    const owner = page.isIndirect() ? page : page.get('Parent');
+    const pageNumber = owner.isIndirect() ? owner.asIndirect() : -1;
     const annotations = arrayUnder(page, 'Annots');
     if (annotations === null) continue;
     for (let index = annotations.length - 1; index >= 0; index -= 1) {
@@ -563,7 +575,9 @@ function sweep(
     catalog?.delete('AcroForm');
   }
 
-  const layers = options.layers ? sweepHiddenLayers(doc, mutate, signal) : null;
+  const layers = options.layers
+    ? sweepHiddenLayers(doc, mutate, signal)
+    : { groups: 0, found: 0, removed: 0, left: 0, undecided: 0, unreadable: 0, groupsDropped: 0 };
   let plumbingUnreached = 0;
   for (const number of plumbing) {
     const object = liveObject(doc, number);
@@ -576,7 +590,8 @@ function sweep(
     layers,
     unused,
     objects: stats.live,
-    unreadable: stats.unreadable + reachability.unreadable,
+    // The walk and the reachability pass meet the same unreadable object: it is one object, not two.
+    unreadable: Math.max(stats.unreadable, reachability.unreadable),
     signed,
     media,
     attachmentIcons,
@@ -611,14 +626,20 @@ function digest(pixels: Uint8ClampedArray): string {
   return `${(first >>> 0).toString(16)}:${(second >>> 0).toString(16)}`;
 }
 
-/** One digest per sampled page; `null` for a page the engine could not draw. */
+/** A sampled page's render digest; `null` for a page the engine could not draw. */
+interface PageDigest {
+  readonly page: number;
+  readonly digest: string | null;
+}
+
+/** One digest per sampled page, in sample order. */
 function renderDigests(
   opened: WritableDocument,
   pages: readonly number[],
   signal: AbortSignal,
-): readonly (string | null)[] {
+): PageDigest[] {
   const { mupdf, doc } = opened;
-  const result: (string | null)[] = [];
+  const result: PageDigest[] = [];
   for (const index of pages) {
     throwIfAborted(signal);
     try {
@@ -633,7 +654,7 @@ function renderDigests(
           true,
         );
         try {
-          result.push(digest(pixmap.getPixels()));
+          result.push({ page: index, digest: digest(pixmap.getPixels()) });
         } finally {
           pixmap.destroy();
         }
@@ -642,7 +663,7 @@ function renderDigests(
       }
     } catch {
       // A page MuPDF cannot draw cannot be compared either; it is left out, and counted.
-      result.push(null);
+      result.push({ page: index, digest: null });
     }
   }
   return result;
@@ -685,7 +706,8 @@ function verificationFailure(message: string): ToolError {
   return new ToolError('verification-failed', { engine: 'mupdf', engineMessage: `sanitize: ${message}` });
 }
 
-function countOf(result: SweepResult, category: Exclude<SanitizeCategory, 'unused'>): number {
+/** What a sweep counted for a category that is counted in the tally (hidden layers have a sweep of their own). */
+function countOf(result: SweepResult, category: Exclude<SanitizeCategory, 'unused' | 'layers'>): number {
   switch (category) {
     case 'javascript':
       return result.tally.javascript;
@@ -703,16 +725,12 @@ function countOf(result: SweepResult, category: Exclude<SanitizeCategory, 'unuse
       return result.tally.comments;
     case 'forms':
       return result.tally.forms;
-    case 'layers':
-      return result.layers?.found ?? 0;
   }
 }
 
 /** What the sweep could actually take out: hidden layer content that stays is not removable. */
 function removableOf(result: SweepResult, category: Exclude<SanitizeCategory, 'unused'>): number {
-  return category === 'layers'
-    ? (result.layers?.found ?? 0) - (result.layers?.left ?? 0)
-    : countOf(result, category);
+  return category === 'layers' ? result.layers.found - result.layers.left : countOf(result, category);
 }
 
 /**
@@ -859,7 +877,7 @@ export async function sanitizeDocument(
       selected.some((category) => removableOf(found, category) > 0) ||
       found.unused > 0 ||
       found.xfaDropped ||
-      (options.forms !== 'keep' && (formFieldsBefore > 0 || working !== bytes)) ||
+      (options.forms !== 'keep' && formFieldsBefore > 0) ||
       inputRevisions > 1;
     if (!present) {
       return nothingFound(bytes, selected, found, pageCount, steps);
@@ -908,9 +926,7 @@ export async function sanitizeDocument(
   for (const category of selected) {
     if (category === 'forms') continue;
     const remaining =
-      category === 'layers'
-        ? (after.layers?.found ?? 0) - (after.layers?.left ?? 0)
-        : countOf(after, category);
+      category === 'layers' ? after.layers.found - after.layers.left : countOf(after, category);
     if (remaining > 0) throw verificationFailure(`${remaining} ${category} items remain in the output`);
   }
   if (after.unused > 0) throw verificationFailure(`${after.unused} unused objects remain in the output`);
@@ -926,23 +942,23 @@ export async function sanitizeDocument(
   if (!pictureChanges) {
     const sample = sampledPages(pageCount);
     const beforeDocument = await openForWrite(working);
-    let before: readonly (string | null)[];
+    let before: readonly PageDigest[];
     try {
       before = renderDigests(beforeDocument, sample, context.signal);
     } finally {
       beforeDocument.doc.destroy();
     }
     const afterDocument = await openForWrite(out);
-    let rendered: readonly (string | null)[];
+    let rendered: readonly PageDigest[];
     try {
       rendered = renderDigests(afterDocument, sample, context.signal);
     } finally {
       afterDocument.doc.destroy();
     }
     for (const [slot, expected] of before.entries()) {
-      if (expected === null) continue;
-      if (rendered[slot] !== expected) {
-        throw verificationFailure(`page ${(sample[slot] ?? 0) + 1} renders differently after sanitising`);
+      if (expected.digest === null) continue;
+      if (rendered[slot]?.digest !== expected.digest) {
+        throw verificationFailure(`page ${expected.page + 1} renders differently after sanitising`);
       }
       compared += 1;
     }
@@ -958,8 +974,8 @@ export async function sanitizeDocument(
       foundCount = formFieldsBefore;
       left = formsLeft;
     } else if (category === 'layers') {
-      foundCount = original.layers?.found ?? 0;
-      left = after.layers?.left ?? 0;
+      foundCount = original.layers.found;
+      left = after.layers.left;
     } else {
       foundCount = countOf(original, category);
       left = countOf(after, category);
@@ -1006,12 +1022,12 @@ function nothingFound(
     category,
     found: 0,
     removed: 0,
-    left: category === 'layers' ? (found.layers?.left ?? 0) : 0,
+    left: category === 'layers' ? found.layers.left : 0,
   }));
   counts.push({ category: 'unused', found: 0, removed: 0, left: 0 });
   const notes: OperationNote[] = [];
   for (const category of selected) {
-    notes.push(...categoryNotes(category, found, 0, category === 'layers' ? (found.layers?.left ?? 0) : 0));
+    notes.push(...categoryNotes(category, found, 0, category === 'layers' ? found.layers.left : 0));
   }
   notes.push(note('preserved', 'op.note.sanitize.none.unused'));
   notes.push(note('preserved', 'op.note.sanitize.nothing'));
@@ -1042,7 +1058,7 @@ function categoryNotes(
   if (category === 'layers') {
     const layers = found.layers;
     const result: OperationNote[] = [];
-    if (layers === null || (foundCount === 0 && layers.undecided === 0 && layers.unreadable === 0)) {
+    if (foundCount === 0 && layers.undecided === 0 && layers.unreadable === 0) {
       result.push(note('preserved', 'op.note.sanitize.none.layers'));
     } else if (foundCount > 0) {
       result.push(
@@ -1054,10 +1070,10 @@ function categoryNotes(
       );
     }
     if (left > 0) result.push(note('warning', 'op.note.sanitize.layersLeft', { count: left }));
-    if (layers !== null && layers.undecided > 0) {
+    if (layers.undecided > 0) {
       result.push(note('warning', 'op.note.sanitize.layersUndecided', { count: layers.undecided }));
     }
-    if (layers !== null && layers.unreadable > 0) {
+    if (layers.unreadable > 0) {
       result.push(note('warning', 'op.note.sanitize.layersUnreadable', { count: layers.unreadable }));
     }
     return result;

@@ -77,7 +77,6 @@ type ImageCaptureConstructor = new (track: MediaStreamTrack) => ImageCaptureLike
 export interface UseCamera extends CameraState {
   readonly videoRef: React.RefObject<HTMLVideoElement | null>;
   readonly start: (deviceId?: string | null) => void;
-  readonly stop: () => void;
   /** A still of what the camera sees, at the best resolution it offers. */
   readonly capture: () => Promise<Blob>;
 }
@@ -85,7 +84,7 @@ export interface UseCamera extends CameraState {
 export function useCamera(): UseCamera {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  /** Bumped by every start/stop, so a slow `getUserMedia` that resolves late is ignored. */
+  /** Bumped by every start and by the unmount, so a slow `getUserMedia` that resolves late is ignored. */
   const generation = useRef(0);
   const [state, setState] = useState<CameraState>({
     status: 'idle',
@@ -102,12 +101,6 @@ export function useCamera(): UseCamera {
     const video = videoRef.current;
     if (video !== null) video.srcObject = null;
   }, []);
-
-  const stop = useCallback(() => {
-    generation.current += 1;
-    release();
-    setState((current) => ({ ...current, status: 'idle', size: null }));
-  }, [release]);
 
   const start = useCallback(
     (deviceId?: string | null) => {
@@ -211,5 +204,5 @@ export function useCamera(): UseCamera {
     return blob;
   }, []);
 
-  return { ...state, videoRef, start, stop, capture };
+  return { ...state, videoRef, start, capture };
 }

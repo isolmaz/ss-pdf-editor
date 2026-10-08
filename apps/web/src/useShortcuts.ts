@@ -406,6 +406,22 @@ function isEditing(target: EventTarget | null): boolean {
 }
 
 /**
+ * Widgets that own the navigation keys (Home, End, Page Up/Down) while the focus is inside them:
+ * the ARIA composite roles, and a list that walks its own rows (`data-owns-page-keys`).
+ */
+const COMPOSITE_WIDGETS =
+  '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"],[role="tablist"],[data-owns-page-keys]';
+
+/**
+ * Whether the focus sits in a composite widget (a menu bar, a menu, the thumbnail list, a dock's tabs):
+ * those handle the page-navigation keys themselves, and the shell answering first (it
+ * listens in the capture phase) would stop the widget from ever seeing them.
+ */
+export function inCompositeWidget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(COMPOSITE_WIDGETS) !== null;
+}
+
+/**
  * Whether `event` is the chord: the key (or its alias) matches, and every modifier the
  * chord *names* is held. A modifier the chord does not name is not checked — the
  * printed `Ctrl++` arrives as `'+'` with `Shift` down, which this chord does not demand,
@@ -427,8 +443,10 @@ export function useShellShortcuts(shortcuts: ShellShortcuts): void {
     const onKeyDown = (event: KeyboardEvent) => {
       const accel = event.ctrlKey || event.metaKey;
       const editing = isEditing(event.target);
+      const composite = inCompositeWidget(event.target);
       for (const binding of SHELL_SHORTCUTS) {
         if (editing && binding.fromAnywhere !== true) continue;
+        if (composite && binding.group === 'page') continue;
         if (!binding.chords.some((chord) => chordMatches(chord, event, accel))) continue;
         /**
          * **One owner per key.** `false` means the shell did not answer: the row is

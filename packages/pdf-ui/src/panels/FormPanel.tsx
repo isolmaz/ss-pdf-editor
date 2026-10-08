@@ -128,6 +128,8 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
       <ul
         ref={listRef}
         aria-label={t('panel.forms')}
+        // The rows walk with Home and End themselves; the shell's first/last-page keys stay out.
+        data-owns-page-keys=""
         className="min-h-0 flex-1 overflow-y-auto p-1"
         onKeyDown={onListKeyDown}
       >

@@ -710,12 +710,24 @@ try {
   await check('page labels: the dialog writes a label plan and reports it back', async () => {
     await runMenuCommand('Sayfa', 'Sayfa etiketleri');
     await waitForOperationForm(15_000);
-    await confirmDialog();
-    await page.waitForFunction(() => /Belgeye uygulandı|etiket/.test(document.body.innerText), undefined, {
-      timeout: 90_000,
-    });
-    await page.waitForTimeout(1200);
-    return 'label plan applied';
+    // The two steps by hand (`confirmDialog` would apply without reading the report): the
+    // report's read-back sentence is the operation's own evidence that the plan landed in
+    // the written file — first label "1", last label the document's last page.
+    const form = page
+      .getByRole('region')
+      .filter({ has: page.getByRole('button', { name: 'Tüm Araçlara Dön' }) });
+    await form.getByRole('button', { name: 'Önizle', exact: true }).click();
+    await form.getByRole('heading', { name: 'İşlem raporu', exact: true }).waitFor({ timeout: 90_000 });
+    const verified = `Etiketler geri okunarak doğrulandı: ilk “1”, son “${FIXTURE_PAGES - 1}”.`;
+    await form.getByText(verified).waitFor({ state: 'visible', timeout: 15_000 });
+    if ((await form.getByText(/Geri okunan ilk etiket beklenenden farklı/).count()) > 0) {
+      throw new Error('the report says the first label read back differs from the one written');
+    }
+    await form.getByRole('button', { name: 'Belgeye uygula', exact: true }).click();
+    await page
+      .getByRole('heading', { name: 'İşlem raporu', exact: true })
+      .waitFor({ state: 'hidden', timeout: 30_000 });
+    return `label plan applied; the report read "1" … "${FIXTURE_PAGES - 1}" back`;
   });
 
   await check('properties: the font inventory names Helvetica', async () => {
@@ -793,6 +805,17 @@ try {
     const pageCount = reopened.pageCount;
     if (pageCount !== FIXTURE_PAGES - 1) {
       throw new Error(`saved page count ${pageCount}, expected ${FIXTURE_PAGES - 1}`);
+    }
+    // The page-labels step above, in the file itself: /Root /PageLabels /Nums holds one
+    // rule, starting at page index 0, numbered in decimal.
+    const numbers = reopened.doc.getTrailer().get('Root').get('PageLabels').get('Nums');
+    if (numbers.isNull() || numbers.length !== 2 || numbers.get(0).asNumber() !== 0) {
+      throw new Error(`the exported file's /PageLabels is not one rule from page 1: ${numbers.toString()}`);
+    }
+    const rule = numbers.get(1).resolve();
+    const startAt = rule.get('St');
+    if (rule.get('S').asName() !== 'D' || !(startAt.isNull() || startAt.asNumber() === 1)) {
+      throw new Error(`the exported page-label rule is not decimal from 1: ${rule.toString()}`);
     }
     const value = reopened.fieldValue('musteri');
     if (value !== 'Grace Hopper') throw new Error(`form value after export is "${value}"`);

@@ -19,6 +19,9 @@ export default defineConfig({
     target: 'es2022',
     cssTarget: ['chrome123', 'firefox120', 'safari17.5'],
     sourcemap: true,
+    // `pnpm coverage` builds unminified, so the e2e run's coverage maps onto the same
+    // statements and branches the unit suite counts (`tools/coverage/report.mjs`).
+    minify: process.env.COVERAGE_BUILD !== '1',
   },
   // The Ghostscript worker imports its engine at runtime, which a classic (IIFE) worker
   // bundle cannot do everywhere; module workers can.

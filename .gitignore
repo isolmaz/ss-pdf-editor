@@ -11,9 +11,15 @@ public/fonts/
 playwright-report/
 test-results/
 
+# `pnpm coverage` output
+/coverage/
+
 # Keys and environment files must never be committed
 .env*
 *.pem
 *.key
 *.p12
 *.pfx
+
+# tools/review/revert-proof.mjs output
+revert-proof-report.json

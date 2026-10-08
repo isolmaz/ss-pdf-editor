@@ -87,7 +87,7 @@ export interface AccessibilityPanelProps {
    * cannot be guessed, so the caller states it (the shell passes the interface locale) and
    * the report names the language it wrote.
    */
-  readonly language?: string;
+  readonly language: string;
   /** Hand produced bytes to the host, which journals them and routes the save. */
   readonly onTagged?: (outcome: WrittenOutcome) => void;
   readonly onAltWritten?: (outcome: WrittenOutcome) => void;
@@ -175,7 +175,7 @@ function AccessibilityReportView({ t, read, language, onTagged, onAltWritten, on
     () =>
       run(async (context) => {
         const outcome = await tagDocument(await read(context), context, {
-          ...(language === undefined ? {} : { language }),
+          language,
         });
         return { bytes: outcome.bytes, notes: outcome.report.notes, steps: outcome.report.steps };
       }, 'tag'),
@@ -298,9 +298,6 @@ function AccessibilityReportView({ t, read, language, onTagged, onAltWritten, on
                   {t(key('panel.a11y.tag'))}
                 </Button>
               </div>
-              {language === undefined ? (
-                <p className="px-1.5 pb-1 text-[11px] text-kumo-subtle">{t(key('panel.a11y.noLanguage'))}</p>
-              ) : null}
               {report.images.length === 0 ? (
                 <p className="px-1.5 text-[11px] text-kumo-subtle">{t(key('panel.a11y.alt.empty'))}</p>
               ) : (
@@ -422,7 +419,7 @@ export function AccessibilityPanel(props: AccessibilityPanelProps) {
           <PdfUaView
             t={t}
             read={read}
-            {...(language === undefined ? {} : { language })}
+            language={language}
             canEdit={canEdit}
             {...(onGoToPage === undefined ? {} : { onGoToPage })}
             onOpenElement={(elementKey, pageIndex) => readingOrderStore.focusElement(elementKey, pageIndex)}
@@ -433,7 +430,7 @@ export function AccessibilityPanel(props: AccessibilityPanelProps) {
           <TagsView
             t={t}
             read={read}
-            {...(language === undefined ? {} : { language })}
+            language={language}
             currentPage={currentPage}
             canEdit={canEdit}
             {...(onGoToPage === undefined ? {} : { onGoToPage })}
@@ -444,7 +441,7 @@ export function AccessibilityPanel(props: AccessibilityPanelProps) {
           <AccessibilityReportView
             t={t}
             read={read}
-            {...(language === undefined ? {} : { language })}
+            language={language}
             {...(props.onTagged === undefined ? {} : { onTagged: props.onTagged })}
             {...(props.onAltWritten === undefined ? {} : { onAltWritten: props.onAltWritten })}
             {...(onNotice === undefined ? {} : { onNotice })}

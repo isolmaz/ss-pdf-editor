@@ -45,6 +45,7 @@
   top: 0;
   z-index: 40;
   border-radius: 50%;
+  pointer-events: none;
 }
 
 /* Magnifier controls: clear of the status bar the shell renders at the bottom. */

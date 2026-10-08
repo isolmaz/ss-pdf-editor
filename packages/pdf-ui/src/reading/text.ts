@@ -127,13 +127,7 @@ export function toReadingTextItem(run: EngineTextRun): ReadingTextItem | null {
   const text = run.str.replace(/\s+/g, ' ').trim();
   if (text.length === 0) return null;
 
-  const matrix = run.transform;
-  const a = matrix[0];
-  const b = matrix[1];
-  const c = matrix[2];
-  const d = matrix[3];
-  const x = matrix[4];
-  const y = matrix[5];
+  const [a, b, c = 0, d = 0, x, y] = run.transform;
   if (a === undefined || b === undefined || x === undefined || y === undefined) return null;
   if (![a, b, x, y].every(Number.isFinite)) return null;
   if (!Number.isFinite(run.width) || !Number.isFinite(run.height)) return null;
@@ -142,7 +136,7 @@ export function toReadingTextItem(run: EngineTextRun): ReadingTextItem | null {
   if (scale === 0) return null;
   // `height` is the text matrix's vertical scale, i.e. the em in user units; the
   // shorter matrix axis is the fallback for the rare run that reports no height.
-  const size = run.height > 0 ? run.height : Math.hypot(c ?? 0, d ?? 0);
+  const size = run.height > 0 ? run.height : Math.hypot(c, d);
   if (size <= 0) return null;
 
   return {
@@ -237,19 +231,17 @@ function median(values: readonly number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((left, right) => left - right);
   const middle = sorted.length >> 1;
-  const upper = sorted[middle] ?? 0;
+  // `values` is non-empty here, so both indices are inside `sorted`.
+  const upper = sorted[middle] as number;
   if (sorted.length % 2 === 1) return upper;
-  return ((sorted[middle - 1] ?? upper) + upper) / 2;
+  return ((sorted[middle - 1] as number) + upper) / 2;
 }
 
 /** Baseline distances between consecutive lines. */
 function leadingDistances(lines: readonly ReadingLine[]): number[] {
   const gaps: number[] = [];
   for (let index = 1; index < lines.length; index += 1) {
-    const previous = lines[index - 1];
-    const current = lines[index];
-    if (previous === undefined || current === undefined) continue;
-    gaps.push(previous.perp - current.perp);
+    gaps.push((lines[index - 1] as ReadingLine).perp - (lines[index] as ReadingLine).perp);
   }
   return gaps;
 }
@@ -289,7 +281,8 @@ export function buildReadingBlocks(items: readonly ReadingTextItem[]): ReadingBl
     previous = line;
     previousSize = size;
   }
-  if (current.length > 0) blocks.push(toBlock(current, pageSize));
+  // `lines` is non-empty, so the last block is never empty.
+  blocks.push(toBlock(current, pageSize));
   return blocks;
 }
 
@@ -332,7 +325,8 @@ function pushChunks(sentence: string, out: string[]): void {
     out.push(remaining.slice(0, cut).trim());
     remaining = remaining.slice(cut).trim();
   }
-  if (remaining.length > 0) out.push(remaining);
+  // The cuts leave the tail of a trimmed sentence non-empty.
+  out.push(remaining);
 }
 
 /**

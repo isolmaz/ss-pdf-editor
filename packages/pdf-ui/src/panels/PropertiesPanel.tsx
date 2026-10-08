@@ -40,14 +40,17 @@ import { PanelLoading, PanelMessage } from './PanelParts';
 import { importRevocationLists } from './revocation-lists';
 import { importTrustRoots } from './trust-roots';
 
+/** One embedded file as the panel lists it; `size` is `null` when its payload cannot be read. */
+export interface AttachmentRow {
+  readonly name: string;
+  readonly description: string;
+  readonly size: number | null;
+}
+
 export interface PropertiesPanelProps {
   readonly t: Translator;
   readonly fonts: readonly PdfFontInfo[] | null;
-  readonly attachments: readonly {
-    readonly name: string;
-    readonly description: string;
-    readonly size: number | null;
-  }[];
+  readonly attachments: readonly AttachmentRow[];
   readonly signatures: readonly SignatureVerification[];
   readonly security: { readonly encrypted: boolean; readonly permissions: readonly string[] } | null;
   readonly loading?: boolean;
@@ -262,19 +265,28 @@ interface Counts {
 /**
  * One sentence when a list changes size. The panels are re-rendered with fresh props
  * by the shell, so the previous counts live in a ref and only a real change speaks.
+ *
+ * The font list is `null` while the shell re-reads it after every change to the document,
+ * so a font change is two renders apart with a `null` between: the last count that was
+ * not `null` is the one the next one is compared with.
  */
 function useListAnnouncement(counts: Counts, t: Translator): string {
   const [message, setMessage] = useState('');
   const previous = useRef<Counts>(counts);
+  const lastFonts = useRef<number | null>(counts.fonts);
   useEffect(() => {
     const before = previous.current;
     previous.current = counts;
-    if (counts.fonts !== null && before.fonts !== null && counts.fonts !== before.fonts) {
-      setMessage(t('props.live.fonts', { count: counts.fonts }));
+    const fontsBefore = lastFonts.current;
+    if (counts.fonts !== null) lastFonts.current = counts.fonts;
+    // One sentence, the weightiest change first: opening another document changes every
+    // list, and its signatures are what the reader most needs to hear about.
+    if (counts.signatures !== before.signatures) {
+      setMessage(t('props.live.signatures', { count: counts.signatures }));
     } else if (counts.attachments !== before.attachments) {
       setMessage(t('props.live.attachments', { count: counts.attachments }));
-    } else if (counts.signatures !== before.signatures) {
-      setMessage(t('props.live.signatures', { count: counts.signatures }));
+    } else if (counts.fonts !== null && fontsBefore !== null && counts.fonts !== fontsBefore) {
+      setMessage(t('props.live.fonts', { count: counts.fonts }));
     }
   }, [counts, t]);
   return message;
@@ -433,6 +445,11 @@ function SignatureRow({
   readonly signature: SignatureVerification;
   readonly t: Translator;
 }) {
+  // A certificate not yet valid becomes valid on its first day; any other is valid until its last.
+  const certificateDate =
+    signature.certificateValidity === 'not-yet-valid'
+      ? signature.certificateNotBefore
+      : signature.certificateNotAfter;
   return (
     <li className={ROW_CLASS}>
       <div className="flex items-baseline gap-2">
@@ -517,7 +534,7 @@ function SignatureRow({
           {t('props.sig.chain', { path: signature.trustPath.join(' → ') })}
         </p>
       ) : null}
-      {signature.certificateNotAfter === null ? null : (
+      {certificateDate === null ? null : (
         <p
           className={
             signature.certificateValidity === 'expired' ? 'text-[11px] text-kumo-danger' : META_CLASS
@@ -530,11 +547,10 @@ function SignatureRow({
                 ? 'props.sig.certNotYet'
                 : // Judged at a trusted timestamp, a certificate that has since expired was still
                   // valid when the signature was made: say so rather than "valid until <past>".
-                  signature.validationTimeSource === 'timestamp' &&
-                    new Date(signature.certificateNotAfter) < new Date()
+                  signature.validationTimeSource === 'timestamp' && new Date(certificateDate) < new Date()
                   ? 'props.sig.certValidAtTimestamp'
                   : 'props.sig.certValidUntil',
-            { date: signature.certificateNotAfter.slice(0, 10) },
+            { date: certificateDate.slice(0, 10) },
           )}
         </p>
       )}

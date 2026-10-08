@@ -267,6 +267,14 @@ describe('normalizePendingMarks', () => {
     // shape the caller already holds comes straight back.
     expect(normalizePendingMarks(input, [])).toBe(input);
   });
+
+  it('hands back the very lists it was given when the file carries only copies of marks that are not pending', () => {
+    const pending = highlight('a1', [[10, 20, 30, 26]]);
+    const input = { annotations: [pending], measures: [], redactions: [] };
+    const settled = normalizePendingMarks(input, [persistedCopy('e1', 'some-other-mark')]);
+    expect(settled.annotations).toBe(input.annotations);
+    expect(settled.measures).toBe(input.measures);
+  });
 });
 
 /** An annotation the file carries that is *not* one of ours (no marker). */
@@ -334,6 +342,14 @@ describe('buildMarkTargets over the file’s own annotations', () => {
     ])
       expect(targetOf(annotation), annotation.id).toBeUndefined();
     expect(targetOf(fileAnnotation('h', { annotationType: 9 }))).toBeDefined();
+  });
+
+  it('lists a reply or review record without geometry, while its comment keeps its box', () => {
+    const root = fileAnnotation('1R', { subtype: 'Text', kind: 'note' });
+    const reply = fileAnnotation('2R', { subtype: 'Text', kind: 'note', inReplyTo: '1R', replyType: 'R' });
+    const targets = targetsOf({ existing: [root, reply] });
+    expect(targets.find((target) => target.key === 'existing:0:1R')?.boxes).toEqual([[10, 774, 30, 780]]);
+    expect(targets.find((target) => target.key === 'existing:0:2R')?.boxes).toEqual([]);
   });
 
   it('lists one annotation once even when the reader reports it twice', () => {
@@ -456,6 +472,12 @@ describe('planMarkRemoval', () => {
     });
     expect(removalCount(request)).toBe(4);
     expect(isEmptyRemoval(request)).toBe(false);
+
+    // The same annotation offered twice by a hand-built target list is still one removal.
+    const doubled = targets.filter((target) => target.key === 'existing:0:e1');
+    expect(planMarkRemoval([...doubled, ...doubled], ['existing:0:e1']).existing).toEqual([
+      { pageIndex: 0, id: 'e1' },
+    ]);
 
     const nothing = planMarkRemoval(targets, ['annotation:ghost']);
     expect(removalCount(nothing)).toBe(0);

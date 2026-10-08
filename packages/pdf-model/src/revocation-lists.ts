@@ -61,7 +61,7 @@ export function revocationListFrom(
   return { id: `crl-${hash.toString(16)}`, label, derBase64: encoded, addedAt, ...summary };
 }
 
-export function revocationListDer(list: RevocationList): Uint8Array | null {
+export function revocationListDer(list: RevocationList): Uint8Array {
   return fromBase64(list.derBase64);
 }
 
@@ -95,7 +95,7 @@ export function parseRevocationLists(raw: unknown): RevocationListsFile {
       continue;
     const der = fromBase64(list.derBase64);
     // A signed CRL, even an empty one, is well over a few dozen bytes of DER.
-    if (der === null || der.length < 32) continue;
+    if (der.length < 32) continue;
     lists.push({
       id: list.id,
       label: list.label,

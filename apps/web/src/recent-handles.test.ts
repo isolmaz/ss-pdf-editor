@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   deleteRecentHandle,
+  ensureWriteAccess,
   getRecentHandle,
   pruneRecentHandles,
   putRecentHandle,
@@ -139,7 +140,178 @@ describe('stored handles', () => {
   });
 });
 
+/** An IndexedDB whose `open` ends with `outcome` and whose database is `db`. */
+function openEndingWith(outcome: 'error' | 'blocked', db: unknown = undefined) {
+  return {
+    open: () => {
+      const request = { onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null } as {
+        onerror: (() => void) | null;
+        onblocked: (() => void) | null;
+        result?: unknown;
+      };
+      request.result = db;
+      queueMicrotask(() => (outcome === 'error' ? request.onerror : request.onblocked)?.());
+      return request;
+    },
+  };
+}
+
+describe('a failing database', () => {
+  it('answers null when opening errors or is blocked by another connection', async () => {
+    vi.stubGlobal('indexedDB', openEndingWith('error'));
+    expect(await getRecentHandle('x')).toBeNull();
+    vi.stubGlobal('indexedDB', openEndingWith('blocked'));
+    expect(await getRecentHandle('x')).toBeNull();
+  });
+
+  it('answers null when a request fails, and when the transaction aborts', async () => {
+    let closed = 0;
+    const failingRequest = () => {
+      const request = { onsuccess: null, onerror: null } as { onerror: (() => void) | null };
+      queueMicrotask(() => request.onerror?.());
+      return request;
+    };
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        const request = { onsuccess: null as (() => void) | null, result: undefined as unknown };
+        request.result = {
+          objectStoreNames: { contains: () => true },
+          transaction: () => ({
+            objectStore: () => ({ get: failingRequest }),
+            onabort: null,
+          }),
+          close: () => {
+            closed += 1;
+          },
+        };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      },
+    });
+    expect(await getRecentHandle('x')).toBeNull();
+    expect(closed).toBe(1);
+
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        const request = { onsuccess: null as (() => void) | null, result: undefined as unknown };
+        request.result = {
+          objectStoreNames: { contains: () => true },
+          transaction: () => {
+            const transaction: { onabort: (() => void) | null; objectStore: () => unknown } = {
+              onabort: null,
+              objectStore: () => ({ get: () => ({ onsuccess: null, onerror: null }) }),
+            };
+            queueMicrotask(() => transaction.onabort?.());
+            return transaction;
+          },
+          close: () => {
+            closed += 1;
+          },
+        };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      },
+    });
+    expect(await getRecentHandle('x')).toBeNull();
+    expect(closed).toBe(2);
+  });
+});
+
+describe('a database that cannot serve the call', () => {
+  it('answers null and still closes the connection when the transaction cannot start', async () => {
+    let closed = 0;
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        const request = { onsuccess: null as (() => void) | null, result: undefined as unknown };
+        request.result = {
+          objectStoreNames: { contains: () => true },
+          transaction: () => {
+            throw new DOMException('closing', 'InvalidStateError');
+          },
+          close: () => {
+            closed += 1;
+          },
+        };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      },
+    });
+    expect(await getRecentHandle('x')).toBeNull();
+    expect(closed).toBe(1);
+  });
+
+  it('creates the store on the first open of the database', async () => {
+    const created: string[] = [];
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        const request = {
+          onupgradeneeded: null as (() => void) | null,
+          onsuccess: null as (() => void) | null,
+          result: undefined as unknown,
+        };
+        request.result = {
+          objectStoreNames: { contains: () => false },
+          createObjectStore: (name: string) => created.push(name),
+          transaction: () => {
+            throw new DOMException('stop here', 'InvalidStateError');
+          },
+          close: () => undefined,
+        };
+        queueMicrotask(() => {
+          request.onupgradeneeded?.();
+          request.onsuccess?.();
+        });
+        return request;
+      },
+    });
+    await getRecentHandle('x');
+    expect(created).toHaveLength(1);
+  });
+});
+
+describe('ensureWriteAccess', () => {
+  const asHandle = (handle: object) => handle as unknown as FileSystemFileHandle;
+
+  it('is true without asking when write permission is already held', async () => {
+    const handle = new FakeHandle();
+    expect(await ensureWriteAccess(asHandle(handle))).toBe(true);
+    expect(handle.requests).toBe(0);
+  });
+
+  it('asks once when the browser says prompt, and follows the answer', async () => {
+    const accepted = new FakeHandle();
+    accepted.permission = 'prompt';
+    expect(await ensureWriteAccess(asHandle(accepted))).toBe(true);
+    expect(accepted.requests).toBe(1);
+
+    const refused = new FakeHandle();
+    refused.permission = 'prompt';
+    refused.asked = 'denied';
+    expect(await ensureWriteAccess(asHandle(refused))).toBe(false);
+  });
+
+  it('is false when permission was revoked, without asking', async () => {
+    const revoked = new FakeHandle();
+    revoked.permission = 'denied';
+    expect(await ensureWriteAccess(asHandle(revoked))).toBe(false);
+    expect(revoked.requests).toBe(0);
+  });
+
+  it('treats a browser without the permission calls as already granted, and a prompt it cannot answer as denied', async () => {
+    expect(await ensureWriteAccess(asHandle({}))).toBe(true);
+    expect(await ensureWriteAccess(asHandle({ queryPermission: async () => 'prompt' }))).toBe(false);
+  });
+});
+
 describe('reopenFromHandle', () => {
+  it('reads the file of a browser that has no permission calls, and refuses a prompt it cannot answer', async () => {
+    const plain = { getFile: async () => new File(['x'], 'plain.pdf') };
+    const opened = await reopenFromHandle(plain as unknown as FileSystemFileHandle);
+    expect(opened.kind).toBe('file');
+    const stuck = { queryPermission: async () => 'prompt', getFile: plain.getFile };
+    expect(await reopenFromHandle(stuck as unknown as FileSystemFileHandle)).toEqual({ kind: 'denied' });
+  });
+
   it('reads the file when permission is held, and asks once when the browser says prompt', async () => {
     const held = new FakeHandle('held.pdf');
     const opened = await reopenFromHandle(held as unknown as FileSystemFileHandle);

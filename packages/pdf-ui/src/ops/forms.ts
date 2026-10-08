@@ -40,11 +40,17 @@ const MAX_CREATED_FIELDS = 200;
  * `ad=Ada Lovelace` lines → fills.
  *
  * One assignment per line; `true`/`false` become a checkbox, a comma-separated
- * value becomes a multi-select, and everything else is text. A line without `=`
+ * value for a dropdown or option list becomes a multi-select, and everything else is
+ * text — a comma in a text field's value (`Smith, John`) belongs to the value. A line without `=`
  * is a mistake the user should read about rather than have silently ignored, so it
  * fails before any engine work with the line number in the engine message.
  */
-function parseFills(text: string): readonly FormFill[] {
+function parseFills(text: string, fields: readonly FormFieldInfo[]): readonly FormFill[] {
+  const multiple = new Set(
+    fields
+      .filter((field) => field.kind === 'dropdown' || field.kind === 'optionlist')
+      .map((field) => field.name),
+  );
   const fills: FormFill[] = [];
   for (const [index, raw] of text.split('\n').entries()) {
     const line = raw.trim();
@@ -56,17 +62,13 @@ function parseFills(text: string): readonly FormFill[] {
         engineMessage: `form fill line ${index + 1} has no "name=value" assignment`,
       });
     }
+    // The line is trimmed and `separator > 0`, so the name has at least one character.
     const name = line.slice(0, separator).trim();
     const value = line.slice(separator + 1).trim();
-    if (name.length === 0) {
-      throw new ToolError('range-invalid', {
-        engine: 'ui',
-        engineMessage: `form fill line ${index + 1} has an empty field name`,
-      });
-    }
     if (value === 'true') fills.push({ name, value: true });
     else if (value === 'false') fills.push({ name, value: false });
-    else if (value.includes(',')) fills.push({ name, value: value.split(',').map((part) => part.trim()) });
+    else if (value.includes(',') && multiple.has(name))
+      fills.push({ name, value: value.split(',').map((part) => part.trim()) });
     else fills.push({ name, value });
   }
   return fills;
@@ -150,7 +152,7 @@ export const formFieldsDialog: OperationDialogSpec = {
   run: async (params, context) => {
     const fields = await readFormFields(context.bytes, context.signal);
     const inventory = inventoryNote(fields);
-    const fills = parseFills(String(params.fills ?? ''));
+    const fills = parseFills(String(params.fills ?? ''), fields);
     const calculations = parseCalculations(String(params.calculations ?? ''));
 
     // Validation runs first and always: a value that cannot be written must be
@@ -181,10 +183,8 @@ export const formFieldsDialog: OperationDialogSpec = {
           steps: [],
           notes: [
             note('preserved', 'form.note.inventory', { count: fields.length }),
-            ...(refused.length === 0 ? [note('preserved', 'form.note.valid')] : []),
-            ...(refused.length === 0
-              ? []
-              : [note('warning', 'form.note.refused', { count: refused.length })]),
+            // A refused fill has thrown above, so nothing is refused once the run gets here.
+            note('preserved', 'form.note.valid'),
           ],
           inputBytes: context.bytes.length,
           outputBytes: context.bytes.length,
@@ -355,10 +355,6 @@ export const createFieldDialog: OperationDialogSpec = {
   ],
   run: async (params, context) => {
     const pages = resolveScope(params.scope, context);
-    const pageIndex = pages[0];
-    if (pageIndex === undefined) {
-      throw new ToolError('selection-empty', { engine: 'ui', engineMessage: 'no page selected' });
-    }
     if (pages.length > MAX_CREATED_FIELDS) {
       throw new ToolError('range-invalid', {
         engine: 'ui',

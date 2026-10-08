@@ -73,7 +73,6 @@ export const formsPart = {
   'form.dialog.flattenHint': 'Fields are merged into page content; no longer interactive.',
   'form.note.inventory': 'Document contains {count} form field(s).',
   'form.note.valid': 'All values comply with field validation rules.',
-  'form.note.refused': '{count} value(s) violated field rules; listed in report.',
   'form.note.exported': '{count} field value(s) written to data file.',
   'form.note.exportIsData': 'Generated file is form data, not the PDF document itself.',
   'form.note.imported': '{count} field value(s) applied from data file.',

@@ -89,7 +89,7 @@ export interface CommandHost {
   /** Pick an image file and click where it goes on the page. */
   readonly addImage: () => void;
   /** Arm the ruler in one of its three modes (`ops/measure.ts`). */
-  readonly measure: (mode: 'distance' | 'perimeter' | 'area' | null) => void;
+  readonly measure: (mode: 'distance' | 'perimeter' | 'area') => void;
   /** Which measure mode is armed, for the menu's check mark. */
   readonly measureMode: 'distance' | 'perimeter' | 'area' | null;
   /** Open a right-dock tab; the comparison and the accessibility check live there. */
@@ -104,6 +104,7 @@ export interface CommandHost {
   readonly toggleFullscreen: () => void;
   readonly toggleReading: () => void;
   readonly toggleMagnifier: () => void;
+  readonly openSnapshot: () => void;
   readonly toggleLeftDock: () => void;
   readonly toggleRightDock: () => void;
   readonly selectAllPages: () => void;
@@ -545,6 +546,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabled: noDocument,
       checked: host.magnifier,
       run: host.toggleMagnifier,
+    },
+    {
+      id: 'view.snapshot',
+      labelKey: 'tools.snapshot',
+      group: 'view',
+      disabled: noDocument,
+      keywords: ['snapshot', 'screenshot', 'capture', 'png', 'goruntu'],
+      run: host.openSnapshot,
     },
     {
       id: 'view.layers',

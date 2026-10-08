@@ -61,9 +61,105 @@ describe('scanContent', () => {
     }
   });
 
-  it('survives a damaged stream: an unclosed dictionary and a runaway nest end the scan, not the process', () => {
-    expect(() => scan(ascii('<</A 1 /B'))).not.toThrow();
-    expect(() => scan(ascii(`${'['.repeat(500)} f`))).not.toThrow();
-    expect(scan(ascii('')).length).toBe(0);
+  it('ends the scan at an unclosed dictionary without producing an operator', () => {
+    expect(scan(ascii('<</A 1 /B'))).toEqual([]);
+    expect(scan(ascii(''))).toEqual([]);
+  });
+
+  it('caps nesting at 33 arrays: a 100000-deep nest neither overflows the stack nor loses the operators around it', () => {
+    const depth = 100000;
+    const found = scan(ascii(`q ${'['.repeat(depth)}${']'.repeat(33)} Q`));
+    expect(found.map((entry) => entry.op)).toEqual(['q', 'Q']);
+    // The 33 arrays the cap allows nest one inside the other; every deeper '[' is one null operand
+    // inside the innermost, so the 33 closing brackets close exactly the arrays that were opened.
+    let level: Operand | undefined = found[1]?.operands[0];
+    let nested = 0;
+    while (level?.t === 'arr' && level.items[0]?.t === 'arr') {
+      nested += 1;
+      level = level.items[0];
+    }
+    expect(nested).toBe(32);
+    expect(found[1]?.operands).toHaveLength(1);
+    if (level?.t !== 'arr') throw new Error('innermost level is not an array');
+    expect(level.items).toHaveLength(depth - 33);
+    expect(level.items.every((item) => item.t === 'null')).toBe(true);
+  });
+
+  it('skips a stray token inside a damaged dictionary and keeps the keys around it', () => {
+    const found = scan(ascii('<</A 1 5 /B 2>> gs'));
+    const dictionary = found[0]?.operands[0];
+    expect(dictionary?.t).toBe('dict');
+    if (dictionary?.t === 'dict') {
+      expect([...dictionary.entries.keys()]).toEqual(['A', 'B']);
+      expect(numberOf(dictionary.entries.get('B'))).toBe(2);
+    }
+  });
+
+  it('ignores a keyword inside an array and ends an unterminated array at the end of the stream', () => {
+    const closed = scan(ascii('[1 f 2] gs'));
+    expect(closed[0]?.operands).toEqual([
+      {
+        t: 'arr',
+        items: [
+          { t: 'num', v: 1 },
+          { t: 'num', v: 2 },
+        ],
+      },
+    ]);
+    const open = scan(ascii('[1 2 '));
+    expect(open).toEqual([]);
+  });
+
+  it('reads a stray delimiter as a null operand, and true, false and null as their own operands', () => {
+    const found = scan(ascii('1 ] 2 ) { } > m true false null d'));
+    expect(found[0]?.op).toBe('m');
+    expect(found[0]?.operands).toEqual([
+      { t: 'num', v: 1 },
+      { t: 'null' },
+      { t: 'num', v: 2 },
+      { t: 'null' },
+      { t: 'null' },
+      { t: 'null' },
+      { t: 'null' },
+    ]);
+    expect(found[1]?.operands).toEqual([{ t: 'bool', v: true }, { t: 'bool', v: false }, { t: 'null' }]);
+  });
+
+  it('drops the oldest operands once a stream piles up more than 64 without an operator', () => {
+    const numbers = Array.from({ length: 100 }, (_, index) => index + 1);
+    const found = scan(ascii(`${numbers.join(' ')} m`));
+    expect(found).toHaveLength(1);
+    // 65th operand cuts to the last 32 (34..65); the 98th cuts again (67..98); two more arrive.
+    expect(found[0]?.operands.map(numberOf)).toEqual(numbers.slice(66));
+  });
+
+  it('ends an inline image without whitespace after ID, and ignores EI that is glued to other bytes', () => {
+    const found = scan(ascii('BI /W 1 ID(x) abEI EIx EI Q'));
+    expect(found.map((entry) => entry.op)).toEqual(['BI', 'Q']);
+  });
+
+  it('survives an inline image that is cut off: at ID, inside its dictionary, or with a keyword where a value belongs', () => {
+    expect(scan(ascii('BI /W 1 ID')).map((entry) => entry.op)).toEqual(['BI']);
+    const unfinished = scan(ascii('BI /W 1 /H'));
+    expect(unfinished.map((entry) => entry.op)).toEqual(['BI']);
+    const noEnd = scan(ascii('BI /W 1 ID data without terminator'));
+    expect(noEnd.map((entry) => entry.op)).toEqual(['BI']);
+    // A stray delimiter between entries is stepped over; a keyword in place of a value leaves the key out.
+    const stray = scan(ascii('BI /W 1 < /H 2 ID x EI Q'));
+    expect(stray.map((entry) => entry.op)).toEqual(['BI', 'Q']);
+    const strayDict = stray[0]?.operands[0];
+    if (strayDict?.t !== 'dict') throw new Error('not a dictionary');
+    expect([...strayDict.entries.keys()]).toEqual(['W', 'H']);
+    const keyword = scan(ascii('BI /W ID abc EI'));
+    const keywordDict = keyword[0]?.operands[0];
+    expect(keyword.map((entry) => entry.op)).toEqual(['BI']);
+    expect(keywordDict).toEqual({ t: 'dict', entries: new Map() });
+  });
+
+  it('returns null from numberOf and nameOf for an operand of the other kind or none at all', () => {
+    expect(numberOf({ t: 'name', v: 'A' })).toBeNull();
+    expect(numberOf(undefined)).toBeNull();
+    expect(nameOf({ t: 'num', v: 1 })).toBeNull();
+    expect(nameOf(undefined)).toBeNull();
   });
 });

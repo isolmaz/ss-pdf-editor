@@ -53,17 +53,19 @@ export interface XfaInfo {
 }
 
 interface Located {
+  readonly catalog: PDFObject;
   readonly acroForm: PDFObject;
   readonly xfa: PDFObject;
 }
 
 function locate(doc: PDFDocument): Located | null {
   const catalog = resolved(doc.getTrailer().get('Root'));
-  const acroForm = catalog === null ? null : resolved(catalog.get('AcroForm'));
+  if (catalog === null) return null;
+  const acroForm = resolved(catalog.get('AcroForm'));
   if (acroForm === null || !acroForm.isDictionary()) return null;
   const entry = acroForm.get('XFA');
   if (entry.isNull()) return null;
-  return { acroForm, xfa: entry };
+  return { catalog, acroForm, xfa: entry };
 }
 
 function streamBytes(entry: PDFObject): Uint8Array | null {
@@ -78,7 +80,11 @@ interface PacketRead {
 /** Every packet of the form, or `null` when the document has no XFA. */
 export function readXfaPackets(doc: PDFDocument): PacketRead | null {
   const located = locate(doc);
-  if (located === null) return null;
+  return located === null ? null : readPackets(located);
+}
+
+/** The packets of a located XFA entry: an array of name/stream pairs, or one XDP stream. */
+function readPackets(located: Located): PacketRead | null {
   const { xfa } = located;
   const resolvedXfa = resolved(xfa);
   if (resolvedXfa?.isArray()) {
@@ -114,12 +120,13 @@ export function packetText(doc: PDFDocument, name: string): string | null {
 
 /** Summary of the form's XFA, or `null` when the document has none. */
 export function describeXfa(doc: PDFDocument, snapshots: readonly XfaFieldSnapshot[]): XfaInfo | null {
-  const read = readXfaPackets(doc);
+  const located = locate(doc);
+  if (located === null) return null;
+  const read = readPackets(located);
   if (read === null) return null;
   const fieldCount = snapshots.filter((snapshot) => snapshot.kind !== 'signature').length;
   const datasets = read.packets.find((packet) => packet.name === 'datasets');
-  const catalog = resolved(doc.getTrailer().get('Root'));
-  const needs = catalog === null ? null : resolved(catalog.get('NeedsRendering'));
+  const needs = resolved(located.catalog.get('NeedsRendering'));
   return {
     kind: fieldCount > 0 ? 'static' : 'dynamic',
     layout: read.layout,
@@ -182,8 +189,9 @@ export function writeDatasets(doc: PDFDocument, xml: string): void {
   if (document === null || replacement === null) throw new Error('the XFA stream is not well-formed XML');
   const root = document.documentElement;
   const imported = document.importNode(replacement.documentElement, true);
+  // The first datasets element: the one `readXfaPackets` (and so every reader here) takes.
   let existing: Element | null = null;
-  for (let node = root.firstChild; node !== null; node = node.nextSibling) {
+  for (let node = root.firstChild; node !== null && existing === null; node = node.nextSibling) {
     if (node.nodeType === 1 && (node as Element).localName === 'datasets') existing = node as Element;
   }
   if (existing === null) root.appendChild(imported);
@@ -235,8 +243,7 @@ export function removeXfaEntries(doc: PDFDocument): boolean {
   const located = locate(doc);
   if (located === null) return false;
   located.acroForm.delete('XFA');
-  const catalog = resolved(doc.getTrailer().get('Root'));
-  if (catalog !== null && !catalog.get('NeedsRendering').isNull()) catalog.delete('NeedsRendering');
+  if (!located.catalog.get('NeedsRendering').isNull()) located.catalog.delete('NeedsRendering');
   return true;
 }
 

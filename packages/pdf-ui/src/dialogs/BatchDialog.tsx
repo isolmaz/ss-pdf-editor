@@ -59,45 +59,6 @@ import type { DialogParams, FieldSpec, FieldValue } from './types';
  * The batch chrome's own sentences
  * ------------------------------------------------------------------ */
 
-/**
- * The sentence ids of this surface, declared in `packages/shared/src/i18n/parts/batch.ts`
- * (Turkish) and `en-parts/batch.ts` (English). The lookup below is the single bridge:
- * every read goes through `Translator`, and a key missing from the dictionary renders
- * **its own id** — visible in the surface, never a hardcoded English string.
- */
-type BatchMessageKey =
-  | 'batch.title'
-  | 'batch.intro'
-  | 'batch.queue'
-  | 'batch.queue.hint'
-  | 'batch.name'
-  | 'batch.steps'
-  | 'batch.steps.hint'
-  | 'batch.template.save'
-  | 'batch.template.load'
-  | 'batch.template.loaded'
-  | 'batch.template.clear'
-  | 'batch.run'
-  | 'batch.cancel'
-  | 'batch.close'
-  | 'batch.download'
-  | 'batch.progress'
-  | 'batch.report'
-  | 'batch.report.completed'
-  | 'batch.report.failed'
-  | 'batch.report.skipped'
-  | 'batch.report.cancelled'
-  | 'batch.report.summary'
-  | 'batch.report.unchanged'
-  | 'batch.error.queue'
-  | 'batch.error.steps'
-  | 'batch.error.template'
-  | 'batch.folder.watch'
-  | 'batch.folder.watching'
-  | 'batch.folder.stop'
-  | 'batch.folder.unsupported'
-  | 'batch.folder.scanned';
-
 /** The step a report entry names, in the vocabulary the *operations* already have. */
 const STEP_LABEL_KEYS: Readonly<Record<BatchStepKind, MessageKey>> = {
   pages: 'pages.extract.title',
@@ -482,8 +443,15 @@ function number(value: FieldValue | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/**
+ * The steps this surface can edit. `image` is engine-only: an image step names a
+ * `/Resources /XObject` entry of *one* document, which a rule set for a queue cannot know
+ * before it opens the file (`ops/batch.ts` documents the same boundary).
+ */
+type OfferedStepKind = Exclude<BatchStepKind, 'image'>;
+
 /** One step's field values as the operation's own params. */
-function stepParams(kind: BatchStepKind, values: DialogParams): BatchStep['params'] {
+function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['params'] {
   switch (kind) {
     case 'pages':
       return { pages: pageSelection(values.pages, 'pages') };
@@ -544,12 +512,6 @@ function stepParams(kind: BatchStepKind, values: DialogParams): BatchStep['param
             skipFirst: flag(values.skipFirst),
           };
     }
-    case 'image':
-      // The engine carries a full image step; this surface does not offer one, and
-      // the reason is in the intro: an image step names a `/Resources /XObject` entry
-      // of *one* document, which a rule set for a queue cannot know before it opens
-      // the file (`ops/batch.ts` documents the same boundary).
-      throw new Error('image');
     case 'metadata':
       return {
         patch: {
@@ -623,8 +585,9 @@ const DEFAULT_STEPS: Readonly<Record<BatchStepKind, boolean>> = {
   protect: false,
 };
 
-/** The steps this surface can edit; `image` is engine-only (see `stepParams`). */
-const OFFERED_STEPS: readonly BatchStepKind[] = BATCH_STEP_KINDS.filter((kind) => kind !== 'image');
+const OFFERED_STEPS: readonly OfferedStepKind[] = BATCH_STEP_KINDS.filter(
+  (kind): kind is OfferedStepKind => kind !== 'image',
+);
 
 export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDialogProps) {
   const [files, setFiles] = useState<readonly File[]>([]);
@@ -648,16 +611,6 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
   const [isWatching, setIsWatching] = useState(false);
   const watchedDirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
   const watchIntervalRef = useRef<number | null>(null);
-
-  /** Every sentence goes through this one bridge (see `BatchMessageKey`). */
-  const text_ = useCallback(
-    (id: BatchMessageKey, params?: Readonly<Record<string, string | number>>): string => {
-      const translated: string | undefined = t(id as unknown as MessageKey);
-      if (translated === undefined) return id;
-      return params === undefined ? translated : t(id as unknown as MessageKey, params);
-    },
-    [t],
-  );
 
   // Clean up controller and watch interval on unmount
   useEffect(() => {
@@ -691,13 +644,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
   }, []);
 
   const startFolderWatch = useCallback(async () => {
-    if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
-      setFailure({
-        message: text_('batch.folder.unsupported'),
-        hint: 'File System Access API gerekli (Chromium/Edge).',
-      });
-      return;
-    }
+    // The Watch Folder button is only offered where `showDirectoryPicker` exists.
     try {
       interface WindowWithDirPicker {
         showDirectoryPicker(): Promise<FileSystemDirectoryHandle>;
@@ -711,8 +658,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       const initialFiles = await scanDirectory(dirHandle);
       if (initialFiles.length > 0) {
         setFiles(initialFiles.slice(0, MAX_BATCH_ITEMS));
-        setLoaded(null);
-        onNotice?.(text_('batch.folder.scanned', { count: initialFiles.length }));
+        onNotice?.(t('batch.folder.scanned', { count: initialFiles.length }));
       }
 
       clearInterval(watchIntervalRef.current ?? undefined);
@@ -726,7 +672,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
               currentFiles.length !== prev.length ||
               currentFiles.some((f) => !prevIds.has(`${f.name}:${f.size}:${f.lastModified}`));
             if (changed) {
-              onNotice?.(text_('batch.folder.scanned', { count: currentFiles.length }));
+              onNotice?.(t('batch.folder.scanned', { count: currentFiles.length }));
               return currentFiles.slice(0, MAX_BATCH_ITEMS);
             }
             return prev;
@@ -738,7 +684,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     } catch {
       // User cancelled picker
     }
-  }, [onNotice, scanDirectory, text_]);
+  }, [onNotice, scanDirectory, t]);
 
   const running = status === 'running';
   const chosen = OFFERED_STEPS.filter((kind) => enabled[kind] === true);
@@ -768,7 +714,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       // A page field that does not parse is the one thing the field table cannot
       // refuse on its own (it is text, and the bound is the item's own count).
       const detail = String((error as Error)?.message ?? error);
-      setFailure({ message: text_('batch.error.queue'), hint: detail });
+      setFailure({ message: t('batch.error.queue'), hint: detail });
       setStatus('error');
       return;
     }
@@ -796,7 +742,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       setReport(result);
       setStatus(result.cancelled ? 'cancelled' : 'done');
       onNotice?.(
-        text_('batch.report.summary', {
+        t('batch.report.summary', {
           completed: result.completed.length,
           failed: result.failed.length,
           skipped: result.skipped.length,
@@ -809,7 +755,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     } finally {
       controller.current = null;
     }
-  }, [files, onNotice, ruleSet, t, text_]);
+  }, [files, onNotice, ruleSet, t]);
 
   const cancel = useCallback(() => controller.current?.abort(), []);
 
@@ -861,14 +807,15 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
   return (
     <Dialog.Root
       open={open}
-      onOpenChange={(next, details) => {
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
         // A run in flight has no half-finished file worth showing; cancelling has
         // its own button (`OperationForm.tsx` follows the same rule).
         if (running) {
           details.cancel();
           return;
         }
-        if (!next) onClose();
+        onClose();
       }}
     >
       <Dialog
@@ -876,18 +823,16 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
         className="flex max-w-xl w-full max-h-[75vh] flex-col gap-3.5 p-5 pdf-floating-shadow"
       >
         <div className="shrink-0">
-          <Dialog.Title className="text-sm font-semibold text-kumo-strong">
-            {text_('batch.title')}
-          </Dialog.Title>
+          <Dialog.Title className="text-sm font-semibold text-kumo-strong">{t('batch.title')}</Dialog.Title>
           <Dialog.Description className="text-xs text-kumo-subtle mt-0.5">
-            {text_('batch.intro')}
+            {t('batch.intro')}
           </Dialog.Description>
         </div>
 
         <div className="overflow-y-auto min-h-0 flex-1 pe-1 flex flex-col gap-3">
           <section className="flex flex-col gap-2 border border-kumo-line p-2">
-            <h3 className="text-xs font-semibold text-kumo-strong">{text_('batch.queue')}</h3>
-            <p className="text-xs text-kumo-subtle">{text_('batch.queue.hint')}</p>
+            <h3 className="text-xs font-semibold text-kumo-strong">{t('batch.queue')}</h3>
+            <p className="text-xs text-kumo-subtle">{t('batch.queue.hint')}</p>
             <div className="flex items-center gap-2">
               <Button
                 icon={FolderOpen}
@@ -900,11 +845,11 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
               {typeof window !== 'undefined' && 'showDirectoryPicker' in window ? (
                 isWatching ? (
                   <Button icon={Stop} variant="destructive" disabled={running} onClick={stopFolderWatch}>
-                    {text_('batch.folder.stop')}
+                    {t('batch.folder.stop')}
                   </Button>
                 ) : (
                   <Button icon={FolderOpen} variant="outline" disabled={running} onClick={startFolderWatch}>
-                    {text_('batch.folder.watch')}
+                    {t('batch.folder.watch')}
                   </Button>
                 )
               ) : null}
@@ -916,7 +861,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
               <div className="flex items-center gap-2 rounded border border-kumo-line bg-kumo-tint px-2 py-1 text-xs text-kumo-strong font-medium">
                 <span className="size-2 rounded-full bg-kumo-success shrink-0" />
                 <span>
-                  {text_('batch.folder.watching')}: {watchedDirName}
+                  {t('batch.folder.watching')}: {watchedDirName}
                 </span>
               </div>
             ) : null}
@@ -937,18 +882,15 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
               className="hidden"
               onChange={(event) => {
                 const picked = Array.from(event.target.files ?? []);
-                if (picked.length > 0) {
-                  setFiles(picked);
-                  setLoaded(null);
-                }
+                if (picked.length > 0) setFiles(picked);
                 event.target.value = '';
               }}
             />
           </section>
 
           <section className="flex flex-col gap-2 border border-kumo-line p-2">
-            <h3 className="text-xs font-semibold text-kumo-strong">{text_('batch.steps')}</h3>
-            <p className="text-xs text-kumo-subtle">{text_('batch.steps.hint')}</p>
+            <h3 className="text-xs font-semibold text-kumo-strong">{t('batch.steps')}</h3>
+            <p className="text-xs text-kumo-subtle">{t('batch.steps.hint')}</p>
 
             {OFFERED_STEPS.map((kind) => (
               <div key={kind} className="flex flex-col gap-2">
@@ -981,7 +923,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
 
           <section className="flex flex-col gap-2 border border-kumo-line p-2">
             <label className="flex flex-col gap-1 text-xs text-kumo-subtle">
-              {text_('batch.name')}
+              {t('batch.name')}
               <input
                 className="border border-kumo-line bg-kumo-base px-2 py-1 text-xs text-kumo-default"
                 value={name}
@@ -991,19 +933,19 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
             </label>
             {loaded === null ? null : (
               <p role="status" className="text-xs text-kumo-subtle">
-                {text_('batch.template.loaded', { count: loaded.steps.length })}
+                {t('batch.template.loaded', { count: loaded.steps.length })}
               </p>
             )}
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" disabled={running} onClick={saveTemplate}>
-                {text_('batch.template.save')}
+                {t('batch.template.save')}
               </Button>
               <Button variant="outline" disabled={running} onClick={() => templateInput.current?.click()}>
-                {text_('batch.template.load')}
+                {t('batch.template.load')}
               </Button>
               {loaded === null ? null : (
                 <Button variant="outline" disabled={running} onClick={() => setLoaded(null)}>
-                  {text_('batch.template.clear')}
+                  {t('batch.template.clear')}
                 </Button>
               )}
             </div>
@@ -1023,10 +965,10 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
           {progress === null ? null : (
             <div className="flex flex-col gap-1.5">
               <p role="status" aria-live="polite" className="text-xs text-kumo-subtle">
-                {progress.label === null ? text_('batch.progress') : t(progress.label)}
+                {progress.label === null ? t('batch.progress') : t(progress.label)}
               </p>
               <Meter
-                label={text_('batch.progress')}
+                label={t('batch.progress')}
                 value={progress.done}
                 max={progress.total === 0 ? 1 : progress.total}
                 customValue={`${progress.done}/${progress.total}`}
@@ -1046,25 +988,25 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
             </div>
           )}
 
-          {report === null ? null : <BatchReportList t={t} text={text_} report={report} />}
+          {report === null ? null : <BatchReportList t={t} report={report} />}
         </div>
 
         <div className="shrink-0 pt-2 border-t border-kumo-line/40 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} icon={X}>
-            {running ? text_('batch.cancel') : text_('batch.close')}
+            {running ? t('batch.cancel') : t('batch.close')}
           </Button>
           {report === null || running ? null : (
             <Button variant="outline" onClick={download}>
-              {text_('batch.download')}
+              {t('batch.download')}
             </Button>
           )}
           {running ? (
             <Button variant="outline" icon={Stop} onClick={cancel}>
-              {text_('batch.cancel')}
+              {t('batch.cancel')}
             </Button>
           ) : (
             <Button variant="primary" icon={Play} disabled={!usable} onClick={() => void start()}>
-              {text_('batch.run')}
+              {t('batch.run')}
             </Button>
           )}
         </div>
@@ -1074,20 +1016,12 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
 }
 
 /** One row per file: what happened, the numbers, and the operation's own notes. */
-function BatchReportList({
-  t,
-  text,
-  report,
-}: {
-  readonly t: Translator;
-  readonly text: (id: BatchMessageKey, params?: Readonly<Record<string, string | number>>) => string;
-  readonly report: BatchReport;
-}) {
+function BatchReportList({ t, report }: { readonly t: Translator; readonly report: BatchReport }) {
   return (
     <section className="flex flex-col gap-2 border border-kumo-line p-2">
-      <h3 className="text-xs font-semibold text-kumo-strong">{text('batch.report')}</h3>
+      <h3 className="text-xs font-semibold text-kumo-strong">{t('batch.report')}</h3>
       <p role="status" className="text-xs tabular-nums text-kumo-subtle">
-        {text('batch.report.summary', {
+        {t('batch.report.summary', {
           completed: report.completed.length,
           failed: report.failed.length,
           skipped: report.skipped.length,
@@ -1095,7 +1029,7 @@ function BatchReportList({
       </p>
       {report.cancelled ? (
         <p className="text-xs text-kumo-subtle">
-          {text('batch.report.cancelled', { names: report.completed.join(', ') })}
+          {t('batch.report.cancelled', { names: report.completed.join(', ') })}
         </p>
       ) : null}
       <ul className="flex flex-col gap-2">
@@ -1104,7 +1038,7 @@ function BatchReportList({
             <p className="text-xs text-kumo-default">
               {result.name} — {t(STEP_LABEL_KEYS[report.order[0] ?? 'metadata'])}
               {result.status === 'done'
-                ? ` · ${text('batch.report.completed', {
+                ? ` · ${t('batch.report.completed', {
                     before: result.inputBytes,
                     after: result.outputBytes,
                     pages: result.pageCount,
@@ -1114,7 +1048,7 @@ function BatchReportList({
             {result.status === 'failed' ? (
               <div role="alert" className="flex flex-col gap-0.5">
                 <p className="text-xs text-kumo-danger">
-                  {text('batch.report.failed', { step: t(STEP_LABEL_KEYS[result.step ?? 'metadata']) })}{' '}
+                  {t('batch.report.failed', { step: t(STEP_LABEL_KEYS[result.step ?? 'metadata']) })}{' '}
                   {t(result.messageKey)}
                 </p>
                 <p className="text-xs text-kumo-subtle">{t(result.hintKey)}</p>
@@ -1124,18 +1058,16 @@ function BatchReportList({
               </div>
             ) : null}
             {result.status === 'skipped' ? (
-              <p className="text-xs text-kumo-subtle">{text('batch.report.skipped')}</p>
+              <p className="text-xs text-kumo-subtle">{t('batch.report.skipped')}</p>
             ) : null}
             {result.status === 'done'
-              ? result.steps.map((step) =>
-                  step.report === null ? null : (
-                    <OperationReportPanel
-                      key={`${result.name}-${step.kind}-${step.report.steps.join('|')}`}
-                      t={t}
-                      report={step.report}
-                    />
-                  ),
-                )
+              ? result.steps.map((step) => (
+                  <OperationReportPanel
+                    key={`${result.name}-${step.kind}-${step.report.steps.join('|')}`}
+                    t={t}
+                    report={step.report}
+                  />
+                ))
               : null}
           </li>
         ))}

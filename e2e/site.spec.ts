@@ -175,24 +175,39 @@ test.describe('the 404 page', () => {
 });
 
 test('the stored theme applies before first paint and survives a reload', async ({ page }) => {
+  // A passive recorder, installed for every navigation: it writes nothing, it only notes
+  // whether `data-mode` was set while the parser had not yet created <body> (so before the
+  // first paint) and keeps the value, so the reload below is what is under test.
+  await page.addInitScript(() => {
+    new MutationObserver(() => {
+      const probe = window as unknown as { __modeBeforeBody?: boolean };
+      probe.__modeBeforeBody ??= document.body === null;
+    }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-mode'] });
+  });
+  await page.goto('/');
+  // theme-boot.js is a plain synchronous script in <head>, so data-mode is set before the body exists.
+  const early = await page.evaluate(() => {
+    const script = document.querySelector('head script[src="/theme-boot.js"]');
+    return script !== null && !script.hasAttribute('defer') && !script.hasAttribute('async');
+  });
+  expect(early).toBe(true);
+
   const canvases: string[] = [];
   for (const mode of ['dark', 'light']) {
-    await page.addInitScript((value: string) => window.localStorage.setItem('pdf-editor.theme', value), mode);
-    await page.goto('/');
-    // theme-boot.js is a plain synchronous script in <head>, so data-mode is set before the body exists.
-    const early = await page.evaluate(() => {
-      const script = document.querySelector('head script[src="/theme-boot.js"]');
-      return script !== null && !script.hasAttribute('defer') && !script.hasAttribute('async');
-    });
-    expect(early).toBe(true);
+    // Stored once, after the first load: nothing rewrites it before the reload.
+    await page.evaluate((value: string) => window.localStorage.setItem('pdf-editor.theme', value), mode);
     await page.reload();
     const state = await page.evaluate(() => ({
       mode: document.documentElement.dataset.mode ?? '',
       scheme: document.documentElement.style.colorScheme,
       canvas: getComputedStyle(document.body).backgroundColor,
+      beforeBody: (window as unknown as { __modeBeforeBody?: boolean }).__modeBeforeBody,
+      stored: window.localStorage.getItem('pdf-editor.theme'),
     }));
     expect(state.mode).toBe(mode);
     expect(state.scheme).toBe(mode);
+    expect(state.stored).toBe(mode);
+    expect(state.beforeBody).toBe(true);
     canvases.push(state.canvas);
   }
   // The Kumo tokens follow data-mode: the two themes paint different canvases.

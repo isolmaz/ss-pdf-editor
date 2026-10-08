@@ -4,7 +4,7 @@
  * Two modes, one operation. The dialog's whole job is to make the difference
  * between them unmissable before the button is pressed: `structure` re-serialises
  * and may drop Info metadata, `raster` renders the selected pages into images and
- * loses their text layer, links, annotations and outline.
+ * loses their text layer, links and annotations (the outline still leads to them).
  *
  * `destructive` is a **spec-level** flag, so choosing the raster mode makes the
  * whole dialog ask twice. The alternative — a lost note

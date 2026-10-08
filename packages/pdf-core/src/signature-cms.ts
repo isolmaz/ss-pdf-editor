@@ -37,14 +37,14 @@ import {
   SignerInfo,
 } from 'pkijs';
 
-/** Byte order, the way a `SET OF` must be sorted: shorter prefix first, then by value. */
+/**
+ * Byte order, the way a `SET OF` must be sorted: shorter prefix first, then by value. Bytes
+ * are compared as the code units of their latin-1 spelling, which orders exactly so.
+ */
 function compareBytes(left: Uint8Array, right: Uint8Array): number {
-  const shortest = Math.min(left.length, right.length);
-  for (let index = 0; index < shortest; index += 1) {
-    const difference = (left[index] ?? 0) - (right[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return left.length - right.length;
+  const first = String.fromCharCode(...left);
+  const second = String.fromCharCode(...right);
+  return Number(first > second) - Number(first < second);
 }
 
 /** The digest algorithms a PAdES B-B signature may use, widest first. */
@@ -105,6 +105,12 @@ async function algorithmFor(
   const name = privateKey.algorithm.name;
   const digestOid = DIGEST_OIDS[digest];
   if (name === 'RSASSA-PKCS1-v1_5') {
+    // WebCrypto signs with the hash the key was created for. A CMS that states another digest
+    // would carry a signature no reader can verify, so the mismatch is refused here.
+    const keyHash = (privateKey.algorithm as RsaHashedKeyAlgorithm).hash.name;
+    if (keyHash !== digest) {
+      throw new Error(`the RSA key signs with ${keyHash}, so the CMS digest cannot be ${digest}`);
+    }
     return {
       webcrypto: { name: 'RSASSA-PKCS1-v1_5' },
       keyOid: OID_RSA_ENCRYPTION,

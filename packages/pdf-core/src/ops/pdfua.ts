@@ -41,7 +41,6 @@
 import type { PDFDocument, PDFObject } from 'mupdf';
 import type { MessageKey } from 'pdf-shared';
 import { ToolError } from 'pdf-shared';
-import { mapMupdfError } from '../engines/mupdf';
 import {
   openForWrite,
   pageObjects,
@@ -56,12 +55,12 @@ import {
   catalogOf,
   decodeStream,
   dictOf,
+  engineFailure,
   FIELD_WALK_LIMIT,
   FINDING_ROW_LIMIT,
   FORM_DEPTH_LIMIT,
   findField,
   intOf,
-  isAbort,
   latin1,
   nameOf,
   pageContent,
@@ -558,10 +557,7 @@ function describeFont(font: PDFObject, fallbackName: string): Omit<FontFacts, 'p
   const type3 = subtype === 'Type3';
   const descendant = subtype === 'Type0' ? descendantOf(font) : null;
   const descriptor = dictOf((descendant ?? font).get('FontDescriptor'));
-  const embedded =
-    type3 ||
-    hasFontFile(descriptor) ||
-    (descendant !== null && hasFontFile(dictOf(descendant.get('FontDescriptor'))));
+  const embedded = type3 || hasFontFile(descriptor);
 
   const toUnicode = font.get('ToUnicode');
   if (!toUnicode.isNull() && toUnicode.isStream()) {
@@ -698,22 +694,17 @@ function scanStream(
     }
     if (coverage !== 'unmarked') continue;
     if (paint.kind === 'form' && paint.name !== null) {
-      const xobjects = dictOf(resources?.get('XObject'));
-      const entry = xobjects?.get(paint.name);
-      const form = entry === undefined ? null : resolved(entry);
-      const number = entry?.isIndirect() === true ? entry.asIndirect() : null;
-      if (
-        entry !== undefined &&
-        form !== null &&
-        depth < FORM_DEPTH_LIMIT &&
-        (number === null || !visited.has(number))
-      ) {
-        if (number !== null) visited.add(number);
+      // A `form` paint exists only because `resourceHooks` found this stream, by name, in this
+      // very dictionary — and a stream is always an indirect object.
+      const entry = (dictOf(resources?.get('XObject')) as PDFObject).get(paint.name);
+      const number = entry.asIndirect();
+      if (depth < FORM_DEPTH_LIMIT && !visited.has(number)) {
+        visited.add(number);
         const decoded = decodeStream(entry);
         if (decoded !== null) {
           scanStream(
             decoded,
-            dictOf(form.get('Resources')) ?? resources,
+            dictOf(entry.get('Resources')) ?? resources,
             pageIndex,
             area,
             depth + 1,
@@ -730,8 +721,7 @@ function scanStream(
     }
     if (paint.kind === 'text') acc.unmarked.text += 1;
     else if (paint.kind === 'path' || paint.kind === 'shading') acc.unmarked.path += 1;
-    else if (paint.kind === 'image' || paint.kind === 'inline-image') acc.unmarked.image += 1;
-    else acc.unmarked.other += 1;
+    else acc.unmarked.image += 1;
   }
 }
 
@@ -785,7 +775,7 @@ function readCharacters(doc: PDFDocument, pageIndex: number): { chars: number; r
           onChar(char) {
             if (char.trim() === '') return;
             chars += 1;
-            if (char === '�') replacement += 1;
+            if (char === '\ufffd') replacement += 1;
           },
         });
         return { chars, replacement };
@@ -795,8 +785,9 @@ function readCharacters(doc: PDFDocument, pageIndex: number): { chars: number; r
     } finally {
       page.destroy();
     }
-  } catch (error) {
-    if (isAbort(error)) throw error;
+  } catch {
+    // MuPDF cannot interpret this page (a stream with impossible decode parameters, say): its
+    // characters are not measured, and the report says so instead of failing the whole check.
     return null;
   }
 }
@@ -849,7 +840,10 @@ interface RuleResult {
 }
 
 class Results {
-  private readonly map = new Map<string, RuleResult>();
+  /** Every rule starts unchecked; a rule no branch of the check reaches stays that way. */
+  private readonly map = new Map<string, RuleResult>(
+    UA_RULES.map((meta) => [meta.id, { state: 'unchecked', count: 0, instances: [] }]),
+  );
 
   set(
     id: UaRuleId,
@@ -875,13 +869,9 @@ class Results {
     this.set(id, instances.length > 0 ? 'fail' : 'pass', instances, passParams);
   }
 
-  get(id: string): RuleResult | undefined {
-    return this.map.get(id);
+  get(id: UaRuleId): RuleResult {
+    return this.map.get(id) as RuleResult;
   }
-}
-
-function _pdfPart(entry: PDFObject): string {
-  return entry.isIndirect() ? `${String(entry.asIndirect())} 0 R` : '?';
 }
 
 /**
@@ -894,8 +884,7 @@ export async function checkPdfUa(bytes: Uint8Array, context: OperationContext): 
   try {
     return inspectUa(doc, context);
   } catch (error) {
-    if (isAbort(error) || error instanceof ToolError) throw error;
-    throw mapMupdfError(error, 'check PDF/UA');
+    throw engineFailure(error, 'check PDF/UA');
   } finally {
     doc.destroy();
   }
@@ -1308,10 +1297,10 @@ function inspectUa(doc: PDFDocument, context: OperationContext): PdfUaReport {
     );
   }
   const unmapped = pageFacts.filter((entry) => entry.replacement > 0);
-  const measured = pageFacts.filter((entry) => entry.chars !== null);
+  const measured = pageFacts.flatMap((entry) => (entry.chars === null ? [] : [entry.chars]));
   if (measured.length === 0 && pageCount > 0)
     results.set('char-mapping', 'unchecked', [{ reason: 'unreadable' }]);
-  else if (measured.every((entry) => (entry.chars ?? 0) === 0)) results.set('char-mapping', 'na');
+  else if (measured.every((chars) => chars === 0)) results.set('char-mapping', 'na');
   else {
     results.verdict(
       'char-mapping',
@@ -1329,7 +1318,7 @@ function inspectUa(doc: PDFDocument, context: OperationContext): PdfUaReport {
 
   /* ---- assemble ---- */
   const rules: UaRule[] = UA_RULES.map((meta) => {
-    const result = results.get(meta.id) ?? { state: 'unchecked' as const, count: 0, instances: [] };
+    const result = results.get(meta.id);
     const base = {
       id: meta.id,
       group: meta.group,
@@ -1407,7 +1396,6 @@ export const UA_FIX_KEYS = {
 } as const;
 
 const PATH_UNIT_OPERATORS = new Set<string>([...PATH_CONSTRUCTION, 'W', 'W*']);
-const PATH_PAINT_OPERATORS = new Set(['S', 's', 'f', 'F', 'f*', 'B', 'B*', 'b', 'b*']);
 
 function wrongValue(path: string, message: string): ToolError {
   return new ToolError('value-out-of-range', { engine: 'model', path, engineMessage: message });
@@ -1420,7 +1408,7 @@ function setInfoTitle(doc: PDFDocument, title: string): void {
     // A trailer handle taken before `addObject` is stale: a `put` through it reads back but is
     // not saved, so a file without an Info dictionary lost its title. Fetch the trailer afresh.
     doc.getTrailer().put('Info', created);
-    info = resolved(created) ?? created;
+    info = created;
   }
   info.put('Title', text(doc, title));
 }
@@ -1458,7 +1446,6 @@ function artifactPathsOnPage(doc: PDFDocument, page: PDFObject): number {
   let cursor = -1;
   for (const paint of marks.paints) {
     if (paint.kind !== 'path' || coverageOf(marks, paint) !== 'unmarked') continue;
-    if (!PATH_PAINT_OPERATORS.has((instructions[paint.index] as { operator: string }).operator)) continue;
     let first = paint.index;
     while (
       first - 1 > cursor &&
@@ -1501,8 +1488,8 @@ function tagAnnotations(
 } {
   const root = dictOf(catalog.get('StructTreeRoot'));
   if (root === null) return { tagged: [], problem: 'no-tree' };
+  // `root` is a dictionary here, so the walk below can always enter it.
   const model = readStructureModel(doc, pages);
-  if (!model.readable) return { tagged: [], problem: 'tree-shape' };
   const owned = new Set<number>();
   walkNodes(model, (node) => {
     for (const kid of node.kids) {
@@ -1513,11 +1500,11 @@ function tagAnnotations(
   });
   let parentTree = dictOf(root.get('ParentTree'));
   if (parentTree === null) {
-    root.put('ParentTree', doc.addObject({ Nums: [] }));
-    parentTree = dictOf(root.get('ParentTree'));
+    parentTree = doc.addObject({ Nums: [] });
+    root.put('ParentTree', parentTree);
   }
-  const nums = parentTree === null ? null : resolved(parentTree.get('Nums'));
-  if (nums?.isArray() !== true || !parentTree?.get('Kids').isNull()) {
+  const nums = resolved(parentTree.get('Nums'));
+  if (nums?.isArray() !== true || !parentTree.get('Kids').isNull()) {
     return { tagged: [], problem: 'tree-shape' };
   }
   let nextKey = intOf(root, 'ParentTreeNextKey') ?? 0;
@@ -1528,17 +1515,17 @@ function tagAnnotations(
   for (const page of pages) nextKey = Math.max(nextKey, (intOf(page, 'StructParents') ?? -1) + 1);
 
   const rootK = resolved(root.get('K'));
-  const documentValue = rootK?.isArray() === true ? rootK.get(0) : (rootK ?? null);
-  const holder = dictOf(documentValue ?? null);
+  const documentValue = rootK?.isArray() === true ? rootK.get(0) : rootK;
+  const holder = dictOf(documentValue);
   if (holder === null) return { tagged: [], problem: 'tree-shape' };
   let holderKids = resolved(holder.get('K'));
   if (holderKids?.isArray() !== true) {
     const kids = doc.newArray();
-    if (holderKids !== null && !holderKids.isNull()) kids.push(holder.get('K'));
+    if (holderKids !== null) kids.push(holder.get('K'));
     holder.put('K', kids);
-    holderKids = resolved(holder.get('K'));
+    // `put` stores a copy of a direct array: push through the stored one.
+    holderKids = resolved(holder.get('K')) as PDFObject;
   }
-  if (holderKids?.isArray() !== true) return { tagged: [], problem: 'tree-shape' };
 
   const tagged: { objectNumber: number; role: string }[] = [];
   for (const page of pages) {
@@ -1571,7 +1558,7 @@ function tagAnnotations(
   return { tagged, problem: null };
 }
 
-interface FixState {
+export interface FixState {
   readonly notes: OperationNote[];
   readonly steps: string[];
   /** Annotations given a structure element, for the read-back. */
@@ -1724,15 +1711,15 @@ function applyFixes(doc: PDFDocument, fixes: readonly UaFix[], context: Operatio
 }
 
 /** Read the file back and confirm each fix is what the file now says. */
-async function verifyFixes(produced: Uint8Array, state: FixState): Promise<void> {
+export async function verifyFixes(produced: Uint8Array, state: FixState): Promise<void> {
   let opened: Awaited<ReturnType<typeof openForWrite>>;
   try {
     opened = await openForWrite(produced);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // `openForWrite` only ever throws a ToolError (an Error), so `message` is always text.
     throw new ToolError('verification-failed', {
       engine: 'mupdf',
-      engineMessage: `the file does not re-open after the fix: ${message}`,
+      engineMessage: `the file does not re-open after the fix: ${(error as Error).message}`,
     });
   }
   const { doc } = opened;
@@ -1801,6 +1788,22 @@ async function verifyFixes(produced: Uint8Array, state: FixState): Promise<void>
   }
 }
 
+/** Read the file back and confirm it declares `pdfuaid:part` 1. */
+export async function verifyUaPart(produced: Uint8Array): Promise<void> {
+  const { doc } = await openForWrite(produced);
+  try {
+    const packet = readXmpPacket(catalogOf(doc));
+    if (packet === null || readUaPart(packet) !== 1) {
+      throw new ToolError('verification-failed', {
+        engine: 'mupdf',
+        engineMessage: 'pdfuaid:part did not read back as 1',
+      });
+    }
+  } finally {
+    doc.destroy();
+  }
+}
+
 /**
  * Apply PDF/UA quick fixes and verify each by reading the file back.
  *
@@ -1839,8 +1842,7 @@ export async function fixPdfUa(
     if (state.rewrittenPages.size > 0) state.steps.push('ua.artifact');
     first = saveRewrite(doc, 'PDF/UA fixes');
   } catch (error) {
-    if (isAbort(error) || error instanceof ToolError) throw error;
-    throw mapMupdfError(error, 'PDF/UA fixes');
+    throw engineFailure(error, 'PDF/UA fixes');
   } finally {
     doc.destroy();
   }
@@ -1865,24 +1867,10 @@ export async function fixPdfUa(
       try {
         writeXmp(reopened.doc, catalogOf(reopened.doc), { uaPart: 1 });
         out = saveRewrite(reopened.doc, 'declare PDF/UA');
-      } catch (error) {
-        if (isAbort(error) || error instanceof ToolError) throw error;
-        throw mapMupdfError(error, 'declare PDF/UA');
       } finally {
         reopened.doc.destroy();
       }
-      const confirm = await openForWrite(out);
-      try {
-        const packet = readXmpPacket(catalogOf(confirm.doc));
-        if (packet === null || readUaPart(packet) !== 1) {
-          throw new ToolError('verification-failed', {
-            engine: 'mupdf',
-            engineMessage: 'pdfuaid:part did not read back as 1',
-          });
-        }
-      } finally {
-        confirm.doc.destroy();
-      }
+      await verifyUaPart(out);
       steps.push('ua.id');
       notes.push(note('changed', UA_FIX_KEYS.uaMarked));
       notes.push(note('warning', UA_FIX_KEYS.manualRemain));

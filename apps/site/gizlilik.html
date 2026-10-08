@@ -144,7 +144,7 @@
             <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Belgeleriniz Asla Yüklenmez</h2>
             <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
               Açtığınız veya düzenlediğiniz PDF dosyaları doğrudan kendi tarayıcınızın geçici belleğinde işlenir.
-              Sunucuya tek bir bayt veri dahi gönderilmez.
+              Sunucuya tek bir bayt veri dahi gönderilmez. Sunucu yalnızca statik dosya sunar; belge yükleyebileceğiniz bir API yoktur.
             </p>
           </div>
         </div>
@@ -168,6 +168,22 @@
         <div class="flex items-start gap-4">
           <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
             <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Üçüncü Taraf Yok</h2>
+            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
+              Motorlar, OCR dil paketleri ve yazı tipleri bu siteden sunulur; hiçbir üçüncü tarafa istek gitmez. Sıkı bir içerik güvenlik politikası (CSP) bağlantıları yalnızca bu siteye izin verir. Çerez ve analitik yoktur. Bir PDF’in içindeki dış bağlantıya tıklarsanız adres yeni bir tarayıcı sekmesinde açılır; düzenleyici ve kaydedilmemiş çalışmanız olduğu yerde kalır.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
               <circle cx="12" cy="13" r="3" />
             </svg>
@@ -175,7 +191,7 @@
           <div>
             <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Kamera Yalnızca Tararken</h2>
             <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Bir belgeyi taradığınızda tarayıcı önce kamera izninizi ister. Görüntü cihazınızda işlenir ve yalnızca sakladığınız sayfalar PDF olur; ses kaydedilmez, tarama penceresini kapattığınızda kamera kapanır.
+              Bir belgeyi taradığınızda tarayıcı önce kamera izninizi ister. Görüntü cihazınızda işlenir ve yalnızca sakladığınız sayfalar PDF olur; ses kaydedilmez, tarama penceresini kapattığınızda kamera kapanır. Sitenin yanıt başlıkları kamerayı yalnızca bu siteye açar.
             </p>
           </div>
         </div>
@@ -218,22 +234,27 @@
                 alanı, OPFS).
               </li>
               <li>
-                Son açılan belgeler listesi: dosya adı, boyutu ve sayfa sayısı (localStorage). Chromium tabanlı
+                Son açılan belgeler listesi: dosya adı, boyutu, sayfa sayısı, açılış zamanı ve varsa yıldız işareti (localStorage). Chromium tabanlı
                 tarayıcılarda dosyayı yeniden açabilmek için dosyaya bir başvuru da tutulur (IndexedDB); dosyanın
                 içeriği değil.
               </li>
               <li>
-                “Bu cihazda hatırla” ile sakladığınız imza görselleri (en fazla altı) ve içe aktardığınız güven
-                kökleri ile iptal listeleri.
+                “Bu cihazda hatırla” ile sakladığınız imza görselleri (en fazla altı, localStorage; imza iletişim
+                kutusundan tek tek silinir) ve içe aktardığınız güven kökleri ile iptal listeleri (uygulamanın kendi
+                ayar klasörü, OPFS; siz kaldırana kadar durur).
               </li>
               <li>
-                Tema, dil, arayüz modu ve son kullandığınız komutlar; çevrimdışı kullanım için uygulama ve motor
-                dosyaları (belge içermez).
+                Tema, dil, arayüz modu ve son kullandığınız komutlar.
+              </li>
+              <li>
+                Çevrimdışı kullanım için uygulamanın, PDF motorlarının, OCR dil paketlerinin ve yazı tiplerinin
+                statik dosyaları (service worker önbelleği). Belge baytları hiçbir zaman önbelleğe girmez.
               </li>
             </ul>
             <p class="mt-2 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
               Şifreli (parola korumalı) bir belge açtığınızda hassas oturum başlar: o belgenin taslağı, kaynak
-              kopyası ve dosya başvurusu saklanmaz, listede yalnızca adı, boyutu ve sayfa sayısı görünür. Aynı ayarı
+              kopyası ve dosya başvurusu saklanmaz, belge açıkken hiçbir imza görseli hatırlanmaz, listede yalnızca adı, boyutu, sayfa sayısı ve açılış zamanı görünür. Parola yalnızca
+              bellekte tutulur, hiçbir yere yazılmaz. Aynı ayarı
               <strong class="font-medium text-kumo-strong">Ayarlar → Gizlilik ve depolama → Hassas oturum</strong>
               ile kendiniz de açabilirsiniz; açtığınızda o belgenin kayıtlı kopyaları silinir. Bir belgenin kayıtlı
               kopyalarını aynı bölümdeki <strong class="font-medium text-kumo-strong">Bu Belgenin Kayıtlı
@@ -348,8 +369,8 @@
           <div class="space-y-3">
             <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Kurumsal</h2>
             <ul class="space-y-2 text-xs text-white/70">
-              <li><a class="transition-colors hover:text-white" href="/gizlilik">Gizlilik Politikası</a></li>
-              <li><a class="transition-colors hover:text-white" href="/kosullar">Kullanıcı Sözleşmesi</a></li>
+              <li><a class="transition-colors hover:text-white" href="/gizlilik">Gizlilik Bildirimi</a></li>
+              <li><a class="transition-colors hover:text-white" href="/kosullar">Kullanım Koşulları</a></li>
               <li><a class="transition-colors hover:text-white" href="/#gizlilik">Sıfır Veri Taahhüdü</a></li>
               <li><a class="transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">İletişim</a></li>
             </ul>
@@ -371,8 +392,8 @@
           <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
             <p>© 2026 SsPdfEditor. Tüm hakları saklıdır.</p>
             <div class="flex flex-wrap items-center gap-6">
-              <a class="transition-colors hover:text-white/90" href="/gizlilik">Gizlilik Politikası</a>
-              <a class="transition-colors hover:text-white/90" href="/kosullar">Kullanıcı Sözleşmesi</a>
+              <a class="transition-colors hover:text-white/90" href="/gizlilik">Gizlilik Bildirimi</a>
+              <a class="transition-colors hover:text-white/90" href="/kosullar">Kullanım Koşulları</a>
               <a class="transition-colors hover:text-white/90" href="/#gizlilik">KVKK / Yerel Güvence</a>
             </div>
           </div>

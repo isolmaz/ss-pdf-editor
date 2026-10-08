@@ -82,7 +82,7 @@ export const convertDialog: OperationDialogSpec = {
       marginMm: Number(params.marginMm),
     };
     const operation = { signal: context.signal, onProgress: context.onProgress };
-    const converted = [];
+    const converted: { name: string; bytes: Uint8Array; pageCount: number; report: OperationReport }[] = [];
     for (const file of picked) {
       const outcome = await convertToPdf(
         { ...options, name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
@@ -95,8 +95,8 @@ export const convertDialog: OperationDialogSpec = {
         report: outcome.report,
       });
     }
-    const [base, ...others] = converted;
-    if (base === undefined) throw new ToolError('selection-empty', { engine: 'ui' });
+    // `picked` has a first file (checked above), so `converted` has a first entry.
+    const [base, ...others] = converted as [(typeof converted)[number], ...typeof converted];
     let bytes = base.bytes;
     let report: OperationReport = base.report;
     if (others.length > 0) {

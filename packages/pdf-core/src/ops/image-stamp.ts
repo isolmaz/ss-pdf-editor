@@ -194,7 +194,8 @@ export async function addImageStamp(
       annotsOf(doc, page, true)?.push(dict);
       annotationId = `${dict.asIndirect()}R`;
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') throw error;
+      // Nothing in this block honours the signal (the abort checks sit outside it), so an
+      // abort can never arrive here: whatever does is the engine's.
       throw mapMupdfError(error, 'annotations.stamp');
     }
     throwIfAborted(context.signal);
@@ -237,11 +238,14 @@ export async function resizeImageStamp(
   context: OperationContext,
 ): Promise<OperationOutcome> {
   throwIfAborted(context.signal);
-  const [x0, y0, x1, y1] = request.rect.map((value, index) => finite(value, `rect[${index}]`));
-  const left = Math.min(x0 ?? 0, x1 ?? 0);
-  const right = Math.max(x0 ?? 0, x1 ?? 0);
-  const upper = Math.min(y0 ?? 0, y1 ?? 0);
-  const lower = Math.max(y0 ?? 0, y1 ?? 0);
+  const x0 = finite(request.rect[0], 'rect[0]');
+  const y0 = finite(request.rect[1], 'rect[1]');
+  const x1 = finite(request.rect[2], 'rect[2]');
+  const y1 = finite(request.rect[3], 'rect[3]');
+  const left = Math.min(x0, x1);
+  const right = Math.max(x0, x1);
+  const upper = Math.min(y0, y1);
+  const lower = Math.max(y0, y1);
   if (right - left < MIN_STAMP_SIDE || lower - upper < MIN_STAMP_SIDE) {
     throw new ToolError('range-invalid', {
       engine: 'model',
@@ -267,7 +271,7 @@ export async function resizeImageStamp(
       dict.put('Rect', written);
       dict.put('M', text(doc, pdfDate(new Date())));
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') throw error;
+      // As in `addImageStamp`: no abort check runs inside this block.
       throw mapMupdfError(error, 'annotations.resize');
     }
     saved = saveRewrite(doc, 'annotations.resize');
@@ -277,9 +281,13 @@ export async function resizeImageStamp(
   // Read back: the stamp is still there and carries exactly the rectangle written.
   const check = await openForWrite(saved);
   try {
-    const page = pageObjects(check.doc)[request.pageIndex];
-    const rect = page === undefined ? [] : readNumbers(stampOnPage(check.doc, page, request.id).get('Rect'));
-    if (rect.length !== 4 || rect.some((value, index) => Math.abs(value - (written[index] ?? 0)) > 0.01)) {
+    // The page exists: the same index was read from this document before it was saved.
+    const page = pageObjects(check.doc)[request.pageIndex] as PDFObject;
+    const rect = readNumbers(stampOnPage(check.doc, page, request.id).get('Rect'));
+    if (
+      rect.length !== 4 ||
+      rect.some((value, index) => Math.abs(value - (written[index] as number)) > 0.01)
+    ) {
       throw new ToolError('verification-failed', {
         engine: 'mupdf',
         engineMessage: `stamp ${request.id} does not carry the rectangle written`,
@@ -331,9 +339,10 @@ function stampOnPage(doc: PDFDocument, page: PDFObject, id: string): PDFObject {
 async function verifyStamp(bytes: Uint8Array, pageIndex: number, id: string): Promise<void> {
   const { doc } = await openForWrite(bytes);
   try {
-    const page = pageObjects(doc)[pageIndex];
-    const dict = page === undefined ? null : stampOnPage(doc, page, id);
-    const normal = resolved(resolved(dict?.get('AP'))?.get('N'));
+    // Called only with the index of the page the stamp was just written on.
+    const page = pageObjects(doc)[pageIndex] as PDFObject;
+    const dict = stampOnPage(doc, page, id);
+    const normal = resolved(resolved(dict.get('AP'))?.get('N'));
     const image = resolved(resolved(resolved(normal?.get('Resources'))?.get('XObject'))?.get('Im0'));
     if (readName(image?.get('Subtype')) !== 'Image') {
       throw new ToolError('verification-failed', {

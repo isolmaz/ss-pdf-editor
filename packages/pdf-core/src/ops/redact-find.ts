@@ -190,11 +190,7 @@ function compareRects(
   left: readonly [number, number, number, number],
   right: readonly [number, number, number, number],
 ): number {
-  for (let index = 0; index < 4; index += 1) {
-    const delta = (left[index] ?? 0) - (right[index] ?? 0);
-    if (delta !== 0) return delta;
-  }
-  return 0;
+  return left[0] - right[0] || left[1] - right[1] || left[2] - right[2] || left[3] - right[3];
 }
 
 /** `patterns` as the engine will run them; a broken pattern fails before any page loads. */
@@ -219,9 +215,7 @@ function compilePattern(pattern: FindPattern, index: number): CompiledPattern {
   } catch (error) {
     throw new ToolError('value-out-of-range', {
       engine: 'model',
-      engineMessage: `pattern ${index} is not a valid regular expression: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      engineMessage: `pattern ${index} is not a valid regular expression: ${String(error)}`,
     });
   }
 }
@@ -288,10 +282,9 @@ function searchPage(
     const top = box.y + box.height;
     text = page.toStructuredText('preserve-whitespace');
     const plain = text.asText();
-    for (const patternIndex of indices) {
+    for (const [patternIndex, pattern] of patterns.entries()) {
       if (hits.length >= MAX_HITS_PER_PAGE) break;
-      const pattern = patterns[patternIndex];
-      if (pattern === undefined) continue;
+      if (!indices.includes(patternIndex)) continue;
       for (const query of queriesOf(pattern, plain)) {
         for (const hit of text.search(query, {})) {
           if (hits.length >= MAX_HITS_PER_PAGE) break;
@@ -340,10 +333,11 @@ function hitRects(quads: readonly Quad[]): Array<readonly [number, number, numbe
     const ys = [quad[1], quad[3], quad[5], quad[7]];
     const rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as const;
     // The measured failure mode is a hit read as one quad: its coordinates are
-    // `undefined`, the rectangle is `NaN`, and MuPDF treats it as the whole page.
-    // Nothing non-finite or empty reaches the engine from here.
-    if (!Number.isFinite(rect[0] + rect[1] + rect[2] + rect[3])) continue;
-    if (rect[2] <= rect[0] || rect[3] <= rect[1]) continue;
+    // `undefined`, the rectangle is `NaN`, and MuPDF treats it as the whole page. A
+    // comparison with `NaN` is false, so this one test refuses non-finite and empty
+    // rectangles alike (zero-width text has quads with no extent). Nothing of either
+    // kind reaches the engine from here.
+    if (!(rect[2] > rect[0] && rect[3] > rect[1])) continue;
     rects.push(rect);
   }
   return rects;

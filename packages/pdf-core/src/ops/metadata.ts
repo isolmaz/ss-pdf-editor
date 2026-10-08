@@ -132,7 +132,8 @@ function codePointText(codePoint: number, fallback: string): string {
 function decodeEntities(text: string): string {
   if (!text.includes('&')) return text;
   return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, (match, body: string) => {
-    if (body.startsWith('#x') || body.startsWith('#X')) {
+    // XML allows only the lower-case `x` in a character reference, and the pattern admits no other.
+    if (body.startsWith('#x')) {
       return codePointText(Number.parseInt(body.slice(2), 16), match);
     }
     if (body.startsWith('#')) return codePointText(Number(body.slice(1)), match);
@@ -148,7 +149,7 @@ function decodeEntities(text: string): string {
 function sanitizeXmlText(value: string): string {
   let result = '';
   for (const char of value) {
-    const code = char.codePointAt(0) ?? 0;
+    const code = char.charCodeAt(0);
     if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue;
     result += char;
   }
@@ -354,7 +355,8 @@ function readProperty(
       const prefix = colon < 0 ? '' : name.slice(0, colon);
       const attributeLocal = colon < 0 ? name : name.slice(colon + 1);
       if (prefix === 'xmlns' || name === 'xmlns') continue;
-      if (attributeLocal !== local) continue;
+      // A bare `name` with no `=` is not a value: the element form is the one that holds it.
+      if (!attribute.hasValue || attributeLocal !== local) continue;
       if (attributeNamespace(prefix, namespaces) !== uri) continue;
       return attribute.value;
     }
@@ -567,7 +569,7 @@ function ensureInfoDictionary(doc: PDFDocument): PDFObject {
   if (existing !== null) return existing;
   const created = doc.addObject(doc.newDictionary());
   doc.getTrailer().put('Info', created);
-  return resolved(created) ?? created;
+  return created.resolve();
 }
 
 /**
@@ -650,8 +652,6 @@ export async function readMetadata(bytes: Uint8Array): Promise<DocumentMetadata>
   };
 }
 
-const PDF_DATE = /^D:\d{4}/;
-
 /** All Info keys as plain strings; `undefined` where the document has nothing. */
 function readInfoValues(doc: PDFDocument): DocumentMetadata {
   return {
@@ -666,10 +666,10 @@ function readInfoValues(doc: PDFDocument): DocumentMetadata {
   };
 }
 
-/** `D:YYYYMMDDHHmmSSZ` → ISO, for the round trip through a `Date`. */
-function isoFromPdfDate(value: string): string {
+/** `D:YYYYMMDDHHmmSSZ` → ISO, for the round trip through a `Date`; `null` for any other text. */
+function isoFromPdfDate(value: string): string | null {
   const match = /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/.exec(value.trim());
-  if (match === null) return value;
+  if (match === null) return null;
   const [, year, month = '01', day = '01', hour = '00', minute = '00', second = '00'] = match;
   return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
 }
@@ -680,7 +680,7 @@ function isoFromPdfDate(value: string): string {
  * as a date — rejected loudly, never silently replaced with "now".
  */
 function parseDateOrThrow(value: string, field: string): Date {
-  const date = new Date(PDF_DATE.test(value.trim()) ? isoFromPdfDate(value.trim()) : value);
+  const date = new Date(isoFromPdfDate(value) ?? value);
   if (Number.isNaN(date.getTime())) {
     throw new ToolError('range-invalid', {
       engine: 'model',
@@ -693,7 +693,7 @@ function parseDateOrThrow(value: string, field: string): Date {
 
 /** XMP dates are ISO 8601 in UTC; a PDF date string is converted, other text is passed through. */
 function toXmpDate(value: string): string {
-  return PDF_DATE.test(value.trim()) ? isoFromPdfDate(value.trim()) : value;
+  return isoFromPdfDate(value) ?? value;
 }
 
 export async function writeMetadata(
@@ -734,7 +734,7 @@ export async function writeMetadata(
         const info = ensureInfoDictionary(doc);
         const keys: string[] = [];
         info.forEach((_value, key) => {
-          if (typeof key === 'string') keys.push(key);
+          keys.push(String(key));
         });
         // Everything but the producer line: that one is product policy, not user data.
         for (const key of keys) if (key !== 'Producer') info.delete(key);

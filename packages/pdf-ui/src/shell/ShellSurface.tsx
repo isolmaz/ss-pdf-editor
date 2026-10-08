@@ -30,7 +30,6 @@ export {
   type LanguageSelectorProps,
   useLocale,
 } from '../components/LanguageSelector';
-export { ModeSelector, type ModeSelectorProps } from '../components/ModeSelector';
 export {
   applyTheme,
   getStoredTheme,

@@ -7,16 +7,10 @@
  * point of a rotated page, and a malformed tree rewritten instead of refused.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { isToolError, type ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { loadPdfjs, openWithPdfjs, type PdfOutlineEntry } from '../engines/pdfjs-handle';
+import { openWithPdfjs, type PdfOutlineEntry } from '../engines/pdfjs-handle';
 import { applyOutlineEdit, type OutlineNodeInput } from './outline-edit';
-
-const pdfjs = await loadPdfjs();
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-  createRequire(import.meta.url).resolve('pdfjs-dist/build/pdf.worker.mjs'),
-).href;
 
 const run = { signal: new AbortController().signal };
 
@@ -233,5 +227,369 @@ describe('applyOutlineEdit', () => {
     ).rejects.toMatchObject({
       code: 'unsupported',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// refusals, malformed trees, every rotation and every removal position
+// ---------------------------------------------------------------------------
+
+async function refusal(promise: Promise<unknown>): Promise<ToolError> {
+  let outcome: { readonly error: unknown } | null = null;
+  try {
+    await promise;
+  } catch (error) {
+    outcome = { error };
+  }
+  if (outcome === null) throw new Error('the call resolved instead of rejecting');
+  if (!isToolError(outcome.error)) throw outcome.error;
+  return outcome.error;
+}
+
+const leaf = (title: string): OutlineNodeInput => ({ title, destination: null });
+
+/** The catalog of a document under construction. */
+function catalogOf(doc: import('mupdf').PDFDocument) {
+  return doc.getTrailer().get('Root').resolve();
+}
+
+/** A flat outline of `titles`, each linked to its neighbours, with no /Count anywhere. */
+function outlineWith(doc: import('mupdf').PDFDocument, titles: readonly string[]) {
+  const outlines = doc.addObject({ Type: 'Outlines' });
+  let previous: import('mupdf').PDFObject | null = null;
+  for (const title of titles) {
+    const item = doc.addObject({ Title: doc.newString(title), Parent: outlines });
+    if (previous === null) outlines.put('First', item);
+    else {
+      previous.put('Next', item);
+      item.put('Prev', previous);
+    }
+    previous = item;
+  }
+  if (previous !== null) outlines.put('Last', previous);
+  catalogOf(doc).put('Outlines', outlines);
+  return outlines;
+}
+
+describe('applyOutlineEdit refuses a request it cannot honour', () => {
+  const tooDeep = (levels: number): OutlineNodeInput =>
+    levels === 0 ? leaf('bottom') : { title: 'level', destination: null, children: [tooDeep(levels - 1)] };
+
+  it.each([
+    [
+      'an item with no title',
+      { kind: 'add-child', parentPath: [], node: leaf('  ') },
+      'request.node[0].title',
+      'an outline item needs a title',
+    ],
+    [
+      'a fractional destination page',
+      { kind: 'add-child', parentPath: [], node: { title: 'x', destination: { pageIndex: 0.5 } } },
+      'request.node[0].destination.pageIndex',
+      'page index must be an integer, got 0.5',
+    ],
+    [
+      'a zero zoom',
+      { kind: 'add-child', parentPath: [], node: { title: 'x', destination: { pageIndex: 0, zoom: 0 } } },
+      'request.node[0].destination.zoom',
+      'zoom must be a finite number > 0, got 0',
+    ],
+    [
+      'a colour that is not #rrggbb',
+      { kind: 'replace-all', nodes: [{ title: 'x', destination: null, color: 'red' }] },
+      'request.nodes[0].color',
+      'outline colour must be #rrggbb, got "red"',
+    ],
+    [
+      'a nesting deeper than 64 levels',
+      { kind: 'replace-all', nodes: [tooDeep(65)] },
+      'request.nodes[0].children[0].children[0]',
+      'the outline is nested deeper than 64 levels',
+    ],
+    [
+      'more than 20000 items',
+      {
+        kind: 'replace-all',
+        nodes: Array.from({ length: 20_001 }, (_unused, index) => leaf(`item ${index}`)),
+      },
+      'request.nodes',
+      'the outline carries more than 20000 items',
+    ],
+    [
+      'a child under an outline the document does not have',
+      { kind: 'add-child', parentPath: [0], node: leaf('x') },
+      'request.parentPath',
+      'the document has no outline to resolve a path against',
+    ],
+  ] as const)('refuses %s', async (_name, request, path, message) => {
+    const error = await refusal(applyOutlineEdit(await blank(), request as never, run));
+    expect(error.details.path).toContain(path);
+    expect(error.details.engineMessage).toBe(message);
+  });
+
+  it('refuses a path against a document with no outline', async () => {
+    const error = await refusal(
+      applyOutlineEdit(await blank(), { kind: 'rename', path: [0], title: 'x' }, run),
+    );
+    expect(error.details.engineMessage).toBe('the document has no outline to resolve a path against');
+  });
+
+  it('refuses to rename the outline root, which has no title', async () => {
+    const error = await refusal(
+      applyOutlineEdit(await withTree(), { kind: 'rename', path: [], title: 'x' }, run),
+    );
+    expect(error.details.engineMessage).toBe('the outline root carries no title; name an item instead');
+  });
+
+  it('refuses a path with a step that is not a whole number, or past the level', async () => {
+    const tree = await withTree();
+    expect(
+      (await refusal(applyOutlineEdit(tree, { kind: 'remove', path: [1.5] }, run))).details.engineMessage,
+    ).toBe('path step 0 is not a non-negative integer: 1.5');
+    expect(
+      (await refusal(applyOutlineEdit(tree, { kind: 'remove', path: [-1] }, run))).details.engineMessage,
+    ).toBe('path step 0 is not a non-negative integer: -1');
+    expect(
+      (await refusal(applyOutlineEdit(tree, { kind: 'remove', path: [0, 7] }, run))).details.engineMessage,
+    ).toBe('path step 1 names item 7, but that level has 2 item(s)');
+  });
+
+  it('refuses to point an item at a page of a document that has none', async () => {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const error = await refusal(
+      applyOutlineEdit(
+        bytes,
+        { kind: 'add-child', parentPath: [], node: { title: 'x', destination: { pageIndex: 0 } } },
+        run,
+      ),
+    );
+    expect(error.details.engineMessage).toBe('the document has no pages to point an outline item at');
+  });
+});
+
+describe('applyOutlineEdit reads a malformed outline and refuses it', () => {
+  const rename = { kind: 'rename', path: [0], title: 'x' } as const;
+
+  it('refuses an item that is listed directly instead of by reference', async () => {
+    const bytes = await blank((doc) => {
+      const outlines = doc.addObject({ Type: 'Outlines' });
+      const direct = doc.newDictionary();
+      direct.put('Title', doc.newString('doğrudan'));
+      outlines.put('First', direct);
+      catalogOf(doc).put('Outlines', outlines);
+    });
+    const error = await refusal(applyOutlineEdit(bytes, rename, run));
+    expect(error.details.engineMessage).toBe(
+      '/Root/Outlines/First is not an indirect reference; an outline item needs one for its /Parent',
+    );
+  });
+
+  it('refuses an item reference that is not a dictionary', async () => {
+    const bytes = await blank((doc) => {
+      const outlines = doc.addObject({ Type: 'Outlines' });
+      outlines.put('First', doc.addObject(doc.newInteger(7)));
+      catalogOf(doc).put('Outlines', outlines);
+    });
+    const error = await refusal(applyOutlineEdit(bytes, rename, run));
+    expect(error.details.engineMessage).toMatch(
+      /^\/Root\/Outlines\/First \(\d+ 0 R\) does not resolve to a dictionary$/,
+    );
+  });
+
+  it('refuses an outline nested deeper than 64 levels', async () => {
+    const bytes = await blank((doc) => {
+      const outlines = doc.addObject({ Type: 'Outlines' });
+      let owner = outlines;
+      for (let level = 0; level < 66; level += 1) {
+        const item = doc.addObject({ Title: doc.newString('level'), Parent: owner });
+        owner.put('First', item);
+        owner = item;
+      }
+      catalogOf(doc).put('Outlines', outlines);
+    });
+    const error = await refusal(applyOutlineEdit(bytes, rename, run));
+    expect(error.details.engineMessage).toBe('the outline is nested deeper than 64 levels');
+  });
+
+  it('refuses an outline of more than 20000 items', async () => {
+    const bytes = await blank((doc) => {
+      outlineWith(
+        doc,
+        Array.from({ length: 20_001 }, (_unused, index) => `item ${index}`),
+      );
+    });
+    const error = await refusal(applyOutlineEdit(bytes, rename, run));
+    expect(error.details.engineMessage).toBe('the outline carries more than 20000 items');
+  });
+
+  it('reads an item without a title as an empty one', async () => {
+    const bytes = await blank((doc) => {
+      const outlines = doc.addObject({ Type: 'Outlines' });
+      outlines.put('First', doc.addObject({ Parent: outlines }));
+      catalogOf(doc).put('Outlines', outlines);
+    });
+    const out = await applyOutlineEdit(bytes, { kind: 'rename', path: [0], title: 'Yeni' }, run);
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.outline.renamed')?.params).toEqual({
+      from: '',
+      to: 'Yeni',
+    });
+    expect(titles(await outlineOf(out.bytes))).toEqual(['Yeni']);
+  });
+
+  it('treats an /Outlines that is not a dictionary as no outline, and writes a fresh one over it', async () => {
+    const bytes = await blank((doc) => {
+      catalogOf(doc).put('Outlines', doc.addObject(doc.newInteger(3)));
+    });
+    const added = await applyOutlineEdit(
+      bytes,
+      { kind: 'add-child', parentPath: [], node: leaf('Yeni') },
+      run,
+    );
+    expect(titles(await outlineOf(added.bytes))).toEqual(['Yeni']);
+    const replaced = await applyOutlineEdit(bytes, { kind: 'replace-all', nodes: [leaf('Başka')] }, run);
+    expect(titles(await outlineOf(replaced.bytes))).toEqual(['Başka']);
+  });
+
+  it('appends after the item a /Last names when the root has no /First', async () => {
+    const bytes = await blank((doc) => {
+      const outlines = doc.addObject({ Type: 'Outlines' });
+      outlines.put('Last', doc.addObject({ Title: doc.newString('eski'), Parent: outlines }));
+      catalogOf(doc).put('Outlines', outlines);
+    });
+    const out = await applyOutlineEdit(bytes, { kind: 'add-child', parentPath: [], node: leaf('Yeni') }, run);
+    expect(titles(await outlineOf(out.bytes))).toEqual(['Yeni']);
+  });
+});
+
+describe('applyOutlineEdit destinations', () => {
+  it('converts a displayed point through every rotation, and through a page with no box or turn', async () => {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    for (const rotate of [0, 90, 180, 270, 0] as const) {
+      doc.insertPage(-1, doc.addPage([0, 0, 200, 300], rotate, {}, ''));
+    }
+    const bare = doc.findPage(4);
+    bare.delete('MediaBox');
+    bare.delete('Rotate');
+    const source = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const nodes = [0, 1, 2, 3, 4].map((pageIndex) => ({
+      title: `page ${pageIndex}`,
+      destination: { pageIndex, x: 30, y: 40 },
+    }));
+    const out = await applyOutlineEdit(source, { kind: 'replace-all', nodes }, run);
+    const read = mupdf.PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (read === null) throw new Error('not a PDF');
+    try {
+      const points: number[][] = [];
+      let item = catalogOf(read).get('Outlines').resolve().get('First');
+      while (item.isIndirect()) {
+        const dict = item.resolve();
+        const dest = dict.get('Dest');
+        points.push([dest.get(2).asNumber(), dest.get(3).asNumber()]);
+        item = dict.get('Next');
+      }
+      expect(points).toEqual([
+        [30, 260],
+        [40, 30],
+        [170, 40],
+        [160, 270],
+        [30, 752],
+      ]);
+    } finally {
+      read.destroy();
+    }
+  });
+
+  it('clamps a destination page into the document and counts them', async () => {
+    const out = await applyOutlineEdit(
+      await blank(),
+      {
+        kind: 'replace-all',
+        nodes: [
+          { title: 'a', destination: { pageIndex: 99 } },
+          { title: 'b', destination: { pageIndex: -3 } },
+          { title: 'c', destination: { pageIndex: 1 } },
+        ],
+      },
+      run,
+    );
+    expect(
+      out.report.notes.find((entry) => entry.key === 'op.note.outline.destinationClamped')?.params,
+    ).toEqual({ count: 2 });
+  });
+});
+
+describe('applyOutlineEdit removal and structure', () => {
+  const three = async (): Promise<Uint8Array> =>
+    (await applyOutlineEdit(await blank(), { kind: 'replace-all', nodes: ['A', 'B', 'C'].map(leaf) }, run))
+      .bytes;
+
+  it('removes the last, then a middle, then the first sibling, keeping the chain whole', async () => {
+    const withoutLast = await applyOutlineEdit(await three(), { kind: 'remove', path: [2] }, run);
+    expect(titles(await outlineOf(withoutLast.bytes))).toEqual(['A', 'B']);
+    const withoutMiddle = await applyOutlineEdit(await three(), { kind: 'remove', path: [1] }, run);
+    expect(titles(await outlineOf(withoutMiddle.bytes))).toEqual(['A', 'C']);
+    const withoutFirst = await applyOutlineEdit(await three(), { kind: 'remove', path: [0] }, run);
+    expect(titles(await outlineOf(withoutFirst.bytes))).toEqual(['B', 'C']);
+    // The removal reports its subtree size and what stays.
+    expect(
+      withoutFirst.report.notes.find((entry) => entry.key === 'op.note.outline.removed')?.params,
+    ).toEqual({ title: 'A', count: 1 });
+    expect(withoutFirst.report.notes.find((entry) => entry.key === 'op.note.outline.nodes')?.params).toEqual({
+      before: 3,
+      after: 2,
+    });
+  });
+
+  it('removes a nested item and adds beside the ones a parent already has', async () => {
+    const nested = (await applyOutlineEdit(await withTree(), { kind: 'remove', path: [0, 1] }, run)).bytes;
+    expect(titles(await outlineOf(nested))).toEqual([{ 'Giriş — Şişli': ['Alt bölüm ğ'] }, 'Sonuç']);
+    const grown = await applyOutlineEdit(
+      nested,
+      { kind: 'add-child', parentPath: [0], node: leaf('Yeni alt') },
+      run,
+    );
+    expect(titles(await outlineOf(grown.bytes))).toEqual([
+      { 'Giriş — Şişli': ['Alt bölüm ğ', 'Yeni alt'] },
+      'Sonuç',
+    ]);
+  });
+
+  it('reports the progress of the edit', async () => {
+    const events: unknown[] = [];
+    await applyOutlineEdit(
+      await three(),
+      { kind: 'remove', path: [0] },
+      { ...run, onProgress: (event) => events.push([event.labelKey, event.done, event.total]) },
+    );
+    expect(events).toEqual([
+      ['op.progress.outline', 0, 1],
+      ['op.progress.outline', 1, 1],
+    ]);
+  });
+
+  it('lets an abort raised while reporting progress through unchanged, and stops before starting', async () => {
+    const abort = new DOMException('aborted', 'AbortError');
+    await expect(
+      applyOutlineEdit(
+        await three(),
+        { kind: 'remove', path: [0] },
+        {
+          ...run,
+          onProgress: () => {
+            throw abort;
+          },
+        },
+      ),
+    ).rejects.toBe(abort);
+    const before = new AbortController();
+    before.abort();
+    await expect(
+      applyOutlineEdit(await three(), { kind: 'remove', path: [0] }, { signal: before.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

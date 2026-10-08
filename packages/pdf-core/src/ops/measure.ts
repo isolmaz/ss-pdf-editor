@@ -196,7 +196,7 @@ export interface MeasureScale {
 const NUMBER_TOKEN = String.raw`\d{1,9}(?:[.,]\d{1,6})?`;
 const UNIT_TOKEN = '[A-Za-zÇĞİÖŞÜçğıöşü]{1,12}';
 /** A leading label such as `Ölçek` / `Scale =` — letters and separators, no digits. */
-const LEADING_LABEL = /^[^\d]{0,24}/;
+const LABEL_LENGTH = 24;
 const RATIO_FORM = new RegExp(`^(${NUMBER_TOKEN})\\s*[:/]\\s*(${NUMBER_TOKEN})$`);
 const EQUATION_FORM = new RegExp(
   `^(${NUMBER_TOKEN})\\s*(${UNIT_TOKEN})\\s*=\\s*(${NUMBER_TOKEN})\\s*(${UNIT_TOKEN})$`,
@@ -204,11 +204,10 @@ const EQUATION_FORM = new RegExp(
 
 /** `12,5` and `12.5` both read as twelve and a half; `1.234,5` is refused, not guessed. */
 function parseDecimal(token: string): number | null {
-  if (token.includes(',') && token.includes('.')) return null;
-  const normalised = token.replace(',', '.');
-  if (!/^\d+(?:\.\d+)?$/.test(normalised)) return null;
-  const value = Number(normalised);
-  return Number.isFinite(value) && value > 0 ? value : null;
+  // `NUMBER_TOKEN` admits digits with at most one `.` or `,` and a digit on each side of it, so
+  // the token is always a plain decimal; the one thing left to refuse is zero.
+  const value = Number(token.replace(',', '.'));
+  return value > 0 ? value : null;
 }
 
 /** A scale, built from a ratio this module computed. */
@@ -262,13 +261,14 @@ export function parseScale(text: string, unit: MeasureUnit = 'cm'): MeasureScale
   const trimmed = text.trim();
   if (trimmed === '') return null;
 
-  const label = LEADING_LABEL.exec(trimmed)?.[0] ?? '';
-  const body = trimmed.slice(label.length).trim();
+  const firstDigit = trimmed.search(/\d/);
+  const body = trimmed.slice(Math.min(firstDigit < 0 ? trimmed.length : firstDigit, LABEL_LENGTH)).trim();
 
+  // The groups cast below are mandatory in both patterns, so a match always holds all of them.
   const ratioForm = RATIO_FORM.exec(body);
   if (ratioForm !== null) {
-    const drawn = parseDecimal(ratioForm[1] ?? '');
-    const real = parseDecimal(ratioForm[2] ?? '');
+    const drawn = parseDecimal(ratioForm[1] as string);
+    const real = parseDecimal(ratioForm[2] as string);
     if (drawn === null || real === null) return null;
     // `1:100` states "one drawn unit is 100 real units"; `2:1` is an enlargement.
     return normaliseScale(real / drawn, unit, `1:${formatRatioNumber(real / drawn)} ${unit}`);
@@ -276,10 +276,10 @@ export function parseScale(text: string, unit: MeasureUnit = 'cm'): MeasureScale
 
   const equation = EQUATION_FORM.exec(body);
   if (equation !== null) {
-    const drawn = parseDecimal(equation[1] ?? '');
-    const real = parseDecimal(equation[3] ?? '');
-    const drawnUnit = UNIT_ALIASES[(equation[2] ?? '').toLocaleLowerCase('tr')];
-    const realUnit = UNIT_ALIASES[(equation[4] ?? '').toLocaleLowerCase('tr')];
+    const drawn = parseDecimal(equation[1] as string);
+    const real = parseDecimal(equation[3] as string);
+    const drawnUnit = UNIT_ALIASES[(equation[2] as string).toLocaleLowerCase('tr')];
+    const realUnit = UNIT_ALIASES[(equation[4] as string).toLocaleLowerCase('tr')];
     if (drawn === null || real === null || drawnUnit === undefined || realUnit === undefined) return null;
     // Both sides in inches: `1 in = 10 ft` is `12 real inches ÷ 1 drawn inch` = 1:12.
     const inchesReal = real * INCHES_PER_UNIT[realUnit];
@@ -296,7 +296,7 @@ export function parseScale(text: string, unit: MeasureUnit = 'cm'): MeasureScale
 
 /** The bounds check both parse paths end in, so no path can return a nonsense scale. */
 function normaliseScale(ratio: number, unit: MeasureUnit, expression: string): MeasureScale | null {
-  if (!Number.isFinite(ratio) || ratio <= 0) return null;
+  // Both sides of the ratio are positive and at most fifteen digits, so it is positive and finite.
   if (ratio > MEASURE_LIMITS.maxRatio || ratio < MEASURE_LIMITS.minRatio) return null;
   // Six significant digits, and the *same* number everywhere: `/Measure /R` is
   // written from `ratio`, so a ratio of 500.00000000000006 (the honest result of
@@ -304,7 +304,6 @@ function normaliseScale(ratio: number, unit: MeasureUnit, expression: string): M
   // prints as `1:500`. One ratio, printed and written identically.
   const rounded = roundRatio(ratio);
   const pointsPerUnit = drawnPointsPerUnit(unit) / rounded;
-  if (!Number.isFinite(pointsPerUnit) || pointsPerUnit <= 0) return null;
   return {
     unit,
     pointsPerUnit,
@@ -541,12 +540,7 @@ export function measureChain(points: readonly MeasurePoint[], mode: MeasureMode)
       engineMessage: `${where}: a distance is two points (got ${chain.length})`,
     });
   }
-  if (mode === 'area' && chain.length < 3) {
-    throw new ToolError('selection-empty', {
-      engine: 'model',
-      engineMessage: `${where}: an area needs at least three points (got ${chain.length})`,
-    });
-  }
+  // An area has at least three points here: two clicked corners were expanded to four above.
 
   let length = 0;
   let minX = Number.POSITIVE_INFINITY;
@@ -851,7 +845,7 @@ export async function writeMeasureAnnotations(
           FormType: 1,
           // The stream paints in annotation space (origin at the rect's lower-left), so the
           // box is the rect's size from the origin — the rect's own coordinates would clip it away.
-          BBox: [0, 0, (rect[2] ?? 0) - (rect[0] ?? 0), (rect[3] ?? 0) - (rect[1] ?? 0)],
+          BBox: [0, 0, rect[2] - rect[0], rect[3] - rect[1]],
           Matrix: [1, 0, 0, 1, 0, 0],
         });
         const dict = doc.addObject({
@@ -942,12 +936,6 @@ function requireMeasurable(mark: MeasureMark, geometry: MeasurePageGeometry): Me
       engineMessage: `${where}: unknown measurement mode ${String(mark.mode)}`,
     });
   }
-  if (!Number.isInteger(mark.pageIndex) || mark.pageIndex < 0) {
-    throw new ToolError('selection-empty', {
-      engine: 'model',
-      engineMessage: `${where}: page index ${String(mark.pageIndex)}`,
-    });
-  }
   const measurement = measureMark(geometry, mark.points, mark.mode);
   if (measurement.length < MEASURE_LIMITS.minPoints) {
     throw new ToolError('value-out-of-range', {
@@ -982,7 +970,7 @@ function annotationSubtype(mark: MeasureMark): string {
  * which for a horizontal ruler (a box with no height) silently reduced a requested
  * 2 pt line to 0.5 pt. A measurement is often exactly that: a straight line.
  */
-function annotateRect(measurement: Measurement, stroke: number): number[] {
+function annotateRect(measurement: Measurement, stroke: number): readonly [number, number, number, number] {
   const [x0, y0, x1, y1] = measurement.rect;
   const pad = stroke / 2 + 0.5;
   return [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
@@ -1017,13 +1005,12 @@ const OP = {
  */
 function measureAppearance(
   measurement: Measurement,
-  rect: readonly number[],
+  rect: readonly [number, number, number, number],
   stroke: number,
   mark: MeasureMark,
   subtype: string,
 ): string {
-  const rectLeft = rect[0] ?? 0;
-  const rectBottom = rect[1] ?? 0;
+  const [rectLeft, rectBottom] = rect;
   const [red, green, blue] = hexToRgb(mark.color);
   const num = (value: number) => value.toFixed(3);
   const local = measurement.points.map((point) => ({
@@ -1043,8 +1030,8 @@ function measureAppearance(
     const from = local[0] as MeasurePoint;
     const to = local[1] as MeasurePoint;
     const half = stroke / 2;
-    const dx = Math.sign(to.x - from.x) || 1;
-    const dy = Math.sign(to.y - from.y) || 1;
+    const dx = Math.sign(to.x - from.x);
+    const dy = Math.sign(to.y - from.y);
     return [
       header,
       `${num(from.x + half * dx)} ${num(from.y + half * dy)} ${OP.MoveTo}`,

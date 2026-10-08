@@ -46,6 +46,7 @@ export const scanPart = {
   'scan.crop.corner.br': 'Bottom-right corner',
   'scan.crop.corner.bl': 'Bottom-left corner',
   'scan.crop.done': 'Add page',
+  'scan.crop.apply': 'Apply',
   'scan.crop.next': 'Photo {current} of {total}',
   'scan.crop.skip': 'Skip this photo',
   'scan.crop.preview': 'Straightened page',

@@ -48,6 +48,7 @@ export const scanPart = {
   'scan.crop.corner.br': 'Sağ alt köşe',
   'scan.crop.corner.bl': 'Sol alt köşe',
   'scan.crop.done': 'Sayfayı ekle',
+  'scan.crop.apply': 'Uygula',
   'scan.crop.next': '{current} / {total} fotoğraf',
   'scan.crop.skip': 'Bu fotoğrafı atla',
   'scan.crop.preview': 'Düzeltilmiş sayfa',

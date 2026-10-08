@@ -417,8 +417,8 @@ function boundsOfRuns(runs: readonly (readonly number[])[]): MarkBox | null {
   let maxY = Number.NEGATIVE_INFINITY;
   for (const run of runs) {
     for (let index = 0; index + 1 < run.length; index += 2) {
-      const x = run[index] ?? 0;
-      const y = run[index + 1] ?? 0;
+      const x = run[index] as number;
+      const y = run[index + 1] as number;
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
@@ -609,7 +609,7 @@ export function storageEntriesFor(
       // (`createNewDict`), and pdf.js's own serializer writes both
       // (`build/pdf.mjs:25002`).
       const userStrokes = strokes.map((stroke) =>
-        stroke.map((value, index) => (index % 2 === 1 ? pageHeight - (value ?? 0) : value)),
+        stroke.map((value, index) => (index % 2 === 1 ? pageHeight - value : value)),
       );
       const lines = userStrokes.map((stroke) => {
         const line: number[] = [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
@@ -878,7 +878,8 @@ export async function writeAnnotations(
       // exactly that offset, and a rect built from the viewport height lands
       // offset points away from the mark (measured).
       const page = await handle.raw.getPage(mark.pageIndex + 1);
-      top = page.view[3] ?? 0;
+      // A page's `view` is its four-number crop box.
+      top = page.view[3] as number;
       heights.set(mark.pageIndex, top);
     }
     for (const entry of storageEntriesFor(mark, top)) {
@@ -1058,7 +1059,7 @@ export async function readAnnotations(
     const view = page.view;
     const pageBox: readonly [number, number, number, number] | undefined =
       view.length >= 4 && view.every((value) => Number.isFinite(value))
-        ? [view[0] ?? 0, view[1] ?? 0, view[2] ?? 0, view[3] ?? 0]
+        ? [view[0] as number, view[1] as number, view[2] as number, view[3] as number]
         : undefined;
     const annotations = (await page.getAnnotations({ intent: 'display' })) as readonly unknown[];
     for (const raw of annotations) {
@@ -1068,7 +1069,7 @@ export async function readAnnotations(
       const rawRect = asNumberArray(record.rect);
       const rect: readonly [number, number, number, number] | null =
         rawRect !== null && rawRect.length >= 4
-          ? [rawRect[0] ?? 0, rawRect[1] ?? 0, rawRect[2] ?? 0, rawRect[3] ?? 0]
+          ? [rawRect[0] as number, rawRect[1] as number, rawRect[2] as number, rawRect[3] as number]
           : null;
       const annotationType = finiteNumber(record.annotationType);
       // The dictionary name is the file's own word; the numeric type is the fallback for
@@ -1226,9 +1227,10 @@ export async function markerTargets(
 /** The pdf.js spelling of an object reference: `17R` for generation 0 (`Ref.toString`). */
 export function referenceOf(entry: PDFObject): string {
   // `asIndirect()` answers only the number; the engine's own `17 5 R` carries the generation.
-  const match = /^(\d+) (\d+) R$/.exec(entry.toString());
-  const objectNumber = match === null ? entry.asIndirect() : Number(match[1]);
-  const generationNumber = match === null ? 0 : Number(match[2]);
+  // MuPDF spells every indirect reference `N G R`, so the match cannot fail for one.
+  const match = /^(\d+) (\d+) R$/.exec(entry.toString()) as RegExpExecArray;
+  const objectNumber = Number(match[1]);
+  const generationNumber = Number(match[2]);
   return generationNumber === 0 ? `${objectNumber}R` : `${objectNumber}R${generationNumber}`;
 }
 
@@ -1375,10 +1377,11 @@ function quadsFromCorners(value: unknown, pageTop: number): readonly MarkBox[] {
   const numbers = value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
   const boxes: MarkBox[] = [];
   for (let index = 0; index + 7 < numbers.length; index += 8) {
-    const x0 = numbers[index] ?? 0;
-    const x1 = numbers[index + 2] ?? 0;
-    const yTop = numbers[index + 1] ?? 0;
-    const yBottom = numbers[index + 5] ?? 0;
+    // `index + 7 < numbers.length` bounds all four reads.
+    const x0 = numbers[index] as number;
+    const x1 = numbers[index + 2] as number;
+    const yTop = numbers[index + 1] as number;
+    const yBottom = numbers[index + 5] as number;
     // User space grows upward; the model's boxes grow downward from the page top.
     boxes.push([
       Math.min(x0, x1),
@@ -1441,9 +1444,10 @@ function isDrawnPath(run: readonly number[]): boolean {
 function pathRun(value: unknown, pageTop: number): number[] | null {
   const run = asNumberListPreservingNaN(value);
   if (run === null || !isDrawnPath(run)) return null;
-  const points: number[] = [run[4] ?? 0, pageTop - (run[5] ?? 0)];
+  // `isDrawnPath` guarantees at least six numbers.
+  const points: number[] = [run[4] as number, pageTop - (run[5] as number)];
   for (let index = 6; index + 5 < run.length; index += 6) {
-    points.push(run[index + 4] ?? 0, pageTop - (run[index + 5] ?? 0));
+    points.push(run[index + 4] as number, pageTop - (run[index + 5] as number));
   }
   return points.length >= 4 ? points : null;
 }
@@ -1467,7 +1471,7 @@ function strokesFromInkLists(value: unknown, pageTop: number): readonly (readonl
     const stroke = asNumberList(raw);
     if (stroke === null || stroke.length < 2 || stroke.length % 2 !== 0) continue;
     for (let index = 1; index < stroke.length; index += 2) {
-      stroke[index] = pageTop - (stroke[index] ?? 0);
+      stroke[index] = pageTop - (stroke[index] as number);
     }
     strokes.push(stroke);
   }

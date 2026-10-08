@@ -314,12 +314,12 @@ interface ResolvedPath {
 
 function resolvePath(tree: OutlineTree, path: readonly number[], label: string): ResolvedPath {
   const root = tree.root;
-  const rootRef = tree.rootRef;
-  if (root === null || rootRef === null) {
+  if (root === null) {
     refuse('the document has no outline to resolve a path against', label);
   }
   let container = root;
-  let parentRef = rootRef;
+  // `readTree` returns a root dictionary only together with the reference it came from.
+  let parentRef = tree.rootRef as PDFObject;
   let children = tree.items;
   let siblings = tree.items;
   let node: OutlineNode | null = null;
@@ -461,7 +461,8 @@ function writeItem(
   write: WriteContext,
 ): OutlineNode {
   const ref = doc.addObject(doc.newDictionary());
-  const dict = resolved(ref) ?? ref;
+  // A freshly added dictionary resolves to itself.
+  const dict = ref.resolve();
   dict.put('Title', text(doc, node.title));
   dict.put('Parent', parentRef);
   if (node.destination !== null) dict.put('Dest', destinationArray(doc, node.destination, write));
@@ -476,18 +477,13 @@ function writeItem(
 function chainTail(owner: PDFObject): PDFObject | null {
   let current = owner.get('First');
   let tail: PDFObject | null = null;
-  let count = 0;
+  // Every chain walked here was already read by `readTree` in this call, which refuses a
+  // chain that revisits an item, runs past MAX_OUTLINE_ITEMS, or holds a link that is not an
+  // indirect reference to a dictionary; a container built in this call has an empty chain.
+  // So the walk terminates and every link resolves to a dictionary.
   while (current.isIndirect()) {
     tail = current;
-    count += 1;
-    if (count > MAX_OUTLINE_ITEMS) {
-      refuse(`the outline carries more than ${MAX_OUTLINE_ITEMS} items`, '/Root/Outlines');
-    }
-    const dict = resolved(current);
-    if (dict === null || !dict.isDictionary()) {
-      refuse(`${current.asIndirect()} 0 R does not resolve to a dictionary`, '/Root/Outlines');
-    }
-    current = dict.get('Next');
+    current = (resolved(current) as PDFObject).get('Next');
   }
   if (tail !== null) return tail;
   const last = owner.get('Last');
@@ -565,7 +561,8 @@ function applyCounts(nodes: readonly OutlineNode[]): number {
 /** A fresh `/Outlines` root, linked from the catalog. */
 function newRoot(doc: PDFDocument): { readonly rootRef: PDFObject; readonly root: PDFObject } {
   const rootRef = doc.addObject(doc.newDictionary());
-  const root = resolved(rootRef) ?? rootRef;
+  // A freshly added dictionary resolves to itself.
+  const root = rootRef.resolve();
   root.put('Type', 'Outlines');
   catalogOf(doc).put('Outlines', rootRef);
   return { rootRef, root };
@@ -627,8 +624,8 @@ function replaceTree(
 ): OutlineTree {
   if (tree.rootRef !== null) {
     deleteSubtree(doc, tree.items);
-    const number = numberOf(tree.rootRef);
-    if (number !== null) doc.deleteObject(number);
+    // `readTree` only accepts an indirect `/Outlines`.
+    doc.deleteObject(tree.rootRef.asIndirect());
   }
   catalogOf(doc).delete('Outlines');
   if (nodes.length === 0) return { rootRef: null, root: null, items: [] };
@@ -763,7 +760,10 @@ function applyRequest(
     place.children.push(...added);
     steps.push('outline.addChild');
     notes.push(
-      note('changed', 'op.note.outline.childAdded', { title: added[0]?.title ?? '', count: built.total }),
+      note('changed', 'op.note.outline.childAdded', {
+        title: (added[0] as OutlineNode).title,
+        count: built.total,
+      }),
     );
     return next;
   }
@@ -782,14 +782,14 @@ function applyRequest(
     refuse('removing the whole outline is replace-all with an empty node list', 'request.path');
   }
   const place = resolvePath(tree, request.path, 'request.path');
-  const removed = place.node;
-  if (removed === null) refuse('the path names no item', 'request.path');
+  // A non-empty path always ends on an item.
+  const removed = place.node as OutlineNode;
   unlinkItem(place.container, removed);
   const count = deleteSubtree(doc, [removed]);
   // Out of the level that listed it — the pdf-lib writer searched the item's own
   // children here, kept it in the model, and every removal failed its read-back.
-  const at = place.siblings.indexOf(removed);
-  if (at >= 0) place.siblings.splice(at, 1);
+  // `siblings` is the list `removed` was found in.
+  place.siblings.splice(place.siblings.indexOf(removed), 1);
   steps.push('outline.remove');
   notes.push(note('changed', 'op.note.outline.removed', { title: removed.title, count }));
   return tree;
@@ -838,8 +838,9 @@ export async function applyOutlineEdit(
         if (after === 0) {
           // The last item is gone: the outline itself goes, objects included.
           catalog.delete('Outlines');
-          const number = numberOf(rootRef);
-          if (number !== null) doc.deleteObject(number);
+          // `/Outlines` is indirect here: `readTree` refuses a direct one and every root written
+          // by this call is added as an object.
+          doc.deleteObject(rootRef.asIndirect());
         } else {
           root.put('Count', after);
         }

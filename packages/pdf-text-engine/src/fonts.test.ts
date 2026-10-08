@@ -6,8 +6,15 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { metricsFor, readFontHeader } from './fonts';
-import type { GlyphSource } from './types';
+import {
+  createFontCatalog,
+  describeFontName,
+  FALLBACK_FONT_CANDIDATE,
+  matchFont,
+  metricsFor,
+  readFontHeader,
+} from './fonts';
+import type { FontCandidate, FontMetrics, GlyphSource, TextStyle } from './types';
 
 interface Table {
   readonly tag: string;
@@ -151,5 +158,121 @@ describe('metricsFor', () => {
     expect(metrics.hasGlyph(0x41)).toBe(true);
     expect(metrics.hasGlyph(0x15f)).toBe(false);
     expect(metrics.missing).toEqual(['ş']);
+  });
+});
+
+describe('matchFont', () => {
+  const face = (
+    id: string,
+    family: FontCandidate['family'],
+    bold = false,
+    italic = false,
+  ): FontCandidate => ({
+    id,
+    family,
+    bold,
+    italic,
+    filePath: `/fonts/${id}.ttf`,
+  });
+  const style = (fontFamily: TextStyle['fontFamily'], bold = false, italic = false): TextStyle => ({
+    fontName: null,
+    fontFamily,
+    bold,
+    italic,
+    fontSize: 10,
+    leading: 12,
+    color: '#000000',
+  });
+  /** A table that covers the Latin letters only, or everything. */
+  const table = (covers: (codePoint: number) => boolean): FontMetrics => ({
+    unitsPerEm: 1000,
+    glyphAdvance: () => 500,
+    ascender: 800,
+    descender: -200,
+    lineGap: 0,
+    hasGlyph: covers,
+    missing: [],
+  });
+  const latin = table((codePoint) => codePoint < 0x100);
+  const everything = table(() => true);
+  const sans = face('sans', 'sans');
+  const sansBold = face('sans-bold', 'sans', true);
+  const sansItalic = face('sans-italic', 'sans', false, true);
+  const serif = face('serif', 'serif');
+
+  it('ranks the same family by weight before slant, and falls back to sans for an unknown family', () => {
+    const catalog = createFontCatalog([sansItalic, sans, sansBold, serif]);
+    expect(matchFont(style('sans', true), 'a', catalog)).toEqual({
+      font: sansBold,
+      substituted: false,
+      exact: true,
+      missingGlyphs: [],
+    });
+    // Weight outweighs slant: bold and upright beats regular and italic for bold italic text.
+    expect(matchFont(style('sans', true, true), 'a', catalog).font).toBe(sansBold);
+    expect(matchFont(style('serif'), 'a', catalog).font).toBe(serif);
+    const unknown = matchFont(style('unknown'), 'a', catalog);
+    expect([unknown.font, unknown.exact, unknown.substituted]).toEqual([sans, false, true]);
+  });
+
+  it('uses the whole catalogue when no face is of the family, and the shipped fallback when it is empty', () => {
+    expect(matchFont(style('mono'), 'a', createFontCatalog([serif, sans])).font).toBe(serif);
+    const none = matchFont(style('sans'), 'a', createFontCatalog([]));
+    expect(none.font).toBe(FALLBACK_FONT_CANDIDATE);
+  });
+
+  it('prefers a lower-ranked face that covers the text, else the first it can measure, and lists the gaps', () => {
+    const tables = new Map<string, FontMetrics | null>([
+      ['sans', latin],
+      ['sans-bold', null],
+      ['sans-italic', everything],
+    ]);
+    const catalog = createFontCatalog(
+      [sans, sansBold, sansItalic],
+      (candidate) => tables.get(candidate.id) ?? null,
+    );
+    // Turkish ğ is missing from the regular face: the italic one covers it and wins.
+    const turkish = matchFont(style('sans'), 'ağ', catalog);
+    expect([turkish.font, turkish.exact, turkish.missingGlyphs]).toEqual([sansItalic, false, []]);
+    // The best-ranked face has no table; the next one it can measure covers the text.
+    expect(matchFont(style('sans', true), 'ab', catalog).font).toBe(sans);
+    // Nothing covers a CJK character: the first measurable face, with the character listed once.
+    tables.set('sans-italic', latin);
+    expect(matchFont(style('sans', true), '中a中', catalog)).toMatchObject({
+      font: sans,
+      missingGlyphs: ['中'],
+    });
+    // Without any table at all the best-ranked face is used and nothing is known to be missing.
+    const unmeasured = createFontCatalog([sans, sansBold], () => null);
+    expect(matchFont(style('sans', true), '中', unmeasured)).toMatchObject({
+      font: sansBold,
+      missingGlyphs: [],
+    });
+  });
+});
+
+describe('describeFontName', () => {
+  it('reads family, weight, slant, base-14 and Type3 from the name alone, past a subset prefix', () => {
+    expect(describeFontName('ABCDEF+Times-BoldItalic')).toEqual({
+      base: 'Times-BoldItalic',
+      subset: true,
+      family: 'serif',
+      bold: true,
+      italic: true,
+      standard14: true,
+      type3: false,
+    });
+    expect(describeFontName('Courier-Oblique')).toMatchObject({
+      family: 'mono',
+      italic: true,
+      standard14: true,
+    });
+    expect(describeFontName('Arial')).toMatchObject({
+      family: 'sans',
+      bold: false,
+      standard14: false,
+      subset: false,
+    });
+    expect(describeFontName('MyType3Glyphs')).toMatchObject({ family: 'unknown', type3: true });
   });
 });

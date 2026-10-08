@@ -372,10 +372,10 @@ export function PagesPanel({
 
   const submitMoveTo = (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const value = Number.parseInt(moveTo, 10);
-    if (!Number.isFinite(value) || selection.length === 0) return;
+    // The field's own `min`/`max` hold the value inside 1…remaining + 1 (the browser refuses to
+    // submit anything else), and the button is off while the field is empty.
     setMoveTo('');
-    moveSelection(Math.max(0, Math.min(value - 1, remaining)), selection);
+    moveSelection(Number.parseInt(moveTo, 10) - 1, selection);
   };
 
   const gapClass = (active: boolean) => `${GAP_CLASS} ${active ? 'bg-pdf-accent' : 'bg-transparent'}`;

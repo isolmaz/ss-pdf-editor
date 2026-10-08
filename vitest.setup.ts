@@ -7,10 +7,11 @@
  * reserved for.
  *
  * - MuPDF: `loadMupdf` imports the installed `mupdf` module.
- * - pdf.js: the standard-font, CMap and wasm directories point at the installed
- *   `pdfjs-dist`. In Node, pdf.js reads them with `fs.readFile(base + name)`, so they are
- *   plain directory paths ending in `/`. Without them every page that uses a
- *   standard-14 font logs "Unable to load font data" and renders with a substitute.
+ * - pdf.js: the worker (the legacy build) and the standard-font, CMap and wasm
+ *   directories point at the installed `pdfjs-dist`. In Node, pdf.js reads the
+ *   directories with `fs.readFile(base + name)`, so they are plain paths ending in `/`.
+ *   Without them every page that uses a standard-14 font logs "Unable to load font
+ *   data" and renders with a substitute.
  *
  * The packages are resolved from `packages/pdf-core`, the workspace that declares them:
  * pnpm's isolation keeps them out of the root's own resolution.
@@ -25,6 +26,7 @@ const coreRequire = createRequire(new URL('./packages/pdf-core/package.json', im
 const mupdfUrl = pathToFileURL(coreRequire.resolve('mupdf')).href;
 // pdf.js insists on a trailing `/`; Node's `fs` accepts forward slashes on Windows too.
 const pdfjsDir = dirname(coreRequire.resolve('pdfjs-dist/package.json')).replaceAll('\\', '/');
+const pdfjsLegacyWorker = pathToFileURL(coreRequire.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href;
 
 // Ghostscript is a fetched engine (`public/engines/ghostscript`, `pnpm fetch:engines`): the
 // emscripten loader is imported by file URL and its wasm read by path, as Node does.
@@ -45,6 +47,9 @@ vi.mock('./packages/pdf-core/src/assets.ts', async (importOriginal) => {
     ...actual,
     PDFJS_ASSETS: {
       ...actual.PDFJS_ASSETS,
+      // The legacy worker: the modern one calls `Math.sumPrecise`, which this Node lacks,
+      // and every page operation that reaches it fails with a warning instead of running.
+      worker: pdfjsLegacyWorker,
       cmaps: `${pdfjsDir}/cmaps/`,
       standardFonts: `${pdfjsDir}/standard_fonts/`,
       wasm: `${pdfjsDir}/wasm/`,

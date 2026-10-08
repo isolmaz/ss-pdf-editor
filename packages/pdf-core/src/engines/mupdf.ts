@@ -40,20 +40,17 @@ export function readPageBox(page: PDFPage): UserBox {
   const media = readBoxArray(object.getInheritable('MediaBox'));
   const crop = readBoxArray(object.getInheritable('CropBox'));
   if (media !== null) {
-    const visible =
+    const visible: Box4 =
       crop === null
         ? media
         : [
-            Math.max(media[0] ?? 0, crop[0] ?? 0),
-            Math.max(media[1] ?? 0, crop[1] ?? 0),
-            Math.min(media[2] ?? 0, crop[2] ?? 0),
-            Math.min(media[3] ?? 0, crop[3] ?? 0),
+            Math.max(media[0], crop[0]),
+            Math.max(media[1], crop[1]),
+            Math.min(media[2], crop[2]),
+            Math.min(media[3], crop[3]),
           ];
-    const selected =
-      (visible[2] ?? 0) > (visible[0] ?? 0) && (visible[3] ?? 0) > (visible[1] ?? 0) ? visible : media;
-    const [x0, y0, x1, y1] = selected;
-    if (x0 !== undefined && y0 !== undefined && x1 !== undefined && y1 !== undefined && x1 > x0 && y1 > y0)
-      return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    const [x0, y0, x1, y1] = visible[2] > visible[0] && visible[3] > visible[1] ? visible : media;
+    if (x1 > x0 && y1 > y0) return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
   }
   throw new ToolError('corrupt-document', {
     engine: 'mupdf',
@@ -61,16 +58,14 @@ export function readPageBox(page: PDFPage): UserBox {
   });
 }
 
+type Box4 = readonly [number, number, number, number];
+
 /** The four numbers of a box array, or `null` when the object is not one. */
-function readBoxArray(object: PDFObject): readonly number[] | null {
+function readBoxArray(object: PDFObject): Box4 | null {
   if (!object.isArray()) return null;
-  const values: number[] = [];
-  for (let index = 0; index < 4; index += 1) {
-    const entry = object.get(index);
-    if (!entry.isNumber()) return null;
-    values.push(entry.asNumber());
-  }
-  return values;
+  const [a, b, c, d] = [object.get(0), object.get(1), object.get(2), object.get(3)];
+  if (!(a.isNumber() && b.isNumber() && c.isNumber() && d.isNumber())) return null;
+  return [a.asNumber(), b.asNumber(), c.asNumber(), d.asNumber()];
 }
 
 /**

@@ -6,7 +6,7 @@
     <title>SsPdfEditor — 100% Local, 100% Free In-Browser PDF Editor</title>
     <meta
       name="description"
-      content="Documents never leave your device: 100% local and 100% free PDF viewing, annotation, form filling, true vector redaction and digital signing."
+      content="Documents never leave your device: 100% local and 100% free PDF viewing, editing, annotation, form filling, OCR in 27 languages, true vector redaction and digital signing."
     />
     <link rel="canonical" href="https://pdf.isolmaz.com/en/" />
     <link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/" />
@@ -130,7 +130,7 @@
         </h1>
 
         <p class="mt-6 max-w-[62ch] text-balance text-base leading-relaxed text-kumo-subtle">
-          Acrobat-class reading, annotation, form filling, page management and permanent redaction. No uploads, no subscription, no account. <strong>Fully local, unlimited and free.</strong>
+          Acrobat-class reading, text editing, annotation, form filling, page management, OCR, conversion, digital signing and permanent redaction. No uploads, no subscription, no account. <strong>Fully local, free and without quotas.</strong>
         </p>
 
         <!-- Action Row -->
@@ -223,19 +223,19 @@
         </div>
       </section>
 
-      <!-- Section 1: TÜM ANA ÖZELLİKLER (6 Comprehensive Domains) -->
+      <!-- Section 1: ALL CORE FEATURES (18 feature cards, same order as the Turkish page) -->
       <section id="features" class="border-t border-kumo-line py-16 sm:py-20">
         <div class="max-w-[60ch]">
           <h2 class="text-2xl font-semibold tracking-tight text-kumo-strong sm:text-3xl leading-[1.35]">
             All the core Acrobat-class capabilities
           </h2>
           <p class="mt-3 text-base leading-relaxed text-kumo-subtle">
-            Reading, page editing, form filling and security tools are integrated in a single local interface.
+            Reading, editing, conversion, OCR, form filling, signing and security tools come together in a single local interface.
           </p>
         </div>
 
         <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <!-- Card 1: Okuma -->
+          <!-- Card 1: Reading -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -245,14 +245,14 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Advanced Reading & Review</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Continuous single-page and two-page book view</li>
-              <li>· Full-text search and bookmark (outline) navigation</li>
-              <li>· High-resolution magnifier and snapshot tool</li>
-              <li>· Read-aloud with your device's local voices</li>
+              <li>· Continuous scrolling, single-page, book and full-screen presentation modes</li>
+              <li>· Full-text search with match highlighting; thumbnails, bookmarks (outline) and document tabs</li>
+              <li>· A magnifier and a snapshot tool that joins the visible pages into one PNG</li>
+              <li>· Reading mode and read-aloud: only voices installed on your device that match the document’s language (or the interface’s, if the document declares none) are used; a cloud voice never is</li>
             </ul>
           </div>
 
-          <!-- Card 2: Sayfa İşlemleri -->
+          <!-- Card 2: Pages -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -262,14 +262,49 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Comprehensive Page Management</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Merge and split pages</li>
-              <li>· Extract pages and delete the ones you do not need</li>
-              <li>· Lossless 90° and 180° page rotation</li>
-              <li>· Drag-and-drop reordering and N-up layout</li>
+              <li>· Blank documents (A3, A4, A5, Letter, Legal); insert, delete, duplicate and replace pages</li>
+              <li>· Drag-and-drop reordering and rotation in 90° steps</li>
+              <li>· Extract pages, split, and merge several files in any order</li>
+              <li>· Page boxes and auto-crop, page labels</li>
             </ul>
           </div>
 
-          <!-- Card 3: Formlar -->
+          <!-- Card 3: Markup -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                <path d="M2 2l7.586 7.586" />
+                <circle cx="11" cy="11" r="2" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Annotation, Notes & Measurement</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Highlight, underline, strike-out and squiggly markup</li>
+              <li>· Sticky notes, freehand ink, shapes, stamps, links, images and typed text; move, rotate, resize or delete any mark</li>
+              <li>· Noto Sans is embedded in typed text, so Turkish letters look right in every reader</li>
+              <li>· Distance, perimeter and area measurement; results are written as real PDF annotations</li>
+            </ul>
+          </div>
+
+          <!-- Card 4: Comments -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Comments & Review</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Comment threads with replies and a review status (Accepted, Rejected, Cancelled, Completed)</li>
+              <li>· Replies and statuses are real PDF records, so Acrobat, Foxit and other readers show the same thread</li>
+              <li>· Import and export as XFDF, FDF and JSON</li>
+              <li>· Imported comments arrive as marks you can still edit</li>
+            </ul>
+          </div>
+
+          <!-- Card 5: Forms -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -281,33 +316,107 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Interactive Form Filling</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· AcroForm text fields, radio buttons and checkboxes</li>
-              <li>· Drop-down lists and form data fields</li>
-              <li>· Permanently flatten form fields into the PDF</li>
-              <li>· Import and export form data</li>
+              <li>· AcroForm text fields, radio buttons, checkboxes and drop-down lists</li>
+              <li>· Create fields, set flags and add simple calculations</li>
+              <li>· Detect fields on a flat form: text fields, checkboxes, radio groups and signature fields are proposed, you confirm</li>
+              <li>· Permanently flatten form fields; import and export form data as FDF or JSON</li>
             </ul>
           </div>
 
-          <!-- Card 4: Açıklama -->
+          <!-- Card 6: XFA -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 19l7-7 3 3-7 7-3-3z" />
-                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-                <path d="M2 2l7.586 7.586" />
-                <circle cx="11" cy="11" r="2" />
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
               </svg>
             </div>
-            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Annotation, Notes & Drawing</h3>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">XFA Forms</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Text highlight, underline and strikethrough markup</li>
-              <li>· Sticky notes and comments</li>
-              <li>· Freehand pen and eraser</li>
-              <li>· Distance and area measurement for architectural and technical drawings</li>
+              <li>· Static XFA: filled like any form while the XFA data is updated too; a signature the form already carries keeps covering what it signed</li>
+              <li>· Dynamic XFA: fill it in its own window with pdf.js’s XFA renderer, save what you typed and export it as XML</li>
+              <li>· Import and export XFA data as the XML file Acrobat’s “Export data” writes</li>
+              <li>· Flatten to a normal PDF, or remove the XFA and keep only the AcroForm; XFA scripts and calculations do not run</li>
             </ul>
           </div>
 
-          <!-- Card 5: Redaksiyon -->
+          <!-- Card 7: Text -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="4 7 4 4 20 4 20 7" />
+                <line x1="9" y1="20" x2="15" y2="20" />
+                <line x1="12" y1="4" x2="12" y2="20" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Text Editing, Find & Replace</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Retype a paragraph in place and the text reflows. Only horizontal text is editable; blocks that cannot be reproduced are marked</li>
+              <li>· Find and replace across the document (Ctrl+H) with match case, whole words and a page range</li>
+              <li>· The old glyphs are really removed and the result is checked with a second PDF engine; the new text is drawn at the old size and colour</li>
+              <li>· Turkish and English letter case is respected (a search for “istanbul” finds its capitalised Turkish form); export text as plain text or Markdown</li>
+            </ul>
+          </div>
+
+          <!-- Card 8: Convert -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="17 1 21 5 17 9" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <polyline points="7 23 3 19 7 15" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Convert & Create</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Convert Word (DOCX), Excel (XLSX), PowerPoint (PPTX), HTML, text/Markdown, CSV/TSV, EPUB and FB2 files to PDF in the browser</li>
+              <li>· Convert a PDF to an editable Word, Excel or CSV file; a Word or CSV file is read back and checked before it is offered, an Excel file is not; the report says what was not carried over (for Word, including how many pictures were left out)</li>
+              <li>· Export pages as PNG, JPEG or WebP images; build a PDF from images</li>
+              <li>· Conversion keeps the content, not the exact look; the old DOC, XLS and PPT formats, OpenDocument and RTF are not converted</li>
+            </ul>
+          </div>
+
+          <!-- Card 9: Scan -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Scan with the Camera</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Build a PDF from photographs taken with a phone or laptop camera, or from photo files; the picture never leaves your device</li>
+              <li>· The four corners of the page are found automatically; if they are not, you drag them yourself</li>
+              <li>· The page is straightened from its perspective; four looks: original colour, grayscale, black and white, and enhanced</li>
+              <li>· Multi-page scans: reorder, rotate and retake; run OCR on the result to make it searchable</li>
+            </ul>
+          </div>
+
+          <!-- Card 10: OCR -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+                <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+                <line x1="7" y1="8" x2="17" y2="8" />
+                <line x1="7" y1="12" x2="17" y2="12" />
+                <line x1="7" y1="16" x2="13" y2="16" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">OCR in 27 Languages</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Adds an invisible, selectable and searchable text layer to scanned pages; pages that already have text are skipped by default</li>
+              <li>· 27 languages: Turkish, English, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian, Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and traditional), Japanese and Korean</li>
+              <li>· Arabic, Hebrew and Chinese-Japanese-Korean text can be searched and copied too; right-to-left words come back in reading order</li>
+              <li>· The OCR engine and language packs are served by this site; they are downloaded the first time you use them and work offline after that</li>
+            </ul>
+          </div>
+
+          <!-- Card 11: Redaction -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -315,28 +424,133 @@
                 <path d="M6 6l12 12" />
               </svg>
             </div>
-            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Permanent Vector Redaction</h3>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Permanent Vector Redaction & Sanitizing</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· NOT a superficial black-box overlay</li>
-              <li>· Removes text operators and glyphs from the PDF stream</li>
-              <li>· Physically destroys the hidden information</li>
-              <li>· Metadata and invisible-layer cleanup</li>
+              <li>· Removes text operators and glyphs from the PDF stream; the output is re-checked glyph by glyph</li>
+              <li>· An object-level audit report: remaining terms, earlier revisions and leftover structure</li>
+              <li>· Sanitize: scripts, attachments, metadata, private application data, thumbnails and hidden layers; the result is re-read and verified</li>
             </ul>
           </div>
 
-          <!-- Card 6: İmza & Şifre -->
+          <!-- Card 12: Signing -->
           <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
             <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
               <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M20 6L9 17l-5-5" />
               </svg>
             </div>
-            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Digital Signing & Encryption</h3>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Digital Signing & Verification</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Local digital signing to the PAdES B-B standard</li>
-              <li>· RSA and ECDSA certificate chain verification</li>
-              <li>· Standard AES password encryption and authorization</li>
-              <li>· Unlock encrypted documents locally</li>
+              <li>· Local digital signing to the PAdES B-B standard from your PKCS#12 identity, with an optional visible stamp</li>
+              <li>· Drawn, typed or photographed signatures and initials; these are a picture on the page, not a certified signature</li>
+              <li>· Signature verification reports integrity, trust, revocation and coverage separately; RSA and ECDSA keys; trust rests only on certificates you imported</li>
+              <li>· Revocation is read from CRLs on your device and from revocation data embedded in the PDF, never fetched from the network; RFC 3161 timestamps are verified offline</li>
+            </ul>
+          </div>
+
+          <!-- Card 13: Encryption -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Encryption & Passwords</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· AES-256 password encryption with permission settings; the output is re-opened and verified</li>
+              <li>· A password-protected file asks for its password and opens read-only; the password is kept in memory only</li>
+              <li>· Remove the protection of a document whose password you know; “Create unlocked copy” opens an editable copy in a new tab</li>
+              <li>· Password-protected documents leave no draft, source copy or file reference on the device (sensitive session)</li>
+            </ul>
+          </div>
+
+          <!-- Card 14: Accessibility -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="4" r="2" />
+                <path d="M5 8l7 1 7-1" />
+                <path d="M12 9v6" />
+                <path d="M9 21l3-6 3 6" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Accessibility & PDF/UA</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· The quick check reports facts only: no score and no conformance claim</li>
+              <li>· PDF/UA check: 34 rules modelled on the Matterhorn Protocol, each marked pass, fail, check by hand, not applicable or not checked. Colour contrast is not measured</li>
+              <li>· A tags and reading-order editor; a tagged-PDF writer adds structure tags to an untagged file and verifies the result</li>
+              <li>· Alt text for images and tooltips for form fields; quick fixes for the title, language and tab order</li>
+            </ul>
+          </div>
+
+          <!-- Card 15: PdfA -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="21 8 21 21 3 21 3 8" />
+                <rect x="1" y="3" width="22" height="5" />
+                <line x1="10" y1="12" x2="14" y2="12" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">PDF/A & Compression</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Convert to PDF/A-2b (the default), PDF/A-3b or PDF/A-1b; the result opens in a new tab and the original stays open</li>
+              <li>· A PDF/A check covering 20 rule groups also works on files you did not convert; it is not a full veraPDF validation and not a certificate</li>
+              <li>· A file that breaks a rule is never handed over: the operation stops and says which rule failed</li>
+              <li>· Compression: a structural re-save (lossless) or turning pages into images (lossy; the text layer, links and annotations are lost); if the file grows, the report says so</li>
+            </ul>
+          </div>
+
+          <!-- Card 16: Structure -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Document Structure & Stamping</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Document properties and XMP, outline (bookmark) editing</li>
+              <li>· Attachments, layers (OCG) and links (limited by a URI allow-list)</li>
+              <li>· Headers and footers, page numbers, Bates numbering</li>
+              <li>· Text or image watermarks and stamps</li>
+            </ul>
+          </div>
+
+          <!-- Card 17: Compare -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9" />
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <rect x="6" y="14" width="12" height="8" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Compare, Batch & Print</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· Compare two documents by text or by pixels; the report always says which method it used</li>
+              <li>· Batch processing: run one ordered set of steps over up to 256 files at a time, with a report for each file</li>
+              <li>· Printing: page ranges, N-up, booklet, poster and duplex sheet layouts</li>
+            </ul>
+          </div>
+
+          <!-- Card 18: Workflow -->
+          <div class="card-hover rounded-xl border border-kumo-line bg-kumo-base p-6">
+            <div class="flex size-9 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </div>
+            <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Workflow</h3>
+            <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
+              <li>· A home screen that lists every tool by task; the Ctrl+K palette reaches any tool</li>
+              <li>· Undo and redo history; local drafts for unsaved work</li>
+              <li>· Save over the original file (Chromium-based browsers) or export a copy</li>
+              <li>· Simple and advanced interface modes, a dark theme, a Turkish and English interface, and offline use</li>
             </ul>
           </div>
         </div>
@@ -352,7 +566,7 @@
             Compare with paid PDF programs
           </h2>
           <p class="mt-3 text-base leading-relaxed text-kumo-subtle max-w-[48ch]">
-            We have it, they do not: key differences, features and planned improvements.
+            Privacy, price and core features side by side.
           </p>
         </div>
 
@@ -509,7 +723,7 @@
               </svg>
               <div class="text-sm">
                 <strong class="font-semibold text-kumo-strong">Save Straight to Disk:</strong>
-                <span class="text-kumo-subtle"> You can write your documents directly back to the original file on your computer, or download them.</span>
+                <span class="text-kumo-subtle"> In Chromium-based browsers you can write your documents directly back to the original file on your computer; in every browser you can download a copy.</span>
               </div>
             </div>
 
@@ -520,6 +734,25 @@
               <div class="text-sm">
                 <strong class="font-semibold text-kumo-strong">Drafts Stay in This Browser:</strong>
                 <span class="text-kumo-subtle"> Unsaved work is kept as a draft in this browser so it is not lost; encrypted documents and sensitive sessions leave no draft. The <a class="text-kumo-strong underline" href="/en/privacy">Privacy</a> page lists what is kept.</span>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">No Third-party Requests:</strong>
+                <span class="text-kumo-subtle"> The engines and fonts are served from this site, and a strict content security policy (CSP) allows connections to this site only. There are no cookies and no analytics.</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <svg class="size-5 shrink-0 text-kumo-strong" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <div class="text-sm">
+                <strong class="font-semibold text-kumo-strong">Open Source:</strong>
+                <span class="text-kumo-subtle"> The source code is open on <a class="text-kumo-strong underline" href="https://github.com/isolmaz/ss-pdf-editor" target="_blank" rel="noreferrer">GitHub</a> under AGPL-3.0-or-later, so you can check what it does.</span>
               </div>
             </div>
           </div>
@@ -652,6 +885,160 @@
               All standard PDF documents are supported. On a computer, documents of up to 2,000 pages and 300 MB
               open; above 1,500 pages the editor warns you. Phones and tablets have the same ceiling, but documents
               over 300 pages or 64 MB open for viewing only. A batch run takes at most 256 files at a time.
+            </div>
+          </details>
+
+          <!-- FAQ 6 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Which languages does it support?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              The interface is in Turkish and English; change it in Settings → Language. OCR works in 27 languages (the list is in the Features section). The OCR engine and every language pack are served by this site and downloaded the first time you use them; after that they work offline too.
+            </div>
+          </details>
+
+          <!-- FAQ 7 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Can I open Word, Excel or PowerPoint files?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Yes. DOCX, XLSX, PPTX, HTML, text/Markdown, CSV/TSV, EPUB and FB2 files are converted to PDF in the browser when you open them or drop them on the editor, and the result opens in a new tab as real, selectable and searchable text. Conversion keeps the content of the document, not its exact page layout, fonts or formatting; each report says what was approximated. The old DOC, XLS and PPT formats, OpenDocument and RTF are not converted. You can also export a PDF to Word, Excel or CSV; a PDF records no paragraphs or tables, so these are rebuilt from the page and can be wrong.
+            </div>
+          </details>
+
+          <!-- FAQ 8 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Is redaction really permanent?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Yes. Marked text is not covered with a black box; it is removed from the PDF content, the file is rewritten and the output is re-checked glyph by glyph. The audit report lists any remaining terms, earlier revisions and leftover structure. Sanitize removes what the pages do not show (scripts, attachments, metadata, hidden layers) and verifies the result by reading it back; a digital signature does not survive it. A limit: the audit scans raw bytes, so it cannot see inside compressed streams, and the report says so.
+            </div>
+          </details>
+
+          <!-- FAQ 9 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>What is the difference between a simple signature and a digital signature?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              A drawn, typed or photographed signature is a picture placed on the page; it proves nothing about who signed or whether the document changed afterwards, and the dialog says so. For that, sign with your PKCS#12 identity to get a PAdES B-B signature. A new signature carries no timestamp and no revocation data, because there is no network to ask. When verifying, trust rests only on certificates you imported and revocation is read only from lists on your device and from revocation data embedded in the PDF itself; with neither, the answer is “unknown”.
+            </div>
+          </details>
+
+          <!-- FAQ 10 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Can I scan a document with my phone?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Yes: File → Scan with camera (also on the home screen and in the Ctrl+K palette). On a phone it opens the rear camera, the picture never leaves your device and the camera runs only while you scan. With no camera, or if you refuse permission, you can choose photo files instead. The camera needs a secure connection (https or localhost). The page is found from its edges and straightened; the output is not meant for archival reproduction. You can run OCR on the resulting PDF to make it searchable.
+            </div>
+          </details>
+
+          <!-- FAQ 11 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Do the PDF/A and accessibility checks stand in for a certificate?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              No. The PDF/A check is a subset of veraPDF’s rules (20 rule groups); a clean result is not a certificate. PDF/A conversion rewrites the whole file: digital signatures stop validating and form fields are flattened into the page. A file that breaks a rule is never handed over. The PDF/UA check is automated and cannot prove conformance: reading order, the quality of alt text and changes of language need a person, and colour contrast is not measured.
+            </div>
+          </details>
+
+          <!-- FAQ 12 -->
+          <details class="group rounded-xl border border-kumo-line bg-kumo-base transition-colors hover:border-kumo-subtle">
+            <summary class="flex cursor-pointer items-center justify-between p-5 text-base font-semibold text-kumo-strong select-none">
+              <span>Will I lose my work if I close the browser?</span>
+              <svg
+                class="accordion-chevron size-5 shrink-0 text-kumo-subtle"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </summary>
+            <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
+              Unsaved changes are kept as a draft in this browser’s private file system (OPFS) only, and come back when you open the editor again; if you close the document’s tab in the editor yourself, its draft is deleted too. Password-protected documents and sensitive sessions leave no draft. Deleting a draft is not secure erasure; it does not overwrite the bytes on disk. For the full list of what is kept, see the <a class="text-kumo-strong underline" href="/en/privacy">Privacy</a> page.
             </div>
           </details>
         </div>
@@ -789,8 +1176,8 @@
           <div class="space-y-3">
             <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Company & Legal</h2>
             <ul class="space-y-2 text-xs text-white/70">
-              <li><a class="transition-colors hover:text-white" href="/en/privacy">Privacy Policy</a></li>
-              <li><a class="transition-colors hover:text-white" href="/en/terms">Terms of Service</a></li>
+              <li><a class="transition-colors hover:text-white" href="/en/privacy">Privacy Notice</a></li>
+              <li><a class="transition-colors hover:text-white" href="/en/terms">Terms of Use</a></li>
               <li><a class="transition-colors hover:text-white" href="#privacy">Zero Data Commitment</a></li>
               <li><a class="transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">Contact</a></li>
             </ul>
@@ -812,8 +1199,8 @@
           <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
             <p>© 2026 SsPdfEditor. All rights reserved.</p>
             <div class="flex flex-wrap items-center gap-6">
-              <a class="transition-colors hover:text-white/90" href="/en/privacy">Privacy Policy</a>
-              <a class="transition-colors hover:text-white/90" href="/en/terms">Terms of Service</a>
+              <a class="transition-colors hover:text-white/90" href="/en/privacy">Privacy Notice</a>
+              <a class="transition-colors hover:text-white/90" href="/en/terms">Terms of Use</a>
               <a class="transition-colors hover:text-white/90" href="#privacy">Local Privacy Guarantee</a>
             </div>
           </div>

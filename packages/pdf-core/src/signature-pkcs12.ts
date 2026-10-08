@@ -14,7 +14,7 @@
 
 import type { OctetString } from 'asn1js';
 import { fromBER, ObjectIdentifier } from 'asn1js';
-import type { AttributeTypeAndValue, PrivateKeyInfo, SafeBag } from 'pkijs';
+import type { AttributeTypeAndValue, AuthenticatedSafe, CertBag, PrivateKeyInfo, SafeBag } from 'pkijs';
 import { Certificate, ContentInfo, EncryptedData, PFX, SafeContents, setEngine } from 'pkijs';
 import type { SignatureDigest } from './signature-cms';
 
@@ -40,20 +40,10 @@ function commonNameOf(certificate: Certificate): string | null {
   for (const rdn of certificate.subject.typesAndValues) {
     const oid = rdn.type;
     if (oid !== '2.5.4.3') continue;
-    const value = rdn.value as {
-      valueBlock?: { value?: unknown; isHexOnly?: boolean; valueHexView?: Uint8Array };
-    };
+    // asn1js decodes every string type (Printable, UTF8, IA5, BMP, Universal, Teletex) to text.
+    const value = rdn.value as { valueBlock?: { value?: unknown } };
     const direct = value?.valueBlock?.value;
     if (typeof direct === 'string' && direct.length > 0) return direct;
-    // A BMPString or UniversalString arrives as bytes rather than text.
-    const bytes = value?.valueBlock?.valueHexView;
-    if (bytes !== undefined && bytes.length > 0) {
-      try {
-        return new TextDecoder('utf-16be').decode(bytes).replace(/\0/g, '');
-      } catch {
-        return null;
-      }
-    }
   }
   return null;
 }
@@ -84,12 +74,11 @@ async function bagsOf(content: ContentInfo, password: ArrayBuffer): Promise<Safe
 const BAG_PKCS8_SHROUDED_KEY = '1.2.840.113549.1.12.10.1.2';
 const BAG_CERT = '1.2.840.113549.1.12.10.1.3';
 
-/** The hex of a bag that carries DER. */
+/** The DER of a certificate bag: pkijs refuses to parse a `CertBag` whose value is not primitive bytes. */
 function bagDer(bag: SafeBag): Uint8Array {
-  const value = bag.bagValue as { certValue?: OctetString; valueBlock?: { valueHexView?: Uint8Array } };
-  const hex = value.certValue?.valueBlock.valueHexView ?? value.valueBlock?.valueHexView;
-  if (hex === undefined) throw new Error(`a bag (${bag.bagId}) carries no bytes`);
-  return new Uint8Array(hex);
+  // pkijs types the value loosely; an x509 `CertBag` holds its certificate as an OCTET STRING.
+  const certValue = (bag.bagValue as CertBag).certValue as OctetString;
+  return new Uint8Array(certValue.valueBlock.valueHexView);
 }
 
 /**
@@ -130,7 +119,9 @@ export async function importPkcs12(
   let rawKey: PrivateKeyInfo | null = null;
   const chain: Uint8Array[] = [];
 
-  for (const content of pfx.parsedValue?.authenticatedSafe?.safeContents ?? []) {
+  // `parseInternalValues` above resolved, so pkijs has set both (it throws otherwise).
+  const authenticated = pfx.parsedValue as { authenticatedSafe: AuthenticatedSafe };
+  for (const content of authenticated.authenticatedSafe.safeContents) {
     for (const bag of await bagsOf(content, passwordBuffer)) {
       if (bag.bagId === BAG_CERT) {
         if (certificateDer === null) certificateDer = bagDer(bag);
@@ -146,10 +137,11 @@ export async function importPkcs12(
        */
       const shrouded = bag.bagValue as unknown as {
         parseInternalValues(parameters: { password: ArrayBuffer }): Promise<void>;
-        parsedValue?: PrivateKeyInfo;
+        /** Set by `parseInternalValues` when it resolves. */
+        parsedValue: PrivateKeyInfo;
       };
       await shrouded.parseInternalValues({ password: passwordBuffer });
-      if (shrouded.parsedValue !== undefined) rawKey = shrouded.parsedValue;
+      rawKey = shrouded.parsedValue;
     }
   }
 

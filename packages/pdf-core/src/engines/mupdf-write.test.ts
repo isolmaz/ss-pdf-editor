@@ -28,6 +28,23 @@ function notoRegular(): Uint8Array<ArrayBuffer> {
   return new Uint8Array(readFileSync(file));
 }
 
+/** `head.unitsPerEm` and `hhea` ascender/descender, read straight from the TrueType table directory. */
+function ttfHeader(program: Uint8Array): { unitsPerEm: number; ascender: number; descender: number } {
+  const view = new DataView(program.buffer, program.byteOffset, program.byteLength);
+  const tables = new Map<string, number>();
+  for (let index = 0; index < view.getUint16(4); index += 1) {
+    const entry = 12 + index * 16;
+    tables.set(String.fromCharCode(...program.subarray(entry, entry + 4)), view.getUint32(entry + 8));
+  }
+  const head = tables.get('head') ?? 0;
+  const hhea = tables.get('hhea') ?? 0;
+  return {
+    unitsPerEm: view.getUint16(head + 18),
+    ascender: view.getInt16(hhea + 4),
+    descender: view.getInt16(hhea + 6),
+  };
+}
+
 async function blankPdf(): Promise<Uint8Array> {
   const { mupdf } = await openForWrite(await emptyShell());
   const doc = new mupdf.PDFDocument();
@@ -106,8 +123,29 @@ describe('mupdf-write', () => {
     const words = 'Merhaba dünya — ğüşıöç İĞÜŞÖÇ';
     const content = `BT /F1 14 Tf 72 700 Td ${face.encode(words)} Tj ET`;
     page.put('Contents', doc.addStream(content, {}));
-    expect(face.widthOfTextAtSize(words, 14)).toBeGreaterThan(100);
-    expect(face.heightAtSize(14, { descender: false })).toBeGreaterThan(10);
+    // Expected values come from the font programme itself, not from the code under test:
+    // advances from MuPDF's own font object (1 = one em), vertical metrics from the
+    // `head`/`hhea` tables read here.
+    const program = notoRegular();
+    const header = ttfHeader(program);
+    const mupdfFont = new mupdf.Font('NotoSans', program);
+    let emWidth = 0;
+    for (const character of words) {
+      emWidth += Math.round(
+        mupdfFont.advanceGlyph(mupdfFont.encodeCharacter(character.codePointAt(0) ?? 0)) * header.unitsPerEm,
+      );
+    }
+    expect(header.unitsPerEm).toBe(1000);
+    expect(face.widthOfTextAtSize(words, 14)).toBeCloseTo((emWidth * 14) / header.unitsPerEm, 6);
+    expect(face.widthOfTextAtSize(words, 28)).toBeCloseTo(2 * face.widthOfTextAtSize(words, 14), 6);
+    expect(face.heightAtSize(14, { descender: false })).toBeCloseTo(
+      (header.ascender * 14) / header.unitsPerEm,
+      6,
+    );
+    expect(face.heightAtSize(14)).toBeCloseTo(
+      ((header.ascender - header.descender) * 14) / header.unitsPerEm,
+      6,
+    );
     const bytes = saveRewrite(doc);
     doc.destroy();
 

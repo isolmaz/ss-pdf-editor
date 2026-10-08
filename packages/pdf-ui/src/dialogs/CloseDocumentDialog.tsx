@@ -26,11 +26,10 @@ export function CloseDocumentDialog({
   return (
     <Dialog.Root
       open
-      onOpenChange={(open, details) => {
-        if (!open) {
-          details.cancel();
-          onCancel();
-        }
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
+        details.cancel();
+        onCancel();
       }}
     >
       <Dialog size="sm" className="flex flex-col gap-3 p-4">

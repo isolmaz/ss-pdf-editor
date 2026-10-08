@@ -113,7 +113,8 @@ export interface SignatureVerification {
   readonly trustPath: readonly string[];
   /** The signer certificate's own window against the machine's clock. */
   readonly certificateValidity: CertificateValidity;
-  /** `notAfter` of the signer certificate, ISO; `null` when the CMS carried none. */
+  /** `notBefore` and `notAfter` of the signer certificate, ISO; `null` when the CMS carried none. */
+  readonly certificateNotBefore: string | null;
   readonly certificateNotAfter: string | null;
   /** Which check produced the trust verdict, or `null` when the chain was validated. */
   readonly trustReason: TrustReason | null;
@@ -138,6 +139,9 @@ const MAX_ASN1_NODES = 4096;
 const CONTENTS_WINDOW = 64 * 1024;
 /** How far the `startxref` scan may reach for a trailer dictionary. */
 const DICT_WINDOW = 64 * 1024;
+
+/** Longest integer token read from the raw bytes: 15 digits are always a safe integer. */
+const MAX_NUMBER_DIGITS = 15;
 
 const BYTE_RANGE_KEY = '/ByteRange';
 const CONTENTS_KEY = '/Contents';
@@ -174,36 +178,30 @@ function lastIndexOfAscii(bytes: Uint8Array, needle: string, from: number): numb
 }
 
 function asciiAt(bytes: Uint8Array, at: number, length: number): string {
-  let text = '';
-  for (let index = 0; index < length && at + index < bytes.length; index += 1) {
-    text += String.fromCharCode(bytes[at + index] ?? 0);
-  }
-  return text;
+  return Array.from(bytes.subarray(at, at + length), (byte) => String.fromCharCode(byte)).join('');
 }
 
-/** PDF whitespace and delimiters (`ISO 32000-2` §7.2.3). */
+/** PDF whitespace (`ISO 32000-2` §7.2.2). */
 const PDF_WHITESPACE = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
 
 function skipWhitespace(bytes: Uint8Array, at: number): number {
-  let cursor = at;
-  while (cursor < bytes.length && PDF_WHITESPACE.has(bytes[cursor] ?? -1)) cursor += 1;
-  return cursor;
+  const rest = bytes.subarray(at);
+  const length = rest.findIndex((byte) => !PDF_WHITESPACE.has(byte));
+  return at + (length < 0 ? rest.length : length);
 }
 
-/** One unsigned decimal integer at `at`, or `null` when the token is not one. */
+/** One unsigned decimal integer of at most 15 digits at `at`, or `null` when the token is not one. */
 function readNumber(bytes: Uint8Array, at: number): { readonly value: number; readonly next: number } | null {
-  let cursor = skipWhitespace(bytes, at);
+  const start = skipWhitespace(bytes, at);
   let value = 0;
   let digits = 0;
-  while (cursor < bytes.length) {
-    const digit = (bytes[cursor] ?? -1) - 0x30;
+  for (const byte of bytes.subarray(start, start + MAX_NUMBER_DIGITS + 1)) {
+    const digit = byte - 0x30;
     if (digit < 0 || digit > 9) break;
     value = value * 10 + digit;
     digits += 1;
-    cursor += 1;
-    if (digits > 15) return null;
   }
-  return digits === 0 || !Number.isSafeInteger(value) ? null : { value, next: cursor };
+  return digits === 0 || digits > MAX_NUMBER_DIGITS ? null : { value, next: start + digits };
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -212,77 +210,16 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   return true;
 }
 
-function hexToBytes(hex: string): Uint8Array {
-  const nibbles: number[] = [];
-  for (const character of hex) {
-    const code = character.charCodeAt(0);
-    const digit =
-      code >= 0x30 && code <= 0x39
-        ? code - 0x30
-        : code >= 0x41 && code <= 0x46
-          ? code - 0x37
-          : code >= 0x61 && code <= 0x66
-            ? code - 0x57
-            : -1;
-    if (digit >= 0) nibbles.push(digit);
-  }
-  const out = new Uint8Array(Math.floor(nibbles.length / 2));
-  for (let index = 0; index + 1 < nibbles.length; index += 2) {
-    out[index / 2] = ((nibbles[index] ?? 0) << 4) | (nibbles[index + 1] ?? 0);
-  }
-  return out;
-}
-
-/** `\ddd`, `\n` and friends — the escapes a literal string may carry (§7.3.4.2). */
-function unescapeLiteral(text: string): Uint8Array {
-  const out: number[] = [];
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index] ?? '';
-    if (character !== '\\') {
-      out.push(character.charCodeAt(0));
-      continue;
-    }
-    const next = text[index + 1] ?? '';
-    index += 1;
-    const named: Record<string, number> = { n: 0x0a, r: 0x0d, t: 0x09, b: 0x08, f: 0x0c };
-    if (named[next] !== undefined) {
-      out.push(named[next]);
-      continue;
-    }
-    if (next >= '0' && next <= '7') {
-      let octal = next;
-      while (octal.length < 3 && text[index + 1] !== undefined) {
-        const digit = text[index + 1] ?? '';
-        if (digit < '0' || digit > '7') break;
-        octal += digit;
-        index += 1;
-      }
-      out.push(Number.parseInt(octal, 8) & 0xff);
-      continue;
-    }
-    // A line continuation (`\<newline>`) produces nothing at all.
-    if (next !== '\n' && next !== '\r') out.push(next.charCodeAt(0));
-  }
-  return new Uint8Array(out);
-}
-
 /* ------------------------------------------------------------------ *
  * Raw scan: signature dictionaries in the file's own bytes
  * ------------------------------------------------------------------ */
 
 type ByteRangeTuple = readonly [number, number, number, number];
 
-interface ContentsValue {
-  readonly bytes: Uint8Array;
+/** Where a `/Contents` string sits in the file: `start` is its opening delimiter, `end` one past its closing one. */
+interface ContentsSpan {
   readonly start: number;
   readonly end: number;
-}
-
-interface RawSignature {
-  /** Offset of the `/ByteRange` keyword — the dictionary's identity in the file. */
-  readonly at: number;
-  readonly byteRange: ByteRangeTuple;
-  readonly contents: ContentsValue;
 }
 
 function readByteRange(
@@ -292,43 +229,25 @@ function readByteRange(
   let cursor = skipWhitespace(bytes, from);
   if (bytes[cursor] !== 0x5b) return null;
   cursor += 1;
-  const values: number[] = [];
-  while (values.length < 4) {
+  const range: [number, number, number, number] = [0, 0, 0, 0];
+  for (let index = 0; index < range.length; index += 1) {
     const number = readNumber(bytes, cursor);
     if (number === null) return null;
-    values.push(number.value);
+    range[index] = number.value;
     cursor = number.next;
   }
-  const [first, second, third, fourth] = values;
-  if (first === undefined || second === undefined || third === undefined || fourth === undefined) return null;
-  return { range: [first, second, third, fourth], next: cursor };
+  return { range, next: cursor };
 }
 
-function readStringValue(bytes: Uint8Array, at: number): ContentsValue | null {
+function readStringSpan(bytes: Uint8Array, at: number): ContentsSpan | null {
   const start = skipWhitespace(bytes, at);
   if (bytes[start] === 0x3c) {
     const close = indexOfAscii(bytes, '>', start + 1);
-    if (close < 0) return null;
-    return { bytes: hexToBytes(asciiAt(bytes, start + 1, close - start - 1)), start, end: close + 1 };
+    return close < 0 ? null : { start, end: close + 1 };
   }
   if (bytes[start] !== 0x28) return null;
-  let depth = 0;
-  for (let cursor = start; cursor < bytes.length; cursor += 1) {
-    const byte = bytes[cursor];
-    if (byte === 0x5c) {
-      cursor += 1;
-      continue;
-    }
-    if (byte === 0x28) depth += 1;
-    else if (byte === 0x29) {
-      depth -= 1;
-      if (depth === 0) {
-        const text = asciiAt(bytes, start + 1, cursor - start - 1);
-        return { bytes: unescapeLiteral(text), start, end: cursor + 1 };
-      }
-    }
-  }
-  return null;
+  const end = literalStringEnd(bytes, start);
+  return end < 0 ? null : { start, end };
 }
 
 /**
@@ -337,11 +256,7 @@ function readStringValue(bytes: Uint8Array, at: number): ContentsValue | null {
  * only a value whose own offsets fall inside the gap is accepted — that is what makes
  * a match trustworthy without a parser.
  */
-function findContentsValue(
-  bytes: Uint8Array,
-  keywordAt: number,
-  range: ByteRangeTuple,
-): ContentsValue | null {
+function findContentsValue(bytes: Uint8Array, keywordAt: number, range: ByteRangeTuple): ContentsSpan | null {
   const gapStart = range[0] + range[1];
   const gapEnd = range[2];
   const candidates = [
@@ -350,16 +265,16 @@ function findContentsValue(
   ];
   for (const at of candidates) {
     if (at < 0 || Math.abs(at - keywordAt) > CONTENTS_WINDOW) continue;
-    const value = readStringValue(bytes, at + CONTENTS_KEY.length);
+    const value = readStringSpan(bytes, at + CONTENTS_KEY.length);
     if (value === null) continue;
     if (value.start >= gapStart && value.end <= gapEnd) return value;
   }
   return null;
 }
 
-/** Every signature dictionary reachable by scanning, keyed by its `/ByteRange`. */
-function scanRawSignatures(bytes: Uint8Array): readonly RawSignature[] {
-  const found: RawSignature[] = [];
+/** The `/ByteRange` of every signature dictionary reachable by scanning the raw bytes. */
+function scanByteRanges(bytes: Uint8Array): readonly ByteRangeTuple[] {
+  const found: ByteRangeTuple[] = [];
   let cursor = 0;
   while (found.length < MAX_SIGNATURES) {
     const at = indexOfAscii(bytes, BYTE_RANGE_KEY, cursor);
@@ -369,7 +284,7 @@ function scanRawSignatures(bytes: Uint8Array): readonly RawSignature[] {
     if (parsed === null) continue;
     const contents = findContentsValue(bytes, at, parsed.range);
     if (contents === null) continue;
-    found.push({ at, byteRange: parsed.range, contents });
+    found.push(parsed.range);
   }
   return found;
 }
@@ -378,38 +293,136 @@ function scanRawSignatures(bytes: Uint8Array): readonly RawSignature[] {
  * Revision chain (`startxref` → trailer `/Prev`)
  * ------------------------------------------------------------------ */
 
-/** The end of the dictionary that starts at `at`, skipping strings and nesting. */
-function dictionaryEnd(bytes: Uint8Array, at: number): number {
+/** Bytes that end a PDF name (§7.2.3). */
+const NAME_DELIMITERS = new Set([0x28, 0x29, 0x3c, 0x3e, 0x5b, 0x5d, 0x7b, 0x7d, 0x2f, 0x25]);
+
+/** Whether the name that ends at `at` is complete: the next byte, if any, is whitespace or a delimiter. */
+function endsName(bytes: Uint8Array, at: number): boolean {
+  return bytes.subarray(at, at + 1).every((byte) => PDF_WHITESPACE.has(byte) || NAME_DELIMITERS.has(byte));
+}
+
+/** The end of the literal string whose `(` sits at `at`: balanced parentheses, `\\` escapes (§7.3.4.2). */
+function literalStringEnd(bytes: Uint8Array, at: number): number {
   let depth = 0;
   let cursor = at;
-  while (cursor < bytes.length && cursor - at < DICT_WINDOW) {
+  while (cursor < bytes.length) {
     const byte = bytes[cursor];
-    if (byte === 0x28) {
-      const close = indexOfAscii(bytes, ')', cursor + 1);
-      if (close < 0) return -1;
-      cursor = close + 1;
-      continue;
-    }
-    if (byte === 0x3c && bytes[cursor + 1] !== 0x3c) {
-      const close = indexOfAscii(bytes, '>', cursor + 1);
-      if (close < 0) return -1;
-      cursor = close + 1;
-      continue;
-    }
-    if (byte === 0x3c && bytes[cursor + 1] === 0x3c) {
-      depth += 1;
+    if (byte === 0x5c) {
       cursor += 2;
       continue;
     }
-    if (byte === 0x3e && bytes[cursor + 1] === 0x3e) {
+    if (byte === 0x28) depth += 1;
+    if (byte === 0x29) {
       depth -= 1;
-      cursor += 2;
-      if (depth === 0) return cursor;
-      continue;
+      if (depth === 0) return cursor + 1;
     }
     cursor += 1;
   }
   return -1;
+}
+
+/** Whether `byte` ends a regular token: whitespace or a delimiter (§7.2.3). */
+function endsToken(byte: number): boolean {
+  return PDF_WHITESPACE.has(byte) || NAME_DELIMITERS.has(byte);
+}
+
+/** The end of the regular token (a number, a keyword or the text of a name) that starts at `at`. */
+function tokenEnd(bytes: Uint8Array, at: number): number {
+  let cursor = at;
+  while (cursor < bytes.length && !endsToken(bytes[cursor] ?? 0)) cursor += 1;
+  return cursor;
+}
+
+/** The end of the comment whose `%` sits at `at`: it runs to the next CR or LF, or to the end (§7.2.4). */
+function commentEnd(bytes: Uint8Array, at: number): number {
+  let cursor = at;
+  while (cursor < bytes.length && bytes[cursor] !== 0x0a && bytes[cursor] !== 0x0d) cursor += 1;
+  return cursor;
+}
+
+/** Whether the bytes from `start` to `end` are an unsigned decimal integer: the number part of an `n g R`. */
+function isDigits(bytes: Uint8Array, start: number, end: number): boolean {
+  return end > start && bytes.subarray(start, end).every((byte) => byte >= 0x30 && byte <= 0x39);
+}
+
+/** The end of the `g R` that follows the object number ending at `at`, or `at` when there is none. */
+function referenceEnd(bytes: Uint8Array, at: number): number {
+  const generationStart = skipWhitespace(bytes, at);
+  const generationEnd = tokenEnd(bytes, generationStart);
+  if (!isDigits(bytes, generationStart, generationEnd)) return at;
+  const markerAt = skipWhitespace(bytes, generationEnd);
+  return bytes[markerAt] === 0x52 && endsName(bytes, markerAt + 1) ? markerAt + 1 : at;
+}
+
+/**
+ * The value of the `/Prev` entry of the dictionary that starts at `at`. Only a key of that
+ * dictionary itself counts — never text inside a string or a comment, a nested dictionary, a
+ * longer name such as `/Previous`, or a name that is the *value* of another entry. So the top
+ * level is read as alternating keys and values (a value is a number, `n g R`, name, string,
+ * array or dictionary). `null` when there is none or the dictionary cannot be read.
+ */
+function dictionaryPrev(bytes: Uint8Array, at: number): number | null {
+  let depth = 0;
+  let arrays = 0;
+  let expectKey = true;
+  let cursor = at;
+  while (cursor < bytes.length && cursor - at < DICT_WINDOW) {
+    const byte = bytes[cursor] ?? 0x20;
+    // At the top level, a token that completes a value makes the next name a key again.
+    const topLevel = depth === 1 && arrays === 0;
+    if (PDF_WHITESPACE.has(byte)) {
+      cursor += 1;
+    } else if (byte === 0x25) {
+      cursor = commentEnd(bytes, cursor);
+    } else if (byte === 0x28) {
+      const end = literalStringEnd(bytes, cursor);
+      if (end < 0) return null;
+      cursor = end;
+      if (topLevel) expectKey = true;
+    } else if (byte === 0x3c && bytes[cursor + 1] === 0x3c) {
+      depth += 1;
+      cursor += 2;
+    } else if (byte === 0x3c) {
+      const close = indexOfAscii(bytes, '>', cursor + 1);
+      if (close < 0) return null;
+      cursor = close + 1;
+      if (topLevel) expectKey = true;
+    } else if (byte === 0x3e && bytes[cursor + 1] === 0x3e) {
+      depth -= 1;
+      cursor += 2;
+      if (depth === 0) return null;
+      if (depth === 1 && arrays === 0) expectKey = true;
+    } else if (byte === 0x5b) {
+      arrays += 1;
+      cursor += 1;
+    } else if (byte === 0x5d) {
+      arrays = Math.max(0, arrays - 1);
+      cursor += 1;
+      if (depth === 1 && arrays === 0) expectKey = true;
+    } else if (byte === 0x2f) {
+      const end = tokenEnd(bytes, cursor + 1);
+      if (topLevel && expectKey) {
+        if (end - cursor === PREV_KEY.length && asciiAt(bytes, cursor, PREV_KEY.length) === PREV_KEY) {
+          const number = readNumber(bytes, end);
+          return number === null ? null : number.value;
+        }
+        expectKey = false;
+      } else if (topLevel) {
+        expectKey = true;
+      }
+      cursor = end;
+    } else {
+      // A number, a keyword, or a stray delimiter that cannot start a value.
+      const end = tokenEnd(bytes, cursor);
+      if (end === cursor) {
+        cursor += 1;
+      } else {
+        cursor = isDigits(bytes, cursor, end) ? referenceEnd(bytes, end) : end;
+        if (topLevel && !expectKey) expectKey = true;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -431,12 +444,7 @@ function previousOffset(bytes: Uint8Array, offset: number, limit: number): numbe
     dictAt = skipWhitespace(bytes, object + 4);
   }
   if (bytes[dictAt] !== 0x3c || bytes[dictAt + 1] !== 0x3c) return null;
-  const end = dictionaryEnd(bytes, dictAt);
-  if (end < 0) return null;
-  const prev = indexOfAscii(bytes, PREV_KEY, dictAt);
-  if (prev < 0 || prev >= end) return null;
-  const number = readNumber(bytes, prev + PREV_KEY.length);
-  return number === null ? null : number.value;
+  return dictionaryPrev(bytes, dictAt);
 }
 
 /** Cross-reference section offsets, oldest first; empty when the chain is unreadable. */
@@ -482,7 +490,6 @@ function revisionsAfter(bytes: Uint8Array, from: number): number {
  * ------------------------------------------------------------------ */
 
 const TAG_OCTET_STRING = 0x04;
-const _TAG_BIT_STRING = 0x03;
 const TAG_OID = 0x06;
 const TAG_UTF8_STRING = 0x0c;
 const TAG_PRINTABLE_STRING = 0x13;
@@ -567,13 +574,11 @@ function firstChild(bytes: Uint8Array, parent: Tlv): Tlv | null {
 
 /** `1.2.840.113549.1.7.2`, decoded from the OID's base-128 arcs. */
 function oidText(bytes: Uint8Array, tlv: Tlv): string {
-  const content = contentBytes(bytes, tlv);
-  const first = content[0];
+  const [first, ...rest] = contentBytes(bytes, tlv);
   if (first === undefined) return '';
   const arcs: number[] = [Math.floor(first / 40), first % 40];
   let value = 0;
-  for (let index = 1; index < content.length; index += 1) {
-    const byte = content[index] ?? 0;
+  for (const byte of rest) {
     value = value * 128 + (byte & 0x7f);
     if ((byte & 0x80) === 0) {
       arcs.push(value);
@@ -593,7 +598,7 @@ interface CmsCertificate {
   /** The key algorithm inside that SPKI: `rsaEncryption` or `id-ecPublicKey`. */
   readonly keyAlgorithm: string;
   /** The named curve of an EC key, when the SPKI names one. */
-  readonly curve: string | null;
+  readonly curve: EcCurve | null;
 }
 
 interface CmsInfo {
@@ -633,7 +638,15 @@ const SIGNATURE_ALGORITHMS: Record<string, 'RSASSA-PKCS1-v1_5' | 'ECDSA'> = {
   '1.2.840.10045.4.3.4': 'ECDSA',
 };
 
-const CURVE_OIDS: Record<string, string> = {
+/** The named curves WebCrypto verifies and this verifier recognises, with the byte size of one scalar. */
+type EcCurve = 'P-256' | 'P-384' | 'P-521';
+
+const EC_PUBLIC_KEY_OID = '1.2.840.10045.2.1';
+const RSA_KEY_OID = '1.2.840.113549.1.1.1';
+
+const CURVE_SIZES: Readonly<Record<EcCurve, number>> = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
+
+const CURVE_OIDS: Readonly<Record<string, EcCurve>> = {
   '1.2.840.10045.3.1.7': 'P-256',
   '1.3.132.0.34': 'P-384',
   '1.3.132.0.35': 'P-521',
@@ -644,6 +657,7 @@ const NO_TRUST: TrustCheck = {
   verdict: 'not-checked',
   path: [],
   validity: 'unknown',
+  notBefore: null,
   notAfter: null,
   reason: null,
 };
@@ -689,7 +703,7 @@ function readSignerInfo(bytes: Uint8Array, signedData: Tlv, budget: { nodes: num
         signedAttrs.start,
         signedAttrs.start + signedAttrs.headerLength + signedAttrs.length,
       );
-      if (signed[0] === TAG_CONTEXT_0) signed[0] = TAG_SET;
+      signed[0] = TAG_SET;
 
       // `SignerInfo ::= SEQUENCE { version, sid, digestAlgorithm, [0] signedAttrs,
       //  signatureAlgorithm, signature }` — the OCTET STRING is the value, and the
@@ -753,7 +767,7 @@ function readCertificate(
   if (issuer === undefined || subject === undefined) return null;
 
   let keyAlgorithm = '';
-  let curve: string | null = null;
+  let curve: EcCurve | null = null;
   const spkiFields = spki === undefined ? [] : children(bytes, spki, budget);
   const spkiAlgorithm = spkiFields[0];
   const algorithmFields = spkiAlgorithm === undefined ? [] : children(bytes, spkiAlgorithm, budget);
@@ -902,17 +916,23 @@ function readSignature(name: string, dictionary: PDFObject): SignatureField {
   };
 }
 
-/** A key that tells one signature dictionary from another: its object number, or itself. */
-function identityOf(entry: PDFObject, value: PDFObject): number | PDFObject {
+/**
+ * A key that tells one signature dictionary from another: its own object number, or — for a
+ * dictionary written inline in its field — the object number of the field that holds it, so
+ * a merged field and widget reached twice (once through `/Fields`, once through a page's
+ * `/Annots`) is one signature, not two. `holder` is the unresolved reference to that field.
+ */
+function identityOf(holder: PDFObject, entry: PDFObject, value: PDFObject): string | PDFObject {
   const reference = entry.get('V');
-  return reference.isIndirect() ? reference.asIndirect() : value;
+  if (reference.isIndirect()) return `value ${reference.asIndirect()}`;
+  return holder.isIndirect() ? `field ${holder.asIndirect()}` : value;
 }
 
 function walkField(
   object: PDFObject,
   prefix: string,
   collected: SignatureField[],
-  seen: Set<number | PDFObject>,
+  seen: Set<string | PDFObject>,
   depth: number,
 ): void {
   const dict = resolved(object);
@@ -930,7 +950,7 @@ function walkField(
 
   const value = signatureValue(dict);
   if (value === null) return;
-  const key = identityOf(dict, value);
+  const key = identityOf(object, dict, value);
   if (seen.has(key)) return;
   seen.add(key);
   collected.push(readSignature(name, value));
@@ -946,7 +966,7 @@ function collectSignatureFields(
   signal: AbortSignal | undefined,
 ): readonly SignatureField[] {
   const collected: SignatureField[] = [];
-  const seen = new Set<number | PDFObject>();
+  const seen = new Set<string | PDFObject>();
 
   const catalog = resolved(doc.getTrailer().get('Root'));
   const acroForm = catalog === null ? null : resolved(catalog.get('AcroForm'));
@@ -963,11 +983,12 @@ function collectSignatureFields(
     const annots = resolved(page.get('Annots'));
     if (annots?.isArray() !== true) continue;
     for (let index = 0; index < annots.length; index += 1) {
-      const annot = resolved(annots.get(index));
+      const annotReference = annots.get(index);
+      const annot = resolved(annotReference);
       if (annot === null || !annot.isDictionary()) continue;
       const value = signatureValue(annot);
       if (value === null) continue;
-      const key = identityOf(annot, value);
+      const key = identityOf(annotReference, annot, value);
       if (seen.has(key)) continue;
       seen.add(key);
       collected.push(readSignature(textOf(annot.get('T')) ?? '', value));
@@ -1060,7 +1081,7 @@ interface SigningFacts {
   readonly signerKey: {
     readonly spki: Uint8Array;
     readonly algorithm: string;
-    readonly curve: string | null;
+    readonly curve: EcCurve | null;
   } | null;
   /** The chain walk against the imported roots; `NO_TRUST` when it could not be run. */
   readonly trust: TrustCheck;
@@ -1079,26 +1100,20 @@ interface SigningFacts {
  * signature with the public key closes that hole, and it is the half this verifier was
  * missing (the OpenSSL check in `tools/spikes/sign-check.mts` is what exposed it).
  */
-function ecdsaSignatureBytes(der: Uint8Array, curve: string): Uint8Array | null {
-  const sizes: Readonly<Record<string, number>> = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
-  const size = sizes[curve];
+function ecdsaSignatureBytes(der: Uint8Array, curve: EcCurve): Uint8Array | null {
+  const size = CURVE_SIZES[curve];
   const sequence = readTlv(der, 0);
-  if (
-    size === undefined ||
-    sequence?.tag !== TAG_SEQUENCE ||
-    sequence.headerLength + sequence.length !== der.length
-  )
-    return null;
+  if (sequence?.tag !== TAG_SEQUENCE || sequence.headerLength + sequence.length !== der.length) return null;
   const parts = children(der, sequence, { nodes: 3 });
   if (parts.length !== 2) return null;
   const raw = new Uint8Array(size * 2);
   for (const [index, part] of parts.entries()) {
-    if (part.tag !== 0x02 || part.start + part.headerLength + part.length > der.length) return null;
+    if (part.tag !== 0x02) return null;
     let scalar = contentBytes(der, part);
-    const first = scalar[0];
+    const [first, second] = scalar;
     if (first === undefined || (first & 0x80) !== 0) return null;
-    if (first === 0 && scalar.length > 1) {
-      if (((scalar[1] ?? 0) & 0x80) === 0) return null;
+    if (first === 0 && second !== undefined) {
+      if ((second & 0x80) === 0) return null;
       scalar = scalar.subarray(1);
     }
     if (scalar.length > size || scalar.every((byte) => byte === 0)) return null;
@@ -1107,71 +1122,70 @@ function ecdsaSignatureBytes(der: Uint8Array, curve: string): Uint8Array | null 
   return raw;
 }
 
+/**
+ * Imports `spki` and verifies `signature` over `data`. An algorithm this context cannot
+ * provide is an absence of evidence, not evidence of tampering — the same rule the digest
+ * follows — so a failure of the engine itself is `unsupported`, not `invalid`.
+ */
+async function verifyWithKey(
+  subtle: SubtleCrypto,
+  spki: Uint8Array,
+  keyAlgorithm: RsaHashedImportParams | EcKeyImportParams,
+  verifyAlgorithm: AlgorithmIdentifier | EcdsaParams,
+  signature: Uint8Array,
+  data: Uint8Array,
+): Promise<'valid' | 'invalid' | 'unsupported'> {
+  try {
+    const key = await subtle.importKey('spki', spki as unknown as ArrayBuffer, keyAlgorithm, false, [
+      'verify',
+    ]);
+    const ok = await subtle.verify(
+      verifyAlgorithm,
+      key,
+      signature as unknown as ArrayBuffer,
+      data as unknown as ArrayBuffer,
+    );
+    return ok ? 'valid' : 'invalid';
+  } catch {
+    return 'unsupported';
+  }
+}
+
 async function verifySignatureValue(
   subtle: SubtleCrypto,
   facts: SigningFacts,
+  digestAlgorithm: string,
 ): Promise<'valid' | 'invalid' | 'unsupported'> {
-  const { signedAttributes, signature, signatureAlgorithm, signerKey, digestAlgorithm } = facts;
-  if (
-    signedAttributes === null ||
-    signature === null ||
-    signerKey === null ||
-    digestAlgorithm === null ||
-    signerKey.spki.length === 0
-  ) {
-    return 'unsupported';
-  }
+  const { signedAttributes, signature, signatureAlgorithm, signerKey } = facts;
+  if (signedAttributes === null || signature === null || signerKey === null) return 'unsupported';
   const kind = SIGNATURE_ALGORITHMS[signatureAlgorithm];
   if (kind === undefined) return 'unsupported';
-  if (kind === 'ECDSA' && signerKey.curve === null) return 'unsupported';
-  if (signerKey.algorithm !== (kind === 'ECDSA' ? '1.2.840.10045.2.1' : '1.2.840.113549.1.1.1')) {
-    // The algorithm the SignerInfo names and the key the certificate carries disagree:
-    // nothing here can verify that pairing, so the verdict stays unchecked rather than
-    // claiming a mismatch.
-    return 'unsupported';
+  // The algorithm the SignerInfo names and the key the certificate carries must agree:
+  // nothing here can verify a mismatched pairing, so the verdict stays unchecked rather
+  // than claiming a mismatch.
+  if (kind === 'ECDSA') {
+    const curve = signerKey.curve;
+    if (curve === null || signerKey.algorithm !== EC_PUBLIC_KEY_OID) return 'unsupported';
+    const raw = ecdsaSignatureBytes(signature, curve);
+    if (raw === null) return 'invalid';
+    return await verifyWithKey(
+      subtle,
+      signerKey.spki,
+      { name: 'ECDSA', namedCurve: curve },
+      { name: 'ECDSA', hash: digestAlgorithm },
+      raw,
+      signedAttributes,
+    );
   }
-
-  const signatureBytes =
-    kind === 'ECDSA' ? ecdsaSignatureBytes(signature, signerKey.curve as string) : signature;
-  if (signatureBytes === null) return 'invalid';
-
-  try {
-    const key =
-      kind === 'ECDSA'
-        ? await subtle.importKey(
-            'spki',
-            signerKey.spki as unknown as ArrayBuffer,
-            { name: 'ECDSA', namedCurve: signerKey.curve as string },
-            false,
-            ['verify'],
-          )
-        : await subtle.importKey(
-            'spki',
-            signerKey.spki as unknown as ArrayBuffer,
-            { name: 'RSASSA-PKCS1-v1_5', hash: digestAlgorithm },
-            false,
-            ['verify'],
-          );
-    const ok =
-      kind === 'ECDSA'
-        ? await subtle.verify(
-            { name: 'ECDSA', hash: digestAlgorithm },
-            key,
-            signatureBytes as unknown as ArrayBuffer,
-            signedAttributes as unknown as ArrayBuffer,
-          )
-        : await subtle.verify(
-            { name: 'RSASSA-PKCS1-v1_5' },
-            key,
-            signatureBytes as unknown as ArrayBuffer,
-            signedAttributes as unknown as ArrayBuffer,
-          );
-    return ok ? 'valid' : 'invalid';
-  } catch {
-    // An algorithm this context cannot provide is an absence of evidence, not evidence of
-    // tampering — the same rule the digest follows.
-    return 'unsupported';
-  }
+  if (signerKey.algorithm !== RSA_KEY_OID) return 'unsupported';
+  return await verifyWithKey(
+    subtle,
+    signerKey.spki,
+    { name: 'RSASSA-PKCS1-v1_5', hash: digestAlgorithm },
+    { name: 'RSASSA-PKCS1-v1_5' },
+    signature,
+    signedAttributes,
+  );
 }
 
 function verdictKey(integrity: SignatureIntegrity, cause: string | null): MessageKey {
@@ -1195,9 +1209,25 @@ function tlvBytes(der: Uint8Array, tlv: Tlv): Uint8Array {
   return der.subarray(tlv.start, tlv.start + tlv.headerLength + tlv.length);
 }
 
-/** The four ByteRange integers are identical — the object graph's and the file's. */
+/** The four ByteRange integers are identical. */
 function sameRange(left: ByteRangeTuple, right: ByteRangeTuple): boolean {
   return left[0] === right[0] && left[1] === right[1] && left[2] === right[2] && left[3] === right[3];
+}
+
+/**
+ * The scanned range a field's `/ByteRange` stands for. The object graph hands numbers over as
+ * 32-bit floats, so above 2^24 (a file of more than 16 MiB) an integer comes back rounded to
+ * the nearest float; the file's own digits are exact, and they are what gets hashed. A field is
+ * paired with the scanned range whose four numbers round to what the object graph read. When
+ * no scanned range does, or when ranges that differ round alike (two candidates the object
+ * graph cannot tell apart), nothing is paired and the signature stays unchecked.
+ */
+function pairedRange(scanned: readonly ByteRangeTuple[], read: ByteRangeTuple): ByteRangeTuple | null {
+  const candidates = scanned.filter((entry) =>
+    entry.every((number, index) => Math.fround(number) === read[index]),
+  );
+  const [first] = candidates;
+  return first !== undefined && candidates.every((entry) => sameRange(entry, first)) ? first : null;
 }
 
 /**
@@ -1209,7 +1239,7 @@ async function verifyOne(
   bytes: Uint8Array,
   field: SignatureField,
   facts: SigningFacts,
-  raw: RawSignature | null,
+  byteRange: ByteRangeTuple | null,
   revisions: readonly number[],
 ): Promise<SignatureVerification> {
   /**
@@ -1237,6 +1267,7 @@ async function verifyOne(
     revocation: (facts.evidence?.revocation ?? 'indeterminate') as SignatureRevocation,
     trustPath: facts.trust.path,
     certificateValidity: facts.trust.validity,
+    certificateNotBefore: facts.trust.notBefore,
     certificateNotAfter: facts.trust.notAfter,
     trustReason: facts.trust.reason,
     timestamp: facts.evidence?.timestamp ?? null,
@@ -1248,8 +1279,8 @@ async function verifyOne(
   // Coverage and the revision count come from the raw layout, so they are reported even
   // when the cryptographic verdict cannot be reached: "the signature does not cover what
   // it should" is a different fact from "the digest did not match".
-  const coverage: SignatureCoverage = raw === null ? 'unknown' : coverageOf(bytes, raw.byteRange);
-  const signedRevisions = raw === null ? 0 : changesAfterSigning(bytes, raw.byteRange, revisions);
+  const coverage: SignatureCoverage = byteRange === null ? 'unknown' : coverageOf(bytes, byteRange);
+  const signedRevisions = byteRange === null ? 0 : changesAfterSigning(bytes, byteRange, revisions);
   const unchecked = (cause: string): SignatureVerification => ({
     ...base,
     integrity: 'unchecked',
@@ -1259,22 +1290,16 @@ async function verifyOne(
   });
 
   if (!DETACHED_SUBFILTERS.has(facts.subFilter)) return unchecked('subfilter');
-  if (raw === null) return unchecked('layout');
+  if (byteRange === null) return unchecked('layout');
   if (facts.messageDigest === null) return unchecked('der');
   if (facts.digestAlgorithm === null) return unchecked('digest');
 
   const subtle = globalThis.crypto?.subtle;
   if (subtle === undefined) return unchecked('webcrypto');
 
-  const [start1, length1, start2, length2] = raw.byteRange;
-  if (start1 + length1 > bytes.length || start2 + length2 > bytes.length) {
-    return unchecked('layout');
-  }
-
   // WebCrypto digests one buffer, so the two covered ranges are joined once.
-  const covered = new Uint8Array(length1 + length2);
-  covered.set(bytes.subarray(start1, start1 + length1), 0);
-  covered.set(bytes.subarray(start2, start2 + length2), length1);
+  const covered = coveredBytes(bytes, byteRange);
+  if (covered === null) return unchecked('layout');
 
   let computed: Uint8Array;
   try {
@@ -1287,7 +1312,7 @@ async function verifyOne(
 
   let integrity: SignatureIntegrity = bytesEqual(computed, facts.messageDigest) ? 'valid' : 'invalid';
   if (integrity === 'valid') {
-    const signature = await verifySignatureValue(subtle, facts);
+    const signature = await verifySignatureValue(subtle, facts, facts.digestAlgorithm);
     if (signature === 'invalid') integrity = 'invalid';
     if (signature === 'unsupported') return unchecked('webcrypto');
   }
@@ -1301,7 +1326,7 @@ async function verifyOne(
 }
 
 /** The two covered segments of a ByteRange, joined; `null` when the range leaves the file. */
-function coveredBytes(bytes: Uint8Array, range: ByteRangeTuple): Uint8Array | null {
+function coveredBytes(bytes: Uint8Array, range: ByteRangeTuple): Uint8Array<ArrayBuffer> | null {
   const [start1, length1, start2, length2] = range;
   if (start1 + length1 > bytes.length || start2 + length2 > bytes.length) return null;
   const covered = new Uint8Array(length1 + length2);
@@ -1327,15 +1352,15 @@ interface TimestampEntryOptions {
 async function verifyTimestampEntry(
   bytes: Uint8Array,
   field: SignatureField,
-  raw: RawSignature | null,
+  byteRange: ByteRangeTuple | null,
   revisions: readonly number[],
   options: TimestampEntryOptions,
 ): Promise<SignatureVerification> {
-  const coverage: SignatureCoverage = raw === null ? 'unknown' : coverageOf(bytes, raw.byteRange);
-  const changes = raw === null ? 0 : changesAfterSigning(bytes, raw.byteRange, revisions);
+  const coverage: SignatureCoverage = byteRange === null ? 'unknown' : coverageOf(bytes, byteRange);
+  const changes = byteRange === null ? 0 : changesAfterSigning(bytes, byteRange, revisions);
   const unchecked: SignatureVerification = {
     fieldName: field.name,
-    subFilter: field.subFilter ?? '',
+    subFilter: TIMESTAMP_SUBFILTER,
     signer: null,
     signedAt: null,
     integrity: 'unchecked',
@@ -1345,6 +1370,7 @@ async function verifyTimestampEntry(
     changesAfterSigning: changes,
     trustPath: [],
     certificateValidity: 'unknown',
+    certificateNotBefore: null,
     certificateNotAfter: null,
     trustReason: null,
     reasonKey: verdictKey('unchecked', 'layout'),
@@ -1353,7 +1379,7 @@ async function verifyTimestampEntry(
     validationTime: null,
     validationTimeSource: 'clock',
   };
-  const covered = raw === null ? null : coveredBytes(bytes, raw.byteRange);
+  const covered = byteRange === null ? null : coveredBytes(bytes, byteRange);
   if (covered === null || field.contents === null) return unchecked;
 
   const { timestamp, revocation } = await (await import('../signature-validation')).evaluateDocumentTimestamp(
@@ -1386,6 +1412,7 @@ async function verifyTimestampEntry(
     trustPath: timestamp.tsaPath,
     // The TSA certificate is judged at the token's own time (`signature-timestamp.ts`).
     certificateValidity: timestamp.status === 'valid' ? 'valid' : 'unknown',
+    certificateNotBefore: timestamp.tsaNotBefore,
     certificateNotAfter: timestamp.tsaNotAfter,
     trustReason: timestamp.tsaTrustReason,
     reasonKey: `props.sig.reason.timestamp.${timestamp.status}`,
@@ -1397,26 +1424,29 @@ async function verifyTimestampEntry(
   };
 }
 
-/** What the ByteRange covers (§12.8.1), and what lies outside it. */
+/**
+ * What the ByteRange covers (§12.8.1), and what lies outside it. The raw scan only yields a range
+ * whose `/Contents` sits in its gap, so the two segments never overlap.
+ */
 function coverageOf(bytes: Uint8Array, range: ByteRangeTuple): SignatureCoverage {
-  const [start1, length1, start2, length2] = range;
-  if (length1 < 0 || length2 < 0 || start1 + length1 > start2) return 'unknown';
-  const end = start2 + length2;
+  const end = range[2] + range[3];
   if (end > bytes.length) return 'unknown';
   // Anything before the first range, or after the last one, is not covered by the
   // signature: that is exactly "partial coverage", whatever wrote those bytes.
-  if (start1 !== 0 || end < bytes.length) return 'covers-partial';
+  if (range[0] !== 0 || end < bytes.length) return 'covers-partial';
   return 'covers-whole-document';
 }
 
 /**
- * Revisions after the signature's own. The chain answers it directly; when it cannot
- * be read, `%%EOF` markers after the covered range answer the same question (§7.5.5).
+ * Revisions after the signature's own. The chain answers it directly when it reaches the
+ * signature's revision; a chain that stops short of it (a newer section whose `/Prev` could
+ * not be read) lists only the newest sections and would undercount, so `%%EOF` markers after
+ * the covered range answer the same question instead (§7.5.5).
  */
 function changesAfterSigning(bytes: Uint8Array, range: ByteRangeTuple, revisions: readonly number[]): number {
   const end = range[2] + range[3];
   const signed = revisions.filter((start) => start <= end).length;
-  if (revisions.length > 0) return Math.max(revisions.length - signed, 0);
+  if (signed > 0) return revisions.length - signed;
   return end < bytes.length ? revisionsAfter(bytes, end) : 0;
 }
 
@@ -1478,7 +1508,7 @@ export async function verifySignatures(
   }
   if (fields.length === 0) return [];
 
-  const raw = scanRawSignatures(bytes);
+  const scanned = scanByteRanges(bytes);
   const revisions = revisionStarts(bytes);
   const results: SignatureVerification[] = [];
   const now = options.now ?? new Date();
@@ -1489,13 +1519,13 @@ export async function verifySignatures(
 
     const contents = field.contents;
     const range = field.byteRange;
-    // A raw entry is only accepted when the four numbers are identical to the object
-    // graph's: a dictionary that arrived inside an object stream carries numbers for a
-    // file this scan never saw, and hashing those ranges would be nonsense.
-    const match = range === null ? undefined : raw.find((entry) => sameRange(entry.byteRange, range));
+    // A raw entry is only accepted when its four numbers are the ones the object graph read
+    // (to float precision): a dictionary that arrived inside an object stream carries numbers
+    // for a file this scan never saw, and hashing those ranges would be nonsense.
+    const match = range === null ? null : pairedRange(scanned, range);
     if (field.subFilter === TIMESTAMP_SUBFILTER) {
       results.push(
-        await verifyTimestampEntry(bytes, field, match ?? null, revisions, {
+        await verifyTimestampEntry(bytes, field, match, revisions, {
           roots,
           crls: options.crls ?? [],
           dss,
@@ -1572,7 +1602,7 @@ export async function verifySignatures(
       evidence,
     };
 
-    results.push(await verifyOne(bytes, field, facts, match ?? null, revisions));
+    results.push(await verifyOne(bytes, field, facts, match, revisions));
   }
   return results;
 }

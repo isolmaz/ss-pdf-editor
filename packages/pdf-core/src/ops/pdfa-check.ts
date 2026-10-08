@@ -24,7 +24,8 @@
  *  - `output-intent` — the profile of each PDF/A output intent (header, class, components);
  *  - `device-colour` — DeviceGray/RGB/CMYK painted without a matching output intent or
  *    `Default*` space, found by reading the content streams (`pdfa-content.ts`);
- *  - `transparency` — part 1 only: constant alpha, blend modes, soft masks, groups;
+ *  - `transparency` — part 1: constant alpha, blend modes, soft masks, groups. Parts 2 and 3: a
+ *    page that uses transparency without an output intent names no blending colour space;
  *  - `fonts` — every font used to paint visible text is embedded, and a CIDFontType2 has its
  *    `/CIDToGIDMap`;
  *  - `actions`, `annotations`, `forms`, `layers`, `images`, `graphics-state`, `embedded-files`.
@@ -42,9 +43,9 @@
  */
 
 import type { PDFDocument, PDFObject } from 'mupdf';
-import { ToolError } from 'pdf-shared';
-import { hexStringToLatin1, loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
+import { hexStringToLatin1, loadMupdf, openPdf } from '../engines/mupdf';
 import { readName, resolved } from '../engines/mupdf-write';
+import { engineFailure } from './accessibility';
 import { nameOf, numberOf, type Operand, scanContent } from './pdfa-content';
 import { NS_DC, NS_PDF, NS_XMP, parseXmp, type XmpPacket, xmpList, xmpText } from './pdfa-xmp';
 import { throwIfAborted } from './types';
@@ -105,7 +106,7 @@ export type PdfARuleState =
   | 'pass'
   /** The rule ran and found `count` violations. */
   | 'fail'
-  /** The part does not have this rule (transparency in part 2, for example). */
+  /** The part does not have this rule (`xmp-info` outside part 1, for example). */
   | 'na'
   /** The rule could not run (the file would not open, or a size budget ended it). */
   | 'unchecked';
@@ -274,7 +275,7 @@ interface Context {
   readonly findings: Findings;
   readonly signal: AbortSignal | undefined;
   readonly outputIntent: { readonly present: boolean; readonly space: 'RGB' | 'CMYK' | 'GRAY' | null };
-  /** Indirect form XObjects and patterns already read, by object number. */
+  /** Indirect form XObjects, patterns and soft-mask groups already read, by object number. */
   readonly visited: Set<number>;
   /** Fonts a content stream selected and painted with, by key, and whether any paint was visible. */
   readonly fonts: Map<string, { readonly font: PDFObject; readonly pageIndex: number; visible: boolean }>;
@@ -362,7 +363,8 @@ function checkBytes(bytes: Uint8Array, findings: Findings): void {
     while (index < bytes.length && (bytes[index] === 10 || bytes[index] === 13)) index += 1;
     const comment = bytes[index] === 0x25;
     let high = 0;
-    for (let at = index + 1; comment && at < index + 1 + 4; at += 1) if ((bytes[at] ?? 0) > 127) high += 1;
+    for (let at = index + 1; comment && at < index + 1 + 4; at += 1)
+      if ((bytes[at] as number) > 127) high += 1;
     if (!comment || high < 4) findings.add('header', { detail: 'no binary comment on the second line' });
   }
 
@@ -383,6 +385,9 @@ function checkAllObjects(doc: PDFDocument, part: PdfAPart, findings: Findings): 
   const count = doc.countObjects();
   const limit = Math.min(count, OBJECT_SCAN_LIMIT);
   for (let number = 1; number < limit; number += 1) {
+    // MuPDF reports most objects it cannot load as "not a stream" (junk bodies, bad offsets, a
+    // corrupt object stream); an object that makes it throw is skipped all the same, so one
+    // damaged object never turns the whole check into an error.
     let entry: PDFObject;
     try {
       entry = doc.newIndirect(number);
@@ -536,7 +541,7 @@ function checkOutputIntents(
       findings.add('output-intent', { detail: 'the profile has no ICC signature' });
       continue;
     }
-    const major = header[8] ?? 0;
+    const major = header[8] as number;
     const deviceClass = String.fromCharCode(...header.subarray(12, 16));
     const colourSpace = String.fromCharCode(...header.subarray(16, 20)).trim();
     if (major > 4) findings.add('output-intent', { detail: `ICC version ${major}` });
@@ -909,9 +914,8 @@ function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: C
         if (entry === null) break;
         const subtype = nameAt(entry, 'Subtype');
         if (subtype === 'Image') {
-          const number = key(entry);
-          if (number >= 0 && context.visited.has(number)) break;
-          if (number >= 0) context.visited.add(number);
+          // Every use is read: the colour an image mask paints with and the page's transparency
+          // belong to the use, and the findings are counted once per page already.
           checkImageDictionary(entry, context, scope);
           const mask = resolved(entry.get('ImageMask'));
           if (mask?.isBoolean() === true && mask.asBoolean()) paintFill();
@@ -922,9 +926,8 @@ function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: C
         break;
       }
       case 'BI': {
-        const dict = operands[0];
-        if (dict?.t !== 'dict') break;
-        const entries = dict.entries;
+        // `scanContent` hands `BI` exactly one operand: the inline image's dictionary.
+        const { entries } = operands[0] as Extract<Operand, { readonly t: 'dict' }>;
         const mask = entries.get('IM') ?? entries.get('ImageMask');
         if (mask?.t === 'bool' && mask.v) paintFill();
         else {
@@ -975,11 +978,10 @@ function scanPattern(name: string, context: Context, scope: Scope): void {
     return;
   }
   if (!entry.isStream()) return;
+  // A stream is always an indirect object, so it has a number.
   const number = key(entry);
-  if (number >= 0) {
-    if (context.visited.has(number)) return;
-    context.visited.add(number);
-  }
+  if (context.visited.has(number)) return;
+  context.visited.add(number);
   const own = dictionaryAt(entry, 'Resources');
   scanStream(
     entry,
@@ -1162,20 +1164,20 @@ function checkForms(catalog: PDFObject, findings: Findings): void {
   for (const field of arrayItems(form.get('Fields'))) visit(field, 0);
 }
 
-function checkEmbeddedFile(spec: PDFObject, part: PdfAPart, findings: Findings, label: string): boolean {
+function checkEmbeddedFile(spec: PDFObject, part: PdfAPart, findings: Findings, label: string): void {
   const target = resolved(spec);
-  if (target === null || !target.isDictionary()) return false;
+  if (target === null || !target.isDictionary()) return;
   const files = dictionaryAt(target, 'EF');
   const stream = files === null ? null : files.get('F').isNull() ? files.get('UF') : files.get('F');
   const mime = stream !== null && !stream.isNull() ? nameAt(stream, 'Subtype') : null;
   if (part === 1) {
     findings.add('embedded-files', { detail: label });
-    return false;
+    return;
   }
   if (part === 2) {
     if (mime !== 'application/pdf')
       findings.add('embedded-files', { detail: `${label}: only PDF/A files may be embedded` });
-    return mime === 'application/pdf';
+    return;
   }
   const relationship = nameAt(target, 'AFRelationship');
   if (relationship === null || !AF_RELATIONSHIPS.has(relationship)) {
@@ -1183,7 +1185,6 @@ function checkEmbeddedFile(spec: PDFObject, part: PdfAPart, findings: Findings, 
   }
   if (mime === null)
     findings.add('embedded-files', { detail: `${label}: the embedded stream has no /Subtype` });
-  return false;
 }
 
 function checkEmbeddedFiles(doc: PDFDocument, part: PdfAPart, findings: Findings): void {
@@ -1246,12 +1247,6 @@ function claimPart(claim: PdfAClaim | null): PdfAPart | null {
   return part === '1' || part === '2' || part === '3' ? (Number(part) as PdfAPart) : null;
 }
 
-function appliesTo(rule: PdfARuleId, part: PdfAPart): boolean {
-  if (rule === 'transparency') return part === 1;
-  if (rule === 'xmp-info') return part === 1;
-  return true;
-}
-
 /**
  * Check `bytes` for the rules above. Never throws for a damaged file (that is a finding); an
  * aborted signal rethrows `AbortError`, and an engine failure becomes a `ToolError`.
@@ -1263,20 +1258,11 @@ export async function checkPdfA(
 ): Promise<PdfACheckReport> {
   if (signal !== undefined) throwIfAborted(signal);
   const mupdf = await loadMupdf();
-  let doc: PDFDocument;
-  try {
-    doc = openPdf(mupdf, bytes);
-  } catch (error) {
-    if (error instanceof ToolError && error.code !== 'internal') {
-      throw error;
-    }
-    throw mapMupdfError(error, 'pdfa check');
-  }
+  const doc = openPdf(mupdf, bytes);
   try {
     return await run(doc, bytes, options, signal);
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
-    throw mapMupdfError(error, 'pdfa check');
+    throw engineFailure(error, 'pdfa check');
   } finally {
     doc.destroy();
   }
@@ -1453,7 +1439,8 @@ function finish(
 ): PdfACheckReport {
   const rules: PdfARuleResult[] = PDFA_RULE_IDS.map((id) => {
     const found = findings.get(id);
-    if (!appliesTo(id, facts.target.part)) return { id, state: 'na', count: 0, samples: [] };
+    // `xmp-info` is part 1's; every other rule runs in every part.
+    if (id === 'xmp-info' && facts.target.part !== 1) return { id, state: 'na', count: 0, samples: [] };
     if (found !== undefined && found.count > 0)
       return { id, state: 'fail', count: found.count, samples: found.samples };
     if (facts.incomplete.has(id)) return { id, state: 'unchecked', count: 0, samples: [] };

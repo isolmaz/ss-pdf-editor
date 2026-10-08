@@ -17,7 +17,18 @@
  * consumes it.
  */
 
-import { BitString, fromBER, Integer, Null, Sequence, Utf8String } from 'asn1js';
+import {
+  Set as AsnSet,
+  BitString,
+  fromBER,
+  Integer,
+  Null,
+  ObjectIdentifier,
+  OctetString,
+  Primitive,
+  Sequence,
+  Utf8String,
+} from 'asn1js';
 import type { Certificate as PkijsCertificate } from 'pkijs';
 import {
   AlgorithmIdentifier,
@@ -41,6 +52,9 @@ const OID_SUBJECT_ALT_NAME = '2.5.29.17';
 const OID_NAME_CONSTRAINTS = '2.5.29.30';
 
 const OID_RSA_ENCRYPTION = '1.2.840.113549.1.1.1';
+const OID_RSA_SHA256 = '1.2.840.113549.1.1.11';
+const OID_RSA_SHA384 = '1.2.840.113549.1.1.12';
+const OID_RSA_SHA512 = '1.2.840.113549.1.1.13';
 const OID_ECDSA_SHA256 = '1.2.840.10045.4.3.2';
 const OID_ECDSA_SHA384 = '1.2.840.10045.4.3.3';
 const OID_ECDSA_SHA512 = '1.2.840.10045.4.3.4';
@@ -62,9 +76,12 @@ export type KeyUsageName = keyof typeof KEY_USAGE_BITS;
 
 export type CurveName = 'P-256' | 'P-384' | 'P-521';
 
-export type KeySpec = { readonly kind: 'EC'; readonly curve: CurveName } | { readonly kind: 'RSA' };
+export type KeySpec =
+  | { readonly kind: 'EC'; readonly curve: CurveName }
+  | { readonly kind: 'RSA'; readonly hash?: HashName };
 
-export type NameKind = 'dns' | 'email' | 'uri' | 'ip';
+/** `directory` is `directoryName` (a `CN=` name) and `registeredId` a kind no validator here compares. */
+export type NameKind = 'dns' | 'email' | 'uri' | 'ip' | 'directory' | 'registeredId';
 
 export interface GeneralNameSpec {
   readonly kind: NameKind;
@@ -86,9 +103,17 @@ export interface IssueOptions {
         readonly name: 'RSA-PKCS1';
         readonly hash: 'SHA-256' | 'SHA-384' | 'SHA-512';
       }
-    | { readonly name: 'unsupported' };
+    | { readonly name: 'unsupported' }
+    /** An ECDSA OID over bytes that are not a DER signature at all. */
+    | { readonly name: 'malformed' };
+  /** The SubjectPublicKeyInfo DER written into the certificate instead of the key pair's own. */
+  readonly spki?: Uint8Array;
   readonly notBefore?: Date;
   readonly notAfter?: Date;
+  /** Writes this subject name instead of `CN=<subject>` (a name with no common name, say). */
+  readonly subjectName?: RelativeDistinguishedNames;
+  /** The serial number's content octets, as written (a leading zero octet is kept); a counter by default. */
+  readonly serial?: Uint8Array;
   /** Omit for no `basicConstraints` extension at all (the v1-style default). */
   readonly basicConstraints?: { readonly cA: boolean; readonly pathLen?: number };
   /** Omit for no `keyUsage` extension at all. */
@@ -127,7 +152,7 @@ export async function generateKey(spec: KeySpec): Promise<CryptoKeyPair> {
         name: 'RSASSA-PKCS1-v1_5',
         modulusLength: 2048,
         publicExponent: Uint8Array.from([1, 0, 1]),
-        hash: 'SHA-256',
+        hash: spec.hash ?? 'SHA-256',
       },
       true,
       ['sign', 'verify'],
@@ -160,10 +185,12 @@ type HashName = 'SHA-256' | 'SHA-384' | 'SHA-512';
 type SignaturePlan =
   | { readonly kind: 'ecdsa'; readonly oid: string; readonly hash: HashName }
   | { readonly kind: 'rsa'; readonly oid: string; readonly hash: HashName }
-  | { readonly kind: 'unsupported'; readonly oid: string };
+  | { readonly kind: 'unsupported'; readonly oid: string }
+  | { readonly kind: 'garbage'; readonly oid: string };
 
 function planFor(options: IssueOptions, keyPair: CryptoKeyPair): SignaturePlan {
   const requested = options.signature;
+  if (requested?.name === 'malformed') return { kind: 'garbage', oid: OID_ECDSA_SHA256 };
   if (requested?.name === 'unsupported') {
     // `1.3.101.112` is Ed25519: a real algorithm this repository does not implement.
     return { kind: 'unsupported', oid: '1.3.101.112' };
@@ -175,11 +202,15 @@ function planFor(options: IssueOptions, keyPair: CryptoKeyPair): SignaturePlan {
       hash === 'SHA-256' ? OID_ECDSA_SHA256 : hash === 'SHA-384' ? OID_ECDSA_SHA384 : OID_ECDSA_SHA512;
     return { kind: 'ecdsa', oid, hash };
   }
-  return {
-    kind: 'rsa',
-    oid: OID_RSA_ENCRYPTION,
-    hash: requested?.name === 'RSA-PKCS1' ? requested.hash : 'SHA-256',
-  };
+  // A plain `rsaEncryption` OID leaves the hash to the caller (the CMS case); asking for
+  // `RSA-PKCS1` writes the `shaNWithRSAEncryption` OID a real certificate carries.
+  if (requested?.name === 'RSA-PKCS1') {
+    const oid = { 'SHA-256': OID_RSA_SHA256, 'SHA-384': OID_RSA_SHA384, 'SHA-512': OID_RSA_SHA512 }[
+      requested.hash
+    ];
+    return { kind: 'rsa', oid, hash: requested.hash };
+  }
+  return { kind: 'rsa', oid: OID_RSA_ENCRYPTION, hash: 'SHA-256' };
 }
 
 /** The bytes a signature is computed over, and the DER a certificate must carry. */
@@ -194,16 +225,47 @@ async function signTbs(plan: SignaturePlan, signingKey: CryptoKey, tbs: Uint8Arr
     );
     return ecdsaRawToDer(raw);
   }
-  // Deliberately not a signature: the fixture exists to prove that "unsupported" is
+  // Deliberately not a signature: the fixture exists to prove that "unsupported" (and, with an
+  // ECDSA OID, "malformed") is
   // reported as such, and these bytes must never accidentally verify.
   return new Uint8Array(64).fill(0x5a);
 }
 
-function distinguishedName(commonName: string): RelativeDistinguishedNames {
-  return new RelativeDistinguishedNames({
-    typesAndValues: [
-      new AttributeTypeAndValue({ type: OID_COMMON_NAME, value: new Utf8String({ value: commonName }) }),
-    ],
+/**
+ * A name of one `CN=` RDN per entry, outermost first; no entries is the empty name.
+ *
+ * `RelativeDistinguishedNames` built from its fields writes every attribute into **one** `SET`
+ * (a multi-valued RDN); only a name read from DER keeps the `SEQUENCE OF SET` it was written
+ * with, so the name is encoded first and read back.
+ */
+export function commonNames(commonNameList: readonly string[]): RelativeDistinguishedNames {
+  const encoded = new Sequence({
+    value: commonNameList.map(
+      (commonName) =>
+        new AsnSet({
+          value: [
+            new AttributeTypeAndValue({
+              type: OID_COMMON_NAME,
+              value: new Utf8String({ value: commonName }),
+            }).toSchema(),
+          ],
+        }),
+    ),
+  }).toBER(false);
+  return new RelativeDistinguishedNames({ schema: fromBER(encoded).result });
+}
+
+/** The octets of a dotted-quad or colon-hex address (one `::` allowed), as an `iPAddress` holds them. */
+function addressOctets(text: string): number[] {
+  if (!text.includes(':')) return text.split('.').map((part) => Number.parseInt(part, 10));
+  const [head = '', tail] = text.split('::');
+  const groups = (part: string): string[] => (part === '' ? [] : part.split(':'));
+  const left = groups(head);
+  const right = tail === undefined ? [] : groups(tail);
+  const zeros = Array.from<string>({ length: 8 - left.length - right.length }).fill('0');
+  return [...left, ...zeros, ...right].flatMap((group) => {
+    const value = Number.parseInt(group, 16);
+    return [value >> 8, value & 0xff];
   });
 }
 
@@ -212,8 +274,20 @@ function generalName(spec: GeneralNameSpec): GeneralName {
   if (spec.kind === 'dns') return new GeneralName({ type: 2, value: spec.value });
   if (spec.kind === 'email') return new GeneralName({ type: 1, value: spec.value });
   if (spec.kind === 'uri') return new GeneralName({ type: 6, value: spec.value });
-  const octets = spec.value.split('.').map((part) => Number.parseInt(part, 10));
-  return new GeneralName({ type: 7, value: Uint8Array.from(octets).buffer as ArrayBuffer });
+  if (spec.kind === 'directory') {
+    // `Outer/Inner` is two RDNs, outermost first; the empty value is the empty name.
+    return new GeneralName({
+      type: 4,
+      value: commonNames(spec.value === '' ? [] : spec.value.split('/')),
+    });
+  }
+  if (spec.kind === 'registeredId') return new GeneralName({ type: 8, value: spec.value });
+  // An address is dotted-quad or colon-hex; a constraint's mask follows after a `/`.
+  const octets = spec.value.split('/').flatMap(addressOctets);
+  return new GeneralName({
+    type: 7,
+    value: new OctetString({ valueHex: Uint8Array.from(octets).buffer as ArrayBuffer }),
+  });
 }
 
 /**
@@ -276,6 +350,40 @@ function extensionsOf(options: IssueOptions): Extension[] {
   return extensions;
 }
 
+/** `subjectKeyIdentifier` holding exactly these octets. */
+export function subjectKeyIdentifierExtension(identifier: Uint8Array): Extension {
+  return extension('2.5.29.14', false, new OctetString({ valueHex: identifier.slice().buffer }).toBER(false));
+}
+
+/** `authorityKeyIdentifier` with its `[0] keyIdentifier` set to these octets. */
+export function authorityKeyIdentifierExtension(identifier: Uint8Array): Extension {
+  const inner = new Sequence({
+    value: [new Primitive({ idBlock: { tagClass: 3, tagNumber: 0 }, valueHex: identifier.slice().buffer })],
+  });
+  return extension('2.5.29.35', false, inner.toBER(false));
+}
+
+/** An extension carrying exactly these inner bytes, however wrong they are for its OID. */
+export function rawExtension(oid: string, critical: boolean, inner: ArrayBuffer): Extension {
+  return extension(oid, critical, inner);
+}
+
+/** A SubjectPublicKeyInfo for an algorithm and parameters OID with a made-up key (never imported). */
+export function fakeSpki(
+  algorithmOid: string,
+  parametersOid: string | null,
+  keyBytes: Uint8Array,
+): Uint8Array {
+  const algorithm = new Sequence({
+    value: [
+      new ObjectIdentifier({ value: algorithmOid }),
+      ...(parametersOid === null ? [] : [new ObjectIdentifier({ value: parametersOid })]),
+    ],
+  });
+  const key = new BitString({ valueHex: keyBytes.slice().buffer });
+  return new Uint8Array(new Sequence({ value: [algorithm, key] }).toBER(false));
+}
+
 /** An extension whose OID no validator here knows, marked critical. */
 export function unknownCriticalExtension(oid = '1.3.6.1.4.1.99999.1'): Extension {
   return extension(oid, true, new Uint8Array([0x05, 0x00]).buffer as ArrayBuffer);
@@ -293,11 +401,12 @@ export async function issueCertificate(
   const signingKey = signer === null ? options.keyPair.privateKey : signer.keyPair.privateKey;
   const plan = planFor(options, signer?.keyPair ?? options.keyPair);
 
-  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', options.keyPair.publicKey));
+  const spki =
+    options.spki ?? new Uint8Array(await crypto.subtle.exportKey('spki', options.keyPair.publicKey));
   const certificate = new Certificate();
   certificate.version = 2;
   certificate.serialNumber = new Integer({
-    valueHex: nextSerial().slice().buffer as ArrayBuffer,
+    valueHex: (options.serial ?? nextSerial()).slice().buffer as ArrayBuffer,
   });
   const algorithmIdentifier = new AlgorithmIdentifier({
     algorithmId: plan.oid,
@@ -307,12 +416,12 @@ export async function issueCertificate(
   });
   certificate.signature = algorithmIdentifier;
   certificate.signatureAlgorithm = algorithmIdentifier;
-  certificate.issuer = signer === null ? distinguishedName(options.subject) : signer.parsed.subject;
+  certificate.issuer = signer === null ? commonNames([options.subject]) : signer.parsed.subject;
   const notBefore = options.notBefore ?? new Date(Date.UTC(2026, 0, 1));
   const notAfter = options.notAfter ?? new Date(Date.UTC(2027, 0, 1));
   certificate.notBefore = new Time({ type: 0, value: notBefore });
   certificate.notAfter = new Time({ type: 0, value: notAfter });
-  certificate.subject = distinguishedName(options.subject);
+  certificate.subject = options.subjectName ?? commonNames([options.subject]);
   certificate.subjectPublicKeyInfo = PublicKeyInfo.fromBER(
     spki.slice().buffer as ArrayBuffer,
   ) as unknown as PublicKeyInfo;

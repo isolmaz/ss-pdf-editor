@@ -249,13 +249,12 @@ export function readLine(line: DetectLine): { runs: TextRun[]; blanks: TextBlank
         .replace(/\s+/g, ' ')
         .trim();
       const sizes = solid.map((char) => char.size).sort((a, b) => a - b);
-      if (text !== '') {
-        runs.push({
-          text,
-          box: unionOf(solid.map((char) => char.box)),
-          size: sizes[Math.floor(sizes.length / 2)] ?? 10,
-        });
-      }
+      // A solid character is not whitespace, so `text` keeps it and `sizes` is not empty.
+      runs.push({
+        text,
+        box: unionOf(solid.map((char) => char.box)),
+        size: sizes[Math.floor(sizes.length / 2)] as number,
+      });
     }
     word = [];
   };
@@ -290,9 +289,10 @@ export function readLine(line: DetectLine): { runs: TextRun[]; blanks: TextBlank
       if (weight >= needed && !leader) {
         flush();
         const body = chars.slice(index, last + 1).filter((entry) => entry.c.trim() !== '');
+        // The run starts on a blank character, which is not whitespace: `body` is not empty.
         blanks.push({
           box: unionOf(body.map((entry) => entry.box)),
-          size: body[0]?.size ?? 10,
+          size: (body[0] as DetectChar).size,
         });
         index = end;
         continue;
@@ -476,8 +476,8 @@ function holdsText(context: Context, box: Box, slack = 0.5): boolean {
 
 /** Whether something is drawn inside `box`, other than `box` itself. */
 function holdsInk(page: DetectionPage, box: Box, slack = 1): boolean {
+  // Every caller passes a box more than twice `slack` wide and high, so `inner` is never empty.
   const inner: Box = [box[0] + slack, box[1] + slack, box[2] - slack, box[3] - slack];
-  if (inner[2] <= inner[0] || inner[3] <= inner[1]) return false;
   // A browser's dropdown arrow, a text area's resize grip, a date picker's icon: small, at the
   // right edge of a wide box, and not content.
   const chrome = (ink: Box): boolean =>
@@ -594,11 +594,12 @@ function fieldOverRule(
 ): RawCandidate | null {
   const band: Box = [span[0], rule.y - 12, span[1], rule.y + 3];
   const left = labelLeft(context.labels, span[0], band);
-  let label = left;
+  let label: TextRun;
   let confidence: Confidence = 'high';
   let top = rule.y - MAX_LINE_FIELD_HEIGHT;
   let size = left?.size ?? 10;
   if (left !== null) {
+    label = left;
     // A heading with a rule under it has the same shape as a label with its line: told apart
     // by size, because a heading is set larger than the text of the page.
     if (left.size > context.bodySize * HEADING_RATIO) return null;
@@ -651,7 +652,6 @@ function fieldOverRule(
   }
   if (rule.y - top < MIN_FIELD_HEIGHT - 3) return null;
   const rect: Box = [x0, top, span[1], rule.y - 0.5];
-  if (label === null) return null;
   return textCandidate(rect, label.text, confidence, 'line', size);
 }
 
@@ -701,14 +701,13 @@ function blankCandidates(context: Context): RawCandidate[] {
     let rect: Box = [blank.box[0], y1 - heightOf, blank.box[2], y1];
     let label = left;
     let confidence: Confidence = 'high';
-    if (left === null) {
+    if (label === null) {
       const above = labelAbove(context.labels, [rect[0], rect[1] - 14, rect[2], rect[3]]);
       if (above === null) continue;
       label = above;
       confidence = 'medium';
       rect = [rect[0], Math.max(above.box[3] + 1, rect[1]), rect[2], rect[3]];
     }
-    if (label === null) continue;
     out.push(textCandidate(rect, label.text, confidence, 'blank', size));
   }
   return out;
@@ -873,8 +872,8 @@ function boxCandidates(context: Context): BoxResult {
     if (page.tables.some((table) => centerInside(box, table.box, -1))) continue;
     if (shape.luminance !== null && shape.luminance < DARK_FILL) continue;
     if (!shape.stroked && (shape.luminance === null || shape.luminance >= WHITE_FILL)) continue;
+    // At least 24 points wide, so wider than any checkbox (`CHECK_MAX`): those are marks, below.
     if (w < MIN_FIELD_WIDTH - 4 || h < 9 || h > MAX_BOX_HEIGHT || w > page.width * 0.95) continue;
-    if (w <= CHECK_MAX && h <= CHECK_MAX) continue; // a checkbox: handled below
     if (holdsText(context, box)) {
       const captioned = shape.stroked ? captionedBox(context, box) : null;
       if (captioned !== null) out.push(captioned);
@@ -955,7 +954,7 @@ function captionedBox(context: Context, box: Box): RawCandidate | null {
   const label = inside.map((run) => run.text).join(' ');
   if (!nameable(label)) return null;
   const rect: Box = [box[0] + 1.5, textBottom + 1, box[2] - 1.5, box[3] - 1.5];
-  const size = inside[0]?.size ?? 9;
+  const size = (inside[0] as TextRun).size;
   return textCandidate(
     rect,
     label,

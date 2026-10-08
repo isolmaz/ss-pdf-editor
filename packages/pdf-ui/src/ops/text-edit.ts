@@ -190,7 +190,7 @@ export const textEditDialog: OperationDialogSpec = {
       files,
       report,
       noticeKey: 'textedit.done',
-      noticeParams: { count: request.insert.length === 0 ? 0 : (request.insert[0]?.lines.length ?? 0) },
+      noticeParams: { count: request.insert[0]?.lines.length ?? 0 },
     };
   },
 };

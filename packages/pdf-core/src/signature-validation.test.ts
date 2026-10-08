@@ -8,6 +8,7 @@
  * judged at its own time.
  */
 
+import { fromBER } from 'asn1js';
 import { describe, expect, it } from 'vitest';
 import {
   extKeyUsageExtension,
@@ -16,6 +17,7 @@ import {
   KP_TIME_STAMPING,
   signatureValueOf,
   signedCms,
+  withEditedCms,
   withUnsigned,
 } from './signature-revocation.fixtures';
 import type { CertificateFixture } from './signature-trust.fixtures';
@@ -149,6 +151,77 @@ describe('evaluateEvidence', () => {
 
     const noSigner = await evaluateEvidence({ ...input(cms, signer, ca), signer: new Uint8Array(0) });
     expect(noSigner).toMatchObject({ revocationChecks: [], revocation: 'indeterminate' });
+  });
+});
+
+describe('evaluateEvidence with several timestamp tokens', () => {
+  /** A CMS whose timestamp attribute carries every token given, in that order. */
+  async function stamped(tokens: (covered: Uint8Array) => Promise<Uint8Array[]>) {
+    const { ca, signer } = await pki();
+    const base = await signedCms(signer, [ca], SIGNED_AT);
+    const [first, ...rest] = await tokens(signatureValueOf(base));
+    if (first === undefined) throw new Error('at least one token');
+    const cms = withEditedCms(withUnsigned(base, { timestampToken: first }), (signedData) => {
+      const attribute = signedData.signerInfos[0]?.unsignedAttrs?.attributes[0];
+      if (attribute === undefined) throw new Error('fixture has no unsigned attribute');
+      for (const token of rest) attribute.values.push(fromBER(token.slice().buffer).result);
+    });
+    return { cms, signer, ca };
+  }
+
+  const stampOf = async (covered: Uint8Array, genTime: Date, extra: { tsa?: CertificateFixture } = {}) => {
+    const { ca } = await pki();
+    const tsa = extra.tsa ?? (await pki()).tsa;
+    return await issueTimestampToken({ tsa, covered, genTime, extraCertificates: [ca] });
+  };
+
+  it('uses the first token that verifies, and keeps it when a later one also verifies or fails', async () => {
+    const { tsa } = await pki();
+    const wrong = new Uint8Array([1, 2, 3]);
+    // A bad token first: the good one after it wins.
+    const badFirst = await stamped(async (covered) => [
+      await stampOf(wrong, day(2, 1), { tsa }),
+      await stampOf(covered, day(3, 2), { tsa }),
+    ]);
+    const chosen = await evaluateEvidence(input(badFirst.cms, badFirst.signer, badFirst.ca));
+    expect(chosen.timestamp?.status).toBe('valid');
+    expect(chosen.timestamp?.genTime).toBe(day(3, 2).toISOString());
+
+    // A good token first stays, whether the next one is good or bad.
+    const goodThenGood = await stamped(async (covered) => [
+      await stampOf(covered, day(3, 2), { tsa }),
+      await stampOf(covered, day(3, 3), { tsa }),
+    ]);
+    expect(
+      (await evaluateEvidence(input(goodThenGood.cms, goodThenGood.signer, goodThenGood.ca))).timestamp
+        ?.genTime,
+    ).toBe(day(3, 2).toISOString());
+    const goodThenBad = await stamped(async (covered) => [
+      await stampOf(covered, day(3, 2), { tsa }),
+      await stampOf(wrong, day(3, 3), { tsa }),
+    ]);
+    expect(
+      (await evaluateEvidence(input(goodThenBad.cms, goodThenBad.signer, goodThenBad.ca))).timestamp?.genTime,
+    ).toBe(day(3, 2).toISOString());
+
+    // Nothing verifies: the first failing token is still reported, never silently dropped.
+    const allBad = await stamped(async () => [
+      await stampOf(wrong, day(2, 1), { tsa }),
+      await stampOf(new Uint8Array([9]), day(2, 2), { tsa }),
+    ]);
+    const reported = await evaluateEvidence(input(allBad.cms, allBad.signer, allBad.ca));
+    expect(reported.timestamp?.status).not.toBe('valid');
+    expect(reported.validationTimeSource).not.toBe('timestamp');
+  });
+
+  it('ignores timestamp tokens when the signature value is unknown', async () => {
+    const { tsa } = await pki();
+    const { cms, signer, ca } = await stamped(async (covered) => [
+      await stampOf(covered, day(3, 2), { tsa }),
+    ]);
+    const outcome = await evaluateEvidence({ ...input(cms, signer, ca), signatureValue: null });
+    expect(outcome.timestamp).toBeNull();
+    expect(outcome.validationTimeSource).toBe('signing-time');
   });
 });
 

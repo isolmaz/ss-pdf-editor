@@ -65,6 +65,7 @@ import {
   type TrustRoot,
   type TrustRootsFile,
   toDer,
+  workingPageCount,
 } from 'pdf-model';
 import { checkDocumentLimits, createTranslator, detectDeviceTier, ToolError } from 'pdf-shared';
 import { lazy, Suspense } from 'react';
@@ -110,7 +111,7 @@ import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
-import type { FieldValue, MeasureReading } from 'pdf-ui';
+import type { AttachmentRow, FieldValue, MeasureReading } from 'pdf-ui';
 import type { SavedSignature, StampSource } from 'pdf-ui/dialog';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import {
@@ -182,7 +183,7 @@ import { isMarkupTool, type MarkupTool, ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
 import { createOpfsDraftStorage, readAppFile, writeAppFile } from './drafts';
 import { compressionPresets } from './export-presets';
-import { MODE_CHANGE_EVENT, readStoredMode, storeMode } from './interface-mode';
+import { readStoredMode, storeMode } from './interface-mode';
 import {
   addAttachments,
   addImageStamp,
@@ -221,7 +222,6 @@ import {
   pruneOverlays,
   redactionNeedles,
   removeMarkTargets,
-  tabPageCount,
   verifyForWrite,
   type WriteVerification,
 } from './operations';
@@ -287,6 +287,27 @@ function selectionRedactAreas(viewer: ViewerApi): readonly RedactRect[] {
   return selectionBoxes(viewer).flatMap((selection) =>
     selection.boxes.map((box) => ({ pageIndex: selection.pageIndex, space: 'app-v1' as const, rect: box })),
   );
+}
+
+/**
+ * The embedded files the properties panel lists, each with its measured size. The engine's
+ * attachment list carries names and descriptions but not payloads, so a size is the byte
+ * length of the payload read one file at a time; an unreadable payload is `null`.
+ */
+async function measuredAttachments(
+  handle: PdfDocumentHandle,
+  signal: AbortSignal,
+): Promise<readonly AttachmentRow[]> {
+  const measured: AttachmentRow[] = [];
+  for (const attachment of await listPdfAttachments(handle)) {
+    if (signal.aborted) break;
+    const size = await readPdfAttachment(handle, attachment).then(
+      (bytes) => bytes.byteLength,
+      () => null,
+    );
+    measured.push({ name: attachment.filename, description: attachment.description, size });
+  }
+  return measured;
 }
 
 export interface AppProps {
@@ -437,6 +458,17 @@ const TextLayer = lazy(async () => {
   const module = await import('pdf-ui/text-edit');
   return { default: module.TextLayer };
 });
+
+/**
+ * The primary language subtag of a catalog `/Lang` ("de-DE" → "de"), or `null` when the
+ * value is not a language tag (an empty string, "x-unknown"). The primary subtag is what
+ * a voice is matched on: a German document is read by any local German voice, not only by
+ * one of the same region.
+ */
+function primaryLanguage(declared: string): string | null {
+  const primary = declared.trim().split(/[-_]/)[0]?.toLowerCase() ?? '';
+  return /^[a-z]{2,3}$/.test(primary) ? primary : null;
+}
 
 export function App({ store }: AppProps) {
   const { theme, setTheme } = useTheme();
@@ -676,19 +708,8 @@ export function App({ store }: AppProps) {
   const [images, setImages] = useState<readonly PdfImageInfo[] | null>(null);
   /** The left dock's visible tab, so a menu or palette command can open a view. */
   const [leftTab, setLeftTab] = useState<DocumentPanelTab>('pages');
-  /**
-   * Simple or advanced (`interface-mode.ts`). Read once on mount and kept in step with
-   * the `pdf-mode-change` event, so the header switch and this state cannot disagree.
-   */
+  /** Simple or advanced (`interface-mode.ts`): read once on mount, changed only by `changeMode`. */
   const [mode, setMode] = useState<InterfaceMode>(readStoredMode);
-  useEffect(() => {
-    const onChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ mode?: InterfaceMode }>).detail;
-      if (detail?.mode === 'simple' || detail?.mode === 'advanced') setMode(detail.mode);
-    };
-    globalThis.addEventListener?.(MODE_CHANGE_EVENT, onChange);
-    return () => globalThis.removeEventListener?.(MODE_CHANGE_EVENT, onChange);
-  }, []);
   const changeMode = useCallback((next: InterfaceMode) => {
     storeMode(next);
     setMode(next);
@@ -847,10 +868,32 @@ export function App({ store }: AppProps) {
    */
   const [viewer, setViewer] = useState<ViewerApi | null>(null);
   const presentation = usePresentation(viewer);
+  /**
+   * The language the open document declares (catalog `/Lang`, which pdf.js reports as
+   * `info.Language`), as a primary subtag; `null` while unread or when it declares none.
+   * The viewer API is replaced with every document, so this follows the document on screen.
+   */
+  const [documentLanguage, setDocumentLanguage] = useState<string | null>(null);
+  useEffect(() => {
+    setDocumentLanguage(null);
+    if (viewer === null) return undefined;
+    let current = true;
+    void viewer.document.raw.getMetadata().then(
+      ({ info }) => {
+        if (!current) return;
+        const declared = (info as { readonly Language?: unknown } | null)?.Language;
+        setDocumentLanguage(typeof declared === 'string' ? primaryLanguage(declared) : null);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [viewer]);
 
   const activeTab = session.tabs.find((tab) => tab.id === session.activeId) ?? null;
   const activeHandle = activeTab === null ? null : (handles.current.get(activeTab.id) ?? null);
-  const pageCount = activeTab === null ? 0 : tabPageCount(activeTab);
+  const pageCount = activeTab === null ? 0 : workingPageCount(activeTab);
   const currentForms =
     activeTab !== null &&
     formInventory?.tabId === activeTab.id &&
@@ -960,7 +1003,7 @@ export function App({ store }: AppProps) {
   const verdict = useMemo(() => {
     if (activeTab === null) return checkDocumentLimits(tier, 0, 0);
     const currentBytes = activeTab.working.produced?.bytes.byteLength ?? activeTab.source.size;
-    return checkDocumentLimits(tier, tabPageCount(activeTab), currentBytes);
+    return checkDocumentLimits(tier, workingPageCount(activeTab), currentBytes);
   }, [activeTab, tier]);
   /** Editing is off in viewing mode and while an operation runs. */
   const viewingOnly = verdict.kind === 'viewing-only';
@@ -1108,7 +1151,7 @@ export function App({ store }: AppProps) {
         draftFor({
           id: before.id,
           name: before.name,
-          pageCount: tabPageCount(before),
+          pageCount: workingPageCount(before),
           size: before.source.size,
           sourcePageCount: before.source.pageCount,
           dirty: before.dirty,
@@ -1188,7 +1231,12 @@ export function App({ store }: AppProps) {
         return;
       }
       await channel.runExclusive(async () => {
-        await channel.probe();
+        // A live window that never answered is a window whose documents are unknown: the
+        // reference graph is incomplete, so nothing is deleted.
+        if (!(await channel.probe())) {
+          setNotice(t('vault.peerSilent'));
+          return;
+        }
         const queued = draftWrites.current.then(async () => {
           const inventory = await readInventory();
           const storedSources = (await draftStorage.listSources?.()) ?? [];
@@ -1440,10 +1488,7 @@ export function App({ store }: AppProps) {
     };
   }, []);
   /** The roots as bytes, for the verifier; recomputed when the list changes. */
-  const trustRootBytes = useMemo(
-    () => trustRoots.map((root) => toDer(root)).filter((der): der is Uint8Array => der !== null),
-    [trustRoots],
-  );
+  const trustRootBytes = useMemo(() => trustRoots.map((root) => toDer(root)), [trustRoots]);
   /**
    * The CRLs the user imported: the same OPFS settings directory and the same re-check when
    * the list changes (an imported CRL is exactly what turns "indeterminate" into an answer).
@@ -1459,8 +1504,7 @@ export function App({ store }: AppProps) {
     };
   }, []);
   const revocationListBytes = useMemo(
-    () =>
-      revocationLists.map((list) => revocationListDer(list)).filter((der): der is Uint8Array => der !== null),
+    () => revocationLists.map((list) => revocationListDer(list)),
     [revocationLists],
   );
   const [factsInventory, setDocumentFacts] = useState<{
@@ -1506,7 +1550,7 @@ export function App({ store }: AppProps) {
         const [fonts, signatures, attachments, protection] = await Promise.all([
           listPdfFonts(bytes, controller.signal),
           verifySignatures(bytes, controller.signal, { roots: trustRootBytes, crls: revocationListBytes }),
-          listPdfAttachments(handle),
+          measuredAttachments(handle, controller.signal),
           inspectProtection(bytes),
         ]);
         if (controller.signal.aborted) return;
@@ -1515,11 +1559,7 @@ export function App({ store }: AppProps) {
           version: tab.working.id,
           fonts,
           signatures,
-          attachments: attachments.map((attachment) => ({
-            name: attachment.filename,
-            description: attachment.description,
-            size: attachment.content === null ? null : attachment.content.byteLength,
-          })),
+          attachments,
           // The protection state comes from the engine's own reader, not from a
           // guess: an unencrypted document reports `encrypted: false` and no
           // permissions, which is a fact and not an empty table.
@@ -1620,7 +1660,7 @@ export function App({ store }: AppProps) {
         const next = await applyProducedBytes(
           contextFor(tab, handle),
           outcome.bytes,
-          tabPageCount(tab),
+          workingPageCount(tab),
           { key: 'props.attach.added', params: { count: outcome.added.length } },
           outcome.report.engine,
           outcome.report.steps,
@@ -1653,7 +1693,7 @@ export function App({ store }: AppProps) {
         const next = await applyProducedBytes(
           contextFor(tab, handle),
           outcome.bytes,
-          tabPageCount(tab),
+          workingPageCount(tab),
           { key: 'props.attach.removed', params: { count: outcome.removed.length } },
           outcome.report.engine,
           outcome.report.steps,
@@ -1738,7 +1778,7 @@ export function App({ store }: AppProps) {
       const next = await applyProducedBytes(
         contextFor(form.tab, handle),
         outcome.bytes,
-        tabPageCount(form.tab),
+        workingPageCount(form.tab),
         { key: 'xfa.note.dataSaved', params: { count: outcome.changed } },
         outcome.report.engine,
         outcome.report.steps,
@@ -1783,7 +1823,7 @@ export function App({ store }: AppProps) {
         const next = await applyProducedBytes(
           contextFor(tab, handle),
           outcome.bytes,
-          tabPageCount(tab),
+          workingPageCount(tab),
           { key: 'form.note.filled', params: { count: 1 } },
           outcome.report.engine,
           outcome.report.steps,
@@ -1893,18 +1933,25 @@ export function App({ store }: AppProps) {
             openWithPdfjs(working?.bytes ?? bytes),
             sha256Hex(bytes),
           ]);
+          // The handle the document was opened from, if one was kept (`recent-handles.ts`):
+          // without it a restored tab could only Export, never Save over its file.
+          const fileHandle = await getRecentHandle(draft.id);
+          // Nothing awaits from here to the tab being in: the check, the document in front
+          // and the opening all see one state. Read before the last await, "in front" was
+          // whatever was open then, and a document the user opened while the handle store
+          // answered lost the front to the restored one — whose export they then took for
+          // their own.
           if (disposed) {
             await handle.destroy();
             return;
           }
-          if (disposed || store.getSnapshot().tabs.some((item) => item.id === draft.id)) {
+          // Opened meanwhile (from the recent list, say): the live tab stays, and the other
+          // drafts are still restored.
+          if (store.getSnapshot().tabs.some((item) => item.id === draft.id)) {
             await handle.destroy();
-            return;
+            continue;
           }
           const activeBeforeRestore = store.getSnapshot().activeId;
-          // The handle the document was opened from, if one was kept (`recent-handles.ts`):
-          // without it a restored tab could only Export, never Save over its file.
-          const fileHandle = await getRecentHandle(draft.id);
           const tab = store.openDocument({
             id: draft.id,
             name: draft.name,
@@ -2060,7 +2107,8 @@ export function App({ store }: AppProps) {
           if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
         }
         setCurrentPage(0);
-        setZoomState(1);
+        // No zoom reset here: the viewer reports the scale it draws the new document at
+        // (fit width), and a reset after the awaits above would overwrite that report.
         setSelectedPages([]);
         setRedactionMarks([]);
         if (fileVerdict.kind === 'warn') setNotice(t('limit.warn.pages'));
@@ -2224,7 +2272,6 @@ export function App({ store }: AppProps) {
       setShowHomeScreen(false);
       await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
       setCurrentPage(0);
-      setZoomState(1);
     },
     [draftStorage, store, tier],
   );
@@ -2344,7 +2391,7 @@ export function App({ store }: AppProps) {
           setNotice(t('ann.data.empty'));
           return;
         }
-        const pageCount = tabPageCount(tab);
+        const pageCount = workingPageCount(tab);
         const data = await import('pdf-core/ops/annotation-data');
         bytes =
           format === 'json'
@@ -2567,7 +2614,7 @@ export function App({ store }: AppProps) {
       const next = await applyProducedBytes(
         contextFor(tab, handle),
         bytes,
-        tabPageCount(tab),
+        workingPageCount(tab),
         { key: 'ann.engineEdit' },
         executed[executed.length - 1]?.engine ?? 'pdfjs',
         executed.map((step) => step.id),
@@ -2739,7 +2786,7 @@ export function App({ store }: AppProps) {
        * verification has to allow for.
        */
       const verification = await verifyForWrite(base, {
-        expectedPageCount: tabPageCount(tab),
+        expectedPageCount: workingPageCount(tab),
         sourceHandle: handle,
         steps: executedSteps.map((step) => step.id),
         expectedFormFields: formFields.map((field) => ({
@@ -3254,7 +3301,7 @@ export function App({ store }: AppProps) {
             tabId: tab.id,
             workingId: tab.working.id,
             name: tab.name,
-            pageCount: tabPageCount(tab),
+            pageCount: workingPageCount(tab),
             bytes,
             ...(presets === undefined ? {} : { presets }),
           });
@@ -3526,7 +3573,7 @@ export function App({ store }: AppProps) {
       const next = await applyProducedBytes(
         contextFor(tab, handle),
         outcome.bytes,
-        tabPageCount(tab),
+        workingPageCount(tab),
         { key: 'a11y.applied', params: { count: outcome.notes.length } },
         'mupdf',
         outcome.steps,
@@ -3737,6 +3784,35 @@ export function App({ store }: AppProps) {
       if (opened && result.offerOcr) window.setTimeout(() => openDialog('ocr'), 0);
     },
     [openDialog, openProducedTab, refuseBusy, setBusy, t],
+  );
+
+  /**
+   * The print dialog's imposed file (N-up, booklet, duplex sides): opened as a new tab, the
+   * place a user can read, save or print it from.
+   */
+  const handlePrintProduced = useCallback(
+    async (file: { readonly name: string; readonly bytes: Uint8Array }) => {
+      if (busyRef.current || cancelRef.current !== null) {
+        refuseBusy();
+        return;
+      }
+      const controller = new AbortController();
+      cancelRef.current = controller;
+      setBusy(true);
+      try {
+        await openProducedTab(file.name, file.bytes, controller.signal);
+        setPrintOpen(false);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
+      } finally {
+        if (cancelRef.current === controller) {
+          cancelRef.current = null;
+          setBusy(false);
+        }
+      }
+    },
+    [openProducedTab, refuseBusy, setBusy, t],
   );
 
   /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
@@ -4704,13 +4780,8 @@ export function App({ store }: AppProps) {
         openSignature,
         addImage: pickImage,
         measure: (mode) => {
-          // The ruler's own sub-mode; `null` puts the tool away. It is the same one
-          // canonical value the rail and the palette write, so stopping the ruler from
-          // its strip and arming it from the menu cannot leave two answers behind.
-          if (mode === null) {
-            if (canvasToolRef.current === 'measure') setCanvasTool('select');
-            return;
-          }
+          // The ruler's own sub-mode: the same one canonical value the rail and the palette
+          // write, so arming it from the menu cannot leave two answers behind.
           setMeasureSubMode(mode);
           setCanvasTool('measure');
         },
@@ -4736,6 +4807,7 @@ export function App({ store }: AppProps) {
         toggleFullscreen: () => void toggleFullscreen(),
         toggleReading: () => setReading((value) => !value),
         toggleMagnifier: () => setMagnifierOn((value) => !value),
+        openSnapshot: () => setSnapshotOpen(true),
         toggleLeftDock: () => setLeftDock((value) => !value),
         toggleRightDock: () => setRightDock((value) => !value),
         selectAllPages: () => setSelectedPages(Array.from({ length: pageCount }, (_v, index) => index)),
@@ -5277,6 +5349,7 @@ export function App({ store }: AppProps) {
                   onNotice={setNotice}
                   onHighlightQuery={(query) => viewerApi.current?.find(query)}
                   onLayersChanged={() => void viewerApi.current?.refreshOptionalContent()}
+                  onExtract={() => openDialog('extract-pages')}
                   onEditOutline={() => openDialog('outline-edit')}
                   onWriteLayers={(request) => void writeLayers(request)}
                   onAddAttachments={(files) => void writeAttachments({ add: files })}
@@ -5371,6 +5444,7 @@ export function App({ store }: AppProps) {
                             snapGrid={measureSnapGrid}
                             snapPoints={measureSnapPoints}
                             onReading={setMeasureReading}
+                            onStop={() => setCanvasTool('select')}
                             onCreate={(mark) => {
                               setMeasureMarks((marks) => [...marks, mark]);
                               if (activeTab !== null) store.setDirty(activeTab.id, true);
@@ -5735,7 +5809,7 @@ export function App({ store }: AppProps) {
                         read={currentBytes}
                         // The document's own language cannot be guessed; the interface's is
                         // what the shell knows, and the report says which one it wrote.
-                        language="tr-TR"
+                        language={locale}
                         currentPage={currentPage}
                         canEdit={canEdit}
                         onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
@@ -5871,6 +5945,7 @@ export function App({ store }: AppProps) {
             ) : null}
             <ReadingPane
               t={t}
+              lang={documentLanguage ?? locale}
               open={reading}
               onClose={() => setReading(false)}
               viewer={viewerApi.current}
@@ -5900,6 +5975,7 @@ export function App({ store }: AppProps) {
                   open={printOpen}
                   onClose={() => setPrintOpen(false)}
                   onNotice={setNotice}
+                  onProduced={(file) => void handlePrintProduced(file)}
                 />
               </Suspense>
             ) : null}
@@ -6202,7 +6278,7 @@ export function App({ store }: AppProps) {
             open={exportModalOpen}
             t={t}
             fileName={activeTab.name}
-            fileSizeFormatted={`${(activeTab.source.master.byteLength / 1024).toFixed(1)} KB`}
+            fileSize={(activeTab.working.produced?.bytes ?? activeTab.source.master).byteLength}
             onClose={() => setExportModalOpen(false)}
             onExport={(opts) => handleExportWithOptions(opts)}
           />

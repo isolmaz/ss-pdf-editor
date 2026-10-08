@@ -33,8 +33,10 @@ export function loadPdfjs(): Promise<PdfjsModule> {
     return module;
   });
   pdfjsModule = attempt;
+  // Until this runs the slot holds `attempt` (a caller in between is handed `attempt`, never a
+  // new load), so clearing it cannot discard a newer in-flight attempt.
   attempt.catch(() => {
-    if (pdfjsModule === attempt) pdfjsModule = null;
+    pdfjsModule = null;
   });
   return attempt;
 }
@@ -275,8 +277,13 @@ export async function openWithPdfjs(
   });
 
   let destroyed = false;
+  // pdf.js does not settle `loadingTask.promise` when the task is destroyed after its setup
+  // (only a pending password request is rejected), so an abort during the load would leave the
+  // caller waiting for ever. The abort settles the open itself.
+  const aborted = Promise.withResolvers<never>();
   const onAbort = () => {
     destroyed = true;
+    aborted.reject(abortError());
     void loadingTask.destroy().catch(() => undefined);
   };
   signal?.addEventListener('abort', onAbort, { once: true });
@@ -318,7 +325,7 @@ export async function openWithPdfjs(
 
   let document: PDFDocumentProxy;
   try {
-    document = await loadingTask.promise;
+    document = await Promise.race([loadingTask.promise, aborted.promise]);
   } catch (error) {
     // A task that failed is torn down here: leaving it alive keeps a worker and a partial
     // document for a file the user will never see. Best-effort — the mapped error
@@ -420,8 +427,9 @@ export async function openWithPdfjs(
           if (!('str' in item)) continue;
           items.push({
             text: item.str,
-            x: item.transform[4] ?? 0,
-            y: item.transform[5] ?? 0,
+            // pdf.js text matrices are six numbers: indices 4 and 5 always exist.
+            x: item.transform[4] as number,
+            y: item.transform[5] as number,
             width: item.width,
             height: item.height,
             fontName: item.fontName,

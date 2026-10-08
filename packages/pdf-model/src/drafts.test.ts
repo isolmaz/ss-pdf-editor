@@ -405,3 +405,62 @@ describe('draft helpers', () => {
     expect(sourceKeyFor('doc-1', 'fp-abc')).toBe('fp-abc');
   });
 });
+
+describe('encodeEngineValues and parseDraft — the remaining shapes', () => {
+  it('drops an entry whose array or members cannot be represented, and keeps a plain one', async () => {
+    const encoded = await encodeEngineValues([
+      ['list', { items: [1, new Map()] }],
+      ['callback', { onChange: () => 1 }],
+      ['big', { count: 10n }],
+      ['plain', { items: [1, 'two'] }],
+    ]);
+    expect(encoded.entries).toEqual([{ key: 'plain', value: { items: [1, 'two'] } }]);
+    expect(encoded.dropped).toBe(3);
+  });
+
+  it('drops a plain object that is a thenable through a hidden `then`, which the member walk would not see', async () => {
+    const thenable = { value: 1 };
+    Object.defineProperty(thenable, 'then', { value: () => undefined, enumerable: false });
+    const encoded = await encodeEngineValues([['thenable', thenable]]);
+    expect(encoded.entries).toEqual([]);
+    expect(encoded.dropped).toBe(1);
+  });
+
+  it('gives a stored bitmap without a type the generic byte type', async () => {
+    const decoded = decodeEngineValues({
+      entries: [{ key: 'mask', value: { image: { __pdfEditorBitmap: 'AQID', type: 5 } } }],
+      dropped: 0,
+    });
+    const [key, value] = decoded[0] ?? [];
+    expect(key).toBe('mask');
+    const image = value?.image;
+    if (!(image instanceof Blob)) throw new Error('the bitmap did not come back as a Blob');
+    expect(image.type).toBe('application/octet-stream');
+    expect([...new Uint8Array(await image.arrayBuffer())]).toEqual([1, 2, 3]);
+  });
+
+  it('reads a draft written before journals and engine values existed as an empty history', () => {
+    const parsed = parseDraft(
+      draft({
+        journal: undefined,
+        journalCursor: undefined,
+        engineValues: undefined,
+        snapshots: undefined,
+        workingId: undefined,
+      }),
+    );
+    expect(parsed?.journal).toEqual([]);
+    expect(parsed?.journalCursor).toBe(0);
+    expect(parsed?.engineValues).toEqual({ entries: [], dropped: 0 });
+    expect(parseDraft(draft({ engineValues: { entries: [], dropped: 'many' } }))?.engineValues.dropped).toBe(
+      0,
+    );
+  });
+
+  it('refuses a journal entry or a snapshot that is not an object', () => {
+    expect(parseDraft(draft({ journal: [null], journalCursor: 1 }))).toBeNull();
+    expect(parseDraft(draft({ journal: ['entry'], journalCursor: 1 }))).toBeNull();
+    expect(parseDraft(draft({ snapshots: [null] }))).toBeNull();
+    expect(parseDraft(draft({ snapshots: ['snap-1'] }))).toBeNull();
+  });
+});

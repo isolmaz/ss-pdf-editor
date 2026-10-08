@@ -51,6 +51,7 @@ class FakeFileHandle {
       },
       async abort(): Promise<void> {
         failures.aborted.push(name);
+        if (failures.abortFails) throw new DOMException('already gone', 'InvalidStateError');
         staged = null;
       },
     };
@@ -70,6 +71,7 @@ class FakeDirectoryHandle {
   }
 
   async removeEntry(name: string): Promise<void> {
+    if (this.failures.remove.has(name)) throw new DOMException('locked', 'NoModificationAllowedError');
     if (!this.files.has(name)) throw new DOMException('missing', 'NotFoundError');
     this.files.delete(name);
   }
@@ -84,7 +86,10 @@ interface FailurePlan {
   readonly write: Set<string>;
   readonly close: Set<string>;
   readonly read: Set<string>;
+  readonly remove: Set<string>;
   readonly aborted: string[];
+  /** The abort of a writable itself rejects. */
+  abortFails: boolean;
 }
 
 interface ListingPlan {
@@ -95,7 +100,14 @@ interface ListingPlan {
 
 function installFakeOpfs(): { files: Map<string, Uint8Array>; failures: FailurePlan; listing: ListingPlan } {
   const files = new Map<string, Uint8Array>();
-  const failures: FailurePlan = { write: new Set(), close: new Set(), read: new Set(), aborted: [] };
+  const failures: FailurePlan = {
+    write: new Set(),
+    close: new Set(),
+    read: new Set(),
+    remove: new Set(),
+    aborted: [],
+    abortFails: false,
+  };
   const listing: ListingPlan = { fail: false, ghosts: [] };
   const directories = new Map<string, FakeDirectoryHandle>();
   /**
@@ -159,6 +171,15 @@ describe('createOpfsDraftStorage', () => {
     expect(failures.aborted).toContain('a.json');
     // A failed write must never read as a successful persistence.
     expect((await storage.readDraftInventory?.())?.drafts).toEqual([]);
+  });
+
+  it('reports the write failure, not the failure of the abort that followed it', async () => {
+    const { failures } = installFakeOpfs();
+    const storage = createOpfsDraftStorage();
+    failures.write.add('a.json');
+    failures.abortFails = true;
+    await expect(storage.writeDraft(MANIFEST('a'))).rejects.toMatchObject({ name: 'QuotaExceededError' });
+    expect(failures.aborted).toEqual(['a.json']);
   });
 
   it('aborts when close fails, not only when write fails', async () => {
@@ -234,6 +255,35 @@ describe('createOpfsDraftStorage', () => {
     expect(await storage.getSource('src-once')).toEqual(new Uint8Array([7, 7]));
     await expect(storage.deleteSource('never-stored')).resolves.toBeUndefined();
     await expect(storage.deleteDraft('never-stored')).resolves.toBeUndefined();
+  });
+
+  it('lists the drafts that read, without the inventory detail', async () => {
+    const { files } = installFakeOpfs();
+    const storage = createOpfsDraftStorage();
+    await storage.writeDraft(MANIFEST('one'));
+    files.set('broken.json', new TextEncoder().encode('{ not json'));
+    expect((await storage.readDrafts()).map((draft) => draft.id)).toEqual(['one']);
+  });
+
+  it('lists no sources when the vault cannot be enumerated', async () => {
+    const { listing } = installFakeOpfs();
+    const storage = createOpfsDraftStorage();
+    await storage.putSource('src-a', new Uint8Array([1]));
+    listing.fail = true;
+    expect(await storage.listSources?.()).toEqual([]);
+  });
+
+  it('surfaces a failure to read a source that is not "absent", and a deletion the browser refuses', async () => {
+    const { failures } = installFakeOpfs();
+    const storage = createOpfsDraftStorage();
+    await storage.putSource('src-locked', new Uint8Array([1, 2]));
+    failures.read.add('src-locked.pdf');
+    await expect(storage.hasSource('src-locked')).rejects.toMatchObject({ name: 'NotReadableError' });
+    await expect(storage.getSource('src-locked')).rejects.toMatchObject({ name: 'NotReadableError' });
+    failures.remove.add('src-locked.pdf');
+    await expect(storage.deleteSource('src-locked')).rejects.toMatchObject({
+      name: 'NoModificationAllowedError',
+    });
   });
 
   it('stores a source blob once and reports it by key', async () => {

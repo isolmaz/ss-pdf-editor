@@ -64,6 +64,7 @@ function host(overrides: Partial<CommandHost> = {}): CommandHost {
     toggleLeftDock: noop,
     toggleRightDock: noop,
     toggleMagnifier: noop,
+    openSnapshot: noop,
     selectAllPages: noop,
     clearSelection: noop,
     palette: noop,

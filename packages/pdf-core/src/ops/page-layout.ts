@@ -19,7 +19,7 @@
  * ("stream" mode).
  */
 
-import type { Font, Image, Matrix, Page, Path, Pixmap, Rect, Shade } from 'mupdf';
+import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 
 export type Box = readonly [number, number, number, number];
@@ -110,14 +110,16 @@ const HAIRLINE = 2.5;
 /** `ABCDEF+Arial-BoldMT` → `Arial`; `TimesNewRomanPS-ItalicMT` → `TimesNewRomanPS`. */
 export function fontFamily(name: string): string {
   const bare = name.replace(/^[A-Z]{6}\+/, '');
-  const family = bare.split(/[-,]/)[0] ?? bare;
+  // `split` always yields a first piece.
+  const family = bare.split(/[-,]/)[0] as string;
   return family.replace(/(?:PS)?MT$/, '').trim() || 'Arial';
 }
 
 export function rgb(color: readonly number[] | null | undefined): number {
   if (color === null || color === undefined || color.length === 0) return 0;
   if (color.length === 1) {
-    const grey = Math.round((color[0] ?? 0) * 255);
+    const [value] = color as [number];
+    const grey = Math.round(value * 255);
     return (grey << 16) | (grey << 8) | grey;
   }
   if (color.length === 4) {
@@ -219,12 +221,12 @@ export function subpaths(path: Path, ctm: Matrix): (readonly [number, number])[]
     },
     curveTo(_x1, _y1, _x2, _y2, x3, y3) {
       // A curve is never a table rule; it breaks the run of straight segments.
-      if (current.length > 0) out.push(current);
+      out.push(current);
       current = [apply(ctm, x3, y3)];
     },
     closePath() {
-      const first = current[0];
-      if (first !== undefined) current.push(first);
+      // A subpath starts with its `moveTo`, so it always has a first point to close on.
+      current.push(current[0] as readonly [number, number]);
     },
   });
   if (current.length > 0) out.push(current);
@@ -292,10 +294,9 @@ function softMasked(mupdf: Mupdf, image: Image): Image | null {
     const height = base.getHeight();
     let soft = mask.toPixmap();
     pixmaps.push(soft);
-    if (soft.getColorSpace()?.isGray() !== true || soft.getAlpha() !== 0) {
-      soft = soft.convertToColorSpace(mupdf.ColorSpace.DeviceGray, false);
-      pixmaps.push(soft);
-    }
+    // The mask comes as a stencil (alpha only, no colour space); its alpha is the grey that is read.
+    soft = soft.convertToColorSpace(mupdf.ColorSpace.DeviceGray, false);
+    pixmaps.push(soft);
     if (soft.getWidth() !== width || soft.getHeight() !== height) {
       soft = soft.warp(
         [
@@ -344,7 +345,6 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   let chars: LayoutChar[] = [];
   let blockBox: Box = [0, 0, 0, 0];
   let lineBox: Box = [0, 0, 0, 0];
-  const fonts = new Map<Font, { font: string; bold: boolean; italic: boolean; mono: boolean }>();
   const text = page.toStructuredText(
     options.images ? 'preserve-whitespace,preserve-images' : 'preserve-whitespace',
   );
@@ -375,17 +375,15 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         chars = [];
       },
       onChar(c, _origin, font, size, quad, color) {
-        let face = fonts.get(font);
-        if (face === undefined) {
-          const name = font.getName();
-          face = {
-            font: fontFamily(name),
-            bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
-            italic: font.isItalic() || /italic|oblique/i.test(name),
-            mono: font.isMono(),
-          };
-          fonts.set(font, face);
-        }
+        // Read per character: the binding hands over a new `Font` wrapper for every one, and two
+        // fonts may share a name (or have none) while their flags differ.
+        const name = font.getName();
+        const face = {
+          font: fontFamily(name),
+          bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
+          italic: font.isItalic() || /italic|oblique/i.test(name),
+          mono: font.isMono(),
+        };
         const xs = [quad[0], quad[2], quad[4], quad[6]];
         const ys = [quad[1], quad[3], quad[5], quad[7]];
         const [x0, y0] = shift(Math.min(...xs), Math.min(...ys));
@@ -393,10 +391,10 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         chars.push({ c, box: [x0, y0, x1, y1], size, color: rgb(color), ...face });
       },
       endLine() {
-        if (chars.length > 0) lines.push({ box: lineBox, chars });
+        lines.push({ box: lineBox, chars });
       },
       endTextBlock() {
-        if (lines.length > 0) blocks.push({ kind: 'text', box: blockBox, lines });
+        blocks.push({ kind: 'text', box: blockBox, lines });
       },
     });
   } finally {
@@ -891,10 +889,10 @@ function streamTable(rows: readonly VisualRow[]): LayoutTable | null {
     else spans.push([piece.x0, piece.x1]);
   }
   if (spans.length < 2 || spans.length > 20) return null;
+  // Every piece lies in the span built from it, so the column always exists.
   const columnOf = (piece: Piece): number => {
     const centre = (piece.x0 + piece.x1) / 2;
-    const index = spans.findIndex((span) => centre >= span[0] - 1 && centre <= span[1] + 1);
-    return index === -1 ? 0 : index;
+    return spans.findIndex((span) => centre >= span[0] - 1 && centre <= span[1] + 1);
   };
   const xs = [
     (spans[0] as [number, number])[0] - 2,

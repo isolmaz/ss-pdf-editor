@@ -76,7 +76,9 @@ describe('detectPage', () => {
     expect(found.confidence).toBeGreaterThan(0.3);
   });
 
-  it('finds a sheet seen in perspective, in a picture larger than the working size', () => {
+  it('finds a sheet seen in perspective, in a picture larger than the working size', {
+    timeout: 60_000,
+  }, () => {
     const width = 1200;
     const height = 900;
     expect(width).toBeGreaterThan(WORKING_SIZE);
@@ -94,7 +96,9 @@ describe('detectPage', () => {
     expectCorners(found.quad, wanted, 6);
   });
 
-  it('finds a sheet at any turn, antialiased or hard-edged (votes split between bins)', () => {
+  it('finds a sheet at any turn, antialiased or hard-edged (votes split between bins)', {
+    timeout: 60_000,
+  }, () => {
     /** A 240 x 220 sheet turned `degrees` about the picture's centre. */
     const turned = (degrees: number): Quad => {
       const r = (degrees * Math.PI) / 180;

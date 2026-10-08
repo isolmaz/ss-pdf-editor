@@ -167,6 +167,18 @@ function requireRange(value: number, min: number, max: number, field: string): n
   return value;
 }
 
+/** A poster grid count: whole tiles, within range. */
+function requireTiles(value: number, field: string): number {
+  requireRange(value, 1, 10, field);
+  if (!Number.isInteger(value)) {
+    throw new ToolError('range-invalid', {
+      engine: 'model',
+      engineMessage: `${field} must be a whole number`,
+    });
+  }
+  return value;
+}
+
 function requiredPages(pages: readonly number[], pageCount: number): number[] {
   if (pages.length === 0) {
     throw new ToolError('selection-empty', { engine: 'model', engineMessage: 'no pages to impose' });
@@ -303,16 +315,14 @@ function anchorCentred(
  * side by side (scale ~0.64), which is the layout a 2-up should have.
  */
 function chooseOrientation(options: NUpOptions, averageAspect: number): 'portrait' | 'landscape' {
-  const synthetic = { width: averageAspect, height: 1 };
-  let best: { orientation: 'portrait' | 'landscape'; scale: number } | undefined;
-  for (const orientation of ['portrait', 'landscape'] as const) {
+  const scaleIn = (orientation: 'portrait' | 'landscape'): number => {
     const sheet = sheetSize(options.paper, orientation);
     const grid = gridFor(options.perSheet, orientation);
     const cell = cellSize(sheet, grid.columns, grid.rows, options.marginMm, options.gutterMm);
-    const scale = fitScale(cell.width, cell.height, synthetic.width, synthetic.height);
-    if (best === undefined || scale > best.scale) best = { orientation, scale };
-  }
-  return best?.orientation ?? 'portrait';
+    return fitScale(cell.width, cell.height, averageAspect, 1);
+  };
+  // Portrait wins a tie: it is the paper's own orientation.
+  return scaleIn('landscape') > scaleIn('portrait') ? 'landscape' : 'portrait';
 }
 
 /** Cross-shaped registration marks centred on the trim lines of one tile. */
@@ -347,7 +357,6 @@ function cropMarkOperators(
       end: { x: corner.x, y: Math.min(sheet.height, corner.y + MARK_LENGTH_PT) },
     };
     for (const line of [horizontal, vertical]) {
-      if (line.start.x === line.end.x && line.start.y === line.end.y) continue;
       operators.push(lineOperators(line.start, line.end));
     }
   }
@@ -405,9 +414,10 @@ class SheetWriter {
   }
 
   finish(): void {
-    if (this.size === null) return;
+    // `begin` always precedes `finish`.
+    const size = this.size as { readonly width: number; readonly height: number };
     const page = this.out.addPage(
-      [0, 0, this.size.width, this.size.height],
+      [0, 0, size.width, size.height],
       0,
       { XObject: this.xObjects },
       this.operators.join('\n'),
@@ -430,8 +440,8 @@ function sourceEmbedder(
     const cached = embedded.get(pageIndex);
     if (cached !== undefined) return cached;
     throwIfAborted(context.signal);
-    const page = pages[pageIndex];
-    if (page === undefined) throw new ToolError('range-invalid', { engine: 'mupdf', pageIndex });
+    // Callers pass indexes `requiredPages` checked against the page count.
+    const page = pages[pageIndex] as PDFObject;
     const geometry = pageGeometry(page);
     // The CropBox, so a sheet shows what a reader shows (source defect A16); the form
     // moves that box to the origin, and `/Rotate` is applied by hand.
@@ -455,8 +465,8 @@ export function planImposition(sourcePages: number, options: ImposeOptions): Imp
       return { sheets, perSheet: 4, padded: sheets * 4 - sourcePages };
     }
     default: {
-      const columns = requireRange(options.columns, 1, 10, 'columns');
-      const rows = requireRange(options.rows, 1, 10, 'rows');
+      const columns = requireTiles(options.columns, 'columns');
+      const rows = requireTiles(options.rows, 'rows');
       return { sheets: sourcePages * columns * rows, perSheet: 1, padded: 0 };
     }
   }
@@ -605,8 +615,8 @@ function imposeOpened(
     }
     if (plan.padded > 0) notes.push(note('changed', 'op.note.impose.padded', { count: plan.padded }));
   } else {
-    const columns = requireRange(options.columns, 1, 10, 'columns');
-    const rows = requireRange(options.rows, 1, 10, 'rows');
+    const columns = requireTiles(options.columns, 'columns');
+    const rows = requireTiles(options.rows, 'rows');
     const overlap = requireRange(options.overlapMm, 0, 50, 'overlapMm') * PT_PER_MM;
     const size = sheetSize(options.paper, 'portrait');
     const pitchX = size.width - overlap;
@@ -662,13 +672,6 @@ function imposeOpened(
       }
     }
     if (options.cropMarks) notes.push(note('changed', 'op.note.impose.cropMarks'));
-  }
-
-  if (sheetsProduced === 0) {
-    throw new ToolError('selection-empty', {
-      engine: 'model',
-      engineMessage: 'imposition produced no sheets',
-    });
   }
 
   copyDocumentInfo(source, out);
@@ -989,13 +992,6 @@ function printOpened(
       labelKey: 'print.progress.sheets',
       done: sheetIndex + 1,
       total: plan.sheets.length,
-    });
-  }
-
-  if (sides === 0) {
-    throw new ToolError('selection-empty', {
-      engine: 'model',
-      engineMessage: 'the print layout produced no sheet sides',
     });
   }
 

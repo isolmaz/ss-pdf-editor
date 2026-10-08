@@ -117,7 +117,6 @@ export const A11Y_KEYS = {
   pageOverlap: dictKey('op.note.a11y.pageOverlap'),
   placement: dictKey('op.note.a11y.placement'),
   headingGuess: dictKey('op.note.a11y.headingGuess'),
-  headingLevelCap: dictKey('op.note.a11y.headingLevelCap'),
   orderFromContent: dictKey('op.note.a11y.orderFromContent'),
   contentRewritten: dictKey('op.note.a11y.contentRewritten'),
   figureNoAlt: dictKey('op.note.a11y.figureNoAlt'),
@@ -511,7 +510,8 @@ function skipInlineImage(buffer: Uint8Array, from: number): number | null {
   let cursor = from;
   while (cursor + 1 < buffer.length) {
     if (buffer[cursor] === 0x45 && buffer[cursor + 1] === 0x49) {
-      const before = cursor === 0 ? 0x20 : (buffer[cursor - 1] as number);
+      // `from` is past the `BI` token, so there is a byte before the cursor.
+      const before = buffer[cursor - 1] as number;
       const after = cursor + 2 >= buffer.length ? 0x20 : (buffer[cursor + 2] as number);
       if (isWhitespace(before) && (isWhitespace(after) || isDelimiter(after))) return cursor + 2;
     }
@@ -591,7 +591,6 @@ export function readInstructions(buffer: Uint8Array): readonly Instruction[] | n
       token += String.fromCharCode(buffer[cursor] as number);
       cursor += 1;
     }
-    if (token === '') return null;
     if (NUMBER_TOKEN.test(token)) {
       if (operands.length === 0) start = tokenStart;
       operands.push({ kind: 'number', number: Number(token) });
@@ -1054,10 +1053,12 @@ function headingRoles(
   regions: readonly (readonly BlockRegion[])[],
   body: number,
 ): ReadonlyMap<number, string> {
+  // No body size means no text worth a vote (or text too small to round to a point): nothing
+  // can be told apart from it, so nothing is a heading.
+  if (body <= 0) return new Map();
   const sizes = new Set<number>();
   for (const page of regions) {
     for (const region of page) {
-      if (region.fontSize <= 0) continue;
       const isHeading =
         region.fontSize >= body * HEADING_SIZE_RATIO ||
         (region.bold && region.fontSize >= body * HEADING_BOLD_RATIO);
@@ -1418,20 +1419,18 @@ function collectDrawnImages(
     const xobjects = dictOf(resources?.get('XObject'));
     if (xobjects === null) continue;
     const entry = xobjects.get(draw.name);
-    // A stream is a stream only by reference (`engines/mupdf-write.ts`).
+    // A stream is a stream only by reference (`engines/mupdf-write.ts`), so it has a number.
     if (entry.isNull() || !entry.isStream()) continue;
-    const dict = resolved(entry);
-    if (dict === null) continue;
+    const dict = resolved(entry) as PDFObject;
     const subtype = nameOf(dict.get('Subtype'));
     if (subtype === 'Image') {
-      if (!entry.isIndirect()) continue;
       const key = refName(entry);
       if (out.some((candidate) => candidate.ref === key)) continue;
       out.push({ ref: key, name: draw.name, dict });
       continue;
     }
     if (subtype === 'Form') {
-      const key = entry.isIndirect() ? refName(entry) : `${String(depth)}:${draw.name}`;
+      const key = refName(entry);
       if (visited.has(key)) continue;
       visited.add(key);
       const decoded = decodeStream(entry);
@@ -1583,7 +1582,8 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
       const existing = images.get(image.ref);
       if (existing === undefined) {
         images.set(image.ref, { name: image.name, pages: [pageIndex], dict: image.dict });
-      } else if (!existing.pages.includes(pageIndex)) {
+      } else {
+        // `drawn` lists an image once per page, so this page is new to it.
         existing.pages.push(pageIndex);
       }
     }
@@ -1610,7 +1610,7 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
   for (const [ref, image] of images) {
     const alt = textOf(image.dict.get('Alt'));
     listed.push({
-      pageIndex: image.pages[0] ?? 0,
+      pageIndex: image.pages[0] as number,
       name: image.name,
       ref,
       pages: [...image.pages],
@@ -1965,7 +1965,8 @@ export async function planPages(
       done: pageIndex + 2,
       total: span,
     });
-    const pageRegions = regions[pageIndex] ?? [];
+    // Pass one pushed exactly one entry per page, in page order.
+    const pageRegions = regions[pageIndex] as readonly BlockRegion[];
     const scanned = scanPage(page);
     if (!scanned.ok) {
       notes.push(note('warning', A11Y_KEYS.pageUnreadable, { page: pageIndex + 1, reason: scanned.reason }));
@@ -2044,9 +2045,7 @@ async function tagOpened(
 
   /* ---- splice: marked content first, structure tree second ---- */
   const tagged: TaggedPage[] = [];
-  let rewritten = 0;
   let figuresWithoutAlt = 0;
-  let headingsWritten = 0;
   for (const plan of plans) {
     const pagePlan = options.plan?.pages[plan.pageIndex];
     const claims = claimsFor(plan, roles, pagePlan);
@@ -2066,10 +2065,8 @@ async function tagOpened(
     const spliced = spliceMarkedContent(plan.scan, claims.claims);
     // The rewrite compresses the new stream (`compress`), as the old writer's flate did.
     resolved(plan.pageRef)?.put('Contents', doc.addStream(spliced.bytes, {}));
-    rewritten += 1;
     for (const claim of claims.claims) {
       if (claim.role === 'Figure' && claim.alt === null) figuresWithoutAlt += 1;
-      if (claim.role.startsWith('H')) headingsWritten += 1;
     }
     tagged.push({
       pageIndex: plan.pageIndex,
@@ -2130,19 +2127,9 @@ async function tagOpened(
     notes.push(note('changed', A11Y_KEYS.langSet, { lang: language }));
   }
 
-  if (rewritten > 0) {
-    notes.push(note('changed', A11Y_KEYS.contentRewritten, { pages: rewritten }));
-  }
+  notes.push(note('changed', A11Y_KEYS.contentRewritten, { pages: tagged.length }));
   if (structure.headings > 0) {
     notes.push(note('warning', A11Y_KEYS.headingGuess, { body, count: structure.headings }));
-  }
-  if (headingsWritten < structure.headings) {
-    notes.push(
-      note('warning', A11Y_KEYS.headingLevelCap, {
-        limit: MAX_HEADING_LEVELS,
-        count: structure.headings - headingsWritten,
-      }),
-    );
   }
   if (figuresWithoutAlt > 0) {
     notes.push(note('warning', A11Y_KEYS.figureNoAlt, { count: figuresWithoutAlt }));
@@ -2186,6 +2173,15 @@ export function isAbort(error: unknown): error is Error {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+/**
+ * What a writer throws for an error caught around engine work: the caller's own abort passes
+ * through untouched, a `ToolError` already says what failed, anything else is MuPDF's and is
+ * mapped with the step (`context`) that was running.
+ */
+export function engineFailure(error: unknown, context: string): Error {
+  return isAbort(error) ? error : mapMupdfError(error, context);
+}
+
 /** The image `Do` operators of one page, with the alt text their XObject already carries. */
 export function figureClaims(
   page: PDFObject,
@@ -2200,8 +2196,9 @@ export function figureClaims(
   for (const draw of scan.draws) {
     const entry = xobjects.get(draw.name);
     if (entry.isNull() || !entry.isStream()) continue;
-    const dict = resolved(entry);
-    if (dict === null || nameOf(dict.get('Subtype')) !== 'Image') continue;
+    // A stream resolves to itself.
+    const dict = resolved(entry) as PDFObject;
+    if (nameOf(dict.get('Subtype')) !== 'Image') continue;
     claims.push({ index: draw.index, role: 'Figure', alt: textOf(dict.get('Alt')) });
   }
   return claims;
@@ -2248,8 +2245,7 @@ export function claimsFor(
     for (const show of match.shows) owner.set(show, match.blockIndex);
   }
   for (const match of plan.matched.matches) {
-    const region = plan.regions[match.blockIndex];
-    if (region === undefined) continue;
+    const region = plan.regions[match.blockIndex] as BlockRegion;
     const role = planned(region.id, roles.get(Math.round(region.fontSize)) ?? 'P');
     // A block's shows are grouped into sequences that stay inside one text object and one
     // `q` level, with none of another block's text between them. A block that spans several
@@ -2280,11 +2276,8 @@ export function claimsFor(
     }
   }
   for (const figure of plan.draws) {
-    const range = widen(figure.index, figure.index);
-    if (range === null) {
-      skipped += 1;
-      continue;
-    }
+    // A `Do` is neither a `BT`/`ET` nor a `q`/`Q`, so its own range already opens and closes at one level.
+    const range = widen(figure.index, figure.index) as { readonly first: number; readonly last: number };
     const id = `f${String(figure.index)}`;
     candidates.push({
       ...range,
@@ -2293,7 +2286,7 @@ export function claimsFor(
       alt: pagePlan?.alts?.[id]?.trim() || figure.alt,
     });
   }
-  candidates.sort((left, right) => left.first - right.first || left.last - right.last);
+  candidates.sort((left, right) => left.first - right.first);
 
   // A page whose stream already carries marked-content ids (an untagged file that lost its
   // tree, say) must not get a second claim on the same number.
@@ -2508,7 +2501,12 @@ export async function setImageAlt(
   let pageCount: number;
   const notes: OperationNote[] = [];
   const steps: string[] = ['load'];
-  const applied: { readonly pageIndex: number; readonly name: string; readonly alt: string }[] = [];
+  const applied: {
+    readonly pageIndex: number;
+    readonly name: string;
+    readonly alt: string;
+    readonly number: number;
+  }[] = [];
   const appliedFields: { readonly name: string; readonly tooltip: string }[] = [];
   try {
     const pages = pageObjects(doc);
@@ -2534,7 +2532,7 @@ export async function setImageAlt(
         continue;
       }
       target.dict.put('Alt', text(doc, edit.alt));
-      applied.push({ pageIndex: edit.pageIndex, name: edit.name, alt: edit.alt });
+      applied.push({ pageIndex: edit.pageIndex, name: edit.name, alt: edit.alt, number: target.number });
     }
 
     if (applied.length === 0 && appliedFields.length === 0) {
@@ -2555,7 +2553,7 @@ export async function setImageAlt(
     }
 
     for (const entry of applied) {
-      const drawn = drawnPages(pages, entry.pageIndex, entry.name);
+      const drawn = drawnPages(pages, entry.number);
       notes.push(
         note('changed', A11Y_KEYS.altSet, {
           name: entry.name,
@@ -2617,22 +2615,21 @@ function findImage(
   pages: readonly PDFObject[],
   pageIndex: number,
   name: string,
-): { readonly number: number | null; readonly dict: PDFObject } | null {
+): { readonly number: number; readonly dict: PDFObject } | null {
   const page = Number.isInteger(pageIndex) ? pages[pageIndex] : undefined;
   if (page === undefined) return null;
   const resources = dictOf(page.getInheritable('Resources'));
   const xobjects = resources === null ? null : dictOf(resources.get('XObject'));
   const entry = xobjects?.get(name);
   if (entry === undefined || entry.isNull() || !entry.isStream()) return null;
-  const dict = resolved(entry);
-  if (dict === null || nameOf(dict.get('Subtype')) !== 'Image') return null;
-  return { number: entry.isIndirect() ? entry.asIndirect() : null, dict };
+  // A stream resolves to itself, and a stream is always an indirect object.
+  const dict = resolved(entry) as PDFObject;
+  if (nameOf(dict.get('Subtype')) !== 'Image') return null;
+  return { number: entry.asIndirect(), dict };
 }
 
-/** Every page whose content stream draws the same image object — the sharing fact. */
-function drawnPages(pages: readonly PDFObject[], pageIndex: number, name: string): readonly number[] {
-  const target = findImage(pages, pageIndex, name);
-  if (target === null || target.number === null) return [];
+/** Every page whose content stream draws the image object `number` — the sharing fact. */
+function drawnPages(pages: readonly PDFObject[], number: number): readonly number[] {
   const found: number[] = [];
   for (const [index, page] of pages.entries()) {
     const content = pageContent(page);
@@ -2641,7 +2638,7 @@ function drawnPages(pages: readonly PDFObject[], pageIndex: number, name: string
     if (instructions === null) continue;
     const { draws } = walkContent(instructions);
     for (const draw of draws) {
-      if (findImage(pages, index, draw.name)?.number === target.number) {
+      if (findImage(pages, index, draw.name)?.number === number) {
         found.push(index);
         break;
       }

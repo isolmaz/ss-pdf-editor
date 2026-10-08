@@ -113,4 +113,45 @@ describe('buildFlattenedXfa', () => {
     expect((await inspect(out.bytes))[0]?.size).toEqual([200, 100]);
     await expect(buildFlattenedXfa([], run)).rejects.toMatchObject({ code: 'selection-empty' });
   });
+
+  it('stops with an abort error when the signal is aborted between pages', async () => {
+    const controller = new AbortController();
+    const first = await png(100, 100, 50);
+    const pages: XfaRasterPage[] = [
+      {
+        widthPt: 100,
+        heightPt: 100,
+        scale: 1,
+        // Reading the first picture is the moment the user cancels.
+        get png() {
+          controller.abort();
+          return first;
+        },
+        words: [],
+      },
+      { widthPt: 100, heightPt: 100, scale: 1, png: first, words: [] },
+    ];
+    await expect(buildFlattenedXfa(pages, { signal: controller.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+  });
+
+  it('maps a picture the engine cannot decode to a tool error', async () => {
+    const page: XfaRasterPage = {
+      widthPt: 100,
+      heightPt: 100,
+      scale: 1,
+      png: new Uint8Array([1, 2, 3]),
+      words: [],
+    };
+    await expect(buildFlattenedXfa([page], run)).rejects.toMatchObject({ name: 'ToolError' });
+  });
+
+  it('refuses a page whose size the file cannot hold, instead of returning a page of another size', async () => {
+    const page: XfaRasterPage = { widthPt: 0, heightPt: 0, scale: 1, png: await png(10, 10, 90), words: [] };
+    await expect(buildFlattenedXfa([page], run)).rejects.toMatchObject({
+      code: 'verification-failed',
+      details: { pageIndex: 0 },
+    });
+  });
 });

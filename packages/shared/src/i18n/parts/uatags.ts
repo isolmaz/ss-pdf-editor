@@ -442,7 +442,6 @@ export const uatagsPart = {
   'tags.untagged.figure': '[görsel]',
   'tags.untagged.skipped': 'Bu sayfadaki {count} blok etiketlenemiyor.',
   'tags.untagged.artifactPaths': 'Çizilen çizgileri ve arka planları artefakt olarak işaretle',
-  'tags.untagged.noLanguage': 'Dosyanın dili yok ve hiçbir dil yazılmayacak.',
   'tags.untagged.language': 'Dosyada dil yoksa {lang} yazılır.',
   'tags.untagged.apply': 'Belgeyi etiketle',
 
@@ -459,5 +458,4 @@ export const uatagsPart = {
   'tags.err.in-stream': 'Bu öğenin içeriği, bu düzenleyicinin yeniden yazmadığı bir form nesnesinin içinde.',
   'tags.err.duplicate-key': 'Bu grup zaten var.',
   'tags.err.root': 'Belge öğesi taşınamaz, gruplanamaz ya da kaldırılamaz.',
-  'tags.err.generic': 'Bu değişiklik yapılamıyor.',
 } as const;

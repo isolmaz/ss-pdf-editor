@@ -159,14 +159,15 @@ export function PrintDialog({ t, viewer, open, onClose, onNotice, onProduced }: 
   return (
     <Dialog.Root
       open={open}
-      onOpenChange={(next, details) => {
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
         // Escape and the backdrop are dropped while pages are being rendered: a
         // half-prepared job has nothing to print.
         if (busy) {
           details.cancel();
           return;
         }
-        if (!next) onClose();
+        onClose();
       }}
     >
       <Dialog className="flex max-h-[calc(100dvh-2rem)] flex-col gap-3 p-4">

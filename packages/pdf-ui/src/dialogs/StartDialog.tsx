@@ -29,8 +29,8 @@ export function StartDialog({ t, spec, context, onClose, onResult }: StartDialog
   return (
     <Dialog.Root
       open
-      onOpenChange={(open, details) => {
-        if (open) return;
+      // The shell opens the dialog (it has no trigger), so the popup only ever asks to close.
+      onOpenChange={(_open, details) => {
         details.cancel();
         if (!running.current) onClose();
       }}
