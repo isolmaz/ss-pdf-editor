@@ -23,6 +23,8 @@ interface CameraProbe {
 declare global {
   interface Window {
     __camera: CameraProbe;
+    /** While true, the next `crypto.subtle.digest` rejects (and clears it). */
+    __failNextDigest: boolean;
   }
 }
 
@@ -112,6 +114,26 @@ async function openScan(page: Page): Promise<Locator> {
   return dialog;
 }
 
+/**
+ * Press "Create PDF" and wait for the dialog to go. The dialog closing is the product's own
+ * signal that the document is open; a sentence in the dialog is its signal that it is not,
+ * and that fails the test at once with the sentence instead of after a minute of waiting.
+ */
+async function createPdf(dialog: Locator): Promise<void> {
+  await dialog.getByRole('button', { name: 'Create PDF' }).click();
+  await expect
+    .poll(
+      async () => {
+        if ((await dialog.count()) === 0) return 'closed';
+        const alerts = await dialog.getByRole('alert').allInnerTexts();
+        if (alerts.length > 0) throw new Error(`the scan dialog stayed open and said: ${alerts.join(' ')}`);
+        return 'open';
+      },
+      { timeout: 60_000, message: 'the scan dialog closes once the PDF is open' },
+    )
+    .toBe('closed');
+}
+
 const outlinePoints = (dialog: Locator) =>
   dialog
     .getByTestId('scan-live-outline')
@@ -164,9 +186,69 @@ test('a sensor still much larger than the video is asked for at its full size an
   const requests = await page.evaluate(() => window.__camera.stillRequests);
   expect(requests).toEqual([{ imageWidth: 4000, imageHeight: 3000 }]);
   await dialog.getByRole('button', { name: 'Add page' }).click();
-  await dialog.getByRole('button', { name: 'Create PDF' }).click();
-  await expect(dialog).toHaveCount(0, { timeout: 60_000 });
+  await createPdf(dialog);
   expect((await readProducedPdf(await exportBytes(page, 'still.pdf'))).pageCount).toBe(1);
+});
+
+test('a PDF the shell fails to open is reported in the dialog, opens no tab, and the retry opens exactly one', async ({
+  page,
+}) => {
+  // The shell fingerprints the produced bytes before it registers a tab, so a rejected digest
+  // is a failure with nothing opened: the shell's own notice would sit behind the modal and
+  // fade, leaving "Create PDF" silent.
+  await page.addInitScript(() => {
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    let armed = false;
+    Object.defineProperty(window, '__failNextDigest', {
+      get: () => armed,
+      set: (value: boolean) => {
+        armed = value;
+      },
+    });
+    crypto.subtle.digest = (...args: Parameters<typeof digest>) => {
+      if (!armed) return digest(...args);
+      armed = false;
+      return Promise.reject(new Error('scripted: the digest failed'));
+    };
+  });
+  await scriptCamera(page, { stillCapture: true });
+  await openPdf(page);
+  // The header's document switcher names the active document and lists the open ones. The
+  // scan dialog is modal, so its button is clicked in the DOM rather than with the pointer.
+  const switcher = (name: string) => page.locator(`button[aria-haspopup="true"][title^="${name}"]`);
+  const openDocuments = async (name: string): Promise<string> => {
+    await switcher(name).evaluate((button: HTMLElement) => button.click());
+    const heading = page.getByText(/^Open documents \(\d+\)$/);
+    const text = (await heading.textContent()) ?? '';
+    await switcher(name).evaluate((button: HTMLElement) => button.click());
+    await expect(heading).toHaveCount(0);
+    return text;
+  };
+  expect(await openDocuments('doc.pdf')).toBe('Open documents (1)');
+  const dialog = await openScan(page);
+  const shutter = dialog.getByTestId('scan-shutter');
+  await expect(shutter).toBeEnabled({ timeout: 30_000 });
+  await shutter.click();
+  await expect(dialog.getByRole('heading', { name: 'Adjust the corners' })).toBeVisible({ timeout: 30_000 });
+  await dialog.getByRole('button', { name: 'Add page' }).click();
+  const create = dialog.getByRole('button', { name: 'Create PDF' });
+  await page.evaluate(() => {
+    window.__failNextDigest = true;
+  });
+  await create.click();
+  await expect(dialog.getByRole('alert')).toHaveText('Something unexpected went wrong.', {
+    timeout: 30_000,
+  });
+  // The failure consumed the armed digest, and the shell opened nothing.
+  expect(await page.evaluate(() => window.__failNextDigest)).toBe(false);
+  await expect(dialog).toBeVisible();
+  await expect(switcher('doc.pdf')).toHaveCount(1);
+  expect(await openDocuments('doc.pdf')).toBe('Open documents (1)');
+  // Nothing is lost: the same dialog, the same page, and the click now makes the PDF.
+  await expect(create).toBeEnabled();
+  await createPdf(dialog);
+  await expect(switcher('Scan ')).toHaveCount(1);
+  expect(await openDocuments('Scan ')).toBe('Open documents (2)');
 });
 
 test('a photo the browser cannot encode is reported on the camera screen and the shutter stays usable', async ({

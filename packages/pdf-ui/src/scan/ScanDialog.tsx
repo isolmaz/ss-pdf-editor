@@ -68,7 +68,12 @@ export interface ScanDialogProps {
   /** `document`: make a PDF. `pages`: hand back the straightened pages as JPEG files. */
   readonly mode: 'document' | 'pages';
   readonly onClose: () => void;
-  readonly onDocument?: (result: ScannedDocument) => void | Promise<void>;
+  /**
+   * Hand the PDF to the shell. Resolving with a sentence means the shell did not open it:
+   * the dialog shows that sentence and stays open, because the shell's own notice sits
+   * behind this modal and the user would otherwise see "Create PDF" do nothing.
+   */
+  readonly onDocument?: (result: ScannedDocument) => Promise<string | undefined> | undefined;
   readonly onPages?: (files: readonly File[]) => void;
 }
 
@@ -348,13 +353,14 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
       const now = new Date();
       const pad = (value: number) => String(value).padStart(2, '0');
       const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}.${pad(now.getMinutes())}`;
-      await onDocument?.({
+      const refusal = await onDocument?.({
         name: t('scan.fileName', { stamp }),
         bytes: outcome.bytes,
         pageCount: outcome.report.pageCount,
         report: outcome.report,
         offerOcr,
       });
+      if (refusal !== undefined) setError(refusal);
     } catch (cause) {
       if (controller.signal.aborted) return;
       const failure = toToolError(cause, 'ui');
