@@ -42,6 +42,9 @@ const SOLID_DENSITY = 0.7;
 const SOLID_WINDOW = 9;
 /** Ink joined into one piece longer than this share of the page's long side is a rule, a frame or a card: text is not that long unbroken, and one straight stroke would out-vote the lines. */
 const LONG_STROKE = 0.1;
+/** A piece at most this many pixels high and at least this many wide is a sliver — a dash of a dashed rule, an underscore, a hairline fragment — not a letter, and a row of them would out-vote the lines as a long stroke does. */
+const SLIVER_HEIGHT = 2;
+const SLIVER_WIDTH = 4;
 
 /** Luma of an RGBA picture. */
 export function toGrey(image: RgbaImage): Grey {
@@ -113,10 +116,11 @@ export interface Skew {
 }
 
 /**
- * Clears the 8-connected pieces of the ink `mask` (`width` × `height`, 1 where inked) whose
- * bounding box is more than `limit` pixels long on a side.
+ * Clears the 8-connected pieces of the ink `mask` (`width` × `height`, 1 where inked) that are
+ * not text: those whose bounding box is more than `limit` pixels long on a side (a rule, a frame, a
+ * card) and the slivers (`SLIVER_HEIGHT`, `SLIVER_WIDTH`).
  */
-function dropLongStrokes(mask: Uint8Array, width: number, height: number, limit: number): void {
+function dropNonText(mask: Uint8Array, width: number, height: number, limit: number): void {
   const seen = new Uint8Array(mask.length);
   const queue = new Int32Array(mask.length);
   for (let start = 0; start < mask.length; start += 1) {
@@ -147,13 +151,15 @@ function dropLongStrokes(mask: Uint8Array, width: number, height: number, limit:
         }
       }
     }
-    if (Math.max(maxX - minX, maxY - minY) + 1 > limit) {
+    const wide = maxX - minX + 1;
+    const high = maxY - minY + 1;
+    if (Math.max(wide, high) > limit || (high <= SLIVER_HEIGHT && wide >= SLIVER_WIDTH)) {
       for (let i = 0; i < tail; i += 1) mask[queue[i] as number] = 0;
     }
   }
 }
 
-/** The ink points of a page for the skew search: centred, subsampled, without pictures, rules, long strokes and the margin. */
+/** The ink points of a page for the skew search: centred, subsampled, without pictures, rules, long strokes, slivers and the margin. */
 function inkPoints(grey: Grey): { xs: Float32Array; ys: Float32Array; diagonal: number } | null {
   const factor = Math.max(1, Math.round(Math.max(grey.width, grey.height) / SKEW_LONG_SIDE));
   const small = downscale(grey, factor);
@@ -161,7 +167,7 @@ function inkPoints(grey: Grey): { xs: Float32Array; ys: Float32Array; diagonal: 
   const threshold = otsu(small.data);
   const ink = new Uint8Array(width * height);
   for (let i = 0; i < ink.length; i += 1) ink[i] = (small.data[i] as number) <= threshold ? 1 : 0;
-  dropLongStrokes(ink, width, height, Math.ceil(LONG_STROKE * Math.max(width, height)));
+  dropNonText(ink, width, height, Math.ceil(LONG_STROKE * Math.max(width, height)));
   const stride = width + 1;
   const sums = new Int32Array(stride * (height + 1));
   for (let y = 0; y < height; y += 1) {

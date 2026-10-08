@@ -116,6 +116,20 @@ describe('skew', () => {
     });
   }
 
+  it('leaves 8 lines of level text alone beside a 1-pt dashed rule, crooked by 3° or 1°, at 150 and 300 dpi', async () => {
+    // eight short lines: the dashes are a long run of ink beside little text
+    const eight = SENTENCES.slice(0, 8)
+      .map((text, at) => line('helvetica', 12, -160, 170 - at * 34, text.slice(0, 25)))
+      .join('\n');
+    for (const degrees of [3, 1, -3, -1]) {
+      for (const dpi of [150, 300]) {
+        const dashes = turned(degrees, '[6 4] 0 d 1 w -180 -190 m 180 -190 l S');
+        const found = detectSkew(toGrey(await render(`${turned(0, eight)}\n${dashes}`, dpi)));
+        expect(isSkewed(found), `${degrees}° at ${dpi} dpi: ${JSON.stringify(found)}`).toBe(false);
+      }
+    }
+  });
+
   it('lets the text decide on a crooked page with a level frame and a level rule', async () => {
     const frame = '1 w -170 -235 340 470 re S 0.5 w -150 -200 m 150 -200 l S';
     for (const degrees of [3, -2.4]) {

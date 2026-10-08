@@ -618,14 +618,18 @@ had to stay green. The moves, and the defects they fixed on the way:
          measures the skew of the render (projection profile of the ink on a copy of at most
          1100 px: ink pixels without pictures, the outer 3 % and every piece of ink — 8-connected —
          longer than a tenth of the page's long side, which is a rule, a frame or a card's edge and
-         would out-vote the lines of text by being one straight stroke; at most 60 000 points,
+         would out-vote the lines of text by being one straight stroke, or at most 2 px high and
+         at least 4 wide, a dash of a dashed rule or a hairline fragment; at most 60 000 points,
          projected across the lines for angles of ±6° in 0.5° and then 0.05° steps, the sharpest
          histogram wins). The page is turned only when there are at least 2000 points (a page
          number measures noise), |angle| is 0.3°–5.9° and the best score is at least 2.5 × the
          mean of the coarse scores (level text pages measure 4–22 and the rough sample 4, a sheet of
          text running up the page 1.4–2.0, a lone page number 1.7–2.1); otherwise `null`, and the
-         page is read exactly as before. A dashed or dotted rule at another angle than the text is
-         not one piece of ink and is not stripped. A turned page is read on an *upright copy* (the render turned about
+         page is read exactly as before. The limit that remains is a dashed or dotted rule at
+         another angle than the text that is thicker than a sliver: measured on level 12 pt text
+         beside a 5-inch rule crooked by 3° or 1°, 1 pt dashes still turn pages of 5 lines or
+         fewer and of eight lines of 12 characters, and 2–3 pt dashes pages of up to eight lines
+         of 25 characters; eight lines of 43 characters held against every dash tried. A turned page is read on an *upright copy* (the render turned about
          the page centre on the same canvas, bilinear, the corners that come in repeating the
          nearest edge pixel): the recogniser, the underline search, the second look, the words'
          lines and paragraphs and the table reader's rows (which group by baseline) are all in
