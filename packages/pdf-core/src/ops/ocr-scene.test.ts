@@ -10,7 +10,15 @@ import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import type { OcrWord } from '../engines/tesseract';
 import type { TextBox } from './layout-scene';
-import { dropMisreads, isMisread, ocrBackground, ocrTextBoxes, type RgbaImage } from './ocr-scene';
+import {
+  dropDuplicates,
+  dropEdgeMarks,
+  dropMisreads,
+  misreadWords,
+  ocrBackground,
+  ocrTextBoxes,
+  type RgbaImage,
+} from './ocr-scene';
 
 /* ------------------------------------------------------------------ *
  * a tiny page painter
@@ -557,19 +565,53 @@ describe('ocrTextBoxes: low confidence', () => {
     ]);
   });
 
-  it('names a symbol-only word below 60 % a misread, and drops it only over a region', () => {
+  it('names what tesseract made of a graphic, and drops it only over a region', () => {
     const star = fake('*', 50, 50, 60, 62, 0, 0, { confidence: 40 });
     const sure = fake('+', 50, 80, 60, 92, 1, 0, { confidence: 80 });
-    const letter = fake('ab', 50, 110, 60, 122, 2, 0, { confidence: 10 });
-    expect(isMisread(star)).toBe(true);
-    expect(isMisread(sure)).toBe(false);
-    expect(isMisread(letter)).toBe(false);
-    expect(isMisread(fake('(O)', 50, 140, 70, 152, 3, 0, { confidence: 30 }))).toBe(true);
-    expect(isMisread(fake('O)', 50, 140, 70, 152, 3, 0, { confidence: 30 }))).toBe(true);
-    const words = [star, sure, letter];
-    expect(dropMisreads(words, [[40, 40, 100, 70]])).toEqual([sure, letter]);
-    expect(dropMisreads(words, [[200, 40, 300, 70]])).toEqual(words);
-    expect(dropMisreads(words, [])).toEqual(words);
+    const letter = fake('ab', 50, 110, 60, 122, 2, 0, { confidence: 40 });
+    const ring = fake('(O)', 50, 140, 70, 152, 3, 0, { confidence: 30 });
+    const icon = fake('(0)', 50, 170, 70, 195, 4, 0, { confidence: 90 });
+    const bar = fake('I', 50, 200, 58, 230, 5, 0, { confidence: 90 });
+    const wide = fake('Os', 50, 240, 80, 270, 6, 0, { confidence: 90 });
+    const level = fake('DUKE', 50, 280, 90, 292, 7, 0, { confidence: 10 });
+    const words = [
+      star,
+      sure,
+      letter,
+      ring,
+      icon,
+      bar,
+      wide,
+      level,
+      ...[0, 1, 2, 3].map((n) => fake('Text', 100, 10 + n * 14, 140, 20 + n * 14, 8 + n)),
+    ];
+    const misread = misreadWords(words);
+    // symbols below 60 %, a ringed letter taller than 1.5 × the typical word (10), a narrow tall stem, letters below 25 %
+    expect([...misread]).toEqual([star, ring, icon, bar, level]);
+    expect(misreadWords([])).toEqual(new Set());
+    expect(dropMisreads(words, [[40, 40, 100, 70]], misread)).toEqual(words.filter((word) => word !== star));
+    expect(dropMisreads(words, [[200, 40, 300, 70]], misread)).toEqual(words);
+    expect(dropMisreads(words, [], misread)).toEqual(words);
+  });
+
+  it('keeps the surer of two words read at the same place, in the order given', () => {
+    const big = fake('094,6', 59, 648, 144, 670, 0, 0, { confidence: 59 });
+    const small = fake('024,', 74, 656, 126, 674, 1, 0, { confidence: 50 });
+    const next = fake('label', 59, 680, 173, 693, 2, 0, { confidence: 90 });
+    const apart = fake('far', 300, 648, 340, 670, 3, 0, { confidence: 40 });
+    expect(dropDuplicates([small, big, next, apart])).toEqual([big, next, apart]);
+    expect(dropDuplicates([])).toEqual([]);
+  });
+
+  it('drops one- and two-character words in the outer 3 % of the page width: scanner edge marks', () => {
+    const words = [
+      fake('i', 2, 100, 5, 112, 0),
+      fake('ab', 100, 100, 120, 112, 1),
+      fake('|', 295, 100, 298, 112, 2),
+      fake('Long', 1, 100, 40, 112, 3),
+      fake('x', 150, 100, 155, 112, 4),
+    ];
+    expect(dropEdgeMarks(words, 300).map((word) => word.text)).toEqual(['ab', 'Long', 'x']);
   });
 
   it('spaces two noted words in a row and a noted word at the start', () => {
@@ -628,6 +670,24 @@ describe('ocrBackground', () => {
     expect(card.rgba.width).toBeCloseTo((card.box[2] - card.box[0]) * 2, 0);
     expect(card.rgba.height).toBeCloseTo((card.box[3] - card.box[1]) * 2, 0);
     expect(card.rgba.data).toHaveLength(card.rgba.width * card.rgba.height * 4);
+  });
+
+  it('marks a region solid when most of its box differs from the page, loose marks not', async () => {
+    const { image, words } = await cardPage();
+    const solid = ocrBackground(image, words).regions.map((region) => region.solid);
+    expect(solid).toEqual([true, true]);
+    const width = 200;
+    const marks: RgbaImage = {
+      width,
+      height: 100,
+      data: new Uint8Array(width * 100 * 4).fill(255),
+      scale: 2,
+    };
+    for (let x = 10; x < 190; x += 12) {
+      for (let y = 10; y < 14; y += 1) marks.data.fill(40, (y * width + x) * 4, (y * width + x) * 4 + 3);
+      for (let y = 14; y < 60; y += 1) marks.data.fill(40, (y * width + x) * 4, (y * width + x) * 4 + 3);
+    }
+    expect(ocrBackground(marks, []).regions.map((region) => region.solid)).toEqual([false]);
   });
 
   it('erases the words: no dark text pixel is left where a word was', async () => {

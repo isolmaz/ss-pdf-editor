@@ -17,7 +17,15 @@ import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
-import { dropMisreads, isMisread, ocrBackground, ocrTextBoxes, type RgbaImage } from './ocr-scene';
+import {
+  dropDuplicates,
+  dropEdgeMarks,
+  dropMisreads,
+  misreadWords,
+  ocrBackground,
+  ocrTextBoxes,
+  type RgbaImage,
+} from './ocr-scene';
 import type { Box, LayoutChar } from './page-layout';
 import { throwIfAborted } from './types';
 
@@ -208,23 +216,28 @@ export async function readScanPage(
   let words: readonly OcrWord[] = layer;
   if (layer.length === 0 && ocr !== null) {
     throwIfAborted(signal);
-    words = await ocr.recognize(png, image.scale, signal);
+    words = dropEdgeMarks(
+      dropDuplicates(await ocr.recognize(png, image.scale, signal)),
+      image.width / image.scale,
+    );
     throwIfAborted(signal);
   }
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
   // dropped, and the page is erased again only if one lies outside.
-  const text = words.filter((word) => !isMisread(word));
+  const misread = misreadWords(words);
+  const text = words.filter((word) => !misread.has(word));
   const first = ocrBackground(image, text);
   const kept = dropMisreads(
     words,
     first.regions.map((region) => region.box),
+    misread,
   );
   const { pageColor, regions } = kept.length === text.length ? first : ocrBackground(image, kept);
   const { boxes, flagged } = ocrTextBoxes(
     kept,
     image,
     ocr?.lowConfidence ?? 0,
-    regions.map((region) => region.box),
+    regions.filter((region) => region.solid).map((region) => region.box),
   );
   const background: SceneShape = {
     kind: 'shape',

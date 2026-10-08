@@ -15,8 +15,9 @@
  *  - `ocrBackground`: the words are erased from the image (filled with the background around
  *    them); what still differs from the page colour afterwards (a card, a photo, a logo) is cut
  *    out as one picture per connected region, and everything else is the page colour.
- *    `isMisread` / `dropMisreads` name the symbol-only guesses of tesseract that lie over a
- *    picture (an icon, a chart): they are not text, and stay in the picture.
+ *    `misreadWords` / `dropMisreads` name what tesseract made of an icon or a chart (symbols,
+ *    stems, low-confidence letters) lying over a picture: not text, it stays in the picture;
+ *    `dropDuplicates` keeps the surer of two words read at the same place.
  *
  * `OcrWord.confidence` is tesseract's 0–100 (the adapter passes it through); `lowConfidence`
  * is a fraction, 0.90 for "flag below 90 %", the threshold measured in `docs/ocr-evaluation.md`.
@@ -66,6 +67,15 @@ const ALIGN = 0.8;
 
 /** A symbol-only word is a misread graphic when tesseract is less sure than this (0–100). */
 const MISREAD_CONFIDENCE = 60;
+/** …a word of letters only, when less sure than this; a single stem, when taller than this × the page's median word. */
+const MISREAD_LETTERS = 25;
+const TALL_STEM = 1.5;
+const STEM_ASPECT = 0.35;
+/** Words of at most two characters this close to the left or right edge of the page (× its width) are scanner marks. */
+const EDGE_BAND = 0.03;
+const TALL_SYMBOL = 1.5;
+/** Two words overlapping by more than this share of the smaller one are one word read twice. */
+const DUPLICATE_OVERLAP = 0.5;
 
 /** Word's natural line is about this × size; where the first baseline sits inside the line. */
 const SINGLE_LINE = 1.2;
@@ -105,6 +115,8 @@ const DIFFERENCE = 12;
 const MERGE_GAP = 3;
 /** A region smaller than this on both sides (points) is noise. */
 const MIN_REGION = 8;
+/** A region is a solid fill (a card, a band, a photo) when this share of its box differs from the page colour; the rest is marks. */
+const SOLID_FILL = 0.5;
 
 /* ------------------------------------------------------------------ *
  * pixels
@@ -278,9 +290,59 @@ const X_ONLY = /^[acemnopqrsuvwxyzgıçş.,:;\-_+=<>~]+$/;
 const MARKED_CAPITAL = /[İĞÖÜÂÊÎÔÛ]/;
 const HAS_DESCENDER = /[gjpqyçşÇŞQ,;()[\]{}|/@]/;
 
-/** Whether a word is a symbol-only guess of tesseract it is not sure of: a misread icon or chart mark. */
-export const isMisread = (word: OcrWord): boolean =>
-  word.confidence < MISREAD_CONFIDENCE && SYMBOLIC.test(word.text);
+/** What tesseract makes of a round icon: a ringed letter or a registered-mark sign. */
+const ICON_GLYPH = /[()®©○●◯◎]/;
+
+const medianHeight = (words: readonly OcrWord[]): number => median(words.map((word) => word.y1 - word.y0));
+
+/**
+ * The words that are not text but what tesseract made of a graphic: a symbol or a letter alone in
+ * punctuation it is below 60 % sure of, or a ringed one like (O) or ® taller than 1.5 × the page's
+ * typical word (an icon, a bullet); a word of one or two characters, taller than 1.5 × the typical word and
+ * narrower than 0.35 × its height (a bar of a chart, a speck); a word of letters only it is below 25 % sure of (a level icon read as DUKE). A misread
+ * word that lies over a picture region is dropped (`dropMisreads`), so the graphic stays in the
+ * picture.
+ */
+export function misreadWords(words: readonly OcrWord[]): Set<OcrWord> {
+  const typical = words.length === 0 ? Infinity : medianHeight(words);
+  return new Set(
+    words.filter(
+      (word) =>
+        (SYMBOLIC.test(word.text) &&
+          (word.confidence < MISREAD_CONFIDENCE ||
+            (ICON_GLYPH.test(word.text) && word.y1 - word.y0 > TALL_SYMBOL * typical))) ||
+        (word.text.length <= 2 &&
+          word.y1 - word.y0 > TALL_STEM * typical &&
+          word.x1 - word.x0 < STEM_ASPECT * (word.y1 - word.y0)) ||
+        (word.confidence < MISREAD_LETTERS && /^\p{L}+$/u.test(word.text)),
+    ),
+  );
+}
+
+/** Words without the one- and two-character ones in the outer 3 % of the page width: the dark scanner edge and its specks. */
+export function dropEdgeMarks(words: readonly OcrWord[], pageWidth: number): OcrWord[] {
+  const band = EDGE_BAND * pageWidth;
+  return words.filter((word) => !(word.text.length <= 2 && (word.x0 < band || word.x1 > pageWidth - band)));
+}
+
+/** Words without any that overlap a surer word by more than half of their own box: one word read twice. */
+export function dropDuplicates(words: readonly OcrWord[]): OcrWord[] {
+  const kept: OcrWord[] = [];
+  for (const word of [...words].sort((a, b) => b.confidence - a.confidence)) {
+    const area = (word.x1 - word.x0) * (word.y1 - word.y0);
+    const twice = kept.some((other) => {
+      const across = Math.min(word.x1, other.x1) - Math.max(word.x0, other.x0);
+      const down = Math.min(word.y1, other.y1) - Math.max(word.y0, other.y0);
+      return (
+        across > 0 &&
+        down > 0 &&
+        across * down > DUPLICATE_OVERLAP * Math.min(area, (other.x1 - other.x0) * (other.y1 - other.y0))
+      );
+    });
+    if (!twice) kept.push(word);
+  }
+  return words.filter((word) => kept.includes(word));
+}
 
 /** The font size one word's height gives, by what its text holds; none for a word of symbols. */
 function wordSize(word: OcrWord): number | undefined {
@@ -353,10 +415,14 @@ function regionIndex(regions: readonly Box[]): (word: OcrWord) => number {
   };
 }
 
-/** The words without those that are symbol-only guesses over a picture region (an icon, a chart). */
-export function dropMisreads(words: readonly OcrWord[], regions: readonly Box[]): OcrWord[] {
+/** The words without the `misread` ones that lie over a picture region (an icon, a chart). */
+export function dropMisreads(
+  words: readonly OcrWord[],
+  regions: readonly Box[],
+  misread: ReadonlySet<OcrWord>,
+): OcrWord[] {
   const within = regionIndex(regions);
-  return words.filter((word) => !(isMisread(word) && within(word) >= 0));
+  return words.filter((word) => !(misread.has(word) && within(word) >= 0));
 }
 
 /** One word's run attributes, before neighbouring words are merged. */
@@ -507,7 +573,7 @@ function readingOrder<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
 
 /**
  * The text boxes of a recognised page: one per paragraph, in reading order. `regions` are the
- * boxes of the pictures `ocrBackground` found: lines and paragraphs never cross their edge.
+ * boxes of the solid regions `ocrBackground` found (cards, bands, photos; not loose marks): lines and paragraphs never cross their edge.
  * `flagged` lists the words with a letter or digit whose confidence is below `lowConfidence`;
  * each is a run of its own with a `note`.
  */
@@ -652,7 +718,7 @@ function commonColor(data: Uint8Array): Rgb {
 export function ocrBackground(
   image: RgbaImage,
   words: readonly OcrWord[],
-): { pageColor: number; regions: { box: Box; rgba: RgbaImage }[] } {
+): { pageColor: number; regions: { box: Box; rgba: RgbaImage; solid: boolean }[] } {
   const { width, height, scale } = image;
   const data = new Uint8Array(image.data);
 
@@ -679,7 +745,7 @@ export function ocrBackground(
   }
   const grown = dilate(mask, width, height, Math.max(1, Math.round(MERGE_GAP * scale)));
 
-  const regions: { box: Box; rgba: RgbaImage }[] = [];
+  const regions: { box: Box; rgba: RgbaImage; solid: boolean }[] = [];
   const stack = new Int32Array(width * height);
   for (let start = 0; start < grown.length; start += 1) {
     if (grown[start] === 0) continue;
@@ -688,6 +754,7 @@ export function ocrBackground(
     let maxX = -1;
     let maxY = -1;
     let top = 0;
+    let inked = 0;
     stack[top++] = start;
     grown[start] = 0;
     while (top > 0) {
@@ -695,6 +762,7 @@ export function ocrBackground(
       const x = at % width;
       const y = (at - x) / width;
       if (mask[at] === 1) {
+        inked += 1;
         minX = Math.min(minX, x);
         maxX = Math.max(maxX, x);
         minY = Math.min(minY, y);
@@ -731,6 +799,7 @@ export function ocrBackground(
     regions.push({
       box: [x0 / scale, y0 / scale, x1 / scale, y1 / scale],
       rgba: { width: cropWidth, height: y1 - y0, data: crop, scale },
+      solid: inked >= SOLID_FILL * (maxX - minX + 1) * (maxY - minY + 1),
     });
   }
   return { pageColor: rgbNumber(page), regions };
