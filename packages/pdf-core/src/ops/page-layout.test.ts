@@ -634,10 +634,81 @@ describe('tables from spacing, in the cases that are not tables', () => {
       'caused by shaking from',
       'large earthquakes.',
     ];
-    const rows = left.flatMap((text, index) =>
-      pieces(400 - index * 12, [50, text], [250, right[index] as string]),
-    );
+    // One column after the other, as a page of prose is drawn: two blocks, side by side.
+    const rows = [
+      ...left.flatMap((text, index) => pieces(400 - index * 12, [50, text])),
+      ...right.flatMap((text, index) => pieces(400 - index * 12, [250, text])),
+    ];
     expect(await tablesOf(rows)).toEqual([]);
+  });
+
+  /** The page's text blocks (the whole table of the cases below is one), and its tables from spacing. */
+  const blocksAndTables = async (lines: Parameters<typeof fixturePage>[0]) => {
+    const { layout } = await layoutOf(await fixturePage(lines));
+    return {
+      blocks: layout.blocks.filter((block) => block.kind === 'text').length,
+      tables: findTextTables(layout, []),
+    };
+  };
+
+  it('keeps a table whose cells are 20 to 30 characters long: one block holds both columns, its cells of every length', async () => {
+    const left = [
+      'Wages, salaries, tips',
+      'Qualified dividends',
+      'Pensions and annuities',
+      'Unemployment compens.',
+    ];
+    const right = [
+      'Form W-2, box 1 total',
+      'Form 1099-DIV, box 1b',
+      'Form 1099-R, box 2a',
+      'Form 1099-G, box 1',
+    ];
+    const rows = left.flatMap((text, index) =>
+      pieces(400 - index * 12, [50, text], [170, right[index] as string]),
+    );
+    const { blocks, tables } = await blocksAndTables(rows);
+    expect(blocks).toBe(1);
+    expect(tables).toHaveLength(1);
+    expect(tables[0]?.xs).toHaveLength(3);
+  });
+
+  it('keeps a bank statement of four columns whose description and reference are 20 to 26 characters long', async () => {
+    const rows = [
+      ['2024-01-15', 'Salary payment from Acme', 'REF-2024-0115-000100', '1,234.50'],
+      ['2024-01-16', 'Card purchase at market', 'REF-2024-0116-004200', '45.20'],
+      ['2024-01-17', 'Transfer to savings acct', 'REF-2024-0117-000700', '500.00'],
+      ['2024-01-18', 'Electricity bill January', 'REF-2024-0118-031000', '88.10'],
+    ].flatMap((cells, index) =>
+      pieces(
+        400 - index * 12,
+        [15, cells[0] as string],
+        [75, cells[1] as string],
+        [215, cells[2] as string],
+        [340, cells[3] as string],
+      ),
+    );
+    const { blocks, tables } = await blocksAndTables(rows);
+    expect(blocks).toBe(1);
+    expect(tables).toHaveLength(1);
+    expect(tables[0]?.xs).toHaveLength(5);
+  });
+
+  it('finds none in two columns of prose in one block whose lines wrap, each filling its column', async () => {
+    const ten = 'abcdefghij';
+    const other = 'klmnopqrst';
+    // Every line is the same two words, so every line is as wide as the column.
+    const rows = [0, 1, 2, 3].flatMap((index) => {
+      const even = index % 2 === 0;
+      return pieces(
+        400 - index * 12,
+        [50, even ? `${ten} ${other}` : `${other} ${ten}`],
+        [170, even ? `${other} ${ten}` : `${ten} ${other}`],
+      );
+    });
+    const { blocks, tables } = await blocksAndTables(rows);
+    expect(blocks).toBe(1);
+    expect(tables).toEqual([]);
   });
 
   it('keeps a table whose cells are short, its columns blocks as well', async () => {

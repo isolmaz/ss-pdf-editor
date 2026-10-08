@@ -944,22 +944,40 @@ const MAX_STREAM_CELL = 30;
 /** Pieces this long, at the median, in a column's block are lines of prose, not cells. */
 const PROSE_LINE = 20;
 
+/** The share of the column's width a line of wrapped prose, a line of words, fills, all but its last. */
+const PROSE_FILL = 0.92;
+
 /**
  * How many columns hold a text block of prose: three or more lines of one block, long ones
- * at the median. Two such columns side by side are two columns of text whose lines happen to
- * stand on the same baselines; read as a table, a reader would take them row by row across
- * the columns instead of one column after the other.
+ * at the median, that are either the block's own column — the block holds no piece of
+ * another column — or wrap, each line but the last filling the column's width. Two such
+ * columns side by side are two columns of text whose lines happen to stand on the same
+ * baselines; read as a table, a reader would take them row by row across the columns
+ * instead of one column after the other. A table whose cells are as long (20–30 characters)
+ * is one block with cells of every width, and stays a table.
  */
 function proseColumns(pieces: readonly Piece[], columnOf: (piece: Piece) => number): number {
-  const runs = new Map<string, number[]>();
+  const groups = new Map<string, { column: number; block: number; lines: Piece[] }>();
   for (const piece of pieces) {
-    const key = `${columnOf(piece)}:${piece.block}`;
-    runs.set(key, [...(runs.get(key) ?? []), piece.text.length]);
+    const column = columnOf(piece);
+    const key = `${column}:${piece.block}`;
+    const group = groups.get(key) ?? { column, block: piece.block, lines: [] };
+    group.lines.push(piece);
+    groups.set(key, group);
   }
-  const columns = new Set<string>();
-  for (const [key, lengths] of runs) {
-    const median = [...lengths].sort((a, b) => a - b)[Math.floor(lengths.length / 2)] as number;
-    if (lengths.length >= 3 && median >= PROSE_LINE) columns.add(key.slice(0, key.indexOf(':')));
+  const columns = new Set<number>();
+  for (const { column, block, lines } of groups.values()) {
+    const lengths = lines.map((line) => line.text.length).sort((x, y) => x - y);
+    if (lines.length < 3 || (lengths[Math.floor(lengths.length / 2)] as number) < PROSE_LINE) continue;
+    const own = pieces.every((piece) => piece.block !== block || columnOf(piece) === column);
+    const inColumn = pieces.filter((piece) => columnOf(piece) === column);
+    const width =
+      Math.max(...inColumn.map((piece) => piece.x1)) - Math.min(...inColumn.map((piece) => piece.x0));
+    // A column of references or amounts is as wide in every row too: wrapped lines hold words.
+    const wraps = lines
+      .slice(0, -1)
+      .every((line) => line.text.includes(' ') && line.x1 - line.x0 >= PROSE_FILL * width);
+    if (own || wraps) columns.add(column);
   }
   return columns.size;
 }
