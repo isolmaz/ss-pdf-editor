@@ -65,6 +65,8 @@ export interface FidelityResult {
   missingFirst: string[];
   extraFirst: string[];
   threshold: Threshold;
+  /** Samples with text inside a picture: how many of those words the converted document holds as text. */
+  pictureText?: { words: number; recovered: number };
   verdict: Verdict;
   /** One line per gated violation or recorded structural failure. */
   failures: string[];
@@ -147,6 +149,23 @@ export function renderMarkdown(results: readonly FidelityResult[]): string {
         r.verdict,
       ].join(' | ')} |`,
     );
+  }
+  const pictures = results.filter((r) => r.pictureText !== undefined);
+  if (pictures.length > 0) {
+    lines.push(
+      '',
+      '## Text inside pictures',
+      '',
+      '| Sample | Mode | Picture words | Recovered as text |',
+      '| --- | --- | --- | --- |',
+    );
+    for (const r of pictures) {
+      const text = r.pictureText;
+      if (text === undefined) continue;
+      lines.push(
+        `| ${cell(r.sample)} | ${cell(r.mode)} | ${text.words} | ${text.recovered} (${pct(text.words === 0 ? null : text.recovered / text.words)}) |`,
+      );
+    }
   }
   const problems = results.filter((r) => r.failures.length > 0 || r.error);
   if (problems.length > 0) {

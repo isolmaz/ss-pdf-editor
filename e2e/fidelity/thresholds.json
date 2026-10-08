@@ -36,6 +36,30 @@
     },
     "usgs-fs2020-3042": {
       "words": 0.99
+    },
+    "shapes": {
+      "words": 0.95
+    },
+    "chart": {
+      "words": 0.84
+    },
+    "text-in-image": {
+      "words": 0.95
+    },
+    "overlay": {
+      "words": 0.64
+    },
+    "rotated": {
+      "words": 0.87
+    },
+    "mixed-page": {
+      "words": 0.95
+    },
+    "slide": {
+      "words": 0.95
+    },
+    "invoice": {
+      "words": 0.93
     }
   },
   "page-images": {
@@ -108,6 +132,50 @@
     "nasa-tm-vacuum-1965": {
       "ssim": 0.6,
       "words": 0.95
+    },
+    "shapes": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "chart": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "text-in-image": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "overlay": {
+      "ssim": 0.91,
+      "words": 0.99
+    },
+    "rotated": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "mixed-page": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "slide": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "invoice": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "shapes-scan": {
+      "ssim": 0.91,
+      "words": 0.39
+    },
+    "invoice-scan": {
+      "ssim": 0.87,
+      "words": 0.36
+    },
+    "invoice-scan-rough": {
+      "ssim": 0.64,
+      "words": 0.29
     }
   }
 }
