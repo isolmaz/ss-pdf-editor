@@ -25,6 +25,8 @@ const TRUST_RATIO = 0.1;
 const TURNED = 0.05;
 /** Visible characters further apart than this many font sizes are separate boxes. */
 const BOX_GAP = 2;
+/** A line whose direction has this much of its length along an axis is upright (turned text is boxed by character). */
+const UPRIGHT = 0.99;
 /** The ring the fill colour is sampled from lies this far (pixels) outside the padded box. */
 const RING = 2;
 /** Pictures hold ink of their own when this share of their pixels differs from their background … */
@@ -35,6 +37,12 @@ const MAX_INK: number = 0.3;
 const INK_CONTRAST = 64;
 /** A word's box is grown by this share of its height to take in the antialiased edges of its glyphs. */
 const WORD_PAD = 0.2;
+/** A word whose box has less ink than this share is under a patch. */
+const COVERED_INK = 0.005;
+/** Rows (of the sampled grid) of blank space that end a band. */
+const MIN_GAP = 3;
+/** A picture of text has ink in at least this many bands of rows. */
+const MIN_BANDS = 3;
 /** A picture is searched for text when it covers at least this share of the page … */
 const MIN_PICTURE = 0.02;
 /**
@@ -82,18 +90,28 @@ export const isScanPage = (scene: PageScene): boolean => !hasVisibleText(scene) 
 /** Whether the page shows text and is mostly pictures: a scan with real text on it, or a picture the text lies over. */
 export const isMixedPage = (scene: PageScene): boolean => hasVisibleText(scene) && picturesCover(scene);
 
-/** The boxes of the visible text, one per run of characters of a line (page points, y down). */
+/** The boxes of the visible text: a run of an upright line, a single character of anything turned (a diagonal watermark's box would cover the page). */
 export function visibleBoxes(scene: PageScene): Box[] {
   const boxes: Box[] = [];
   for (const line of linesOf(scene)) {
-    const shown = line.chars.filter(isVisible).sort((a, b) => a.box[0] - b.box[0]);
+    const shown = line.chars.filter(isVisible);
+    const [dx, dy] = line.dir;
+    const across = Math.abs(dx) > UPRIGHT && Math.abs(dy) < 1 - UPRIGHT;
+    const along = Math.abs(dy) > UPRIGHT && Math.abs(dx) < 1 - UPRIGHT;
+    if (!across && !along) {
+      boxes.push(...shown.map((char): Box => [...char.box]));
+      continue;
+    }
+    // Along the line: x for text across the page, y for text up or down it.
+    const [low, high] = across ? ([0, 2] as const) : ([1, 3] as const);
+    shown.sort((first, second) => first.box[low] - second.box[low]);
     let current: Box | null = null;
     let last: LayoutChar | null = null;
     for (const char of shown) {
       if (
         current !== null &&
         last !== null &&
-        char.box[0] - last.box[2] <= BOX_GAP * Math.max(last.size, char.size)
+        char.box[low] - last.box[high] <= BOX_GAP * Math.max(last.size, char.size)
       ) {
         current = [
           Math.min(current[0], char.box[0]),
@@ -292,6 +310,83 @@ export function wordsInPicture(image: RgbaImage, words: readonly OcrWord[], box:
     stats.confidence >= PICTURE_CONFIDENCE &&
     stats.inkInWords >= MIN_TEXT_INK;
   return text ? inside : [];
+}
+
+/** The share of the pixels of `box` (page points) in `image` that differ from the box's own commonest tone by more than `INK_CONTRAST`. */
+function inkShare(image: RgbaImage, box: Box): number | null {
+  const [x0, y0, x1, y1] = pixelsOf(image, box, 0);
+  const bins = new Array<number>(16).fill(0);
+  const tones: number[] = [];
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const at = (y * image.width + x) * 4;
+      const tone =
+        0.299 * (image.data[at] as number) +
+        0.587 * (image.data[at + 1] as number) +
+        0.114 * (image.data[at + 2] as number);
+      tones.push(tone);
+      const bin = Math.min(15, tone >> 4);
+      bins[bin] = (bins[bin] as number) + 1;
+    }
+  }
+  if (tones.length === 0) return null;
+  const background = (bins.indexOf(Math.max(...bins)) + 0.5) * 16;
+  return tones.filter((tone) => Math.abs(tone - background) > INK_CONTRAST).length / tones.length;
+}
+
+/**
+ * The words of a text layer that show something in the render: a word whose box is flat (no ink
+ * at all) lies under a patch (an opaque annotation, a picture drawn over the scan) and is what
+ * the reader cannot see, so it is not text of the page.
+ */
+export const dropCovered = (words: readonly OcrWord[], image: RgbaImage): OcrWord[] =>
+  words.filter((word) => (inkShare(image, [word.x0, word.y0, word.x1, word.y1]) ?? 1) >= COVERED_INK);
+
+/**
+ * Whether a picture, from its own pixels (composited over white; `image.scale` is not read), may
+ * hold a page of text: a tenth of a percent to a third of it is ink, and the ink falls in at
+ * least three bands of rows with at least a few blank rows between. A logo or a letterhead is one or two bands, a
+ * photograph is ink everywhere; neither is worth rendering the page and reading it for.
+ */
+export function pictureLooksLikeText(image: RgbaImage): boolean {
+  const step = Math.max(1, Math.floor(Math.max(image.width, image.height) / 400));
+  const columns = Math.ceil(image.width / step);
+  const rows = Math.ceil(image.height / step);
+  const tones = new Float32Array(columns * rows);
+  const bins = new Array<number>(16).fill(0);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const at = (row * step * image.width + column * step) * 4;
+      const white = 255 - (image.data[at + 3] as number);
+      const tone =
+        0.299 * ((image.data[at] as number) + white) +
+        0.587 * ((image.data[at + 1] as number) + white) +
+        0.114 * ((image.data[at + 2] as number) + white);
+      tones[row * columns + column] = tone;
+      const bin = Math.min(15, tone >> 4);
+      bins[bin] = (bins[bin] as number) + 1;
+    }
+  }
+  const background = (bins.indexOf(Math.max(...bins)) + 0.5) * 16;
+  let ink = 0;
+  let bands = 0;
+  let blank = MIN_GAP;
+  for (let row = 0; row < rows; row += 1) {
+    let inked = 0;
+    for (let column = 0; column < columns; column += 1) {
+      if (Math.abs((tones[row * columns + column] as number) - background) > INK_CONTRAST) inked += 1;
+    }
+    ink += inked;
+    if (inked >= 2) {
+      // a band starts after a blank stretch: the ascenders and the x-height of one line are one band
+      if (blank >= MIN_GAP) bands += 1;
+      blank = 0;
+    } else {
+      blank += 1;
+    }
+  }
+  const share = ink / (columns * rows);
+  return share >= MIN_INK && share <= MAX_INK && bands >= MIN_BANDS;
 }
 
 /**

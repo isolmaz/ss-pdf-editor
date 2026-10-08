@@ -22,11 +22,13 @@ import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics } from './docx-fonts';
 import {
+  dropCovered,
   dropMasked,
   inkBoxes,
   layerTrusted,
   maskBoxes,
   pictureBoxes,
+  pictureLooksLikeText,
   textPictures,
   wordsInPicture,
 } from './docx-layout-mixed';
@@ -63,6 +65,8 @@ export interface OcrOptions {
 }
 
 /** A scan is read at its own resolution within these bounds, dpi. */
+/** The quality an erased JPEG picture is written at. */
+const PICTURE_JPEG_QUALITY = 90;
 const MIN_DPI = 150;
 const MAX_DPI = 300;
 const DEFAULT_DPI = 200;
@@ -143,13 +147,18 @@ function scanDpi(scene: PageScene): number {
   return Math.min(MAX_DPI, Math.max(MIN_DPI, dpi));
 }
 
-/** The page drawn as it shows, opaque, as RGBA pixels and as a PNG. */
-function renderScan(mupdf: Mupdf, page: Page, dpi: number): { image: RgbaImage; png: Uint8Array } {
+/** The page drawn as the reader sees it, annotations included (a black box over a word hides it from OCR too), opaque, as RGBA pixels and as a PNG. */
+function renderScan(
+  mupdf: Mupdf,
+  page: Page,
+  dpi: number,
+  withPng = true,
+): { image: RgbaImage; png: Uint8Array } {
   const [x0, y0, x1, y1] = page.getBounds();
   // Within the pixel budget of the page images, however large the page: a poster at 300 dpi
   // would be over a hundred megapixels, twice (pixels and PNG). Everything after this reads `image.scale`.
   const scale = Math.min(dpi / 72, cappedPerPoint(x1 - x0, y1 - y0));
-  const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, false);
+  const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
   try {
     const width = pixmap.getWidth();
     const height = pixmap.getHeight();
@@ -175,7 +184,7 @@ function renderScan(mupdf: Mupdf, page: Page, dpi: number): { image: RgbaImage; 
         data,
         scale: (width / Math.max(1e-6, x1 - x0) + height / Math.max(1e-6, y1 - y0)) / 2,
       },
-      png: pixmap.asPNG().slice(),
+      png: withPng ? pixmap.asPNG().slice() : new Uint8Array(),
     };
   } finally {
     pixmap.destroy();
@@ -285,6 +294,12 @@ async function setWords(
     : ocrTextBoxes(words, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
 }
 
+/** Whether any pixel of the picture is see-through. */
+const hasAlpha = (rgba: RgbaImage): boolean => {
+  for (let at = 3; at < rgba.data.length; at += 4) if ((rgba.data[at] as number) < 255) return true;
+  return false;
+};
+
 /** A picture's own pixels as RGBA, on the scale of its box (pixels per page point). */
 function decodePicture(mupdf: Mupdf, data: Uint8Array, box: Box): RgbaImage {
   const picture = new mupdf.Image(data);
@@ -313,12 +328,42 @@ function decodePicture(mupdf: Mupdf, data: Uint8Array, box: Box): RgbaImage {
   }
 }
 
+/** The picture without alpha as PNG, or as JPEG when it came as one (a scanned screenshot stays small). */
+function opaquePicture(
+  mupdf: Mupdf,
+  rgba: RgbaImage,
+  mime: SceneImage['mime'],
+): Pick<SceneImage, 'data' | 'mime'> {
+  const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, rgba.width, rgba.height], false);
+  try {
+    const to = pixmap.getPixels();
+    const stride = pixmap.getStride();
+    for (let y = 0; y < rgba.height; y += 1) {
+      for (let x = 0; x < rgba.width; x += 1) {
+        const source = (y * rgba.width + x) * 4;
+        const target = y * stride + x * 3;
+        to[target] = rgba.data[source] as number;
+        to[target + 1] = rgba.data[source + 1] as number;
+        to[target + 2] = rgba.data[source + 2] as number;
+      }
+    }
+    return mime === 'image/jpeg'
+      ? { data: pixmap.asJPEG(PICTURE_JPEG_QUALITY, false).slice(), mime }
+      : { data: pixmap.asPNG().slice(), mime };
+  } finally {
+    pixmap.destroy();
+  }
+}
+
 /**
  * The text inside the pictures of a page that is not a scan (a screenshot, a sign, a table
- * saved as an image): the page is rendered with its visible text masked, OCR reads what is
- * left, and the words in a picture that holds ink and enough surely read words become text
- * boxes over the picture, which is set again without them. The rest of the page is as it was
- * (`null`: no picture has words, or OCR cannot run, and the caller keeps the page).
+ * saved as an image). Pictures are first judged on their own pixels (`pictureLooksLikeText`:
+ * a logo or a photograph is dropped before anything is rendered); then the page is rendered
+ * with its visible text masked, OCR reads what is left, and the words of a picture that holds
+ * enough surely read lines over most of its ink become text boxes over the picture, which is
+ * set again without them (a picture with see-through pixels is left as it is, its glyphs
+ * behind the text). Each word belongs to the topmost picture it lies in. The rest of the page is
+ * as it was (`null`: no picture has words, or OCR cannot run, and the caller keeps the page).
  */
 export async function readPictureText(
   mupdf: Mupdf,
@@ -329,40 +374,40 @@ export async function readPictureText(
   fonts: OpenFonts,
   visible: readonly Box[],
 ): Promise<ScanPage | null> {
-  const candidates = textPictures(scene);
+  const decoded = new Map<SceneImage, RgbaImage>();
+  // Topmost first: the scene lists the drawing bottom first.
+  const candidates = textPictures(scene)
+    .reverse()
+    .filter((picture) => {
+      const own = decodePicture(mupdf, picture.data, picture.box);
+      decoded.set(picture, own);
+      return pictureLooksLikeText(own);
+    });
   if (candidates.length === 0) return null;
-  const scan = renderScan(mupdf, page, scanDpi(scene));
+  const scan = renderScan(mupdf, page, scanDpi(scene), false);
   const masked = maskBoxes(scan.image, visible);
-  const inked = inkBoxes(
-    masked,
-    candidates.map((picture) => picture.box),
-  );
-  if (inked.length === 0) return null;
   throwIfAborted(signal);
-  const read = await readWords(
-    mupdf,
-    masked,
-    visible.length > 0 ? pngOf(mupdf, masked) : scan.png,
-    ocr,
-    signal,
-  );
+  const read = await readWords(mupdf, masked, pngOf(mupdf, masked), ocr, signal);
   if (read === null) return null;
   provideStandardMetrics(mupdf);
   const outside = dropMasked(read.words, visible, read.image.scale);
   const misread = misreadWords(outside);
-  const text = outside.filter((word) => !misread.has(word));
+  const taken = new Set<OcrWord>();
   const found = new Map<SceneImage, OcrWord[]>();
   for (const picture of candidates) {
-    if (!inked.includes(picture.box)) continue;
-    const inside = wordsInPicture(read.image, text, picture.box);
+    const free = outside.filter((word) => !misread.has(word) && !taken.has(word));
+    const inside = wordsInPicture(read.image, free, picture.box);
+    for (const word of inside) taken.add(word);
     if (inside.length > 0) found.set(picture, inside);
   }
   if (found.size === 0) return null;
   const items = scene.items.map((item): SceneItem => {
     const words = item.kind === 'image' ? found.get(item) : undefined;
-    if (item.kind !== 'image' || words === undefined) return item;
+    const own = item.kind === 'image' ? decoded.get(item) : undefined;
+    if (item.kind !== 'image' || words === undefined || own === undefined) return item;
+    // Words cannot be taken out of see-through pixels: the picture stays, its words above it.
+    if (hasAlpha(own)) return item;
     // The picture's own pixels, without the words (in its box's frame).
-    const own = decodePicture(mupdf, item.data, item.box);
     const erased = eraseWords(
       own,
       words.map((word) => ({
@@ -373,7 +418,7 @@ export async function readPictureText(
         y1: word.y1 - item.box[1],
       })),
     );
-    return { ...item, data: pngOf(mupdf, erased), mime: 'image/png' };
+    return { ...item, ...opaquePicture(mupdf, erased, item.mime) };
   });
   const all = [...found.values()].flat();
   const { boxes, flagged } = await setWords(mupdf, read.image, all, ocr.lowConfidence, [], read.rules, fonts);
@@ -410,7 +455,8 @@ export async function readScanPage(
   const inked = inkBoxes(masked, pictureBoxes(scene));
   if (mixed && !useLayer && inked.length === 0) return null;
   let image = masked;
-  let words: readonly OcrWord[] = layer;
+  // A layer word under a patch in the render (an opaque annotation, a picture over the scan) is not on the page.
+  let words: readonly OcrWord[] = dropCovered(layer, masked);
   let duplicates: readonly OcrWord[] = [];
   let rules: readonly Rule[] = [];
   let reread = false;

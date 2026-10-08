@@ -9,6 +9,7 @@
 
 import { DOMParser } from '@xmldom/xmldom';
 import JSZip from 'jszip';
+import type { PDFDocument } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
@@ -83,6 +84,7 @@ async function scanWith(
   over: string,
   sample: Promise<Uint8Array> = SAMPLE,
   placement = 'q 400 0 0 500 0 0 cm',
+  extra: { readonly transparent?: boolean; readonly annotate?: (doc: PDFDocument) => void } = {},
 ): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
   const source = mupdf.Document.openDocument((await sample).slice(), 'application/pdf');
@@ -90,7 +92,12 @@ async function scanWith(
   try {
     const pixmap = source
       .loadPage(0)
-      .toPixmap(mupdf.Matrix.scale(200 / 72, 200 / 72), mupdf.ColorSpace.DeviceRGB, false, false);
+      .toPixmap(
+        mupdf.Matrix.scale(200 / 72, 200 / 72),
+        mupdf.ColorSpace.DeviceRGB,
+        extra.transparent === true,
+        false,
+      );
     const image = scan.addImage(new mupdf.Image(pixmap.asPNG()));
     pixmap.destroy();
     const unicode = scan.addStream(
@@ -114,6 +121,7 @@ async function scanWith(
       `${placement} /Im0 Do Q\n${over}\n`,
     );
     scan.insertPage(-1, page);
+    if (extra.annotate !== undefined) extra.annotate(scan);
     const saved = scan.saveToBuffer('compress');
     const bytes = saved.asUint8Array().slice();
     saved.destroy();
@@ -123,6 +131,28 @@ async function scanWith(
     source.destroy();
   }
 }
+
+/** An opaque black Square annotation over `rect` (PDF space, from the bottom): the "black box" of a pseudo-redaction. */
+const blackBox =
+  (rect: [number, number, number, number]) =>
+  (doc: PDFDocument): void => {
+    const [x0, y0, x1, y1] = rect;
+    const appearance = doc.addStream(`0 g 0 0 ${x1 - x0} ${y1 - y0} re f`, {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, x1 - x0, y1 - y0],
+    });
+    const annotation = doc.addObject({
+      Type: 'Annot',
+      Subtype: 'Square',
+      Rect: rect,
+      F: 4,
+      AP: { N: appearance },
+    });
+    const annotations = doc.newArray();
+    annotations.push(annotation);
+    doc.loadPage(0).getObject().put('Annots', annotations);
+  };
 
 /** A typed header over the scan's top (baseline 30 pt from the top). */
 const HEADER = 'BT /F1 14 Tf 60 470 Td (Typed header) Tj ET';
@@ -418,8 +448,8 @@ describe('exact layout: text inside a picture on a page of vector text', () => {
       expect(body).not.toContain('aaaabbbb');
       expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrMixedPages')).toBe(false);
     }
-    // the blank picture is not even read
-    expect(calls).toBe(4);
+    // the blank picture and the logo-like one (the sample: a panel and a line) are not even read
+    expect(calls).toBe(3);
   });
 });
 
@@ -672,5 +702,255 @@ describe('mixed page helpers', () => {
       kept.map((entry) => entry.text),
     );
     expect(dropMasked(dropped, [], 1)).toEqual(dropped);
+  });
+});
+
+describe('exact layout: what the reader sees is what OCR reads', () => {
+  it('gives the recogniser the page with its annotations: text under an opaque box is not read', async () => {
+    // the box lies over the picture's first two rows (page y 90..130 from the top)
+    const covered = blackBox([50, 360, 250, 412]);
+    for (const [bytes, calls, at] of [
+      [await scanWith('', PARAGRAPH, 'q 400 0 0 500 0 0 cm', { annotate: covered }), 1, 110],
+      [
+        await scanWith(HEADER, PARAGRAPH, 'q 200 0 0 250 100 100 cm', {
+          annotate: blackBox([100, 100 + 100, 300, 100 + 200]),
+        }),
+        1,
+        250,
+      ],
+    ] as const) {
+      const seen: { png: Uint8Array; scale: number }[] = [];
+      await exportOffice(
+        bytes,
+        {
+          ...options,
+          ocr: {
+            lowConfidence: 0.9,
+            recognize: async (png, scale) => {
+              seen.push({ png, scale });
+              return [];
+            },
+          },
+        },
+        run,
+      );
+      expect(seen).toHaveLength(calls);
+      const first = seen[0] ?? { png: new Uint8Array(), scale: 1 };
+      // the black box is in the picture the recogniser reads (the paragraph's tint is red 217 there)
+      expect(await redAt(first.png, first.scale, 150, at)).toBeLessThan(30);
+    }
+  });
+
+  it('drops the words of an invisible layer that lie under an opaque box, keeping the others', async () => {
+    const layer =
+      'BT /F1 14 Tf 3 Tr 60 400 Td (Hello) Tj ET\nBT /F1 14 Tf 3 Tr 60 380 Td (secret) Tj ET\nBT /F1 14 Tf 3 Tr 60 360 Td (Other) Tj ET';
+    const sample = officeDocument([
+      {
+        content: [
+          '0.85 0.92 1 rg 0 0 400 500 re f',
+          line('helvetica', 14, 60, 400, 'Hello'),
+          line('helvetica', 14, 60, 380, 'secret'),
+          line('helvetica', 14, 60, 360, 'Other'),
+        ].join('\n'),
+      },
+    ]);
+    let calls = 0;
+    const result = await exportOffice(
+      await scanWith(layer, sample, 'q 400 0 0 500 0 0 cm', { annotate: blackBox([55, 375, 130, 395]) }),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => {
+            calls += 1;
+            return [];
+          },
+        },
+      },
+      run,
+    );
+    expect(calls).toBe(0);
+    const body = await written(result.file.bytes);
+    expect(occurrences(body, 'Hello')).toBe(2);
+    expect(occurrences(body, 'Other')).toBe(2);
+    expect(body).not.toContain('secret');
+  });
+});
+
+describe('exact layout: watermarks and pictures drawn twice', () => {
+  const WATERMARK = 'BT /F1 40 Tf 0.7071 0.7071 -0.7071 0.7071 60 100 Tm (CONFIDENTIAL) Tj ET';
+
+  it('boxes diagonal text by character, not as one box over the page', async () => {
+    const boxes = visibleBoxes(await sceneOf(await scanWith(WATERMARK)));
+    expect(boxes.length).toBeGreaterThanOrEqual(10);
+    for (const box of boxes) expect((box[2] - box[0]) * (box[3] - box[1])).toBeLessThan(6000);
+    // and upright text is still boxed by run, a vertical line too
+    const upright = visibleBoxes(
+      await sceneOf(await scanWith('BT /F1 14 Tf 0 1 -1 0 300 100 Tm (Turned words) Tj ET')),
+    );
+    expect(upright).toHaveLength(1);
+  });
+
+  it('leaves the scan under a watermark: only the watermark is painted over', async () => {
+    const seen: { png: Uint8Array; scale: number }[] = [];
+    await exportOffice(
+      await scanWith(WATERMARK),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png, scale) => {
+            seen.push({ png, scale });
+            return scanned();
+          },
+        },
+      },
+      run,
+    );
+    const first = seen[0] ?? { png: new Uint8Array(), scale: 1 };
+    // the dark panel (x 40–240, y 200–300 from the top, red 153) away from the diagonal's line stays; the old one-box mask painted it over
+    expect(await redAt(first.png, first.scale, 80, 290)).toBeLessThan(170);
+    expect(await redAt(first.png, first.scale, 80, 290)).toBeGreaterThan(130);
+  });
+
+  it('writes the words of a picture drawn twice once', async () => {
+    // the same picture again, over the lower part of the first one
+    const twice = 'q 100 0 0 125 150 150 cm /Im0 Do Q';
+    const result = await exportOffice(
+      await scanWith(`${HEADER}\n${twice}`, PARAGRAPH, 'q 200 0 0 250 100 100 cm'),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => [
+            ...paragraphWords().map((entry) => ({
+              ...entry,
+              x0: 100 + entry.x0 / 2,
+              x1: 100 + entry.x1 / 2,
+              y0: 150 + entry.y0 / 2,
+              y1: 150 + entry.y1 / 2,
+            })),
+          ],
+        },
+      },
+      run,
+    );
+    const body = (await written(result.file.bytes)).replaceAll(' ', '');
+    expect(occurrences(body, 'aaaabbbbccccdddd')).toBe(6);
+  });
+
+  it('does not paint black over the see-through parts of a picture whose words are read', async () => {
+    const text = officeDocument([
+      {
+        content: [
+          '0 g',
+          ...[0, 1, 2].map((row) => line('courier', 12, 60, 400 - 20 * row, 'aaaa bbbb cccc dddd')),
+        ].join('\n'),
+      },
+    ]);
+    const result = await exportOffice(
+      await scanWith(HEADER, text, 'q 200 0 0 250 100 100 cm', { transparent: true }),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () =>
+            paragraphWords().map((entry) => ({
+              ...entry,
+              x0: 100 + entry.x0 / 2,
+              x1: 100 + entry.x1 / 2,
+              y0: 150 + entry.y0 / 2,
+              y1: 150 + entry.y1 / 2,
+            })),
+        },
+      },
+      run,
+    );
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const mupdf = await loadMupdf();
+    for (const name of Object.keys(zip.files).filter(
+      (entry) => entry.startsWith('word/media/') && zip.file(entry) !== null,
+    )) {
+      const picture = new mupdf.Image(await (zip.file(name) as JSZip.JSZipObject).async('uint8array'));
+      const pixmap = picture.toPixmap();
+      try {
+        // the corner of the transparent picture is still transparent (or white when flattened), never opaque black
+        const px = pixmap.getPixels();
+        const channels = pixmap.getNumberOfComponents();
+        const corner = Array.from(px.subarray(0, channels));
+        const opaqueBlack = corner.slice(0, 3).every((value) => value === 0) && (corner[3] ?? 255) === 255;
+        expect(opaqueBlack).toBe(false);
+      } finally {
+        pixmap.destroy();
+        picture.destroy();
+      }
+    }
+  });
+});
+
+describe('exact layout: cheap decisions about pictures', () => {
+  it('does not render or read a page whose picture is a logo, a photograph or empty', async () => {
+    let calls = 0;
+    const ocr = {
+      lowConfidence: 0.9,
+      recognize: async () => {
+        calls += 1;
+        return paragraphWords();
+      },
+    };
+    for (const sample of [SAMPLE, BLANK]) {
+      await exportOffice(
+        await scanWith(HEADER, sample, 'q 200 0 0 250 100 100 cm'),
+        { ...options, ocr },
+        run,
+      );
+    }
+    expect(calls).toBe(0);
+  });
+
+  it('keeps a JPEG picture a JPEG when its words are erased', async () => {
+    const mupdf = await loadMupdf();
+    const source = mupdf.Document.openDocument((await PARAGRAPH).slice(), 'application/pdf');
+    const pixmap = source
+      .loadPage(0)
+      .toPixmap(mupdf.Matrix.scale(200 / 72, 200 / 72), mupdf.ColorSpace.DeviceRGB, false, false);
+    const jpeg = pixmap.asJPEG(90, false);
+    const doc = new mupdf.PDFDocument();
+    const image = doc.addImage(new mupdf.Image(jpeg));
+    const font = doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' });
+    doc.insertPage(
+      -1,
+      doc.addPage(
+        [0, 0, 400, 500],
+        0,
+        { XObject: { Im0: image }, Font: { F1: font } },
+        `${HEADER.replace('/F1', '/F1')}\nq 200 0 0 250 100 100 cm /Im0 Do Q\n`,
+      ),
+    );
+    const bytes = doc.saveToBuffer('compress').asUint8Array().slice();
+    pixmap.destroy();
+    source.destroy();
+    doc.destroy();
+    const result = await exportOffice(
+      bytes,
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () =>
+            paragraphWords().map((entry) => ({
+              ...entry,
+              x0: 100 + entry.x0 / 2,
+              x1: 100 + entry.x1 / 2,
+              y0: 150 + entry.y0 / 2,
+              y1: 150 + entry.y1 / 2,
+            })),
+        },
+      },
+      run,
+    );
+    expect(occurrences((await written(result.file.bytes)).replaceAll(' ', ''), 'aaaabbbbccccdddd')).toBe(6);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    expect(Object.keys(zip.files).filter((name) => /word\/media\/.*\.jpe?g$/.test(name))).not.toHaveLength(0);
   });
 });
