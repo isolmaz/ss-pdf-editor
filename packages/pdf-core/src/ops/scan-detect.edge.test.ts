@@ -214,10 +214,11 @@ describe('detectPage on awkward outlines', () => {
   });
 
   it('finds nothing in a picture so long and thin that its working raster is under 16 px across', () => {
-    const width = 16;
-    const height = 2000;
-    const data = new Uint8ClampedArray(width * height * 4).fill(200);
-    expect(detectPage({ width, height, data })).toBeNull();
+    // A bright strip on a dark desk, 16 x 600 (working raster 11 x 400): without the check the
+    // detector reads the strip's two long sides and the frame lines and returns a bogus quad.
+    expect(detectPage(sheet(16, 600, [0, 60, 16, 540], () => 220))).toBeNull();
+    // The same across the other way: 500 x 16 shrinks to 400 x 13.
+    expect(detectPage(sheet(500, 16, [1, 2, 499, 14], () => 220))).toBeNull();
   });
 
   it('keeps a side that leans out of the picture, where only its last quarter is in view', () => {
