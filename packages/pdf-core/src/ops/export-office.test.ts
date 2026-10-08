@@ -248,6 +248,32 @@ describe('exportOffice', () => {
     expect(wordFontName('NimbusRoman')).toBe('Times New Roman');
     expect(wordFontName('Calibri')).toBe('Calibri');
   });
+
+  it('answers the families Word does not ship with the standard font of their kind', () => {
+    for (const sans of ['HelveticaWorld', 'HelveticaNeueLTStd', 'Univers', 'MyriadPro', 'Frutiger']) {
+      expect(wordFontName(sans)).toBe('Arial');
+    }
+    for (const serif of ['MinionPro', 'Garamond', 'PalatinoLinotype', 'TimesTen']) {
+      expect(wordFontName(serif)).toBe('Times New Roman');
+    }
+    expect(wordFontName('CourierStd')).toBe('Courier New');
+    // A foundry's prefix does not hide the family.
+    expect(wordFontName('ITCFranklinGothicStd')).toBe('Arial');
+    expect(wordFontName('ITCGaramond')).toBe('Times New Roman');
+    expect(wordFontName('ITCCourierStd')).toBe('Courier New');
+    for (const kept of ['SegoeUI', 'TrebuchetMS', 'CalibriLight', 'NotoSans', 'Verdana']) {
+      expect(wordFontName(kept, { serif: true, mono: false })).toBe(kept.replace(/([a-z])([A-Z])/g, '$1 $2'));
+    }
+  });
+
+  it('falls back to the class of an unknown family, and only when told the class', () => {
+    expect(wordFontName('Mystery')).toBe('Mystery');
+    expect(wordFontName('Mystery', { serif: false, mono: false })).toBe('Arial');
+    expect(wordFontName('Mystery', { serif: true, mono: false })).toBe('Times New Roman');
+    expect(wordFontName('Mystery', { serif: true, mono: true })).toBe('Courier New');
+    // A table entry beats the class.
+    expect(wordFontName('HelveticaWorld', { serif: true, mono: false })).toBe('Arial');
+  });
 });
 
 describe('exportOffice → DOCX paragraphs', () => {
@@ -1553,6 +1579,27 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
     const at = blocks.findIndex((block) => block.includes('<wp:inline'));
     expect(blocks[at - 1]).toContain('Line 4');
     expect(blocks[at + 1]).toContain('Last line of the page');
+  });
+
+  it('keeps a stamp over a corner of the last line of the page inline, after that line', async () => {
+    const bytes = await officeDocument([
+      {
+        images: { Im1: red },
+        content: [
+          courier(50, 100, 'Last line of the page'),
+          // 30 x 25 pt over the lower left of the line and below it: a little of the line's box.
+          picture('Im1', 50, 80, 30, 25),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    expect(document).not.toContain('<wp:anchor');
+    const blocks = bodyBlocks(document).filter((block) => block.startsWith('<w:p>'));
+    const line = blocks.findIndex((block) => block.includes('Last line of the page'));
+    const stamp = blocks.findIndex((block) => block.includes('<wp:inline'));
+    expect(line).toBeGreaterThanOrEqual(0);
+    expect(stamp).toBeGreaterThan(line);
   });
 
   it('keeps the gaps of a two-column page whose left column holds a labelled drawing, so the page is one page long', async () => {

@@ -26,7 +26,7 @@ import type { OperationDialogSpec } from '../dialogs/types';
 import { resolveScope } from './scope';
 
 /** Language pack names as the UI spells them; the values are tesseract's own codes. */
-const LANGUAGE_LABELS: Record<OcrLanguage, MessageKey> = {
+export const OCR_LANGUAGE_LABELS: Record<OcrLanguage, MessageKey> = {
   tur: 'ocr.language.tr',
   eng: 'ocr.language.en',
   deu: 'ocr.language.deu',
@@ -74,7 +74,7 @@ export const ocrDialog: OperationDialogSpec = {
       columns: 2,
       options: OCR_LANGUAGES.map((language) => ({
         value: language,
-        labelKey: LANGUAGE_LABELS[language],
+        labelKey: OCR_LANGUAGE_LABELS[language],
       })),
     },
     {

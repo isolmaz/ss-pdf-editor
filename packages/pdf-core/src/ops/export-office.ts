@@ -19,7 +19,9 @@
  *    and the picture is anchored behind it. The package is written by hand (WordprocessingML is plain XML in a ZIP) and
  *    read back with mammoth, an independent reader, whose words have to match the words
  *    written. `docxLayout: 'page-images'` writes a different Word file: each page one
- *    picture of the page, exact but not editable (`ops/docx-pages.ts`); the XML both
+ *    picture of the page, exact but not editable (`ops/docx-pages.ts`); `docxLayout:
+ *    'layout'` rebuilds each page where the PDF has it, the text in positioned text boxes
+ *    above the shapes and pictures (exact and editable, `ops/docx-layout.ts`); the XML the
  *    writers share is in `ops/docx-drawing.ts`.
  *  - **XLSX**: one sheet per table (ruled or read from spacing), with merged cells and
  *    column widths. A page without any table becomes one sheet of its text rows, split at
@@ -53,6 +55,7 @@ import {
   xmlSafe,
   zipped,
 } from './docx-drawing';
+import { type LayoutDocx, type OcrOptions, writeLayoutDocx } from './docx-layout';
 import { type PageImage, pageImagesDocx, renderPageImages } from './docx-pages';
 import {
   type Box,
@@ -76,9 +79,11 @@ export type OfficeFormat = 'docx' | 'xlsx' | 'csv';
 export type CsvDelimiter = ',' | ';';
 /**
  * How a Word file is built: `flow` reads the page as text, tables and pictures that reflow
- * (editable); `page-images` draws each page as one picture of the page (exact, not editable).
+ * (editable); `page-images` draws each page as one picture of the page (exact, not editable);
+ * `layout` rebuilds each page where the PDF has it — shapes, pictures and links in place, the
+ * text in positioned text boxes above them (exact and editable).
  */
-export type DocxLayout = 'flow' | 'page-images';
+export type DocxLayout = 'flow' | 'page-images' | 'layout';
 
 export interface OfficeExportOptions {
   /** 0-based page indices, ascending. */
@@ -86,6 +91,13 @@ export interface OfficeExportOptions {
   readonly format: OfficeFormat;
   /** Word only; `flow` when left out. */
   readonly docxLayout?: DocxLayout;
+  /**
+   * Exact layout only: reads the pages that are pictures without text. `recognize` gets the page
+   * as a PNG and its pixels per point, and returns the words (page points, confidence 0–100);
+   * a word below `lowConfidence` (0–1) is marked with a Word comment and listed in the report.
+   * Without it a scanned page stays a picture (and the report says OCR was not available).
+   */
+  readonly ocr?: OcrOptions;
   readonly baseName: string;
   readonly csvDelimiter?: CsvDelimiter;
   /** Sheet names in the reader's language: `table(1)` → `Table 1`, `page(3)` → `Page 3`. */
@@ -142,10 +154,42 @@ const FAMILY_NAMES: Readonly<Record<string, string>> = {
   DejaVuSansMono: 'DejaVu Sans Mono',
 };
 
-/** `TimesNewRomanPS` → `Times New Roman`; `SegoeUI` → `Segoe UI`; `Calibri` stays. */
-export function wordFontName(family: string): string {
+/**
+ * Families by what they are called, matched on the lower-cased name without punctuation: the
+ * ones Word (or any Windows machine) ships are kept by name, the rest of the sans, serif and
+ * monospaced families PDFs embed are answered by the metric-compatible standard font of their
+ * kind (`HelveticaNeueLTStd`, `Univers`, `MyriadPro` → Arial; `MinionPro`, `Garamond` →
+ * Times New Roman). Word and LibreOffice substitute an unknown name with a serif face.
+ */
+const KEPT =
+  /^(?:calibri|cambria|candara|corbel|constantia|consolas|segoe|verdana|georgia|tahoma|trebuchet|noto)/;
+const SANS =
+  /^(?:itc|adobe|ms|mt|lt)?(?:helvetica|arial|univers|frutiger|myriad|nimbussans|liberationsans|swiss|avenir|futura|gillsans|lato|roboto|opensans|sourcesans|ptsans|franklin)/;
+const SERIF =
+  /^(?:itc|adobe|ms|mt|lt)?(?:times|minion|garamond|nimbusroman|liberationserif|palatino|bookman|baskerville|caslon|bodoni|didot|centuryschool|newcentury|charter|sabon|utopia)/;
+const MONO = /^(?:itc|adobe|ms|mt|lt)?(?:courier|nimbusmono|liberationmono|lucidaconsole)/;
+
+/** What the font's own flags say, for a family the table does not know. */
+export interface FontKind {
+  readonly serif: boolean;
+  readonly mono: boolean;
+}
+
+/**
+ * `TimesNewRomanPS` → `Times New Roman`; `SegoeUI` → `Segoe UI`; `Calibri` stays;
+ * `HelveticaNeueLTStd` → `Arial`. An unknown family is named as it is without `kind`, and by
+ * its class (monospaced, serif, else sans) with it.
+ */
+export function wordFontName(family: string, kind?: FontKind): string {
   const known = FAMILY_NAMES[family];
   if (known !== undefined) return known;
+  const key = family.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!KEPT.test(key)) {
+    if (SANS.test(key)) return 'Arial';
+    if (SERIF.test(key)) return 'Times New Roman';
+    if (MONO.test(key)) return 'Courier New';
+    if (kind !== undefined) return kind.mono ? 'Courier New' : kind.serif ? 'Times New Roman' : 'Arial';
+  }
   return family
     .replace(/PS$/, '')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -1571,6 +1615,83 @@ async function writePageImages(
   return { file, steps: ['office.read', 'office.write', 'verify'], notes };
 }
 
+/** Up to this many distinct flagged words are named in the report. */
+const MAX_FLAGGED_LISTED = 20;
+
+/** `word (1), other (2)`: the distinct flagged words with their page numbers, the first ones, then an ellipsis when there are more. */
+function flaggedList(flagged: readonly { readonly page: number; readonly text: string }[]): string {
+  const seen = new Set<string>();
+  const listed: string[] = [];
+  let more = false;
+  for (const word of flagged) {
+    const entry = `${word.text} (${word.page})`;
+    if (seen.has(entry)) continue;
+    if (listed.length === MAX_FLAGGED_LISTED) {
+      more = true;
+      break;
+    }
+    seen.add(entry);
+    listed.push(entry);
+  }
+  return listed.join(', ') + (more ? ', …' : '');
+}
+
+/**
+ * The Word file of the exact layout, read back like the flowing one: the words mammoth finds
+ * (it reads the text boxes' VML fallback) must be the words written.
+ */
+async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExportResult> {
+  await verifyDocx(layout.bytes, layout.words);
+  const file: OutputFile = { name: `${stem}.docx`, bytes: layout.bytes, mime: MIME.docx };
+  const notes: OperationNote[] = [
+    note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: layout.pages }),
+    note('preserved', 'op.note.exportOffice.layout', {
+      boxes: layout.boxes,
+      shapes: layout.shapes,
+      pictures: layout.pictures,
+    }),
+  ];
+  if (layout.scaled.length > 0) {
+    // The smallest factor, rounded, but never 100: a page that was shrunk was shrunk.
+    const percent = Math.min(99, Math.round(Math.min(...layout.scaled.map((page) => page.scale)) * 100));
+    notes.push(
+      note('changed', 'op.note.exportOffice.pageScaled', {
+        pages: layout.scaled.map((page) => page.page).join(', '),
+        percent,
+      }),
+    );
+  }
+  if (layout.rasters > 0) {
+    notes.push(note('changed', 'op.note.exportOffice.layoutRasters', { count: layout.rasters }));
+  }
+  if (layout.fonts > 0) {
+    notes.push(note('preserved', 'op.note.exportOffice.fontsEmbedded', { count: layout.fonts }));
+  }
+  if (layout.textless.length > 0) {
+    notes.push(note('warning', 'op.note.exportOffice.noText', { pages: layout.textless.join(', ') }));
+  }
+  if (layout.unreadable > 0) {
+    notes.push(note('lost', 'op.note.exportOffice.unreadable', { count: layout.unreadable }));
+  }
+  if (layout.ocr.pages.length > 0) {
+    notes.push(note('changed', 'op.note.exportOffice.ocrPages', { pages: layout.ocr.pages.join(', ') }));
+  }
+  if (layout.ocr.flagged.length > 0) {
+    notes.push(
+      note('warning', 'op.note.exportOffice.ocrLowConfidence', {
+        count: layout.ocr.flagged.length,
+        words: flaggedList(layout.ocr.flagged),
+      }),
+    );
+  }
+  if (layout.ocr.unavailable.length > 0) {
+    notes.push(
+      note('warning', 'op.note.exportOffice.ocrUnavailable', { pages: layout.ocr.unavailable.join(', ') }),
+    );
+  }
+  return { file, steps: ['office.read', 'office.write', 'verify'], notes };
+}
+
 export async function exportOffice(
   bytes: Uint8Array,
   options: OfficeExportOptions,
@@ -1586,16 +1707,21 @@ export async function exportOffice(
   const steps: string[] = ['office.read'];
   const notes: OperationNote[] = [];
   const asImages = options.format === 'docx' && options.docxLayout === 'page-images';
+  const asLayout = options.format === 'docx' && options.docxLayout === 'layout';
   let pages: ReadPage[] = [];
   let images: PageImage[] = [];
+  let layout: LayoutDocx | null = null;
   let title: string;
   let language: string;
+  const stem = options.baseName.replace(/\.pdf$/i, '') || 'document';
   try {
-    title = doc.getMetaData('info:Title')?.trim() ?? '';
+    title = doc.getMetaData('info:Title')?.trim() || stem;
     // The catalog's `/Lang` (BCP 47, what Word's `w:lang` takes too), when the PDF has one.
     language = readText(doc.getTrailer().get('Root').get('Lang'))?.trim() ?? '';
     if (asImages) images = await renderPageImages(doc, options.pages, context);
-    else pages = await readPages(doc, options.pages, options.format === 'docx', context);
+    else if (asLayout) {
+      layout = await writeLayoutDocx(doc, options.pages, title, language, context, options.ocr ?? null);
+    } else pages = await readPages(doc, options.pages, options.format === 'docx', context);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapMupdfError(error, 'export-office');
@@ -1604,9 +1730,8 @@ export async function exportOffice(
   }
   throwIfAborted(context.signal);
 
-  const stem = options.baseName.replace(/\.pdf$/i, '') || 'document';
-  if (title === '') title = stem;
   if (asImages) return writePageImages(images, stem, title, context);
+  if (layout !== null) return writeLayout(layout, stem);
   const textless = pages
     .filter((page) =>
       page.layout.blocks.every(

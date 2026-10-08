@@ -128,8 +128,8 @@ describe('recognizePage', () => {
     const result = await engine.recognizePage(input({ languages: ['tur', 'eng'] }));
     expect(result.confidence).toBe(81);
     expect(result.words).toEqual([
-      { text: 'Çarşı', x0: 10, y0: 20, x1: 60, y1: 40, confidence: 77 },
-      { text: 'Dünya', x0: 70, y0: 20, x1: 100, y1: 40, confidence: 90 },
+      { text: 'Çarşı', x0: 10, y0: 20, x1: 60, y1: 40, confidence: 77, block: 0, paragraph: 0, line: 0 },
+      { text: 'Dünya', x0: 70, y0: 20, x1: 100, y1: 40, confidence: 90, block: 0, paragraph: 0, line: 0 },
     ]);
     expect(state.created).toHaveLength(1);
     expect(state.created[0]?.languages).toEqual(['tur', 'eng']);
@@ -142,6 +142,42 @@ describe('recognizePage', () => {
     expect(state.workers[0]?.recognize).toEqual([
       { image, recognizeOptions: {}, output: { blocks: true, text: false, hocr: false, tsv: false } },
     ]);
+  });
+
+  it('numbers blocks, paragraphs and lines over the page and scales the line baseline', async () => {
+    const word = (text: string, x0: number) => ({
+      text,
+      bbox: { x0, y0: 20, x1: x0 + 20, y1: 40 },
+      confidence: 95,
+    });
+    const baseline = { x0: 20, y0: 36, x1: 80, y1: 38, has_baseline: true };
+    state.recognize = async () => ({
+      data: {
+        confidence: 90,
+        blocks: [
+          {
+            paragraphs: [
+              { lines: [{ baseline, words: [word('a', 20), word('b', 50)] }, { words: [word('c', 20)] }] },
+              { lines: [{ baseline: { ...baseline, has_baseline: false }, words: [word('d', 20)] }] },
+            ],
+          },
+          { paragraphs: [{ lines: [{ words: [word('e', 20)] }] }] },
+        ],
+      },
+    });
+    const { words } = await engine.recognizePage(input());
+    expect(words.map(({ text, block, paragraph, line }) => [text, block, paragraph, line])).toEqual([
+      ['a', 0, 0, 0],
+      ['b', 0, 0, 0],
+      ['c', 0, 0, 1],
+      ['d', 0, 1, 2],
+      ['e', 1, 2, 3],
+    ]);
+    expect(words[0]?.baseline).toEqual({ x0: 10, y0: 18, x1: 40, y1: 19 });
+    expect(words[1]?.baseline).toEqual({ x0: 10, y0: 18, x1: 40, y1: 19 });
+    // No baseline, or one tesseract flags as not found: the field is absent.
+    expect(words[2]).not.toHaveProperty('baseline');
+    expect(words[3]).not.toHaveProperty('baseline');
   });
 
   it('uses the best-model directory for the best quality', async () => {

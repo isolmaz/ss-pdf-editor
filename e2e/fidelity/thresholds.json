@@ -1,16 +1,113 @@
 {
   "flow": {
-    "default": { "ssim": null, "words": null },
-    "cards": { "words": 0.99 },
-    "columns": { "words": 0.91 },
-    "cv": { "words": 0.98 },
-    "form": { "words": 0.99 },
-    "table": { "words": 0.99 },
-    "text-over-image": { "words": 0.99 },
-    "irs-f1040-2022": { "words": 0.57 },
-    "irs-fw4-2022": { "words": 0.75 },
-    "irs-p15-2022": { "words": 0.99 },
-    "usgs-fs2020-3002": { "words": 0.95 },
-    "usgs-fs2020-3042": { "words": 0.99 }
+    "default": {
+      "ssim": null,
+      "words": null
+    },
+    "cards": {
+      "words": 0.99
+    },
+    "columns": {
+      "words": 0.91
+    },
+    "cv": {
+      "words": 0.98
+    },
+    "form": {
+      "words": 0.99
+    },
+    "table": {
+      "words": 0.99
+    },
+    "text-over-image": {
+      "words": 0.99
+    },
+    "irs-f1040-2022": {
+      "words": 0.57
+    },
+    "irs-fw4-2022": {
+      "words": 0.75
+    },
+    "irs-p15-2022": {
+      "words": 0.99
+    },
+    "usgs-fs2020-3002": {
+      "words": 0.95
+    },
+    "usgs-fs2020-3042": {
+      "words": 0.99
+    }
+  },
+  "page-images": {
+    "default": {
+      "ssim": 0.95,
+      "words": null
+    }
+  },
+  "layout": {
+    "default": {
+      "ssim": null,
+      "words": null
+    },
+    "cards": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "columns": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "cv": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "form": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "table": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "text-over-image": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "irs-f1040-2022": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "irs-i1040tt-2022": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "irs-p15-2022": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "usgs-fs2020-3002": {
+      "ssim": 0.95,
+      "words": 0.99
+    },
+    "irs-fw4-2022": {
+      "ssim": 0.93,
+      "words": 0.99
+    },
+    "usgs-fs2020-3042": {
+      "ssim": 0.86,
+      "words": 0.99
+    },
+    "cv-scan": {
+      "ssim": 0.83,
+      "words": 0.9
+    },
+    "cards-scan": {
+      "ssim": 0.92,
+      "words": 0.74
+    },
+    "nasa-tm-vacuum-1965": {
+      "ssim": 0.6,
+      "words": 0.95
+    }
   }
 }

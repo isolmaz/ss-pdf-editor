@@ -464,12 +464,20 @@ had to stay green. The moves, and the defects they fixed on the way:
     word count must equal the words written. A picture MuPDF could not draw, and one inside a
     ruled table (whose cells carry text only), is left out of the file and counted in a `lost`
     note (`op.note.exportOffice.picturesLost`).
-  - **Word layout** (`OfficeExportOptions.docxLayout`, `flow` by default; the UI's `layout` field and the
-    Export dialog's second select). `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
+  - **Word layout** (`OfficeExportOptions.docxLayout`: `flow`, `page-images` or `layout`; the UI's
+    `layout` field and the Export dialog's second select default to `layout`, the exact layout, and
+    the dialog lists it first). Two of the three skip the flowing reader. `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
     page with MuPDF (`page.toPixmap`, RGB, no alpha so white paper, annotations and widgets
     included; pdf.js is not used, so the path runs in Node tests) at 200 dpi of the page's size as
     `getBounds` gives it (after `/Rotate` and the crop box), lower only when a page would exceed 40 megapixels; the note reports the lowest dpi used (`dpi`).
-    JPEG (quality 90) when a `Device` pass sees `fillImage` on the page, PNG otherwise. Each page is a
+    The picture is drawn from the page's corner at one scale on both axes (`Matrix.translate`
+    then `scale`), and its pixel count is the one a renderer draws the page's extent into
+    (`coverPixels`: the side in whole twips, `wordSide`, at that scale, rounded up), so the
+    picture is copied pixel for pixel instead of resampled; the section and the anchor are the
+    same whole-twip size, so the page keeps its size within a twip, and the anchor is lifted
+    one twip (`LIBREOFFICE_LIFT`), which cancels the twip LibreOffice puts an anchored picture
+    above its place.
+    JPEG (quality 92) when the `fillImage` boxes a `Device` pass sees cover at least half of the page, PNG otherwise (a small logo keeps the text lossless). Each page is a
     section of the page's size with every margin 0 and `w:orient` when wide, holding one
     paragraph (exact 1 pt line, 1 pt run) with a `wp:anchor` picture at the page's corner
     (`behindDoc`, `wrapNone`; children in the schema's order). **The 22-inch rule:** Word refuses a
@@ -479,6 +487,157 @@ had to stay green. The moves, and the defects they fixed on the way:
     writers share (escaping, package parts, `zipped`, the section and the anchor) is in
     `ops/docx-drawing.ts`. The file is read back with mammoth like the flowing one; it holds no
     words, so none must be found.
+  - **Word exact layout** (`docxLayout: 'layout'`, "Text and pictures, exact layout"). The page is
+    rebuilt from what it draws, not from reading order: `ops/layout-scene-read.ts` runs a MuPDF
+    `Device` over the page and records a scene (text runs with their fonts, sizes, colours and
+    links; filled and stroked paths; images; the regions it cannot express); `ops/docx-layout-text.ts`
+    groups the runs into paragraphs and writes each as a positioned text box, and
+    `ops/docx-layout-shapes.ts` writes the paths as DrawingML `custGeom` shapes and the pictures as
+    anchors; `ops/docx-layout.ts` assembles the package (one section per page, margins 0, every
+    object a `wp:anchor` in front of or behind the text). A text box is written as
+    `mc:AlternateContent` with a `wps:txbx` choice and a VML (`v:textbox`) fallback; mammoth reads the
+    fallback back, so the `verify` step still compares the words written with the words found.
+    Text that runs up or down the page (MuPDF's line direction, which holds for one character too) is a
+    vertical text box (`bodyPr vert="vert270"` / `"vert"` on the visual box): LibreOffice ignores
+    `a:xfrm rot` on a text box. A line's baseline is its characters' origin (`LayoutChar.baseline`);
+    the box top is that minus 0.8 × the exact line height, and the box starts `TEXT_LEFT` (0.1 pt)
+    left of the first glyph origin, where LibreOffice puts it. The 22-inch rule above applies too: a
+    larger page is scaled down (`wordPageScale`) and everything on it with it. XML shared with the
+    picture layout is in `ops/docx-drawing.ts`. The pipeline, per page and then per document
+    (`writeLayoutDocx`, which gives the event loop a turn between pages):
+    1. **Scene read** (`readPageScene`). One `Device` pass in paint order. Paths become
+       `SceneShape`s (fill and stroke with alpha, dashes, caps, joins; hairlines drawn 0.25 pt);
+       images become `SceneImage`s drawn through their transform with the soft mask folded in and
+       cut to the clip (JPEG 90 when opaque and over 256 colours, else PNG, at most 2000 px a
+       side). Clips are a stack: an upright rectangle only shrinks the box content is cut to; a
+       clip of straight edges (`Polygon`, winding or even-odd; Antenna House wraps every table
+       rule in one) leaves a shape or picture alone when its box lies wholly inside the
+       polygon (`POLYGON_SLACK` 0.5 pt) and rasters it otherwise; any other clip (a curve, a
+       stroke, text, an image mask), a soft mask, a blend-mode group, a tiling pattern, a
+       shading and a stencil mask put what they cover in a raster *island*. Islands within 8 pt
+       merge and sit in the paint order at their first contribution; each is rendered once at
+       144 dpi by MuPDF **without its text** (and without what Word draws itself over or under
+       it), so the text above stays editable. A page of more than 1500 shapes and islands
+       becomes one raster. Links (external URIs only) and the text (`readPageLayout`) are read
+       in the same pass. Three limits keep one odd drawing from costing the export: a filled
+       rectangle reaching further than five page sides off the page is cut to the page and any
+       other shape that far out is an island (Word's offsets are 32-bit); an even-odd fill of
+       more than 1500 subpaths is an island (finding its holes is quadratic); and a colour of
+       a space the binding cannot pass on never throws (a DeviceN of two inks goes through as
+       it is; of five or more inks it is converted to RGB first, one 8-bit pixel of the space
+       run through MuPDF's own tint transform, so a CMYK-and-spot fill keeps its hue). A page the reader
+       fails on for any other reason is written as `readPageRaster`'s one picture of the
+       page under its text boxes and links.
+    2. **Text boxes** (`textBoxes`, `ops/docx-layout-text.ts`). MuPDF's lines (pieces of a
+       justified line are joined again when their gaps are equal) become paragraphs while the
+       size agrees (±1 pt), the baseline pitch is regular (0.5…1.6 × size) and the left edges,
+       centres or right edges agree (2 pt); a bullet starts a paragraph. Alignment is centre,
+       right, justified (at least two full-width lines) or left. Paragraphs that stack at the
+       gap Word's exact line spacing would give, and share an edge, are one box. A run is a
+       stretch of one family, size (0.5 pt), weight, slant, colour and link. Its family is the
+       embedded face when the font was embedded, otherwise `wordFontName`: a name table, then
+       sans → Arial, serif → Times New Roman, monospaced → Courier New (by name, else by the
+       font's flags, the serif flag judged for the family as a whole). A line carries a `RunFit`
+       (each character's natural advance in the face Word draws and where the PDF starts it),
+       and `fitLine` turns that into `w:spacing` per character, in twentieths of a point: a
+       word's letters share the residual between their natural width and the PDF's
+       origin-to-origin span, the space after it takes whatever lands the next word on its
+       place, and the pen is tracked as LibreOffice truncates each portion to whole twips, so
+       the error never adds up past 0.05 pt. A word needing more than 0.5 × size a letter keeps
+       the font's own spacing; a face narrower or wider than the PDF's gets a `w:w` scale.
+       A justified paragraph is written `w:jc left` (`paragraphXml`): with the words fitted,
+       LibreOffice's own justification stretched the fitted spaces a second time. The trade-off
+       is that a justified paragraph is no longer justified once edited. The justified box is as
+       wide as the PDF's lines; only a box with a squeezed line (spaces under 0.278 × size) gets
+       the room that line needs at natural spaces, +1.5 %, because LibreOffice wraps a line
+       wider than its frame despite `wrap="none"`; any other box is 3 % + 2 pt wider than its
+       text for the same reason.
+    3. **Shapes and pictures** (`sceneItemXml`, `ops/docx-layout-shapes.ts`). A shape is a
+       `wps:wsp`: `prstGeom rect` for an upright rectangle, otherwise `custGeom` with the points
+       in EMU relative to the box; a box thinner than its stroke (a rule) is widened to the
+       stroke around its centre. DrawingML has no fill rule, so an even-odd fill is one nonzero
+       path whose subpaths alternate in direction by nesting depth (crossing subpaths cannot be
+       written). A picture or raster is a *rectangle filled with the picture* (a `wps:wsp` with a `blipFill`, `prstGeom rect` and no outline), not a `pic:pic`: LibreOffice paints a `pic:pic` in front of every shape of the page whatever its `relativeHeight` (translucent panels laid over a photo vanished behind it), while shapes stack among themselves by it. Like a shape it has a VML `mc:Fallback` (`v:rect` with a `v:fill type="frame"` of the same relationship id, position, size and `z-index`) for readers of VML only. `DocxRegistry` hands out the
+       relationship ids, `wp:docPr` ids and `relativeHeight`, starting at Word's own base
+       251658240 (stacked from 1, LibreOffice paints the page-sized background over everything
+       after it), so calling in paint order keeps the paint order: first the scene's items,
+       then the text boxes.
+    4. **Parts.** `embedFonts` (`ops/docx-fonts.ts`, before the first page is read, so every
+       page's text can look its face up) records, per page, the Unicode → glyph pairs and
+       advances each visible font draws (a `Device` whose `fillText`/`strokeText` see them;
+       invisible text is `ignoreText`, and text drawn at opacity 0, as this app's OCR layer is, is not recorded); finds the programs in the page's and its forms'
+       resources (`FontFile2`, `FontFile3` as a bare CFF or OpenType; Type 1 is not
+       embedded); and rebuilds each with `trueTypeForWord` / `cffForWord`
+       (`ops/docx-font-sfnt.ts`): a new Unicode `cmap` of exactly the drawn pairs, a `name`
+       table (family, style; a second program of one family and style, such as another subset
+       of the face, is `Family 2`), the `OS/2` and `post` a PDF subset lacks (its ascent and
+       descent read from `hhea`, else `head`), and the style bits made to agree with the names. The font's licence bits are kept: `OS/2`
+       `fsType` 2 ("restricted licence") or 0x0200 (bitmaps only) makes the builder return `null`
+       and the font keeps its fallback, and an OpenType-CFF font is rebuilt with its own `fsType`, as does any font that cannot be rebuilt (the export goes on). A ligature
+       glyph arrives from MuPDF as its first character with the glyph and the next ones with
+       gid −1, so a glyph is held until the next shows it stands alone and is never mapped as
+       its first letter. The fonts are written as `word/fonts/fontN.odttf` XORed with the key
+       of their `w:fontKey` GUID (ECMA-376 Part 1 §17.8.1; the GUID is derived from the bytes, so
+       the same export gives the same file), `word/fontTable.xml`, and `word/settings.xml`
+       with `embedTrueTypeFonts` and `saveSubsetFonts`. `word/styles.xml` makes the font most of
+       the text is set in the document default. A noted run (OCR) is a `w:commentRangeStart`…
+       `commentReference` range and one `w:comment` in `word/comments.xml` (author
+       `SsPdfEditor`, a `CommentReference` style in `styles.xml`). Counts go to the notes
+       `layout`, `layoutRasters`, `fontsEmbedded`, `pageScaled`, `noText` and `unreadable`.
+    5. **Scans (OCR).** After the scene is read, `isScanPage` decides: no visible character
+       on the page and pictures (not shapes) covering at least half of its area, so a scan with
+       or without an invisible text layer. For such a page `readScanPage`
+       (`ops/docx-layout-ocr.ts`) replaces the scene's items and the text boxes:
+       - *Words.* The invisible layer's, when the page has one (`layerWords`: words cut at
+         blanks from the layer's characters, boxes from the baseline and size, confidence 100,
+         no recognition run); else `OfficeExportOptions.ocr.recognize` (the UI passes
+         `recognizePage`, Tesseract, quality `best`, the languages ticked in the form's
+         `ocrLanguages` field, default `tur`+`eng`) on the page rendered by MuPDF at the scan's
+         own resolution, that of its largest picture, bounded to 150–300 dpi and 200 when
+         unknown. Without `recognize` and without a layer `readScanPage` returns `null`, the
+         page keeps its pictures, and `ocrUnavailable` lists it.
+       - *Rules for what Tesseract returned.* `dropDuplicates` keeps the surer of two words
+         overlapping by more than 30 % of the smaller box; `dropEdgeMarks` drops words of one or two
+         characters in the outer 3 % of the page width (the scanner's dark edge);
+         `misreadWords` names what Tesseract made of an icon or a chart: a symbol or one
+         letter in punctuation under 60 % sure, a ringed or registered-mark glyph taller than
+         1.5 × the page's typical word, a one- or two-character stem taller than 1.5 × typical
+         and narrower than 0.35 × its height, and a word of letters only under 25 % sure.
+         `ocrBackground` runs a first time without them; a misread word that lies over a picture
+         region is dropped (`dropMisreads`), the graphic staying in the picture, and the
+         background is computed again when any was dropped; a misread word outside every region
+         stays text.
+       - *`ocrBackground`.* Each word's box (plus 0.15 × its height) is filled with the median
+         colour of the ring of pixels around it; the page colour is the commonest colour left
+         (16 levels a channel); pixels more than 12 levels from it form regions, joined when
+         closer than 3 pt and dropped under 8 pt on both sides; each region is cropped from the
+         erased image as one PNG, and is *solid* (a card, a band, a photo) when at least half
+         its box differs, the rest being loose marks. The page becomes a page-sized rectangle
+         of the page colour, the regions pictures above it, and the page's own vector shapes
+         stay above those.
+       - *`ocrTextBoxes`.* Tesseract's lines are cut where two words are further apart than
+         1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
+         paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
+         ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart; paragraphs are
+         put in reading order by recursive cuts at the widest gap no box crosses (a column
+         gutter outweighs the space between a heading and its list; horizontal wins a tie).
+         A line's size is the median of its words' sizes, each from the word's height by what
+         it holds (capitals and ascenders 0.745, x-height letters 0.53, marked capitals 0.92,
+         descenders 0.235 of the size; calibrated on Noto Sans and Arial); a height inflated by
+         a speck (more than 1.3 × the size the word widths give) is set at 1.1 × the width-based
+         size. The
+         colour is the median of the word's ink pixels against its background, bold is a
+         stroke 1.3× the page's median. The family is the one of Arial, Times New Roman and
+         Courier New whose per-word width ratios agree best (judged from 8 words of three
+         letters up; Arial wins unless another's spread is under 0.8 × its), measured with
+         the metric-compatible standard fonts MuPDF carries (`standardAdvance`). Each word
+         carries where the scan has its letters (`RunFit`), so the writer fits it like a PDF's
+         text; a box more than 25 % narrower or 35 % wider than the word's natural width is
+         not trusted and its letters are set at the natural pitch from its left edge. A word
+         with a letter or digit under `lowConfidence` (0.90, `LOW_CONFIDENCE` in
+         `packages/pdf-ui/src/ops/office.ts`, the threshold of `docs/ocr-evaluation.md`) is a run
+         of its own with a `note`, written as a comment and listed in `ocrLowConfidence`; the
+         pages read are listed in `ocrPages`.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
     is not read back (the XLSX path reports no `verify` step; only Word and CSV do). CSV rows are read back through `parseCsv`. A CSV text
     cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,
@@ -879,6 +1038,11 @@ warning because it is additive. A worker that fails to start (a missing core, la
 start is not cached. Cancellation is a real `worker.terminate()`, and the
 `finally` awaits worker termination, so "memory is back" is true when the function
 resolves.
+
+The same recogniser reads the scanned pages of the exact Word layout (`recognizePage`, quality
+`best`, passed to `exportOffice` as `ocr.recognize`; see "Word exact layout" in 5.1). That path
+also reuses this operation's invisible text layer instead of recognising again. Why Tesseract is
+the only engine, and the 0.90 confidence threshold, are measured in `docs/ocr-evaluation.md`.
 
 **Accessibility (`ops/accessibility.ts`).** Three operations, and the first one is
 deliberately not a score:

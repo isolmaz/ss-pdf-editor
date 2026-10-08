@@ -19,7 +19,7 @@
  * ("stream" mode).
  */
 
-import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade } from 'mupdf';
+import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade, Text } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 
 export type Box = readonly [number, number, number, number];
@@ -27,18 +27,31 @@ export type Box = readonly [number, number, number, number];
 export interface LayoutChar {
   readonly c: string;
   readonly box: Box;
+  /**
+   * The y of the character's origin in page space: the baseline of upright text. (The box
+   * reaches from the font's ascent to its descent, which differ between fonts.)
+   */
+  readonly baseline: number;
   readonly size: number;
   /** Family without the subset prefix or the style suffix (`ABCDEF+Arial-BoldMT` → `Arial`). */
   readonly font: string;
+  /** The font's full name as MuPDF has it, subset tag included (`ABCDEF+Arial-BoldMT`): what the fonts of the page resources are matched by. */
+  readonly face?: string;
   readonly bold: boolean;
   readonly italic: boolean;
   readonly mono: boolean;
+  /** The font's own serif flag (unreliable between the styles of one family). */
+  readonly serif: boolean;
   /** `0xRRGGBB`. */
   readonly color: number;
+  /** Drawn invisibly (render mode 3, or a zero alpha): the text layer a scan's OCR leaves behind. */
+  readonly invisible?: true;
 }
 
 export interface LayoutLine {
   readonly box: Box;
+  /** MuPDF's unit direction of the text along the line in page space: (1, 0) across, (0, -1) up, (0, 1) down. */
+  readonly dir: readonly [number, number];
   readonly chars: readonly LayoutChar[];
 }
 
@@ -106,6 +119,12 @@ const SNAP = 1.5;
 const MIN_RULE = 6;
 /** A filled rectangle thinner than this is drawn as a line. */
 const HAIRLINE = 2.5;
+
+/**
+ * Whether a font's name says it is bold, for a font whose flags do not: Bold, Black, Heavy,
+ * SemiBold, Demi, and the foundries' `-Dem` (`ITCFranklinGothicStd-Dem`).
+ */
+export const BOLD_NAME = /bold|black|heavy|semibold|demi|[-,\s]dem(?![a-z])/i;
 
 /** `ABCDEF+Arial-BoldMT` → `Arial`; `TimesNewRomanPS-ItalicMT` → `TimesNewRomanPS`. */
 export function fontFamily(name: string): string {
@@ -279,7 +298,7 @@ function drawImage(mupdf: Mupdf, bbox: Rect, transform: Matrix, image: Image): U
  * three pixel views are taken after every allocation: they are windows on the wasm heap,
  * which an allocation may move.
  */
-function softMasked(mupdf: Mupdf, image: Image): Image | null {
+export function softMasked(mupdf: Mupdf, image: Image): Image | null {
   const mask = image.getMask();
   if (mask === null) return null;
   const pixmaps: Pixmap[] = [];
@@ -343,8 +362,12 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   const blocks: LayoutBlock[] = [];
   let lines: LayoutLine[] = [];
   let chars: LayoutChar[] = [];
+  /** Every line's `chars` with each character's origin (page space, unshifted), for `invisible`. */
+  const walked: { readonly chars: LayoutChar[]; readonly origins: (readonly [number, number])[] }[] = [];
+  let origins: (readonly [number, number])[] = [];
   let blockBox: Box = [0, 0, 0, 0];
   let lineBox: Box = [0, 0, 0, 0];
+  let lineDir: readonly [number, number] = [1, 0];
   const text = page.toStructuredText(
     options.images ? 'preserve-whitespace,preserve-images' : 'preserve-whitespace',
   );
@@ -368,30 +391,43 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         blockBox = [x0, y0, x1, y1];
         lines = [];
       },
-      beginLine(bbox) {
+      beginLine(bbox, _wmode, direction) {
         const [x0, y0] = shift(bbox[0], bbox[1]);
         const [x1, y1] = shift(bbox[2], bbox[3]);
         lineBox = [x0, y0, x1, y1];
+        lineDir = [direction[0], direction[1]];
         chars = [];
+        origins = [];
       },
-      onChar(c, _origin, font, size, quad, color) {
+      onChar(c, origin, font, size, quad, color) {
         // Read per character: the binding hands over a new `Font` wrapper for every one, and two
         // fonts may share a name (or have none) while their flags differ.
         const name = font.getName();
         const face = {
           font: fontFamily(name),
-          bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
+          face: name,
+          bold: font.isBold() || BOLD_NAME.test(name),
           italic: font.isItalic() || /italic|oblique/i.test(name),
           mono: font.isMono(),
+          serif: font.isSerif(),
         };
         const xs = [quad[0], quad[2], quad[4], quad[6]];
         const ys = [quad[1], quad[3], quad[5], quad[7]];
         const [x0, y0] = shift(Math.min(...xs), Math.min(...ys));
         const [x1, y1] = shift(Math.max(...xs), Math.max(...ys));
-        chars.push({ c, box: [x0, y0, x1, y1], size, color: rgb(color), ...face });
+        origins.push([origin[0], origin[1]]);
+        chars.push({
+          c,
+          box: [x0, y0, x1, y1],
+          baseline: shift(origin[0], origin[1])[1],
+          size,
+          color: rgb(color),
+          ...face,
+        });
       },
       endLine() {
-        lines.push({ box: lineBox, chars });
+        walked.push({ chars, origins });
+        lines.push({ box: lineBox, dir: lineDir, chars });
       },
       endTextBlock() {
         blocks.push({ kind: 'text', box: blockBox, lines });
@@ -424,7 +460,24 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
     if (width * height > area * 0.6 || (width < 0.5 && height < 0.5)) return;
     marks.push({ box: [x0, y0, x1, y1], seed });
   };
+  /** The origins of the glyphs drawn invisibly, on a grid of a quarter point. */
+  const hidden = new Set<string>();
+  const hide = (text: Text, ctm: Matrix): void => {
+    text.walk({
+      showGlyph(_font, trm) {
+        const [x, y] = apply(ctm, trm[4], trm[5]);
+        hidden.add(`${Math.round(x * 4)},${Math.round(y * 4)}`);
+      },
+    });
+  };
   const device = new mupdf.Device({
+    fillText(text, ctm, _colorspace, _color, alpha) {
+      if (alpha === 0) hide(text, ctm);
+    },
+    strokeText(text, _stroke, ctm, _colorspace, _color, alpha) {
+      if (alpha === 0) hide(text, ctm);
+    },
+    ignoreText: hide,
     fillShade(shade, ctm) {
       borrowed(shade);
       mark(transformBox(shade.getBounds(), ctm), true);
@@ -469,6 +522,19 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
     device.close();
   } finally {
     device.destroy();
+  }
+  if (hidden.size > 0) {
+    for (const line of walked) {
+      for (const [at, origin] of line.origins.entries()) {
+        const gx = Math.round(origin[0] * 4);
+        const gy = Math.round(origin[1] * 4);
+        let found = false;
+        for (let dx = -1; dx <= 1 && !found; dx += 1) {
+          for (let dy = -1; dy <= 1 && !found; dy += 1) found = hidden.has(`${gx + dx},${gy + dy}`);
+        }
+        if (found) line.chars[at] = { ...(line.chars[at] as LayoutChar), invisible: true };
+      }
+    }
   }
 
   return { width: px1 - px0, height: py1 - py0, blocks, rulings, marks };

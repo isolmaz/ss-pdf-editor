@@ -3,8 +3,17 @@
  * brings a page inside it, the page section, and a picture anchored to the page.
  */
 
+import { DOMParser } from '@xmldom/xmldom';
 import { describe, expect, it } from 'vitest';
-import { anchoredPictureXml, pageSectionXml, wordPageScale, xml } from './docx-drawing';
+import {
+  anchoredPictureXml,
+  documentRelsXml,
+  pageSectionXml,
+  SHAPE_NAMESPACES,
+  wordDocumentXml,
+  wordPageScale,
+  xml,
+} from './docx-drawing';
 
 describe('wordPageScale', () => {
   it('leaves a page that fits, even one exactly 22 inches wide, as it is', () => {
@@ -60,5 +69,42 @@ describe('anchoredPictureXml', () => {
     expect(anchoredPictureXml(picture)).toContain('<wp:docPr id="3" name="a&amp;b.png"/>');
     expect(xml('a&b')).toBe('a&amp;b');
     expect(anchoredPictureXml({ ...picture, width: 0, height: 0 })).toContain('<wp:extent cx="1" cy="1"/>');
+  });
+});
+
+describe('documentRelsXml', () => {
+  it('lists the styles, the media and then the external links, the link target escaped', () => {
+    const rels = documentRelsXml(['a.png'], [{ rid: 'rIdLink1', uri: 'https://example.com/?a=1&b=<2>' }]);
+    expect(rels).toContain('Id="rIdImage1"');
+    expect(rels).toContain(
+      '<Relationship Id="rIdLink1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/?a=1&amp;b=&lt;2&gt;" TargetMode="External"/>',
+    );
+    expect(rels.indexOf('rIdImage1')).toBeLessThan(rels.indexOf('rIdLink1'));
+  });
+
+  it('is unchanged without links', () => {
+    expect(documentRelsXml(['a.png'])).not.toContain('hyperlink');
+    expect(documentRelsXml(['a.png'])).toBe(documentRelsXml(['a.png'], []));
+  });
+});
+
+describe('SHAPE_NAMESPACES', () => {
+  it('would be caught if a prefix were declared twice', () => {
+    const failures: string[] = [];
+    new DOMParser({
+      errorHandler: (level: string, message: string) => failures.push(`${level}: ${message}`),
+    }).parseFromString(wordDocumentXml('<w:p/>', `${SHAPE_NAMESPACES} ${SHAPE_NAMESPACES}`), 'text/xml');
+    expect(failures.length).toBeGreaterThan(0);
+  });
+
+  it('adds each prefix once to the document root, which parses without a complaint', () => {
+    const failures: string[] = [];
+    const xmlText = wordDocumentXml('<w:p/>', SHAPE_NAMESPACES);
+    new DOMParser({
+      errorHandler: (level: string, message: string) => failures.push(`${level}: ${message}`),
+    }).parseFromString(xmlText, 'text/xml');
+    expect(failures).toEqual([]);
+    const prefixes = [...xmlText.matchAll(/xmlns:(\w+)=/g)].map((match) => match[1]);
+    expect(new Set(prefixes).size).toBe(prefixes.length);
   });
 });

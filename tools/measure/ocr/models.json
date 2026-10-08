@@ -1,0 +1,284 @@
+{
+  "generated": "2026-10-08",
+  "note": "Every file is fetched by fetch-models.mjs and verified against bytes+sha256. ONNX files come from the official PaddlePaddle / Felix92 (OnnxTR) Hugging Face repos at the pinned revision; the two extra layout models come from the RapidAI ModelScope mirror of RapidLayout v1.2.0.",
+  "models": [
+    {
+      "id": "ppocrv6-det-tiny",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx",
+      "revision": "2ba1506c0380b8f0b03dd142459aac66d4421f6c",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.onnx",
+      "bytes": 1780590,
+      "sha256": "193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/2ba1506c0380b8f0b03dd142459aac66d4421f6c/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv6-det-small",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx",
+      "revision": "28fe5895c24fd108c19eb3e8479f4ab385fbfc62",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.onnx",
+      "bytes": 9880512,
+      "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv6-det-medium",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx",
+      "revision": "61323801669c338b7891481ec7bac61ce31b576a",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.onnx",
+      "bytes": 62032837,
+      "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/61323801669c338b7891481ec7bac61ce31b576a/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv6-rec-tiny",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx",
+      "revision": "2612ab37152ae0a677521bae4e1e3d4fb4cf7c30",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.onnx",
+      "bytes": 4462639,
+      "sha256": "9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv6-rec-small",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx",
+      "revision": "b8f84f0b80c529de40b4fbb3544b84fa7233a513",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx",
+      "bytes": 21159378,
+      "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv6-rec-medium",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx",
+      "revision": "50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.onnx",
+      "bytes": 76554979,
+      "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/50c7eacafc52fa7bcf4194e8cd08e46f8558504b/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv5-det-mobile",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx",
+      "revision": "e6f4fa85f00e168c862bc462aebca69eef9b3d3d",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.onnx",
+      "bytes": 4826518,
+      "sha256": "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/e6f4fa85f00e168c862bc462aebca69eef9b3d3d/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv5-det-server",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv5_server_det_onnx",
+      "revision": "dcf248c4dcc064c6d030db241255f9e8fbc6733a",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_server_det_onnx/resolve/dcf248c4dcc064c6d030db241255f9e8fbc6733a/inference.onnx",
+      "bytes": 88116791,
+      "sha256": "10803475a591f7dc623e24670fb5752ec94d39a1f8cf069aac1b6f0ce19cfc85",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_server_det_onnx/resolve/dcf248c4dcc064c6d030db241255f9e8fbc6733a/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv5-rec-latin-mobile",
+      "repo": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx",
+      "revision": "89d3a50e2c27e2e7cceeab0e944c25c807d5db4f",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.onnx",
+      "bytes": 8042023,
+      "sha256": "7888113072263cb471b93f66dd5e2ad70548dc526fa1ace760d0d973dd121498",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/89d3a50e2c27e2e7cceeab0e944c25c807d5db4f/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "ppocrv5-rec-server",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-OCRv5_server_rec_onnx",
+      "revision": "b70df217f4fd99d14f970bad092cebe7d74cc4d1",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_server_rec_onnx/resolve/b70df217f4fd99d14f970bad092cebe7d74cc4d1/inference.onnx",
+      "bytes": 84503027,
+      "sha256": "d9dc333c9c7b042c6dffb8e33d72b6f65c9c1d463d0a3c2f78174fea55e94752",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_server_rec_onnx/resolve/b70df217f4fd99d14f970bad092cebe7d74cc4d1/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "layout-pp-doclayout-plus-l",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-DocLayout_plus-L_onnx",
+      "revision": "feb74619326f634e0e883218598096a3733ad9f7",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-DocLayout_plus-L_onnx/resolve/feb74619326f634e0e883218598096a3733ad9f7/inference.onnx",
+      "bytes": 129736329,
+      "sha256": "77afb2caa74dd13240d087d2eced91d7fcd2caebd16006a0a66162fc8707ff0e",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-DocLayout_plus-L_onnx/resolve/feb74619326f634e0e883218598096a3733ad9f7/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "layout-pp-doclayout-v3",
+      "repo": "https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_onnx",
+      "revision": "46bbdf188bb0a772c08aed74882ce7e51a8f1ea6",
+      "license": "apache-2.0",
+      "file": "inference.onnx",
+      "url": "https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_onnx/resolve/46bbdf188bb0a772c08aed74882ce7e51a8f1ea6/inference.onnx",
+      "bytes": 130502049,
+      "sha256": "45bf71750b00739a41fc209f132eb104a4d6b5bb29483c9078164d8b87cf28ba",
+      "sideFiles": [
+        {
+          "file": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_onnx/resolve/46bbdf188bb0a772c08aed74882ce7e51a8f1ea6/inference.yml"
+        }
+      ]
+    },
+    {
+      "id": "onnxtr-det-fast-base",
+      "repo": "https://huggingface.co/Felix92/onnxtr-fast-base",
+      "revision": "9e1b4f4773acfee2f252523c7fa563bf699c1fe5",
+      "license": "apache-2.0",
+      "file": "model.onnx",
+      "url": "https://huggingface.co/Felix92/onnxtr-fast-base/resolve/9e1b4f4773acfee2f252523c7fa563bf699c1fe5/model.onnx",
+      "bytes": 42342927,
+      "sha256": "1b89ebf9b6a5e01eb21b1775efc54aab6dbf8c726dcce938e40ddcb91404b43a",
+      "sideFiles": [
+        {
+          "file": "config.json",
+          "url": "https://huggingface.co/Felix92/onnxtr-fast-base/resolve/9e1b4f4773acfee2f252523c7fa563bf699c1fe5/config.json"
+        }
+      ]
+    },
+    {
+      "id": "onnxtr-det-db-mobilenet-v3-large",
+      "repo": "https://huggingface.co/Felix92/onnxtr-db-mobilenet-v3-large",
+      "revision": "21338515c12c7f685b8f1022b9babd90a4b9588a",
+      "license": "apache-2.0",
+      "file": "model.onnx",
+      "url": "https://huggingface.co/Felix92/onnxtr-db-mobilenet-v3-large/resolve/21338515c12c7f685b8f1022b9babd90a4b9588a/model.onnx",
+      "bytes": 16076965,
+      "sha256": "4987e7bdea372559808bd5add85fda10e179dc639696fb489e59a197a25b4c64",
+      "sideFiles": [
+        {
+          "file": "config.json",
+          "url": "https://huggingface.co/Felix92/onnxtr-db-mobilenet-v3-large/resolve/21338515c12c7f685b8f1022b9babd90a4b9588a/config.json"
+        }
+      ]
+    },
+    {
+      "id": "onnxtr-rec-parseq-multilingual-v1",
+      "repo": "https://huggingface.co/Felix92/onnxtr-parseq-multilingual-v1",
+      "revision": "7d7329948dbcff02637a3eb9c14ae0c4440c5ed0",
+      "license": "apache-2.0",
+      "file": "model.onnx",
+      "url": "https://huggingface.co/Felix92/onnxtr-parseq-multilingual-v1/resolve/7d7329948dbcff02637a3eb9c14ae0c4440c5ed0/model.onnx",
+      "bytes": 96712454,
+      "sha256": "ef468ad6415b93bdd73d9442a14e40a58e5f109bcbf6f328bad4873fb7f7998b",
+      "sideFiles": [
+        {
+          "file": "config.json",
+          "url": "https://huggingface.co/Felix92/onnxtr-parseq-multilingual-v1/resolve/7d7329948dbcff02637a3eb9c14ae0c4440c5ed0/config.json"
+        }
+      ]
+    },
+    {
+      "id": "onnxtr-rec-crnn-mobilenet-v3-small",
+      "repo": "https://huggingface.co/Felix92/onnxtr-crnn-mobilenet-v3-small",
+      "revision": "96dcb28209d6454213d0197029e8754625ce9d53",
+      "license": "apache-2.0",
+      "file": "model.onnx",
+      "url": "https://huggingface.co/Felix92/onnxtr-crnn-mobilenet-v3-small/resolve/96dcb28209d6454213d0197029e8754625ce9d53/model.onnx",
+      "bytes": 8331378,
+      "sha256": "bded4d49b3e91dac24591ed4f0af3de4c3baab1f9cc07e8e7dc07c9ba66b3b33",
+      "sideFiles": [
+        {
+          "file": "config.json",
+          "url": "https://huggingface.co/Felix92/onnxtr-crnn-mobilenet-v3-small/resolve/96dcb28209d6454213d0197029e8754625ce9d53/config.json"
+        }
+      ]
+    },
+    {
+      "id": "layout-yolov8n-general6",
+      "repo": "https://github.com/RapidAI/RapidLayout",
+      "revision": "modelscope RapidAI/RapidLayout @ v1.2.0",
+      "license": "Apache-2.0 (RapidLayout conversion); upstream 360LayoutAnalysis weights: see docs",
+      "file": "yolov8n_layout_general6.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidLayout/resolve/v1.2.0/onnx/360/yolov8n_layout_general6.onnx",
+      "bytes": 12242304,
+      "sha256": "927b6edcb268e896e6a170f7d78980591b408e04b3908f54d58eb69efd018c95",
+      "sideFiles": []
+    },
+    {
+      "id": "layout-doclayout-yolo-docstructbench",
+      "repo": "https://github.com/opendatalab/DocLayout-YOLO",
+      "revision": "modelscope RapidAI/RapidLayout @ v1.2.0",
+      "license": "AGPL-3.0",
+      "file": "doclayout_yolo_docstructbench_imgsz1024.onnx",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidLayout/resolve/v1.2.0/onnx/doclayout/doclayout_yolo_docstructbench_imgsz1024.onnx",
+      "bytes": 75324621,
+      "sha256": "3b452baef10ecabd615491bc82cc4d49475fbc2cd7a8e535044f2c6bb28fb9fe",
+      "sideFiles": []
+    }
+  ]
+}

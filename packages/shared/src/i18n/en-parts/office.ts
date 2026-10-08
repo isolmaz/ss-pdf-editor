@@ -11,12 +11,17 @@ export const officePart = {
   'export.office.format.csv': 'CSV',
   'export.office.format.csvHint': 'The tables in one file, an empty line between them.',
   'export.office.layout': 'Word layout',
+  'export.office.layout.exact': 'Text and pictures, exact layout',
+  'export.office.layout.exactHint': 'Editable text boxes; shapes, pictures, colours and links in place.',
   'export.office.layout.flow': 'Flowing text (best for editing)',
   'export.office.layout.flowHint':
     'Paragraphs, headings and tables you can edit in Word; the exact look of the page is not kept.',
   'export.office.layout.pageImages': 'One picture per page (exact look)',
   'export.office.layout.pageImagesHint':
     'Each page becomes one picture that looks exactly like the page; its text cannot be edited in Word.',
+  'export.office.ocrLanguages': 'Languages of scanned pages',
+  'export.office.ocrLanguagesHint':
+    'Pages without text (scans) are read with OCR in these languages and become editable text in Word; words it was unsure of get a comment.',
   'export.office.delimiter': 'Delimiter',
   'export.office.delimiter.comma': 'Comma (,)',
   'export.office.delimiter.semicolon': 'Semicolon (;) — what Excel expects in many European locales',
@@ -35,6 +40,12 @@ export const officePart = {
     '{pages} pages were exported to {format}, and the file was read back to check it.',
   'op.note.exportOffice.docxApproximate':
     'The text was exported as flowing paragraphs: exact positions on the page, multi-column flow, drawings, form fields and annotations are not. Fonts are named; where one is not installed, Word uses a similar one.',
+  'op.note.exportOffice.layout':
+    'The page layout was rebuilt: {boxes} text boxes, {shapes} shapes and {pictures} pictures at their places; the text can be edited.',
+  'op.note.exportOffice.layoutRasters':
+    '{count} regions Word cannot draw (gradients, masks) were placed as pictures.',
+  'op.note.exportOffice.fontsEmbedded':
+    '{count} fonts were embedded in the document, so the text shows in its original typefaces.',
   'op.note.exportOffice.pageImages':
     'Each page was exported as one picture of the page at {dpi} dpi; the look is kept, but its text cannot be edited in Word.',
   'op.note.exportOffice.pageScaled':
@@ -57,6 +68,12 @@ export const officePart = {
     'No ruled table was found on these pages; their text was split into columns by its spacing, so check the columns: {pages}.',
   'op.note.exportOffice.noText':
     'These pages hold no readable text (they look scanned); run OCR first for editable text: {pages}.',
+  'op.note.exportOffice.ocrPages':
+    'These pages are pictures, so they were read with OCR; their text is editable text boxes in Word and the rest sits behind it as pictures: {pages}.',
+  'op.note.exportOffice.ocrLowConfidence':
+    '{count} words were read with low confidence and marked with a comment in Word (page number in brackets): {words}',
+  'op.note.exportOffice.ocrUnavailable':
+    'These pages are pictures but OCR was not available for this export; they stayed pictures and their text cannot be edited: {pages}.',
   'op.note.exportOffice.unreadable':
     '{count} characters have no Unicode meaning in the document and could not be exported (they show as �).',
 } as const;

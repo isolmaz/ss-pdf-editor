@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import { fixturePage, gridOperators, reportPage, TABLE_XS, TABLE_YS } from './layout-fixtures';
 import {
+  BOLD_NAME,
   findFigures,
   findTables,
   findTextTables,
@@ -165,6 +166,21 @@ describe('page layout', () => {
     expect([x0, y0, x1, y1].map(Math.round)).toEqual([160, 310, 240, 390]);
     const image = png(figures[0] ?? [0, 0, 0, 0]);
     expect([...image.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  });
+
+  it('reads a bold face from its name: Bold, Black, Demi and the foundries\u2019 -Dem, not Demeter or a Medium', () => {
+    for (const bold of [
+      'ABCDEF+Arial-BoldMT',
+      'Foo-Black',
+      'Foo-SemiBold',
+      'Foo-DemiBold',
+      'UFOBFF+ITCFranklinGothicStd-Dem',
+      'Foo,Dem',
+    ]) {
+      expect(BOLD_NAME.test(bold)).toBe(true);
+    }
+    for (const regular of ['Foo-Regular', 'Demeter-Roman', 'Foo-Medium'])
+      expect(BOLD_NAME.test(regular)).toBe(false);
   });
 
   it('names a font family without its subset tag or style and converts colours', () => {

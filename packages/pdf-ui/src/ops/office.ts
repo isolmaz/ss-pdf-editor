@@ -3,11 +3,13 @@
  *
  * A download like the text export: the pages in scope are read as layout and written in
  * the chosen format, and the core's own report says what came across and what did not.
- * A Word file is either flowing text (editable) or one picture per page (exact look); the
+ * A Word file is the exact layout (editable text boxes, shapes and pictures in place, the
+ * default), flowing text (editable) or one picture per page (exact look, not editable); the
  * choice shows only while Word is the format. Its own chunk, because the writer carries
  * JSZip and the read-back check mammoth.
  */
 
+import { OCR_LANGUAGE_CODES_ALL, type OcrLanguageCode, recognizePage } from 'pdf-core/engines/tesseract';
 import {
   type CsvDelimiter,
   type DocxLayout,
@@ -15,7 +17,11 @@ import {
   type OfficeFormat,
 } from 'pdf-core/ops/export-office';
 import type { OperationDialogSpec } from '../dialogs/types';
+import { OCR_LANGUAGE_LABELS } from './ocr';
 import { resolveScope } from './scope';
+
+/** A word below this confidence (0–1) is marked with a Word comment: the threshold measured in `docs/ocr-evaluation.md`. */
+const LOW_CONFIDENCE = 0.9;
 
 /**
  * Excel splits a CSV on the list separator of the computer's region, and that is `;`
@@ -54,9 +60,14 @@ export const exportOfficeDialog: OperationDialogSpec = {
       id: 'layout',
       kind: 'radio',
       labelKey: 'export.office.layout',
-      defaultValue: 'flow',
+      defaultValue: 'layout',
       visibleWhen: { field: 'format', equals: ['docx'] },
       options: [
+        {
+          value: 'layout',
+          labelKey: 'export.office.layout.exact',
+          hintKey: 'export.office.layout.exactHint',
+        },
         { value: 'flow', labelKey: 'export.office.layout.flow', hintKey: 'export.office.layout.flowHint' },
         {
           value: 'page-images',
@@ -64,6 +75,21 @@ export const exportOfficeDialog: OperationDialogSpec = {
           hintKey: 'export.office.layout.pageImagesHint',
         },
       ],
+    },
+    {
+      id: 'ocrLanguages',
+      kind: 'checkboxList',
+      labelKey: 'export.office.ocrLanguages',
+      hintKey: 'export.office.ocrLanguagesHint',
+      // Turkish and English: the pair measured best in `docs/ocr-evaluation.md`.
+      defaultValue: ['tur', 'eng'],
+      columns: 2,
+      // One condition per field: the exact layout is the only one that reads scans.
+      visibleWhen: { field: 'layout', equals: ['layout'] },
+      options: OCR_LANGUAGE_CODES_ALL.map((language) => ({
+        value: language,
+        labelKey: OCR_LANGUAGE_LABELS[language],
+      })),
     },
     {
       id: 'delimiter',
@@ -83,13 +109,38 @@ export const exportOfficeDialog: OperationDialogSpec = {
       ? (params.format as OfficeFormat)
       : 'docx';
     const delimiter: CsvDelimiter = params.delimiter === 'semicolon' ? ';' : ',';
-    const docxLayout: DocxLayout = params.layout === 'page-images' ? 'page-images' : 'flow';
+    const docxLayout: DocxLayout = (['layout', 'page-images', 'flow'] as const).includes(
+      params.layout as DocxLayout,
+    )
+      ? (params.layout as DocxLayout)
+      : 'layout';
+    // Scanned pages of the exact layout are read with OCR, in the chosen languages.
+    const languages = (Array.isArray(params.ocrLanguages) ? params.ocrLanguages : []).filter(
+      (language): language is OcrLanguageCode => OCR_LANGUAGE_CODES_ALL.includes(language as OcrLanguageCode),
+    );
+    const ocr =
+      format === 'docx' && docxLayout === 'layout' && languages.length > 0
+        ? {
+            lowConfidence: LOW_CONFIDENCE,
+            recognize: async (png: Uint8Array, scale: number, signal: AbortSignal) =>
+              (
+                await recognizePage({
+                  image: new Blob([png as unknown as BlobPart], { type: 'image/png' }),
+                  scale,
+                  languages,
+                  quality: 'best',
+                  signal,
+                })
+              ).words,
+          }
+        : undefined;
     const result = await exportOffice(
       context.bytes,
       {
         pages,
         format,
         docxLayout,
+        ...(ocr === undefined ? {} : { ocr }),
         baseName: context.name,
         csvDelimiter: delimiter,
         sheetName: {

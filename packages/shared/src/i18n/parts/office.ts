@@ -13,12 +13,18 @@ export const officePart = {
   'export.office.format.csv': 'CSV',
   'export.office.format.csvHint': 'Tablolar tek dosyada, aralarında boş satırla.',
   'export.office.layout': 'Word düzeni',
+  'export.office.layout.exact': 'Metin + resim, tam düzen',
+  'export.office.layout.exactHint':
+    'Düzenlenebilir metin kutuları; şekiller, resimler, renkler ve bağlantılar yerinde.',
   'export.office.layout.flow': 'Akan metin (düzenlemeye uygun)',
   'export.office.layout.flowHint':
     'Paragraflar, başlıklar ve tablolar Word’de düzenlenebilir; sayfanın birebir görünümü korunmaz.',
   'export.office.layout.pageImages': 'Tek resim (her sayfa birebir)',
   'export.office.layout.pageImagesHint':
     'Her sayfa, görünümü birebir korunan tek bir resim olur; metni Word’de düzenlenemez.',
+  'export.office.ocrLanguages': 'Taranmış sayfaların dilleri',
+  'export.office.ocrLanguagesHint':
+    'Metni olmayan (taranmış) sayfalar bu dillerle OCR ile okunur ve Word’de düzenlenebilir metin olur; emin olunamayan kelimeler yorumla işaretlenir.',
   'export.office.delimiter': 'Ayırıcı',
   'export.office.delimiter.comma': 'Virgül (,)',
   'export.office.delimiter.semicolon': 'Noktalı virgül (;) — Türkçe Excel bunu bekler',
@@ -38,6 +44,11 @@ export const officePart = {
     '{pages} sayfa {format} dosyasına aktarıldı ve dosya yeniden okunarak doğrulandı.',
   'op.note.exportOffice.docxApproximate':
     'Metin akan paragraflar olarak aktarıldı: sayfadaki birebir konumlar, çok sütunlu akış, çizimler, form alanları ve açıklamalar aktarılmaz. Yazı tipleri adlarıyla aktarılır; bilgisayarda yoksa Word benzerini kullanır.',
+  'op.note.exportOffice.layout':
+    'Sayfa düzeni yeniden kuruldu: {boxes} metin kutusu, {shapes} şekil ve {pictures} resim yerlerinde duruyor; metin düzenlenebilir.',
+  'op.note.exportOffice.layoutRasters':
+    'Word’ün çizemediği {count} bölge (renk geçişleri, maskeler) resim olarak yerleştirildi.',
+  'op.note.exportOffice.fontsEmbedded': '{count} yazı tipi belgeye gömüldü; metin özgün harflerle görünür.',
   'op.note.exportOffice.pageImages':
     'Her sayfa, {dpi} dpi çözünürlükte sayfanın tek bir resmi olarak aktarıldı; görünüm korunur ama metni Word’de düzenlenemez.',
   'op.note.exportOffice.pageScaled':
@@ -60,6 +71,12 @@ export const officePart = {
     'Şu sayfalarda çizgili tablo bulunamadı; metin, aralıklarına göre sütunlara bölündü, sütunları kontrol edin: {pages}.',
   'op.note.exportOffice.noText':
     'Şu sayfalarda okunabilir metin yok (taranmış görünüyor); düzenlenebilir metin için önce OCR uygulayın: {pages}.',
+  'op.note.exportOffice.ocrPages':
+    'Şu sayfalar resim olduğu için OCR ile okundu; metinleri Word’de düzenlenebilir metin kutuları, geri kalanı sayfanın arkasında resim olarak yerleşti: {pages}.',
+  'op.note.exportOffice.ocrLowConfidence':
+    '{count} kelime düşük güvenle okundu ve Word’de yorumla işaretlendi (parantezde sayfa no): {words}',
+  'op.note.exportOffice.ocrUnavailable':
+    'Şu sayfalar resim ama bu aktarımda OCR kullanılamadı; sayfalar resim olarak kaldı, metinleri düzenlenemez: {pages}.',
   'op.note.exportOffice.unreadable':
     '{count} karakterin Unicode karşılığı belgede tanımlı değil; bu karakterler aktarılamadı (� olarak görünür).',
 } as const;
