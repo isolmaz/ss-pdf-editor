@@ -570,6 +570,18 @@ describe('ocrTextBoxes: family and fit', () => {
     expect(runsOf(short)[0]?.size).toBeGreaterThan(0);
   });
 
+  it('gives a box at least the natural width of its widest line, a little over', () => {
+    // each word's box is 80 % of what Arial sets it in: trusted (over 75 %), so the letters are squeezed, and the frame must not be narrower than the text
+    const line = setIn('Arial', WORDS.slice(0, 3));
+    const squeezed = line.map((word) => ({ ...word, x1: word.x0 + 0.8 * (word.x1 - word.x0) }));
+    const [first] = ocrTextBoxes(squeezed, blank(1500), 0.9, [], advance).boxes as [TextBox];
+    // three words as Arial sets them, and the two spaces between (0.6 em at 20 pt each)
+    const natural = line.reduce((sum, word) => sum + word.x1 - word.x0, 0) + 2 * 0.6 * 20;
+    const width = first.box[2] - first.box[0];
+    expect(width).toBeCloseTo(1.015 * natural, 6);
+    expect(width).toBeGreaterThan(1.03 * ((squeezed[2]?.x1 as number) - 10) + 2);
+  });
+
   it('places the words around a noted one too, and leaves a family it has no metrics for unfitted', () => {
     const words = [
       fake('macros', 10, 10, 60, 20.6, 0),
@@ -721,9 +733,38 @@ describe('ocrTextBoxes: low confidence', () => {
     expect(dropMisreads(words, [], misread)).toEqual(words);
   });
 
-  it('keeps the surer of two words read at the same place, in the order given', () => {
+  it('keeps a symbol between two sure words of its line: a separator of the text, not a graphic', () => {
+    const row = (extra: OcrWord[]) => [
+      fake('Kurucu', 10, 10, 60, 22, 4),
+      ...extra,
+      fake('Sub', 90, 10, 120, 22, 4),
+    ];
+    const dash = fake('—', 70, 10, 80, 22, 4, 0, { confidence: 40 });
+    const lead = fake('•', 0, 10, 6, 22, 4, 0, { confidence: 40 });
+    const far = fake('|', 200, 10, 203, 22, 4, 0, { confidence: 40 });
+    const other = fake('|', 70, 40, 73, 52, 5, 0, { confidence: 40 });
+    for (const [symbol, expected] of [
+      [dash, false],
+      [lead, true],
+      [far, true],
+      [other, true],
+    ] as const) {
+      expect(misreadWords([...row([symbol])]).has(symbol)).toBe(expected);
+    }
+    // a sure word on the right only, or a unsure one on the left, is not a separator
+    expect(misreadWords(row([lead])).has(lead)).toBe(true);
+    expect(
+      misreadWords([
+        fake('a', 10, 10, 20, 22, 4, 0, { confidence: 30 }),
+        dash,
+        fake('b', 90, 10, 100, 22, 4),
+      ]).has(dash),
+    ).toBe(true);
+  });
+
+  it('keeps the bigger of two words read at the same place (the surer when equal), in the order given', () => {
     const big = fake('094,6', 59, 648, 144, 670, 0, 0, { confidence: 59 });
-    const small = fake('024,', 74, 656, 126, 674, 1, 0, { confidence: 50 });
+    const small = fake('024,', 74, 656, 126, 674, 1, 0, { confidence: 90 });
     const next = fake('label', 59, 680, 173, 693, 2, 0, { confidence: 90 });
     const apart = fake('far', 300, 648, 340, 670, 3, 0, { confidence: 40 });
     expect(dropDuplicates([small, big, next, apart])).toEqual([big, next, apart]);
@@ -739,6 +780,20 @@ describe('ocrTextBoxes: low confidence', () => {
       fake('x', 150, 100, 155, 112, 4),
     ];
     expect(dropEdgeMarks(words, 300).map((word) => word.text)).toEqual(['ab', 'Long', 'x']);
+  });
+
+  it('writes a * or + that opens a line of more words as the bullet it is, and leaves other ones', () => {
+    const words = [
+      fake('*', 10, 10, 16, 22, 0),
+      fake('Item', 25, 10, 60, 22, 0),
+      fake('a', 65, 10, 72, 22, 0),
+      fake('+', 80, 10, 90, 22, 0),
+      fake('+', 10, 40, 20, 52, 1),
+      fake('Next', 25, 40, 60, 52, 1),
+      fake('*', 10, 200, 16, 212, 2),
+    ];
+    const { boxes } = ocrTextBoxes(words, blank(), 0.9);
+    expect(boxes.map(textOf)).toEqual([['• Item a +', '• Next'], ['*']]);
   });
 
   it('spaces two noted words in a row and a noted word at the start', () => {

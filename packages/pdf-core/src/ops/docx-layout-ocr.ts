@@ -215,12 +215,14 @@ export async function readScanPage(
   if (layer.length === 0 && ocr === null) return null;
   const { image, png } = renderScan(mupdf, page, scanDpi(scene));
   let words: readonly OcrWord[] = layer;
+  // Words read twice are dropped from the text, but their ink is erased all the same.
+  let duplicates: readonly OcrWord[] = [];
   if (layer.length === 0 && ocr !== null) {
     throwIfAborted(signal);
-    words = dropEdgeMarks(
-      dropDuplicates(await ocr.recognize(png, image.scale, signal)),
-      image.width / image.scale,
-    );
+    const read = await ocr.recognize(png, image.scale, signal);
+    const unique = dropDuplicates(read);
+    duplicates = read.filter((word) => !unique.includes(word));
+    words = dropEdgeMarks(unique, image.width / image.scale);
     throwIfAborted(signal);
   }
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
@@ -230,13 +232,14 @@ export async function readScanPage(
     standardAdvance(family, bold, false, unicode);
   const misread = misreadWords(words);
   const text = words.filter((word) => !misread.has(word));
-  const first = ocrBackground(image, text);
+  const first = ocrBackground(image, [...text, ...duplicates]);
   const kept = dropMisreads(
     words,
     first.regions.map((region) => region.box),
     misread,
   );
-  const { pageColor, regions } = kept.length === text.length ? first : ocrBackground(image, kept);
+  const { pageColor, regions } =
+    kept.length === text.length ? first : ocrBackground(image, [...kept, ...duplicates]);
   const { boxes, flagged } = ocrTextBoxes(
     kept,
     image,

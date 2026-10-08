@@ -74,6 +74,8 @@ const STEM_ASPECT = 0.35;
 /** Words of at most two characters this close to the left or right edge of the page (× its width) are scanner marks. */
 const EDGE_BAND = 0.03;
 const TALL_SYMBOL = 1.5;
+/** A symbol between two sure words of its line, each at most this × the typical word height away, is text. */
+const SEPARATOR_REACH = 2;
 /** Two words overlapping by more than this share of the smaller one are one word read twice. */
 const DUPLICATE_OVERLAP = 0.3;
 
@@ -89,7 +91,7 @@ const WIDTH_PAD = 2;
 const CENTRE_TOLERANCE = 2;
 
 /** A line's size is its paragraph's (the upper quartile) unless it is clearly different. */
-const SIZE_SNAP_LOW = 0.72;
+const SIZE_SNAP_LOW = 0.88;
 const SIZE_SNAP_HIGH = 1.1;
 
 /** Channel difference (0–255) below which a word has no ink worth reading. */
@@ -305,12 +307,24 @@ const medianHeight = (words: readonly OcrWord[]): number => median(words.map((wo
  */
 export function misreadWords(words: readonly OcrWord[]): Set<OcrWord> {
   const typical = words.length === 0 ? Infinity : medianHeight(words);
+  const reach = SEPARATOR_REACH * typical;
+  // A symbol with a sure word of its own line close on both sides is a separator of the text (| — •), not a graphic.
+  const separates = (word: OcrWord): boolean => {
+    const sure = words.filter(
+      (other) => other !== word && other.line === word.line && other.confidence >= MISREAD_CONFIDENCE,
+    );
+    return (
+      sure.some((other) => other.x1 <= word.x0 + 1 && word.x0 - other.x1 <= reach) &&
+      sure.some((other) => other.x0 >= word.x1 - 1 && other.x0 - word.x1 <= reach)
+    );
+  };
   return new Set(
     words.filter(
       (word) =>
         (SYMBOLIC.test(word.text) &&
           (word.confidence < MISREAD_CONFIDENCE ||
-            (ICON_GLYPH.test(word.text) && word.y1 - word.y0 > TALL_SYMBOL * typical))) ||
+            (ICON_GLYPH.test(word.text) && word.y1 - word.y0 > TALL_SYMBOL * typical)) &&
+          !separates(word)) ||
         (word.text.length <= 2 &&
           word.y1 - word.y0 > TALL_STEM * typical &&
           word.x1 - word.x0 < STEM_ASPECT * (word.y1 - word.y0)) ||
@@ -325,19 +339,21 @@ export function dropEdgeMarks(words: readonly OcrWord[], pageWidth: number): Ocr
   return words.filter((word) => !(word.text.length <= 2 && (word.x0 < band || word.x1 > pageWidth - band)));
 }
 
-/** Words without any that overlap a surer word by more than half of their own box: one word read twice. */
+const boxArea = (word: OcrWord): number => (word.x1 - word.x0) * (word.y1 - word.y0);
+
+/**
+ * Words without any that overlap a bigger one by more than `DUPLICATE_OVERLAP` of the smaller box: one
+ * word read twice, at two segmentations; the box that covers more ink (the surer when equal) is
+ * the reading. The caller still erases the dropped ones.
+ */
 export function dropDuplicates(words: readonly OcrWord[]): OcrWord[] {
   const kept: OcrWord[] = [];
-  for (const word of [...words].sort((a, b) => b.confidence - a.confidence)) {
-    const area = (word.x1 - word.x0) * (word.y1 - word.y0);
+  for (const word of [...words].sort((a, b) => boxArea(b) - boxArea(a) || b.confidence - a.confidence)) {
+    const area = boxArea(word);
     const twice = kept.some((other) => {
       const across = Math.min(word.x1, other.x1) - Math.max(word.x0, other.x0);
       const down = Math.min(word.y1, other.y1) - Math.max(word.y0, other.y0);
-      return (
-        across > 0 &&
-        down > 0 &&
-        across * down > DUPLICATE_OVERLAP * Math.min(area, (other.x1 - other.x0) * (other.y1 - other.y0))
-      );
+      return across > 0 && down > 0 && across * down > DUPLICATE_OVERLAP * Math.min(area, boxArea(other));
     });
     if (!twice) kept.push(word);
   }
@@ -486,6 +502,9 @@ function pickFamily(lines: readonly Line[], advance: Advance): string {
   return best;
 }
 
+/** What tesseract reads a bullet as, when it opens a line of more words: * + ° · */
+const BULLET_LIKE = /^[*+°·]$/;
+
 /** A line whose height-based size exceeds the one its word widths give by this factor has an inflated height (a speck joined the box). */
 const INFLATED = 1.3;
 /** …and is set at the width-based size × this. */
@@ -513,6 +532,22 @@ function sizeOf(line: Line, family: string, advance: Advance | undefined): numbe
 /** A word box this much narrower or wider than the word's natural width is not trusted (a misread, a box grown over a mark): its letters are set at the natural pitch from the box's left edge. */
 const FIT_LOW = 0.75;
 const FIT_HIGH = 1.35;
+
+/** What a line whose letters the writer squeezes needs of its frame beyond its own width: the natural width of the text in the stand-in font, a little over (a frame narrower than that makes LibreOffice wrap, and the wrapped words are cut off). */
+const SQUEEZE_MARGIN = 1.015;
+
+/** The widest line's natural width in the stand-in family: the advances of its letters at the size of their run. */
+function naturalWidth(lines: readonly TextLine[]): number {
+  return Math.max(
+    0,
+    ...lines.map((line) =>
+      line.runs.reduce(
+        (sum, run) => sum + (run.fit?.advances.reduce((total, em) => total + em, 0) ?? 0) * run.size,
+        0,
+      ),
+    ),
+  );
+}
 
 /** One piece of a run's text: a word with the page positions of its box ends, or a space (`NaN`). */
 interface Part {
@@ -759,11 +794,11 @@ export function ocrTextBoxes(
     for (const line of lines) {
       const size = sizes.get(line) as number;
       const bold = pageStroke > 0 && (lineStroke.get(line) as number) >= BOLD_RATIO * pageStroke;
-      const tokens = line.words.map((word): Token => {
+      const tokens = line.words.map((word, at): Token => {
         const low = word.confidence / 100 < lowConfidence && !SYMBOLIC.test(word.text);
         if (low) flagged.push({ text: word.text, confidence: word.confidence / 100 });
         return {
-          text: word.text,
+          text: at === 0 && line.words.length > 1 && BULLET_LIKE.test(word.text) ? '\u2022' : word.text,
           bold,
           color: (inks.get(word) as WordInk).color,
           note: low ? `Low OCR confidence (${Math.round(word.confidence)} %)` : undefined,
@@ -784,7 +819,10 @@ export function ocrTextBoxes(
       lines.length > 1 &&
       lines.every((line) => Math.abs((line.x0 + line.x1) / 2 - centre) <= CENTRE_TOLERANCE) &&
       !lines.every((line) => Math.abs(line.x0 - left) <= CENTRE_TOLERANCE);
-    const width = (right - left) * WIDTH_FACTOR + WIDTH_PAD;
+    const width = Math.max(
+      (right - left) * WIDTH_FACTOR + WIDTH_PAD,
+      SQUEEZE_MARGIN * naturalWidth(textLines),
+    );
     const x0 = centred ? centre - width / 2 : left;
     const top = (baselines[0] as number) - BASELINE_IN_LINE * lineHeight;
     const bottom = Math.max(top + lineHeight * lines.length, ...lines.map((line) => line.y1));
