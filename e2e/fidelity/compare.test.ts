@@ -11,6 +11,20 @@ import {
   ssim,
 } from './compare';
 
+describe('normalizeWords quotes', () => {
+  it('maps acute accent and double prime before NFKC', () => {
+    expect(normalizeWords('it\u00B4s')).toEqual(["it's"]);
+    expect(normalizeWords('it\u00B4s')).toEqual(normalizeWords("it's"));
+    expect(normalizeWords('12\u2033')).toEqual(['12"']);
+  });
+
+  it('maps characters that NFKC itself turns into quotes or dashes', () => {
+    expect(normalizeWords('a\uFE58b a\uFE31b')).toEqual(['a-b', 'a-b']);
+    expect(normalizeWords('a\uFE32b')).toEqual(['a-b']);
+    expect(normalizeWords('it\u2034')).toEqual(["it'''"]);
+  });
+});
+
 /** A deterministic generator: the tests must not depend on `Math.random`. */
 function prng(seed: number): () => number {
   let s = seed >>> 0;

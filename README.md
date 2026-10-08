@@ -270,7 +270,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     page, each page keeps its size and orientation, and two-column text is read column by
     column. Ruled tables become Word tables with their merged cells. Tables without rules
     are recognised from the spacing of the text and become borderless tables. Pictures keep
-    their transparency; charts and drawings made of vector graphics are carried as pictures.
+    their transparency; charts and drawings made of vector graphics are carried as pictures, their labels staying text over them.
     A picture that cannot be read, or one inside a table cell, is left out, and the report
     says how many.
   - **Word layout.** Word has three layouts, chosen in the Export dialog and in the form.
@@ -573,8 +573,9 @@ The limits are defined once, in
   - Exact positions, text boxes, headers and footers, form fields and annotations are not
     reproduced. A paragraph that continues in the next column stays split in two.
   - A table without rules is a guess from the spacing; the report says how many there were.
-  - A chart or drawing becomes a picture, its labels included, so its text cannot be
-    edited.
+  - A chart or drawing becomes a picture drawn without its text; the labels on it stay
+    editable text over the picture, which sits behind them and moves with the text around
+    it.
   - Scanned pages have no text to export until OCR has added it.
 - **Scanning with the camera.**
   - The page is found from its edges, so a page of the same brightness as what it lies on,
@@ -704,7 +705,7 @@ The limits are defined once, in
 | `pnpm dev` | Vite dev server for the editor (`pnpm --filter site dev` for the landing, port 5175) |
 | `pnpm build` | Builds the landing (`apps/site/dist`), then the editor (`apps/web/dist`) |
 | `pnpm assemble:dist` | Composes the deployable `dist/` |
-| `pnpm preview` | Serves `dist/` under the production headers (port 4178) |
+| `pnpm preview` | Serves `dist/` under the production headers (port 4178, or `--port N`; Playwright passes `E2E_PORT`) |
 | `pnpm typecheck` | `tsc -b` over the workspace |
 | `pnpm lint` / `check` / `format` | Biome: lint / lint and format check / format write |
 | `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions; `VITEST_MAX_WORKERS=N` caps the unit workers |
@@ -763,10 +764,11 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`, the OpenSSL signing round trip.
 - **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test: every
   sample is exported through the UI in each Word layout (`flow`, `page-images`, `layout`), converted
-  back with LibreOffice and compared (SSIM at 100 dpi (rendered at 200 dpi and averaged) per page, word accuracy in reading order per
-  document) against the thresholds in `e2e/fidelity/thresholds.json`; a `null` threshold is
-  measured, not gated. Locally: `pnpm fidelity` with `LIBREOFFICE` set to the path of `soffice`. The
-  report goes to the job summary and the `fidelity` artifact.
+  back with LibreOffice 26.2.6 and compared (SSIM at 100 dpi (rendered at 200 dpi and averaged) per
+  page, word accuracy in reading order per document) against the thresholds in
+  `e2e/fidelity/thresholds.json`; a `null` threshold is measured, not gated. Locally: `pnpm fidelity`
+  with `LIBREOFFICE` set to the path of `soffice`. The report goes to the job summary and the
+  `fidelity` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 
@@ -778,7 +780,7 @@ Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flak
 fix's own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests
+`e2e-service-worker`, `behavior` and `fidelity` must pass, and force-pushes are blocked. Pull requests
 are merged with a merge commit. [`REVIEW.md`](REVIEW.md), the review guide of pull request #28, lists
 its commits by risk, each fix with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
 how changes land.
@@ -842,7 +844,7 @@ Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
 A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
-after `verify`, `e2e`, `e2e-service-worker` and `behavior` have passed. It runs `wrangler
+after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `fidelity` have passed. It runs `wrangler
 deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
 `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
 runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.

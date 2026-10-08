@@ -407,17 +407,56 @@ had to stay green. The moves, and the defects they fixed on the way:
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
     rule between two cells merges them). Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
-    every row ("stream"). Prose set in columns is told apart by its long pieces.
+    every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
+    blocks: two columns that each hold a text block of three or more lines with a median line
+    of 20 characters or more are two columns of text whose lines share baselines, not a table
+    (read row by row across them, a reader would take the columns in turn no more), provided
+    the block is the column's own (it holds no piece of the other column) or its lines wrap
+    (each but the last holds words and fills the column's width): a table of 20-to-30-character
+    cells is often one block of both columns, with cells of every length, and stays a table. A line is cut
+    into segments where a gap between visible characters is wider than about two spaces
+    (`lineSegments`), and a segment is placed — outside a table, in a table, in a cell — as a
+    whole, by its centre, except that a segment is cut where a column edge of its table lies in
+    a gap of spaces between two visible characters (two cells that one line reads across the rule
+    with a single space): no word is ever cut at the edge of a table or between two cells.
   - **Drawings.** Curves, polygons that are not rectangles, shadings and pictures seed
     regions that grow over every mark they touch. A region holding a line of prose is left
     to the text, and so is one crossing a table or covering most of the page. The region is
-    rendered at 144 dpi as one picture, labels included, and its text leaves the flow. Above
+    rendered at 144 dpi as one picture without its text (`renderRegion` runs the page through a
+    device that hands everything but text to a draw device): the text on a drawing stays text
+    in the flow. A drawing that has text on it, like a raster picture that text stands on, is
+    anchored behind the text (`wp:anchor`, `behindDoc`) to a paragraph one point high that
+    holds its place in the flow, and takes no room there: the anchor hangs from that paragraph
+    (`positionV relativeFrom="paragraph"`), and that paragraph stands right before the items that are
+    on the drawing (a quarter of their area under it), its space before being a paragraph of its own
+    above it, since Word and LibreOffice measure the anchor from different places of a paragraph.
+    The offset is the distance the flow puts between the holder and the first of those items less
+    the one the PDF has between the drawing's top and that item, so the labels and the text after
+    the drawing follow it wherever the flow puts it, a card in the next column after the one before
+    it included. When the items on a drawing are not one run in the flow (another drawing's text
+    comes between them) the drawing is an inline picture before the first of them instead, and
+    no text lands on white paper; a picture no item stands on (a stamp over a corner of two lines)
+    stays inline where MuPDF read it. Only that run of items is laid out without the `MAX_GAP`
+    clamp. The first item after the run starts at or under the feet of the run's pictures (those of
+    drawings side by side, with no horizontal overlap, are all kept, each seen from the newest
+    holder; a picture that lies on a bigger one, a photograph on a full-page background, drops it:
+    the text after it is on the background, not under it), also when it is another
+    column's and beside them in the PDF, since the flow would print it over the drawing; its gap
+    below the feet is clamped again. Gaps
+    inside the drawing's height are not clamped to `MAX_GAP`, and the first item below it starts
+    at or under its foot. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
   - **Word (flow).** Each page is a section with the page's size, orientation and margins. Blocks
     are cut into paragraphs where a line ends short, a gap opens, the size changes or a
     bullet or a number (one or two digits and `.` or `)`, then a space) starts. A hyphen that
     breaks a word before a lower-case letter is removed, even when it is set in another style than
     the letters before it (the join reads the line's last characters across its runs).
+    Lines that share a row and follow each other along it (MuPDF cuts the dots of a leader into
+    a line each) are joined first. A character belongs to one table (ruled before spread, the
+    smallest first), so a nested or overlapping table does not write its words twice. Tables that
+    stand next to each other with nothing between them (a row of key caps drawn as grids) get a
+    hairline paragraph between them: Word and LibreOffice fuse tables that touch into one. An inline
+    picture is shrunk to fit the page's text area less one body-size line.
     Paragraphs of several lines that start a third of the way across are a second column,
     and alignment and indents are measured in a paragraph's own column. Sizes at least
     1.3× the body size (1.15× when bold) become `Heading1`–`3` by rank. `w:lang` is the
@@ -2460,7 +2499,7 @@ deploy scripts.
 
 The release path is a pull request, then GitHub Actions, then a deploy that only a push to
 `main` triggers. `main` is protected: a pull request is required, the required checks are
-`verify`, `e2e` (4 shards), `e2e-service-worker` and `behavior`, force-pushes are blocked, and
+`verify`, `e2e` (4 shards), `e2e-service-worker`, `behavior` and `fidelity`, force-pushes are blocked, and
 merges are merge commits.
 
 - `.github/workflows/ci.yml` runs on `pull_request`, `push` to `main` and `workflow_dispatch`.
@@ -2472,7 +2511,12 @@ merges are merge commits.
   `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading the HTML report
   and, on failure, the traces (7 days). `e2e-service-worker` needs `e2e` and runs
   `playwright test --project=service-worker --no-deps`. `behavior` needs `verify` and runs
-  `pnpm ci:behavior` (the OpenSSL signing round trip).
+  `pnpm ci:behavior` (the OpenSSL signing round trip). `fidelity` needs `verify` and runs
+  `pnpm fidelity`: every sample is exported to DOCX through the UI, converted back with
+  LibreOffice 26.2.6 (official `.deb` tarball pinned by version and sha256) and compared, SSIM at
+  100 dpi per page and word accuracy in reading order per document, against
+  `e2e/fidelity/thresholds.json` (`null` = measured, not gated); locally `pnpm fidelity` with
+  `LIBREOFFICE` set. The report goes to the job summary and the `fidelity` artifact.
 - `deploy` runs only on a push to `main` and needs every job above: `wrangler deploy` with the
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
   <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
@@ -2513,7 +2557,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`) and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. `--skip-e2e` reports the unit suite alone; `--min-lines=<percent>` fails the run under that total (the nightly workflow passes 98). `E2E_WORKERS` caps the browsers and `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
 | Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
-| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
+| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `fidelity` (`pnpm fidelity`: DOCX export round trip through LibreOffice, SSIM and word accuracy against `e2e/fidelity/thresholds.json`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
 | Nightly | `.github/workflows/nightly.yml`: `pnpm coverage --min-lines=98` (fails under 98 % total lines, uploads the report) and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
 | Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
 | Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |

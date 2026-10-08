@@ -205,8 +205,8 @@ jobs:
   # PDF → Word export fidelity (`e2e/fidelity/`): every sample is exported through the real UI, the
   # DOCX is converted back to PDF by a pinned LibreOffice, and the pages and words are compared with
   # the original. Thresholds live in `e2e/fidelity/thresholds.json`; a `null` there means "measured,
-  # not gated", so until a mode has numbers this job reports and does not fail on quality. It is not
-  # a dependency of `deploy`. The report is appended to the job summary and uploaded either way.
+  # not gated", so until a mode has numbers this job reports and does not fail on quality. It is a
+  # quality gate: `deploy` needs it. The report is appended to the job summary and uploaded either way.
   #
   # LibreOffice comes from the official .deb tarball, verified by sha256 on every run (a cached
   # copy is verified too). It is fetched from the Document Foundation's permanent archive
@@ -312,7 +312,7 @@ jobs:
   deploy:
     name: deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [verify, e2e, e2e-service-worker, behavior]
+    needs: [verify, e2e, e2e-service-worker, behavior, fidelity]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment:

@@ -14,10 +14,12 @@ import {
   findTables,
   findTextTables,
   fontFamily,
+  lineSegments,
   type PageLayout,
   readPageLayout,
   renderRegion,
   rgb,
+  segmentInside,
   textRows,
 } from './page-layout';
 
@@ -352,6 +354,55 @@ describe('pictures in the layout', () => {
   });
 });
 
+describe('a region rendered without its text', () => {
+  it('paints every shape, shading and picture of the region but none of the text on it', async () => {
+    const bytes = await builtPage((mupdf, doc) => {
+      const shading = doc.addObject({
+        ShadingType: 2,
+        ColorSpace: 'DeviceRGB',
+        Coords: [0, 0, 100, 0],
+        BBox: [100, 100, 150, 130],
+        Extend: [true, true],
+        Function: { FunctionType: 2, Domain: [0, 1], C0: [0, 1, 0], C1: [0, 1, 0], N: 1 },
+      });
+      const picture = imageObject(mupdf, doc, {
+        width: 2,
+        height: 2,
+        samples: [255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0],
+        space: 'rgb',
+      });
+      return {
+        content: [
+          // A blue card with a clipped corner, a shading and a picture on it, and black text over all.
+          '0.2 0.4 0.8 rg 100 100 200 100 re f',
+          'q 250 100 50 50 re W n 1 1 0 rg 100 100 200 100 re f Q',
+          '/Sh sh',
+          'q 30 0 0 30 200 160 cm /Im Do Q',
+          '0 0 0 rg BT /F1 40 Tf 110 140 Td (HELLO) Tj ET',
+        ].join('\n'),
+        shadings: { Sh: shading },
+        xobjects: { Im: picture },
+      };
+    });
+    const { png } = await layoutOf(bytes);
+    const mupdf = await loadMupdf();
+    const card = decoded(mupdf, png([100, 300, 300, 400]));
+    const colours = new Set<string>();
+    let dark = 0;
+    for (let y = 0; y < card.height; y += 1) {
+      for (let x = 0; x < card.width; x += 1) {
+        const [r = 0, g = 0, b = 0, a = 0] = card.at(x, y);
+        if (a === 255 && r < 60 && g < 60 && b < 60) dark += 1;
+        colours.add(`${r >> 6},${g >> 6},${b >> 6}`);
+      }
+    }
+    // The card (blue), its clipped yellow corner, the shading (green) and the picture (red) are there...
+    for (const colour of ['0,1,3', '3,3,0', '0,3,0', '3,0,0']) expect(colours.has(colour), colour).toBe(true);
+    // ...and the black of the letters is not.
+    expect(dark).toBe(0);
+  });
+});
+
 describe('what the page draws, as marks', () => {
   const marksOf = async (bytes: Uint8Array) =>
     (await layoutOf(bytes)).layout.marks.map((mark) => ({ box: mark.box.map(Math.round), seed: mark.seed }));
@@ -525,6 +576,36 @@ describe('tables from rules and from spacing, in the cases that are not tables',
   });
 });
 
+describe('a line cut into segments', () => {
+  const segmentsOf = async (text: string) => {
+    const { layout } = await layoutOf(await fixturePage([{ text, x: 50, y: 400, size: 10 }]));
+    const line = layout.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []))[0];
+    return lineSegments(line?.chars ?? []);
+  };
+  const spelled = (segments: readonly (readonly { c: string }[])[]) =>
+    segments.map((segment) => segment.map((char) => char.c).join(''));
+
+  it('cuts where the gap between two visible characters is wider than two spaces, the spaces of a gap going with the segment before it', async () => {
+    expect(spelled(await segmentsOf('Your social            security'))).toEqual([
+      'Your social            ',
+      'security',
+    ]);
+  });
+
+  it('keeps the spaces that open and close a line, and the ones between words, in a segment', async () => {
+    expect(spelled(await segmentsOf('  Ad Soyad  '))).toEqual(['  Ad Soyad  ']);
+    expect(spelled(await segmentsOf('  Ad            Soyad  '))).toEqual(['  Ad            ', 'Soyad  ']);
+    expect(await segmentsOf('   ')).toEqual([]);
+  });
+
+  it('places a segment by the centre of its visible characters', async () => {
+    const [segment] = await segmentsOf('  Ad  ');
+    // `Ad` spans x 52…64 at size 10 (Helvetica: 6.67 and 5.56 wide, from x 50 + 2 spaces).
+    expect(segmentInside(segment ?? [], [50, 0, 70, 500], 0)).toBe(true);
+    expect(segmentInside(segment ?? [], [70, 0, 90, 500], 0)).toBe(false);
+  });
+});
+
 describe('tables from spacing, in the cases that are not tables', () => {
   const tablesOf = async (lines: Parameters<typeof fixturePage>[0]) =>
     findTextTables((await layoutOf(await fixturePage(lines))).layout, []);
@@ -538,6 +619,104 @@ describe('tables from spacing, in the cases that are not tables', () => {
     const twentyOne = (y: number) =>
       pieces(y, ...Array.from({ length: 21 }, (_, index): [number, string] => [10 + index * 18, 'a']));
     expect(await tablesOf([...twentyOne(400), ...twentyOne(388)])).toEqual([]);
+  });
+
+  it('finds none in two columns of prose whose lines are short, each column a text block running down the rows', async () => {
+    const left = [
+      'Maps and information for',
+      'worldwide earthquakes shown',
+      'within minutes after they',
+      'occur on the map.',
+    ];
+    const right = [
+      'Estimates of population at',
+      'risk and economic impacts',
+      'caused by shaking from',
+      'large earthquakes.',
+    ];
+    // One column after the other, as a page of prose is drawn: two blocks, side by side.
+    const rows = [
+      ...left.flatMap((text, index) => pieces(400 - index * 12, [50, text])),
+      ...right.flatMap((text, index) => pieces(400 - index * 12, [250, text])),
+    ];
+    expect(await tablesOf(rows)).toEqual([]);
+  });
+
+  /** The page's text blocks (the whole table of the cases below is one), and its tables from spacing. */
+  const blocksAndTables = async (lines: Parameters<typeof fixturePage>[0]) => {
+    const { layout } = await layoutOf(await fixturePage(lines));
+    return {
+      blocks: layout.blocks.filter((block) => block.kind === 'text').length,
+      tables: findTextTables(layout, []),
+    };
+  };
+
+  it('keeps a table whose cells are 20 to 30 characters long: one block holds both columns, its cells of every length', async () => {
+    const left = [
+      'Wages, salaries, tips',
+      'Qualified dividends',
+      'Pensions and annuities',
+      'Unemployment compens.',
+    ];
+    const right = [
+      'Form W-2, box 1 total',
+      'Form 1099-DIV, box 1b',
+      'Form 1099-R, box 2a',
+      'Form 1099-G, box 1',
+    ];
+    const rows = left.flatMap((text, index) =>
+      pieces(400 - index * 12, [50, text], [170, right[index] as string]),
+    );
+    const { blocks, tables } = await blocksAndTables(rows);
+    expect(blocks).toBe(1);
+    expect(tables).toHaveLength(1);
+    expect(tables[0]?.xs).toHaveLength(3);
+  });
+
+  it('keeps a bank statement of four columns whose description and reference are 20 to 26 characters long', async () => {
+    const rows = [
+      ['2024-01-15', 'Salary payment from Acme', 'REF-2024-0115-000100', '1,234.50'],
+      ['2024-01-16', 'Card purchase at market', 'REF-2024-0116-004200', '45.20'],
+      ['2024-01-17', 'Transfer to savings acct', 'REF-2024-0117-000700', '500.00'],
+      ['2024-01-18', 'Electricity bill January', 'REF-2024-0118-031000', '88.10'],
+    ].flatMap((cells, index) =>
+      pieces(
+        400 - index * 12,
+        [15, cells[0] as string],
+        [75, cells[1] as string],
+        [215, cells[2] as string],
+        [340, cells[3] as string],
+      ),
+    );
+    const { blocks, tables } = await blocksAndTables(rows);
+    expect(blocks).toBe(1);
+    expect(tables).toHaveLength(1);
+    expect(tables[0]?.xs).toHaveLength(5);
+  });
+
+  it('finds none in two columns of prose in one block whose lines wrap, each filling its column', async () => {
+    const ten = 'abcdefghij';
+    const other = 'klmnopqrst';
+    // Every line is the same two words, so every line is as wide as the column.
+    const rows = [0, 1, 2, 3].flatMap((index) => {
+      const even = index % 2 === 0;
+      return pieces(
+        400 - index * 12,
+        [50, even ? `${ten} ${other}` : `${other} ${ten}`],
+        [170, even ? `${other} ${ten}` : `${ten} ${other}`],
+      );
+    });
+    const { blocks, tables } = await blocksAndTables(rows);
+    expect(blocks).toBe(1);
+    expect(tables).toEqual([]);
+  });
+
+  it('keeps a table whose cells are short, its columns blocks as well', async () => {
+    const names = ['Elma', 'Armut', 'Kiraz', 'Erik'];
+    const rows = names.flatMap((text, index) =>
+      pieces(400 - index * 12, [50, text], [170, `${index + 1}`], [290, `${index * 7}`]),
+    );
+    expect(await tablesOf(rows)).toHaveLength(1);
   });
 
   it('moves a piece whose left edge snaps to the column of the piece before it into the next column', async () => {
