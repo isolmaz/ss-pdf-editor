@@ -43,9 +43,9 @@ Five rules explain most of the decisions in this codebase:
    check is reported `unsupported` or `degraded` instead of being counted as a pass. A
    promised fact that broke throws.
 5. **Honesty is a feature.** Operations report what they lost (`OperationNote` with
-   `kind: 'lost'`), verification has `unsupported` and `degraded` states rather than a
-   boolean badge, signature verification has four independent fields, and the
-   accessibility check refuses to produce a score.
+   `kind: 'lost'`), verification gives each fact a `verified`, `degraded` or `unsupported`
+   verdict rather than one boolean badge, signature verification has four independent
+   fields, and the accessibility check refuses to produce a score.
 
 ---
 
@@ -150,9 +150,10 @@ chunks; it is still over the 250 KiB budget the README states.
 Because `MessageKey` is a union of literal keys, passing an unknown key is a compile
 error. That is why operation notes, dialog titles and error text are typed as `MessageKey`
 rather than `string`: an untranslated sentence fails `pnpm typecheck` instead of shipping
-as English. (A few surfaces where the key set is not yet merged into the catalogue use an
-explicit, marked cast — `MEASURE_KEYS` in `MeasureLayer.tsx`, `BatchMessageKey`,
-`A11Y_KEYS` — and render the key id rather than inventing English copy.)
+as English. (A few surfaces build keys from tables or sentence parts the type cannot follow
+and use an explicit, marked cast — `MEASURE_KEYS` in `MeasureLayer.tsx`, `A11Y_KEYS` in
+`ops/accessibility.ts`, the status tables of `ComparePanel.tsx`. `MeasureLayer` renders the key
+id rather than inventing English copy when the catalogue has no entry.)
 
 ---
 
@@ -193,7 +194,10 @@ Guarantees the class actually provides:
   silently restore a different state than the user left.
 - `#stepFor` in `session.ts` materialises one of three step kinds: `document` (swap the
   produced snapshot, or the source master when `before`/`after` is `null`), `overlays`
-  (canvas-only edits), or `unavailable` when the bytes the step names are no longer held.
+  (canvas-only edits), or `unavailable` when the bytes the step names are no longer held. A history restored from storage
+is untrusted: `parseDraft` does not validate journal payloads, so a payload that is not an object or has no
+`after`, an unknown op kind and a snapshot the store no longer holds are each refused here (the step is
+`unavailable`), not applied.
 
 `DOCUMENT_CHANGE_KIND = 'document.change'` is the single op kind document capabilities write:
 
@@ -306,7 +310,8 @@ retain**:
 label and a timestamp, in a versioned file (`version: 1`). There is no built-in CA list,
 because shipping one would vouch for certificates the user never chose. base64 is
 implemented in the module rather than via `btoa`, so the code runs identically in Node and
-the browser. A stored root that does not decode, or decodes to fewer than 64 bytes, is
+the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
+indentation), so it has no failure of its own; a stored root that decodes to fewer than 64 bytes is
 dropped rather than trusted, and `trustRootFrom` derives the id from the DER, so importing
 the same certificate twice is one entry.
 
@@ -335,7 +340,8 @@ had to stay green. The moves, and the defects they fixed on the way:
   sorted;
 - the font inventory the Document information panel reads (`ops/pdf-fonts.ts`);
 - layer writes (`ops/layer-write.ts`), which now also report a layer name that matched
-  nothing — the pdf-lib writer returned before adding that warning;
+  nothing — the pdf-lib writer returned before adding that warning — and, for a request that
+  renames a layer and also sets its state or order, verify the file under the new name;
 - link edits (`ops/link-edit.ts`);
 - outline edits (`ops/outline-edit.ts`), where two pdf-lib defects are fixed: nested items
   were never chained onto their parent, and a removal kept the removed item in the recount,
@@ -377,8 +383,9 @@ had to stay green. The moves, and the defects they fixed on the way:
   opens DOCX/XLSX/PPTX itself, but only as reflowed text: a sheet lost its labels and grid, a
   slide became one paragraph and a Word table a list of cells. So each format is first read
   into HTML — DOCX through mammoth (BSD-2-Clause, `externalFileAccess` off), XLSX and PPTX by
-  `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom` (a part xmldom cannot read is
-  `corrupt-document`; one it had to repair, such as a sheet cut off mid-row, is converted and
+  `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom` (a part xmldom cannot read, or that is empty, is
+  `corrupt-document`; an attribute is read through `attribute()`, which answers `null` when it is
+  absent, because xmldom's `getAttribute` answers `''` and no default would ever apply; one it had to repair, such as a sheet cut off mid-row, is converted and
   named in a `lost` note), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are. Every part is
   laid out (`Document.style` adds only the `@page` margin, before `layout`) and run through
   one `DocumentWriter`. The source's outline and links are written afterwards by the
@@ -408,14 +415,18 @@ had to stay green. The moves, and the defects they fixed on the way:
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
   - **Word.** Each page is a section with the page's size, orientation and margins. Blocks
     are cut into paragraphs where a line ends short, a gap opens, the size changes or a
-    bullet starts. A hyphen that breaks a word before a lower-case letter is removed.
+    bullet or a number (one or two digits and `.` or `)`, then a space) starts. A hyphen that
+    breaks a word before a lower-case letter is removed, even when it is set in another style than
+    the letters before it (the join reads the line's last characters across its runs).
     Paragraphs of several lines that start a third of the way across are a second column,
     and alignment and indents are measured in a paragraph's own column. Sizes at least
     1.3× the body size (1.15× when bold) become `Heading1`–`3` by rank. `w:lang` is the
     catalog's `/Lang`. The package is written by hand and read back with mammoth, whose
-    word count must equal the words written.
+    word count must equal the words written. A picture MuPDF could not draw, and one inside a
+    ruled table (whose cells carry text only), is left out of the file and counted in a `lost`
+    note (`op.note.exportOffice.picturesLost`).
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
-    is reopened and its cells counted. CSV rows are read back through `parseCsv`. A CSV text
+    is not read back (the XLSX path reports no `verify` step; only Word and CSV do). CSV rows are read back through `parseCsv`. A CSV text
     cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,
     tab or carriage return, and not a number by `cellNumber`) is written with a leading `'`
     (CWE-1236); XLSX needs no such guard, since its text cells are `inlineStr`.
@@ -433,7 +444,7 @@ had to stay green. The moves, and the defects they fixed on the way:
   a second time;
 - page boxes, resize, scale, shift, content rotation and auto-crop (`ops/page-boxes.ts`), where
   a content transform wraps the page's streams through `wrapPageContent` and auto-crop now
-  measures on the document it edits instead of opening a second copy;
+  measures on the document it edits instead of opening a second copy, and a page that needed no change is counted once in the unchanged-pages note (it used to be counted twice);
 - the rotation pass and the merge's metadata step after pdf.js `extractPages`
   (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`; `compose.rotate` is now
   declared to the save verification (it may change `rotation`), where `pdf-lib.setRotation`
@@ -447,7 +458,7 @@ had to stay green. The moves, and the defects they fixed on the way:
   (`pageAsForm`, resources grafted once per document). Two poster defects are fixed: every row
   of tiles but the last came out blank (the vertical offset had its sign reversed, so the top of
   a poster was never printed), and the enlargement took the larger of the two scales, which cut
-  the page's right or bottom edge off the grid — it now fits the whole page;
+  the page's right or bottom edge off the grid — it now fits the whole page. A poster also refuses a fractional tile count (1.5 columns or rows) as `range-invalid`, (the range check alone let 1.5 through);
 - compression (`ops/compress.ts`): the structure mode is a MuPDF rewrite with deduplication,
   lossless font/image compression and object streams, and no longer regenerates form-field
   appearances (pdf-lib did, and warned); the raster mode replaces the selected pages **in
@@ -459,7 +470,9 @@ had to stay green. The moves, and the defects they fixed on the way:
   embedded Noto Sans (`/NotoForm` in `/AcroForm /DR`). MuPDF's own appearance synthesis was
   measured and not used: it places the baseline outside the widget box. Two defects are
   fixed: a field whose dictionary is also its widget reported no page (`pageIndex: null` for
-  most real forms), and creating a text field always failed ("No /DA");
+  most real forms), and creating a text field always failed ("No /DA"). A calculation's numbers follow the
+  documented grammar (`[0-9]+('.'[0-9]+)?`) and a malformed one (`1.2.3`, `1..2`) is refused, not read as a
+  shorter number;
 - the OCR text layer (`ops/ocr.ts` `writeOcrLayer`, step `ocr.layer`), one content stream per
   page where the pdf-lib writer opened one per word. A word Noto Sans can spell uses it; any
   other uses Tesseract's glyph-less design rebuilt in `engines/glyphless-font.ts` (Type 0
@@ -533,12 +546,22 @@ engine's annotation storage is empty: there is nothing to serialise, and pdf.js 
 re-serialises and warns that `getData` was meant — measured on every export without a form
 edit.
 
+`openWithPdfjs()` settles when its `signal` aborts, whenever that happens: before or during
+the chunk load, or during the document load. pdf.js does not settle `loadingTask.promise` when
+the task is destroyed after its setup (only a pending password request is rejected), so an
+open cancelled mid-load used to leave its caller waiting for ever. The load now races an
+abort promise; the abort rejects with `aborted` (`ToolError`) and still destroys the loading
+task, which owns the worker and the transport.
+
 **Notes** (`writeNoteAnnotations`, `ops/annotation-shapes.ts`) are `/Text` sticky notes:
 the comment is their `/Contents`, and their `/AP` is a folded-sheet icon in the mark's colour
 (never fainter than 60 %), with the alpha in the appearance's `/ExtGState` as well as on `/CA`.
 They went through the engine before as empty `/FreeText` shells, whose appearance typed `()`:
 the note drew nothing in any other reader, nor in the app once the file was reopened. Shapes
-carry their alpha the same way, since pdf.js and PDFium paint the `/AP` and ignore `/CA`. The
+carry their alpha the same way, since pdf.js and PDFium paint the `/AP` and ignore `/CA`, and their
+stroke width is the annotation's own `/BS /W` (and `/Border`), not only a number inside the
+appearance stream: a reader that rebuilds the appearance draws the border, and reopening the
+file here reads back the thickness that was drawn. The
 viewer's `imageResourcesPath` points at `PDFJS_ASSETS.images` (`/engines/pdfjs/images/`,
 pinned by `fetch-engines`), where pdf.js finds the `annotation-<name>.svg` icon it lays over a
 file's own `/Text` note.
@@ -635,7 +658,9 @@ entry is only accepted when its integers agree with the object graph's (read wit
 MuPDF hands numbers over as 32-bit floats, so above 2^24 (a file over 16 MiB) "agree" means
 the scanned integers round to what the object graph read; the scan's exact integers are what
 is hashed, and ranges that differ but round alike pair with nothing (`unchecked`). Only a
-top-level `/Prev` of each trailer is followed when the revisions are counted.
+top-level `/Prev` of each trailer is followed when the revisions are counted; a chain that stops
+short of the signature's revision falls back to counting the `%%EOF` markers after the covered range, and an
+inline signature dictionary reached through both `/Fields` and a page's `/Annots` is one signature.
 A file whose bytes never name `/ByteRange` is answered without loading an engine — the
 verdicts are asked for as soon as a document opens. The ASN.1 walk is
 hand-rolled and bounded (64 signatures, 1 024 revisions, 4 096 nodes). Two cryptographic
@@ -666,7 +691,10 @@ signature verified over the child's `tbsCertificate`, validity windows checked a
 supplied clock, and `basicConstraints` cA / `keyUsage.keyCertSign` / `pathLenConstraint` /
 `nameConstraints` enforced. **Policy processing (RFC 5280 §6.1.5) is deliberately not
 implemented**, and a critical extension outside the applied set forces `indeterminate`
-rather than being ignored. With no roots imported the answer is `not-checked` with reason
+rather than being ignored. A certificate or extension whose DER cannot be read, and name constraints that cannot be read or evaluated,
+give `indeterminate` (`malformed` / `unsupported-critical-extension`), never a pass. The verdict carries
+`notBefore` as well as `notAfter`, so the panel shows the start date of a certificate that is not yet valid.
+With no roots imported the answer is `not-checked` with reason
 `no-roots` — an absence of evidence is never reported as `untrusted`.
 
 #### 5.3.1 Revocation from lists already on the device
@@ -792,7 +820,9 @@ the 25 MiB asset limit. A `fast` run that includes one of them runs at `best`
 (`effectiveOcrQuality`, one worker reads every language from one directory), and the report
 says so. `existingText: 'skip' | 'overwrite'`
 decides what happens to pages that already have text, and overwriting is reported as a
-warning because it is additive. Cancellation is a real `worker.terminate()`, and the
+warning because it is additive. A worker that fails to start (a missing core, language pack or worker script) is mapped to
+`ocr-language-missing` or `asset-missing` rather than surfacing as a raw error, and a failed
+start is not cached. Cancellation is a real `worker.terminate()`, and the
 `finally` awaits worker termination, so "memory is back" is true when the function
 resolves.
 
@@ -829,7 +859,9 @@ the types the user chose; every drawing of an image is a figure.
   (elements, MCID / MCR / OBJR kids, `/Alt`, table attributes, role map, bounded by
   `STRUCT_NODE_LIMIT`). `StructEdit` (`move`, `role`, `alt`, `scope`, `group`, `unwrap`,
   `artifact`) is applied by the pure `applyStructureEdits`; `structureSignature` is the
-  read-back fingerprint. A refused edit throws `StructEditError` with a stable `reason`.
+  read-back fingerprint. A refused edit throws `StructEditError` with a stable `reason`; a move into or out of
+  an element that is not editable (a direct structure element), or a group inside one, is refused as `not-editable`.
+  The panel's tagging language is a required `language` prop, and the shell passes the interface locale.
 - `ops/content-scan.ts` — a content-stream scan that records marked-content spans, paint
   operators (text, path, image, form) and their coverage (`tagged | artifact | conflict |
   unmarked`), shared by the checker and the editor.
@@ -892,10 +924,10 @@ captured as mapped `ToolError` codes and the run continues, and cancellation is 
 rather than an exception.
 
 `ops/compare.ts` offers two independent answers and always names the method: a line-level
-LCS over text extracted by the **existing** text exporter (with word-level detail inside
+LCS over text extracted by the **existing** text exporter (changes listed in document order, with word-level detail inside
 changed pairs, and an explicit `truncated` reason when a bound is hit), and a pixel
-comparison rendered at 40 DPI through an injected canvas surface, so the module stays
-DOM-free.
+comparison rendered at 40 DPI through an injected canvas surface (a page only one document has is not
+rasterised), so the module stays DOM-free.
 
 ### 5.7 Removing annotations — selection's writer
 
@@ -924,7 +956,8 @@ Two dependency rules complete the picture, and both are about not leaving a file
   page's `/Annots` and a popup's `/Parent` are all read as references first; a reference that
   would dangle is left in place, and a surviving annotation's dictionary is never rewritten
   to make the delete look clean. A page that loses its last annotation loses its empty
-  `/Annots` array too.
+  `/Annots` array too. An annotation a page lists twice in `/Annots` loses every entry and is
+  reported once.
 
 The write is MuPDF's rewrite (`engines/mupdf-write.ts`), which regenerates no appearance
 stream — regenerating field appearances would rewrite the form the operation promises to
@@ -961,7 +994,9 @@ one word. Whole-word mode refuses a letter, digit or mark on either side.
 1. **Line** — a match that changes width with more text after it (within the column: a gap
    wider than 1 em is a tab stop) erases from the match to the end of that stretch and draws
    the replacement plus the rest again, moved by the difference, each run in the face that
-   draws it exactly (`sameFace`: the page's own font, or the standard face it already was).
+   draws it exactly (`sameFace`: the page's own font, or the standard face it already was). Every erase box stops
+   where the lines above and below begin (`eraseBox`), so at tight leading MuPDF's redaction does not take a
+   neighbouring line's glyphs along.
    Text after a tab stop stays while the moved text still ends a word gap before it. A
    deletion takes the following word gap along.
 2. **In place** — the replacement at the first glyph's origin, size and colour, in the room
@@ -971,8 +1006,9 @@ one word. Whole-word mode refuses a letter, digit or mark on either side.
    centred or right-aligned line stays centred or right-aligned.
 3. **Paragraph** — a match across lines, or a line that cannot take the change, lays the
    block out again word by word (`placeParagraph`): every original run keeps its font, size
-   and colour, the alignment is read from the lines (justified when every line that does not
-   end a paragraph reaches the block's right edge), paragraphs and first-line indents are
+   and colour, the alignment is read from the lines (a left-aligned block is justified when every line that does not
+   end a paragraph reaches the block's right edge; a centred or right-aligned block keeps its alignment, and
+   a line's offset from the left edge is not taken for an indent), paragraphs and first-line indents are
    kept, and the paragraph grows into the free space below it before it shrinks (down to
    85 %). A block whose text cannot be drawn again run by run falls back to the text tool's
    one-face reflow (`planTextEdit`). A table-like block is never re-laid: a match that fits
@@ -991,7 +1027,7 @@ as wide as the old font did, within ±15 %.
 be found for it: a `/ToUnicode` CMap inverted (single-code-point entries), or a simple font's
 base encoding (`WinAnsiEncoding`, `MacRomanEncoding` through the platform's own decoder,
 `StandardEncoding`) with `/Differences` read for `uniXXXX`, single letters and the common
-glyph names. Composite fonts must use `Identity-H`; Type3 fonts are not used. Widths come
+glyph names (only the table's own names map: `constructor` or `__proto__` is not a glyph). Composite fonts must use `Identity-H`; Type3 fonts are not used. Widths come
 from `/Widths` or `/W`/`/DW`, and a word gap the font has no space glyph for is drawn as a
 `TJ` adjustment. MuPDF reports a font under its own spelling (`NimbusSans-Bold` for
 `/BaseFont /Nimbus#20Sans#20Bold`), so names are compared without case, spaces or
@@ -1059,7 +1095,7 @@ them into the first paint.
   the square root of its area — so the page's outer border beats the text block inside it and a
   frame-sized quad that nothing supports. Each side of the winner is refitted by least squares
   through its supporting edge pixels (a fraction of a pixel; the Hough bin alone would be a few
-  pixels of the photograph). Below a score of 0.2 it returns `null` and the UI offers the inset
+  pixels of the photograph). It also returns `null` when the 400 px working raster is under 16 px either way (a long thin strip). Below a score of 0.2 it returns `null` and the UI offers the inset
   default.
 - `scan-image.ts` — `warpPage` maps the rectangle onto the corners and samples bilinearly (a
   box prefilter first when the source is much larger than the output); a quarter turn is a
@@ -1091,9 +1127,11 @@ match and every page must have the proportions asked for. Steps: `scan.compose` 
 takes a still with `ImageCapture.takePhoto` only when the camera's photo size is more than 1.25×
 its video (otherwise the video frame). The preview outline reruns the detector on a 400 px copy
 of the frame a few times a second and smooths the corners; the stream stops when the camera
-screen is left. A page keeps the photograph as a `Blob`, a 1400 px decode for everything on
+screen is left (unmounting releases it, and the tracks of a stream whose `getUserMedia` answers after that are
+ended at once). A page keeps the photograph as a `Blob`, a 1400 px decode for everything on
 screen and its corners as fractions of the picture, so the same outline serves the on-screen
-preview and the full-size decode the PDF is made from, one page at a time. `CornerEditor` draws
+preview and the full-size decode the PDF is made from, one page at a time. Editing the corners of an existing page confirms with Apply (`scan.crop.apply`), a new page with Done, and the
+notice for a photo that could not be opened stays on screen while the next one opens. `CornerEditor` draws
 the handles as 44 px targets with pointer capture, a 4× magnifier, arrow-key movement, and a
 red outline (and a disabled "add") for a folded quad.
 
@@ -1164,7 +1202,9 @@ chosen button decides. Three writers keep the data current, all through the same
    edits (`lazy-ops.ts`; a document without XFA comes back as the same array, unwritten).
    The sync is appended as an incremental update (`saveIncremental`; a rewrite only when
    MuPDF cannot append), so the bytes pdf.js kept, and a signature over them, stay intact;
-3. `importXfaData` replaces the data and fills the widgets from it.
+3. `importXfaData` replaces the data (the first `datasets` element of an XDP stream, the one every reader takes) and fills the
+   widgets from it, then writes the imported datasets back when the fill spelled a value its own way (a form with no template packet), so
+   the read-back holds what was imported.
 
 `flattenForm` now accepts a static form (the XFA is removed because it would redraw every
 field from its data) and refuses a dynamic one with `xfa-dynamic`.
@@ -1221,13 +1261,16 @@ input, saves with `garbage=compact,compress`, **re-opens the output and runs the
 read-only**: every selected category must count zero, or the operation throws
 `verification-failed`. `found`, `removed` and `left` in the report are measured, never assumed,
 and a counter and a remover cannot disagree because they are one function. The sweep sees only
-the latest revision, so the input goes back unchanged ("nothing found") only when it has one:
+the latest revision, so the input goes back unchanged ("nothing found") only when it has one,
+nothing selected is present and no form field is left to flatten (flatten mode with no fields and nothing else to
+remove reports "nothing found" instead of rewriting the file):
 a file with earlier revisions is always rewritten, since an incremental update that freed an
 attachment or a script leaves its bytes in the revision before it (`revisionsDropped` note),
 and the output must have a single revision.
 
 **Actions are decided per type** (ISO 32000-1 §12.6.4), wherever one hangs (`/A`, `/PA`,
-`/AA`, `/OpenAction`, and each `/Next` chain). JavaScript, Launch, ImportData, SubmitForm,
+`/AA`, `/OpenAction`, and each `/Next` chain, followed to `ACTION_DEPTH` = 24; a chain that loops
+back counts each action once). JavaScript, Launch, ImportData, SubmitForm,
 Rendition, RichMediaExecute and a `file:` URI are "active" (default on); other URIs and
 GoToR/GoToE are "external links" (default off); GoTo, Named, Hide, ResetForm, SetOCGState and
 the media actions stay. A Link whose external action went and that has no other destination is
@@ -1383,7 +1426,9 @@ of up to 6 pages compared block by block (`comparePage`, warning over 5 % mean o
 viewers. The baseline is the input, or the prepared file when form fields were flattened (their
 values are drawn into the page then).
 
-**What preparing is for.** Each step exists because a fixture lost something without it.
+**What preparing is for.** Each step exists because a fixture lost something without it. An annotation
+written inline in `/Annots` is first made an object of its own, so it gets its appearance like any other and one
+that cannot be drawn is really removed from the file.
 Ghostscript drops every widget and field value (fields are flattened first, `forms.ts`); it
 copied an `OpenAction` script into a stray catalog `/A` key (forbidden actions are removed from
 the catalog, pages, annotations and outline); it drops annotations without the Print flag, links
@@ -1404,7 +1449,10 @@ graphics-state stack that follows `q`/`Q`, `cs`/`CS`, `Do`, `sh`, `BI`, patterns
 `xmp-info`, `output-intent`, `device-colour`, `transparency`, `fonts`, `images`,
 `graphics-state`, `actions`, `annotations`, `forms`, `layers`, `embedded-files`, each with its
 ISO 19005 clause per part (`PDFA_CLAUSES`) and a state `pass | fail | na | unchecked`. XMP is
-parsed with `@xmldom/xmldom` (`pdfa-xmp.ts`). Where it differs from the standard is documented in
+parsed with `@xmldom/xmldom` (`pdfa-xmp.ts`); `parseXmp` never throws, and both of its tree walks are
+iterative, so a deeply nested packet cannot hit the call-stack limit. In parts 2 and 3 `transparency`
+reports a page that uses transparency with no output intent and no `/Group /CS`, and every use of an image
+is read (findings are still once per page). Where it differs from the standard is documented in
 the file header (a font only used for invisible text is exempt in parts 2 and 3; a JavaScript
 name tree is reported even if nothing runs it). Every report carries `notChecked`: font
 programs, ICC bodies, exact syntax, XMP value formats, the PDF/A of embedded files, and the
@@ -1459,7 +1507,12 @@ The pieces, in the order the text-edit pipeline uses them:
    programme this package does not ship → **substituted**; a shipped face matching on
    family, weight and italic → **editable**.
 3. **Reflow (`reflow.ts`)** — block-local reflow with `measureLineWidth()` and a font
-   metric table.
+   metric table: greedy line breaking inside the block's own box, left/centre/right/justify
+   alignment, first-line indent, leading and paragraph spacing, hyphenation only when asked
+   (at a code-point boundary with at least two characters on each side of the break; a word
+   that still does not fit is placed whole and shows as an overflow) and an auto-shrink walk
+   in 0.5 pt steps down to a floor (`minFontSize`, never below 1 pt). Empty text occupies no
+   height.
 4. **Fonts (`fonts.ts`)** — `createFontCatalog()`, `matchFont()`, `metricsFor()`,
    `describeFontName()` (subset prefix vs base-14 detection) and `DEFAULT_FONT_CANDIDATES`.
 5. **The writer's request (`plan.ts`)** — `planTextEdit()` produces the serialisable
@@ -1668,7 +1721,10 @@ highlighted before — the first command, "Create a blank document". The empty s
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that
-dispatches keyboard actions, keeping the displayed bindings and their behavior together.
+dispatches keyboard actions, keeping the displayed bindings and their behavior together. The page keys (`PageUp`, `PageDown`,
+`Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
+tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
+list), which owns them.
 
 `useOperationRun()` owns the run state machine
 (`idle → running → done | error | cancelled`), the `AbortController`, and the mapping from
@@ -1676,7 +1732,7 @@ a thrown `ToolError` to translated message + hint text.
 
 ### 7.4 The armed tool, its properties and the responsive shell
 
-**The armed tool is one value.** `CanvasToolId` (`tools/ToolProperties.tsx`) is the union of
+**The armed tool is one value.** `CanvasToolId` (`packages/pdf-ui/src/tools/ToolProperties.tsx`) is the union of
 everything a canvas gesture can be — `select`, `hand`, `highlight`, `underline`, `strikeout`,
 `squiggly`, `ink`, `shapes`, `note`, `redact`, `measure`, `link`, `text`, `freetext`, `stamp`
 — and the shell holds exactly one at a time. `stamp` is armed only with a picture to place
@@ -1691,7 +1747,9 @@ layer that actually owns the pointer now read the same value. Each command's `ch
 carries it to the menu (rendered as a `menuitemcheckbox` with `aria-checked`) and to the
 palette, and arming the armed tool again puts it away — so one command is both start and stop
 and `checked` is never a lie. Sub-choices that are not a second tool stay separate: the
-measurement mode is `null` unless the ruler owns the pointer.
+measurement mode is `null` unless the ruler owns the pointer. The ruler's overlay swallows
+every pointer event, so Escape is its way out: the first press ends the chain being clicked, and
+Escape on an empty chain ends the tool (the shell's `onStop` returns to `select`).
 
 **The tool strip shows only supported controls, in a fixed-height row.** It opens with one
 sentence saying what the pointer does now. Text markup (including highlight), ink and shapes
@@ -1711,8 +1769,8 @@ pointer rests on it.
 (`COMPACT_VIEW_QUERY`, `(max-width: 1023px)`) both docks start collapsed and reopen as
 overlaid panels, so the canvas keeps the width and the tools stay one click away. The page
 and view controls (`PageNavigation`) live in the status bar's navigation slot, never over
-the page. The header keeps identity, menus, four task toggles that show real state (tools
-panel, reading pane, text-edit tool; convert and sign are one-shot actions), the document
+the page. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
+panel, reading pane, text-edit tool — and the one-shot convert and sign actions), the document
 switcher, the file actions and one settings button — language, theme, the interface mode,
 privacy, storage and offline preparation are in `SettingsDialog`. Tooltips are one wrapper
 (`components/Tooltip.tsx`) over Kumo's primitive: it portals to `document.body` so a
@@ -1923,7 +1981,13 @@ back to a fixed 250 ms wait.
 Persistence is a shared callback used by both the manual OPFS save and the automatic draft
 path, so the two cannot disagree about what was persisted. A restore does not rerun just
 because the UI language changed, one unreadable draft does not stop the others from
-recovering, and discarding a tab retains any source another valid draft still references.
+recovering, a draft whose document was opened meanwhile (from the recent list, say) is
+skipped while the rest are still restored, and a document the user opens while recovery waits
+for a draft's stored file handle keeps the front: the document in front is read after the
+last `await` before the restored tab goes in, with nothing awaited in between, so a restored
+tab never takes the place of a document that is in front (`e2e/ui-recovery-race.spec.ts`
+holds the handle store open with `e2e/recent-handles-gate.ts` to prove it). Discarding a tab
+retains any source another valid draft still references.
 When the inventory is unreadable or incomplete, the discard path deletes nothing and says
 so.
 
@@ -2017,7 +2081,8 @@ none (Node); an attribute is read with `hasAttribute` first, because that packag
 `''` for a missing one. `toAppSpace` mirrors a line's two ends point by point. A line's
 `rect` is its ends in drag order, and normalising it as a box turned the line around.
 
-**FDF strings.** A value with any character outside ASCII is written whole as UTF-16BE
+**FDF strings.** Octal escapes of one to three digits are read (`\1`, `\12`), and the FDF reader
+uses the shared PDF tokenizer. A value with any character outside ASCII is written whole as UTF-16BE
 behind the `\376\377` BOM (`form-data.ts`). The writer used to escape only the non-ASCII
 characters as two-byte units inside a single-byte string, so `gö` came back as `g\0ö`.
 That broke Turkish form values and comments in every reader.
@@ -2072,7 +2137,10 @@ refuses a `/Widget` that arrives anyway. A saved link **is** a target — a pers
 an object like any other and selection has to reach it — so the layers report a press on a
 link rather than refusing it, consume that press only when they actually handle a target, and
 cancel the click navigation a consumed press owns. A link nobody handled, and every link while
-no mark tool is armed, navigates exactly as it did before.
+no mark tool is armed, follows its address: an internal link scrolls to its page, and an
+external `/URI` link opens in a new tab (the viewer's link service is built with pdf.js's
+`LinkTarget.BLANK`, `PdfViewerPane.tsx`), so the editor's own tab, the open document and its
+unsaved marks stay where they are.
 
 ---
 
@@ -2124,8 +2192,10 @@ why. The rules:
   failure; it records `degraded` / `changed`.
 - A fact the operation did **not** declare is a preservation promise, and breaking it
   throws `verification-failed` naming the fact.
-- A step id the table does not know makes the whole verification `unverified` and
-  **named** — there is no silent fallback to "nothing may change".
+- A step id the table does not know makes the operation `unverified` and **named**
+  (`OperationIdentity.kind`): a change in a fact it did not declare is then recorded
+  `degraded` with reason `unverified` and the step ids, instead of throwing — there is no
+  silent fallback to "nothing may change".
 - **Deleting annotations** reports `annotations.remove`, which may change
   `annotations` and nothing else. On top of that declaration the writer runs its own
   read-back of the produced file (§5.7), so a removal is checked twice: once against the
@@ -2149,9 +2219,12 @@ the trust policy the save path runs separately). Above the memory budget (64 MiB
 form, outline and label checks report `degraded` with reason `budget` rather than passing
 quietly.
 
-`WriteVerification.state` is one of `verified`, `degraded`, `unsupported` — and `failed` is
-never *returned*: it is thrown, because a save that cannot be verified must not mark the
-session saved. The table is stored on the output version, and the notice line names the
+A fact's verdict (`FactCheck.verdict`) is `verified`, `degraded` or `unsupported`.
+`WriteVerification.state` is only `verified` or `degraded`: the page count is always checked,
+so a run is never left with nothing established, and the facts that are `unsupported` by
+construction (`annotations`, `signatures`) are listed in `checks` without lowering the state.
+`failed` is never *returned*: it is thrown, because a save that cannot be verified must not mark
+the session saved. The table is stored on the output version, and the notice line names the
 facts and their reasons, because "verified" without its list is a sentence this part of the
 code exists to stop producing.
 
@@ -2266,7 +2339,7 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
 
-Inventory: 258 pinned files across eight groups — `mupdf` (3), `pdfjs` (200: worker,
+Inventory: 269 pinned files across eight groups — `mupdf` (3), `pdfjs` (211: worker,
 cmaps, standard fonts, wasm), `tesseract` (33: module, worker, core `.wasm.js` + `.wasm`,
 Turkish and English in `fast` and `best`, 25 more languages in `best`), `ghostscript` (2:
 `gs.js` loader and `gs.wasm`, from `@bentopdf/gs-wasm`), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
@@ -2334,14 +2407,37 @@ styled Turkish `dist/404.html`, or the English `dist/en/404.html` under `/en/` (
 same nearest-404 rule when it serves `dist/`. Wrangler is pinned at 4.135.0 inside the
 deploy scripts.
 
-The release path is local gates, then a deliberate push (GitHub Actions runs the same
-`pnpm ci:verify` gate on it, as a check only: it never deploys), then Cloudflare: the build pipeline
-validates the pushed commit with `pnpm ci:verify` and its configured deploy command runs
-`pnpm run worker:deploy` — the same command a maintainer can run by hand, and the one that
-publishes <https://pdf.isolmaz.com/>. The `dist/_headers` file is part of the upload, so the
-CSP and the COOP/COEP pair are host-enforced rather than dashboard settings. What was
-deployed is then checked on the live surface; a green local gate is not evidence that the
-deployed build behaves.
+The release path is a pull request, then GitHub Actions, then a deploy that only a push to
+`main` triggers. `main` is protected: a pull request is required, the required checks are
+`verify`, `e2e` (4 shards), `e2e-service-worker` and `behavior`, force-pushes are blocked, and
+merges are merge commits.
+
+- `.github/workflows/ci.yml` runs on `pull_request`, `push` to `main` and `workflow_dispatch`.
+  `verify` installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
+  `pnpm check:docs` (the documentation sync check), `pnpm fetch:engines --sync`, `pnpm unit`,
+  `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`,
+  `pnpm assemble:dist` and `wrangler deploy --dry-run`. `e2e` needs `verify`: four shards,
+  each builds `dist/` itself, installs Playwright Chromium (cached) and runs
+  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading the HTML report
+  and, on failure, the traces (7 days). `e2e-service-worker` needs `e2e` and runs
+  `playwright test --project=service-worker --no-deps`. `behavior` needs `verify` and runs
+  `pnpm ci:behavior` (the OpenSSL signing round trip).
+- `deploy` runs only on a push to `main` and needs every job above: `wrangler deploy` with the
+  `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
+  <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
+  `dist/`; if the smoke check fails, `wrangler rollback` returns the Worker to the previous
+  version and the job fails. One deploy runs at a time (a concurrency group that is not
+  cancelled). `pnpm run worker:deploy` is the same publish by hand.
+- `.github/workflows/nightly.yml` (daily and on demand) runs `pnpm coverage --min-lines=98`,
+  which fails under 98 % total lines and uploads the report, and the Playwright suite in four
+  shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
+- `.github/workflows/revert-proof.yml` (on demand, and on a pull request labelled
+  `revert-proof`) takes every fix in `tools/review/revert-proof.json` and checks that the fix's own
+  test fails on the fix commit's parent and passes on the fix commit.
+
+The `dist/_headers` file is part of the upload, so the CSP and the COOP/COEP pair are
+host-enforced rather than dashboard settings. A green pipeline is not evidence that the deployed
+build behaves; the smoke check and a look at the live surface are.
 
 ---
 
@@ -2357,10 +2453,15 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Parity features | One `*.test.ts` beside each module, against bytes re-read by MuPDF or pdf.js: comment replies and review states (`annotation-review`, `annotation-threads`), XFDF/FDF/JSON round trips with Turkish text, font subsets (`mupdf-write`), the locale registry and the Phosphor weight plugin; find and replace, the glyph-less font, Office and text conversion (a damaged part becomes a loss note), Office export and page layout; CRLs, RFC 3161 timestamps and the signature evidence (`signature-revocation.fixtures.ts` builds the PKI); form-field detection and XFA (`xfa-data`, `xfa-form`, `xfa-flatten`); the scan geometry, detector (every turn, antialiased and hard-edged), warp and filters; sanitize per category; one real Ghostscript PDF/A-2b run checked by `checkPdfA`, the PDF/UA rules and the structure editor (`ua.fixtures.ts`); and `useShortcuts.test.ts`, which refuses a chord two rows share |
 | Source-level behaviour | `tools/audit/regressions.cjs` — browser-free checks (it prints its own count) that transpile the **real** sources and run them against doubles (OPFS, service worker, pdf.js handle), plus selected React callbacks extracted from `App.tsx` by AST. Subjects: Save/Save As semantics, draft validation and encoding, journal snapshot stability, branch release, service-worker offline behaviour and cache isolation, OPFS persistence and recovery, pdf.js loading paths, OCR worker cleanup, the redaction save guard, failed writes and dirtiness, and a final unhandled-rejection sweep |
 | Gate integrity | `tools/audit/require-tests.mjs` fails the build when the unit run discovered zero test files, so an empty run cannot pass as a green gate |
-| Built application | Playwright against assembled `dist/` under production headers, every spec through `e2e/test.ts`, whose automatic fixture fails a test on any console error or uncaught exception in any page of its browser context unless the test names it (`allowedErrors`; `referee.spec.ts` checks the referee itself on a second page); tests tagged `@service-worker` (the worker's install, update and offline reload) run in their own Playwright project once the rest has passed (`dependencies`), because their timing depends on an idle machine; a targeted run of one of them takes `--no-deps`, or the whole suite runs first: shell and shortcut help, real PDF rendering, persisted/session selection move/rotate/delete/undo, unchanged pending-edit canvases, note export/reopen, tooltip hover/focus/mobile, offline reload, shared vault and OCR (the scan is generated in the test: known printed lines rasterised by MuPDF into an image-only PDF, and the recognised words are asserted in reading order); `editor-stability.spec.ts` holds the document still — a mark scrolls with its page, arming every tool and posting a notice leave the viewer where it is, the status-bar rotate turns the page on screen, typed Turkish text reaches the file as `/FreeText`, a protected file asks for its password and opens read-only, and document properties, an attachment added then removed in the panel, and bookmarks added then deleted in the outline form, written by the in-browser MuPDF writer, reach the exported file. `e2e/flows-document.spec.ts` drives the editor flows the other specs do not: a non-PDF is refused and a valid file opens afterwards, page stepper and zoom, page duplicate/move/delete with undo checked against the exported bytes, search, a form value, a value typed into a field on the page undoing in one step, a redaction box removing text from the export, and closing an edited document and the recent list (its controls named in the interface language; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes). `e2e/flows-pages.spec.ts` covers the page and file flows, each read back from the produced bytes: insert (blank and a page range of another file), merge at the start and end, extract (the page opens as `name-p2.pdf` while the source keeps its pages), split by ranges, export as images (PNG size at the chosen DPI, JPG chosen in the export dialog) and as text, print up to the browser print call (range, decoded sheets, a range error, the dialog in the interface language and its button reachable on a short window), opening by drop, reordering by drag, and a thumbnail's own rotate and delete buttons acting on that thumbnail's page (they once acted on the previous selection). `e2e/flows-modes.spec.ts` covers the modes and the release flow: two `Ctrl+Z` presses sent back to back undo two steps (history presses queue behind one another instead of being refused or lost), the status bar shows no zoom with no document open, reading mode (English text, arrow/page keys, Escape) and presentation mode (full screen, one page per key, Escape), the update banner and its Refresh against a second origin that ships a byte-different `/sw.js` (including a first-visit page, whose first update must reload too), and signing: the stamp on the page, a signature an independent `openssl cms -verify` accepts over the whole `/ByteRange`, no warning when exporting the file just signed, and the warning (then a broken signature on "Save anyway") when an edit after signing is exported — the save path judges every version the applied history produced, not only the newest. It also runs a menu-bar sweep (two-page/single spread, fit page, magnifier, theme, batch dialog, all in the interface language, and `<html lang>` following the detected locale). `e2e/flows-commands.spec.ts` drives the menu-bar commands the other specs leave out, one test per command or family, each read back from the produced bytes (`readProducedEntry` in `tool-fixture.ts` prints one object of the file): optimize (metadata cleared, pages rasterised), page boxes and labels, new form field with form data export (downloaded, document untouched) and import, replace pages, replace image, compare / accessibility tagging / redaction audit, page numbering, security (encrypted download with the permission bits) with remove password, link tool, layers written into `/OCProperties`, Select all and Rename (the header name edits in place; the export is named after it), browser storage (save, delete stored copies, sensitive session), underline/strikeout/squiggly, the home Merge PDFs tile (two chosen files become one new document, in the order chosen), the export dialog's compression level filling the Optimize form (`export-presets.ts`), a Bates batch started from the home screen, and an English check of every dialog's text and default values. `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does. `e2e/flows-parity.spec.ts` drives the parity flows, each failing on any console error: the palette's empty state (Enter runs nothing; *Advanced mode* keeps the keyboard), a comment thread with a reply and a status exported as XFDF and imported into a fresh copy, field detection on a Chromium-printed flat form (remove one, add the rest, one undo), sanitize removing the author from the exported file, PDF/A-2b opened in a new tab and passing its own check, the PDF/UA rows and the tag tree of a tagged print, the home grid's full rows, the missing-input error, and the language and right-to-left switches |
+| Built application | Playwright against assembled `dist/` under production headers (`playwright.config.ts`, served by `tools/preview-dist.mjs`), Chromium only, no launch flags. Every spec goes through `e2e/test.ts`, whose automatic fixture fails a test on any console error or uncaught exception in any page of its browser context unless the test names it (`allowedErrors`; `referee.spec.ts` checks the referee itself on a second page) and which, when `E2E_COVERAGE` is set, records every page's V8 coverage (the Coverage row). Two projects: `chromium` runs everything except tests tagged `@service-worker` (the worker's install, update and offline reload: `offline.spec.ts`, `app-flows.spec.ts`, `app15-update.spec.ts`, `flows-modes.spec.ts`), and `service-worker` runs those once the first has passed (`dependencies`), because their timing depends on an idle machine; a targeted run of one of them takes `--no-deps`. `E2E_WORKERS` caps the browsers on a machine someone is using; CI runs with one retry. What is asserted is what the user sees and the file the export writes, re-read with MuPDF or pdf.js (`readProducedEntry` in `tool-fixture.ts`; fixtures are generated in the test, the OCR scan included: known printed lines rasterised by MuPDF into an image-only PDF, recognised words asserted in reading order). The suite comes in families. **Shell and document:** `smoke`, `document`, `web-shell`, `ui-shell` (menu bar, palette, settings), `editor-stability` (a mark scrolls with its page, arming a tool or posting a notice leaves the viewer where it is), `ocr`, `offline`, `two-window` (two windows on one vault) and `ui-recovery-race` (a document opened while draft recovery waits keeps the front; `recent-handles-gate.ts` holds the handle store). **`flows-*`:** document, pages, modes (undo queueing, reading and presentation mode, the update banner against a second origin, signing and the save warning), commands (one test per menu command) and parity (comment threads, field detection, sanitize, PDF/A, PDF/UA, right-to-left). **`app-*`:** files (pickers and write-back), flows (other formats opened as PDFs, history, tab lifecycle), home and shortcuts (every chord, and the widgets that keep their keys). **`app15-*`:** work that arrives while the shell is busy, commands on a selection, navigation, refusals, the start page when part of it cannot be fetched, the update banner's dismissal and a damaged vault. **`ui-*`:** one family per surface, each checked in the produced file: marks (`ui-marks-*`, `ui-layers-*`, `tool-interaction`), panels (`ui-panels*`, `ui-tags`, `ui-accessibility`, `ui-comments`, `ui-compare`, `ui-outline`, `ui-pages`, `ui-properties`, `ui-attachments`, `ui-search`), the viewer, print, presentation, read-aloud and snapshot (`ui-viewer15*`, `ui-rest16*`, `ui-print`, `ui-presentation`, `ui-read-aloud`, `ui-snapshots`), scan, signatures and stamps (`ui-scan*`, `ui-signature*`, `ui-stamp-image`), XFA and batch (`ui-xfa*`, `ui-batch`), dialogs and badges (`ui-small`, `ui-password`). **`faults16*`:** engine failures injected in the running app through `e2e/engine-faults.ts` (Engine and hostile-input guards row). `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes |
 | Landing and legal pages | `e2e/site.spec.ts`, Playwright against the same assembled `dist/`, covers the six pages of `apps/site` in Turkish and English: each is well-formed (one `h1` and one `main`, language, description, canonical, three `hreflang` links and a sitemap entry, resolving links and anchors), the language switch leads to the translation and back, the English pages contain no Turkish letters, the header call to action opens `/editor/` from both languages, section anchors scroll and the FAQ expands, an unknown path gets the styled 404 page with working exits (the English one under `/en/`, whose exits stay in English), the stored theme is applied by a synchronous `theme-boot.js` before first paint and survives a reload, fonts and images load with no CSP violation, and the skip link is the first tab stop with no sideways scroll at phone width |
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
-| Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so `e2e/test.ts` records each test page's V8 coverage of `/editor/assets/*.js` and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. Ghostscript's worker and the service worker are not recorded by a page |
+| Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`) and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. `--skip-e2e` reports the unit suite alone; `--min-lines=<percent>` fails the run under that total (the nightly workflow passes 98). `E2E_WORKERS` caps the browsers and `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
+| Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
+| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
+| Nightly | `.github/workflows/nightly.yml`: `pnpm coverage --min-lines=98` (fails under 98 % total lines, uploads the report) and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
+| Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
+| Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
 `tools/spikes/` keeps only what still runs: the three `ci:behavior` checks

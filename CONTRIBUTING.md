@@ -21,19 +21,64 @@ pnpm dev                     # the editor on a local dev server
 
 ## Checks
 
-Every change must pass the local gates. GitHub Actions (`.github/workflows/ci.yml`) re-runs the
-`pnpm ci:verify` steps on every pull request and on pushes to `main`; it does not run `pnpm e2e` or
-`pnpm ci:behavior`, so those stay local. `pnpm ci:verify` runs the same checks as CI on your machine;
-the individual commands are:
+Every change must pass the local gates. `pnpm ci:verify` runs on your machine the checks of the
+`verify` job in CI; the individual commands are:
 
 ```sh
 pnpm typecheck
 pnpm check                   # Biome lint and format (also run by the pre-commit hook)
+pnpm check:docs              # the file paths, pnpm scripts and commands the docs name must exist
 pnpm fetch:engines --sync     # once per fresh clone: the unit tests read the fetched fonts
 pnpm unit                    # Vitest, the non-vacuity guard and the source-level regressions
 pnpm build && pnpm assemble:dist
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
+pnpm ci:behavior             # the behaviour checks in tools/spikes/ (needs openssl)
 ```
+
+`pnpm check:docs` (`tools/audit/docs-sync.mjs`) reads the documentation and fails when a file
+path, a `pnpm` script or a command it names does not exist. When you rename a file or a script,
+update the docs that name it in the same commit.
+
+### Continuous integration
+
+GitHub Actions runs `.github/workflows/ci.yml` on every pull request, on every push to `main`
+and on manual dispatch:
+
+- **`verify`** installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
+  `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`,
+  `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist` and
+  `wrangler deploy --dry-run`.
+- **`e2e`** (after `verify`) runs the Playwright suite in four shards. Each shard builds
+  `dist/` itself, installs Playwright Chromium (cached) and runs
+  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`. The HTML report and
+  the traces of a failed shard are uploaded and kept for 7 days.
+- **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker
+  --no-deps`.
+- **`behavior`** (after `verify`) runs `pnpm ci:behavior`.
+- **`deploy`** runs only on a push to `main`, after every job above has passed: `wrangler deploy`
+  with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
+  `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails, the job
+  runs `wrangler rollback` to the previous version and fails. Deploys run one at a time and a
+  waiting one is not cancelled.
+
+`.github/workflows/nightly.yml` runs daily and on manual dispatch. It runs `pnpm coverage
+--min-lines=98`, which fails when total line coverage is under 98 % and uploads the report, and
+the Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, so
+a flaky test fails the night.
+
+`.github/workflows/revert-proof.yml` runs on manual dispatch and on a pull request labelled
+`revert-proof`. For every fix on the list that `tools/review/revert-proof.mjs` reads, the fix's
+own test must fail on the fix commit's parent and pass on the fix commit.
+
+Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
+`e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests are
+merged with a merge commit, never squashed or rebased, so each commit keeps naming one fix and
+its test. A reviewer who did not write the change records PASS or FAIL on the pull request, and
+documentation that does not describe a behaviour change is a FAIL. [`REVIEW.md`](REVIEW.md) lists
+the commits by risk, each fix with the test that proves it; how changes land is in
+[`docs/integration-plan.md`](docs/integration-plan.md).
+
+### Tests and coverage
 
 `pnpm coverage` measures what the two suites execute together, on the sources under
 `packages/*/src` and `apps/*/src`: the unit suite under V8 coverage, then the whole Playwright
@@ -41,11 +86,12 @@ suite against an unminified build of the editor, mapped back to the sources thro
 build's source maps and added to the unit figures statement by statement
 (`tools/coverage/report.mjs`). It prints a table per package and writes the report to
 `coverage/report/` (`html/index.html`); it rebuilds the production `dist/` before it exits.
-`pnpm coverage --skip-e2e` reports the unit suite alone. On a machine you are working on,
-`E2E_WORKERS=4` caps the browsers Playwright runs at once and `VITEST_MAX_WORKERS=8` the unit
-workers; both apply to `pnpm e2e`, `pnpm unit` and `pnpm coverage`. Code that runs in a web worker
-(Ghostscript) or in the service worker is not recorded by a page, so it is not in the
-browser figures.
+`pnpm coverage --skip-e2e` reports the unit suite alone, and `pnpm coverage --min-lines=98` exits
+with an error when the total line coverage is under 98 % (the nightly run does this). On a machine
+you are working on, `E2E_WORKERS=4` caps the browsers Playwright runs at once and
+`VITEST_MAX_WORKERS=8` the unit workers; both apply to `pnpm e2e`, `pnpm unit` and
+`pnpm coverage`. Code that runs in a web worker (Ghostscript) or in the service worker is not
+recorded by a page, so it is not in the browser figures.
 
 The OCR specs generate their own inputs (a scan rendered from known printed lines, and a text PDF),
 so they run on a clean checkout.

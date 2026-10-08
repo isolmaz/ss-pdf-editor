@@ -130,7 +130,7 @@
         </h1>
 
         <p class="mt-6 max-w-[62ch] text-balance text-base leading-relaxed text-kumo-subtle">
-          Acrobat-class reading, text editing, annotation, form filling, page management, OCR, conversion, digital signing and permanent redaction. No uploads, no subscription, no account. <strong>Fully local, unlimited and free.</strong>
+          Acrobat-class reading, text editing, annotation, form filling, page management, OCR, conversion, digital signing and permanent redaction. No uploads, no subscription, no account. <strong>Fully local, free and without quotas.</strong>
         </p>
 
         <!-- Action Row -->
@@ -248,7 +248,7 @@
               <li>· Continuous scrolling, single-page, book and full-screen presentation modes</li>
               <li>· Full-text search with match highlighting; thumbnails, bookmarks (outline) and document tabs</li>
               <li>· A magnifier and a snapshot tool that joins the visible pages into one PNG</li>
-              <li>· Reading mode, with read-aloud using the voices installed on your device</li>
+              <li>· Reading mode and read-aloud: only voices installed on your device that match the document’s language (or the interface’s, if the document declares none) are used; a cloud voice never is</li>
             </ul>
           </div>
 
@@ -371,7 +371,7 @@
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Convert & Create</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· Convert Word (DOCX), Excel (XLSX), PowerPoint (PPTX), HTML, text/Markdown, CSV/TSV, EPUB and FB2 files to PDF in the browser</li>
-              <li>· Convert a PDF to an editable Word, Excel or CSV file; the file is read back and checked before it is offered</li>
+              <li>· Convert a PDF to an editable Word, Excel or CSV file; a Word or CSV file is read back and checked before it is offered, an Excel file is not; the report says what was not carried over (for Word, including how many pictures were left out)</li>
               <li>· Export pages as PNG, JPEG or WebP images; build a PDF from images</li>
               <li>· Conversion keeps the content, not the exact look; the old DOC, XLS and PPT formats, OpenDocument and RTF are not converted</li>
             </ul>
@@ -442,7 +442,7 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Digital Signing & Verification</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Local digital signing to the PAdES B-B standard from your PKCS#12 identity, with a visible stamp</li>
+              <li>· Local digital signing to the PAdES B-B standard from your PKCS#12 identity, with an optional visible stamp</li>
               <li>· Drawn, typed or photographed signatures and initials; these are a picture on the page, not a certified signature</li>
               <li>· Signature verification reports integrity, trust, revocation and coverage separately; RSA and ECDSA keys; trust rests only on certificates you imported</li>
               <li>· Revocation is read from CRLs on your device and from revocation data embedded in the PDF, never fetched from the network; RFC 3161 timestamps are verified offline</li>
@@ -479,7 +479,7 @@
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Accessibility & PDF/UA</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· The quick check reports facts only: no score and no conformance claim</li>
-              <li>· PDF/UA check: 34 rules modelled on the Matterhorn Protocol, each marked pass, fail, needs a person or not applicable. Colour contrast is not measured</li>
+              <li>· PDF/UA check: 34 rules modelled on the Matterhorn Protocol, each marked pass, fail, check by hand, not applicable or not checked. Colour contrast is not measured</li>
               <li>· A tags and reading-order editor; a tagged-PDF writer adds structure tags to an untagged file and verifies the result</li>
               <li>· Alt text for images and tooltips for form fields; quick fixes for the title, language and tab order</li>
             </ul>
@@ -928,7 +928,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Yes. DOCX, XLSX, PPTX, HTML, text, CSV and EPUB files are converted to PDF in the browser when you open them or drop them on the editor, and the result opens in a new tab as real, selectable and searchable text. Conversion keeps the content of the document, not its exact page layout, fonts or formatting; each report says what was approximated. The old DOC, XLS and PPT formats, OpenDocument and RTF are not converted. You can also export a PDF to Word, Excel or CSV; a PDF records no paragraphs or tables, so these are rebuilt from the page and can be wrong.
+              Yes. DOCX, XLSX, PPTX, HTML, text/Markdown, CSV/TSV, EPUB and FB2 files are converted to PDF in the browser when you open them or drop them on the editor, and the result opens in a new tab as real, selectable and searchable text. Conversion keeps the content of the document, not its exact page layout, fonts or formatting; each report says what was approximated. The old DOC, XLS and PPT formats, OpenDocument and RTF are not converted. You can also export a PDF to Word, Excel or CSV; a PDF records no paragraphs or tables, so these are rebuilt from the page and can be wrong.
             </div>
           </details>
 
@@ -972,7 +972,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              A drawn, typed or photographed signature is a picture placed on the page; it proves nothing about who signed or whether the document changed afterwards, and the dialog says so. For that, sign with your PKCS#12 identity to get a PAdES B-B signature. A new signature carries no timestamp and no revocation data, because there is no network to ask. When verifying, trust rests only on certificates you imported and revocation is read only from lists on your device; with no list the answer is “unknown”.
+              A drawn, typed or photographed signature is a picture placed on the page; it proves nothing about who signed or whether the document changed afterwards, and the dialog says so. For that, sign with your PKCS#12 identity to get a PAdES B-B signature. A new signature carries no timestamp and no revocation data, because there is no network to ask. When verifying, trust rests only on certificates you imported and revocation is read only from lists on your device and from revocation data embedded in the PDF itself; with neither, the answer is “unknown”.
             </div>
           </details>
 

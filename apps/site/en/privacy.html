@@ -173,7 +173,7 @@
           <div>
             <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">No Third Parties</h2>
             <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              The engines, OCR language packs and fonts are served by this site; no request goes to any third party. A strict content security policy (CSP) allows connections to this site only. There are no cookies and no analytics.
+              The engines, OCR language packs and fonts are served by this site; no request goes to any third party. A strict content security policy (CSP) allows connections to this site only. There are no cookies and no analytics. If you click an external link inside a PDF, the address opens in a new browser tab, so the editor and your unsaved work stay where they are.
             </p>
           </div>
         </div>
@@ -230,7 +230,7 @@
                 system, OPFS).
               </li>
               <li>
-                The recent documents list: file name, size and page count (localStorage). In Chromium-based
+                The recent documents list: file name, size, page count, when it was opened and its star, if you gave it one (localStorage). In Chromium-based
                 browsers a reference to the file is kept too, so it can be reopened (IndexedDB); not the file's
                 contents.
               </li>
@@ -249,7 +249,7 @@
             </ul>
             <p class="mt-2 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
               Opening an encrypted (password-protected) document starts a sensitive session: that document's draft,
-              source copy and file reference are not kept, and the list shows only its name, size and page count. The password is kept in memory only and is
+              source copy and file reference are not kept, no signature picture is remembered while it is open, and the list shows only its name, size and page count. The password is kept in memory only and is
               never written anywhere.
               You can turn the same setting on yourself with
               <strong class="font-medium text-kumo-strong">Settings → Privacy and storage → Sensitive

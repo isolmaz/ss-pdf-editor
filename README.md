@@ -49,7 +49,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
 | 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing · compression · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
-| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes · offline |
+| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes (chosen in Settings) · offline |
 
 ## Quick start
 
@@ -95,9 +95,18 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   followed: an internal one goes to its page, an external one opens in a new browser tab, so
   the open document and its unsaved changes stay where they are.
 - **View modes.** You get single-page, book and full-screen presentation modes, a
-  magnifier lens, and a snapshot tool that combines the visible pages into one PNG.
-- **Reading mode.** The page is shown as a text column. Read-aloud uses only speech voices
-  installed on the device.
+  magnifier lens, and a snapshot tool (**View → Snapshot**, or the palette) that combines the
+  pages in view into one PNG to copy or download.
+  - Presentation starts on the page at the top of the viewer and fits it to the screen width.
+    Space, `→` and `PageDown` turn to the next page, `←` and `PageUp` to the previous one,
+    `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
+    leaving full screen. A browser that refuses full screen still shows the presentation
+    layout in the page. Leaving restores the zoom you had.
+- **Reading mode.** The page is shown as a text column. Read-aloud speaks it a sentence at a
+  time, with pause, stop and a speed control, and uses only a speech voice installed on the
+  device for the document's own language (the catalog `/Lang`, matched on its primary
+  subtag) or, when the file declares none, for the interface language; without such a
+  voice it is unavailable and says so.
 - **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
   reopens a document by its identity, never by its file name. In Chromium-based browsers it
   reopens the file itself (the browser asks for permission again, and once more for write
@@ -110,6 +119,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   is kept in memory only.
 - **Shortcut list.** It is available in both languages from Help or `Ctrl+K`, even with no
   document open. The list is the binding table itself, so every chord it prints works.
+  `Home`, `End`, `PageUp` and `PageDown` turn the document's page, except while the focus is
+  in a menu bar or menu, a list, tree or grid, a tab strip or the form panel's field list:
+  those keep the keys to move inside themselves.
 
 ### Annotating, forms, measuring
 
@@ -129,7 +141,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Selection deletes whole marks only, never page content. To remove page content
     securely, use redaction.
 - **Style.** The app sets colour, opacity, thickness and author. Multiply blending keeps
-  text readable, and freehand strokes stay continuous in the exported file.
+  text readable, and freehand strokes stay continuous in the exported file. A rectangle,
+  circle or line writes its thickness as the annotation's border width (`/BS /W` and
+  `/Border`), so other readers draw it and this editor reads the same thickness back.
 - **Comment threads.** In the Notes panel every comment can be answered and given a review
   status (Accepted, Rejected, Cancelled, Completed), as in Acrobat.
   - A reply is a real PDF reply (`/IRT`) and a status is a real `/State` record (text
@@ -149,8 +163,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   unsaved changes, a signature warning, export, print or settings, plus the XFA form
   viewer, which needs the room.
 - **Save versus Export.** *Save* writes over the file you opened; this needs Chromium
-  and its File System Access API. *Export* always downloads a copy. Firefox and Safari
-  offer Export only.
+  and its File System Access API. *Export* always downloads a copy; its dialog shows the
+  size of the document as it is now, not as it was opened. Firefox and Safari offer Export
+  only.
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
   flatten them and add simple calculations. Form data can be imported or exported as FDF
   or JSON; exporting downloads only the data file.
@@ -173,7 +188,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - *XFA data* exports and imports the form's data as the XML file Acrobat's "Export data"
     writes; in a static form the fields are filled from it too.
 - **Measurement.** Measure distance, perimeter and area with a scale, units, a grid and
-  snapping. The results are written as real PDF annotations.
+  snapping. The results are written as real PDF annotations. `Esc` clears the chain being
+  measured, and a second `Esc` returns to the select tool.
 - **Small screens.** Below 1024 px both docks start collapsed and reopen as overlays.
 
 ### Pages and structure
@@ -186,13 +202,20 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     from the first file, and the report says so.
   - Composition goes through pdf.js `extractPages`, so outlines, form fields and page
     labels travel with the pages.
+  - The Pages panel selects by click, `Ctrl`, `Shift` or the keyboard. It moves the
+    selection with `Alt` or `Ctrl` plus the arrow keys, the up and down buttons, the *Move
+    to* field or drag and drop, and its toolbar rotates, duplicates, deletes and extracts.
+    The toolbar buttons, the *Move to* field and dragging are disabled while the document
+    is viewing-only.
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
   the box from the ink bounds.
 - **Structure.**
   - Page labels.
   - Outline editing.
   - Links, limited by a URI allow-list.
-  - Attachments.
+  - Attachments: add, save and remove in the Attachments panel; the Properties panel lists
+    each one with its size, read from the file, and shows "Size unreadable" for one whose
+    data cannot be read.
   - Layers (OCG).
   - Header and footer, Bates numbering and watermarks.
 - **Printing.** N-up, booklet and poster imposition, plus a duplex print-sheet builder.
@@ -211,7 +234,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - The new text is drawn where the old one was, at its size and in its colour. When it is
     wider or narrower, the rest of the line moves along; text after a tab stop keeps its
     place. A match across a line break, or one that does not fit its line, lays the
-    paragraph out again, and every other word keeps its own font, size and colour.
+    paragraph out again, and every other word keeps its own font, size and colour. The
+    paragraph keeps its alignment (left, centred, right or justified), and the erased area
+    stops where the lines above and below begin, so a neighbouring line is not removed with
+    the match.
   - It uses the document's own font whenever that font already draws every character the
     new text needs (in a merged file, the copy of the font the page itself uses). Otherwise
     it uses a close standard font (Helvetica, Times, Courier) or Noto Sans, sized to match,
@@ -227,21 +253,24 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     image opens as a PDF page. **File → Convert to PDF** offers the page size, orientation
     and margin, and joins several files into one PDF in the order you set.
   - Word goes through mammoth: headings, lists, tables, links and images. Each Excel sheet
-    becomes a table of its used range, and each slide becomes a page of the slide's size
-    with its text, tables and pictures in reading order.
+    becomes a table of its used range, with date-formatted cells shown as dates, and each
+    slide becomes a page of the slide's size with its text, tables and pictures in reading
+    order.
   - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
     document become link annotations. The title comes from the file or its name.
   - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
 - **PDF to Word, Excel and CSV.** **Export → Word, Excel or CSV** (also in the tools panel,
   the palette and the home screen) rebuilds the pages in the browser as an editable file.
   - **Word (DOCX):** paragraphs that reflow, with their fonts, sizes, bold, italic and
-    colour. Larger type becomes Heading 1–3, so Word's navigation pane and table of contents
-    see it. Alignment, indents and spacing are measured from the page, each page keeps its
-    size and orientation, and two-column text is read column by column. Ruled tables
-    become Word tables with their merged cells. Tables without rules are recognised from
-    the spacing of the text and become borderless tables. Pictures keep their transparency;
-    charts and drawings made of vector graphics are carried as pictures. A picture that
-    cannot be read, or one inside a table cell, is left out, and the report says how many.
+    colour. A line that starts with a bullet, or with one or two digits and a full stop or
+    bracket, starts a new paragraph. Larger type becomes Heading 1–3, so Word's navigation
+    pane and table of contents see it. Alignment, indents and spacing are measured from the
+    page, each page keeps its size and orientation, and two-column text is read column by
+    column. Ruled tables become Word tables with their merged cells. Tables without rules
+    are recognised from the spacing of the text and become borderless tables. Pictures keep
+    their transparency; charts and drawings made of vector graphics are carried as pictures.
+    A picture that cannot be read, or one inside a table cell, is left out, and the report
+    says how many.
   - **Excel (XLSX):** one sheet per table, with merged cells and the column widths of the
     rules. A page without any table becomes one sheet of its rows. A value becomes a number
     only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
@@ -250,8 +279,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     expects in your region. A text cell that starts with `=`, `+`, `-` or `@` would run as a
     formula when the file is opened, so it is written with a leading `'` (negative numbers
     are left alone), and the report counts them.
-  - The file is read back before it is offered (Word with mammoth, an independent reader),
-    and the report says what was approximated.
+  - A Word file is read back with mammoth (an independent reader) and a CSV file with a CSV
+    parser before it is offered; an Excel file is not read back. The report says what was
+    approximated.
 
 ### Scanning with the camera
 
@@ -277,8 +307,10 @@ nothing leaving the browser.
   shadow does not turn half the page black) and **Enhanced** (even lighting, white paper,
   colour kept).
 - **Several pages.** Thumbnails to reorder, rotate, delete, retake and re-edit the corners
-  of, then A4, Letter or fit-to-image pages and a JPEG quality. The PDF opens as a new tab;
-  you are offered the OCR tool on it, which makes it searchable.
+  of (re-editing the corners of a page ends with **Apply**), then A4, Letter or
+  fit-to-image pages and a JPEG quality. A photo that cannot be opened is reported, and the
+  notice stays while the next photo opens. The PDF opens as a new tab; you are offered the
+  OCR tool on it, which makes it searchable.
 - **Into an open document.** In **Insert pages**, the source **Scan with camera** inserts
   the straightened pages after the page you choose.
 
@@ -300,7 +332,8 @@ nothing leaving the browser.
     chosen category must count zero, or nothing is returned.
   - A file with earlier revisions (incremental saves) is always rewritten as one, even when
     the latest revision holds nothing to remove: an earlier one can still contain what a
-    later save deleted.
+    later save deleted. When the file has one revision and none of the chosen categories is
+    present, it is returned unchanged and the report says nothing was found.
   - When the selection does not change the picture, up to 40 pages are rendered before and
     after and must match pixel for pixel.
   - Limits: no "embedded search index" category (its place in the file is not specified),
@@ -326,7 +359,11 @@ nothing leaving the browser.
     browser's local storage only, and every saved entry can be deleted from the dialog.
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
-  - Trust is checked only against certificates you imported.
+  - Signatures of files larger than 16 MiB are checked against the exact byte ranges stored
+    in the file (MuPDF reports them rounded above that size); a range that cannot be paired
+    with the stored one leaves the signature unchecked.
+  - Trust is checked only against certificates you imported. A certificate that is not yet
+    valid is reported with the date it becomes valid; any other shows its expiry date.
   - Revocation is read from lists already on your device, never fetched: CRLs you import in
     the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
     the CRLs and OCSP responses stored in the PDF (the `/DSS` and the signature's own
@@ -351,7 +388,9 @@ nothing leaving the browser.
   - The OCR engine and every language pack are served by this site. Turkish and English are
     the two packs listed in the offline manifest, but Settings → Offline use does not fetch
     them (see [Offline use](#offline-use)). The engine and each pack are downloaded the first
-    time you run OCR with them; after that they work offline too.
+    time you run OCR with them; after that they work offline too. If the engine or a language
+    pack cannot be started (a missing core, pack or worker script), the notice says that the
+    language or an engine package is missing, and the next run tries again.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
     Right-to-left words come back in reading order.
@@ -366,17 +405,20 @@ nothing leaving the browser.
     tables, headings, lists, links (`OBJR`), annotations, form tooltips, fonts (embedded,
     `/ToUnicode`, characters that map to Unicode), `/Tabs /S`, the `pdfuaid` identifier in
     the XMP packet and bookmarks for long documents. Colour contrast is **not measured**,
-    and the report says so. Quick fixes write the title, language, `DisplayDocTitle`, tab
-    order, link descriptions, field tooltips, artifact markers for drawn lines, and
-    Link/Form/Annot elements for annotations. The `pdfuaid:part` declaration is offered only
-    when every automated rule passes; the rules that need a person stay unverified.
+    and the report says so. Quick fixes write the title, language (its field starts as the
+    file's `/Lang`, or the interface's language when there is none; tagging a file without
+    `/Lang` also writes the interface's language), `DisplayDocTitle`, tab order, link
+    descriptions, field tooltips, artifact markers for drawn lines, and Link/Form/Annot
+    elements for annotations. The `pdfuaid:part` declaration is offered only when every
+    automated rule passes; the rules that need a person stay unverified.
   - **Tags.** The structure tree as an editable outline, with numbered boxes over the pages
     showing the reading order. Reorder by drag or by Alt+arrow keys, change an element's
     type (P, H1–H6, Figure, Table, L, LI and the other standard types), set a figure's alt
     text or a header cell's scope, group elements or make a list, mark content as an
     artifact. A file with no tags shows the order its content is drawn in; change it and the
     types, then tag the document. Edits are a draft applied in one write, verified by
-    reading the file back.
+    reading the file back. A move into, out of or grouping inside an element whose children
+    cannot be rewritten is refused at the drop ("That element cannot be changed here.").
 - **PDF/A.** **Tools → Save as PDF/A** converts the document to PDF/A-2b (the default),
   PDF/A-3b or PDF/A-1b and opens the result in a new tab; the original stays open. The
   **PDF/A** panel (palette: *PDF/A check*) checks any file, converted or not.
@@ -384,8 +426,9 @@ nothing leaving the browser.
     when the tool is used. Colours become sRGB with an sRGB output intent, every font is
     embedded, and the XMP metadata is written from the document's own title, author and dates.
     Form fields are flattened, scripts and forbidden annotations removed, and missing
-    annotation appearances drawn first, so filled-in form values and links survive in PDF/A-2b
-    and 3b.
+    annotation appearances drawn first (an annotation written inline in a page's `/Annots`
+    included; one that cannot be drawn is removed and counted in the report), so filled-in
+    form values and links survive in PDF/A-2b and 3b.
   - Before the result is offered, the checker runs on it. **A file that breaks a rule is never
     handed over**: the operation stops and says which rule failed.
   - A file that already claims the chosen level is left as it is only when it passes every
@@ -395,13 +438,23 @@ nothing leaving the browser.
     output intent, device colour, transparency, fonts, images, graphics state, actions,
     annotations, forms, layers, embedded files). It reports each rule as passed, broken (with
     page and the thing at fault, and the ISO clause) or unchecked, and lists what it never
-    looks at. **It is not a full veraPDF validation.** Its rules were calibrated against veraPDF
+    looks at. For PDF/A-2 and 3 it reports a page that uses transparency without an output
+    intent or a `/Group /CS`, and every use of an image is read, on every page it appears.
+    **It is not a full veraPDF validation.** Its rules were calibrated against veraPDF
     1.30 while developing it (same pass or fail verdict on every fixture used).
   - The report compares sampled pages before and after: the share of words still extractable
     and a grey render, so a conversion that changed the look or the text says so.
 - **Comparison.** Compare two documents by text or by pixels; the report always says which
-  method it used.
-- **Batch.** Run one ordered set of steps over many files, with a report for each file.
+  method it used. Text changes are listed in document order, and the line list is capped
+  (the report says when it is).
+- **Batch.** Run one ordered set of steps over many files, with a report for each file. The
+  steps are extract pages, compress, OCR, page labels, header/footer and page numbering,
+  document properties, text export and security (password and permissions).
+  - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
+    it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;
+    choosing files afterwards does not discard it.
+  - Where the browser offers a directory picker (Chromium), *Watch Folder* queues the PDFs
+    of a folder and queues them again when the folder changes.
 
 ---
 
@@ -443,6 +496,12 @@ These describe how the build works; they are not promises.
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.
   - Cleanup refuses to delete anything when it cannot fully read which drafts are in use.
+    Every open window of the editor holds a Web Lock while it is open, and a cleanup waits
+    until each of them has said which documents it holds; a window that stays silent for
+    10 seconds makes the cleanup refuse, and a window that closed meanwhile is no longer
+    waited for.
+  - When drafts are restored at start-up, the document you opened meanwhile stays in front;
+    a draft whose document you already opened is skipped, and the others are restored.
 - **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
   the UI never claims that it does.
 
@@ -604,7 +663,8 @@ The limits are defined once, in
   - Only two hand-built XFA 3.3 files were tested, no real-world form; see
     `architecture.md` §5.10.
 - **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
-  malformed journal makes the whole draft unreadable on purpose.
+  malformed journal makes the whole draft unreadable on purpose. A draft whose stored file
+  is gone is reported as damaged and not restored; the other drafts still are.
 - **Early engine spikes.** Some code comments mention a measurement from an *early engine
   spike*. That prototype was removed before the public release, and each comment states
   what was measured.
@@ -624,13 +684,14 @@ The limits are defined once, in
 | `pnpm preview` | Serves `dist/` under the production headers (port 4178) |
 | `pnpm typecheck` | `tsc -b` over the workspace |
 | `pnpm lint` / `check` / `format` | Biome: lint / lint and format check / format write |
-| `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions |
-| `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`) |
-| `pnpm coverage [--skip-e2e]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits) |
+| `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions; `VITEST_MAX_WORKERS=N` caps the unit workers |
+| `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`); `E2E_WORKERS=N` caps the browsers running at once |
+| `pnpm coverage [--skip-e2e] [--min-lines=N]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits); `--min-lines=N` fails the run when the total line coverage is under N % |
 | `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
 | `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
+| `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist |
 | `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
 | `pnpm ci:behavior` | The behaviour harnesses in `tools/spikes/`: the phase 3 and phase 4 browser drivers against the assembled `dist/`, then the signing check (needs `openssl`) |
 | `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
@@ -653,33 +714,59 @@ packages/
   pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
 public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
                     manifest, robots/sitemap
-tools/              dist assembly, engine pins, licence audit, regression harness,
-                    git hooks, behaviour checks (spikes/), README clip recorder
-e2e/                Playwright specs for the editor flows and the site
-docs/media/         the README clips
-.github/            issue and pull request templates (no workflows)
+tools/              dist assembly, engine pins, licence audit, regression and docs checks,
+                    coverage report, deploy smoke check, revert-proof, git hooks,
+                    behaviour checks (spikes/), README clip recorder
+e2e/                Playwright specs for the editor flows and the site, and the engine
+                    fault injection (engine-faults.ts)
+docs/               integration-plan.md; media/ holds the README clips
+REVIEW.md           the commits of the branch by risk, each fix with its proving test
+.github/            workflows (CI, nightly, revert-proof), issue and pull request templates
 ```
 
 ---
 
 ## Quality gates
 
-GitHub Actions (`.github/workflows/ci.yml`, one `verify` job on `ubuntu-latest`) runs the
-`pnpm ci:verify` steps below on every pull request and on every push to `main`, with read-only
-token permissions and no secrets. `pnpm e2e` and `pnpm ci:behavior` are not run there; run them
-locally. To run the same checks locally, run `pnpm ci:verify`.
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every push to
+`main` and on manual dispatch. Its jobs:
 
-- **`pnpm ci:verify`** runs these steps in order:
+- **`verify`** runs the steps listed below, then `wrangler deploy --dry-run`.
+- **`e2e`** (after `verify`) runs the whole Playwright suite in four shards. Each shard builds
+  `dist/` itself, installs Playwright Chromium (cached) and runs
+  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`. The HTML report and
+  the traces of a failure are uploaded for 7 days.
+- **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
+- **`behavior`** (after `verify`) runs `pnpm ci:behavior`, the OpenSSL signing round trip.
+- **`deploy`** runs only on a push to `main`, after every job above has passed; see
+  [Build and deploy](#build-and-deploy).
+
+`.github/workflows/nightly.yml` runs daily and on manual dispatch: `pnpm coverage
+--min-lines=98`, which fails under 98 % total line coverage and uploads the report, and the
+Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
+`.github/workflows/revert-proof.yml` runs on manual dispatch and on a pull request labelled
+`revert-proof`: for every fix on the list that `tools/review/revert-proof.mjs` reads, the
+fix's own test must fail on the fix commit's parent and pass on the fix commit.
+
+Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
+`e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests
+are merged with a merge commit. [`REVIEW.md`](REVIEW.md) lists the commits by risk, each fix
+with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
+how changes land.
+
+- **`pnpm ci:verify`** runs the same checks as the `verify` job on your machine, in order:
   1. `install --frozen-lockfile`
   2. `typecheck`
   3. `check`
-  4. `fetch:engines --sync` (the unit tests read the fetched fonts from `public/fonts`)
-  5. `unit`
-  6. `audit:model-types`
-  7. `build`
-  8. `verify:assets`
-  9. `check:licenses`
-  10. `assemble:dist`
+  4. `check:docs` (the file paths, `pnpm` scripts and commands the documentation names must
+     exist)
+  5. `fetch:engines --sync` (the unit tests read the fetched fonts from `public/fonts`)
+  6. `unit`
+  7. `audit:model-types`
+  8. `build`
+  9. `verify:assets`
+  10. `check:licenses`
+  11. `assemble:dist`
 - **`pnpm ci:full`** adds `ci:behavior`:
   - `tools/spikes/phase3-check.mjs` runs the acceptance sentence end to end in a real
     browser. That sentence is: open, search, highlight, comment, fill a form, delete two
@@ -697,8 +784,8 @@ locally. To run the same checks locally, run `pnpm ci:verify`.
   - Save and Export stay disabled until the inspection of the current version has
     answered.
   - Each write is checked against twelve declared facts.
-  - A fact that cannot be checked is reported `unverified` or `degraded`, never folded into
-    "verified".
+  - A fact that cannot be checked is reported as partly verified (`degraded`) or not checked
+    (`unsupported`) with its reason, never folded into "verified".
 
 ---
 
@@ -723,6 +810,15 @@ A missing licence or version placeholder stops the build.
 
 Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
+
+A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
+after `verify`, `e2e`, `e2e-service-worker` and `behavior` have passed. It runs `wrangler
+deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
+`tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails, the job
+runs `wrangler rollback` to the previous version and fails. Only one deploy runs at a time; a
+waiting deploy is not cancelled.
+
+To build and deploy by hand:
 
 ```bash
 pnpm build && pnpm assemble:dist
