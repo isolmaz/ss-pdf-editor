@@ -771,9 +771,11 @@ function covers(
  * is a line that lies wholly in the strip: a caption that only touches it stays a paragraph.
  * A strip above or below the rules that holds lines of text one under the other (a header
  * row and a first row that no rule separates) is cut between them into the rows they are,
- * where the gap between two lines is at least half a line (a header cell wrapped in two
- * lines stays one row);
- * the cuts are returned, for they separate their rows although no rule is drawn there.
+ * where the gap between two lines is at least a quarter of a line, a pitch of about 1.7 times
+ * the size (a header cell wrapped in two lines at the font's own leading stays one row). No
+ * pitch alone tells every wrapped leading from every row pitch: this one keeps the leadings
+ * up to 16 pt at 10 pt type in a cell and cuts the pitches from 18 pt.
+ * The cuts are returned, for they separate their rows although no rule is drawn there.
  */
 function completeOuterEdges(
   horizontal: readonly Ruling[],
@@ -797,7 +799,7 @@ function completeOuterEdges(
     const out: number[] = [];
     let foot = Number.NEGATIVE_INFINITY;
     for (const line of [...linesIn(box)].sort((a, b) => a[1] - b[1])) {
-      if (foot !== Number.NEGATIVE_INFINITY && line[1] - foot >= (line[3] - line[1]) / 2)
+      if (foot !== Number.NEGATIVE_INFINITY && line[1] - foot >= (line[3] - line[1]) / 4)
         out.push((foot + line[1]) / 2);
       foot = Math.max(foot, line[3]);
     }

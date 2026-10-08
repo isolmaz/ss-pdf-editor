@@ -930,9 +930,11 @@ describe('lattice tables with missing rules', () => {
         'Name\nText',
       ]);
     }
-    // A line of leading beyond the line itself is a row of its own.
-    const [apart] = findTables((await layoutOf(await grid(26))).layout);
-    expect(apart?.ys).toHaveLength(5);
+    // A pitch from a quarter of a line beyond the line itself is a row of its own.
+    for (const pitch of [18, 20, 26]) {
+      const [apart] = findTables((await layoutOf(await grid(pitch))).layout);
+      expect(apart?.ys).toHaveLength(5);
+    }
   });
 
   it('does not take a page of three columns for a table when two dividers run past a header rule and a footer rule', async () => {
