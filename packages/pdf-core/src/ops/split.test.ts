@@ -178,7 +178,7 @@ describe('splitDocument', () => {
 
   it('in size mode keeps every part under the limit and re-produces an oversized estimate with one page less', async () => {
     // Pages of very different weight: the first two are heavy (incompressible numbers), the
-    // rest are empty, so the proportional estimate (three pages) is wrong for the first part
+    // rest are empty, so the proportional estimate (two pages) is wrong for the first part
     // and has to be corrected down to one page.
     const doc = new PDFDocument();
     let seed = 7;
@@ -192,16 +192,20 @@ describe('splitDocument', () => {
     const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
     doc.destroy();
 
-    // The limit sits one byte under the real size of the two heavy pages together, and the
-    // size estimate is told the average page weighs a third of that: two pages are estimated,
-    // produced, found too big, and produced again as one.
-    const twoHeavy = (await splitDocument(bytes, { ...base, mode: 'everyN', chunkSize: 2 }, run)).files[0];
-    const together = twoHeavy?.bytes.length ?? 0;
-    const maxBytes = together - 1;
+    // The limit sits halfway between the real size of one heavy page and of the two together
+    // (kilobytes apart: the same pages are not always produced at the same byte count, so a
+    // limit one byte under the pair was a coin toss on CI), and the size estimate is told the
+    // average page weighs 2/5 of the limit: two pages are estimated, produced, found too big,
+    // and produced again as one.
+    const sizeOf = async (chunkSize: number) =>
+      (await splitDocument(bytes, { ...base, mode: 'everyN', chunkSize }, run)).files[0]?.bytes.length ?? 0;
+    const [alone, together] = [await sizeOf(1), await sizeOf(2)];
+    expect(together - alone).toBeGreaterThan(4000);
+    const maxBytes = Math.floor((alone + together) / 2);
     const progress: Array<number | undefined> = [];
     const result = await splitDocument(
       bytes,
-      { ...base, mode: 'size', maxBytes, totalBytes: Math.round((together * 5) / 3) },
+      { ...base, mode: 'size', maxBytes, totalBytes: maxBytes * 2 },
       {
         signal: run.signal,
         onProgress: (entry) => {
