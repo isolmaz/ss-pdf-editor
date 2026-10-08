@@ -167,6 +167,37 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   // strip offers the copy.
   await expect(rail(page).getByRole('button', { name: 'Add Text', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Create unlocked copy' })).toBeVisible();
+
+  // Permanent redaction is refused through every door, not only the toolbar. Nothing is
+  // written to a protected tab, so neither its form nor its drawing layer may appear.
+  await useAdvancedMode(page);
+  const redactForm = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
+  const redactLayer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+
+  // (a) The command palette lists the command but disabled; choosing it opens nothing.
+  await page.keyboard.press('Control+k');
+  await page.getByRole('combobox').fill('Redaction (Permanent Erase)');
+  await expect.soft(page.getByRole('option', { name: /Redaction \(Permanent Erase\)/ })).toBeDisabled();
+  await page.keyboard.press('Enter');
+  // The form is a lazy chunk: give an opening one the time it needs before asserting absence.
+  await page.waitForTimeout(2_000);
+  await expect.soft(redactForm).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // (b) Tools tab → Security & Redaction → Permanent Redaction.
+  await page.getByRole('tab', { name: 'Tools', exact: true }).click();
+  const tools = page.getByRole('tabpanel', { name: 'Tools' });
+  const back = tools.getByRole('button', { name: 'Back to All Tools' });
+  if (await back.isVisible()) await back.click();
+  const security = tools.getByRole('button', { name: 'Security & Redaction', exact: true });
+  await expect(security).toBeVisible();
+  if ((await security.getAttribute('aria-expanded')) !== 'true') await security.click();
+  const permanent = tools.getByRole('button', { name: /^Permanent Redaction/ });
+  await expect(permanent).toBeVisible();
+  await permanent.click();
+  await page.waitForTimeout(2_000);
+  await expect(redactForm).toHaveCount(0);
+  await expect(redactLayer).toHaveCount(0);
 });
 
 test('an operation applied from the tools panel reaches the document', async ({ page }) => {

@@ -5500,7 +5500,7 @@ export function App({ store }: AppProps) {
                   viewer === null ? null : (
                     <>
                       {/* A protected tab is read-only: no area can be marked on it. */}
-                      {redactionActive && !locked && viewer !== null ? (
+                      {redactionActive && !locked && !viewingOnly && viewer !== null ? (
                         <RedactionLayer
                           t={t}
                           viewer={viewer}
@@ -5696,7 +5696,15 @@ export function App({ store }: AppProps) {
                       t={t}
                       activeSpec={rightDock && rightTab === 'tools' ? dialogSpec : null}
                       context={dialogContext}
-                      onSelectTool={(id) => openDialog(id)}
+                      onSelectTool={(id) => {
+                        // Same refusal as the arming half below: the form is not offered on a
+                        // tab nothing can be written to, and a protected one says why.
+                        if (id === 'redact' && !canEdit) {
+                          if (locked) setNotice(t('locked.banner'));
+                          return;
+                        }
+                        openDialog(id);
+                      }}
                       onBackToTools={() => {
                         cancelRef.current?.abort();
                         setDialogId(null);
@@ -5713,8 +5721,10 @@ export function App({ store }: AppProps) {
                         // The rail emits the redaction tool today and offered the
                         // highlighter before it; anything else is not a canvas tool and
                         // must not silently arm one.
-                        if (tool === 'redact') setCanvasTool(canEdit ? 'redact' : 'select');
-                        else if (tool === 'highlight') setCanvasTool('highlight');
+                        if (tool === 'redact') {
+                          if (canEdit) setCanvasTool('redact');
+                          else if (locked) setNotice(t('locked.banner'));
+                        } else if (tool === 'highlight') setCanvasTool('highlight');
                       }}
                       onOpenPalette={() => setPaletteOpen(true)}
                       onExportModal={() => setExportModalOpen(true)}
