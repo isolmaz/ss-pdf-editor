@@ -324,7 +324,7 @@ the same certificate twice is one entry.
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
-| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
+| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
 | `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
@@ -779,7 +779,7 @@ had to stay green. The moves, and the defects they fixed on the way:
   was an unknown step;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
-  written) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
+  written, plus the planned page labels) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
   pages of another document inserted its *first* pages instead (the plan's slot index was
   handed to the engine as the page number), so "insert pages 3-4 of this file" put in 1-2;
 - imposition and the print layout (`ops/impose.ts`), where each source page is a form XObject
@@ -2273,7 +2273,19 @@ the user just typed.
 
 Structural page actions (rotate, delete, duplicate, move, insert, replace) go through
 `composeDocument`, i.e. pdf.js `extractPages` on the live document, so annotations, form
-values, outlines and page labels travel with the pages. `planPageAction()` computes the new
+values and outlines travel with the pages. Page labels travel with them too, but only where the
+engine writes them: `extractPages` builds `/PageLabels` for a composition with a single source
+document (`#collectPageLabels` returns when `!isSingleFile`), so rotate, delete, duplicate and
+move keep them and a composition with a second source — insert and replace through
+`ops/page-insert.ts`, and `mergeDocuments` — would drop the tree. Those write it back themselves in
+their MuPDF pass (`composedLabelRanges` / `replaceLabelRanges`, `ops/page-labels.ts`): every output
+page is mapped to its source page and keeps the label that source gave it, so the pages of the
+current document keep exactly the label they had, and an inserted or added page keeps its own
+document's label — its `/PageLabels`, or its decimal page number in that document when it has none
+(a blank page reads `1`). Ranges are emitted only where style, prefix or consecutive numbering
+breaks, and nothing is written when no contributing document has labels; the merge report
+measures the ranges in the file it produced and says `lost` if they are fewer than planned.
+`planPageAction()` computes the new
 page list purely, so the effect of an action on the page order is reviewable without
 rendering anything. Applying a result re-checks that the tab and working version it started
 from are still current; if not, the operation throws `aborted` and the model is untouched.

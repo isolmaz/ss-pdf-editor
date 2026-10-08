@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 interface Plan {
   /** Runs on the document being written, just before it is saved. */
   tamper?: (document: PDFDocument) => void;
+  /** Runs on the document being written, right after each page-label range is written to it. */
+  afterLabels?: (document: PDFDocument) => void;
   /** A method of the document that throws when called. */
   trap?: { readonly method: string; readonly error: unknown };
   /** What `countPages` answers instead of the real count. */
@@ -39,6 +41,12 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
             if (property === state.trap?.method) {
               return () => {
                 throw state.trap?.error;
+              };
+            }
+            if (property === 'setPageLabels') {
+              return (...args: Parameters<PDFDocument['setPageLabels']>) => {
+                target.setPageLabels(...args);
+                state.afterLabels?.(target);
               };
             }
             if (property === 'setMetaData') {
@@ -76,6 +84,7 @@ const { openWithPdfjs } = await import('../engines/pdfjs-handle');
 
 afterEach(() => {
   state.tamper = undefined;
+  state.afterLabels = undefined;
   state.trap = undefined;
   state.pageCount = undefined;
   state.failLoad = new Map();
@@ -190,6 +199,19 @@ describe('the structure a merge measures in the file it produced', () => {
       expected: 1,
       actual: 0,
     });
+  });
+});
+
+describe('the page labels a merge writes are checked against the plan', () => {
+  it('says the labels were lost when the file holds fewer ranges than were planned', async () => {
+    state.afterLabels = (doc) => doc.getTrailer().get('Root').delete('PageLabels');
+    const out = await merged(undefined, (doc) => doc.setPageLabels(0, 'D', 'A-', 1));
+    // `A-1` on the base page, then the added page counting on its own from `1`: two ranges.
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.merge.labelsLost')?.params).toEqual({
+      expected: 2,
+      actual: 0,
+    });
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.merge.labels');
   });
 });
 

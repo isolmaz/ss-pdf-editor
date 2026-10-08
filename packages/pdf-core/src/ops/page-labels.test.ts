@@ -5,12 +5,17 @@
 
 import { PDFDocument } from 'mupdf';
 import { isToolError, type ToolError } from 'pdf-shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  composedLabelRanges,
+  composeLabelRanges,
   formatLabel,
+  type LabelPlacement,
   type PageLabelRange,
   type PageLabelStyle,
+  readLabelRanges,
   readPageLabels,
+  replaceLabelRanges,
   writePageLabels,
 } from './page-labels';
 
@@ -183,5 +188,248 @@ describe('writePageLabels / readPageLabels', () => {
   it('maps an engine failure on damaged bytes to a tool error', async () => {
     const error = await failureOf(writePageLabels(new Uint8Array([1, 2, 3]), [range(0, 'decimal')], run));
     expect(error.code).not.toBe('aborted');
+  });
+});
+
+/** A document of `count` pages that `build` may give a /PageLabels tree. */
+function labelledDocument(count: number, build: (doc: PDFDocument) => void): PDFDocument {
+  const doc = new PDFDocument();
+  for (let index = 0; index < count; index += 1) {
+    doc.insertPage(index, doc.addPage([0, 0, 200, 200], 0, {}, ''));
+  }
+  build(doc);
+  return doc;
+}
+
+/** The ranges `readLabelRanges` finds in a document `build` labelled, and nothing else. */
+function rangesOf(build: (doc: PDFDocument) => void, count = 8): readonly PageLabelRange[] {
+  const doc = labelledDocument(count, build);
+  try {
+    return readLabelRanges(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+
+describe('readLabelRanges', () => {
+  it('reads every style, prefix and start a plan can carry, in page order', () => {
+    const ranges = rangesOf((doc) => {
+      doc.setPageLabels(5, PDFDocument.PAGE_LABEL_ALPHA_LC);
+      doc.setPageLabels(0, PDFDocument.PAGE_LABEL_ROMAN_LC);
+      doc.setPageLabels(2, PDFDocument.PAGE_LABEL_DECIMAL, 'p-', 7);
+      doc.setPageLabels(3, PDFDocument.PAGE_LABEL_ALPHA_UC, 'Ek-', 3);
+      doc.setPageLabels(4, PDFDocument.PAGE_LABEL_ROMAN_UC);
+      doc.setPageLabels(6, PDFDocument.PAGE_LABEL_NONE, 'Kapak');
+    });
+    expect(ranges).toEqual([
+      range(0, 'roman-lower'),
+      range(2, 'decimal', 'p-', 7),
+      range(3, 'alpha-upper', 'Ek-', 3),
+      range(4, 'roman-upper'),
+      range(5, 'alpha-lower'),
+      range(6, 'none', 'Kapak'),
+    ]);
+  });
+
+  it('reads a document without a plan as having none', () => {
+    expect(rangesOf(() => undefined)).toEqual([]);
+    expect(rangesOf((doc) => doc.getTrailer().get('Root').put('PageLabels', 7))).toEqual([]);
+  });
+
+  it('reads what it can from entries that are not well formed', () => {
+    const ranges = rangesOf((doc) => {
+      const labelled = doc.addObject({ S: 'R', P: doc.newString('Z-'), St: 4 });
+      doc
+        .getTrailer()
+        .get('Root')
+        .put(
+          'PageLabels',
+          doc.addObject({
+            Nums: [
+              // not a page index, a negative page index, a label that is not a dictionary
+              doc.newName('x'),
+              { S: 'D' },
+              -1,
+              { S: 'D' },
+              3,
+              7,
+              // a style letter nobody knows, and a start that is below 1
+              4,
+              { S: 'Z', St: 0 },
+              // a start with a fraction, a start that is no number, a label behind a reference
+              5,
+              { S: 'D', St: 2.9 },
+              6,
+              { S: 'D', St: doc.newName('x') },
+              7,
+              labelled,
+              // two labels for page 2: the later one stands; a last key without a label
+              2,
+              { S: 'D' },
+              2,
+              { S: 'A' },
+              9,
+            ],
+          }),
+        );
+    });
+    expect(ranges).toEqual([
+      range(2, 'alpha-upper'),
+      range(4, 'none'),
+      range(5, 'decimal', '', 2),
+      range(6, 'decimal'),
+      range(7, 'roman-upper', 'Z-', 4),
+    ]);
+  });
+
+  it('follows kids, reads a node reachable twice once, and ends at a cycle and at a depth no tree has', () => {
+    const ranges = rangesOf((doc) => {
+      const leaf = doc.addObject({ Nums: [3, { S: 'D' }, 4, { S: 'r' }] });
+      leaf.put('Kids', [leaf, 5, { Nums: [6, { S: 'A' }] }]);
+      let deep: unknown = { Nums: [7, { S: 'D' }] };
+      for (let level = 0; level < 40; level += 1) deep = { Kids: [deep] };
+      doc
+        .getTrailer()
+        .get('Root')
+        .put(
+          'PageLabels',
+          doc.addObject({
+            Kids: [doc.addObject({ Nums: [0, { S: 'R' }] }), leaf, leaf, deep],
+          }),
+        );
+    });
+    expect(ranges).toEqual([
+      range(0, 'roman-upper'),
+      range(3, 'decimal'),
+      range(4, 'roman-lower'),
+      range(6, 'alpha-upper'),
+    ]);
+  });
+});
+
+describe('composeLabelRanges', () => {
+  /** The pages of source `source` in output order starting at `from`, taking `pages` of it. */
+  const place = (source: number, from: number, pages: readonly number[]): LabelPlacement[] =>
+    pages.map((page, index) => ({ source, page, position: from + index }));
+  const frontMatter = [range(0, 'roman-lower'), range(2, 'decimal')];
+
+  it('writes nothing when no source that contributes a page has a plan', () => {
+    expect(composeLabelRanges([[], []], [...place(0, 0, [0, 1]), ...place(1, 2, [0])])).toEqual([]);
+    expect(composeLabelRanges([[], frontMatter], place(0, 0, [0, 1]))).toEqual([]);
+  });
+
+  it('keeps every page of the first document and gives an inserted page its own number', () => {
+    const placements = [...place(1, 0, [0]), ...place(0, 1, [0, 1, 2, 3])];
+    expect(composeLabelRanges([frontMatter, []], placements)).toEqual([
+      range(0, 'decimal'),
+      range(1, 'roman-lower'),
+      range(3, 'decimal'),
+    ]);
+  });
+
+  it('splits a range around an insertion and resumes its counting behind it', () => {
+    const placements = [...place(0, 0, [0, 1]), ...place(1, 2, [0]), ...place(0, 3, [2, 3])];
+    expect(composeLabelRanges([[range(0, 'decimal')], []], placements)).toEqual([
+      range(0, 'decimal'),
+      range(2, 'decimal'),
+      range(3, 'decimal', '', 3),
+    ]);
+  });
+
+  it('does not split a range that continues across documents, and does not depend on the order given', () => {
+    const placements = [...place(1, 2, [2]), ...place(0, 0, [0, 1])];
+    expect(composeLabelRanges([[range(0, 'decimal')], []], placements)).toEqual([range(0, 'decimal')]);
+  });
+
+  it('starts a range where only the prefix changes, and counts nothing in an unnumbered one', () => {
+    const base = [range(0, 'decimal', 'A-', 4), range(2, 'none', 'Kapak', 9)];
+    expect(composeLabelRanges([base], place(0, 0, [0, 1, 2, 3]))).toEqual([
+      range(0, 'decimal', 'A-', 4),
+      range(2, 'none', 'Kapak'),
+    ]);
+    expect(
+      composeLabelRanges(
+        [[range(0, 'decimal', 'A-', 4)], [range(0, 'decimal', 'B-', 5)]],
+        [...place(0, 0, [0]), ...place(1, 1, [0])],
+      ),
+    ).toEqual([range(0, 'decimal', 'A-', 4), range(1, 'decimal', 'B-', 5)]);
+  });
+
+  it('gives a page in front of the first range the empty label a reader shows there', () => {
+    expect(composeLabelRanges([[range(1, 'decimal')]], place(0, 0, [0, 1, 2]))).toEqual([
+      range(0, 'none'),
+      range(1, 'decimal'),
+    ]);
+  });
+});
+
+describe('replaceLabelRanges', () => {
+  it('makes the ranges the whole plan, clearing the rules it does not name', async () => {
+    const mupdf = await import('mupdf');
+    const doc = labelledDocument(5, (document) => {
+      document.setPageLabels(0, PDFDocument.PAGE_LABEL_ROMAN_LC);
+      document.setPageLabels(3, PDFDocument.PAGE_LABEL_ALPHA_UC);
+    });
+    try {
+      replaceLabelRanges(mupdf, doc, [range(0, 'decimal', 'p-', 2), range(2, 'roman-upper')]);
+      expect(readLabelRanges(doc)).toEqual([range(0, 'decimal', 'p-', 2), range(2, 'roman-upper')]);
+    } finally {
+      doc.destroy();
+    }
+  });
+});
+
+describe('composedLabelRanges', () => {
+  const labelled = async (rules: readonly (readonly [number, string])[]) => {
+    const doc = labelledDocument(3, (document) => {
+      for (const [page, style] of rules) document.setPageLabels(page, style);
+    });
+    try {
+      return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    } finally {
+      doc.destroy();
+    }
+  };
+
+  it('reads the labels of every source and plans the composition from them', async () => {
+    const planned = await composedLabelRanges(
+      [await pages(2), await labelled([[0, 'R']])],
+      [
+        { source: 1, page: 2, position: 0 },
+        { source: 0, page: 0, position: 1 },
+        { source: 0, page: 1, position: 2 },
+      ],
+      run,
+      'test',
+    );
+    expect(planned).toEqual([range(0, 'roman-upper', '', 3), range(1, 'decimal')]);
+  });
+
+  it('stops at an aborted signal', async () => {
+    const before = new AbortController();
+    before.abort();
+    await expect(
+      composedLabelRanges(
+        [await pages(1)],
+        [{ source: 0, page: 0, position: 0 }],
+        { signal: before.signal },
+        'test',
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('maps an engine failure while a source is read, naming the step', async () => {
+    const bytes = await pages(1);
+    const trap = vi.spyOn(PDFDocument.prototype, 'getTrailer').mockImplementation(() => {
+      throw new Error('trailer is damaged');
+    });
+    try {
+      const error = await failureOf(
+        composedLabelRanges([bytes], [{ source: 0, page: 0, position: 0 }], run, 'insertPages.labels'),
+      );
+      expect(error.details.engineMessage).toBe('insertPages.labels: trailer is damaged');
+    } finally {
+      trap.mockRestore();
+    }
   });
 });

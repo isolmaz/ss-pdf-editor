@@ -15,6 +15,15 @@
  * The rest of the source catalog (viewer preferences, `Lang`, output intents,
  * OCG/`OCProperties`, `OpenAction`) is rebuilt by the engine; the report says so.
  *
+ * **Page labels** are the other thing the engine drops for a composition with a second
+ * source (`#collectPageLabels` writes them for a single document only), so they are
+ * planned from the same page plan and written back in the same MuPDF pass
+ * (`composedLabelRanges`, `ops/page-labels.ts`): every page keeps the label its own
+ * document gave it. The base pages keep exactly the label they had; an inserted page has
+ * its source's label — that document's `/PageLabels`, or its decimal page number in it
+ * when it has none (a blank page reads `1`). No labels are written when neither document
+ * has any.
+ *
  * ### Page order (the part a reviewer wants to see without running an engine)
  *
  * `planInsert(pageCount, at, count)`:
@@ -66,6 +75,12 @@ import {
 import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { composeDocument } from './compose';
 import { imagesToPdf } from './images';
+import {
+  composedLabelRanges,
+  type LabelPlacement,
+  type PageLabelRange,
+  replaceLabelRanges,
+} from './page-labels';
 import { pageGeometry } from './stamp';
 import {
   note,
@@ -477,14 +492,17 @@ export async function buildInsertedPages(
 }
 
 /**
- * Write the base document's Info into a composition result and stamp the product
+ * Write what the engine does not carry for a composition with a second source into the
+ * result — the base document's Info and the planned page labels — and stamp the product
  * producer line. `copyDocumentInfo` is the same helper `impose`/`compress` use; the
  * Info dictionary only reaches the output through this step because the engine copies
- * it for single-document compositions only.
+ * it for single-document compositions only, and the same goes for the label tree.
+ * `labels` empty leaves the result without a label plan.
  */
 async function carryBaseInfo(
   produced: Uint8Array,
   base: Uint8Array,
+  labels: readonly PageLabelRange[],
   context: OperationContext,
   operation: string,
 ): Promise<Uint8Array> {
@@ -496,6 +514,7 @@ async function carryBaseInfo(
     const { doc: document } = await openForWrite(produced);
     try {
       copyDocumentInfo(source, document);
+      if (labels.length > 0) replaceLabelRanges(mupdf, document, labels);
       return saveRewrite(document, operation);
     } finally {
       document.destroy();
@@ -542,6 +561,28 @@ export async function insertPages(
   const kept = plan.filter((page) => page.source === 'document');
   const outputCount = pageCount + built.pageCount;
 
+  // A document source hands over the whole file: the plan's 0-based slot is the chosen
+  // page list's index, not the page itself.
+  const insertedPages = inserted.map((page) =>
+    options.source.kind === 'document' ? (options.source.pages[page.page] as number) : page.page,
+  );
+  // Source 0 is the current document, source 1 the inserted one.
+  const labels = await composedLabelRanges(
+    [options.bytes, built.bytes],
+    [
+      ...kept.map((page): LabelPlacement => ({ source: 0, page: page.page, position: page.position })),
+      ...inserted.map(
+        (page, slot): LabelPlacement => ({
+          source: 1,
+          page: insertedPages[slot] as number,
+          position: page.position,
+        }),
+      ),
+    ],
+    context,
+    'insertPages.labels',
+  );
+
   const handle = await openWithPdfjs(options.bytes, { signal: context.signal });
   let composed: Uint8Array;
   try {
@@ -555,12 +596,7 @@ export async function insertPages(
           },
           {
             bytes: built.bytes,
-            // A document source hands over the whole file: the plan's 0-based slot is
-            // the chosen page list's index, not the page itself.
-            pages: inserted.map((page) =>
-              // The plan's slot indexes the chosen pages.
-              options.source.kind === 'document' ? (options.source.pages[page.page] as number) : page.page,
-            ),
+            pages: insertedPages,
             positions: inserted.map((page) => page.position),
           },
         ],
@@ -577,7 +613,7 @@ export async function insertPages(
     await handle.destroy();
   }
 
-  const bytes = await carryBaseInfo(composed, options.bytes, context, 'insertPages.metadata');
+  const bytes = await carryBaseInfo(composed, options.bytes, labels, context, 'insertPages.metadata');
   const notes: OperationNote[] = [
     note('preserved', 'insert.note.storage'),
     note('lost', 'insert.note.catalog'),
@@ -587,6 +623,7 @@ export async function insertPages(
       position: Math.min(at + 1, outputCount),
     }),
   ];
+  if (labels.length > 0) notes.push(note('changed', 'insert.note.labels'));
   if (options.source.kind === 'image' && built.pageCount < options.source.files.length) {
     notes.push(
       note('warning', 'insert.note.skipped', { count: options.source.files.length - built.pageCount }),
@@ -649,6 +686,26 @@ export async function replacePages(
   }
 
   const kept = plan.filter((page) => page.source === 'document');
+  // Source 0 is the current document, source n the n-th replacement document (the order
+  // the groups were first used in, which is the order they are composed in).
+  const labels = await composedLabelRanges(
+    [options.bytes, ...groups.keys()],
+    [
+      ...kept.map((page): LabelPlacement => ({ source: 0, page: page.page, position: page.position })),
+      ...[...groups.values()].flatMap((group, index) =>
+        group.pages.map(
+          (page, slot): LabelPlacement => ({
+            source: index + 1,
+            page,
+            position: group.positions[slot] as number,
+          }),
+        ),
+      ),
+    ],
+    context,
+    'replacePages.labels',
+  );
+
   const handle = await openWithPdfjs(options.bytes, { signal: context.signal });
   let composed: Uint8Array;
   try {
@@ -676,13 +733,14 @@ export async function replacePages(
     await handle.destroy();
   }
 
-  const bytes = await carryBaseInfo(composed, options.bytes, context, 'replacePages.metadata');
+  const bytes = await carryBaseInfo(composed, options.bytes, labels, context, 'replacePages.metadata');
   const notes: OperationNote[] = [
     note('preserved', 'insert.note.storage'),
     note('lost', 'insert.note.catalog'),
     note('preserved', 'insert.note.info'),
     note('changed', 'replace.note.replaced', { count: options.pages.length }),
   ];
+  if (labels.length > 0) notes.push(note('changed', 'insert.note.labels'));
 
   return {
     bytes,

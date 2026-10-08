@@ -210,7 +210,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
   the box from the ink bounds.
 - **Structure.**
-  - Page labels.
+  - Page labels. Inserting, replacing or merging pages keeps the label every page already had;
+    a page from a document without labels is numbered by its page number in that document.
   - Outline editing.
   - Links, limited by a URI allow-list.
   - Attachments: add, save and remove in the Attachments panel; the Properties panel lists
