@@ -141,6 +141,15 @@ const MARK_PAD = 0.4;
 const MARKED_ABOVE = /[İĞÖÜÂÊÎÔÛ]/;
 const CEDILLA = /[ÇŞçşĢģ]/;
 
+/**
+ * A scan saved as JPEG has faint ripples around letters, up to a block (16 px) away from the
+ * ink: the erased box of a word grows over them, side by side, while the next row or column
+ * holds nothing but pixels within `RIPPLE_DIFFERENCE` of the fill (anything stronger — the ink
+ * of the next word, a rule, a card edge — stops it).
+ */
+const RIPPLE_REACH = 16;
+const RIPPLE_DIFFERENCE = 17;
+
 /** Channel difference from the page colour that makes a pixel part of a picture. */
 const DIFFERENCE = 12;
 /** Pictures closer than this (points) are one picture. */
@@ -167,6 +176,32 @@ function pixelBox(image: RgbaImage, x0: number, y0: number, x1: number, y1: numb
   const px1 = Math.min(width, Math.max(px0 + 1, Math.ceil(x1 * scale)));
   const py1 = Math.min(height, Math.max(py0 + 1, Math.ceil(y1 * scale)));
   return [px0, py0, px1, py1];
+}
+
+/** `box` grown over the faint ripples around it (see `RIPPLE_REACH`), side by side. */
+function growOverRipples(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  box: PixelBox,
+  fill: Rgb,
+): PixelBox {
+  let [x0, y0, x1, y1] = box;
+  const faintRow = (y: number): boolean => {
+    for (let x = x0; x < x1; x += 1)
+      if (distance(data, (y * width + x) * 4, fill) > RIPPLE_DIFFERENCE) return false;
+    return true;
+  };
+  const faintColumn = (x: number): boolean => {
+    for (let y = y0; y < y1; y += 1)
+      if (distance(data, (y * width + x) * 4, fill) > RIPPLE_DIFFERENCE) return false;
+    return true;
+  };
+  for (let step = 0; step < RIPPLE_REACH && y0 > 0 && faintRow(y0 - 1); step += 1) y0 -= 1;
+  for (let step = 0; step < RIPPLE_REACH && y1 < height && faintRow(y1); step += 1) y1 += 1;
+  for (let step = 0; step < RIPPLE_REACH && x0 > 0 && faintColumn(x0 - 1); step += 1) x0 -= 1;
+  for (let step = 0; step < RIPPLE_REACH && x1 < width && faintColumn(x1); step += 1) x1 += 1;
+  return [x0, y0, x1, y1];
 }
 
 /** Count one more sample in a histogram bin. */
@@ -1251,8 +1286,8 @@ export function ocrBackground(
     const above = MARKED_ABOVE.test(word.text) ? MARK_PAD * h : pad;
     const below = CEDILLA.test(word.text) ? MARK_PAD * h : pad;
     const box = pixelBox(image, word.x0 - pad, word.y0 - above, word.x1 + pad, word.y1 + below);
-    const [x0, y0, x1, y1] = box;
     const [r, g, b] = ringMedian(data, width, height, box, RING);
+    const [x0, y0, x1, y1] = growOverRipples(data, width, height, box, [r, g, b]);
     for (let y = y0; y < y1; y += 1) {
       for (let x = x0; x < x1; x += 1) {
         const at = (y * width + x) * 4;

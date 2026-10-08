@@ -113,6 +113,37 @@ async function text(zip: JSZip, name: string): Promise<string> {
 }
 
 describe('exact layout: a scanned page read by OCR', () => {
+  it('reads the unsure word again on a crop of it and writes the surer reading', async () => {
+    const crops: { size: number; models: string }[] = [];
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => words([96, 50, 97]).map((w, at) => (at === 1 ? { ...w, text: 'worid' } : w)),
+          readWord: async (png, models) => {
+            crops.push({ size: png.length, models });
+            return { text: 'world', confidence: 93 };
+          },
+        },
+      },
+      run,
+    );
+    // Only the unsure word was read again, once.
+    expect(crops).toHaveLength(1);
+    expect(crops[0]?.models).toBe('all');
+    expect(crops[0]?.size).toBeGreaterThan(100);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const written = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    expect(written).toContain('Hello world today');
+  });
+
   it('writes the words as text boxes, the page colour as a shape, the panel as a picture and one comment', async () => {
     const seen: { scale: number; png: number }[] = [];
     const result = await exportOffice(

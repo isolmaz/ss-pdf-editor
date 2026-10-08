@@ -9,7 +9,12 @@
  * JSZip and the read-back check mammoth.
  */
 
-import { OCR_LANGUAGE_CODES_ALL, type OcrLanguageCode, recognizePage } from 'pdf-core/engines/tesseract';
+import {
+  OCR_LANGUAGE_CODES_ALL,
+  type OcrLanguageCode,
+  recognizePage,
+  recognizeWord,
+} from 'pdf-core/engines/tesseract';
 import {
   type CsvDelimiter,
   type DocxLayout,
@@ -132,6 +137,15 @@ export const exportOfficeDialog: OperationDialogSpec = {
                   signal,
                 })
               ).words,
+            readWord: async (png: Uint8Array, models: 'all' | 'english', signal: AbortSignal) =>
+              models === 'english' && !languages.includes('eng')
+                ? null
+                : await recognizeWord({
+                    image: new Blob([png as unknown as BlobPart], { type: 'image/png' }),
+                    languages: models === 'english' ? ['eng'] : languages,
+                    quality: 'best',
+                    signal,
+                  }),
           }
         : undefined;
     const result = await exportOffice(

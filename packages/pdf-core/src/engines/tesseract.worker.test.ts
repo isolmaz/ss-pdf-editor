@@ -14,11 +14,12 @@ import { TESSERACT_ASSETS } from '../assets';
 interface FakeWorker {
   recognize: (image: unknown, options: unknown, output: unknown) => Promise<unknown>;
   terminate: () => Promise<void>;
+  setParameters: (parameters: unknown) => Promise<void>;
 }
 
 const state = vi.hoisted(() => ({
   created: [] as Array<{ languages: string[]; options: Record<string, unknown> }>,
-  workers: [] as Array<{ recognize: unknown[]; terminated: number }>,
+  workers: [] as Array<{ recognize: unknown[]; terminated: number; parameters: unknown[] }>,
   /** Called for each created worker, in order; defaults to a worker that recognizes `page`. */
   nextCreate: [] as Array<() => Promise<unknown>>,
   recognize: undefined as undefined | ((call: number) => Promise<unknown>),
@@ -33,13 +34,16 @@ vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
     state.logger = options.logger as (message: unknown) => void;
     const next = state.nextCreate.shift();
     if (next !== undefined) await next();
-    const record = { recognize: [] as unknown[], terminated: 0 };
+    const record = { recognize: [] as unknown[], terminated: 0, parameters: [] as unknown[] };
     state.workers.push(record);
     const worker: FakeWorker = {
       recognize: (image, recognizeOptions, output) => {
         record.recognize.push({ image, recognizeOptions, output });
         if (state.recognize === undefined) return Promise.reject(new Error('no scripted recognition'));
         return state.recognize(record.recognize.length);
+      },
+      setParameters: async (parameters) => {
+        record.parameters.push(parameters);
       },
       terminate: async () => {
         record.terminated += 1;
@@ -341,6 +345,52 @@ describe('recognizePage', () => {
       throw original;
     };
     expect(await engine.recognizePage(input()).catch((caught: unknown) => caught)).toBe(original);
+  });
+});
+
+describe('recognizeWord', () => {
+  const wordInput = (signal = new AbortController().signal) => ({
+    image,
+    languages: ['eng' as const],
+    quality: 'best' as const,
+    signal,
+  });
+
+  it('reads a crop as one word and puts the page mode back', async () => {
+    state.recognize = async () => ({ data: { text: ' SQL \n', confidence: 47 } });
+    expect(await engine.recognizeWord(wordInput())).toEqual({ text: 'SQL', confidence: 47 });
+    expect(state.workers[0]?.parameters).toEqual([
+      { tessedit_pageseg_mode: '8' },
+      { tessedit_pageseg_mode: '3' },
+    ]);
+    expect(state.workers[0]?.recognize[0]).toMatchObject({ output: { text: true, blocks: false } });
+  });
+
+  it('answers null for a crop without text, and puts the mode back when the engine fails', async () => {
+    state.recognize = async () => ({ data: { text: ' \n', confidence: 0 } });
+    expect(await engine.recognizeWord(wordInput())).toBeNull();
+    state.recognize = async () => {
+      throw new Error('out of memory');
+    };
+    await expect(engine.recognizeWord(wordInput())).rejects.toMatchObject({ code: 'out-of-memory' });
+    expect(state.workers[0]?.parameters.at(-1)).toEqual({ tessedit_pageseg_mode: '3' });
+  });
+
+  it('names a failed start, refuses an aborted signal and stops when cancelled mid-read', async () => {
+    state.nextCreate = [async () => Promise.reject(new Error('Failed to fetch'))];
+    await expect(engine.recognizeWord(wordInput())).rejects.toMatchObject({ code: 'asset-missing' });
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(engine.recognizeWord(wordInput(aborted.signal))).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    const controller = new AbortController();
+    state.recognize = () => new Promise(() => undefined);
+    const pending = engine.recognizeWord(wordInput(controller.signal));
+    await vi.waitFor(() => expect(state.workers[0]?.recognize).toHaveLength(1));
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(state.workers[0]?.terminated).toBe(1);
   });
 });
 

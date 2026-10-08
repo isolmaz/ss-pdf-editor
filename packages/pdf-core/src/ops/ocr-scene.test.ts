@@ -1000,6 +1000,35 @@ describe('ocrBackground', () => {
     expect(regions).toEqual([]);
   });
 
+  it('erases the faint ripples a JPEG leaves around a word, up to the next strong ink', () => {
+    const width = 200;
+    const image: RgbaImage = {
+      width,
+      height: 100,
+      data: new Uint8Array(width * 100 * 4).fill(255),
+      scale: 1,
+    };
+    const paint = (value: number, x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y += 1) {
+        for (let x = x0; x < x1; x += 1) image.data.fill(value, (y * width + x) * 4, (y * width + x) * 4 + 3);
+      }
+    };
+    // the word's ink, ripples a few rows above and below it (15 off the page colour), a rule further down
+    paint(0, 60, 40, 140, 52);
+    paint(240, 50, 28, 150, 35);
+    paint(240, 50, 57, 150, 63);
+    paint(0, 40, 70, 160, 72);
+    const word: OcrWord = { text: 'Heading', x0: 60, y0: 40, x1: 140, y1: 52, confidence: 99 };
+    const { regions } = ocrBackground(image, [word]);
+    // only the rule is left, and the ripples are not in it
+    expect(regions).toHaveLength(1);
+    expect(regions[0]?.box[1]).toBeGreaterThanOrEqual(68);
+    // a ripple column beside the word goes too (the left and right sides grow as well)
+    paint(240, 52, 40, 59, 52);
+    paint(240, 141, 40, 148, 52);
+    expect(ocrBackground(image, [word]).regions).toHaveLength(1);
+  });
+
   it('merges nearby marks and drops specks smaller than 8 × 8 pt', () => {
     const width = 200;
     const image: RgbaImage = {

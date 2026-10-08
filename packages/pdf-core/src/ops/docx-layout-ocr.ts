@@ -19,6 +19,7 @@ import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics, standardAdvance } from './docx-fonts';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
+import { type ReadWord, refineWords } from './ocr-refine';
 import {
   dropDuplicates,
   dropEdgeMarks,
@@ -40,6 +41,8 @@ export interface OcrOptions {
   /** The words of a rendered page: its PNG, pixels per page point, an abort signal. Boxes in page points, y down. */
   readonly recognize: (png: Uint8Array, scale: number, signal: AbortSignal) => Promise<readonly OcrWord[]>;
   readonly lowConfidence: number;
+  /** Reads the PNG of one cropped word again (see `ocr-refine.ts`); without it the first read stands. */
+  readonly readWord?: ReadWord;
 }
 
 /** The pictures cover at least this much of the page for it to be a scan. */
@@ -241,6 +244,9 @@ export async function readScanPage(
       image = eraseRules(image, rules);
       png = pngOf(mupdf, image);
       read = (await recognise()) ?? read;
+    }
+    if (ocr.readWord !== undefined) {
+      read = await refineWords(read, image, (crop) => pngOf(mupdf, crop), ocr.readWord, signal);
     }
     const unique = dropDuplicates(read);
     const marks = markWords(unique);

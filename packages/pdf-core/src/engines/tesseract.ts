@@ -344,6 +344,63 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
   }
 }
 
+export interface RecognizeWordInput {
+  /** A tight, upscaled crop of one word. */
+  readonly image: Blob;
+  readonly languages: readonly OcrLanguageCode[];
+  readonly quality: OcrQuality;
+  readonly signal: AbortSignal;
+}
+
+/** The page segmentation modes of the engine's `tessedit_pageseg_mode`. */
+const PSM_AUTO = '3';
+const PSM_SINGLE_WORD = '8';
+
+/**
+ * Read one cropped word as a word (single-word page segmentation) with the given languages.
+ * The worker is the one page reads share, so the mode is put back afterwards. `null` when
+ * the crop holds no text.
+ */
+export async function recognizeWord(
+  input: RecognizeWordInput,
+): Promise<{ text: string; confidence: number } | null> {
+  throwIfAborted(input.signal);
+  let entry: WorkerEntry;
+  try {
+    entry = await acquireWorker(input.languages, input.quality);
+  } catch (error) {
+    throw mapTesseractError(error, 'start');
+  }
+  const onAbort = () => {
+    void releaseWorker(entry);
+  };
+  input.signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await raceWithAbort(
+      (async () => {
+        await entry.worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_WORD as never });
+        try {
+          const result = await entry.worker.recognize(
+            input.image,
+            {},
+            { blocks: false, text: true, hocr: false, tsv: false },
+          );
+          const text = result.data.text.trim();
+          return text.length === 0 ? null : { text, confidence: result.data.confidence };
+        } finally {
+          await entry.worker.setParameters({ tessedit_pageseg_mode: PSM_AUTO as never });
+        }
+      })(),
+      input.signal,
+    );
+  } catch (error) {
+    if (input.signal.aborted) throw abortError();
+    throw mapTesseractError(error, 'recognize');
+  } finally {
+    input.signal.removeEventListener('abort', onAbort);
+  }
+}
+
 function collectWords(page: Page, scale: number): OcrWord[] {
   const words: OcrWord[] = [];
   let paragraphIndex = 0;
