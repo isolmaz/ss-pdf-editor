@@ -636,6 +636,22 @@ describe('text box XML', () => {
     expect(xmlText.match(/<w:br\/>/g)).toHaveLength(2);
   });
 
+  it('writes an underlined run with a single underline after its size, in the text colour, and others without', () => {
+    const box = handMade({
+      paragraphs: [
+        {
+          align: 'left',
+          lineHeight: 12.5,
+          lines: [{ runs: [run('link', { underline: true }), run(' plain')] }],
+        },
+      ],
+    });
+    const xmlText = textBoxXml(box, 1, registry());
+    expect(xmlText).toContain('<w:sz w:val="20"/><w:szCs w:val="20"/><w:u w:val="single"/>');
+    // one run underlined in the drawing and one in the fallback; the plain run in neither
+    expect(xmlText.match(/<w:u /g)).toHaveLength(2);
+  });
+
   it('puts the same content in the fallback as in the drawing', () => {
     const xmlText = textBoxXml(handMade(), 1, registry());
     const contents = xmlText.match(/<w:txbxContent>.*?<\/w:txbxContent>/g) ?? [];

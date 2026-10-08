@@ -15,10 +15,14 @@ import {
   dropDuplicates,
   dropEdgeMarks,
   dropMisreads,
+  eraseRules,
+  findUnderlines,
+  markWords,
   misreadWords,
   ocrBackground,
   ocrTextBoxes,
   type RgbaImage,
+  type Rule,
 } from './ocr-scene';
 
 /* ------------------------------------------------------------------ *
@@ -468,6 +472,98 @@ describe('ocrTextBoxes: columns and regions', () => {
     expect(boxes.flatMap(textOf)).toEqual(['Header', 'Left1', 'Left2', 'Right1', 'Right2', 'Footer']);
   });
 
+  it('reads a heading under a header before the next block, not as a column of its own', () => {
+    // the heading stands left of where the header text starts, but below it: no overlap, so no columns
+    const words = [
+      fake('Heading', 10, 100, 60, 114, 3),
+      fake('Title', 120, 10, 200, 24, 0),
+      fake('Sub', 120, 40, 200, 54, 1),
+      fake('Body', 120, 300, 200, 314, 4),
+    ];
+    expect(ocrTextBoxes(words, blank(), 0.9).boxes.flatMap(textOf)).toEqual([
+      'Title',
+      'Sub',
+      'Heading',
+      'Body',
+    ]);
+  });
+
+  it('reads a grid of cards row by row when the rows are separated nearly as widely as the columns', () => {
+    const words = [
+      fake('A1', 10, 10, 60, 24, 0),
+      fake('A2', 10, 60, 60, 74, 1),
+      fake('B1', 150, 10, 200, 24, 2),
+      fake('B2', 150, 60, 200, 74, 3),
+      fake('C1', 10, 140, 60, 154, 4),
+      fake('D1', 150, 140, 200, 154, 5),
+    ];
+    expect(ocrTextBoxes(words, blank(), 0.9).boxes.flatMap(textOf)).toEqual(
+      [['A1'], ['A2'], ['B1'], ['B2'], ['C1'], ['D1']].flat().flatMap((text) => [text]),
+    );
+  });
+
+  it('reads a column before the next when the paragraph breaks of both columns line up', () => {
+    // two columns 35 pt apart, two paragraphs of three lines each, a blank line between them
+    const column = (name: string, x: number, first: number) =>
+      [0, 1, 2, 3, 4, 5].map((row) =>
+        fake(
+          `${name}${row}`,
+          x,
+          10 + row * 14 + (row > 2 ? 22 : 0),
+          x + 100,
+          22 + row * 14 + (row > 2 ? 22 : 0),
+          first + row,
+        ),
+      );
+    const words = [...column('L', 10, 0), ...column('R', 145, 10)];
+    expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      ...[0, 1, 2, 3, 4, 5].map((row) => `L${row}`),
+      ...[0, 1, 2, 3, 4, 5].map((row) => `R${row}`),
+    ]);
+  });
+
+  it('reads the cells of a table row by row when its columns are no further apart than a word space', () => {
+    const words = [
+      fake('Turkce', 10, 10, 60, 24, 0),
+      fake('Ana', 63, 10, 100, 24, 1),
+      fake('Ingilizce', 10, 60, 60, 74, 2),
+      fake('Ileri', 63, 60, 100, 74, 3),
+      fake('Almanca', 10, 110, 60, 124, 4),
+      fake('Orta', 63, 110, 100, 124, 5),
+    ];
+    expect(ocrTextBoxes(words, blank(), 0.9).boxes.flatMap(textOf)).toEqual([
+      'Turkce',
+      'Ana',
+      'Ingilizce',
+      'Ileri',
+      'Almanca',
+      'Orta',
+    ]);
+  });
+
+  it('reads a column of line numbers beside paragraphs along with them, not before them', () => {
+    const paragraph = (name: string, top: number, first: number) =>
+      [0, 1, 2].map((row) =>
+        fake(`${name}${row}`, 55, top + row * 18, 155, top + 14 + row * 18, first + row),
+      );
+    const words = [
+      fake('n1', 10, 10, 25, 24, 0),
+      fake('n2', 10, 90, 25, 104, 1),
+      ...paragraph('A', 10, 2),
+      ...paragraph('B', 90, 5),
+    ];
+    expect(ocrTextBoxes(words, blank(), 0.9).boxes.flatMap(textOf)).toEqual([
+      'n1',
+      'A0',
+      'A1',
+      'A2',
+      'n2',
+      'B0',
+      'B1',
+      'B2',
+    ]);
+  });
+
   it('reads a column before the next when the gutter is wider than the space between a heading and its text', () => {
     const words = [
       fake('Side', 10, 40, 60, 54, 0),
@@ -486,8 +582,12 @@ describe('ocrTextBoxes: columns and regions', () => {
   it('reads boxes no gap separates top to bottom, then left to right', () => {
     const across = [fake('Aaa', 0, 0, 60, 12, 0), fake('Bbb', 40, 0, 100, 12, 1)];
     expect(ocrTextBoxes(across, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Aaa', 'Bbb']);
+    // boxes that share a row (overlap by half of the shorter) are read left to right even when the left one starts lower
     const overlap = [fake('Aaa', 0, 6, 60, 18, 0), fake('Bbb', 40, 0, 100, 12, 1)];
-    expect(ocrTextBoxes(overlap, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Bbb', 'Aaa']);
+    expect(ocrTextBoxes(overlap, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Aaa', 'Bbb']);
+    // …and a box that only touches the row from below starts the next one
+    const below = [fake('Aaa', 0, 10, 60, 22, 0), fake('Bbb', 40, 0, 100, 12, 1)];
+    expect(ocrTextBoxes(below, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Bbb', 'Aaa']);
   });
 });
 
@@ -962,6 +1062,68 @@ describe('ocrBackground', () => {
     expect(regions).toEqual([]);
   });
 
+  it('erases the faint ripples a JPEG leaves around a word, up to the next strong ink', () => {
+    const width = 200;
+    const image: RgbaImage = {
+      width,
+      height: 100,
+      data: new Uint8Array(width * 100 * 4).fill(255),
+      scale: 1,
+    };
+    const paint = (
+      value: (x: number, y: number) => number,
+      x0: number,
+      y0: number,
+      x1: number,
+      y1: number,
+    ) => {
+      for (let y = y0; y < y1; y += 1) {
+        for (let x = x0; x < x1; x += 1)
+          image.data.fill(value(x, y), (y * width + x) * 4, (y * width + x) * 4 + 3);
+      }
+    };
+    // noise a few levels either side of the page colour
+    const noise = (x: number, y: number): number => 240 + ((x * 7 + y * 3) % 11);
+    // the word's ink, ripples a few rows above and below it, a rule further down
+    paint(() => 0, 60, 40, 140, 52);
+    paint(noise, 50, 28, 150, 35);
+    paint(noise, 50, 57, 150, 63);
+    paint(() => 0, 40, 70, 160, 72);
+    const word: OcrWord = { text: 'Heading', x0: 60, y0: 40, x1: 140, y1: 52, confidence: 99 };
+    const { regions } = ocrBackground(image, [word]);
+    // only the rule is left, and the ripples are not in it
+    expect(regions).toHaveLength(1);
+    expect(regions[0]?.box[1]).toBeGreaterThanOrEqual(68);
+    // ripple columns beside the word go too (the left and right sides grow as well)
+    paint(noise, 52, 40, 59, 52);
+    paint(noise, 141, 40, 148, 52);
+    expect(ocrBackground(image, [word]).regions).toHaveLength(1);
+  });
+
+  it('does not paint the tint of a band, a card or a highlight into the page around it', () => {
+    const width = 300;
+    const height = 100;
+    const image: RgbaImage = { width, height, data: new Uint8Array(width * height * 4).fill(255), scale: 1 };
+    const paint = (value: number, x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y += 1) {
+        for (let x = x0; x < x1; x += 1) image.data.fill(value, (y * width + x) * 4, (y * width + x) * 4 + 3);
+      }
+    };
+    // a light band (238, 17 under white) from y 40 to 70 with a word on it
+    paint(238, 20, 40, 280, 70);
+    paint(0, 100, 50, 180, 62);
+    const word: OcrWord = { text: 'Zebra', x0: 100, y0: 50, x1: 180, y1: 62, confidence: 99 };
+    const { regions } = ocrBackground(image, [word]);
+    expect(regions).toHaveLength(1);
+    expect(regions[0]?.box).toEqual([19, 39, 281, 71]);
+    const pixel = (x: number, y: number): number => image.data[(y * width + x) * 4] as number;
+    // the source is untouched; the region holds the band alone
+    expect(pixel(120, 72)).toBe(255);
+    expect(pixel(120, 38)).toBe(255);
+    const crop = regions[0]?.rgba as RgbaImage;
+    expect(crop.data[(1 * crop.width + 130) * 4]).toBe(238);
+  });
+
   it('merges nearby marks and drops specks smaller than 8 × 8 pt', () => {
     const width = 200;
     const image: RgbaImage = {
@@ -985,5 +1147,278 @@ describe('ocrBackground', () => {
       [4.5, 4.5, 45.5, 20.5],
       [49.5, 39.5, 95.5, 41.5],
     ]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * underlines, marks, weight and slant within a line
+ * ------------------------------------------------------------------ */
+
+describe('underlines', () => {
+  const LINK = 'gymnast.com';
+  async function linkPage(rules: { x: number; w: number; y: number }[]) {
+    const page = new Page(300, 80, WHITE);
+    page.text('helvetica', 14, 20, 40, BLACK, LINK);
+    for (const rule of rules) page.rect(rule.x, rule.y, rule.w, 1, BLACK);
+    const image = await page.render(3);
+    return { image, word: wordAt(image, LINK, [10, 20, 200, 60]) };
+  }
+
+  it('finds a thin rule under a word, wherever it lies from the baseline to below the descenders', async () => {
+    for (const y of [42, 43, 44, 45]) {
+      const { image, word } = await linkPage([{ x: 20, w: 100, y }]);
+      const rules = findUnderlines(image, [word]);
+      expect(rules).toHaveLength(1);
+      expect(rules[0]?.y0).toBeCloseTo(y, 0);
+      expect(rules[0]?.x0).toBeLessThanOrEqual(word.x0 + 1);
+    }
+  });
+
+  it('follows the rule past the word over the words next to it, but not far beyond the words: that is a divider', async () => {
+    const page = new Page(300, 80, WHITE);
+    page.text('helvetica', 14, 20, 40, BLACK, 'wide link');
+    page.text('helvetica', 14, 100, 40, BLACK, 'text');
+    page.rect(20, 44, 120, 1, BLACK);
+    const image = await page.render(3);
+    const words = [wordAt(image, 'wide link', [10, 20, 90, 60]), wordAt(image, 'text', [95, 20, 200, 60])];
+    const rules = findUnderlines(image, words);
+    expect(rules).toHaveLength(2);
+    const [first] = rules as [(typeof rules)[number]];
+    expect(first.x1).toBeGreaterThan(130);
+    const divider = new Page(300, 80, WHITE);
+    divider.text('helvetica', 14, 20, 40, BLACK, 'Heading');
+    divider.rect(10, 44, 280, 1, BLACK);
+    const dividerImage = await divider.render(3);
+    expect(findUnderlines(dividerImage, [wordAt(dividerImage, 'Heading', [10, 20, 90, 60])])).toEqual([]);
+  });
+
+  it('leaves the horizontal borders of a ruled table in the picture', async () => {
+    const table = new Page(300, 80, WHITE);
+    table.text('helvetica', 12, 12, 40, BLACK, 'Item');
+    table.text('helvetica', 12, 105, 40, BLACK, 'Quantity');
+    table.text('helvetica', 12, 258, 40, BLACK, '12.50');
+    // the row's bottom border, edge to edge, and the cell lines through it
+    table.rect(10, 43, 281, 1, BLACK);
+    for (const x of [10, 100, 200, 290]) table.rect(x, 20, 1, 40, BLACK);
+    const image = await table.render(3);
+    const words = [
+      wordAt(image, 'Item', [12, 25, 60, 42]),
+      wordAt(image, 'Quantity', [102, 25, 190, 42]),
+      wordAt(image, '12.50', [202, 25, 288, 42]),
+    ];
+    expect(findUnderlines(image, words)).toEqual([]);
+    // the words with no gap wider than a word space and no line through the ends: still a rule under the text
+    const row = new Page(300, 80, WHITE);
+    row.text('helvetica', 12, 15, 40, BLACK, 'Item Quantity 12.50');
+    row.rect(14, 43, 107, 1, BLACK);
+    const rowImage = await row.render(3);
+    const all = wordAt(rowImage, 'Item Quantity 12.50', [12, 25, 200, 42]);
+    expect(findUnderlines(rowImage, [all])).toHaveLength(1);
+  });
+
+  it('leaves the border of a cell that holds one line of text, with its sides drawn, in the picture', async () => {
+    const cell = new Page(300, 80, WHITE);
+    cell.text('helvetica', 12, 20, 40, BLACK, 'Cell content');
+    cell.rect(15, 43, 75, 1, BLACK);
+    cell.rect(15, 20, 1, 24, BLACK);
+    cell.rect(89, 20, 1, 24, BLACK);
+    const image = await cell.render(3);
+    expect(findUnderlines(image, [wordAt(image, 'Cell content', [17, 25, 86, 42])])).toEqual([]);
+    // below the rule instead (the top border of the row under it)
+    const below = new Page(300, 80, WHITE);
+    below.text('helvetica', 12, 20, 40, BLACK, 'Cell content');
+    below.rect(15, 43, 75, 1, BLACK);
+    below.rect(15, 43, 1, 24, BLACK);
+    below.rect(89, 43, 1, 24, BLACK);
+    const belowImage = await below.render(3);
+    expect(findUnderlines(belowImage, [wordAt(belowImage, 'Cell content', [17, 25, 86, 42])])).toEqual([]);
+  });
+
+  it('is not fooled by text, a thick bar, a card edge or a word without ink', async () => {
+    const plain = await new Page(300, 80, WHITE);
+    plain.text('helvetica', 14, 20, 40, BLACK, 'minimum');
+    const image = await plain.render(3);
+    expect(findUnderlines(image, [wordAt(image, 'minimum', [10, 20, 200, 60])])).toEqual([]);
+    const bar = new Page(300, 80, WHITE);
+    bar.text('helvetica', 14, 20, 40, BLACK, LINK);
+    bar.rect(10, 44, 150, 6, BLACK);
+    const barImage = await bar.render(3);
+    expect(findUnderlines(barImage, [wordAt(barImage, LINK, [10, 20, 200, 41])])).toEqual([]);
+    const flat = blank(100, 60);
+    expect(findUnderlines(flat, [fake('empty', 10, 10, 60, 24, 0)])).toEqual([]);
+    expect(findUnderlines(flat, [fake('a', 10, 10, 14, 24, 0), fake('\u2014', 10, 10, 60, 24, 0)])).toEqual(
+      [],
+    );
+    // a word narrower than its height has no rule worth looking for
+    expect(findUnderlines(image, [fake('ab', 20, 20, 24, 40, 0)])).toEqual([]);
+  });
+
+  it('erases a rule, keeping the descender that crosses it', async () => {
+    const page = new Page(300, 80, WHITE);
+    page.text('helvetica', 24, 20, 40, BLACK, 'gymnast');
+    page.rect(20, 42, 110, 1, BLACK);
+    const image = await page.render(3);
+    const word = wordAt(image, 'gymnast', [10, 10, 200, 70]);
+    const [rule] = findUnderlines(image, [word]) as [Rule];
+    const clean = eraseRules(image, [rule]);
+    expect(clean.data).not.toBe(image.data);
+    // the rows of the rule are background across it, except where the g / y descend through them
+    const row = Math.round(42.5 * 3);
+    let dark = 0;
+    for (let x = Math.floor(rule.x0 * 3); x < Math.ceil(rule.x1 * 3); x += 1) {
+      if ((clean.data[(row * clean.width + x) * 4] as number) < 128) dark += 1;
+    }
+    let before = 0;
+    for (let x = Math.floor(rule.x0 * 3); x < Math.ceil(rule.x1 * 3); x += 1) {
+      if ((image.data[(row * image.width + x) * 4] as number) < 128) before += 1;
+    }
+    expect(before).toBeGreaterThan(200);
+    expect(dark).toBeLessThan(25);
+    expect(dark).toBeGreaterThan(0);
+  });
+
+  it('writes the words over a rule as underlined runs and the rest not', async () => {
+    const { image, word } = await linkPage([{ x: 20, w: 100, y: 44 }]);
+    const rules = findUnderlines(image, [word]);
+    const other = fake('plain', 112, 28, 150, 44, 0, 0, { line: 0 });
+    const runs = runsOf(
+      ocrTextBoxes([word, other], image, 0.9, [], undefined, undefined, rules).boxes[0] as TextBox,
+    );
+    expect(runs.map((run) => [run.text, run.underline])).toEqual([
+      [`${LINK} `, true],
+      ['plain', undefined],
+    ]);
+  });
+});
+
+describe('marks and icons', () => {
+  it('drops the dot, the cedilla and the accent read as words of their own, over or under a bigger word', () => {
+    const dot = fake('H', 20, 36, 25, 41, 0);
+    const word = fake('Izmir', 20, 41, 100, 66, 1);
+    const cedilla = fake(',', 30, 90, 33, 95, 2);
+    const holder = fake('Sis', 20, 70, 50, 90, 3);
+    const comma = fake(',', 102, 60, 104, 66, 4);
+    const far = fake('x', 200, 36, 205, 41, 5);
+    const marks = markWords([dot, word, cedilla, holder, comma, far]);
+    expect([...marks]).toEqual([dot, cedilla]);
+  });
+
+  it('keeps the short words of a body line under a heading, and a letter among the words of its line', () => {
+    const heading = fake('Introduction', 20, 20, 170, 41, 0);
+    const body = [
+      fake('This', 20, 50, 45, 58, 1),
+      fake('is', 48, 50, 56, 58, 1),
+      fake('a', 59, 52, 64, 58, 1),
+      fake('list', 67, 50, 90, 58, 1),
+      fake('of', 93, 50, 104, 58, 1),
+      fake('items', 107, 50, 140, 58, 1),
+    ];
+    expect([...markWords([heading, ...body])]).toEqual([]);
+    // a one-character mark alone on its line is still one, a word of two letters never is
+    const dot = fake('H', 20, 14, 25, 19, 2);
+    const two = fake('ab', 20, 14, 25, 19, 3);
+    expect([...markWords([dot, two, heading])]).toEqual([dot]);
+  });
+
+  it('names the corner of an external-link icon and a design bar as misreads whatever their confidence', () => {
+    const row = [fake('www.example.com', 10, 10, 100, 22, 0), fake('Next', 160, 10, 200, 22, 0)];
+    const icon = fake('[7', 104, 10, 116, 22, 0, 0, { confidence: 92 });
+    const bar = fake('=', 125, 4, 128, 28, 0, 0, { confidence: 90 });
+    const dash = fake('\u2014', 130, 14, 150, 17, 0, 0, { confidence: 90 });
+    const closing = fake('2)', 120, 40, 130, 52, 1);
+    // a pipe as tall as a bar is still a character of the text
+    const pipe = fake('|', 131, 4, 133, 20, 0, 0, { confidence: 90 });
+    const misread = misreadWords([...row, icon, bar, dash, closing, pipe]);
+    expect(misread.has(icon)).toBe(true);
+    expect(misread.has(bar)).toBe(true);
+    expect(misread.has(dash)).toBe(false);
+    expect(misread.has(closing)).toBe(false);
+    expect(misread.has(pipe)).toBe(false);
+  });
+
+  it('keeps an opening bracket that a closing one follows on its line, however sure the read', () => {
+    const line = [
+      fake('See', 10, 10, 30, 22, 0),
+      fake('(5', 34, 10, 46, 22, 0, 0, { confidence: 96 }),
+      fake('pages)', 50, 10, 90, 22, 0),
+      fake('here', 94, 10, 120, 22, 0),
+    ];
+    expect([...misreadWords(line)]).toEqual([]);
+    // the same bracket with nothing closing it after it is the corner of an icon
+    const open = fake('(5', 34, 40, 46, 52, 1, 0, { confidence: 96 });
+    expect(misreadWords([...line, open]).has(open)).toBe(true);
+  });
+
+  it('erases the dot of an İ and the cedilla of a Ş that lie outside the word box', async () => {
+    const page = new Page(300, 120, [235, 235, 235]);
+    page.card(10, 10, 280, 100, 8, WHITE);
+    page.text('noto', 24, 30, 70, BLACK, 'İŞ');
+    const image = await page.render(3);
+    // the box of the capitals only: from their top to their baseline
+    const word = wordAt(image, 'İŞ', [20, 30, 200, 100]);
+    const caps = { ...word, y0: word.y0 + 5 };
+    const noDot = { ...caps, text: 'AB' };
+    const dark = (region: RgbaImage) => region.data.some((value, at) => at % 4 === 0 && value < 100);
+    const marked = ocrBackground(image, [caps]).regions[0]?.rgba as RgbaImage;
+    const plain = ocrBackground(image, [noDot]).regions[0]?.rgba as RgbaImage;
+    expect(dark(marked)).toBe(false);
+    expect(dark(plain)).toBe(true);
+  });
+});
+
+describe('weight and slant of a line', () => {
+  it('writes the bold words of a line bold and its regular words not', async () => {
+    const page = new Page(400, 150, WHITE);
+    const regular = 'The quick brown fox jumps over';
+    for (const row of [0, 1, 2]) page.text('helvetica', 12, 10, 24 + row * 24, BLACK, regular);
+    page.text('helveticaBold', 12, 10, 96, BLACK, 'Backend Framework');
+    page.text('helvetica', 12, 130, 96, BLACK, 'Lazy dog jumps');
+    page.text('helveticaBold', 12, 210, 96, BLACK, 'Veri');
+    page.text('helveticaBold', 12, 240, 96, BLACK, '&');
+    page.text('helveticaBold', 12, 252, 96, BLACK, 'Tabani');
+    const image = await page.render(3);
+    const words = [
+      ...[0, 1, 2].map((row) =>
+        wordAt(image, regular, [2, row * 24 + 10, 398, row * 24 + 30], { line: row, paragraph: 0 }),
+      ),
+      wordAt(image, 'Backend Framework', [2, 80, 125, 110], { line: 3, paragraph: 0 }),
+      wordAt(image, 'Lazy dog jumps', [126, 80, 205, 110], { line: 3, paragraph: 0 }),
+      wordAt(image, 'Veri', [206, 80, 236, 110], { line: 3, paragraph: 0 }),
+      wordAt(image, '&', [237, 80, 249, 110], { line: 3, paragraph: 0 }),
+      wordAt(image, 'Tabani', [250, 80, 398, 110], { line: 3, paragraph: 0 }),
+    ];
+    const last = ocrTextBoxes(words, image, 0.9).boxes.flatMap((box) =>
+      box.paragraphs.flatMap((paragraph) => paragraph.lines.map((line) => line.runs)),
+    );
+    const mixed = last[last.length - 1] ?? [];
+    expect(mixed.map((run) => [run.text.trim(), run.bold])).toEqual([
+      ['Backend Framework', true],
+      ['Lazy dog jumps', false],
+      ['Veri & Tabani', true],
+    ]);
+    expect(last.slice(0, 3).every((runs) => runs.every((run) => !run.bold))).toBe(true);
+  });
+
+  it('calls an oblique line italic at 9–11 pt and 150–200 dpi, and an upright one never', async () => {
+    const texts = ['Anadolu Teknoloji A.S., Istanbul', 'minimum limit unit viii'];
+    for (const dpi of [150, 200]) {
+      for (const size of [9, 10, 11]) {
+        for (const [face, expected] of [
+          ['helvetica', false],
+          ['helveticaOblique', true],
+          ['timesRoman', false],
+          ['timesItalic', true],
+        ] as const) {
+          for (const text of texts) {
+            const page = new Page(300, 40, WHITE);
+            page.text(face, size, 8, 26, BLACK, text);
+            const image = await page.render(dpi / 72);
+            const word = wordAt(image, text, [2, 2, 298, 38]);
+            const run = runsOf(ocrTextBoxes([word], image, 0.9).boxes[0] as TextBox)[0];
+            expect(run?.italic, `${face} ${size} pt ${dpi} dpi`).toBe(expected);
+          }
+        }
+      }
+    }
   });
 });

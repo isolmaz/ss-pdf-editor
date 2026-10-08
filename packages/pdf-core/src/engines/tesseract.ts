@@ -98,6 +98,11 @@ export function effectiveOcrQuality(languages: readonly OcrLanguageCode[], quali
 }
 
 export interface RecognizeInput {
+  /**
+   * Segment the page automatically (the engine's mode 3: columns, blocks, lines) instead of as
+   * one block (its default, 6). The exact-layout Word export reads scans so.
+   */
+  readonly automaticLayout?: boolean;
   readonly image: Blob;
   /** pixels per PDF point (dpi/72) — converts the returned boxes back to page points */
   readonly scale: number;
@@ -321,14 +326,16 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
     // interrupted from the outside; the race makes the *caller* return an AbortError
     // immediately once the worker has been terminated, instead of waiting for a
     // worker that will never answer again.
-    const result = await raceWithAbort(
+    const read = () =>
       entry.worker.recognize(
         input.image,
         {},
         // Blocks are the only output carrying word boxes; text/hocr/tsv would each
         // serialize the whole page again for nothing.
         { blocks: true, text: false, hocr: false, tsv: false },
-      ),
+      );
+    const result = await raceWithAbort(
+      input.automaticLayout === true ? inMode(entry.worker, PSM_AUTO, read) : read(),
       input.signal,
     );
     return {
@@ -341,6 +348,69 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
   } finally {
     input.signal.removeEventListener('abort', onAbort);
     if (entry.onProgress === input.onProgress) entry.onProgress = undefined;
+  }
+}
+
+export interface RecognizeWordInput {
+  /** A tight, upscaled crop of one word. */
+  readonly image: Blob;
+  readonly languages: readonly OcrLanguageCode[];
+  readonly quality: OcrQuality;
+  readonly signal: AbortSignal;
+}
+
+/** The page segmentation modes of the engine's `tessedit_pageseg_mode`: a worker starts in `SINGLE_BLOCK`, which page reads rely on. */
+const PSM_AUTO = '3';
+const PSM_SINGLE_BLOCK = '6';
+const PSM_SINGLE_WORD = '8';
+
+/** `work` with the worker in segmentation `mode`; the default mode is put back whatever happens, since the worker is shared by every page. */
+async function inMode<T>(worker: TesseractWorker, mode: string, work: () => Promise<T>): Promise<T> {
+  await worker.setParameters({ tessedit_pageseg_mode: mode as never });
+  try {
+    return await work();
+  } finally {
+    await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_BLOCK as never });
+  }
+}
+
+/**
+ * Read one cropped word as a word (single-word page segmentation) with the given languages.
+ * The worker is the one page reads share, so the mode is put back afterwards. `null` when
+ * the crop holds no text.
+ */
+export async function recognizeWord(
+  input: RecognizeWordInput,
+): Promise<{ text: string; confidence: number } | null> {
+  throwIfAborted(input.signal);
+  let entry: WorkerEntry;
+  try {
+    entry = await acquireWorker(input.languages, input.quality);
+  } catch (error) {
+    throw mapTesseractError(error, 'start');
+  }
+  const onAbort = () => {
+    void releaseWorker(entry);
+  };
+  input.signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await raceWithAbort(
+      inMode(entry.worker, PSM_SINGLE_WORD, async () => {
+        const result = await entry.worker.recognize(
+          input.image,
+          {},
+          { blocks: false, text: true, hocr: false, tsv: false },
+        );
+        const text = result.data.text.trim();
+        return text.length === 0 ? null : { text, confidence: result.data.confidence };
+      }),
+      input.signal,
+    );
+  } catch (error) {
+    if (input.signal.aborted) throw abortError();
+    throw mapTesseractError(error, 'recognize');
+  } finally {
+    input.signal.removeEventListener('abort', onAbort);
   }
 }
 

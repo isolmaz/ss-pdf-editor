@@ -933,7 +933,8 @@ function runXml(
         (run.italic ? '<w:i/><w:iCs/>' : '') +
         `<w:color w:val="${(run.color & 0xffffff).toString(16).toUpperCase().padStart(6, '0')}"/>` +
         (twips === 0 || twips === null ? '' : `<w:spacing w:val="${twips}"/>`) +
-        `${hscale}<w:sz w:val="${half}"/><w:szCs w:val="${half}"/>`;
+        `${hscale}<w:sz w:val="${half}"/><w:szCs w:val="${half}"/>` +
+        (run.underline === true ? '<w:u w:val="single"/>' : '');
       const content = twips === null ? '<w:tab/>' : `<w:t xml:space="preserve">${xml(text)}</w:t>`;
       return `<w:r><w:rPr>${properties}</w:rPr>${content}</w:r>`;
     })
