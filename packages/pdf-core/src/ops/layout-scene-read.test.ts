@@ -410,6 +410,75 @@ describe('layout scene: rasters', () => {
   });
 });
 
+describe('layout scene: raster content', () => {
+  const half = { Type: 'ExtGState', ca: 0.5 };
+  const circle = [
+    'q 250 250 m 250 277.6 227.6 300 200 300 c 172.4 300 150 277.6 150 250 c',
+    '150 222.4 172.4 200 200 200 c 227.6 200 250 222.4 250 250 c W n',
+  ].join(' ');
+
+  it('draws only what the island itself holds: neither the shapes under nor the shapes over it', async () => {
+    const { mupdf, scene } = await sceneOfRaw({
+      content: [
+        '/GS1 gs 0 g 0 0 400 500 re f',
+        `${circle} 1 0 0 rg 150 200 100 100 re f Q`,
+        '1 g 190 240 20 20 re f',
+      ].join('\n'),
+      resources: () => ({ ExtGState: { GS1: half } }),
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['shape', 'raster', 'shape']);
+    const png = decode(mupdf, (scene.items[1] as SceneRaster).data);
+    // The red half-transparent fill alone (the decoder premultiplies: half of 255 over half
+    // opaque): not the black under it, nor the white over it.
+    const [r, g, bl, a] = png.at(png.width / 2, png.height / 2);
+    expect([g, bl]).toEqual([0, 0]);
+    expect(r).toBeGreaterThanOrEqual(124);
+    expect(r).toBeLessThanOrEqual(130);
+    expect(a).toBeGreaterThanOrEqual(126);
+    expect(a).toBeLessThanOrEqual(130);
+  });
+});
+
+describe('layout scene: raster content of patterns', () => {
+  it('keeps each far apart tiling pattern, nested ones included, in its own raster', async () => {
+    const tile = (
+      doc: InstanceType<Mupdf['PDFDocument']>,
+      content: string,
+      patterns: Record<string, unknown>,
+    ) =>
+      doc.addStream(content, {
+        Type: 'Pattern',
+        PatternType: 1,
+        PaintType: 1,
+        TilingType: 1,
+        BBox: [0, 0, 10, 10],
+        XStep: 10,
+        YStep: 10,
+        Resources: { Pattern: patterns },
+      });
+    const { mupdf, scene } = await sceneOfRaw({
+      content: [
+        '/Pattern cs /P1 scn 20 20 60 60 re f',
+        '/Pattern cs /P2 scn 300 400 60 60 re f',
+        '1 0 0 rg 150 200 10 10 re f',
+      ].join('\n'),
+      resources: (doc) => {
+        const red = tile(doc, '1 0 0 rg 0 0 10 10 re f', {});
+        const nested = tile(doc, '/Pattern cs /P3 scn 0 0 10 10 re f', { P3: red });
+        return { Pattern: { P1: tile(doc, '0 0 1 rg 0 0 10 10 re f', {}), P2: nested } };
+      },
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster', 'raster', 'shape']);
+    const [first, second] = scene.items as [SceneRaster, SceneRaster];
+    close(first.box, [20, 420, 80, 480]);
+    close(second.box, [300, 40, 360, 100]);
+    const blue = decode(mupdf, first.data);
+    expect(blue.at(blue.width / 2, blue.height / 2)).toEqual([0, 0, 255, 255]);
+    const red = decode(mupdf, second.data);
+    expect(red.at(red.width / 2, red.height / 2)).toEqual([255, 0, 0, 255]);
+  });
+});
+
 describe('layout scene: links', () => {
   it('reads an external link with its box and ignores an internal one', async () => {
     const { scene } = await sceneOfRaw({

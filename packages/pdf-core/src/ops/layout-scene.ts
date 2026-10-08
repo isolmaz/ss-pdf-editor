@@ -137,7 +137,12 @@ export class DocxRegistry {
   readonly media: { readonly name: string; readonly rid: string; readonly data: Uint8Array }[] = [];
   readonly links: { readonly rid: string; readonly uri: string }[] = [];
   private drawings = 0;
-  private stack = 0;
+  private stack: number;
+
+  /** `base`: the stacking position below the first `nextZ` (0 for the first to be 1). */
+  constructor(base = 0) {
+    this.stack = base;
+  }
 
   /** Adds a picture under `word/media/` and returns its relationship id. */
   addMedia(data: Uint8Array, extension: 'png' | 'jpeg'): string {
