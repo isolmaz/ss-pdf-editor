@@ -23,7 +23,7 @@ import {
 import { embedFonts, provideStandardMetrics } from './docx-fonts';
 import { fitLine, horizontalScale, textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
 import { wordFontName } from './export-office';
-import { line, officeDocument } from './export-office-fixtures';
+import { line, officeDocument, picture } from './export-office-fixtures';
 import { DocxRegistry, type SceneLink, type TextBox, type TextRun } from './layout-scene';
 import { type LayoutChar, type PageLayout, readPageLayout } from './page-layout';
 
@@ -119,6 +119,37 @@ describe('grouping lines into text boxes', () => {
     const [, , justifiedBox] = boxes as [TextBox, TextBox, TextBox, TextBox];
     expect(justifiedBox.box[2] - justifiedBox.box[0]).toBeCloseTo(174, 1);
     expect(textOf(justifiedBox)).toEqual([justified.filter((text) => text !== '').join('\n')]);
+  });
+
+  it('reads several lines that share a middle as one centred paragraph', async () => {
+    const lines = ['Ozet', 'Rapor basligi', 'bir iki'];
+    const layout = await layoutOf(
+      lines
+        .map((text, at) => line('courier', 10, centredAt(200, 10, text.length), 400 - at * 13, text))
+        .join('\n'),
+    );
+    const boxes = textBoxes(layout, []);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]?.paragraphs.map((paragraph) => paragraph.align)).toEqual(['center']);
+    expect(textOf(boxes[0] as TextBox)).toEqual([lines.join('\n')]);
+  });
+
+  it('ends a paragraph at a picture: the text above and below it are separate boxes', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          line('courier', 10, 40, 440, 'ust satir'),
+          picture('Photo', 40, 300, 100, 80),
+          line('courier', 10, 40, 260, 'alt satir'),
+        ].join('\n'),
+        images: { Photo: { width: 20, height: 16, rgb: [200, 30, 30] } },
+      },
+    ]);
+    const mupdf = await loadMupdf();
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+    const layout = readPageLayout(mupdf, doc.loadPage(0), { images: true });
+    expect(layout.blocks.some((block) => block.kind === 'image')).toBe(true);
+    expect(textBoxes(layout, []).map((box) => textOf(box).join('|'))).toEqual(['ust satir', 'alt satir']);
   });
 
   it('gives a justified box of squeezed lines the room their natural spaces need, so LibreOffice does not wrap them', async () => {
@@ -822,6 +853,51 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
     expect(textBoxXml(box, 1, new DocxRegistry())).toContain('<w:w w:val="80"/>');
   });
 
+  it('does not read the slant of a synthetic oblique (a sheared text matrix) as a horizontal scale', async () => {
+    const mupdf = await loadMupdf();
+    const program = new Uint8Array(
+      readFileSync(
+        join(
+          dirname(createRequire(import.meta.url).resolve('@expo-google-fonts/noto-sans/package.json')),
+          '400Regular/NotoSans_400Regular.ttf',
+        ),
+      ),
+    );
+    const doc = new mupdf.PDFDocument();
+    const noto = new mupdf.Font('NotoSans-Regular', program);
+    const hexOf = (text: string) =>
+      [...text]
+        .map((c) =>
+          noto
+            .encodeCharacter(c.codePointAt(0) as number)
+            .toString(16)
+            .padStart(4, '0'),
+        )
+        .join('');
+    doc.insertPage(
+      0,
+      doc.addPage(
+        [0, 0, 400, 300],
+        0,
+        { Font: { F0: doc.addFont(noto) } },
+        // The same size and glyphs, upright and sheared by 0.3.
+        `BT /F0 18 Tf 40 200 Td <${hexOf('Istanbul agaclari')}> Tj ET\n` +
+          `BT /F0 18 Tf 1 0 0.3 1 40 150 Tm <${hexOf('Istanbul agaclari')}> Tj ET\n`,
+      ),
+    );
+    doc.subsetFonts();
+    const reopened = openPdf(mupdf, doc.saveToBuffer('garbage=compact,compress').asUint8Array());
+    const fonts = await embedFonts(mupdf, reopened, [0], { signal: new AbortController().signal });
+    const layout = readPageLayout(mupdf, reopened.loadPage(0), { images: false });
+    const boxes = textBoxes(layout, [], (face) => fonts.faceOf(0, face));
+    expect(boxes).toHaveLength(2);
+    for (const box of boxes) expect(box.paragraphs[0]?.lines[0]?.runs[0]?.fit?.hscale).toBe(1);
+    // The sheared line (the lower one) is set in italic, the upright one is not.
+    const [sheared, upright] = [...boxes].sort((a, b) => b.box[1] - a.box[1]) as [TextBox, TextBox];
+    expect(sheared.paragraphs[0]?.lines[0]?.runs[0]?.italic).toBe(true);
+    expect(upright.paragraphs[0]?.lines[0]?.runs[0]?.italic).toBe(false);
+  });
+
   it('reads the horizontal scale of embedded glyphs: whole percent, 1 inside 2 % or with nothing to compare', () => {
     expect(horizontalScale(9, 10)).toBe(0.81);
     expect(horizontalScale(10.1, 10)).toBe(1);
@@ -839,7 +915,7 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
   it('shares a word\u2019s residual over its letters, split between two whole spacings, and the gap goes to the space', () => {
     // "abcd ef": letters 5 pt wide; the PDF has the word's last letter 0.5 pt further than natural (+ 10 twips over 3 letters).
     const starts = [0, 5, 10, 15.5, Number.NaN, 30, 35];
-    const [spacing] = fitLine([fitted('abcd ef', starts, [0.5, 0.5, 0.5, 0.5, 0.25, 0.5, 0.5])], 1);
+    const [spacing] = fitLine([fitted('abcd ef', starts, [0.5, 0.5, 0.5, 0.5, 0.25, 0.5, 0.5])], 1).spacing;
     // 3 gaps × 3.33: two letters of 3, one of 4 (the extras last); the last letter none.
     expect(spacing?.slice(0, 4)).toEqual([3, 3, 4, 0]);
     // The pen is at 15.5 + 5 after "abcd"; the space has to end at 30: 30 − 20.5 − 2.5 = 7 pt.
@@ -850,7 +926,7 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
   it('counts every portion as LibreOffice truncates it to whole twips, so the space takes the lost fraction', () => {
     // "ab" is 99.746 + 100 twips: LibreOffice draws 199; the next word at 12.3 pt (246 twips) needs 47 − 50 = −3 of the space.
     const starts = [0, 4.99, Number.NaN, 12.3];
-    const [spacing] = fitLine([fitted('ab c', starts, [0.49873, 0.5, 0.25, 0.5])], 1);
+    const [spacing] = fitLine([fitted('ab c', starts, [0.49873, 0.5, 0.25, 0.5])], 1).spacing;
     expect(spacing).toEqual([0, 0, -3, 0]);
   });
 
@@ -873,13 +949,102 @@ describe('fitting each line to the PDF\u2019s glyph positions', () => {
 
   it('leaves a word alone whose spacing would be more than half its size, and runs with no geometry', () => {
     const wild = fitted('abc', [0, 30, 60], [0.5, 0.5, 0.5]);
-    expect(fitLine([wild, run('x')], 1)).toEqual([[0, 0, 0], undefined]);
+    expect(fitLine([wild, run('x')], 1).spacing).toEqual([[0, 0, 0], undefined]);
   });
 
   it('keeps the whole-line pen on the PDF\u2019s across a space the fit ends on', () => {
     const trailing = fitted('ab ', [0, 5, Number.NaN], [0.5, 0.5, 0.25]);
-    expect(fitLine([trailing], 1)).toEqual([[0, 0, 0]]);
-    expect(fitLine([], 1)).toEqual([]);
+    expect(fitLine([trailing], 1).spacing).toEqual([[0, 0, 0]]);
+    expect(fitLine([], 1).spacing).toEqual([]);
+  });
+
+  it('sets a gap of a size or more as a tab at the next word\u2019s place, and a smaller one as spacing', () => {
+    // "ab cd": the gap from the end of "ab" (10) to "cd" (40) is 30 pt, three sizes; "cd ef" has 4 pt.
+    const starts = [0, 5, Number.NaN, 40, 45, Number.NaN, 54, 59];
+    const advances = [0.5, 0.5, 0.25, 0.5, 0.5, 0.25, 0.5, 0.5];
+    const line = fitted('ab cd ef', starts, advances);
+    const tabbed = fitLine([line], 1, 0);
+    // The stop is the word's start from the origin (40 pt = 800 twips); the pen is at 10 pt = 200 when it is met.
+    expect(tabbed.tabs[0]?.[2]).toEqual({ stop: 800, from: 200 });
+    expect(tabbed.tabs[0]?.filter((tab) => tab !== undefined)).toHaveLength(1);
+    expect(tabbed.spacing[0]?.[2]).toBe(0);
+    // Without an origin there are no tabs: the space is stretched.
+    const plain = fitLine([line], 1);
+    expect(plain.tabs[0]?.every((tab) => tab === undefined)).toBe(true);
+    expect(plain.spacing[0]?.[2]).toBeGreaterThan(0);
+  });
+
+  it('writes a tab as `w:tab` with a paragraph stop, keeps the words, and gives a stop another line would stop short at no tab', () => {
+    const runs = (text: string, starts: number[]) => [
+      fitted(
+        text,
+        starts,
+        [...text].map((c) => (c === ' ' ? 0.25 : 0.5)),
+      ),
+    ];
+    const paragraph = (lines: TextRun[][], align: 'left' | 'center' = 'left') => ({
+      align,
+      lineHeight: 12,
+      lines: lines.map((item) => ({ runs: item })),
+    });
+    const content = (xmlText: string) => /<w:txbxContent>(.*?)<\/w:txbxContent>/.exec(xmlText)?.[1] ?? '';
+    // Box at x = 100: "ab" at 100, "cd" at 140 → stop (140 − 100.1) pt = 798 twips.
+    const near = runs('ab cd', [100.1, 105.1, Number.NaN, 140, 145]);
+    const one = content(textBoxXml(handMade({ paragraphs: [paragraph([near])] }), 1, registry0()));
+    expect(one).toContain('<w:tabs><w:tab w:val="left" w:pos="798"/></w:tabs>');
+    expect(one).toContain('<w:tab/>');
+    expect([...one.matchAll(/<w:t [^>]*>(.*?)<\/w:t>/g)].map((m) => m[1]).join('|')).toBe('ab|cd');
+    // A centred paragraph is placed by its width, not by stops.
+    const centred = content(
+      textBoxXml(handMade({ paragraphs: [paragraph([near], 'center')] }), 1, registry0()),
+    );
+    expect(centred).not.toContain('<w:tab');
+    // A second line whose stop (130 → 598 twips) lies between the first line's pen and its stop would take the tab short.
+    const second = runs('ab cd', [100.1, 105.1, Number.NaN, 130, 135]);
+    const clash = content(textBoxXml(handMade({ paragraphs: [paragraph([near, second])] }), 1, registry0()));
+    expect(clash).not.toContain('<w:tab');
+    expect(clash).toContain('<w:t xml:space="preserve"> </w:t>');
+    // Two lines with the same stop share it.
+    const same = content(textBoxXml(handMade({ paragraphs: [paragraph([near, near])] }), 1, registry0()));
+    expect(same.match(/<w:tab w:val="left"/g)).toHaveLength(1);
+    expect(same.match(/<w:tab\/>/g)).toHaveLength(2);
+  });
+
+  it('indents a left paragraph from the box\u2019s edge and its first line from the others', () => {
+    const lines = [{ runs: [run('abc')] }];
+    const xmlText = textBoxXml(
+      handMade({
+        paragraphs: [
+          { align: 'left', lineHeight: 12, lines, inset: 30, firstLine: 18 },
+          { align: 'left', lineHeight: 12, lines, firstLine: 18 },
+          { align: 'left', lineHeight: 12, lines, inset: 6 },
+          { align: 'left', lineHeight: 12, lines },
+        ],
+      }),
+      1,
+      registry0(),
+    );
+    const content = /<w:txbxContent>(.*?)<\/w:txbxContent>/.exec(xmlText)?.[1] ?? '';
+    expect(content.match(/<w:ind [^>]*\/>/g)).toEqual([
+      '<w:ind w:left="600" w:firstLine="360"/>',
+      '<w:ind w:left="0" w:firstLine="360"/>',
+      '<w:ind w:left="120"/>',
+    ]);
+  });
+
+  it('keeps the first-line indent of a justified paragraph in the box\u2019s paragraph', async () => {
+    // Four 20-character lines of Courier; the first starts 18 pt (3 characters) in.
+    const layout = await layoutOf(
+      [
+        line('courier', 10, 58, 440, 'x'.repeat(17)),
+        ...[1, 2, 3].map((at) => line('courier', 10, 40, 440 - at * 13, 'x'.repeat(20))),
+      ].join('\n'),
+    );
+    const [box] = textBoxes(layout, []) as [TextBox];
+    expect(box.paragraphs).toHaveLength(1);
+    expect(box.paragraphs[0]?.align).toBe('both');
+    expect(box.paragraphs[0]?.inset).toBeCloseTo(0, 1);
+    expect(box.paragraphs[0]?.firstLine).toBeCloseTo(18, 1);
   });
 
   it('writes a run whose spacing changes as one `w:r` per spacing, inside one hyperlink', () => {

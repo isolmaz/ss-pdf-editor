@@ -176,6 +176,30 @@ function serifFamilies(layout: PageLayout): ReadonlySet<string> {
 /** The embedded face (if any) of a MuPDF font name on the page being written. */
 export type FaceLookup = (face: string) => EmbeddedFace | undefined;
 
+/**
+ * How much wider than their advance a line's glyph boxes are because the PDF shears the text
+ * (a synthetic oblique is a skewed text matrix; the box of a sheared glyph reaches over by the
+ * slant): the mean of box width − pitch to the next glyph over the glyph pairs of the line, when
+ * most of them are wider than their pitch by over a tenth of the size; 0 for upright text.
+ */
+function shearOf(chars: readonly LayoutChar[]): number {
+  let pairs = 0;
+  let sheared = 0;
+  let excess = 0;
+  for (let at = 0; at + 1 < chars.length; at += 1) {
+    const char = chars[at] as LayoutChar;
+    const next = chars[at + 1] as LayoutChar;
+    if (isSpace(char) || isSpace(next) || next.baseline !== char.baseline) continue;
+    pairs += 1;
+    const over = char.box[2] - char.box[0] - (next.box[0] - char.box[0]);
+    if (over > 0.1 * char.size) {
+      sheared += 1;
+      excess += over;
+    }
+  }
+  return sheared > 0 && sheared * 2 >= pairs ? excess / sheared : 0;
+}
+
 /** Runs of a line: split on font, size (0.5 pt), weight, slant, colour and link. */
 function runsOf(
   chars: readonly LayoutChar[],
@@ -216,6 +240,7 @@ function runsOf(
   const runs: TextRun[] = [];
   /** Per run: the geometry of its characters and the sums `horizontalScale` compares. */
   const fits: { advances: number[]; starts: number[]; ends: number[]; drawn: number; natural: number }[] = [];
+  const shear = shearOf(chars);
   for (const item of items) {
     // A font the document embeds is named by its embedded family and set in the embedded face's own weight and slant.
     const face = item.source.face === undefined ? undefined : embedded?.(item.source.face);
@@ -226,7 +251,8 @@ function runsOf(
         mono: item.source.mono,
       });
     const bold = face?.bold ?? item.source.bold;
-    const italic = face?.italic ?? item.source.italic;
+    // A sheared line is an oblique the PDF makes itself: Word draws it as italic.
+    const italic = (face?.italic ?? item.source.italic) || shear > 0;
     const last = runs[runs.length - 1];
     let at = runs.length - 1;
     if (
@@ -263,7 +289,7 @@ function runsOf(
         (face === undefined ? standardAdvance(font, bold, italic, unicode) : undefined);
       const em = program ?? (item.space ? SPACE : width / source.size / codes.length);
       if (face !== undefined && program !== undefined && !item.space) {
-        fit.drawn += width / codes.length;
+        fit.drawn += Math.max(0, width - shear) / codes.length;
         fit.natural += program * source.size;
       }
       fit.advances.push(em);
@@ -589,11 +615,17 @@ function upright(group: readonly Para[]): TextBox {
   return {
     box: [x0, top, x0 + width, bottom],
     rotation: 0,
-    paragraphs: group.map((para) => ({
-      align: para.align,
-      lineHeight: para.lineHeight,
-      lines: para.rows.map((row): TextLine => ({ runs: row.runs })),
-    })),
+    paragraphs: group.map((para) => {
+      const own = paragraphLeft(para);
+      return {
+        align: para.align,
+        lineHeight: para.lineHeight,
+        ...(classOf(para.align) === 'left'
+          ? { inset: own - left, firstLine: (para.rows[0] as Row).x0 - own }
+          : {}),
+        lines: para.rows.map((row): TextLine => ({ runs: row.runs })),
+      };
+    }),
   };
 }
 
@@ -707,6 +739,30 @@ const halfPoints = (size: number, scale: number): number => Math.max(2, Math.rou
 /** The largest `w:spacing` Word accepts (twentieths of a point). */
 const MAX_SPACING = 31680;
 
+/**
+ * What LibreOffice advances a glyph by: the font's advance at the size, and for a glyph set at a
+ * horizontal scale (`w:w`) each advance is cut to whole twentieths of a point (measured: 3.144 pt
+ * drawn 3.10 pt).
+ */
+function glyphAdvance(advance: number, hscale: number): number {
+  return hscale === 1 ? advance : Math.floor(advance * hscale * 20) / 20;
+}
+
+/** A gap of at least this × the size between two words is set with a tab (see `fitLine`). */
+const TAB_GAP = 1;
+
+/** A tab stop in twentieths of a point: where it is (from the text area's left edge) and where the pen was when the tab was met. */
+export interface TabStop {
+  readonly stop: number;
+  readonly from: number;
+}
+
+/** What `fitLine` decides: the spacing after each character per run, and the tab each space stands for (if any). */
+export interface FittedLine {
+  readonly spacing: (number[] | undefined)[];
+  readonly tabs: (readonly (TabStop | undefined)[])[];
+}
+
 /** A letter-spacing beyond this × the size is a mismatch of fonts, not the PDF's own spacing: it is not applied. */
 const MAX_LETTER_SPACING = 0.5;
 
@@ -726,9 +782,21 @@ const MAX_LETTER_SPACING = 0.5;
  *
  * A word whose letters would need more than {@link MAX_LETTER_SPACING} × size per character
  * keeps the font's own spacing. `scale` is the document's points per PDF point.
+ *
+ * With an `origin` (where the text area's left edge is, in points) a space that stands for a
+ * gap of at least {@link TAB_GAP} × size is a tab instead: its stop is the next word's start
+ * from the origin, so the error the words before it left in the pen does not carry on past it.
+ * Every tab's `from` is where the pen is estimated to be when it is met.
  */
-export function fitLine(runs: readonly TextRun[], scale: number): (number[] | undefined)[] {
-  const items: { run: number; natural: number; start: number; space: boolean; size: number }[] = [];
+export function fitLine(runs: readonly TextRun[], scale: number, origin?: number): FittedLine {
+  const items: {
+    run: number;
+    natural: number;
+    start: number;
+    space: boolean;
+    size: number;
+    tab?: TabStop;
+  }[] = [];
   for (const [r, run] of runs.entries()) {
     const fit = run.fit;
     if (fit === undefined) continue;
@@ -736,7 +804,7 @@ export function fitLine(runs: readonly TextRun[], scale: number): (number[] | un
     for (const [k, code] of [...run.text].entries()) {
       items.push({
         run: r,
-        natural: (fit.advances[k] as number) * size * fit.hscale,
+        natural: glyphAdvance((fit.advances[k] as number) * size, fit.hscale),
         start: (fit.starts[k] as number) * scale,
         space: code === ' ',
         size,
@@ -785,21 +853,39 @@ export function fitLine(runs: readonly TextRun[], scale: number): (number[] | un
     if (next !== undefined) {
       const blank = Math.floor((items[stop] as (typeof items)[number]).natural * 20);
       const gap = Math.round(next.start * 20 - cursor);
-      twips[stop] = Math.max(-MAX_SPACING, Math.min(MAX_SPACING, gap - blank));
-      cursor += blank + (twips[stop] as number);
+      const space = items[stop] as (typeof items)[number];
+      if (origin !== undefined && gap >= TAB_GAP * space.size * 20) {
+        space.tab = { stop: Math.round((next.start - origin) * 20), from: Math.round(cursor - origin * 20) };
+        cursor = Math.round(next.start * 20);
+      } else {
+        twips[stop] = Math.max(-MAX_SPACING, Math.min(MAX_SPACING, gap - blank));
+        cursor += blank + (twips[stop] as number);
+      }
     }
     at = stop + 1;
   }
-  const out: (number[] | undefined)[] = runs.map((run) => (run.fit === undefined ? undefined : []));
-  for (const [k, item] of items.entries()) (out[item.run] as number[]).push(twips[k] as number);
-  return out;
+  const spacing: (number[] | undefined)[] = runs.map((run) => (run.fit === undefined ? undefined : []));
+  const tabs: (TabStop | undefined)[][] = runs.map(() => []);
+  for (const [k, item] of items.entries()) {
+    (spacing[item.run] as number[]).push(twips[k] as number);
+    (tabs[item.run] as (TabStop | undefined)[]).push(item.tab);
+  }
+  return { spacing, tabs };
 }
 
-/** The pieces of a run's text that share one spacing: `[text, twips]`. */
-function spacedPieces(text: string, spacing: readonly number[] | undefined): [string, number][] {
+/** The pieces of a run's text that share one spacing: `[text, twips]`; a tab is a piece of its own with `null`. */
+function spacedPieces(
+  text: string,
+  spacing: readonly number[] | undefined,
+  tabs: readonly (TabStop | undefined)[],
+): [string, number | null][] {
   if (spacing === undefined) return [[text, 0]];
-  const pieces: [string, number][] = [];
+  const pieces: [string, number | null][] = [];
   for (const [k, code] of [...text].entries()) {
+    if (tabs[k] !== undefined) {
+      pieces.push(['', null]);
+      continue;
+    }
     const twips = spacing[k] as number;
     const last = pieces[pieces.length - 1];
     if (last !== undefined && last[1] === twips) last[0] += code;
@@ -811,6 +897,7 @@ function spacedPieces(text: string, spacing: readonly number[] | undefined): [st
 function runXml(
   run: TextRun,
   spacing: readonly number[] | undefined,
+  tabs: readonly (TabStop | undefined)[],
   scale: number,
   registry: DocxRegistry,
 ): string {
@@ -818,16 +905,17 @@ function runXml(
   const font = xml(run.font);
   const hscale =
     run.fit === undefined || run.fit.hscale === 1 ? '' : `<w:w w:val="${Math.round(run.fit.hscale * 100)}"/>`;
-  const body = spacedPieces(run.text, spacing)
+  const body = spacedPieces(run.text, spacing, tabs)
     .map(([text, twips]) => {
       const properties =
         `<w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/>` +
         (run.bold ? '<w:b/><w:bCs/>' : '') +
         (run.italic ? '<w:i/><w:iCs/>' : '') +
         `<w:color w:val="${(run.color & 0xffffff).toString(16).toUpperCase().padStart(6, '0')}"/>` +
-        (twips === 0 ? '' : `<w:spacing w:val="${twips}"/>`) +
+        (twips === 0 || twips === null ? '' : `<w:spacing w:val="${twips}"/>`) +
         `${hscale}<w:sz w:val="${half}"/><w:szCs w:val="${half}"/>`;
-      return `<w:r><w:rPr>${properties}</w:rPr><w:t xml:space="preserve">${xml(text)}</w:t></w:r>`;
+      const content = twips === null ? '<w:tab/>' : `<w:t xml:space="preserve">${xml(text)}</w:t>`;
+      return `<w:r><w:rPr>${properties}</w:rPr>${content}</w:r>`;
     })
     .join('');
   const linked =
@@ -836,20 +924,30 @@ function runXml(
   return run.note === undefined || run.text.trim() === '' ? linked : registry.commented(run.note, linked);
 }
 
-/** The line's runs; a line that is followed by a break ends in a space (mammoth would glue the words). */
+/**
+ * The line's runs, and the tabs it uses; a line that is followed by a break ends in a space
+ * (mammoth would glue the words). `origin` is the text area's left edge in points when the line
+ * may be set with tabs (`fitLine`).
+ */
 function lineRunsXml(
   runs: readonly TextRun[],
   scale: number,
   registry: DocxRegistry,
   broken: boolean,
-): string {
+  origin?: number,
+): { xml: string; tabs: TabStop[] } {
   const all = [...runs];
   const last = all[all.length - 1];
   if (broken && last !== undefined && !/\s$/.test(xmlSafe(last.text))) {
     all.push({ ...last, text: ' ', link: null, fit: undefined });
   }
-  const spacing = fitLine(all, scale);
-  return all.map((run, at) => runXml(run, spacing[at], scale, registry)).join('');
+  const fitted = fitLine(all, scale, origin);
+  return {
+    xml: all
+      .map((run, at) => runXml(run, fitted.spacing[at], fitted.tabs[at] ?? [], scale, registry))
+      .join(''),
+    tabs: fitted.tabs.flat().filter((tab): tab is TabStop => tab !== undefined),
+  };
 }
 
 /**
@@ -858,14 +956,43 @@ function lineRunsXml(
  * (p15: words drifted 0.65 pt a space, SSIM 0.61 → 0.92 once left alone). Centre and right
  * stay: the fitted line is as wide as the PDF's.
  */
-function paragraphXml(paragraph: TextParagraph, scale: number, registry: DocxRegistry): string {
+function paragraphXml(
+  paragraph: TextParagraph,
+  scale: number,
+  registry: DocxRegistry,
+  origin: number,
+): string {
   const line = Math.max(1, Math.round(paragraph.lineHeight * scale * TWIPS));
-  const lines = paragraph.lines
-    .map((item, index) => lineRunsXml(item.runs, scale, registry, index < paragraph.lines.length - 1))
-    .join('<w:r><w:br/></w:r>');
+  const write = (from: number | undefined) =>
+    paragraph.lines.map((item, index) =>
+      lineRunsXml(item.runs, scale, registry, index < paragraph.lines.length - 1, from),
+    );
+  // Tabs need a paragraph whose stops no other tab of it can stop short at.
+  let written = write(paragraph.align === 'center' || paragraph.align === 'right' ? undefined : origin);
+  const stops = [...new Set(written.flatMap((item) => item.tabs.map((tab) => tab.stop)))].sort(
+    (a, b) => a - b,
+  );
+  const stopsShort = written.some((item) =>
+    item.tabs.some((tab) => stops.some((stop) => stop > tab.from && stop < tab.stop)),
+  );
+  if (stopsShort) {
+    written = write(undefined);
+    stops.length = 0;
+  }
+  const lines = written.map((item) => item.xml).join('<w:r><w:br/></w:r>');
+  const inset = Math.round((paragraph.inset ?? 0) * scale * TWIPS);
+  const first = Math.round((paragraph.firstLine ?? 0) * scale * TWIPS);
+  const indent =
+    inset === 0 && first === 0
+      ? ''
+      : `<w:ind w:left="${inset}"${first === 0 ? '' : ` w:firstLine="${first}"`}/>`;
+  const tabs =
+    stops.length === 0
+      ? ''
+      : `<w:tabs>${stops.map((stop) => `<w:tab w:val="left" w:pos="${stop}"/>`).join('')}</w:tabs>`;
   return (
-    `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="${line}" w:lineRule="exact"/>` +
-    `<w:jc w:val="${paragraph.align === 'both' ? 'left' : paragraph.align}"/></w:pPr>${lines}</w:p>`
+    `<w:p><w:pPr>${tabs}<w:spacing w:before="0" w:after="0" w:line="${line}" w:lineRule="exact"/>` +
+    `${indent}<w:jc w:val="${paragraph.align === 'both' ? 'left' : paragraph.align}"/></w:pPr>${lines}</w:p>`
   );
 }
 
@@ -881,7 +1008,7 @@ export function textBoxXml(box: TextBox, scale: number, registry: DocxRegistry):
   const height = (y1 - y0) * scale;
   const left = x0 * scale;
   const top = y0 * scale;
-  const content = `<w:txbxContent>${box.paragraphs.map((paragraph) => paragraphXml(paragraph, scale, registry)).join('')}</w:txbxContent>`;
+  const content = `<w:txbxContent>${box.paragraphs.map((paragraph) => paragraphXml(paragraph, scale, registry, left + TEXT_LEFT * scale)).join('')}</w:txbxContent>`;
   const z = registry.nextZ();
   const id = registry.nextDrawingId();
   const cx = Math.max(1, Math.round(width * EMU));
