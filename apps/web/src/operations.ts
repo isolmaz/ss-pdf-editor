@@ -919,7 +919,8 @@ export interface WriteVerification {
   /**
    * What the checks establish overall. `verified` means every check that this build
    * can run did run and held; `degraded` means at least one was cut short or measured a
-   * declared change; `unsupported` means no check could be made at all. The facts that
+   * declared change. A fact this build cannot check is `unsupported` in `checks` and does
+   * not lower the state. The facts that
    * are `unsupported` **by construction** (`annotations`, `signatures`) are listed in
    * `checks` and do not by themselves lower the state — the state answers "how much of
    * the table did we establish", and `checks` answers "what happened to each fact".

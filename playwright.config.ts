@@ -34,8 +34,8 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   // `list` is the console reporter in both cases; with `CI` set (a build pipeline) the
-  // HTML report is written too, for reading a failed run afterwards. The browser gates run
-  // locally: the hosted workflow (`.github/workflows/ci.yml`) runs `ci:verify` only.
+  // HTML report is written too, for reading a failed run afterwards (the hosted workflow,
+  // `.github/workflows/ci.yml`, uploads it when a shard fails).
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   outputDir: 'test-results',
   use: {

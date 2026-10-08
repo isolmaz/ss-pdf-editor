@@ -24,6 +24,11 @@
  * the browser figures.
  *
  * `--skip-e2e` reports the unit suite alone (no build, no browser).
+ *
+ * `--min-lines=<percent>` is a floor on the total line coverage: once the report and the
+ * table are printed, the run exits 1 with `coverage: total lines X% is below the floor Y%`
+ * when the total is lower (the nightly workflow passes `--min-lines=98`). The value is
+ * checked before anything runs, so a typo costs no build.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -55,6 +60,16 @@ function run(label, args, env = {}) {
 function fail(message) {
   console.error(`coverage: ${message}`);
   process.exit(1);
+}
+
+const minLinesArg = process.argv.find((arg) => arg.startsWith('--min-lines'));
+let minLines = null;
+if (minLinesArg !== undefined) {
+  const value = minLinesArg.startsWith('--min-lines=') ? minLinesArg.slice('--min-lines='.length) : '';
+  minLines = value.trim() === '' ? Number.NaN : Number(value);
+  if (!Number.isFinite(minLines) || minLines < 0 || minLines > 100) {
+    fail(`--min-lines expects a percentage from 0 to 100, as --min-lines=<percent> (got "${minLinesArg}")`);
+  }
 }
 
 /** The sources counted, as `vitest.config.ts` lists them: no tests, fixture builders or declarations. */
@@ -263,3 +278,7 @@ console.log(
 );
 console.log(`\nReport: ${relative(root, join(reportDir, 'html', 'index.html'))}`);
 writeFileSync(join(reportDir, 'packages.json'), `${JSON.stringify(Object.fromEntries(rows), null, 2)}\n`);
+
+if (minLines !== null && total.lines.pct < minLines) {
+  fail(`total lines ${total.lines.pct.toFixed(2)}% is below the floor ${minLines}%`);
+}
