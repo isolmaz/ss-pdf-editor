@@ -107,6 +107,9 @@ export const en: Record<MessageKey, string> = {
     '{count} edit(s) could not be carried in the draft; keep the document open to save them.',
   'draft.engineValuesLost':
     'None of the {count} form/annotation edit(s) carried by the draft could be restored; make the edits again in the document.',
+  'draft.sourceNotStored':
+    'This document is open, but its recovery copy could not be stored yet: until a draft save succeeds, unsaved changes would not survive a closed tab or a crash. {reason}',
+  'draft.storageRefused': "The browser's storage refused the write.",
   'viewer.singlePage': 'Single page',
   'viewer.book': 'Two-page spread',
   'viewer.fullscreen': 'Full screen',

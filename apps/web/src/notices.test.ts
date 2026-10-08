@@ -13,7 +13,15 @@
 import type { Translator } from 'pdf-shared';
 import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { auditNotice, engineValuesNotices, failureNotices, noticeLine, verificationNotices } from './notices';
+import {
+  appendWarning,
+  auditNotice,
+  engineValuesNotices,
+  failureNotices,
+  noticeLine,
+  storedCopyWarning,
+  verificationNotices,
+} from './notices';
 import type { DocumentFact, FactCheck, WriteVerification } from './operations';
 
 function verification(
@@ -174,5 +182,37 @@ describe('renderNotice', () => {
       key: 'verify.degraded',
       params: { count: 2, facts: 'verify.fact.rotation{}' },
     });
+  });
+});
+
+describe('storedCopyWarning', () => {
+  // A stub dictionary that echoes the key: the contract is which reason the sentence names.
+  const t: Translator = Object.assign(
+    (key: Parameters<Translator>[0], params?: Readonly<Record<string, string | number>>) =>
+      params === undefined ? key : `${key}[${params.reason}]`,
+    { locale: 'en' as const },
+  );
+
+  it('names a full store as a full store', () => {
+    expect(storedCopyWarning(new DOMException('full', 'QuotaExceededError'), t)).toBe(
+      'draft.sourceNotStored[error.quota-exceeded.message]',
+    );
+  });
+
+  it('keeps the message of a ToolError, and calls any other storage failure a failed write', () => {
+    expect(storedCopyWarning(new ToolError('out-of-memory', { engine: 'fs' }), t)).toBe(
+      'draft.sourceNotStored[error.out-of-memory.message]',
+    );
+    expect(storedCopyWarning(new DOMException('locked', 'NoModificationAllowedError'), t)).toBe(
+      'draft.sourceNotStored[draft.storageRefused]',
+    );
+    expect(storedCopyWarning('nope', t)).toBe('draft.sourceNotStored[draft.storageRefused]');
+  });
+});
+
+describe('appendWarning', () => {
+  it('adds the warning after the success line and leaves a clean line alone', () => {
+    expect(appendWarning('Opened.', 'Not stored.')).toBe('Opened. Not stored.');
+    expect(appendWarning('Opened.', null)).toBe('Opened.');
   });
 });
