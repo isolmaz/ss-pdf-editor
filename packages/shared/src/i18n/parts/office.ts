@@ -73,6 +73,8 @@ export const officePart = {
     'Şu sayfalarda okunabilir metin yok (taranmış görünüyor); düzenlenebilir metin için önce OCR uygulayın: {pages}.',
   'op.note.exportOffice.ocrPages':
     'Şu sayfalar resim olduğu için OCR ile okundu; metinleri Word’de düzenlenebilir metin kutuları, geri kalanı sayfanın arkasında resim olarak yerleşti: {pages}.',
+  'op.note.exportOffice.ocrFont':
+    'Taranmış metin, taramanın kullandığı görünen yazı tipiyle ({families}) dizildi ve yazı tipi belgeye gömüldü.',
   'op.note.exportOffice.ocrLowConfidence':
     '{count} kelime düşük güvenle okundu ve Word’de yorumla işaretlendi (parantezde sayfa no): {words}',
   'op.note.exportOffice.ocrUnavailable':

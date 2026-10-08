@@ -212,7 +212,11 @@ The pre-commit hook checks the staged files. It refuses engine builds, trainedda
 and font binaries, private keys and env files, then runs `biome check --staged`. The
 pre-push hook checks every tracked file against the same rules and also refuses any file
 over 5 MiB; the size limit is not checked on commit. Engines and fonts are fetched by
-`pnpm fetch:engines` and pinned in `tools/asset-pins.json`, never committed.
+`pnpm fetch:engines` and pinned in `tools/asset-pins.json`, never committed. A new font
+family is an `@expo-google-fonts/<family>` package pinned to an exact version, a row in
+`tools/fetch-engines.mjs`, its licence texts in `tools/assemble-dist.mjs`, and an entry in
+`packages/pdf-core/src/ops/ocr-font-catalog.ts`; its regular face must spell `ğĞıİşŞçÇöÖüÜ`.
+Only SIL OFL-1.1 or Apache-2.0 fonts are accepted.
 
 A new dependency must carry a free licence; `pnpm check:licenses` audits every installed
 package and fails on one that is neither free nor recognised.
