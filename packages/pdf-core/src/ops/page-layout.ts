@@ -808,6 +808,8 @@ interface Piece {
   readonly x0: number;
   readonly x1: number;
   readonly text: string;
+  /** The text block the piece's line belongs to. */
+  readonly block: number;
 }
 
 interface VisualRow {
@@ -818,39 +820,71 @@ interface VisualRow {
 }
 
 /**
- * The text outside `exclude` as visual rows: each line is cut where the gap between two
- * characters is wider than about two spaces, and lines that share a baseline (the cells
- * of one table row are often separate lines, or separate blocks) form one row.
+ * A line cut into segments where the gap between two visible characters is wider than about
+ * two spaces: the cells of a table that a line runs through, the words of a label and
+ * its value. A segment keeps the spaces between its characters; the spaces that stand in a
+ * gap go with the segment before it. Characters of one segment are never told apart.
+ */
+export function lineSegments(chars: readonly LayoutChar[]): LayoutChar[][] {
+  const segments: LayoutChar[][] = [];
+  let previous: LayoutChar | null = null;
+  let pending: LayoutChar[] = [];
+  for (const char of chars) {
+    if (char.c.trim() === '') {
+      pending.push(char);
+      continue;
+    }
+    const gap = previous === null ? 0 : char.box[0] - previous.box[2];
+    const wide = previous !== null && gap > Math.max(char.size, previous.size) * 1.2;
+    const segment = segments[segments.length - 1];
+    if (segment === undefined || wide) {
+      // Spaces that open the line go with the first segment, those in a gap with the one before.
+      if (segment !== undefined) segment.push(...pending);
+      segments.push([...(segment === undefined ? pending : []), char]);
+    } else segment.push(...pending, char);
+    pending = [];
+    previous = char;
+  }
+  const last = segments[segments.length - 1];
+  if (last !== undefined) last.push(...pending);
+  return segments;
+}
+
+/** Whether the centre of a segment's visible characters (a segment has some) lies inside a box (see `inside`). */
+export function segmentInside(segment: readonly LayoutChar[], box: Box, tolerance = 1): boolean {
+  const visible = segment.filter((char) => char.c.trim() !== '');
+  const bounds: Box = [
+    Math.min(...visible.map((char) => char.box[0])),
+    Math.min(...visible.map((char) => char.box[1])),
+    Math.max(...visible.map((char) => char.box[2])),
+    Math.max(...visible.map((char) => char.box[3])),
+  ];
+  return inside({ ...(visible[0] as LayoutChar), box: bounds }, box, tolerance);
+}
+
+/**
+ * The text outside `exclude` as visual rows: each line is cut into segments
+ * (`lineSegments`), a segment is outside when its centre is, and lines that share a
+ * baseline (the cells of one table row are often separate lines, or separate blocks) form
+ * one row.
  */
 function visualRows(layout: PageLayout, exclude: readonly Box[]): VisualRow[] {
   const rows: VisualRow[] = [];
-  for (const block of layout.blocks) {
+  for (const [blockIndex, block] of layout.blocks.entries()) {
     if (block.kind !== 'text') continue;
     for (const line of block.lines) {
-      const chars = line.chars.filter((char) => !exclude.some((box) => inside(char, box)));
-      const groups: LayoutChar[][] = [];
-      let previous: LayoutChar | null = null;
-      for (const char of chars) {
-        if (char.c.trim() === '') continue;
-        const gap = previous === null ? 0 : char.box[0] - previous.box[2];
-        const wide = previous !== null && gap > Math.max(char.size, previous.size) * 1.2;
-        const group = groups[groups.length - 1];
-        if (group === undefined || wide) groups.push([char]);
-        else group.push(char);
-        previous = char;
-      }
-      if (groups.length === 0) continue;
-      const pieces = groups.map((group) => {
-        // The spaces between the visible characters are the piece's own; read them back.
-        const first = group[0] as LayoutChar;
-        const last = group[group.length - 1] as LayoutChar;
-        const from = chars.indexOf(first);
-        const to = chars.indexOf(last);
+      const segments = lineSegments(line.chars).filter(
+        (segment) => !exclude.some((box) => segmentInside(segment, box)),
+      );
+      if (segments.length === 0) continue;
+      const groups = segments.map((segment) => segment.filter((char) => char.c.trim() !== ''));
+      const pieces = segments.map((segment, index) => {
+        const group = groups[index] as LayoutChar[];
         return {
-          x0: first.box[0],
-          x1: last.box[2],
-          text: chars
-            .slice(from, to + 1)
+          x0: (group[0] as LayoutChar).box[0],
+          x1: (group[group.length - 1] as LayoutChar).box[2],
+          block: blockIndex,
+          text: segment
             .map((char) => char.c)
             .join('')
             .replace(/\s+/g, ' ')
@@ -907,6 +941,29 @@ export function textRows(layout: PageLayout, exclude: readonly Box[]): TextRow[]
 /** Cells longer than this on average are prose set in columns, not a table. */
 const MAX_STREAM_CELL = 30;
 
+/** Pieces this long, at the median, in a column's block are lines of prose, not cells. */
+const PROSE_LINE = 20;
+
+/**
+ * How many columns hold a text block of prose: three or more lines of one block, long ones
+ * at the median. Two such columns side by side are two columns of text whose lines happen to
+ * stand on the same baselines; read as a table, a reader would take them row by row across
+ * the columns instead of one column after the other.
+ */
+function proseColumns(pieces: readonly Piece[], columnOf: (piece: Piece) => number): number {
+  const runs = new Map<string, number[]>();
+  for (const piece of pieces) {
+    const key = `${columnOf(piece)}:${piece.block}`;
+    runs.set(key, [...(runs.get(key) ?? []), piece.text.length]);
+  }
+  const columns = new Set<string>();
+  for (const [key, lengths] of runs) {
+    const median = [...lengths].sort((a, b) => a - b)[Math.floor(lengths.length / 2)] as number;
+    if (lengths.length >= 3 && median >= PROSE_LINE) columns.add(key.slice(0, key.indexOf(':')));
+  }
+  return columns.size;
+}
+
 /**
  * A table without rules, from consecutive rows that each hold two or more pieces of text.
  * Its columns are the gaps that run through all of its rows: every piece is projected onto
@@ -931,6 +988,7 @@ function streamTable(rows: readonly VisualRow[]): LayoutTable | null {
     const centre = (piece.x0 + piece.x1) / 2;
     return spans.findIndex((span) => centre >= span[0] - 1 && centre <= span[1] + 1);
   };
+  if (proseColumns(pieces, columnOf) >= 2) return null;
   const xs = [
     (spans[0] as [number, number])[0] - 2,
     ...spans.slice(1).map((span, index) => ((spans[index] as [number, number])[1] + span[0]) / 2),

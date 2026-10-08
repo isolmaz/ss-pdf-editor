@@ -14,10 +14,12 @@ import {
   findTables,
   findTextTables,
   fontFamily,
+  lineSegments,
   type PageLayout,
   readPageLayout,
   renderRegion,
   rgb,
+  segmentInside,
   textRows,
 } from './page-layout';
 
@@ -574,6 +576,36 @@ describe('tables from rules and from spacing, in the cases that are not tables',
   });
 });
 
+describe('a line cut into segments', () => {
+  const segmentsOf = async (text: string) => {
+    const { layout } = await layoutOf(await fixturePage([{ text, x: 50, y: 400, size: 10 }]));
+    const line = layout.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []))[0];
+    return lineSegments(line?.chars ?? []);
+  };
+  const spelled = (segments: readonly (readonly { c: string }[])[]) =>
+    segments.map((segment) => segment.map((char) => char.c).join(''));
+
+  it('cuts where the gap between two visible characters is wider than two spaces, the spaces of a gap going with the segment before it', async () => {
+    expect(spelled(await segmentsOf('Your social            security'))).toEqual([
+      'Your social            ',
+      'security',
+    ]);
+  });
+
+  it('keeps the spaces that open and close a line, and the ones between words, in a segment', async () => {
+    expect(spelled(await segmentsOf('  Ad Soyad  '))).toEqual(['  Ad Soyad  ']);
+    expect(spelled(await segmentsOf('  Ad            Soyad  '))).toEqual(['  Ad            ', 'Soyad  ']);
+    expect(await segmentsOf('   ')).toEqual([]);
+  });
+
+  it('places a segment by the centre of its visible characters', async () => {
+    const [segment] = await segmentsOf('  Ad  ');
+    // `Ad` spans x 52…64 at size 10 (Helvetica: 6.67 and 5.56 wide, from x 50 + 2 spaces).
+    expect(segmentInside(segment ?? [], [50, 0, 70, 500], 0)).toBe(true);
+    expect(segmentInside(segment ?? [], [70, 0, 90, 500], 0)).toBe(false);
+  });
+});
+
 describe('tables from spacing, in the cases that are not tables', () => {
   const tablesOf = async (lines: Parameters<typeof fixturePage>[0]) =>
     findTextTables((await layoutOf(await fixturePage(lines))).layout, []);
@@ -587,6 +619,33 @@ describe('tables from spacing, in the cases that are not tables', () => {
     const twentyOne = (y: number) =>
       pieces(y, ...Array.from({ length: 21 }, (_, index): [number, string] => [10 + index * 18, 'a']));
     expect(await tablesOf([...twentyOne(400), ...twentyOne(388)])).toEqual([]);
+  });
+
+  it('finds none in two columns of prose whose lines are short, each column a text block running down the rows', async () => {
+    const left = [
+      'Maps and information for',
+      'worldwide earthquakes shown',
+      'within minutes after they',
+      'occur on the map.',
+    ];
+    const right = [
+      'Estimates of population at',
+      'risk and economic impacts',
+      'caused by shaking from',
+      'large earthquakes.',
+    ];
+    const rows = left.flatMap((text, index) =>
+      pieces(400 - index * 12, [50, text], [250, right[index] as string]),
+    );
+    expect(await tablesOf(rows)).toEqual([]);
+  });
+
+  it('keeps a table whose cells are short, its columns blocks as well', async () => {
+    const names = ['Elma', 'Armut', 'Kiraz', 'Erik'];
+    const rows = names.flatMap((text, index) =>
+      pieces(400 - index * 12, [50, text], [170, `${index + 1}`], [290, `${index * 7}`]),
+    );
+    expect(await tablesOf(rows)).toHaveLength(1);
   });
 
   it('moves a piece whose left edge snaps to the column of the piece before it into the next column', async () => {
