@@ -435,7 +435,10 @@ had to stay green. The moves, and the defects they fixed on the way:
     the drawing follow it wherever the flow puts it, a card in the next column after the one before
     it included. When the items on a drawing are not one run in the flow (another drawing's text
     comes between them) the drawing is an inline picture before the first of them instead, and
-    no text lands on white paper. Gaps
+    no text lands on white paper; a picture no item stands on (a stamp over a corner of two lines)
+    stays inline where MuPDF read it. Only that run of items, and the first item after it when it
+    lies below the picture, are laid out without the `MAX_GAP` clamp; an item that is not on the
+    picture (another column's) ends the run, so the gaps of a two-column page stay clamped. Gaps
     inside the drawing's height are not clamped to `MAX_GAP`, and the first item below it starts
     at or under its foot. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.

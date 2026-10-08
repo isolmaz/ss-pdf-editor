@@ -989,7 +989,7 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
       });
       y += 1;
     }
-    return { pictures, texts };
+    return { pictures, texts, end: y };
   };
 
   it('keeps the text inside a drawing as text and puts the drawing behind it, taking no room of its own', async () => {
@@ -1029,6 +1029,9 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
     near((texts.get('12.480') ?? 0) - (card?.top ?? 0), 160 - ASCENT - 110);
     // ...and the text after the cards starts under them, not over them.
     expect(texts.get('after') ?? 0).toBeGreaterThanOrEqual((card?.top ?? 0) + 80);
+    // The gap above the cards is clamped like any: the title's own space before is the rest of 48 pt.
+    const [title] = (await paragraphProps(file.bytes)).find(([, text]) => text === 'Aktif') ?? [];
+    expect(Number(/w:before="(\d+)"/.exec(title ?? '')?.[1]) / 20).toBeLessThanOrEqual(48);
     // The picture is a paragraph of a point's height, not a block of 80 pt in the flow.
     const holders = bodyBlocks(document).filter((block) => block.includes('<wp:anchor'));
     expect(holders).toHaveLength(2);
@@ -1182,6 +1185,53 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
     // The last text is under every card.
     const foot = Math.max(...pictures.map((entry) => entry.top + entry.height));
     expect(texts.get('after the cards') ?? 0).toBeGreaterThanOrEqual(foot - 0.1);
+  });
+
+  it('keeps a stamp over a corner of two lines of a paragraph where it is read, inline, not behind the last item of the page', async () => {
+    const bytes = await officeDocument([
+      {
+        images: { Im1: red },
+        content: [
+          ...[470, 458, 446, 434].map((y, index) =>
+            courier(50, y, `Line ${index + 1} of a paragraph that runs on across the page`),
+          ),
+          // 40 x 30 pt over the start of the second and third lines: a tenth of the paragraph.
+          picture('Im1', 50, 440, 40, 30),
+          courier(50, 100, 'Last line of the page'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    expect(document).not.toContain('<wp:anchor');
+    const blocks = bodyBlocks(document).filter((block) => block.startsWith('<w:p>'));
+    const at = blocks.findIndex((block) => block.includes('<wp:inline'));
+    expect(blocks[at - 1]).toContain('Line 4');
+    expect(blocks[at + 1]).toContain('Last line of the page');
+  });
+
+  it('keeps the gaps of a two-column page whose left column holds a labelled drawing, so the page is one page long', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          courier(40, 470, 'Intro'),
+          // A 120 pt drawing, 320..440 pt from the top, with its label.
+          circle(100, 120, 60),
+          courier(80, 120, 'Chart'),
+          // The right column: eleven lines at the top of the page.
+          ...Array.from({ length: 11 }, (_, index) =>
+            courier(230, 470 - index * 14, `Right line ${index + 1}`),
+          ),
+          courier(40, 30, 'Footer'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const { pictures, texts, end } = flowOf(await documentXml(file.bytes));
+    expect(pictures).toHaveLength(1);
+    // The whole flow ends inside the page, above its bottom margin: one page.
+    expect(end).toBeLessThanOrEqual(500 - 18);
+    expect(texts.get('Footer') ?? 0).toBeGreaterThanOrEqual((pictures[0]?.top ?? 0) + 120 - 1.1);
   });
 
   it('draws a picture inline, before its text, when the text on it is not one run in the flow, so that no text lands on white paper', async () => {

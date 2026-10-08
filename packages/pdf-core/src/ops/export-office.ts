@@ -661,17 +661,21 @@ const STANDS_ON = 0.25;
  * on it, so that the picture and its text move together in the flow. When those items are not
  * one run in the flow — another drawing's text, or a column's, comes between them — nothing
  * keeps the text on the picture, and it would land on white paper: the picture is then an
- * ordinary inline one, right before its first item, and the text stays readable under it.
+ * ordinary inline one, right before its first item, and the text stays readable under it. A
+ * picture that no item stands on (a stamp that covers a corner of a line) has no holder to
+ * keep: it stays inline where MuPDF read it.
  */
 function placePictures(items: readonly Item[]): Item[] {
   const flow = items.filter((item) => !isBehind(item));
-  const placed = items.filter(isBehind).map((picture) => {
+  const placed = items.flatMap((picture, position) => {
+    if (!isBehind(picture)) return [];
     const stands = flow.flatMap((item, index) =>
       coveredBy(item.box, picture.box) >= STANDS_ON ? [index] : [],
     );
-    const at = stands[0] ?? flow.length;
-    const together = stands.every((index, run) => index === at + run);
-    return { at, item: together ? picture : { ...picture, behind: false } };
+    const read = items.slice(0, position).filter((item) => !isBehind(item)).length;
+    const at = stands[0] ?? read;
+    const together = stands.length > 0 && stands.every((index, run) => index === at + run);
+    return [{ at, item: together ? picture : { ...picture, behind: false } }];
   });
   const ordered: Item[] = [];
   flow.forEach((item, index) => {
@@ -993,24 +997,32 @@ function docxPage(
     `<w:pgMar w:top="${twips(margins.top)}" w:right="${twips(margins.right)}" w:bottom="${twips(margins.bottom)}" ` +
     `w:left="${twips(margins.left)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
   const out: string[] = [];
-  // `previousBottom` is where the flow stands, in the PDF's own coordinates; `floor` is the
-  // lowest foot of a picture behind the text so far. Gaps are clamped to MAX_GAP, except those
-  // inside such a picture, which keep the text on it where the PDF has it (the flow stands at
-  // the foot of the item before, even when that is higher up the page than where it was: the
-  // text of a card in the next column), and the first item below it starts at or under its foot.
+  // `previousBottom` is where the flow stands, in the PDF's own coordinates. Gaps are clamped to
+  // MAX_GAP, except for the run of items that stand on a picture behind the text, which keep the
+  // text on it where the PDF has it, and the first item after the run, which starts at or under the
+  // picture's foot when it is below it. An item that is not on the picture (another column's)
+  // ends the run and is laid out like any other.
   let previousBottom = margins.top;
-  let floor = 0;
+  let active: Box | null = null;
   const planned = items.map((item) => {
     const top = item.box[1];
-    const inside = top < floor - 1;
-    const before = inside
-      ? Math.max(0, top - previousBottom)
-      : Math.max(0, floor - previousBottom) + clamp(top - Math.max(previousBottom, floor), 0, MAX_GAP);
-    // The holder of a picture behind the text is one point high.
+    const standing = active !== null && !isBehind(item) && coveredBy(item.box, active) >= STANDS_ON;
+    const floor = active === null || standing ? 0 : active[3];
+    let before = clamp(top - previousBottom, 0, MAX_GAP);
+    if (standing) before = Math.max(0, top - previousBottom);
+    else if (top >= floor - 1 && floor > 0) {
+      before = Math.max(0, floor - previousBottom) + clamp(top - Math.max(previousBottom, floor), 0, MAX_GAP);
+    }
     if (isBehind(item)) {
-      previousBottom += before + 1;
-      floor = Math.max(floor, item.box[3]);
-    } else previousBottom = inside ? item.box[3] : Math.max(previousBottom, item.box[3]);
+      // The holder is one point high and stands where the PDF has the picture.
+      previousBottom = Math.max(previousBottom, top) + 1;
+      active = item.box;
+    } else {
+      // On the picture the flow follows the PDF from item to item, whatever column it was
+      // in before; elsewhere it only moves down.
+      previousBottom = standing ? item.box[3] : Math.max(previousBottom, item.box[3]);
+      if (!standing) active = null;
+    }
     return { item, before };
   });
   /**
