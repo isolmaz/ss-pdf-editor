@@ -14,6 +14,7 @@ import { loadMupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { exportOffice } from './export-office';
 import { line, officeDocument } from './export-office-fixtures';
+import { detectSkew, toGrey } from './ocr-preprocess';
 import type { OperationContext } from './types';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -605,5 +606,174 @@ describe('exact layout: a scanned page read by OCR', () => {
         { signal: controller.signal },
       ),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('exact layout: a crooked scan', () => {
+  const SENTENCES = [
+    'The quick brown fox jumps over the lazy dog',
+    'Pack my box with five dozen liquor jugs',
+    'How vexingly quick daft zebras jump today',
+    'Sphinx of black quartz judge my vow',
+    'Amazingly few discotheques provide jukeboxes',
+    'Jackdaws love my big sphinx of quartz',
+    'The five boxing wizards jump quickly',
+    'Crazy Fredrick bought many very exquisite opal jewels',
+    'We promptly judged antique ivory buckles',
+    'A wizard job is to vex chumps quickly in fog',
+  ];
+  /** Ten lines with their left ends at x = 40 and baselines 34 pt apart from y = 80 (down), the sheet skewed by `degrees` (descending to the right) about the page centre. */
+  const crookedPage = (degrees: number, rule = false) => {
+    const phi = (-degrees * Math.PI) / 180;
+    const c = Math.cos(phi).toFixed(6);
+    const s = Math.sin(phi).toFixed(6);
+    const lines = SENTENCES.map((sentence, at) => line('helvetica', 12, -160, 170 - at * 34, sentence));
+    const under = rule ? ['0 0 0 rg -160 166 130 0.8 re f'] : [];
+    return officeDocument([
+      {
+        content: `1 1 1 rg 0 0 400 500 re f 0 0 0 rg q ${c} ${s} ${-s} ${c} 200 250 cm\n${[...lines, ...under].join('\n')}\nQ`,
+      },
+    ]);
+  };
+  /** One word at the start of each line, where a recogniser reading the upright page puts it. */
+  const uprightWords = (): OcrWord[] =>
+    SENTENCES.map((_, at) => ({
+      text: 'Sample',
+      x0: 40,
+      x1: 40 + 6.5 * 6,
+      y0: 71 + at * 34,
+      y1: 83 + at * 34,
+      confidence: 95,
+      block: 1,
+      paragraph: at + 1,
+      line: at + 1,
+    }));
+  /** The skew of the lines of a PNG the recogniser was shown, degrees. */
+  async function skewOf(png: Uint8Array): Promise<number> {
+    const mupdf = await loadMupdf();
+    const image = new mupdf.Image(png);
+    const pixmap = image.toPixmap();
+    try {
+      const width = pixmap.getWidth();
+      const height = pixmap.getHeight();
+      const channels = pixmap.getNumberOfComponents();
+      const stride = pixmap.getStride();
+      const from = pixmap.getPixels();
+      const data = new Uint8Array(width * height * 4);
+      for (let y = 0; y < height; y += 1)
+        for (let x = 0; x < width; x += 1)
+          for (let channel = 0; channel < 3; channel += 1)
+            data[(y * width + x) * 4 + channel] = from[
+              y * stride + x * channels + Math.min(channel, channels - 1)
+            ] as number;
+      return detectSkew(toGrey({ width, height, data, scale: 1 })).angle;
+    } finally {
+      pixmap.destroy();
+    }
+  }
+  /** The text boxes of the document: the frame's turn (degrees), its centre and size (points). */
+  const textBoxes = (xml: string) =>
+    xml
+      .split('<wp:anchor')
+      .filter((part) => part.includes('txBox="1"'))
+      .map((part) => {
+        const [h, v] = [...part.matchAll(/<wp:posOffset>(-?\d+)<\/wp:posOffset>/g)].map(
+          (m) => Number(m[1]) / 12700,
+        );
+        const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(part) as RegExpExecArray;
+        const [w, hh] = [Number(extent[1]) / 12700, Number(extent[2]) / 12700];
+        const turn = /<a:xfrm rot="(-?\d+)"/.exec(part);
+        return {
+          turn: turn === null ? 0 : Number(turn[1]) / 60000,
+          centre: [(h as number) + w / 2, (v as number) + hh / 2] as const,
+          width: w,
+          height: hh,
+        };
+      });
+
+  it('reads an upright copy, writes the text boxes turned by the skew on the scan’s own lines, and keeps the scan as the background', async () => {
+    const seen: number[] = [];
+    let first = 0;
+    const result = await exportOffice(
+      await scanOf(undefined, crookedPage(3)),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png) => {
+            seen.push(await skewOf(png));
+            first = first === 0 ? png.length : first;
+            return uprightWords();
+          },
+        },
+      },
+      run,
+    );
+    // the recogniser saw level lines
+    expect(seen).toHaveLength(1);
+    expect(Math.abs(seen[0] as number)).toBeLessThan(0.3);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const boxes = textBoxes(xml);
+    expect(boxes).toHaveLength(10);
+    for (const box of boxes) expect(Math.abs(box.turn - 3)).toBeLessThan(0.2);
+    // each frame's centre, turned back about the page centre, is where the upright line is: its left edge at x = 40
+    const radians = (-3 * Math.PI) / 180;
+    boxes.forEach((box, at) => {
+      const dx = box.centre[0] - 200;
+      const dy = box.centre[1] - 250;
+      const x = 200 + dx * Math.cos(radians) - dy * Math.sin(radians);
+      const y = 250 + dx * Math.sin(radians) + dy * Math.cos(radians);
+      expect(Math.abs(x - box.width / 2 - 40)).toBeLessThan(1.5);
+      expect(y).toBeGreaterThan(71 + at * 34 - 4);
+      expect(y).toBeLessThan(83 + at * 34 + 4);
+    });
+  });
+
+  it('reads the page again without a rule under a word, erased on the scan along its own line', async () => {
+    const sizes: number[] = [];
+    const rule: OcrWord[] = uprightWords();
+    const result = await exportOffice(
+      await scanOf(undefined, crookedPage(3, true)),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png) => {
+            sizes.push(png.length);
+            // the first word of the first line, widened to the rule's length: a link
+            return rule.map((word, at) =>
+              at === 0 ? { ...word, x1: 40 + 130, text: 'The quick brown' } : word,
+            );
+          },
+        },
+      },
+      run,
+    );
+    // read twice: the second picture is the first without the rule
+    expect(sizes).toHaveLength(2);
+    expect(sizes[1]).not.toBe(sizes[0]);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    expect(xml).toContain('<w:u w:val="single"/>');
+    expect(textBoxes(xml).every((box) => Math.abs(box.turn - 3) < 0.2)).toBe(true);
+  });
+
+  it('turns no box on a level page', async () => {
+    const result = await exportOffice(
+      await scanOf(undefined, crookedPage(0)),
+      { ...options, ocr: { lowConfidence: 0.9, recognize: async () => uprightWords() } },
+      run,
+    );
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    expect(textBoxes(xml)).toHaveLength(10);
+    expect(xml).not.toContain('<a:xfrm rot=');
+  });
+
+  it('does not turn the boxes of a page read from its own text layer', async () => {
+    const result = await exportOffice(await scanOf('Hello world today', crookedPage(3)), { ...options }, run);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    expect(await text(zip, 'word/document.xml')).not.toContain('<a:xfrm rot=');
   });
 });
