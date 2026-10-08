@@ -103,7 +103,18 @@ const STROKE_INK = 0.5;
 const SAME_COLOUR = 40;
 
 /** A line is bold when its median stroke (in em) is this × the page's median. */
-const BOLD_RATIO = 1.3;
+const BOLD_RATIO = 1.2;
+
+/**
+ * Italic: a stem of upright text keeps its place from row to row, one of italic text moves left
+ * going down. The ink runs of each row are matched one-to-one with those of the row below (same
+ * width, ±1 px) and the centres' shifts are averaged (leftward positive); diagonals of v w y
+ * cancel, stems dominate. A line leans when the mean shift of its stems is at least
+ * `ITALIC_SLANT` px per row over at least `ITALIC_STEMS` matched pairs.
+ */
+const ITALIC_SLANT = 0.18;
+const ITALIC_STEMS = 100;
+const MAX_SHIFT = 1.5;
 const MAX_RUN = 64;
 
 /** Ring thickness (pixels) the background is read from. */
@@ -212,6 +223,8 @@ interface WordInk {
   readonly color: Rgb;
   /** Lengths of the horizontal ink runs (1…MAX_RUN px), counted over the word's rows. */
   readonly runs: Int32Array;
+  /** Σ of the shifts (px, leftward going down) of the stems matched between rows, and how many pairs matched. */
+  readonly lean: { readonly sum: number; readonly pairs: number };
 }
 
 /** The ink of one word: its colour and the lengths of its strokes. */
@@ -227,8 +240,10 @@ function measureWord(image: RgbaImage, word: OcrWord): WordInk {
     }
   }
   const runs = new Int32Array(MAX_RUN + 1);
-  if (strongest < MIN_CONTRAST) return { color: [0, 0, 0], runs };
+  if (strongest < MIN_CONTRAST) return { color: [0, 0, 0], runs, lean: { sum: 0, pairs: 0 } };
   const histogram = new Int32Array(768);
+  const wide = x1 - x0;
+  const mask = new Uint8Array(wide * (y1 - y0));
   let inked = 0;
   for (let y = y0; y < y1; y += 1) {
     let run = 0;
@@ -245,6 +260,7 @@ function measureWord(image: RgbaImage, word: OcrWord): WordInk {
         countColour(histogram, data, at);
         inked += 1;
       }
+      if (x < x1 && away >= STROKE_INK * strongest) mask[(y - y0) * wide + (x - x0)] = 1;
     }
   }
   return {
@@ -254,7 +270,51 @@ function measureWord(image: RgbaImage, word: OcrWord): WordInk {
       histogramMedian(histogram, 512, inked),
     ],
     runs,
+    lean: stemLean(mask, wide, y1 - y0),
   };
+}
+
+/** The ink runs (start, end exclusive) of one row of a mask. */
+function rowRuns(mask: Uint8Array, wide: number, y: number): [number, number][] {
+  const runs: [number, number][] = [];
+  let start = -1;
+  for (let x = 0; x <= wide; x += 1) {
+    const on = x < wide && mask[y * wide + x] === 1;
+    if (on && start < 0) start = x;
+    else if (!on && start >= 0) {
+      runs.push([start, x]);
+      start = -1;
+    }
+  }
+  return runs;
+}
+
+/** The shifts of the stems of a mask (`wide` × `tall`): runs matched one-to-one, of the same width ±1, with those of the row below. */
+function stemLean(mask: Uint8Array, wide: number, tall: number): { sum: number; pairs: number } {
+  let sum = 0;
+  let pairs = 0;
+  let above = rowRuns(mask, wide, 0);
+  for (let y = 1; y < tall; y += 1) {
+    const below = rowRuns(mask, wide, y);
+    for (const run of above) {
+      const over = below.filter((other) => other[0] < run[1] && other[1] > run[0]);
+      const only = over[0];
+      if (over.length !== 1 || only === undefined) continue;
+      if (above.filter((other) => other[0] < only[1] && other[1] > only[0]).length !== 1) continue;
+      if (Math.abs(only[1] - only[0] - (run[1] - run[0])) > 1) continue;
+      const shift = (run[0] + run[1] - only[0] - only[1]) / 2;
+      if (Math.abs(shift) > MAX_SHIFT) continue;
+      sum += shift;
+      pairs += 1;
+    }
+    above = below;
+  }
+  return { sum, pairs };
+}
+
+/** Whether the stems lean: enough matched pairs, and on average a real slant. */
+function leans(sum: number, pairs: number): boolean {
+  return pairs >= ITALIC_STEMS && sum >= ITALIC_SLANT * pairs;
 }
 
 /** The median of a run-length histogram, in pixels; 0 when it is empty. */
@@ -445,6 +505,7 @@ export function dropMisreads(
 interface Token {
   readonly text: string;
   readonly bold: boolean;
+  readonly italic: boolean;
   readonly color: Rgb;
   readonly note: string | undefined;
   /** The word's box, page points from the left. */
@@ -458,7 +519,7 @@ const sameColour = (a: Rgb, b: Rgb): boolean =>
   Math.abs(a[2] - b[2]) <= SAME_COLOUR;
 
 /** The advance (em) of a Unicode value in a stand-in family (Arial, Times New Roman, Courier New), `undefined` where unknown. */
-export type Advance = (family: string, bold: boolean, unicode: number) => number | undefined;
+export type Advance = (family: string, bold: boolean, italic: boolean, unicode: number) => number | undefined;
 
 /** The stand-in families a scan's text is set in, sans first: it wins unless another is clearly closer. */
 const FAMILIES = ['Arial', 'Times New Roman', 'Courier New'] as const;
@@ -469,8 +530,8 @@ const MIN_WORDS = 8;
 /** Advance of a character the family has no glyph for, em. */
 const FALLBACK_ADVANCE = 0.5;
 
-const advanceOf = (advance: Advance, family: string, bold: boolean, code: number): number =>
-  advance(family, bold, code) ?? FALLBACK_ADVANCE;
+const advanceOf = (advance: Advance, family: string, bold: boolean, italic: boolean, code: number): number =>
+  advance(family, bold, italic, code) ?? FALLBACK_ADVANCE;
 
 /**
  * The family the page's words are set in: for each stand-in, the ratio of every word's box width
@@ -487,7 +548,8 @@ function pickFamily(lines: readonly Line[], advance: Advance): string {
       for (const word of line.words) {
         if ((word.text.match(/[\p{L}\p{N}]/gu) ?? []).length < 3) continue;
         let em = 0;
-        for (const char of word.text) em += advanceOf(advance, family, false, char.codePointAt(0) as number);
+        for (const char of word.text)
+          em += advanceOf(advance, family, false, false, char.codePointAt(0) as number);
         logs.push(Math.log((word.x1 - word.x0) / (em * line.size)));
       }
     }
@@ -521,7 +583,8 @@ function sizeOf(line: Line, family: string, advance: Advance | undefined): numbe
   for (const word of line.words) {
     if ((word.text.match(/[\p{L}\p{N}]/gu) ?? []).length < 3) continue;
     let em = 0;
-    for (const char of word.text) em += advanceOf(advance, family, false, char.codePointAt(0) as number);
+    for (const char of word.text)
+      em += advanceOf(advance, family, false, false, char.codePointAt(0) as number);
     sizes.push((word.x1 - word.x0) / em);
   }
   if (sizes.length === 0) return line.size;
@@ -561,6 +624,7 @@ function fitOf(
   parts: readonly Part[],
   family: string,
   bold: boolean,
+  italic: boolean,
   size: number,
   advance: Advance,
 ): RunFit {
@@ -568,7 +632,9 @@ function fitOf(
   const starts: number[] = [];
   const ends: number[] = [];
   for (const part of parts) {
-    const ems = [...part.text].map((char) => advanceOf(advance, family, bold, char.codePointAt(0) as number));
+    const ems = [...part.text].map((char) =>
+      advanceOf(advance, family, bold, italic, char.codePointAt(0) as number),
+    );
     const total = ems.reduce((sum, em) => sum + em, 0);
     const natural = total * size;
     const width = part.x1 - part.x0;
@@ -591,7 +657,8 @@ function runsOf(
   family: string,
   advance: Advance | undefined,
 ): TextRun[] {
-  const metrics = advance !== undefined && advance(family, false, 97) !== undefined ? advance : undefined;
+  const metrics =
+    advance !== undefined && advance(family, false, false, 97) !== undefined ? advance : undefined;
   const space: Part = { text: ' ', x0: Number.NaN, x1: Number.NaN };
   const runs: { run: TextRun; color: Rgb; parts: Part[] }[] = [];
   for (const [index, token] of tokens.entries()) {
@@ -614,6 +681,7 @@ function runsOf(
       token.note === undefined &&
       last.run.note === undefined &&
       last.run.bold === token.bold &&
+      last.run.italic === token.italic &&
       sameColour(last.color, token.color)
     ) {
       last.run = { ...last.run, text: last.run.text + text };
@@ -626,7 +694,7 @@ function runsOf(
         font: family,
         size,
         bold: token.bold,
-        italic: false,
+        italic: token.italic,
         color: rgbNumber(token.color),
         link: null,
         ...(token.note === undefined ? {} : { note: token.note }),
@@ -636,7 +704,7 @@ function runsOf(
     });
   }
   return runs.map(({ run, parts }) =>
-    metrics === undefined ? run : { ...run, fit: fitOf(parts, family, run.bold, size, metrics) },
+    metrics === undefined ? run : { ...run, fit: fitOf(parts, family, run.bold, run.italic, size, metrics) },
   );
 }
 
@@ -763,6 +831,7 @@ export function ocrTextBoxes(
   const paragraphs = readingOrder(groupParagraphs(groupLines(words, regionIndex(regions))), boundsOf);
   const lineStroke = new Map<Line, number>();
   const sizes = new Map<Line, number>();
+  const slants = new Map<Line, boolean>();
   const family = font ?? (advance === undefined ? FAMILIES[0] : pickFamily(paragraphs.flat(), advance));
 
   for (const lines of paragraphs) {
@@ -776,13 +845,21 @@ export function ocrTextBoxes(
       const rounded = Math.max(1, Math.round(size * 2) / 2);
       sizes.set(line, rounded);
       const runs = new Int32Array(MAX_RUN + 1);
+      let leanSum = 0;
+      let leanPairs = 0;
       for (const word of line.words) {
         const ink = measureWord(image, word);
         inks.set(word, ink);
+        // Digits and symbols have diagonals that do not cancel (7 4 9 /): only words of letters count.
+        if (/\p{L}{2}/u.test(word.text)) {
+          leanSum += ink.lean.sum;
+          leanPairs += ink.lean.pairs;
+        }
         for (let length = 1; length <= MAX_RUN; length += 1)
           runs[length] = (runs[length] ?? 0) + (ink.runs[length] ?? 0);
       }
       lineStroke.set(line, medianRun(runs) / (rounded * image.scale));
+      slants.set(line, leans(leanSum, leanPairs));
     }
   }
   const pageStroke = median([...lineStroke.values()]);
@@ -794,12 +871,14 @@ export function ocrTextBoxes(
     for (const line of lines) {
       const size = sizes.get(line) as number;
       const bold = pageStroke > 0 && (lineStroke.get(line) as number) >= BOLD_RATIO * pageStroke;
+      const italic = slants.get(line) as boolean;
       const tokens = line.words.map((word, at): Token => {
         const low = word.confidence / 100 < lowConfidence && !SYMBOLIC.test(word.text);
         if (low) flagged.push({ text: word.text, confidence: word.confidence / 100 });
         return {
           text: at === 0 && line.words.length > 1 && BULLET_LIKE.test(word.text) ? '\u2022' : word.text,
           bold,
+          italic,
           color: (inks.get(word) as WordInk).color,
           note: low ? `Low OCR confidence (${Math.round(word.confidence)} %)` : undefined,
           x0: word.x0,
