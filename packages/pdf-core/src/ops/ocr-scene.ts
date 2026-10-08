@@ -67,10 +67,8 @@ const ALIGN = 0.8;
 
 /** Lines on baselines at most this × the size apart are cells of one row. */
 const ROW_BAND = 0.5;
-/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre)… */
+/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre); rows of only two cells need a value column of figures too (`amountLike`)… */
 const TABLE_CELLS = 3;
-/** …or only two when the rows are further apart than this × the size (the space of text lines is at most this), */
-const TABLE_LEADING = 1.5;
 /** …and rows of three cells or more further apart than this × the size are not one table (rows are padded: twice the size is usual; two cells reach `MAX_LEADING` only: cards, paragraph breaks of two columns). */
 const TABLE_MAX_LEADING = 4;
 /** …and their cells hold this many words or fewer on average (a line of prose has more). */
@@ -1092,17 +1090,29 @@ function groupLines(words: readonly OcrWord[], regionOf: (word: OcrWord) => numb
   return lines;
 }
 
+const rightmost = (row: readonly Line[]): Line =>
+  row.reduce((best, line) => (line.x1 > best.x1 ? line : best));
+
+/** A cell of figures: more digits than letters (an amount, a quantity, a percentage, a date). */
+function amountLike(cell: Line): boolean {
+  const text = cell.words.map((word) => word.text).join('');
+  return (text.match(/\p{N}/gu)?.length ?? 0) > (text.match(/\p{L}/gu)?.length ?? 0);
+}
+
 /**
  * Whether the cells of a row stand under the cells of the row above, as a table's do (see
  * `tableRows`); `leading` is the distance from the lowest line above, which a wrapped cell
  * brings closer than the row's own baseline.
  */
 function gridPair(above: readonly Line[], below: readonly Line[], leading: number): boolean {
+  const amounts = (row: readonly Line[]) => amountLike(rightmost(row));
   const size = Math.max(...above.map((line) => line.size), ...below.map((line) => line.size));
-  const pitch = (below[0] as Line).baseline - (above[0] as Line).baseline;
-  const need = pitch >= TABLE_LEADING * size ? 2 : TABLE_CELLS;
-  const reachDown = Math.min(above.length, below.length) >= TABLE_CELLS ? TABLE_MAX_LEADING : MAX_LEADING;
-  if (leading > reachDown * size || above.length < need || below.length < need) return false;
+  const cells = Math.min(above.length, below.length);
+  const need = cells >= TABLE_CELLS ? TABLE_CELLS : 2;
+  const reachDown = cells >= TABLE_CELLS ? TABLE_MAX_LEADING : MAX_LEADING;
+  if (leading > reachDown * size || cells < need) return false;
+  // Two cells are a table only with a value column: two side-by-side blocks of short lines (a skill list, a label block) are columns.
+  if (need === 2 && !(amounts(above) && amounts(below))) return false;
   const reach = ALIGN * size;
   const stands = (cell: Line) =>
     above.some(
@@ -1119,7 +1129,9 @@ function gridPair(above: readonly Line[], below: readonly Line[], leading: numbe
 /**
  * The tables of a page, as the lines that are their cells: rows are lines on one baseline (two
  * or more), and consecutive rows whose cells stand under each other (`gridPair`) are one table.
- * A line alone on its baseline (the second line of a wrapped cell) does not end a table.
+ * A line alone on its baseline keeps the table open only as the second line of a wrapped cell
+ * (it starts under a cell of the row above, or under such a line); any other line — a
+ * sub-heading — ends it.
  * A column of single-line cells (an invoice's descriptions) looks like a paragraph of short
  * lines to `groupParagraphs`; this is what tells it apart.
  */
@@ -1135,6 +1147,8 @@ function tableRows(lines: readonly Line[]): Line[][] {
   const tables: Line[][] = [];
   let open = false;
   let above: Line[] | undefined;
+  /** The cells of the last row and the lines that wrapped under them. */
+  let refs: Line[] = [];
   let lowest = -Infinity;
   for (const row of rows) {
     const baseline = (row[0] as Line).baseline;
@@ -1147,6 +1161,21 @@ function tableRows(lines: readonly Line[]): Line[][] {
         open = false;
       }
       above = row;
+      refs = [...row];
+    } else {
+      const line = row[0] as Line;
+      const wraps = refs.some(
+        (cell) =>
+          cell.region === line.region &&
+          Math.abs(cell.x0 - line.x0) <= ALIGN * line.size &&
+          baseline - lowest <= MAX_LEADING * line.size,
+      );
+      if (wraps) refs.push(line);
+      else {
+        open = false;
+        above = undefined;
+        refs = [];
+      }
     }
     lowest = baseline;
   }

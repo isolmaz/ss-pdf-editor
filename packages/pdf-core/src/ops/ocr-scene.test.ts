@@ -703,6 +703,67 @@ describe('ocrTextBoxes: tables read by row', () => {
     ]);
   });
 
+  it('keeps two side-by-side lists of short lines column by column, at loose and at tight leading', () => {
+    const lists = (pitch: number) => [
+      ...['JavaScript', 'TypeScript', 'Python', 'Go'].map((text, at) =>
+        fake(text, 10, 10 + at * pitch, 70, 22 + at * pitch, at),
+      ),
+      ...['Docker', 'Kubernetes', 'AWS', 'Linux'].map((text, at) =>
+        fake(text, 150, 10 + at * pitch, 210, 22 + at * pitch, 10 + at),
+      ),
+    ];
+    const left = ['JavaScript', 'TypeScript', 'Python', 'Go'];
+    const right = ['Docker', 'Kubernetes', 'AWS', 'Linux'];
+    for (const pitch of [26, 15]) {
+      expect(ocrTextBoxes(lists(pitch), blank(400), 0.9).boxes.flatMap(textOf)).toEqual([...left, ...right]);
+    }
+    // the same with a label column and a value column that has words, not figures
+    const labels = [
+      fake('Name', 10, 10, 50, 22, 0),
+      fake('Ada', 150, 10, 190, 22, 5),
+      fake('City', 10, 36, 50, 48, 1),
+      fake('Rome', 150, 36, 190, 48, 6),
+      fake('Job', 10, 62, 50, 74, 2),
+      fake('Chef', 150, 62, 190, 74, 7),
+    ];
+    expect(ocrTextBoxes(labels, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      'Name',
+      'City',
+      'Job',
+      'Ada',
+      'Rome',
+      'Chef',
+    ]);
+  });
+
+  it('ends a table at a sub-heading between two parts of a grid', () => {
+    const grid = (top: number, line: number, names: string) =>
+      [0, 1].flatMap((at) =>
+        row(
+          top + at * 24,
+          [0, 1, 2].map((c) => [`${names}${at * 3 + c}`, 10 + c * 100, 40 + c * 100] as const),
+          line + at,
+        ),
+      );
+    const words = [...grid(10, 0, 'a'), fake('Section', 120, 70, 190, 82, 9), ...grid(100, 10, 'b')];
+    const order = ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf);
+    expect(order).toEqual([
+      'a0',
+      'a1',
+      'a2',
+      'a3',
+      'a4',
+      'a5',
+      'Section',
+      'b0',
+      'b1',
+      'b2',
+      'b3',
+      'b4',
+      'b5',
+    ]);
+  });
+
   it('keeps the table as one unit among the text above and below it', () => {
     const words = [fake('Title', 10, 10, 120, 24, 8), ...invoice(), fake('Totals', 10, 260, 120, 274, 9)];
     const order = ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf);

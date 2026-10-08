@@ -692,6 +692,16 @@ had to stay green. The moves, and the defects they fixed on the way:
          1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
          paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
          ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart.
+         The cells of a table never join a paragraph: rows are lines on one baseline (within
+         0.5 × the size), and consecutive rows form a table when at least 3 cells of each (2
+         when both rows have a right-most cell of figures — more digits than letters: label
+         and amount rows) stand under cells of the row above by left edge, right edge or
+         centre, the cells average at most 4 words, and the rows are at most 4 × the size apart
+         (2 × for two cells). A line alone on its baseline keeps the table open only as the
+         second line of a wrapped cell (it starts under a cell above); any other line ends it.
+         Every cell line is a paragraph of its own, and a table is one item of the cut below,
+         read row by row inside (`inRows` of its paragraphs), so an invoice's descriptions are
+         not read before its quantities.
          *Reading order* is by recursive cuts (`readingOrder`): the paragraphs are split at the
          widest horizontal gap no box crosses (the part above first) and at the widest vertical
          one (the part to the left first), a vertical cut counting only where the two parts
