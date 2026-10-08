@@ -110,10 +110,137 @@ describe('grouping lines into text boxes', () => {
       ['both'],
       ['right'],
     ]);
-    // The justified box is no wider than its lines (30 characters × 6 pt): no slack to stretch into.
+    // The justified box is hardly wider than its lines (30 characters × 6 pt): little to stretch into.
     const [, , justifiedBox] = boxes as [TextBox, TextBox, TextBox, TextBox];
-    expect(justifiedBox.box[2] - justifiedBox.box[0]).toBeLessThan(181);
+    expect(justifiedBox.box[2] - justifiedBox.box[0]).toBeLessThan(180);
+    expect(justifiedBox.box[2] - justifiedBox.box[0]).toBeGreaterThan(176);
     expect(textOf(justifiedBox)).toEqual([justified.filter((text) => text !== '').join('\n')]);
+  });
+
+  it('joins the pieces MuPDF cuts a stretched justified line into', async () => {
+    const full = 'x'.repeat(50);
+    // Three 4-letter words spread over 20…320 (gaps of 114 pt): MuPDF reports each as a line.
+    const spread = (y: number, words: string[]) =>
+      words.map((word, at) => line('courier', 10, 20 + at * 138, y, word));
+    const layout = await layoutOf(
+      [
+        line('courier', 10, 20, 440, full),
+        ...spread(427, ['aaaa', 'bbbb', 'cccc']),
+        line('courier', 10, 20, 414, full),
+        line('courier', 10, 20, 401, 'son'),
+      ].join('\n'),
+    );
+    const boxes = textBoxes(layout, []);
+    expect(boxes.map(textOf)).toEqual([[`${full}\naaaa bbbb cccc\n${full}\nson`]]);
+    expect((boxes[0] as TextBox).paragraphs.map((paragraph) => paragraph.align)).toEqual(['both']);
+  });
+
+  it('does not join columns of one row that are not evenly spread', async () => {
+    const layout = await layoutOf(
+      [
+        line('courier', 10, 20, 440, 'x'.repeat(50)),
+        line('courier', 10, 20, 427, 'Ad'),
+        line('courier', 10, 120, 427, 'Deger'),
+        line('courier', 10, 300, 427, 'Son'),
+        line('courier', 10, 20, 414, 'x'.repeat(50)),
+      ].join('\n'),
+    );
+    const text = textBoxes(layout, []).flatMap(textOf).join('|');
+    expect(text).toContain('Deger');
+    expect(text).not.toContain('Ad Deger');
+  });
+
+  it('joins two pieces only when together they span the block from edge to edge', async () => {
+    const full = 'x'.repeat(50);
+    const joined = textBoxes(
+      await layoutOf(
+        [
+          line('courier', 10, 20, 440, full),
+          line('courier', 10, 20, 427, 'Ad'),
+          line('courier', 10, 296, 427, 'Sonn'),
+          line('courier', 10, 20, 414, full),
+        ].join('\n'),
+      ),
+      [],
+    );
+    expect(joined.flatMap(textOf)).toEqual([`${full}\nAd Sonn\n${full}`]);
+    const apart = textBoxes(
+      await layoutOf(
+        [
+          line('courier', 10, 20, 440, full),
+          line('courier', 10, 60, 427, 'Ad'),
+          line('courier', 10, 296, 427, 'Sonn'),
+          line('courier', 10, 20, 414, full),
+        ].join('\n'),
+      ),
+      [],
+    );
+    expect(apart.flatMap(textOf).join('|')).not.toContain('Ad Sonn');
+    const short = textBoxes(
+      await layoutOf(
+        [
+          line('courier', 10, 20, 440, full),
+          line('courier', 10, 20, 427, 'Ad'),
+          line('courier', 10, 200, 427, 'Son'),
+          line('courier', 10, 20, 414, full),
+        ].join('\n'),
+      ),
+      [],
+    );
+    expect(short.flatMap(textOf).join('|')).not.toContain('Ad Sonn');
+  });
+
+  it('keeps the two ends of a footer apart: nothing else in its block to measure against', async () => {
+    const boxes = textBoxes(
+      await layoutOf(
+        [
+          line('courier', 10, 20, 440, 'x'.repeat(50)),
+          line('courier', 10, 20, 60, 'Yayin 15'),
+          line('courier', 10, 272, 60, 'Sayfa 3'),
+        ].join('\n'),
+      ),
+      [],
+    );
+    expect(boxes.flatMap(textOf)).toEqual(['x'.repeat(50), 'Yayin 15', 'Sayfa 3']);
+  });
+
+  it('justifies a paragraph whose lines all reach the column edge, the last too', async () => {
+    const full = 'x'.repeat(50);
+    const boxes = textBoxes(
+      await layoutOf([440, 427, 414].map((y) => line('courier', 10, 20, y, full)).join('\n')),
+      [],
+    );
+    expect(boxes.flatMap((box) => box.paragraphs.map((paragraph) => paragraph.align))).toEqual(['both']);
+  });
+
+  it('justifies a short paragraph like the justified ones of its column', async () => {
+    const full = 'x'.repeat(50);
+    const boxes = textBoxes(
+      await layoutOf(
+        [
+          line('courier', 10, 20, 440, full),
+          line('courier', 10, 20, 427, full),
+          line('courier', 10, 20, 414, 'abc'),
+          // A paragraph of two lines: the first reaches the column edge, the last does not.
+          line('courier', 10, 20, 380, full),
+          line('courier', 10, 20, 367, 'def'),
+          // Another that does not reach it, and one in the next column that has nothing to follow.
+          line('courier', 10, 20, 330, 'x'.repeat(40)),
+          line('courier', 10, 20, 317, 'ghi'),
+          line('courier', 10, 20, 300, 'x'.repeat(48)),
+          line('courier', 10, 20, 287, 'jkl'),
+          line('courier', 10, 220, 150, 'x'.repeat(20)),
+          line('courier', 10, 220, 137, 'mno'),
+        ].join('\n'),
+      ),
+      [],
+    );
+    const aligns = boxes.flatMap((box) =>
+      box.paragraphs.map((paragraph) => [textOf(box)[0]?.slice(0, 3), paragraph.align]),
+    );
+    expect(aligns).toContainEqual(['xxx', 'both']);
+    expect(aligns.filter(([, align]) => align === 'both')).toHaveLength(2);
+    expect(aligns.filter(([, align]) => align === 'left').length).toBeGreaterThanOrEqual(3);
   });
 
   it('makes one paragraph of each bullet and numbered item, and keeps the list in one box', async () => {
@@ -172,6 +299,7 @@ describe('grouping lines into text boxes', () => {
       bold: false,
       italic: false,
       mono: false,
+      serif: false,
       color: 0,
     });
     // "ab" at 40…52, "cd" at 60…72: the gap of 8 pt is wider than a quarter of the size.
@@ -202,6 +330,44 @@ describe('grouping lines into text boxes', () => {
       ],
     };
     expect(textOf(textBoxes(tight, [])[0] as TextBox)).toEqual(['abcd']);
+  });
+
+  it('names a family Word does not know by the class its font flags say', () => {
+    const char = (c: string, x: number, overrides: Partial<LayoutChar>): LayoutChar => ({
+      c,
+      box: [x, 90, x + 6, 102],
+      size: 10,
+      font: 'Mystery',
+      bold: false,
+      italic: false,
+      mono: false,
+      serif: false,
+      color: 0,
+      ...overrides,
+    });
+    const page = (chars: LayoutChar[]): PageLayout => ({
+      width: WIDTH,
+      height: PAGE,
+      blocks: [{ kind: 'text', box: [40, 90, 100, 102], lines: [{ box: [40, 90, 100, 102], chars }] }],
+      rulings: [],
+      marks: [],
+    });
+    const fontsOf = (layout: PageLayout) =>
+      (textBoxes(layout, [])[0] as TextBox).paragraphs[0]?.lines[0]?.runs.map((item) => item.font);
+    // A sans family whose bold style is flagged serif (as MuPDF reports for some embedded fonts)
+    // stays one family: the regular characters outvote it.
+    expect(
+      fontsOf(
+        page([
+          char('a', 40, {}),
+          char('b', 46, {}),
+          char('c', 52, { bold: true, serif: true }),
+          char('d', 58, { font: 'MinionPro', serif: true }),
+          char('e', 64, { font: 'Unknown2', serif: true }),
+          char('f', 70, { font: 'Unknown3', mono: true }),
+        ]),
+      ),
+    ).toEqual(['Arial', 'Arial', 'Times New Roman', 'Courier New']);
   });
 
   it('drops lines of whitespace only', async () => {

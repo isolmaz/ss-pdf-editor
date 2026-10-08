@@ -248,6 +248,28 @@ describe('exportOffice', () => {
     expect(wordFontName('NimbusRoman')).toBe('Times New Roman');
     expect(wordFontName('Calibri')).toBe('Calibri');
   });
+
+  it('answers the families Word does not ship with the standard font of their kind', () => {
+    for (const sans of ['HelveticaWorld', 'HelveticaNeueLTStd', 'Univers', 'MyriadPro', 'Frutiger']) {
+      expect(wordFontName(sans)).toBe('Arial');
+    }
+    for (const serif of ['MinionPro', 'Garamond', 'PalatinoLinotype', 'TimesTen']) {
+      expect(wordFontName(serif)).toBe('Times New Roman');
+    }
+    expect(wordFontName('CourierStd')).toBe('Courier New');
+    for (const kept of ['SegoeUI', 'TrebuchetMS', 'CalibriLight', 'NotoSans', 'Verdana']) {
+      expect(wordFontName(kept, { serif: true, mono: false })).toBe(kept.replace(/([a-z])([A-Z])/g, '$1 $2'));
+    }
+  });
+
+  it('falls back to the class of an unknown family, and only when told the class', () => {
+    expect(wordFontName('Mystery')).toBe('Mystery');
+    expect(wordFontName('Mystery', { serif: false, mono: false })).toBe('Arial');
+    expect(wordFontName('Mystery', { serif: true, mono: false })).toBe('Times New Roman');
+    expect(wordFontName('Mystery', { serif: true, mono: true })).toBe('Courier New');
+    // A table entry beats the class.
+    expect(wordFontName('HelveticaWorld', { serif: true, mono: false })).toBe('Arial');
+  });
 });
 
 describe('exportOffice → DOCX paragraphs', () => {

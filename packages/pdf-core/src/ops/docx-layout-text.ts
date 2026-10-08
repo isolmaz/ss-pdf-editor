@@ -56,6 +56,7 @@ const MIN_LINE = 1.15;
 /** Width slack: a substitute font with wider metrics must not overflow; `wrap="none"` is also set. */
 const WIDTH_FACTOR = 1.03;
 const WIDTH_PAD = 2;
+const JUSTIFIED_FACTOR = 1.015;
 
 /* ------------------------------------------------------------------ *
  * lines
@@ -128,8 +129,30 @@ function gapBetween(previous: LayoutChar, char: LayoutChar, direction: Direction
   return char.box[0] - previous.box[2];
 }
 
+/**
+ * The families a page mostly sets in serif faces, by the characters' flags: the flag is read
+ * from each style's own font descriptor and a family's bold may disagree with its regular, so
+ * the family is judged as a whole.
+ */
+function serifFamilies(layout: PageLayout): ReadonlySet<string> {
+  const votes = new Map<string, number>();
+  for (const block of layout.blocks) {
+    if (block.kind !== 'text') continue;
+    for (const line of block.lines) {
+      for (const char of line.chars)
+        votes.set(char.font, (votes.get(char.font) ?? 0) + (char.serif ? 1 : -1));
+    }
+  }
+  return new Set([...votes].filter(([, vote]) => vote > 0).map(([family]) => family));
+}
+
 /** Runs of a line: split on font, size (0.5 pt), weight, slant, colour and link. */
-function runsOf(chars: readonly LayoutChar[], links: readonly SceneLink[], direction: Direction): TextRun[] {
+function runsOf(
+  chars: readonly LayoutChar[],
+  links: readonly SceneLink[],
+  direction: Direction,
+  serifs: ReadonlySet<string>,
+): TextRun[] {
   // Characters with a space between words where the PDF has none but a gap.
   const items: { c: string; source: LayoutChar; link: string | null; space: boolean }[] = [];
   for (let index = 0; index < chars.length; index += 1) {
@@ -161,7 +184,10 @@ function runsOf(chars: readonly LayoutChar[], links: readonly SceneLink[], direc
 
   const runs: TextRun[] = [];
   for (const item of items) {
-    const font = wordFontName(item.source.font);
+    const font = wordFontName(item.source.font, {
+      serif: serifs.has(item.source.font),
+      mono: item.source.mono,
+    });
     const last = runs[runs.length - 1];
     if (
       last !== undefined &&
@@ -189,14 +215,14 @@ function runsOf(chars: readonly LayoutChar[], links: readonly SceneLink[], direc
 }
 
 /** A line as a row, or `null` when it holds nothing but whitespace. */
-function rowOf(line: LayoutLine, links: readonly SceneLink[]): Row | null {
+function rowOf(line: LayoutLine, links: readonly SceneLink[], serifs: ReadonlySet<string>): Row | null {
   const solid = line.chars.filter((char) => !isSpace(char));
   if (solid.length === 0) return null;
   const first = line.chars.indexOf(solid[0] as LayoutChar);
   const last = line.chars.lastIndexOf(solid[solid.length - 1] as LayoutChar);
   const chars = line.chars.slice(first, last + 1);
   const direction = directionOf(solid);
-  const runs = runsOf(chars, links, direction);
+  const runs = runsOf(chars, links, direction, serifs);
   const text = runs.map((run) => run.text).join('');
   let x0 = Number.POSITIVE_INFINITY;
   let y0 = Number.POSITIVE_INFINITY;
@@ -212,6 +238,71 @@ function rowOf(line: LayoutLine, links: readonly SceneLink[]): Row | null {
   const sample = solid.find((char) => Math.round(char.size * 2) / 2 === Math.round(size * 2) / 2) ?? solid[0];
   const baseline = (sample as LayoutChar).box[3] - DESCENT * size;
   return { runs, text, x0, x1, y0, y1, size, baseline, bullet: BULLET.test(text), direction };
+}
+
+/**
+ * MuPDF cuts a justified line whose words are stretched far apart into one "line" per piece
+ * (the pieces of a block read left to right on one baseline). They are one line again when the
+ * gaps between the pieces are all the same (justification stretches every gap alike) and the
+ * last piece reaches the right edge of the block's other lines, or, for a single gap, when the
+ * pieces span those lines from edge to edge. Pieces that are columns of a row (unequal gaps),
+ * or a block with no other line to measure against (a footer's two ends), stay apart.
+ */
+function joinPieces(lines: readonly LayoutLine[]): LayoutLine[] {
+  const extent = (item: LayoutLine) => {
+    const solid = item.chars.filter((char) => !isSpace(char));
+    return {
+      x0: Math.min(...solid.map((char) => char.box[0])),
+      x1: Math.max(...solid.map((char) => char.box[2])),
+    };
+  };
+  const filled = lines.filter((item) => item.chars.some((char) => !isSpace(char)));
+  const out: LayoutLine[] = [];
+  let at = 0;
+  while (at < lines.length) {
+    const first = lines[at] as LayoutLine;
+    const pieces = [first];
+    if (filled.includes(first)) {
+      let end = at + 1;
+      while (end < lines.length) {
+        const next = lines[end] as LayoutLine;
+        const last = pieces[pieces.length - 1] as LayoutLine;
+        const sameBaseline =
+          filled.includes(next) &&
+          Math.abs(next.box[1] - first.box[1]) <= 1 &&
+          Math.abs(next.box[3] - first.box[3]) <= 1 &&
+          extent(next).x0 > extent(last).x1;
+        if (!sameBaseline) break;
+        pieces.push(next);
+        end += 1;
+      }
+    }
+    const others = filled.filter((item) => !pieces.includes(item));
+    const left = Math.min(...others.map((item) => extent(item).x0));
+    const right = Math.max(...others.map((item) => extent(item).x1));
+    const gaps = pieces
+      .slice(1)
+      .map((piece, index) => extent(piece).x0 - extent(pieces[index] as LayoutLine).x1);
+    const even = gaps.every((gap) => Math.abs(gap - (gaps[0] as number)) <= 1.5);
+    const reachesRight = extent(pieces[pieces.length - 1] as LayoutLine).x1 >= right - 2.5;
+    const spans = reachesRight && extent(first).x0 <= left + 2;
+    if (pieces.length > 1 && others.length > 0 && even && (gaps.length > 1 ? reachesRight : spans)) {
+      out.push({
+        box: [
+          Math.min(...pieces.map((piece) => piece.box[0])),
+          Math.min(...pieces.map((piece) => piece.box[1])),
+          Math.max(...pieces.map((piece) => piece.box[2])),
+          Math.max(...pieces.map((piece) => piece.box[3])),
+        ],
+        chars: pieces.flatMap((piece) => piece.chars),
+      });
+      at += pieces.length;
+    } else {
+      out.push(first);
+      at += 1;
+    }
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ *
@@ -270,7 +361,10 @@ function alignmentOf(rows: readonly Row[], pageWidth: number): Align {
   const right = Math.max(...rows.map((row) => row.x1));
   const last = rows[rows.length - 1] as Row;
   const full = rows.filter((row) => Math.abs(row.x0 - left) <= 1.5 && Math.abs(row.x1 - right) <= 1.5);
-  if (full.length >= 2 && last.x1 < right - 1.5) return 'both';
+  // Every line the full width, the last too, is a justified paragraph that goes on (a column's
+  // end, a page's); two lines are not enough to tell it from a ragged pair.
+  const lastFull = last.x1 >= right - 1.5;
+  if (full.length >= (lastFull ? 3 : 2)) return 'both';
   const leftSpread = Math.max(...rows.map((row) => row.x0)) - left;
   const middle = ((rows[0] as Row).x0 + (rows[0] as Row).x1) / 2;
   if (leftSpread > 1.5 && rows.every((row) => Math.abs((row.x0 + row.x1) / 2 - middle) <= EDGE))
@@ -355,6 +449,24 @@ function stack(group: Para[], next: Para): boolean {
   return true;
 }
 
+/**
+ * Whether a left-aligned paragraph of several lines is justified like the paragraphs around
+ * it: it starts where one of theirs does and every line but the last reaches the right edge
+ * theirs reach (a paragraph of two lines is too short to show it on its own).
+ */
+function justifiedLikeColumn(para: Para, justified: readonly Para[]): boolean {
+  const left = paragraphLeft(para);
+  const last = para.rows[para.rows.length - 1] as Row;
+  return justified.some((ref) => {
+    const right = paragraphRight(ref);
+    return (
+      Math.abs(paragraphLeft(ref) - left) <= EDGE &&
+      last.x1 <= right + 1.5 &&
+      para.rows.slice(0, -1).every((row) => Math.abs(row.x1 - right) <= 1.5)
+    );
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * boxes
  * ------------------------------------------------------------------ */
@@ -365,8 +477,12 @@ function upright(group: readonly Para[]): TextBox {
   const left = Math.min(...rows.map((row) => row.x0));
   const right = Math.max(...rows.map((row) => row.x1));
   const justified = group.some((para) => para.align === 'both');
-  // A justified line is stretched to the box: no slack there, or the right edge moves.
-  const width = justified ? right - left + 0.5 : (right - left) * WIDTH_FACTOR + WIDTH_PAD;
+  // A justified line is stretched to the box, so the slack is small or the right edge moves; but
+  // typesetters squeeze the spaces of a tight line below their natural width, and a line that
+  // does not fit in the substitute font wraps, pushing the rest of the box out of its frame.
+  const width = justified
+    ? (right - left) * JUSTIFIED_FACTOR + 0.5
+    : (right - left) * WIDTH_FACTOR + WIDTH_PAD;
   const kind = classOf(first.align);
   const x0 = kind === 'center' ? (left + right) / 2 - width / 2 : kind === 'right' ? right - width : left;
   const top = boxTop((first.rows[0] as Row).baseline, first.lineHeight);
@@ -409,7 +525,9 @@ function rotated(row: Row): TextBox {
  * blocks as long as the size, pitch and edge rules hold; a picture block ends both.
  */
 export function textBoxes(layout: PageLayout, links: readonly SceneLink[]): TextBox[] {
-  const boxes: TextBox[] = [];
+  // Stacked paragraphs per box, or a rotated box; built once the page's alignments are known.
+  const parts: (Para[] | TextBox)[] = [];
+  const serifs = serifFamilies(layout);
   let pending: Pending | null = null;
   let group: Para[] = [];
   const flush = () => {
@@ -417,14 +535,14 @@ export function textBoxes(layout: PageLayout, links: readonly SceneLink[]): Text
       const para = paragraphOf(pending.rows, layout.width);
       pending = null;
       if (group.length === 0 || !stack(group, para)) {
-        if (group.length > 0) boxes.push(upright(group));
+        if (group.length > 0) parts.push(group);
         group = [para];
       }
     }
   };
   const end = () => {
     flush();
-    if (group.length > 0) boxes.push(upright(group));
+    if (group.length > 0) parts.push(group);
     group = [];
   };
   for (const block of layout.blocks) {
@@ -432,12 +550,12 @@ export function textBoxes(layout: PageLayout, links: readonly SceneLink[]): Text
       end();
       continue;
     }
-    for (const line of block.lines) {
-      const row = rowOf(line, links);
+    for (const line of joinPieces(block.lines)) {
+      const row = rowOf(line, links, serifs);
       if (row === null) continue;
       if (row.direction !== 'right') {
         end();
-        boxes.push(rotated(row));
+        parts.push(rotated(row));
       } else if (pending !== null && continues(pending, row)) {
         pending.rows.push(row);
       } else {
@@ -447,7 +565,14 @@ export function textBoxes(layout: PageLayout, links: readonly SceneLink[]): Text
     }
   }
   end();
-  return boxes;
+  const paragraphs = parts.filter((part): part is Para[] => Array.isArray(part)).flat();
+  const justified = paragraphs.filter((para) => para.align === 'both');
+  for (const para of paragraphs) {
+    if (para.align === 'left' && para.rows.length >= 2 && justifiedLikeColumn(para, justified)) {
+      para.align = 'both';
+    }
+  }
+  return parts.map((part) => (Array.isArray(part) ? upright(part) : part));
 }
 
 /* ------------------------------------------------------------------ *

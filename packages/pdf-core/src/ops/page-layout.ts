@@ -33,6 +33,8 @@ export interface LayoutChar {
   readonly bold: boolean;
   readonly italic: boolean;
   readonly mono: boolean;
+  /** The font's own serif flag (unreliable between the styles of one family). */
+  readonly serif: boolean;
   /** `0xRRGGBB`. */
   readonly color: number;
 }
@@ -383,6 +385,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
           bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
           italic: font.isItalic() || /italic|oblique/i.test(name),
           mono: font.isMono(),
+          serif: font.isSerif(),
         };
         const xs = [quad[0], quad[2], quad[4], quad[6]];
         const ys = [quad[1], quad[3], quad[5], quad[7]];

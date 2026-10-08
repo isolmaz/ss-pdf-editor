@@ -145,10 +145,42 @@ const FAMILY_NAMES: Readonly<Record<string, string>> = {
   DejaVuSansMono: 'DejaVu Sans Mono',
 };
 
-/** `TimesNewRomanPS` → `Times New Roman`; `SegoeUI` → `Segoe UI`; `Calibri` stays. */
-export function wordFontName(family: string): string {
+/**
+ * Families by what they are called, matched on the lower-cased name without punctuation: the
+ * ones Word (or any Windows machine) ships are kept by name, the rest of the sans, serif and
+ * monospaced families PDFs embed are answered by the metric-compatible standard font of their
+ * kind (`HelveticaNeueLTStd`, `Univers`, `MyriadPro` → Arial; `MinionPro`, `Garamond` →
+ * Times New Roman). Word and LibreOffice substitute an unknown name with a serif face.
+ */
+const KEPT =
+  /^(?:calibri|cambria|candara|corbel|constantia|consolas|segoe|verdana|georgia|tahoma|trebuchet|noto)/;
+const SANS =
+  /^(?:helvetica|arial|univers|frutiger|myriad|nimbussans|liberationsans|swiss|avenir|futura|gillsans|lato|roboto|opensans|sourcesans|ptsans|franklin)/;
+const SERIF =
+  /^(?:times|minion|garamond|nimbusroman|liberationserif|palatino|bookman|baskerville|caslon|bodoni|didot|centuryschool|newcentury|charter|sabon|utopia)/;
+const MONO = /^(?:courier|nimbusmono|liberationmono|lucidaconsole)/;
+
+/** What the font's own flags say, for a family the table does not know. */
+export interface FontKind {
+  readonly serif: boolean;
+  readonly mono: boolean;
+}
+
+/**
+ * `TimesNewRomanPS` → `Times New Roman`; `SegoeUI` → `Segoe UI`; `Calibri` stays;
+ * `HelveticaNeueLTStd` → `Arial`. An unknown family is named as it is without `kind`, and by
+ * its class (monospaced, serif, else sans) with it.
+ */
+export function wordFontName(family: string, kind?: FontKind): string {
   const known = FAMILY_NAMES[family];
   if (known !== undefined) return known;
+  const key = family.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!KEPT.test(key)) {
+    if (SANS.test(key)) return 'Arial';
+    if (SERIF.test(key)) return 'Times New Roman';
+    if (MONO.test(key)) return 'Courier New';
+    if (kind !== undefined) return kind.mono ? 'Courier New' : kind.serif ? 'Times New Roman' : 'Arial';
+  }
   return family
     .replace(/PS$/, '')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
