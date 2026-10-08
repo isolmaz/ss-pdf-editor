@@ -8,7 +8,10 @@
  *    with no margins. A page above Word's 22-inch limit is shrunk by one factor on both
  *    sides (`wordPageScale`); the picture is rendered from the original size, so shrinking
  *    the page loses no detail.
- *  - The picture is 200 dpi of the original page, capped at 40 megapixels. JPEG (quality 92)
+ *  - The picture is 200 dpi of the original page from its corner, at one scale on both axes,
+ *    capped at 40 megapixels, and shown at the section's size to the twip, so the page keeps
+ *    its size. Its pixel count is the one a renderer draws the extent into, so it copies
+ *    the pixels instead of resampling them (see `coverPixels`). JPEG (quality 92)
  *    when raster images cover at least half of the page — photographs, scans — where it is a
  *    fraction of the size; PNG otherwise (text and vector art stay crisp, and a small logo
  *    does not put JPEG artefacts around the text).
@@ -59,7 +62,7 @@ export interface PageImage {
   readonly bytes: Uint8Array;
   readonly pixelWidth: number;
   readonly pixelHeight: number;
-  /** The resolution the page was drawn at (the lower of its two axes). */
+  /** The resolution the page was drawn at. */
   readonly dpi: number;
 }
 
@@ -89,37 +92,77 @@ function mostlyImages(mupdf: Mupdf, page: Page): boolean {
   return covered >= PHOTO_SHARE * (x1 - x0) * (y1 - y0);
 }
 
+/**
+ * A side of the page in points as Word keeps it: a whole number of twips (at most 0.025 pt from
+ * the page's). The section's `w:pgSz` and the picture's extent both come from this, so the
+ * picture is exactly the page (EMU = twips × 635) and LibreOffice, which keeps twips, does not
+ * stretch it.
+ */
+const wordSide = (points: number): number => Math.round(points * TWIPS) / TWIPS;
+
+/** Float noise below this (the page 612 pt at 200 dpi is 1700.0000000000002 px) is not a pixel. */
+const PIXEL_EPSILON = 1e-6;
+
+/**
+ * The pixels of a side of the picture. A renderer draws a picture into the whole pixels its
+ * extent reaches into (a viewer at 200 dpi: the extent in pixels, rounded up) and resamples it
+ * to that count unless it already has it; an image of exactly that many pixels is copied, one
+ * pixel to one, which keeps a noisy scan from being blurred. The extent is the page's side in
+ * whole twips (`wordSide`, undone from the shrinking `scale`), drawn at `perPoint` pixels per point.
+ */
+const coverPixels = (points: number, scale: number, perPoint: number): number =>
+  Math.max(1, Math.ceil((wordSide(points * scale) / scale) * perPoint - PIXEL_EPSILON));
+
+/**
+ * The most pixels per point at which a `width × height` page, drawn into the whole pixels that
+ * reach over it (under two more than the exact count on each side, counting the twip rounding),
+ * stays within `MAX_PIXELS`: the positive root of `(width · k + 2)(height · k + 2) = MAX_PIXELS`.
+ */
+function cappedPerPoint(width: number, height: number): number {
+  const area = width * height;
+  const sides = (width + height) * 2;
+  return (Math.sqrt(sides * sides + 4 * area * (MAX_PIXELS - 4)) - sides) / (2 * area);
+}
+
 /** The page, drawn at 200 dpi (fewer when that would pass 40 megapixels), as JPEG (mostly pictures) or PNG. */
 function renderPage(mupdf: Mupdf, page: Page, index: number): PageImage {
   const [x0, y0, x1, y1] = page.getBounds();
   const width = x1 - x0;
   const height = y1 - y0;
-  const capped = Math.sqrt(MAX_PIXELS / (width * height));
-  const perPoint = Math.min(RENDER_DPI / 72, capped);
-  // Rounding down under the cap keeps the product at or below it.
-  const whole = perPoint === capped ? Math.floor : Math.round;
-  const pixelWidth = Math.max(1, whole(width * perPoint));
-  const pixelHeight = Math.max(1, whole(height * perPoint));
-  // Each side is scaled to its own pixel count, so the pixmap is exactly that size.
-  const place = mupdf.Matrix.concat(
-    mupdf.Matrix.translate(-x0, -y0),
-    mupdf.Matrix.scale(pixelWidth / width, pixelHeight / height),
-  );
+  const scale = wordPageScale(width, height);
+  const perPoint = Math.min(RENDER_DPI / 72, cappedPerPoint(width, height));
+  const pixelWidth = coverPixels(width, scale, perPoint);
+  const pixelHeight = coverPixels(height, scale, perPoint);
+  // One scale for both axes, from the page's corner: pixel `(i, j)` is the square
+  // `[i, i + 1] × [j, j + 1]` of the page at `perPoint` pixels per point, so the picture laid
+  // down at that same scale is the page pixel for pixel; stretching the page to a whole number
+  // of pixels would shift its far edge by a fraction of one.
+  const place = mupdf.Matrix.concat(mupdf.Matrix.translate(-x0, -y0), mupdf.Matrix.scale(perPoint, perPoint));
   const photographic = mostlyImages(mupdf, page);
-  const pixmap = page.toPixmap(place, mupdf.ColorSpace.DeviceRGB, false, true);
+  const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, pixelWidth, pixelHeight], false);
   try {
+    // White paper under what the page draws.
+    pixmap.clear(255);
+    const device = new mupdf.DrawDevice(place, pixmap);
+    try {
+      // `run` draws what a viewer shows: the contents, the annotations and the form fields.
+      page.run(device, mupdf.Matrix.identity);
+      device.close();
+    } finally {
+      device.destroy();
+    }
     // `slice` copies the bytes out of the engine's memory.
     const bytes = photographic ? pixmap.asJPEG(JPEG_QUALITY).slice() : pixmap.asPNG().slice();
     return {
       index,
       width,
       height,
-      scale: wordPageScale(width, height),
+      scale,
       extension: photographic ? 'jpeg' : 'png',
       bytes,
       pixelWidth,
       pixelHeight,
-      dpi: Math.min((pixelWidth / width) * 72, (pixelHeight / height) * 72),
+      dpi: perPoint * 72,
     };
   } finally {
     pixmap.destroy();
@@ -162,11 +205,12 @@ const STYLES_XML =
   '</w:styles>';
 
 /**
- * A side of the page in points as Word keeps it: a whole number of twips. The section's
- * `w:pgSz` and the picture's extent both come from this, so the picture is exactly the page
- * (EMU = twips × 635) and the renderer never resamples it.
+ * LibreOffice lays an anchored picture one twip above where the file puts it, whatever the page
+ * size (a picture at 0 pt comes out at 0.05 pt above the page's top edge, 0.14 px at 200 dpi — enough
+ * to resample the whole page and lose several percent of SSIM). The offset cancels it: one twip
+ * is invisible in Word.
  */
-const wordSide = (points: number): number => Math.round(points * TWIPS) / TWIPS;
+const LIBREOFFICE_LIFT = 1 / TWIPS;
 
 /**
  * One page's paragraph: the anchored picture, in a run and a paragraph a point high.
@@ -180,7 +224,7 @@ function pageParagraphXml(image: PageImage, number: number, name: string, sectio
     name,
     rid: imageRelId(number),
     x: 0,
-    y: 0,
+    y: LIBREOFFICE_LIFT,
     width: wordSide(image.width * image.scale),
     height: wordSide(image.height * image.scale),
   });
