@@ -23,6 +23,17 @@ async function controlledPage(page: Page, origin: string): Promise<void> {
   });
 }
 
+/**
+ * Retires the test's page before its origin. The page idle-warms its lazy chunks on its own
+ * schedule (`main.tsx`) and the origin's `close()` can take seconds to drain, so a page left
+ * alive meanwhile asks a refusing server for chunks: the worker answers 503 "Offline Missing"
+ * and the console-error referee fails a test whose assertions all held.
+ */
+async function closeSite(page: Page, site: { readonly close: () => Promise<void> }): Promise<void> {
+  await page.close();
+  await site.close();
+}
+
 const checkForUpdate = (page: Page) =>
   page.evaluate(async () => {
     await (await navigator.serviceWorker.getRegistration('/editor/'))?.update();
@@ -53,7 +64,7 @@ test('a new release raises the update banner, which can be dismissed while the n
       }),
     ).toBe('installed');
   } finally {
-    await site.close();
+    await closeSite(page, site);
   }
 });
 
@@ -82,8 +93,23 @@ test('Refresh on the update banner hands over to the waiting worker and reloads 
         return { waiting: registration?.waiting ?? null, active: registration?.active?.state };
       }),
     ).toEqual({ waiting: null, active: 'activated' });
+
+    // The reloaded page warms its lazy chunks once the browser is idle. Through the new
+    // worker they load: the swap left a working cache and network path behind.
+    await page.waitForFunction(
+      () =>
+        performance
+          .getEntriesByType('resource')
+          .some(
+            (entry) =>
+              entry.name.includes('/editor/assets/CommandPalette-') &&
+              (entry as PerformanceResourceTiming).responseStatus === 200,
+          ),
+      undefined,
+      { timeout: 30_000 },
+    );
   } finally {
-    await site.close();
+    await closeSite(page, site);
   }
 });
 
