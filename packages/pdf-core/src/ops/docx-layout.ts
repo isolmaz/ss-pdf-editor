@@ -30,13 +30,8 @@ import {
   zipped,
 } from './docx-drawing';
 import { embedFonts } from './docx-fonts';
-import {
-  type FlaggedWord,
-  isScanPage,
-  type OcrOptions,
-  readScanPage,
-  type ScanPage,
-} from './docx-layout-ocr';
+import { isMixedPage, isScanPage, visibleBoxes } from './docx-layout-mixed';
+import { type FlaggedWord, type OcrOptions, readScanPage, type ScanPage } from './docx-layout-ocr';
 import { sceneItemXml } from './docx-layout-shapes';
 import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
 import { type OpenFont, openFontFiles } from './docx-ocr-font';
@@ -82,6 +77,10 @@ export interface LayoutDocx {
     readonly pages: readonly number[];
     readonly flagged: readonly FlaggedWord[];
     readonly unavailable: readonly number[];
+    /** Pages with real text over a scan (1-based): the text stays as it is and the scan's words were read with OCR. */
+    readonly mixed: readonly number[];
+    /** Pages whose invisible text layer was not trusted (unreadable characters, turned lines) and were read with OCR instead. */
+    readonly untrusted: readonly number[];
     /** The open font families the scans' text is set in and the package carries (`docx-ocr-font.ts`). */
     readonly families: readonly string[];
   };
@@ -165,6 +164,8 @@ export async function writeLayoutDocx(
   const textless: number[] = [];
   const ocrPages: number[] = [];
   const unavailable: number[] = [];
+  const mixedPages: number[] = [];
+  const untrusted: number[] = [];
   const flagged: FlaggedWord[] = [];
   let shapes = 0;
   let pictures = 0;
@@ -187,6 +188,9 @@ export async function writeLayoutDocx(
       if (isScanPage(scene)) {
         scan = await readScanPage(mupdf, page, scene, ocr, context.signal);
         if (scan === null) unavailable.push(index + 1);
+      } else if (ocr !== null && isMixedPage(scene)) {
+        // Real text over a scan: the text stays vector text, the scan's words are read with OCR (or `null`: nothing scanned to read).
+        scan = await readScanPage(mupdf, page, scene, ocr, context.signal, visibleBoxes(scene));
       }
     } finally {
       page.destroy();
@@ -194,10 +198,16 @@ export async function writeLayoutDocx(
     const scale = wordPageScale(scene.width, scene.height);
     if (scale < 1) scaled.push({ page: index + 1, scale });
     const section = pageSectionXml(scene.width * scale, scene.height * scale);
-    const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face));
+    const vector = scan === null || scan.mixed;
+    const sceneBoxes = vector
+      ? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face))
+      : [];
+    const boxes = [...sceneBoxes, ...(scan?.boxes ?? [])];
     const items = scan?.items ?? scene.items;
     if (scan !== null) {
-      ocrPages.push(index + 1);
+      if (scan.mixed) mixedPages.push(index + 1);
+      else ocrPages.push(index + 1);
+      if (scan.layerRejected) untrusted.push(index + 1);
       scanBoxes.push(...scan.boxes);
       if (scan.open !== null && !openFonts.has(scan.open.name)) openFonts.set(scan.open.name, scan.open);
       for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
@@ -210,7 +220,7 @@ export async function writeLayoutDocx(
       else rasters += 1;
     }
     // The scene reads the page's text without pictures, so its blocks are text.
-    for (const block of scan === null ? scene.text.blocks : []) {
+    for (const block of vector ? scene.text.blocks : []) {
       for (const line of block.kind === 'text' ? block.lines : []) {
         for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
       }
@@ -282,6 +292,8 @@ export async function writeLayoutDocx(
       pages: ocrPages,
       flagged,
       unavailable,
+      mixed: mixedPages,
+      untrusted,
       families: [...new Set(openFiles.map((file) => file.family))],
     },
   };

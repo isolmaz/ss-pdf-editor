@@ -6,6 +6,10 @@
  *    from the `recognize` the caller supplied — or, when the PDF already carries an invisible
  *    text layer (this app's own OCR leaves one), from that layer, and the page is not rendered
  *    for OCR at all.
+ *    A layer that fails `layerTrusted` (replacement characters, turned lines) is not reused: the
+ *    page is read with OCR.
+ *  - A mixed page (real text over a scan, `docx-layout-mixed.ts`) is read the same way with the
+ *    real text masked out of the render; the writer keeps that text as it is.
  *  - `ocrTextBoxes` makes the words positioned text boxes; `ocrBackground` makes the page colour
  *    a page-sized shape and everything else a picture in place. The page's own pictures are
  *    replaced by those; its vector shapes stay above them.
@@ -17,6 +21,7 @@ import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics } from './docx-fonts';
+import { dropMasked, hasScanInk, layerTrusted, maskBoxes } from './docx-layout-mixed';
 import { chooseOpenFont, type OpenFont, ocrAdvance } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
@@ -48,12 +53,12 @@ export interface OcrOptions {
   readonly englishAlone?: boolean;
 }
 
-/** The pictures cover at least this much of the page for it to be a scan. */
-const SCAN_COVER = 0.5;
 /** A scan is read at its own resolution within these bounds, dpi. */
 const MIN_DPI = 150;
 const MAX_DPI = 300;
 const DEFAULT_DPI = 200;
+/** A mixed page whose scanned words are read with a lower mean confidence than this (0–100) is a picture, not text. */
+const MIXED_CONFIDENCE = 50;
 /** Words from a text layer are as sure as the layer's author. */
 const LAYER_CONFIDENCE = 100;
 
@@ -74,22 +79,10 @@ export interface ScanPage {
   readonly regions: number;
   /** The open family the text is set in (`chooseOpenFont`); `null` when it is set in the stand-ins. */
   readonly open: OpenFont | null;
-}
-
-const isVisible = (char: { readonly c: string; readonly invisible?: true }): boolean =>
-  char.invisible !== true && char.c.trim() !== '';
-
-/** Whether the page shows no text and is mostly pictures: a scan, with or without an invisible text layer. */
-export function isScanPage(scene: PageScene): boolean {
-  // The scene reads the page's text without pictures, so its blocks are text.
-  for (const block of scene.text.blocks)
-    for (const line of block.kind === 'text' ? block.lines : []) if (line.chars.some(isVisible)) return false;
-  let covered = 0;
-  for (const item of scene.items) {
-    if (item.kind === 'shape') continue;
-    covered += Math.max(0, item.box[2] - item.box[0]) * Math.max(0, item.box[3] - item.box[1]);
-  }
-  return covered >= SCAN_COVER * scene.width * scene.height;
+  /** The page also shows real text, kept as it is by the caller (`visible` of `readScanPage`). */
+  readonly mixed: boolean;
+  /** The page's invisible text layer was not trusted (`layerTrusted`) and the page was read with OCR instead. */
+  readonly layerRejected: boolean;
 }
 
 /** The words of the page's invisible text layer, as OCR words (boxes from the baseline and size the layer was written with). */
@@ -207,10 +200,76 @@ const rectangle = (box: Box): SceneShape['segments'] => [
   { kind: 'close' },
 ];
 
+/** What the recogniser found on a page: the words to set, the ones read twice (still erased), the rules under words, and the picture as read. */
+interface OcrRead {
+  readonly words: readonly OcrWord[];
+  readonly duplicates: readonly OcrWord[];
+  readonly rules: readonly Rule[];
+  readonly image: RgbaImage;
+}
+
+/** The words `ocr` reads off the rendered page, `null` when it cannot run (the caller keeps the page as it was). */
+async function readWords(
+  mupdf: Mupdf,
+  firstImage: RgbaImage,
+  firstPng: Uint8Array,
+  ocr: OcrOptions,
+  signal: AbortSignal,
+): Promise<OcrRead | null> {
+  let image = firstImage;
+  let png = firstPng;
+  const recognise = async (): Promise<readonly OcrWord[] | null> => {
+    try {
+      return await ocr.recognize(png, image.scale, signal);
+    } catch (error) {
+      // A recogniser that cannot run (language pack missing, offline, worker crashed) leaves
+      // the page as the picture it is; only the reader's own cancel stops the export.
+      throwIfAborted(signal);
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      return null;
+    }
+  };
+  let read = await recognise();
+  if (read === null) return null;
+  // Rules under words (links) make tesseract misread them: the page is read again without them.
+  const rules = findUnderlines(image, read);
+  if (rules.length > 0) {
+    image = eraseRules(image, rules);
+    png = pngOf(mupdf, image);
+    read = (await recognise()) ?? read;
+  }
+  if (ocr.readWord !== undefined) {
+    try {
+      read = await refineWords(read, image, (crop) => pngOf(mupdf, crop), ocr.readWord, signal, {
+        englishAlone: ocr.englishAlone === true,
+      });
+    } catch (error) {
+      // The second look is a bonus: when it cannot run (a worker that crashed, no memory for another
+      // one) the first read stands; only the reader's own cancel stops the export.
+      throwIfAborted(signal);
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+    }
+  }
+  const unique = dropDuplicates(read);
+  const marks = markWords(unique);
+  const words = dropEdgeMarks(
+    unique.filter((word) => !marks.has(word)),
+    image.width / image.scale,
+  );
+  throwIfAborted(signal);
+  // Words read twice are dropped from the text, but their ink is erased all the same.
+  return { words, duplicates: [...read.filter((word) => !unique.includes(word)), ...marks], rules, image };
+}
+
 /**
- * The scan page rebuilt: words from the invisible layer if there is one, else from
+ * The scan page rebuilt: words from the invisible layer if there is one it can trust, else from
  * `ocr.recognize` (`null`: there is none or it failed, and the page has no layer — the caller
  * keeps the page as it was). The page's vector shapes stay above the pictures.
+ *
+ * `visible` (a mixed page, `docx-layout-mixed.ts`) are the boxes of text the page really shows:
+ * they are painted over with their surroundings before OCR reads the render and before the
+ * background is made, the words found on them are dropped, and the page is left as it was
+ * (`null`) when what is left holds no scanned text.
  */
 export async function readScanPage(
   mupdf: Mupdf,
@@ -218,58 +277,39 @@ export async function readScanPage(
   scene: PageScene,
   ocr: OcrOptions | null,
   signal: AbortSignal,
+  visible: readonly Box[] = [],
 ): Promise<ScanPage | null> {
+  const mixed = visible.length > 0;
   const layer = layerWords(scene);
   if (layer.length === 0 && ocr === null) return null;
+  // A layer of replacement characters or turned lines says less than the picture: OCR reads it again when it can.
+  const trusted = ocr === null || layerTrusted(scene);
+  const useLayer = layer.length > 0 && trusted;
   const scan = renderScan(mupdf, page, scanDpi(scene));
-  let image = scan.image;
-  let png = scan.png;
+  const masked = maskBoxes(scan.image, visible);
+  if (mixed && !useLayer && !hasScanInk(masked, scene)) return null;
+  let image = masked;
   let words: readonly OcrWord[] = layer;
-  // Words read twice are dropped from the text, but their ink is erased all the same.
   let duplicates: readonly OcrWord[] = [];
   let rules: readonly Rule[] = [];
-  if (layer.length === 0 && ocr !== null) {
+  let reread = false;
+  if (!useLayer && ocr !== null) {
     throwIfAborted(signal);
-    const recognise = async (): Promise<readonly OcrWord[] | null> => {
-      try {
-        return await ocr.recognize(png, image.scale, signal);
-      } catch (error) {
-        // A recogniser that cannot run (language pack missing, offline, worker crashed) leaves
-        // the page as the picture it is; only the reader's own cancel stops the export.
-        throwIfAborted(signal);
-        if (error instanceof Error && error.name === 'AbortError') throw error;
-        return null;
-      }
-    };
-    let read = await recognise();
-    if (read === null) return null;
-    // Rules under words (links) make tesseract misread them: the page is read again without them.
-    rules = findUnderlines(image, read);
-    if (rules.length > 0) {
-      image = eraseRules(image, rules);
-      png = pngOf(mupdf, image);
-      read = (await recognise()) ?? read;
+    const read = await readWords(mupdf, masked, mixed ? pngOf(mupdf, masked) : scan.png, ocr, signal);
+    if (read === null && layer.length === 0) return null;
+    if (read !== null) {
+      ({ words, duplicates, rules, image } = read);
+      reread = layer.length > 0;
     }
-    if (ocr.readWord !== undefined) {
-      try {
-        read = await refineWords(read, image, (crop) => pngOf(mupdf, crop), ocr.readWord, signal, {
-          englishAlone: ocr.englishAlone === true,
-        });
-      } catch (error) {
-        // The second look is a bonus: when it cannot run (a worker that crashed, no memory for another
-        // one) the first read stands; only the reader's own cancel stops the export.
-        throwIfAborted(signal);
-        if (error instanceof Error && error.name === 'AbortError') throw error;
-      }
+  }
+  if (mixed) {
+    words = dropMasked(words, visible, image.scale);
+    if (
+      words.length === 0 ||
+      words.reduce((sum, word) => sum + word.confidence, 0) / words.length < MIXED_CONFIDENCE
+    ) {
+      return null;
     }
-    const unique = dropDuplicates(read);
-    const marks = markWords(unique);
-    duplicates = [...read.filter((word) => !unique.includes(word)), ...marks];
-    words = dropEdgeMarks(
-      unique.filter((word) => !marks.has(word)),
-      image.width / image.scale,
-    );
-    throwIfAborted(signal);
   }
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
   // dropped, and the page is erased again only if one lies outside.
@@ -315,5 +355,7 @@ export async function readScanPage(
     flagged,
     regions: pictures.length,
     open,
+    mixed,
+    layerRejected: reread,
   };
 }
