@@ -302,12 +302,49 @@ function macRomanAscii(text: string): Uint8Array {
   return out;
 }
 
+/** A `name` record kept from a font's own table: where it applies and its raw string. */
+interface NameRecord {
+  readonly platform: number;
+  readonly encoding: number;
+  readonly language: number;
+  readonly id: number;
+  readonly data: Uint8Array;
+}
+
+/** The IDs of the notices a font carries about its authors and its licence: copyright, trademark, licence text, licence URL. */
+const NOTICE_IDS: readonly number[] = [0, 7, 13, 14];
+
+/** The notice records (IDs 0, 7, 13, 14) of a format 0 `name` table; a record cut off by the table's end is left out. */
+function noticesOf(name: Uint8Array | undefined): NameRecord[] {
+  if (name === undefined || name.length < 6) return [];
+  const dv = view(name);
+  const storage = dv.getUint16(4);
+  const records: NameRecord[] = [];
+  for (let index = 0; index < dv.getUint16(2); index += 1) {
+    const at = 6 + 12 * index;
+    if (at + 12 > name.length) break;
+    const id = dv.getUint16(at + 6);
+    const start = storage + dv.getUint16(at + 10);
+    const end = start + dv.getUint16(at + 8);
+    if (!NOTICE_IDS.includes(id) || end > name.length) continue;
+    records.push({
+      platform: dv.getUint16(at),
+      encoding: dv.getUint16(at + 2),
+      language: dv.getUint16(at + 4),
+      id,
+      data: name.slice(start, end),
+    });
+  }
+  return records;
+}
+
 /**
- * The `name` table: IDs 1, 2, 3, 4, 5, 6, 16, 17 as Mac (1,0,0) and Windows (3,1,0x409) records.
+ * The `name` table: IDs 1, 2, 3, 4, 5, 6, 16, 17 as Mac (1,0,0) and Windows (3,1,0x409) records,
+ * and `notices` (the font's own copyright and licence records) after them, in the table's sort order.
  * LibreOffice 26.2 silently drops an embedded font whose `name` has no ID 3 (unique identifier):
  * measured by swapping this table into a font it accepts.
  */
-function buildName(names: FontNames): Uint8Array {
+function buildName(names: FontNames, notices: readonly NameRecord[] = []): Uint8Array {
   const compact = (text: string) => text.replace(/[^A-Za-z0-9]/g, '');
   const postScript = `${compact(names.family)}-${compact(names.style)}`.slice(0, 63);
   const full = names.style === 'Regular' ? names.family : `${names.family} ${names.style}`;
@@ -321,12 +358,15 @@ function buildName(names: FontNames): Uint8Array {
     [16, names.family],
     [17, names.style],
   ];
-  const entries: { platform: number; encoding: number; language: number; id: number; data: Uint8Array }[] =
-    [];
+  const entries: NameRecord[] = [];
   for (const [id, text] of strings)
     entries.push({ platform: 1, encoding: 0, language: 0, id, data: macRomanAscii(text) });
   for (const [id, text] of strings)
     entries.push({ platform: 3, encoding: 1, language: 0x409, id, data: utf16be(text) });
+  entries.push(...notices);
+  entries.sort(
+    (a, b) => a.platform - b.platform || a.encoding - b.encoding || a.language - b.language || a.id - b.id,
+  );
   const header = 6 + 12 * entries.length;
   const out = new Uint8Array(header + entries.reduce((sum, entry) => sum + entry.data.length, 0));
   const dv = view(out);
@@ -459,12 +499,14 @@ function parseSfnt(bytes: Uint8Array): Sfnt | null {
  * table rewritten to `names`; every other table is kept. A missing `OS/2`, `post`, `name` or
  * `cmap` is added. Null when the font forbids embedding (`OS/2` fsType "restricted license"),
  * is not a TrueType font with `head`, `maxp`, `glyf` and `loca`, or has a map too sparse for a
- * format 4 subtable.
+ * format 4 subtable. `keepNotices` carries the font's own copyright, trademark and licence records
+ * (`name` IDs 0, 7, 13, 14) into the new table: for a font that is whole and open-licensed.
  */
 export function trueTypeForWord(
   ttf: Uint8Array,
   map: readonly GlyphMapping[],
   names: FontNames,
+  options: { readonly keepNotices?: boolean } = {},
 ): Uint8Array | null {
   const sfnt = parseSfnt(ttf);
   if (sfnt === null || sfnt.version === SFNT_OTTO) return null;
@@ -525,7 +567,7 @@ export function trueTypeForWord(
   }
   if (!tables.has('post')) tables.set('post', buildPost());
   tables.set('cmap', cmap);
-  tables.set('name', buildName(names));
+  tables.set('name', buildName(names, options.keepNotices === true ? noticesOf(tables.get('name')) : []));
   return assemble(SFNT_TRUETYPE, tables);
 }
 
