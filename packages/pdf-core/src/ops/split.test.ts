@@ -178,7 +178,7 @@ describe('splitDocument', () => {
 
   it('in size mode keeps every part under the limit and re-produces an oversized estimate with one page less', async () => {
     // Pages of very different weight: the first two are heavy (incompressible numbers), the
-    // rest are empty, so the proportional estimate (three pages) is wrong for the first part
+    // rest are empty, so the proportional estimate (two pages) is wrong for the first part
     // and has to be corrected down to one page.
     const doc = new PDFDocument();
     let seed = 7;
