@@ -336,6 +336,32 @@ describe('exportOffice, Word as one picture per page', () => {
     expect(await text(zip, '[Content_Types].xml')).not.toContain('Extension="png"');
   });
 
+  it('draws a JPEG only when pictures cover half of the page: a small logo or an off-page picture leaves the text lossless', async () => {
+    const bytes = await officeDocument([
+      {
+        // A 60 × 60 logo (under 2 % of the page) beside a line of text.
+        images: { Logo: { width: 4, height: 4, rgb: [0, 0, 255] } },
+        content: picture('Logo', 20, 420, 60, 60) + line('helvetica', 24, 50, 300, 'Merhaba'),
+      },
+      {
+        // A full-page picture lying entirely beyond the page's edge covers none of it.
+        images: { Far: { width: 4, height: 4, rgb: [0, 0, 255] } },
+        content: picture('Far', 1000, 1000, 400, 500) + line('helvetica', 24, 50, 300, 'Merhaba'),
+      },
+      {
+        // Four fifths of the page.
+        images: { Photo: { width: 4, height: 4, rgb: [0, 0, 255] } },
+        content: picture('Photo', 0, 0, 400, 400),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, { ...options, pages: [0, 1, 2] }, run);
+    const zip = await JSZip.loadAsync(file.bytes);
+    const names = Object.keys(zip.files).filter(
+      (name) => name.startsWith('word/media/') && !zip.files[name]?.dir,
+    );
+    expect(names.sort()).toEqual(['word/media/page1.png', 'word/media/page2.png', 'word/media/page3.jpeg']);
+  });
+
   it('titles the document with the PDF’s title, or the file name', async () => {
     const titled = await officeDocument([{ content: '' }], { title: 'Kat Planı' });
     const named = await exportOffice(titled, { ...options, pages: [0] }, run);

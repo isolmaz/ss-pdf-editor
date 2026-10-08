@@ -282,7 +282,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     *Flowing text* (described above) is the one to edit at length. *One picture per page* draws
     every page exactly as a viewer shows it (annotations and form fields included, on white
     paper), at 200 dpi (lower only when a page would exceed 40 megapixels), and puts it in its own section as one picture anchored behind the text:
-    JPEG for a page that holds a photograph or scan, PNG otherwise. The look is exact, but the
+    JPEG (quality 92) for a page that is at least half pictures (a photograph or scan), PNG otherwise. The look is exact, but the
     text cannot be edited in Word. Word's pages stop at 22 inches (55.88 cm) a side, so in the
     exact layout and in the picture layout a larger page is shrunk in proportion to fit, and the
     report says which pages and by how much.

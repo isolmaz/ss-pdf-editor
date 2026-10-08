@@ -6,8 +6,9 @@
  * ## Grouping
  *
  * 1. A line is MuPDF's (the characters on one baseline); lines of nothing but whitespace are
- *    dropped. A line whose characters progress vertically is rotated text and is a box of its
- *    own (rotation 90 or 270).
+ *    dropped. A line MuPDF reports as running vertically (its direction, which holds for a
+ *    single character too) is rotated text and is a box of its own (rotation 90 or 270),
+ *    written as a vertical text box (`vert="vert"` / `"vert270"`: LibreOffice ignores `rot`).
  * 2. Consecutive lines (across MuPDF's blocks, see `textBoxes`) are one paragraph while their font size agrees
  *    (±1 pt), their baseline pitch is regular (0.5…1.6 × size, ±15 % of the paragraph's pitch)
  *    and the alignment stays consistent: left edges, centres or right edges all agree (2 pt)
@@ -45,18 +46,37 @@ function boxTop(baseline: number, lineHeight: number): number {
 }
 
 /**
- * MuPDF's character boxes reach from the font's ascent to its descent; the baseline is this
- * fraction of the size above the bottom (0.27…0.32 for the fonts looked at).
+ * MuPDF's character boxes reach from the font's ascent to its descent; for rotated text, whose
+ * origin is not read, the baseline is this fraction of the size inside the box's far side
+ * (0.27…0.32 for the fonts looked at). Upright text has its origin (`LayoutChar.baseline`).
  */
 const DESCENT = 0.3;
 
 /** A single line's height is at least this × size (Word's natural line is about that). */
 const MIN_LINE = 1.15;
 
-/** Width slack: a substitute font with wider metrics must not overflow; `wrap="none"` is also set. */
+/**
+ * Width slack: a substitute font with wider metrics must not overflow. `wrap="none"` is
+ * also set, but LibreOffice wraps a line that is wider than its frame all the same, and the
+ * second line is cut off by the frame's height (measured: a page lost 11 % of its words).
+ */
 const WIDTH_FACTOR = 1.03;
 const WIDTH_PAD = 2;
-const JUSTIFIED_FACTOR = 1.015;
+/**
+ * A justified line fills its box, so the box is the PDF's own width, plus what the line's
+ * squeezed spaces need: typesetters set a tight line with its spaces below the natural
+ * `SPACE` × size, and a line whose natural width passes the frame wraps (see above).
+ */
+const SPACE = 0.278;
+
+/** What a squeezed line's frame needs beyond that, for a substitute font a little wider than the PDF's. */
+const SQUEEZE_MARGIN = 1.015;
+
+/** The box width ÷ the lines' extent for a justified box: 1 unless a line is squeezed. */
+function justifiedFactor(rows: readonly Row[]): number {
+  const worst = Math.max(...rows.map((row) => row.natural));
+  return worst > 1 ? worst * SQUEEZE_MARGIN : 1;
+}
 
 /* ------------------------------------------------------------------ *
  * lines
@@ -75,6 +95,8 @@ interface Row {
   readonly baseline: number;
   readonly bullet: boolean;
   readonly direction: Direction;
+  /** The line's width with its spaces at their natural width ÷ its width: above 1 for a squeezed line. */
+  readonly natural: number;
 }
 
 const BULLET = /^(?:[•▪◦‣●○■□·*]|[-–—]\s|\d{1,3}[.)](?:\s|$))/;
@@ -109,17 +131,15 @@ function dominantSize(chars: readonly LayoutChar[]): number {
   return best;
 }
 
-/** Whether the characters run down or up the page rather than across it. */
-function directionOf(chars: readonly LayoutChar[]): Direction {
-  const first = chars[0];
-  const last = chars[chars.length - 1];
-  if (first === undefined || last === undefined || chars.length < 2) return 'right';
-  const dx = (last.box[0] + last.box[2] - first.box[0] - first.box[2]) / 2;
-  const dy = (last.box[1] + last.box[3] - first.box[1] - first.box[3]) / 2;
-  if (Math.abs(dy) > 2 * Math.abs(dx) && Math.abs(dy) > 1.5 * Math.max(first.size, last.size)) {
-    return dy > 0 ? 'down' : 'up';
-  }
-  return 'right';
+/**
+ * Whether the line runs down or up the page rather than across it, by MuPDF's direction of
+ * the line (which is right for a single character too, where no two positions compare).
+ * Text turned less than about 25° from the vertical counts as running down or up.
+ */
+function directionOf(line: LayoutLine): Direction {
+  const [, y] = line.dir;
+  if (Math.abs(y) < 0.9) return 'right';
+  return y > 0 ? 'down' : 'up';
 }
 
 /** The gap between two consecutive characters along the line's direction. */
@@ -221,7 +241,7 @@ function rowOf(line: LayoutLine, links: readonly SceneLink[], serifs: ReadonlySe
   const first = line.chars.indexOf(solid[0] as LayoutChar);
   const last = line.chars.lastIndexOf(solid[solid.length - 1] as LayoutChar);
   const chars = line.chars.slice(first, last + 1);
-  const direction = directionOf(solid);
+  const direction = directionOf(line);
   const runs = runsOf(chars, links, direction, serifs);
   const text = runs.map((run) => run.text).join('');
   let x0 = Number.POSITIVE_INFINITY;
@@ -236,8 +256,12 @@ function rowOf(line: LayoutLine, links: readonly SceneLink[], serifs: ReadonlySe
   }
   const size = dominantSize(solid);
   const sample = solid.find((char) => Math.round(char.size * 2) / 2 === Math.round(size * 2) / 2) ?? solid[0];
-  const baseline = (sample as LayoutChar).box[3] - DESCENT * size;
-  return { runs, text, x0, x1, y0, y1, size, baseline, bullet: BULLET.test(text), direction };
+  // The origin is the baseline of upright text; a rotated line's is across, set by `rotated`.
+  const baseline = (sample as LayoutChar).baseline;
+  const glyphs = solid.reduce((sum, char) => sum + char.box[2] - char.box[0], 0);
+  const spaces = text.split(' ').length - 1;
+  const natural = direction === 'right' ? (glyphs + spaces * SPACE * size) / (x1 - x0) : 1;
+  return { runs, text, x0, x1, y0, y1, size, baseline, bullet: BULLET.test(text), direction, natural };
 }
 
 /**
@@ -262,13 +286,14 @@ function joinPieces(lines: readonly LayoutLine[]): LayoutLine[] {
   while (at < lines.length) {
     const first = lines[at] as LayoutLine;
     const pieces = [first];
-    if (filled.includes(first)) {
+    if (filled.includes(first) && directionOf(first) === 'right') {
       let end = at + 1;
       while (end < lines.length) {
         const next = lines[end] as LayoutLine;
         const last = pieces[pieces.length - 1] as LayoutLine;
         const sameBaseline =
           filled.includes(next) &&
+          directionOf(next) === 'right' &&
           Math.abs(next.box[1] - first.box[1]) <= 1 &&
           Math.abs(next.box[3] - first.box[3]) <= 1 &&
           extent(next).x0 > extent(last).x1;
@@ -294,6 +319,7 @@ function joinPieces(lines: readonly LayoutLine[]): LayoutLine[] {
           Math.max(...pieces.map((piece) => piece.box[2])),
           Math.max(...pieces.map((piece) => piece.box[3])),
         ],
+        dir: first.dir,
         chars: pieces.flatMap((piece) => piece.chars),
       });
       at += pieces.length;
@@ -477,11 +503,11 @@ function upright(group: readonly Para[]): TextBox {
   const left = Math.min(...rows.map((row) => row.x0));
   const right = Math.max(...rows.map((row) => row.x1));
   const justified = group.some((para) => para.align === 'both');
-  // A justified line is stretched to the box, so the slack is small or the right edge moves; but
-  // typesetters squeeze the spaces of a tight line below their natural width, and a line that
-  // does not fit in the substitute font wraps, pushing the rest of the box out of its frame.
+  // A justified line is stretched to the box, so the box is the lines' width and any slack moves
+  // the right edge; only a squeezed line (spaces below their natural width) whose natural width
+  // would not fit the frame gets the room it needs (`justifiedFactor`).
   const width = justified
-    ? (right - left) * JUSTIFIED_FACTOR + 0.5
+    ? (right - left) * justifiedFactor(rows)
     : (right - left) * WIDTH_FACTOR + WIDTH_PAD;
   const kind = classOf(first.align);
   const x0 = kind === 'center' ? (left + right) / 2 - width / 2 : kind === 'right' ? right - width : left;
@@ -500,8 +526,8 @@ function upright(group: readonly Para[]): TextBox {
 }
 
 /**
- * Rotated text: one line, its visual box in page space. The frame Word rotates is
- * `textBoxXml`'s business (the text's length along its width, the line along its height).
+ * Rotated text: one line, its visual box in page space (the text's length along the box's
+ * height, the line across its width). `textBoxXml` writes it as a vertical text box.
  */
 function rotated(row: Row): TextBox {
   const lineHeight = Math.max(MIN_LINE * row.size, row.x1 - row.x0);
@@ -649,19 +675,22 @@ function paragraphXml(paragraph: TextParagraph, scale: number, registry: DocxReg
  */
 export function textBoxXml(box: TextBox, scale: number, registry: DocxRegistry): string {
   const [x0, y0, x1, y1] = box.box;
-  const sideways = box.rotation === 90 || box.rotation === 270;
-  // The frame Word rotates about its centre is the unrotated one: sides swapped for 90/270.
-  const width = (sideways ? y1 - y0 : x1 - x0) * scale;
-  const height = (sideways ? x1 - x0 : y1 - y0) * scale;
-  const left = ((x0 + x1) / 2) * scale - width / 2;
-  const top = ((y0 + y1) / 2) * scale - height / 2;
+  const width = (x1 - x0) * scale;
+  const height = (y1 - y0) * scale;
+  const left = x0 * scale;
+  const top = y0 * scale;
   const content = `<w:txbxContent>${box.paragraphs.map((paragraph) => paragraphXml(paragraph, scale, registry)).join('')}</w:txbxContent>`;
   const z = registry.nextZ();
   const id = registry.nextDrawingId();
   const cx = Math.max(1, Math.round(width * EMU));
   const cy = Math.max(1, Math.round(height * EMU));
-  const rot = box.rotation === 0 ? '' : ` rot="${Math.round(box.rotation * 60000)}"`;
-  const rotation = box.rotation === 0 ? '' : `rotation:${box.rotation};`;
+  const vert = box.rotation === 90 ? 'vert' : box.rotation === 270 ? 'vert270' : 'horz';
+  const flow =
+    box.rotation === 90
+      ? ' style="layout-flow:vertical"'
+      : box.rotation === 270
+        ? ' style="layout-flow:vertical;mso-layout-flow-alt:bottom-to-top"'
+        : '';
   return (
     '<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>' +
     `<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${z}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">` +
@@ -675,14 +704,14 @@ export function textBoxXml(box: TextBox, scale: number, registry: DocxRegistry):
     '<wp:cNvGraphicFramePr/>' +
     '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
     '<wps:wsp><wps:cNvSpPr txBox="1"/>' +
-    `<wps:spPr><a:xfrm${rot}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>' +
     `<wps:txbx>${content}</wps:txbx>` +
-    '<wps:bodyPr rot="0" vert="horz" wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"><a:noAutofit/></wps:bodyPr>' +
+    `<wps:bodyPr rot="0" vert="${vert}" wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"><a:noAutofit/></wps:bodyPr>` +
     '</wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>' +
     '<mc:Fallback><w:pict>' +
-    `<v:shape style="position:absolute;margin-left:${pt(left)}pt;margin-top:${pt(top)}pt;width:${pt(width)}pt;height:${pt(height)}pt;${rotation}mso-position-horizontal-relative:page;mso-position-vertical-relative:page;z-index:${z}" stroked="f" filled="f">` +
-    `<v:textbox inset="0,0,0,0">${content}</v:textbox></v:shape></w:pict></mc:Fallback>` +
+    `<v:shape style="position:absolute;margin-left:${pt(left)}pt;margin-top:${pt(top)}pt;width:${pt(width)}pt;height:${pt(height)}pt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page;z-index:${z}" stroked="f" filled="f">` +
+    `<v:textbox${flow} inset="0,0,0,0">${content}</v:textbox></v:shape></w:pict></mc:Fallback>` +
     '</mc:AlternateContent></w:r>'
   );
 }

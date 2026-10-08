@@ -431,7 +431,7 @@ had to stay green. The moves, and the defects they fixed on the way:
     page with MuPDF (`page.toPixmap`, RGB, no alpha so white paper, annotations and widgets
     included; pdf.js is not used, so the path runs in Node tests) at 200 dpi of the page's size as
     `getBounds` gives it (after `/Rotate` and the crop box), lower only when a page would exceed 40 megapixels; the note reports the lowest dpi used (`dpi`).
-    JPEG (quality 90) when a `Device` pass sees `fillImage` on the page, PNG otherwise. Each page is a
+    JPEG (quality 92) when the `fillImage` boxes a `Device` pass sees cover at least half of the page, PNG otherwise (a small logo keeps the text lossless). Each page is a
     section of the page's size with every margin 0 and `w:orient` when wide, holding one
     paragraph (exact 1 pt line, 1 pt run) with a `wp:anchor` picture at the page's corner
     (`behindDoc`, `wrapNone`; children in the schema's order). **The 22-inch rule:** Word refuses a
@@ -451,6 +451,13 @@ had to stay green. The moves, and the defects they fixed on the way:
     object a `wp:anchor` in front of or behind the text). A text box is written as
     `mc:AlternateContent` with a `wps:txbx` choice and a VML (`v:textbox`) fallback; mammoth reads the
     fallback back, so the `verify` step still compares the words written with the words found.
+    Text that runs up or down the page (MuPDF's line direction, which holds for one character too) is a
+    vertical text box (`bodyPr vert="vert270"` / `"vert"` on the visual box): LibreOffice ignores
+    `a:xfrm rot` on a text box. A line's baseline is its characters' origin (`LayoutChar.baseline`);
+    the box top is that minus 0.8 × the exact line height. A justified box is exactly as wide as the
+    PDF's lines (a justified line fills its box); only a box with a squeezed line (spaces narrower than
+    0.278 × size) gets the room that line needs at natural spaces, +1.5 %, because LibreOffice
+    wraps a line wider than its frame despite `wrap="none"`.
     Regions Word cannot draw (gradients, complex clips) are rasters: the page is rendered with
     MuPDF **without its text** and the region cut from it, so the text above stays editable; they
     are counted in `op.note.exportOffice.layoutRasters`, and the box, shape and picture counts in
