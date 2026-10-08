@@ -129,6 +129,10 @@ export interface TextParagraph {
   readonly align: 'left' | 'center' | 'right' | 'both';
   /** Baseline to baseline, in points; Word's exact line spacing. */
   readonly lineHeight: number;
+  /** Left paragraphs: how far, in points, the paragraph's lines start right of the box's left edge (0 when absent). */
+  readonly inset?: number;
+  /** Left paragraphs: how much further right than the other lines the first one starts, in points (0 when absent). */
+  readonly firstLine?: number;
   /** The lines as the PDF breaks them; the writer joins them with line breaks. */
   readonly lines: readonly TextLine[];
 }
