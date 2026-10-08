@@ -11,9 +11,13 @@
  *           require a non-zero exit. The failure is classified from the output: an expect/assert
  *           failure is `failed-assertion`; a module that does not load, a missing export, a syntax
  *           or type error or "no tests found" is `failed-load`, which proves nothing about behaviour.
+ *           A fix whose defect was a throw or a hang rather than a wrong value names that failure in
+ *           the entry's `failure` (a regular expression over the output, written down for review):
+ *           a run that matches it, and no load pattern, is `failed-declared`. Any other failure is
+ *           `failed-load`.
  *   AFTER   check out `<commit>` (or `testCommit`), run the same tests and require exit 0 with at
  *           least one test run.
- * An entry is `proved` only for failed-assertion + passed. `load-only` and `not-proved` are reported
+ * An entry is `proved` only for failed-assertion or failed-declared, then passed. `load-only` and `not-proved` are reported
  * and make the exit code 1, they are never counted as proved.
  *
  * Needs a clean work tree: it checks commits out with `-f`. The original HEAD is restored on exit,
@@ -87,10 +91,16 @@ const LOAD_FAILURE = new RegExp(
 /** An expect/assert failure, from Vitest and from Playwright. */
 const ASSERTION_FAILURE = /AssertionError|Error: expect\(|waiting for expect\(/;
 
-/** @returns {'failed-assertion' | 'failed-load'} for the output of a run that exited non-zero. */
-function classifyFailure(output) {
+/**
+ * @param {string} output of a run that exited non-zero
+ * @param {string | undefined} declared the entry's `failure` pattern, if it names one
+ * @returns {'failed-assertion' | 'failed-declared' | 'failed-load'}
+ */
+function classifyFailure(output, declared) {
   if (LOAD_FAILURE.test(output)) return 'failed-load';
-  return ASSERTION_FAILURE.test(output) ? 'failed-assertion' : 'failed-load';
+  if (ASSERTION_FAILURE.test(output)) return 'failed-assertion';
+  if (declared !== undefined && new RegExp(declared).test(output)) return 'failed-declared';
+  return 'failed-load';
 }
 
 /** True when the run reports at least one passed test (an all-skipped run also exits 0). */
@@ -236,7 +246,7 @@ async function main() {
           result.before = 'failed-load';
           result.note = `before: build failed: ${lastLines(before.output, 5)}`;
         } else {
-          result.before = classifyFailure(before.output);
+          result.before = classifyFailure(before.output, entry.failure);
         }
         console.log(`   before: ${result.before}`);
         if (result.before !== 'failed-assertion') result.beforeOutput = lastLines(before.output, 40);
@@ -262,7 +272,11 @@ async function main() {
       }
       console.log(`   after: ${result.after}`);
 
-      if (result.before === 'failed-assertion' && result.after === 'passed') result.verdict = 'proved';
+      if (
+        (result.before === 'failed-assertion' || result.before === 'failed-declared') &&
+        result.after === 'passed'
+      )
+        result.verdict = 'proved';
       else if (result.before === 'failed-load' && result.after === 'passed') result.verdict = 'load-only';
       results.push(result);
       console.log(`   verdict: ${result.verdict}`);

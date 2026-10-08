@@ -74,7 +74,9 @@
       "packages/pdf-core/src/signature-validation.test.ts"
     ],
     "run": ["packages/pdf-core/src/signature-evidence.test.ts"],
-    "filter": "skips attributes without values and a signing time that is not a time"
+    "filter": "skips attributes without values and a signing time that is not a time",
+    "failure": "TypeError: undefined is not iterable[\\s\\S]*readSignatureEvidence packages/pdf-core/src/signature-evidence\\.ts",
+    "note": "Before the fix a hostile attribute set crashed readSignatureEvidence: the declared failure is that crash, thrown from the product file."
   },
   {
     "commit": "114efee21c6e13ff4c094e72acac8fbee9eb7a05",
@@ -287,7 +289,9 @@
       "packages/pdf-core/src/ops/xfa-form.test.ts"
     ],
     "run": ["packages/pdf-core/src/ops/xfa-form.test.ts"],
-    "filter": "binds fields by the shape of their names when the form has no template packet|writes the first datasets element of an XDP stream|keeps the imported data when the fill spells a check box value its own way"
+    "filter": "binds fields by the shape of their names when the form has no template packet|writes the first datasets element of an XDP stream|keeps the imported data when the fill spells a check box value its own way",
+    "failure": "ToolError: \\[verification-failed\\] mupdf: the datasets hold \\d+ values, \\d+ were imported",
+    "note": "Before the fix the import wrote too few values and its own read-back refused the result: the declared failure is that refusal."
   },
   {
     "commit": "5b382d552850fb1e6fac716dfca11c6dbf878ae2",
@@ -303,7 +307,9 @@
     "kind": "unit",
     "tests": ["apps/web/src/vault-channel.test.ts"],
     "run": ["apps/web/src/vault-channel.test.ts"],
-    "filter": "stops waiting for a listed window once its lock is gone|keeps waiting for a listed window whose lock is still held"
+    "filter": "stops waiting for a listed window once its lock is gone|keeps waiting for a listed window whose lock is still held",
+    "failure": "Test timed out in \\d+ms",
+    "note": "Before the fix the probe waited out its full 10 s for a closed window: the declared failure is the test timing out on that wait."
   },
   {
     "commit": "80e2dddce83b3b695c91fc4876703a7aa62b6e2f",
@@ -347,7 +353,9 @@
       "e2e/ui-xfa.spec.ts"
     ],
     "run": ["e2e/ui-scan.spec.ts"],
-    "filter": "the refusal is named"
+    "filter": "the refusal is named",
+    "testCommit": "05d35d5e280ddfa339e1336719e8bc03a2945b93",
+    "note": "The spec runs from 05d35d5, which scripts the refused camera permission; before that it relied on the host refusing, and a runner without a camera answers NotFoundError."
   },
   {
     "commit": "4c0b5214c6c7c41a52bae4610766b7dae18ec03a",
@@ -547,7 +555,9 @@
     "kind": "unit",
     "tests": ["packages/pdf-core/src/ops/scan-detect.edge.test.ts"],
     "run": ["packages/pdf-core/src/ops/scan-detect.edge.test.ts"],
-    "filter": "so long and thin that its working raster is under 16 px"
+    "filter": "so long and thin that its working raster is under 16 px",
+    "testCommit": "fd0aa634ef2a8b41a48b9539deed0c7e9319cbde",
+    "note": "The proving input is from fd0aa63: the first version of the test used a flat strip, which the unfixed detector also found nothing in."
   },
   {
     "commit": "8b758ebd5780da44a467e38b004c36352464fdc6",
