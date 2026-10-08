@@ -514,6 +514,111 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(Object.keys(zip.files).some((name) => name.startsWith('word/media/'))).toBe(true);
   });
 
+  describe('read side by side', () => {
+    /** The three-page export of one scan page, with a recogniser that answers each call with a word of its own, after `delays`. */
+    async function three(concurrency: number | undefined, delays: readonly number[], signal = run.signal) {
+      let started = 0;
+      let inFlight = 0;
+      let most = 0;
+      const signals: AbortSignal[] = [];
+      const result = await exportOffice(
+        await scanOf(),
+        {
+          ...options,
+          pages: [0, 0, 0],
+          ocr: {
+            lowConfidence: 0.9,
+            ...(concurrency === undefined ? {} : { concurrency }),
+            recognize: async (_png, _scale, own) => {
+              const call = started;
+              started += 1;
+              inFlight += 1;
+              most = Math.max(most, inFlight);
+              signals.push(own);
+              try {
+                await new Promise((resolve) => setTimeout(resolve, delays[call] ?? 0));
+                return words([96, 97, 98]).map((word, at) =>
+                  at === 0 ? { ...word, text: `page${call}` } : word,
+                );
+              } finally {
+                inFlight -= 1;
+              }
+            },
+          },
+        },
+        { signal },
+      );
+      const zip = await JSZip.loadAsync(result.file.bytes);
+      const xml = await text(zip, 'word/document.xml');
+      const written = Array.from(
+        new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+      )
+        .map((t) => t.textContent)
+        .join(' ');
+      // Each word is in the page's text twice (as a run and as the line's text), in page order.
+      const order = [
+        ...new Set([...written.replace(/\s/g, '').matchAll(/page(\d)/g)].map((match) => Number(match[1]))),
+      ];
+      return { order, most, started, signals };
+    }
+
+    it('reads the pages at the same time and writes them in their order, whichever is read first', async () => {
+      const { order, most } = await three(3, [60, 30, 0]);
+      expect(most).toBe(3);
+      expect(order).toEqual([0, 1, 2]);
+    });
+
+    it('reads one page at a time unless the recogniser can read more', async () => {
+      const { order, most } = await three(undefined, [5, 5, 5]);
+      expect(most).toBe(1);
+      expect(order).toEqual([0, 1, 2]);
+      expect((await three(2, [5, 5, 5])).most).toBe(2);
+    });
+
+    it('stops every read when the export is cancelled', async () => {
+      const controller = new AbortController();
+      const running = three(3, [50, 50, 50], controller.signal);
+      setTimeout(() => controller.abort(), 10);
+      await expect(running).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('stops the reads under way, and waits for them, when a page read ahead fails', async () => {
+      const signals: AbortSignal[] = [];
+      let settled = 0;
+      let calls = 0;
+      await expect(
+        exportOffice(
+          await scanOf(),
+          {
+            ...options,
+            pages: [0, 0, 0],
+            ocr: {
+              lowConfidence: 0.9,
+              concurrency: 3,
+              recognize: async (_png, _scale, own) => {
+                calls += 1;
+                const call = calls;
+                signals.push(own);
+                if (call === 2) throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
+                try {
+                  await new Promise((resolve) => setTimeout(resolve, 40));
+                  return words([96, 97, 98]);
+                } finally {
+                  settled += 1;
+                }
+              },
+            },
+          },
+          run,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      // The failure of page two is reported as the export's; the other two reads were let finish, not left running.
+      expect(calls).toBe(3);
+      expect(settled).toBe(2);
+      expect(signals.every((own) => own.aborted)).toBe(true);
+    });
+  });
+
   it('still stops when the recogniser itself reports the cancellation', async () => {
     await expect(
       exportOffice(

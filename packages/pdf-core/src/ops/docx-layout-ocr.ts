@@ -46,6 +46,8 @@ export interface OcrOptions {
   readonly readWord?: ReadWord;
   /** Whether `readWord` with `'english'` reads with another set of languages than with `'all'` (not when English is the only one, or not among them); default no. */
   readonly englishAlone?: boolean;
+  /** How many scanned pages the writer reads at a time, the recogniser being able to read as many side by side; default 1. */
+  readonly concurrency?: number;
 }
 
 /** The pictures cover at least this much of the page for it to be a scan. */
