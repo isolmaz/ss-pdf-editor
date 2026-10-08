@@ -68,6 +68,8 @@ const ASPECT_SPREAD = 0.1;
 export const READING_MARGIN = 0.15;
 /** A reading replaces the settled one only when its drawing scores at least this (0–1): a clear win of two poor fits is not a reading of the ink. */
 export const READING_FLOOR = 0.3;
+/** A word set smaller than this (px to the em) is not judged by its ink: a pixel of tolerance is over a tenth of its glyphs, and the proportions that keep another length out stop counting. */
+export const READING_MIN_EM = 16;
 /** The box a reading is laid on may be this many pixels wider, narrower, taller or shorter than the ink's. */
 const READING_SLACK = 1;
 /** The glyphs sit this far (× size) above the pixmap's bottom, and the pixmap is this tall (× size). */
@@ -368,9 +370,10 @@ export interface ReadingWord {
  * word's size and box (`wordScore`: shape, with the proportions of the ink box, so a reading of
  * another length cannot pass for the word by being stretched) and the best-scoring one wins —
  * only when it beats the settled text by {@link READING_MARGIN} and scores at least
- * {@link READING_FLOOR}; the boxes of the drawing and of the ink may differ by a pixel
- * ({@link READING_SLACK}) without costing the right reading its score. A word on blank paper, or
- * whose settled text the font cannot draw, keeps its text.
+ * {@link READING_FLOOR}, and only for a word of {@link READING_MIN_EM} px to the em or more
+ * (smaller glyphs keep their text: a pixel is too much of them). The boxes of the drawing and of
+ * the ink may differ by a pixel ({@link READING_SLACK}) without costing the right reading its
+ * score. A word on blank paper, or whose settled text the font cannot draw, keeps its text.
  */
 export function chooseReadings(
   mupdf: Mupdf,
@@ -383,7 +386,9 @@ export function chooseReadings(
       const glyphs = glyphsOf(font, reading);
       return glyphs === null ? [] : [{ reading, glyphs }];
     });
-    const scan = shown.length > 1 && shown[0]?.reading === word.text ? scanInk(image, word) : null;
+    const judged =
+      shown.length > 1 && shown[0]?.reading === word.text && word.size * image.scale >= READING_MIN_EM;
+    const scan = judged ? scanInk(image, word) : null;
     if (scan === null) return word.text;
     const scores = shown.map(({ reading, glyphs }) =>
       wordScore(scan, drawnInk(mupdf, font, glyphs, reading, word.size * image.scale), READING_SLACK),

@@ -659,9 +659,11 @@ had to stay green. The moves, and the defects they fixed on the way:
             reading other than the settled one replaces it only when it scores 0.15 higher
             (`READING_MARGIN`: "9020" for "%20" where the scan has a 9, not "i" for "l") and at
             least 0.3 (`READING_FLOOR`: two drawings that do not lie on the ink are no evidence
-            however far apart), and the page is then set again with that reading and the
-            confidence it was read at, so the low-confidence flag follows the text written. Only
-            words the second look read have alternatives.
+            however far apart), and only for words of 16 px to the em or more (`READING_MIN_EM`: at
+            a smaller size a pixel of tolerance is a tenth of the glyphs and the proportions stop
+            keeping another length out; those words keep their text), and the page is then set
+            again with that reading and the confidence it was read at, so the low-confidence flag
+            follows the text written. Only words the second look read have alternatives.
        - *Rules for what Tesseract returned.* `dropDuplicates` keeps, of two words overlapping by
          more than 30 % of the smaller box (one word read at two segmentations), the one whose
          box is larger (the surer when equal); the dropped ones are still erased from the

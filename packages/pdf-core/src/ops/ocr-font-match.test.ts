@@ -195,6 +195,16 @@ describe('chooseReadings', () => {
     expect(wrong).toEqual([]);
   }, 60000);
 
+  it('leaves the ink out of it when the glyphs are too small for a pixel of tolerance: under 16 px to the em', () => {
+    // 7 pt at 150 dpi is an em of 14.6 px: a pixel is a tenth of the glyph, and the proportions
+    // that keep a reading of another length out no longer count
+    expect(choose('modern', 'modern', ['rnodern'], 150, 'Times New Roman', 7)).toBe('modern');
+    // even where the ink is clear (wor1d for world: 0.28 against 1.0), the settled text stays
+    expect(choose('world', 'wor1d', ['world'], 150, 'Arial', 7)).toBe('wor1d');
+    // from 16 px on it chooses (8 pt at 150 dpi is 16.7 px)
+    expect(choose('world', 'wor1d', ['world'], 150, 'Arial', 8)).toBe('world');
+  });
+
   it('keeps the settled reading when no drawing lies on the ink at all, whatever it beats the others by', () => {
     // Courier ink read in Helvetica: neither reading overlaps it by half, and one of them by 0.2 more than the other
     const courier = faces.get('Courier New') as Font;
