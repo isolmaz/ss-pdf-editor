@@ -101,6 +101,8 @@ export interface TextRun {
   readonly color: number;
   /** The external link the run belongs to, if any. */
   readonly link: string | null;
+  /** A remark on the run (OCR: a word the engine was unsure of); the writer shows it as a comment. */
+  readonly note?: string;
 }
 
 export interface TextLine {

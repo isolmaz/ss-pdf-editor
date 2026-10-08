@@ -31,6 +31,16 @@ export type OcrWord = {
   readonly x1: number;
   readonly y1: number;
   readonly confidence: number;
+  /**
+   * Where tesseract put the word, as running indices over the page (page-unique, in reading
+   * order): its block, its paragraph and its text line. Absent on words that did not come from
+   * `recognizePage`.
+   */
+  readonly block?: number;
+  readonly paragraph?: number;
+  readonly line?: number;
+  /** The baseline of the word's line in page points, when tesseract found one. */
+  readonly baseline?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
 };
 
 /**
@@ -334,9 +344,16 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
 
 function collectWords(page: Page, scale: number): OcrWord[] {
   const words: OcrWord[] = [];
-  for (const block of page.blocks ?? []) {
+  let paragraphIndex = 0;
+  let lineIndex = 0;
+  for (const [blockIndex, block] of (page.blocks ?? []).entries()) {
     for (const paragraph of block.paragraphs) {
       for (const line of paragraph.lines) {
+        const found = line.baseline?.has_baseline === true ? line.baseline : undefined;
+        const baseline =
+          found === undefined
+            ? undefined
+            : { x0: found.x0 / scale, y0: found.y0 / scale, x1: found.x1 / scale, y1: found.y1 / scale };
         for (const word of line.words) {
           const text = word.text.trim();
           // Whitespace-only "words" carry no box worth writing and would add empty
@@ -349,9 +366,15 @@ function collectWords(page: Page, scale: number): OcrWord[] {
             x1: word.bbox.x1 / scale,
             y1: word.bbox.y1 / scale,
             confidence: word.confidence,
+            block: blockIndex,
+            paragraph: paragraphIndex,
+            line: lineIndex,
+            ...(baseline === undefined ? {} : { baseline }),
           });
         }
+        lineIndex += 1;
       }
+      paragraphIndex += 1;
     }
   }
   return words;
