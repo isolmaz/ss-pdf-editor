@@ -5,11 +5,21 @@
  * interface language's sheet names reach the export.
  */
 
+import { createRequire } from 'node:module';
 import { xlsxToHtml } from 'pdf-core/ops/convert-ooxml';
 import { fixturePage, reportPage } from 'pdf-core/ops/layout-fixtures';
 import { createTranslator } from 'pdf-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OpRunContext } from '../dialogs/types';
+
+interface ZipReader {
+  loadAsync(
+    data: Uint8Array,
+  ): Promise<{ file(name: string): { async(type: 'string'): Promise<string> } | null }>;
+}
+
+// pdf-core owns jszip; this package cannot resolve it.
+const JSZip = createRequire(new URL('../../../pdf-core/package.json', import.meta.url))('jszip') as ZipReader;
 
 /** The dialog loaded fresh, since its delimiter default is read when the module loads. */
 async function dialogIn(language: string | undefined) {
@@ -75,26 +85,49 @@ describe('export-office dialog', () => {
     expect(word.files?.[0]?.name).toBe('rapor.docx');
   });
 
-  it('offers the Word layout only for Word, flowing text first', async () => {
+  it('offers the Word layout only for Word, the exact layout first and by default', async () => {
     const dialog = await dialogIn('en-US');
     const layout = dialog.fields.find((candidate) => candidate.id === 'layout');
     expect(layout).toMatchObject({
       kind: 'radio',
       labelKey: 'export.office.layout',
-      defaultValue: 'flow',
+      defaultValue: 'layout',
       visibleWhen: { field: 'format', equals: ['docx'] },
     });
     const options = layout !== undefined && 'options' in layout ? layout.options : [];
     expect(Array.isArray(options)).toBe(true);
     if (!Array.isArray(options)) return;
-    expect(options.map((option) => option.value)).toEqual(['flow', 'page-images']);
+    expect(options.map((option) => option.value)).toEqual(['layout', 'flow', 'page-images']);
+    expect(options[0]).toMatchObject({
+      labelKey: 'export.office.layout.exact',
+      hintKey: 'export.office.layout.exactHint',
+    });
   });
 
-  it('writes one picture per page when the layout says so, and flowing text for anything else', async () => {
+  it('writes text boxes for the exact layout (also the default), one picture per page, or flowing text', async () => {
     const dialog = await dialogIn('en-US');
     const pdf = await fixturePage([{ text: 'Merhaba', x: 50, y: 400, size: 12 }]);
-    // A ZIP names its entries in plain text in their headers.
     const entries = (bytes: Uint8Array | undefined): string => new TextDecoder('latin1').decode(bytes);
+    const documentOf = async (bytes: Uint8Array | undefined): Promise<string> =>
+      (await (await JSZip.loadAsync(bytes ?? new Uint8Array())).file('word/document.xml')?.async('string')) ??
+      '';
+
+    // The exact layout is the choice, and what an unknown or missing value falls back to.
+    const asked: Record<string, string>[] = [
+      { scope: 'all', format: 'docx', layout: 'layout' },
+      { scope: 'all', format: 'docx', layout: 'sideways' },
+      { scope: 'all', format: 'docx' },
+    ];
+    for (const params of asked) {
+      const exact = await dialog.run(params, contextFor(pdf));
+      const document = await documentOf(exact.files[0]?.bytes);
+      expect(document, JSON.stringify(params)).toContain('<wps:txbx');
+      expect(document, JSON.stringify(params)).toContain('Merhaba');
+      expect(
+        exact.report.notes.map((entry) => entry.key),
+        JSON.stringify(params),
+      ).toContain('op.note.exportOffice.layout');
+    }
 
     const pictures = await dialog.run(
       { scope: 'all', format: 'docx', layout: 'page-images' },
@@ -103,19 +136,9 @@ describe('export-office dialog', () => {
     expect(entries(pictures.files[0]?.bytes)).toContain('word/media/page1.png');
     expect(pictures.report.notes.map((entry) => entry.key)).toContain('op.note.exportOffice.pageImages');
 
-    // Flowing text is the choice, and what an unknown or missing value falls back to.
-    const asked: Record<string, string>[] = [
-      { scope: 'all', format: 'docx', layout: 'flow' },
-      { scope: 'all', format: 'docx', layout: 'sideways' },
-      { scope: 'all', format: 'docx' },
-    ];
-    for (const params of asked) {
-      const flow = await dialog.run(params, contextFor(pdf));
-      expect(entries(flow.files[0]?.bytes), JSON.stringify(params)).not.toContain('word/media/');
-      expect(
-        flow.report.notes.map((entry) => entry.key),
-        JSON.stringify(params),
-      ).toContain('op.note.exportOffice.docxApproximate');
-    }
+    const flow = await dialog.run({ scope: 'all', format: 'docx', layout: 'flow' }, contextFor(pdf));
+    expect(entries(flow.files[0]?.bytes)).not.toContain('word/media/');
+    expect(await documentOf(flow.files[0]?.bytes)).not.toContain('<wps:txbx');
+    expect(flow.report.notes.map((entry) => entry.key)).toContain('op.note.exportOffice.docxApproximate');
   });
 });

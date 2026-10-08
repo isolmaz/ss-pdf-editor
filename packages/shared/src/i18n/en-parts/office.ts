@@ -11,6 +11,8 @@ export const officePart = {
   'export.office.format.csv': 'CSV',
   'export.office.format.csvHint': 'The tables in one file, an empty line between them.',
   'export.office.layout': 'Word layout',
+  'export.office.layout.exact': 'Text and pictures, exact layout',
+  'export.office.layout.exactHint': 'Editable text boxes; shapes, pictures, colours and links in place.',
   'export.office.layout.flow': 'Flowing text (best for editing)',
   'export.office.layout.flowHint':
     'Paragraphs, headings and tables you can edit in Word; the exact look of the page is not kept.',
@@ -35,6 +37,10 @@ export const officePart = {
     '{pages} pages were exported to {format}, and the file was read back to check it.',
   'op.note.exportOffice.docxApproximate':
     'The text was exported as flowing paragraphs: exact positions on the page, multi-column flow, drawings, form fields and annotations are not. Fonts are named; where one is not installed, Word uses a similar one.',
+  'op.note.exportOffice.layout':
+    'The page layout was rebuilt: {boxes} text boxes, {shapes} shapes and {pictures} pictures at their places; the text can be edited.',
+  'op.note.exportOffice.layoutRasters':
+    '{count} regions Word cannot draw (gradients, masks) were placed as pictures.',
   'op.note.exportOffice.pageImages':
     'Each page was exported as one picture of the page at 200 dpi; the look is kept, but its text cannot be edited in Word.',
   'op.note.exportOffice.pageScaled':

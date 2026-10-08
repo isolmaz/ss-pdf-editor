@@ -86,8 +86,17 @@ export function imageRelId(n: number): string {
   return `rIdImage${n}`;
 }
 
-/** `word/_rels/document.xml.rels`: the styles and the files under `word/media/`, in order. */
-export function documentRelsXml(mediaNames: readonly string[]): string {
+/** An external link of the document: the relationship id the text refers to, and where it goes. */
+export interface DocumentLink {
+  readonly rid: string;
+  readonly uri: string;
+}
+
+/**
+ * `word/_rels/document.xml.rels`: the styles, the files under `word/media/` in order, and the
+ * external hyperlinks (`TargetMode="External"`) when there are any.
+ */
+export function documentRelsXml(mediaNames: readonly string[], links: readonly DocumentLink[] = []): string {
   return (
     `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
     '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
@@ -97,18 +106,38 @@ export function documentRelsXml(mediaNames: readonly string[]): string {
           `<Relationship Id="${imageRelId(index + 1)}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${name}"/>`,
       )
       .join('') +
+    links
+      .map(
+        (link) =>
+          `<Relationship Id="${link.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${xml(link.uri)}" TargetMode="External"/>`,
+      )
+      .join('') +
     '</Relationships>'
   );
 }
 
-/** `word/document.xml` around a body, with the namespaces pictures need. */
-export function wordDocumentXml(body: string): string {
+/**
+ * The extra namespaces of a document that holds Word shapes and text boxes
+ * (`docx-layout-shapes.ts`, `docx-layout-text.ts`), each declared once: `wps` for the
+ * shape, `mc` for the `mc:AlternateContent` it sits in, `v`, `o` and `w10` for the VML
+ * fallback. Pass as `wordDocumentXml`'s second argument; a second declaration of a prefix
+ * makes the XML invalid.
+ */
+export const SHAPE_NAMESPACES =
+  'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" ' +
+  'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
+  'xmlns:v="urn:schemas-microsoft-com:vml" ' +
+  'xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+  'xmlns:w10="urn:schemas-microsoft-com:office:word"';
+
+/** `word/document.xml` around a body, with the namespaces pictures need (and `extraNamespaces`). */
+export function wordDocumentXml(body: string, extraNamespaces = ''): string {
   return (
     `${XML_HEAD}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
     'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
     'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ' +
     'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
-    `xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}</w:body></w:document>`
+    `xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"${extraNamespaces === '' ? '' : ` ${extraNamespaces}`}><w:body>${body}</w:body></w:document>`
   );
 }
 
@@ -150,6 +179,35 @@ export interface AnchoredPicture {
   /** Size in points. */
   readonly width: number;
   readonly height: number;
+  /** Stacking position (`relativeHeight`, larger is on top); the id when absent. */
+  readonly relativeHeight?: number;
+}
+
+/**
+ * The start of a `wp:anchor` placed on the page itself, behind the text, with no wrapping,
+ * up to and including `wp:docPr`; the children are in the order the schema fixes. Offsets
+ * and extent in EMU. What follows is `wp:cNvGraphicFramePr`, then `a:graphic`, then
+ * `</wp:anchor>`.
+ */
+export function pageAnchorHeadXml(
+  id: number,
+  name: string,
+  relativeHeight: number,
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+): string {
+  return (
+    `<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${relativeHeight}" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">` +
+    '<wp:simplePos x="0" y="0"/>' +
+    `<wp:positionH relativeFrom="page"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="page"><wp:posOffset>${y}</wp:posOffset></wp:positionV>` +
+    `<wp:extent cx="${cx}" cy="${cy}"/>` +
+    '<wp:effectExtent l="0" t="0" r="0" b="0"/>' +
+    '<wp:wrapNone/>' +
+    `<wp:docPr id="${id}" name="${xml(name)}"/>`
+  );
 }
 
 /**
@@ -166,14 +224,7 @@ export function anchoredPictureXml(picture: AnchoredPicture): string {
   const y = Math.round(picture.y * EMU);
   return (
     '<w:drawing>' +
-    `<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${id}" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">` +
-    '<wp:simplePos x="0" y="0"/>' +
-    `<wp:positionH relativeFrom="page"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
-    `<wp:positionV relativeFrom="page"><wp:posOffset>${y}</wp:posOffset></wp:positionV>` +
-    `<wp:extent cx="${cx}" cy="${cy}"/>` +
-    '<wp:effectExtent l="0" t="0" r="0" b="0"/>' +
-    '<wp:wrapNone/>' +
-    `<wp:docPr id="${id}" name="${xml(name)}"/>` +
+    pageAnchorHeadXml(id, name, picture.relativeHeight ?? id, x, y, cx, cy) +
     '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
     '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
     `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${xml(name)}"/><pic:cNvPicPr/></pic:nvPicPr>` +

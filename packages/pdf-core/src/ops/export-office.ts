@@ -18,7 +18,9 @@
  *    region. The package is written by hand (WordprocessingML is plain XML in a ZIP) and
  *    read back with mammoth, an independent reader, whose words have to match the words
  *    written. `docxLayout: 'page-images'` writes a different Word file: each page one
- *    picture of the page, exact but not editable (`ops/docx-pages.ts`); the XML both
+ *    picture of the page, exact but not editable (`ops/docx-pages.ts`); `docxLayout:
+ *    'layout'` rebuilds each page where the PDF has it, the text in positioned text boxes
+ *    above the shapes and pictures (exact and editable, `ops/docx-layout.ts`); the XML the
  *    writers share is in `ops/docx-drawing.ts`.
  *  - **XLSX**: one sheet per table (ruled or read from spacing), with merged cells and
  *    column widths. A page without any table becomes one sheet of its text rows, split at
@@ -52,6 +54,7 @@ import {
   xmlSafe,
   zipped,
 } from './docx-drawing';
+import { type LayoutDocx, writeLayoutDocx } from './docx-layout';
 import { type PageImage, pageImagesDocx, renderPageImages } from './docx-pages';
 import {
   type Box,
@@ -74,9 +77,11 @@ export type OfficeFormat = 'docx' | 'xlsx' | 'csv';
 export type CsvDelimiter = ',' | ';';
 /**
  * How a Word file is built: `flow` reads the page as text, tables and pictures that reflow
- * (editable); `page-images` draws each page as one picture of the page (exact, not editable).
+ * (editable); `page-images` draws each page as one picture of the page (exact, not editable);
+ * `layout` rebuilds each page where the PDF has it — shapes, pictures and links in place, the
+ * text in positioned text boxes above them (exact and editable).
  */
-export type DocxLayout = 'flow' | 'page-images';
+export type DocxLayout = 'flow' | 'page-images' | 'layout';
 
 export interface OfficeExportOptions {
   /** 0-based page indices, ascending. */
@@ -1266,6 +1271,43 @@ async function writePageImages(
   return { file, steps: ['office.read', 'office.write', 'verify'], notes };
 }
 
+/**
+ * The Word file of the exact layout, read back like the flowing one: the words mammoth finds
+ * (it reads the text boxes' VML fallback) must be the words written.
+ */
+async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExportResult> {
+  await verifyDocx(layout.bytes, layout.words);
+  const file: OutputFile = { name: `${stem}.docx`, bytes: layout.bytes, mime: MIME.docx };
+  const notes: OperationNote[] = [
+    note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: layout.pages }),
+    note('preserved', 'op.note.exportOffice.layout', {
+      boxes: layout.boxes,
+      shapes: layout.shapes,
+      pictures: layout.pictures,
+    }),
+  ];
+  if (layout.scaled.length > 0) {
+    // The smallest factor, rounded, but never 100: a page that was shrunk was shrunk.
+    const percent = Math.min(99, Math.round(Math.min(...layout.scaled.map((page) => page.scale)) * 100));
+    notes.push(
+      note('changed', 'op.note.exportOffice.pageScaled', {
+        pages: layout.scaled.map((page) => page.page).join(', '),
+        percent,
+      }),
+    );
+  }
+  if (layout.rasters > 0) {
+    notes.push(note('changed', 'op.note.exportOffice.layoutRasters', { count: layout.rasters }));
+  }
+  if (layout.textless.length > 0) {
+    notes.push(note('warning', 'op.note.exportOffice.noText', { pages: layout.textless.join(', ') }));
+  }
+  if (layout.unreadable > 0) {
+    notes.push(note('lost', 'op.note.exportOffice.unreadable', { count: layout.unreadable }));
+  }
+  return { file, steps: ['office.read', 'office.write', 'verify'], notes };
+}
+
 export async function exportOffice(
   bytes: Uint8Array,
   options: OfficeExportOptions,
@@ -1281,15 +1323,19 @@ export async function exportOffice(
   const steps: string[] = ['office.read'];
   const notes: OperationNote[] = [];
   const asImages = options.format === 'docx' && options.docxLayout === 'page-images';
+  const asLayout = options.format === 'docx' && options.docxLayout === 'layout';
   let pages: ReadPage[] = [];
   let images: PageImage[] = [];
+  let layout: LayoutDocx | null = null;
   let title: string;
   let language: string;
+  const stem = options.baseName.replace(/\.pdf$/i, '') || 'document';
   try {
-    title = doc.getMetaData('info:Title')?.trim() ?? '';
+    title = doc.getMetaData('info:Title')?.trim() || stem;
     // The catalog's `/Lang` (BCP 47, what Word's `w:lang` takes too), when the PDF has one.
     language = readText(doc.getTrailer().get('Root').get('Lang'))?.trim() ?? '';
     if (asImages) images = await renderPageImages(doc, options.pages, context);
+    else if (asLayout) layout = await writeLayoutDocx(doc, options.pages, title, language, context);
     else pages = await readPages(doc, options.pages, options.format === 'docx', context);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
@@ -1299,9 +1345,8 @@ export async function exportOffice(
   }
   throwIfAborted(context.signal);
 
-  const stem = options.baseName.replace(/\.pdf$/i, '') || 'document';
-  if (title === '') title = stem;
   if (asImages) return writePageImages(images, stem, title, context);
+  if (layout !== null) return writeLayout(layout, stem);
   const textless = pages
     .filter((page) =>
       page.layout.blocks.every(

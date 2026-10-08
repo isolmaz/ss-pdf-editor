@@ -425,8 +425,9 @@ had to stay green. The moves, and the defects they fixed on the way:
     word count must equal the words written. A picture MuPDF could not draw, and one inside a
     ruled table (whose cells carry text only), is left out of the file and counted in a `lost`
     note (`op.note.exportOffice.picturesLost`).
-  - **Word layout** (`OfficeExportOptions.docxLayout`, `flow` by default; the UI's `layout` field and the
-    Export dialog's second select). `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
+  - **Word layout** (`OfficeExportOptions.docxLayout`: `flow`, `page-images` or `layout`; the UI's
+    `layout` field and the Export dialog's second select default to `layout`, the exact layout, and
+    the dialog lists it first). Two of the three skip the flowing reader. `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
     page with MuPDF (`page.toPixmap`, RGB, no alpha so white paper, annotations and widgets
     included; pdf.js is not used, so the path runs in Node tests) at 200 dpi of the page's size as
     `getBounds` gives it (after `/Rotate` and the crop box), fewer when that would pass 40 megapixels.
@@ -440,6 +441,22 @@ had to stay green. The moves, and the defects they fixed on the way:
     writers share (escaping, package parts, `zipped`, the section and the anchor) is in
     `ops/docx-drawing.ts`. The file is read back with mammoth like the flowing one; it holds no
     words, so none must be found.
+  - **Word exact layout** (`docxLayout: 'layout'`, "Text and pictures, exact layout"). The page is
+    rebuilt from what it draws, not from reading order: `ops/layout-scene-read.ts` runs a MuPDF
+    `Device` over the page and records a scene (text runs with their fonts, sizes, colours and
+    links; filled and stroked paths; images; the regions it cannot express); `ops/docx-layout-text.ts`
+    groups the runs into paragraphs and writes each as a positioned text box, and
+    `ops/docx-layout-shapes.ts` writes the paths as DrawingML `custGeom` shapes and the pictures as
+    anchors; `ops/docx-layout.ts` assembles the package (one section per page, margins 0, every
+    object a `wp:anchor` in front of or behind the text). A text box is written as
+    `mc:AlternateContent` with a `wps:txbx` choice and a VML (`v:textbox`) fallback; mammoth reads the
+    fallback back, so the `verify` step still compares the words written with the words found.
+    Regions Word cannot draw (gradients, complex clips) are rasters: the page is rendered with
+    MuPDF **without its text** and the region cut from it, so the text above stays editable; they
+    are counted in `op.note.exportOffice.layoutRasters`, and the box, shape and picture counts in
+    `op.note.exportOffice.layout`. The 22-inch rule above applies too: a larger page is scaled down
+    (`wordPageScale`) and everything on it with it. XML shared with the picture layout is in
+    `ops/docx-drawing.ts`.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
     is not read back (the XLSX path reports no `verify` step; only Word and CSV do). CSV rows are read back through `parseCsv`. A CSV text
     cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,

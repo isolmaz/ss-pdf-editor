@@ -279,7 +279,7 @@ function drawImage(mupdf: Mupdf, bbox: Rect, transform: Matrix, image: Image): U
  * three pixel views are taken after every allocation: they are windows on the wasm heap,
  * which an allocation may move.
  */
-function softMasked(mupdf: Mupdf, image: Image): Image | null {
+export function softMasked(mupdf: Mupdf, image: Image): Image | null {
   const mask = image.getMask();
   if (mask === null) return null;
   const pixmaps: Pixmap[] = [];

@@ -5,13 +5,15 @@ import type { Translator } from 'pdf-shared';
 import { useId, useState } from 'react';
 import { Button } from '../components/Button';
 
+type OfficeLayout = 'layout' | 'flow' | 'page-images';
+
 export interface ExportOptions {
   readonly kind: 'pdf' | 'compressed' | 'images' | 'text' | 'office';
   readonly compressionLevel?: 'high' | 'medium' | 'low';
   readonly imageFormat?: 'png' | 'jpg';
   readonly officeFormat?: 'docx' | 'xlsx' | 'csv';
-  /** Word only: flowing text, or one picture per page. */
-  readonly officeLayout?: 'flow' | 'page-images';
+  /** Word only: the exact layout (text boxes), flowing text, or one picture per page. */
+  readonly officeLayout?: OfficeLayout;
 }
 
 export interface ExportDialogProps {
@@ -29,7 +31,7 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
   const [compressionLevel, setCompressionLevel] = useState<'high' | 'medium' | 'low'>('medium');
   const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png');
   const [officeFormat, setOfficeFormat] = useState<'docx' | 'xlsx' | 'csv'>('docx');
-  const [officeLayout, setOfficeLayout] = useState<'flow' | 'page-images'>('flow');
+  const [officeLayout, setOfficeLayout] = useState<OfficeLayout>('layout');
   const formId = useId();
 
   const handleDownload = () => {
@@ -217,11 +219,12 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
             {selectedKind === 'office' && officeFormat === 'docx' && (
               <select
                 value={officeLayout}
-                onChange={(e) => setOfficeLayout(e.target.value as 'flow' | 'page-images')}
+                onChange={(e) => setOfficeLayout(e.target.value as OfficeLayout)}
                 aria-label={t('export.office.layout')}
                 className="w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold text-kumo-strong outline-none focus:border-pdf-accent"
                 onClick={(e) => e.stopPropagation()}
               >
+                <option value="layout">{t('export.office.layout.exact')}</option>
                 <option value="flow">{t('export.office.layout.flow')}</option>
                 <option value="page-images">{t('export.office.layout.pageImages')}</option>
               </select>

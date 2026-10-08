@@ -1,5 +1,11 @@
 {
   "flow": {
     "default": { "ssim": null, "words": null }
+  },
+  "page-images": {
+    "default": { "ssim": 0.95, "words": null }
+  },
+  "layout": {
+    "default": { "ssim": null, "words": null }
   }
 }

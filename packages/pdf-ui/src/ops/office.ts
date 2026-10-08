@@ -3,7 +3,8 @@
  *
  * A download like the text export: the pages in scope are read as layout and written in
  * the chosen format, and the core's own report says what came across and what did not.
- * A Word file is either flowing text (editable) or one picture per page (exact look); the
+ * A Word file is the exact layout (editable text boxes, shapes and pictures in place, the
+ * default), flowing text (editable) or one picture per page (exact look, not editable); the
  * choice shows only while Word is the format. Its own chunk, because the writer carries
  * JSZip and the read-back check mammoth.
  */
@@ -54,9 +55,14 @@ export const exportOfficeDialog: OperationDialogSpec = {
       id: 'layout',
       kind: 'radio',
       labelKey: 'export.office.layout',
-      defaultValue: 'flow',
+      defaultValue: 'layout',
       visibleWhen: { field: 'format', equals: ['docx'] },
       options: [
+        {
+          value: 'layout',
+          labelKey: 'export.office.layout.exact',
+          hintKey: 'export.office.layout.exactHint',
+        },
         { value: 'flow', labelKey: 'export.office.layout.flow', hintKey: 'export.office.layout.flowHint' },
         {
           value: 'page-images',
@@ -83,7 +89,11 @@ export const exportOfficeDialog: OperationDialogSpec = {
       ? (params.format as OfficeFormat)
       : 'docx';
     const delimiter: CsvDelimiter = params.delimiter === 'semicolon' ? ';' : ',';
-    const docxLayout: DocxLayout = params.layout === 'page-images' ? 'page-images' : 'flow';
+    const docxLayout: DocxLayout = (['layout', 'page-images', 'flow'] as const).includes(
+      params.layout as DocxLayout,
+    )
+      ? (params.layout as DocxLayout)
+      : 'layout';
     const result = await exportOffice(
       context.bytes,
       {

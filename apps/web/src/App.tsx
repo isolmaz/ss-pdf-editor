@@ -3511,7 +3511,7 @@ export function App({ store }: AppProps) {
       compressionLevel?: string;
       imageFormat?: string;
       officeFormat?: 'docx' | 'xlsx' | 'csv';
-      officeLayout?: 'flow' | 'page-images';
+      officeLayout?: 'layout' | 'flow' | 'page-images';
     }) => {
       if (options.kind === 'pdf') {
         void exportActive();
@@ -3529,7 +3529,7 @@ export function App({ store }: AppProps) {
         const format = options.officeFormat ?? 'docx';
         openDialog(
           'export-office',
-          format === 'docx' ? { format, layout: options.officeLayout ?? 'flow' } : { format },
+          format === 'docx' ? { format, layout: options.officeLayout ?? 'layout' } : { format },
         );
       }
     },

@@ -207,9 +207,9 @@ test('the Word, Excel or CSV choice starts the office form on the format picked 
   const format = dialog.getByRole('combobox', { name: 'Format' });
   await expect(format).toBeEnabled();
   await expect(format).toHaveValue('docx');
-  // The Word layout is offered while Word is the format, flowing text first, and only then.
+  // The Word layout is offered while Word is the format, the exact layout first, and only then.
   const layout = dialog.getByRole('combobox', { name: 'Word layout' });
-  await expect(layout).toHaveValue('flow');
+  await expect(layout).toHaveValue('layout');
   await format.click();
   await format.selectOption('xlsx');
   await expect(layout).toBeHidden();
@@ -237,15 +237,15 @@ test('the Word layout picked in the dialog is the one checked in the office form
   const form = page.getByRole('region', { name: 'Export to Word, Excel or CSV' });
   await expect(form.getByRole('radio', { name: /Word \(DOCX\)/ })).toBeChecked({ timeout: 30_000 });
   await expect(form.getByRole('radio', { name: /One picture per page/ })).toBeChecked();
-  await expect(form.getByRole('radio', { name: /Flowing text/ })).not.toBeChecked();
+  await expect(form.getByRole('radio', { name: /exact layout/ })).not.toBeChecked();
   await form.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(form).toBeHidden();
 
-  // The default is the flowing text.
+  // The default is the exact layout.
   dialog = await openExportDialog(page);
   await dialog.getByRole('radio', { name: 'Word, Excel or CSV' }).check();
   await dialog.getByRole('button', { name: 'Download as Word, Excel or CSV' }).click();
-  await expect(form.getByRole('radio', { name: /Flowing text/ })).toBeChecked({ timeout: 30_000 });
+  await expect(form.getByRole('radio', { name: /exact layout/ })).toBeChecked({ timeout: 30_000 });
 });
 
 test('clicking the compression and image lists does not switch the chosen option', async ({ page }) => {

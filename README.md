@@ -273,14 +273,19 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     their transparency; charts and drawings made of vector graphics are carried as pictures.
     A picture that cannot be read, or one inside a table cell, is left out, and the report
     says how many.
-  - **Word layout.** Word has two layouts, chosen in the Export dialog and in the form. *Flowing
-    text* (the default, above) is the one to edit. *One picture per page* draws every page
-    exactly as a viewer shows it (annotations and form fields included, on white paper), at
-    200 dpi, and puts it in its own section as one picture anchored behind the text: JPEG
-    for a page that holds a photograph or scan, PNG otherwise. The look is exact, but the
-    text cannot be edited in Word. Word's pages stop at 22 inches (55.88 cm) a side, so a
-    larger page is shrunk in proportion to fit, and the report says which pages and by how
-    much.
+  - **Word layout.** Word has three layouts, chosen in the Export dialog and in the form.
+    *Text and pictures, exact layout* (the default) keeps the page as it looks: every paragraph
+    of text is an editable text box at its place, with its fonts, sizes, colours and links;
+    vector shapes (lines, rectangles, curves, fills and strokes) are Word shapes; pictures are
+    anchored where they sit; and the few regions Word cannot draw (gradients, complex clips)
+    are placed as pictures, rendered without the text above them so the text stays editable.
+    *Flowing text* (described above) is the one to edit at length. *One picture per page* draws
+    every page exactly as a viewer shows it (annotations and form fields included, on white
+    paper), at 200 dpi, and puts it in its own section as one picture anchored behind the text:
+    JPEG for a page that holds a photograph or scan, PNG otherwise. The look is exact, but the
+    text cannot be edited in Word. Word's pages stop at 22 inches (55.88 cm) a side, so in the
+    exact layout and in the picture layout a larger page is shrunk in proportion to fit, and the
+    report says which pages and by how much.
   - **Excel (XLSX):** one sheet per table, with merged cells and the column widths of the
     rules. A page without any table becomes one sheet of its rows. A value becomes a number
     only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
@@ -289,7 +294,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     expects in your region. A text cell that starts with `=`, `+`, `-` or `@` would run as a
     formula when the file is opened, so it is written with a leading `'` (negative numbers
     are left alone), and the report counts them.
-  - A Word file (either layout) is read back with mammoth (an independent reader) and a CSV file with a CSV
+  - A Word file (any layout) is read back with mammoth (an independent reader) and a CSV file with a CSV
     parser before it is offered; an Excel file is not read back. The report says what was
     approximated.
 
@@ -756,6 +761,12 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
   the traces of a failure are uploaded for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`, the OpenSSL signing round trip.
+- **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test: every
+  sample is exported through the UI in each Word layout (`flow`, `page-images`, `layout`), converted
+  back with LibreOffice and compared (SSIM at 100 dpi per page, word accuracy in reading order per
+  document) against the thresholds in `e2e/fidelity/thresholds.json`; a `null` threshold is
+  measured, not gated. Locally: `pnpm fidelity` with `LIBREOFFICE` set to the path of `soffice`. The
+  report goes to the job summary and the `fidelity` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 

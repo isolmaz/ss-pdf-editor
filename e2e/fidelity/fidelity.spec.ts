@@ -62,6 +62,23 @@ const MODES: readonly Mode[] = [
     label: 'Word (DOCX)',
     select: async (region) => {
       await region.getByRole('radio', { name: /Word \(DOCX\)/ }).check();
+      await region.getByRole('radio', { name: /Flowing text/ }).check();
+    },
+  },
+  {
+    id: 'page-images',
+    label: 'Word (DOCX), one picture per page',
+    select: async (region) => {
+      await region.getByRole('radio', { name: /Word \(DOCX\)/ }).check();
+      await region.getByRole('radio', { name: /One picture per page/ }).check();
+    },
+  },
+  {
+    id: 'layout',
+    label: 'Word (DOCX), text and pictures in their exact layout',
+    select: async (region) => {
+      await region.getByRole('radio', { name: /Word \(DOCX\)/ }).check();
+      await region.getByRole('radio', { name: /exact layout/ }).check();
     },
   },
 ];

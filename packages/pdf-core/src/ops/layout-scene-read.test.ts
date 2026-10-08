@@ -1,0 +1,448 @@
+import type { PDFObject } from 'mupdf';
+import { describe, expect, it } from 'vitest';
+import { loadMupdf, type Mupdf } from '../engines/mupdf';
+import { circle, line, officeDocument, picture } from './export-office-fixtures';
+import type { SceneImage, SceneRaster, SceneShape } from './layout-scene';
+import { readPageScene } from './layout-scene-read';
+
+interface RawPage {
+  readonly content: string;
+  readonly size?: readonly [number, number];
+  /** Resources the page needs besides `Font /F1`. */
+  readonly resources?: (doc: InstanceType<Mupdf['PDFDocument']>) => Record<string, unknown>;
+  /** Images by resource name, each pixel from `at(x, y)`. */
+  readonly images?: Readonly<
+    Record<
+      string,
+      {
+        readonly width: number;
+        readonly height: number;
+        readonly at: (x: number, y: number) => readonly [number, number, number];
+      }
+    >
+  >;
+  /** Link annotations; `page` is the page object a GoTo link points at. */
+  readonly annots?: (page: PDFObject) => readonly unknown[];
+}
+
+/** A one-page PDF from a raw content stream, with `Helvetica` as `/F1`. */
+async function rawPdf(spec: RawPage): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const font = doc.addObject({
+    Type: 'Font',
+    Subtype: 'Type1',
+    BaseFont: 'Helvetica',
+    Encoding: 'WinAnsiEncoding',
+  });
+  const xobjects: Record<string, PDFObject> = {};
+  for (const [name, image] of Object.entries(spec.images ?? {})) {
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, image.width, image.height], false);
+    const samples = pixmap.getPixels();
+    for (let y = 0; y < image.height; y += 1) {
+      for (let x = 0; x < image.width; x += 1) samples.set(image.at(x, y), (y * image.width + x) * 3);
+    }
+    const decoded = new mupdf.Image(pixmap);
+    xobjects[name] = doc.addImage(decoded);
+    decoded.destroy();
+    pixmap.destroy();
+  }
+  const [width, height] = spec.size ?? [400, 500];
+  const page = doc.addPage(
+    [0, 0, width, height],
+    0,
+    { Font: { F1: font }, XObject: xobjects, ...spec.resources?.(doc) },
+    spec.content,
+  );
+  if (spec.annots !== undefined) {
+    page.put(
+      'Annots',
+      spec.annots(page).map((annot) => doc.addObject(annot)),
+    );
+  }
+  doc.insertPage(0, page);
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+async function sceneOf(bytes: Uint8Array) {
+  const mupdf = await loadMupdf();
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+  const scene = readPageScene(mupdf, doc.loadPage(0));
+  return { mupdf, scene };
+}
+
+const sceneOfRaw = async (spec: RawPage) => sceneOf(await rawPdf(spec));
+
+const contentOnly = (content: string) => officeDocument([{ content }]);
+
+/** A decoded PNG/JPEG: its size and every pixel as `[r, g, b, a]`. */
+function decode(mupdf: Mupdf, data: Uint8Array) {
+  const pixmap = new mupdf.Image(data).toPixmap();
+  const pixels = pixmap.getPixels();
+  const stride = pixmap.getStride();
+  const alpha = pixmap.getAlpha();
+  // MuPDF counts the alpha channel among the components.
+  const step = pixmap.getNumberOfComponents();
+  const at = (x: number, y: number): [number, number, number, number] => {
+    const from = y * stride + x * step;
+    return [
+      pixels[from] as number,
+      pixels[from + 1] as number,
+      pixels[from + 2] as number,
+      alpha === 1 ? (pixels[from + step - 1] as number) : 255,
+    ];
+  };
+  return { width: pixmap.getWidth(), height: pixmap.getHeight(), at };
+}
+
+const shapes = (items: readonly { kind: string }[]) =>
+  items.filter((item): item is SceneShape => item.kind === 'shape');
+
+const close = (actual: readonly number[], expected: readonly number[], digits = 1) => {
+  expect(actual).toHaveLength(expected.length);
+  expected.forEach((value, index) => {
+    expect(actual[index]).toBeCloseTo(value, digits);
+  });
+};
+
+describe('layout scene: shapes', () => {
+  it('reads a filled rectangle, a scaled dashed stroke and a curved fill in paint order', async () => {
+    const { scene } = await sceneOf(
+      await contentOnly(
+        [
+          '0.2 0.4 0.6 rg 50 400 100 50 re f',
+          'q 2 0 0 2 0 0 cm 1 0 0 RG 3 w [4 2] 0 d 1 J 1 j 20 100 m 100 100 l S Q',
+          circle(250, 150, 40, '0 0.6 0'),
+        ].join('\n'),
+      ),
+    );
+    expect([scene.width, scene.height]).toEqual([400, 500]);
+    expect(scene.items.map((item) => item.kind)).toEqual(['shape', 'shape', 'shape']);
+    const [rectangle, stroke, disc] = shapes(scene.items) as [SceneShape, SceneShape, SceneShape];
+
+    close(rectangle.box, [50, 50, 150, 100]);
+    expect(rectangle.fill).toEqual({ color: 0x336699, alpha: 1, evenOdd: false });
+    expect(rectangle.stroke).toBeNull();
+    expect(rectangle.segments.filter((segment) => segment.kind === 'line')).toHaveLength(3);
+
+    // The `cm` doubles the width (3 → 6) and the dash (4 2 → 8 4); y is flipped to the top-left origin.
+    expect(stroke.fill).toBeNull();
+    expect(stroke.stroke).toEqual({
+      color: 0xff0000,
+      alpha: 1,
+      width: 6,
+      dash: [8, 4],
+      cap: 'round',
+      join: 'round',
+    });
+    close(stroke.box, [40, 300, 200, 300]);
+
+    expect(disc.fill).toEqual({ color: 0x009900, alpha: 1, evenOdd: false });
+    expect(disc.segments.filter((segment) => segment.kind === 'curve')).toHaveLength(4);
+    close(disc.box, [210, 310, 290, 390]);
+  });
+
+  it('carries the fill and the stroke alpha of an ExtGState as two shapes', async () => {
+    const { scene } = await sceneOfRaw({
+      content: '/GS1 gs 1 0 0 rg 0 0 1 RG 4 w 100 100 80 80 re B',
+      resources: () => ({ ExtGState: { GS1: { Type: 'ExtGState', ca: 0.5, CA: 0.25 } } }),
+    });
+    const [fill, stroke] = shapes(scene.items) as [SceneShape, SceneShape];
+    expect(scene.items).toHaveLength(2);
+    expect(fill.fill).toMatchObject({ color: 0xff0000, alpha: 0.5 });
+    expect(fill.stroke).toBeNull();
+    expect(stroke.stroke).toMatchObject({ color: 0x0000ff, alpha: 0.25, width: 4, dash: [] });
+    expect(stroke.stroke?.cap).toBe('butt');
+    expect(stroke.stroke?.join).toBe('miter');
+  });
+
+  it('converts a CMYK fill the way MuPDF does', async () => {
+    const { scene } = await sceneOf(await contentOnly('0 1 1 0 k 50 50 50 50 re f'));
+    const color = (shapes(scene.items)[0] as SceneShape).fill?.color ?? 0;
+    expect(color >> 16).toBeGreaterThan(200);
+    expect((color >> 8) & 255).toBeLessThan(100);
+    expect(color & 255).toBeLessThan(100);
+  });
+
+  it('keeps the page-sized background fill as the first shape', async () => {
+    const { scene } = await sceneOf(
+      await contentOnly('0.8 0.8 0.6 rg 0 0 400 500 re f 0 g 100 100 50 50 re f'),
+    );
+    const [paper, ink] = shapes(scene.items) as [SceneShape, SceneShape];
+    expect(scene.items).toHaveLength(2);
+    close(paper.box, [0, 0, 400, 500]);
+    expect(paper.fill?.color).toBe(0xcccc99);
+    expect(ink.fill?.color).toBe(0);
+  });
+
+  it('turns a page of more than 1500 paths into one raster', async () => {
+    const squares = Array.from({ length: 1600 }, (_, index) => {
+      return `${(index % 40) * 10} ${Math.floor(index / 40) * 10} 8 8 re f`;
+    }).join('\n');
+    const { mupdf, scene } = await sceneOf(await contentOnly(`0 0.5 0 rg ${squares}`));
+    expect(scene.items).toHaveLength(1);
+    const [all] = scene.items as [SceneRaster];
+    expect(all.kind).toBe('raster');
+    // 40 columns of 10 pt, the last square ends at 398; 40 rows from the bottom, the top one ends at 398 from it.
+    close(all.box, [0, 102, 398, 500]);
+    const png = decode(mupdf, all.data);
+    // The square drawn at 0,0 (PDF) is at the bottom-left of the box.
+    expect(png.at(4, png.height - 4)[3]).toBe(255);
+    // The gap between squares stays transparent.
+    expect(png.at(17, png.height - 4)[3]).toBe(0);
+  });
+});
+
+describe('layout scene: pictures', () => {
+  it('reads a picture at its box with its colour', async () => {
+    const { mupdf, scene } = await sceneOf(
+      await officeDocument([
+        {
+          content: picture('Im1', 100, 300, 120, 80),
+          images: { Im1: { width: 8, height: 8, rgb: [200, 30, 60] } },
+        },
+      ]),
+    );
+    expect(scene.items).toHaveLength(1);
+    const [image] = scene.items as [SceneImage];
+    expect(image.kind).toBe('image');
+    close(image.box, [100, 120, 220, 200]);
+    expect(image.mime).toBe('image/png');
+    const png = decode(mupdf, image.data);
+    const [r, g, b, a] = png.at(Math.floor(png.width / 2), Math.floor(png.height / 2));
+    expect([r, g, b, a]).toEqual([200, 30, 60, 255]);
+  });
+
+  it('sends a photographic picture as JPEG', async () => {
+    const { mupdf, scene } = await sceneOfRaw({
+      content: 'q 128 0 0 128 100 100 cm /Im1 Do Q',
+      images: {
+        Im1: {
+          width: 64,
+          height: 64,
+          // Smooth but far more than 256 distinct colours.
+          at: (x, y) => [x * 4, y * 4, (x * 7 + y * 3) % 256],
+        },
+      },
+    });
+    const [image] = scene.items as [SceneImage];
+    expect(image.kind).toBe('image');
+    expect(image.mime).toBe('image/jpeg');
+    expect([image.data[0], image.data[1]]).toEqual([0xff, 0xd8]);
+    const jpeg = decode(mupdf, image.data);
+    const [r, g] = jpeg.at(Math.floor(jpeg.width * 0.75), Math.floor(jpeg.height * 0.25));
+    // Column 48 of 64 is 192 red, row 16 is 64 green (JPEG is lossy).
+    expect(Math.abs(r - 192)).toBeLessThan(24);
+    expect(Math.abs(g - 64)).toBeLessThan(24);
+  });
+
+  it('crops a picture to a rectangular clip', async () => {
+    const { mupdf, scene } = await sceneOfRaw({
+      content: 'q 100 100 50 100 re W n 200 0 0 200 100 100 cm /Im1 Do Q',
+      images: { Im1: { width: 4, height: 4, at: (x) => (x < 2 ? [255, 0, 0] : [0, 0, 255]) } },
+    });
+    const [image] = scene.items as [SceneImage];
+    expect(image.kind).toBe('image');
+    // The picture spans x 100…300, the clip x 100…150 (page y 300…400): only the left (red) quarter shows.
+    close(image.box, [100, 300, 150, 400]);
+    const png = decode(mupdf, image.data);
+    expect(png.at(Math.floor(png.width / 2), Math.floor(png.height / 2)).slice(0, 3)).toEqual([255, 0, 0]);
+  });
+});
+
+describe('layout scene: rasters', () => {
+  it('draws a shading as one raster without the text over it', async () => {
+    const { mupdf, scene } = await sceneOfRaw({
+      content: ['q 20 200 360 100 re W n /Sh1 sh Q', 'BT 0 g /F1 60 Tf 40 230 Td (HELLO) Tj ET'].join('\n'),
+      resources: (doc) => ({
+        Shading: {
+          Sh1: doc.addObject({
+            ShadingType: 2,
+            ColorSpace: 'DeviceRGB',
+            Coords: [0, 0, 400, 0],
+            Function: { FunctionType: 2, Domain: [0, 1], C0: [0, 0, 1], C1: [0, 0, 1], N: 1 },
+            Extend: [true, true],
+          }),
+        },
+      }),
+    });
+    // The text is still read as text …
+    const letters = scene.text.blocks.flatMap((block) =>
+      block.kind === 'text' ? block.lines.flatMap((entry) => entry.chars.map((char) => char.c)) : [],
+    );
+    expect(letters.join('')).toBe('HELLO');
+    // … and the drawing is the shading alone.
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    const [shading] = scene.items as [SceneRaster];
+    close(shading.box, [20, 200, 380, 300]);
+    const png = decode(mupdf, shading.data);
+    expect([png.width, png.height]).toEqual([720, 200]);
+    let ink = 0;
+    let blue = 0;
+    for (let y = 0; y < png.height; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const [r, g, b, a] = png.at(x, y);
+        if (r + g + b < 200) ink += 1;
+        if (r < 8 && g < 8 && b > 247 && a === 255) blue += 1;
+      }
+    }
+    expect(ink).toBe(0);
+    expect(blue).toBe(png.width * png.height);
+  });
+
+  it('draws what a circular clip cuts as a raster, and cuts a rectangle to a rectangular clip', async () => {
+    const { mupdf, scene } = await sceneOf(
+      await contentOnly(
+        [
+          // A circle (r 50 at 200,250) as the clip, a big red fill through it.
+          'q 250 250 m 250 277.6 227.6 300 200 300 c 172.4 300 150 277.6 150 250 c',
+          '150 222.4 172.4 200 200 200 c 227.6 200 250 222.4 250 250 c W n',
+          '1 0 0 rg 0 0 400 500 re f Q',
+          // A rectangle cut by a rectangular clip.
+          'q 20 20 100 100 re W n 0 0 1 rg 0 0 70 70 re f Q',
+        ].join('\n'),
+      ),
+    );
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster', 'shape']);
+    const [clipped, cut] = scene.items as [SceneRaster, SceneShape];
+    close(clipped.box, [150, 200, 250, 300]);
+    const png = decode(mupdf, clipped.data);
+    // Inside the circle: red; in the box's corner, outside the circle: nothing.
+    expect(png.at(png.width / 2, png.height / 2)).toEqual([255, 0, 0, 255]);
+    expect(png.at(3, 3)[3]).toBe(0);
+    // The rectangle 0…70 cut to 20…120 is 20…70 on both axes (page y: 430…480).
+    close(cut.box, [20, 430, 70, 480]);
+    expect(cut.segments.map((segment) => segment.kind)).toEqual(['move', 'line', 'line', 'line', 'close']);
+    expect(cut.fill?.color).toBe(0x0000ff);
+  });
+
+  it('rasters a stroke that a rectangular clip cuts, and drops shapes outside it', async () => {
+    const { scene } = await sceneOf(
+      await contentOnly(
+        [
+          'q 100 100 100 100 re W n',
+          '0 0 1 RG 4 w 50 150 m 250 150 l S',
+          '1 0 0 rg 300 300 20 20 re f',
+          'Q',
+        ].join('\n'),
+      ),
+    );
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    const [cutLine] = scene.items as [SceneRaster];
+    close(cutLine.box, [100, 348, 200, 352]);
+  });
+
+  it('draws a blend-mode fill as a raster, and a tiling pattern fill', async () => {
+    const { scene: blended } = await sceneOfRaw({
+      content: '/GS1 gs 1 0 0 rg 100 100 100 100 re f',
+      resources: () => ({ ExtGState: { GS1: { Type: 'ExtGState', BM: 'Multiply' } } }),
+    });
+    expect(blended.items.map((item) => item.kind)).toEqual(['raster']);
+    close((blended.items[0] as SceneRaster).box, [100, 300, 200, 400]);
+
+    const { mupdf, scene: tiled } = await sceneOfRaw({
+      content: '/Pattern cs /P1 scn 100 100 100 100 re f',
+      resources: (doc) => ({
+        Pattern: {
+          P1: doc.addStream('1 0 0 rg 0 0 5 5 re f', {
+            Type: 'Pattern',
+            PatternType: 1,
+            PaintType: 1,
+            TilingType: 1,
+            BBox: [0, 0, 10, 10],
+            XStep: 10,
+            YStep: 10,
+            Resources: {},
+          }),
+        },
+      }),
+    });
+    expect(tiled.items.map((item) => item.kind)).toEqual(['raster']);
+    const [pattern] = tiled.items as [SceneRaster];
+    close(pattern.box, [100, 300, 200, 400]);
+    const png = decode(mupdf, pattern.data);
+    expect(png.at(2, png.height - 2)).toEqual([255, 0, 0, 255]);
+    expect(png.at(15, png.height - 2)[3]).toBe(0);
+  });
+
+  it('draws a soft-masked fill as a raster and leaves the mask own drawing out', async () => {
+    const { scene } = await sceneOfRaw({
+      content: '/GS1 gs 1 0 0 rg 100 100 100 100 re f',
+      resources: (doc) => ({
+        ExtGState: {
+          GS1: {
+            Type: 'ExtGState',
+            SMask: {
+              Type: 'Mask',
+              S: 'Luminosity',
+              G: doc.addStream('0.5 g 0 0 400 500 re f', {
+                Type: 'XObject',
+                Subtype: 'Form',
+                BBox: [0, 0, 400, 500],
+                Group: { S: 'Transparency', CS: 'DeviceGray' },
+              }),
+            },
+          },
+        },
+      }),
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    close((scene.items[0] as SceneRaster).box, [100, 300, 200, 400]);
+  });
+
+  it('puts an island at the paint position of its first content, so later shapes stay on top', async () => {
+    const { scene: ordered } = await sceneOfRaw({
+      content: [
+        '0 g 10 10 20 20 re f',
+        '/GS1 gs 1 0 0 rg 100 100 100 100 re f',
+        '/GS0 gs 0 0 1 rg 120 120 20 20 re f',
+      ].join('\n'),
+      resources: () => ({
+        ExtGState: {
+          GS0: { Type: 'ExtGState', BM: 'Normal' },
+          GS1: { Type: 'ExtGState', BM: 'Multiply' },
+        },
+      }),
+    });
+    expect(ordered.items.map((item) => item.kind)).toEqual(['shape', 'raster', 'shape']);
+  });
+});
+
+describe('layout scene: links', () => {
+  it('reads an external link with its box and ignores an internal one', async () => {
+    const { scene } = await sceneOfRaw({
+      content: '0 g 50 400 100 20 re f',
+      annots: (page) => [
+        {
+          Type: 'Annot',
+          Subtype: 'Link',
+          Rect: [50, 400, 150, 420],
+          Border: [0, 0, 0],
+          A: { S: 'URI', URI: '(https://example.com/a)' },
+        },
+        {
+          Type: 'Annot',
+          Subtype: 'Link',
+          Rect: [200, 400, 300, 420],
+          Border: [0, 0, 0],
+          Dest: [page, 'Fit'],
+        },
+      ],
+    });
+    expect(scene.links).toHaveLength(1);
+    const link = scene.links[0];
+    expect(link?.uri).toBe('https://example.com/a');
+    close(link?.box ?? [], [50, 80, 150, 100]);
+  });
+});
+
+describe('layout scene: text', () => {
+  it('carries the page text from the layout reader', async () => {
+    const { scene } = await sceneOf(await contentOnly(line('helvetica', 12, 40, 400, 'Hello scene')));
+    const lines = scene.text.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []));
+    expect(lines.map((entry) => entry.chars.map((char) => char.c).join(''))).toEqual(['Hello scene']);
+    expect(scene.items).toEqual([]);
+  });
+});
