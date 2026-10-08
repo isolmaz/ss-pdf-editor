@@ -542,6 +542,25 @@ describe('sceneItemXml: even-odd fills', () => {
     ]);
   });
 
+  it('finishes a compound path of thousands of subpaths at once and still finds the hole', () => {
+    // A frame with a hole, and 3 998 small squares side by side (outlined glyphs, a map's cells).
+    const segments: PathSegment[] = [...frame(true)];
+    for (let i = 0; i < 3998; i += 1) {
+      const x = 200 + (i % 100) * 4;
+      const y = Math.floor(i / 100) * 4;
+      segments.push(...rectSegments(x, y, x + 2, y + 2));
+    }
+    const started = performance.now();
+    const root = render(shape({ box: [0, 0, 600, 160], segments, fill: evenOdd }));
+    expect(performance.now() - started).toBeLessThan(1000);
+    const subpaths = subpathPoints(one(root, 'a:path')).map((p) => Math.sign(area(p)));
+    expect(subpaths).toHaveLength(4000);
+    const [outer, inner, firstSquare, lastSquare] = [subpaths[0], subpaths[1], subpaths[2], subpaths[3999]];
+    expect(inner).toBe(-(outer as number));
+    expect(firstSquare).toBe(outer);
+    expect(lastSquare).toBe(outer);
+  });
+
   it('leaves subpaths side by side as they are', () => {
     const segments = [...rectSegments(0, 0, 40, 40), ...rectSegments(60, 0, 100, 40)];
     const root = render(shape({ box: [0, 0, 100, 40], segments, fill: evenOdd }));

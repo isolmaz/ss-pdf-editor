@@ -13,8 +13,8 @@
  *    refer to; `styles.xml` sets the document's font to the one most text is set in.
  */
 
-import type { PDFDocument } from 'mupdf';
-import { loadMupdf } from '../engines/mupdf';
+import type { Page, PDFDocument } from 'mupdf';
+import { loadMupdf, type Mupdf } from '../engines/mupdf';
 import {
   contentTypesXml,
   corePropertiesXml,
@@ -40,7 +40,7 @@ import {
 import { sceneItemXml } from './docx-layout-shapes';
 import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
 import { DocxRegistry, type PageScene, type TextBox } from './layout-scene';
-import { readPageScene } from './layout-scene-read';
+import { readPageRaster, readPageScene } from './layout-scene-read';
 import { type OperationContext, throwIfAborted } from './types';
 
 export type { OcrOptions } from './docx-layout-ocr';
@@ -127,6 +127,18 @@ function stylesXml(font: string, language: string): string {
 }
 
 /**
+ * The page's scene; a page the shape reader fails on (a drawing it did not foresee) is the whole
+ * page as one picture under its text boxes instead, so one page cannot fail the export.
+ */
+function readSceneOf(mupdf: Mupdf, page: Page): PageScene {
+  try {
+    return readPageScene(mupdf, page);
+  } catch {
+    return readPageRaster(mupdf, page);
+  }
+}
+
+/**
  * The pages (0-based indices) of `doc` as one DOCX: read, one page at a time with the event
  * loop given a turn between, and written. The caller verifies the package with `words`.
  */
@@ -165,7 +177,7 @@ export async function writeLayoutDocx(
     let scene: PageScene;
     let scan: ScanPage | null = null;
     try {
-      scene = readPageScene(mupdf, page);
+      scene = readSceneOf(mupdf, page);
       if (isScanPage(scene)) {
         scan = await readScanPage(mupdf, page, scene, ocr, context.signal);
         if (scan === null) unavailable.push(index + 1);

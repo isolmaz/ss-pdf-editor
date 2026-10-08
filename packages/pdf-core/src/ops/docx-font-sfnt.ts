@@ -31,6 +31,13 @@ const CHECKSUM_MAGIC = 0xb1b0afba;
 /** `OS/2` fsType bits 1–3 hold the embedding permission; 2 alone is "restricted license". */
 const FS_TYPE_RESTRICTED = 0x0002;
 const FS_TYPE_PERMISSION_MASK = 0x000f;
+/** fsType bit 9: only bitmaps of the font may be embedded, not its outlines. */
+const FS_TYPE_BITMAP_ONLY = 0x0200;
+
+/** Whether an `OS/2` fsType forbids embedding the font's outlines (restricted license, or bitmaps only). */
+export function fsTypeForbidsEmbedding(fsType: number): boolean {
+  return (fsType & FS_TYPE_PERMISSION_MASK) === FS_TYPE_RESTRICTED || (fsType & FS_TYPE_BITMAP_ONLY) !== 0;
+}
 
 const FS_SELECTION_ITALIC = 0x0001;
 const FS_SELECTION_BOLD = 0x0020;
@@ -367,6 +374,8 @@ interface Os2Spec {
   readonly winAscent: number;
   readonly winDescent: number;
   readonly averageWidth: number;
+  /** The embedding permission bits, as the font the program comes from has them. */
+  readonly fsType: number;
 }
 
 function styleFlags(names: FontNames): { bold: boolean; italic: boolean } {
@@ -394,7 +403,7 @@ function buildOs2(spec: Os2Spec, pairs: readonly [number, number][]): Uint8Array
   dv.setInt16(2, int16(spec.averageWidth));
   dv.setUint16(4, spec.bold ? 700 : 400);
   dv.setUint16(6, 5); // medium width
-  dv.setUint16(8, 0); // fsType: installable
+  dv.setUint16(8, spec.fsType);
   dv.setInt16(10, 650); // ySubscriptXSize
   dv.setInt16(12, 600);
   dv.setInt16(16, 140);
@@ -467,7 +476,7 @@ export function trueTypeForWord(
   const os2 = tables.get('OS/2');
   if (os2 !== undefined && os2.length >= 10) {
     const fsType = view(os2).getUint16(8);
-    if ((fsType & FS_TYPE_PERMISSION_MASK) === FS_TYPE_RESTRICTED) return null;
+    if (fsTypeForbidsEmbedding(fsType)) return null;
   }
 
   const pairs = cleanMap(map, view(maxp).getUint16(4));
@@ -508,6 +517,7 @@ export function trueTypeForWord(
           winAscent: Math.max(0, ascender),
           winDescent: Math.abs(descender),
           averageWidth: 0,
+          fsType: 0,
         },
         pairs,
       ),
@@ -693,14 +703,15 @@ function buildHhea(ascent: number, descent: number, advanceMax: number): Uint8Ar
  * A bare CFF program (PDF FontFile3 `Type1C` / `CIDFontType0C`) as an OpenType-CFF font: the
  * `CFF ` table as given, plus `cmap` (from `map`), `head`, `hhea`, `hmtx` (`advances` by glyph
  * id, glyphs without one get the CFF `defaultWidthX`), `maxp` 0.5, `name`, `OS/2` 4 and
- * `post` 3. Null when the CFF cannot be parsed or the map is too sparse for a format 4 subtable.
+ * `post` 3; `metrics.fsType` is the source font's embedding permission, kept as it is (0 when the
+ * program has no `OS/2` of its own to take it from). Null when the CFF cannot be parsed or the map is too sparse for a format 4 subtable.
  */
 export function cffForWord(
   cff: Uint8Array,
   map: readonly GlyphMapping[],
   advances: ReadonlyMap<number, number>,
   names: FontNames,
-  metrics: { readonly ascent: number; readonly descent: number },
+  metrics: { readonly ascent: number; readonly descent: number; readonly fsType?: number },
 ): Uint8Array | null {
   const facts = readCff(cff);
   if (facts === null) return null;
@@ -740,6 +751,7 @@ export function cffForWord(
           winAscent: Math.max(0, metrics.ascent),
           winDescent: Math.abs(metrics.descent),
           averageWidth,
+          fsType: metrics.fsType ?? 0,
         },
         pairs,
       ),

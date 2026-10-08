@@ -519,7 +519,14 @@ had to stay green. The moves, and the defects they fixed on the way:
        144 dpi by MuPDF **without its text** (and without what Word draws itself over or under
        it), so the text above stays editable. A page of more than 1500 shapes and islands
        becomes one raster. Links (external URIs only) and the text (`readPageLayout`) are read
-       in the same pass.
+       in the same pass. Three limits keep one odd drawing from costing the export: a filled
+       rectangle reaching further than five page sides off the page is cut to the page and any
+       other shape that far out is an island (Word's offsets are 32-bit); an even-odd fill of
+       more than 1500 subpaths is an island (finding its holes is quadratic); and a colour of
+       a space the binding cannot pass on (a DeviceN of two inks goes through as it is; five
+       or more inks are drawn as the grey `1 − max ink`) never throws. A page the reader
+       fails on for any other reason is written as `readPageRaster`'s one picture of the
+       page under its text boxes and links.
     2. **Text boxes** (`textBoxes`, `ops/docx-layout-text.ts`). MuPDF's lines (pieces of a
        justified line are joined again when their gaps are equal) become paragraphs while the
        size agrees (±1 pt), the baseline pitch is regular (0.5…1.6 × size) and the left edges,
@@ -557,15 +564,15 @@ had to stay green. The moves, and the defects they fixed on the way:
     4. **Parts.** `embedFonts` (`ops/docx-fonts.ts`, before the first page is read, so every
        page's text can look its face up) records, per page, the Unicode → glyph pairs and
        advances each visible font draws (a `Device` whose `fillText`/`strokeText` see them;
-       invisible text is `ignoreText`); finds the programs in the page's and its forms'
+       invisible text is `ignoreText`, and text drawn at opacity 0, as this app's OCR layer is, is not recorded); finds the programs in the page's and its forms'
        resources (`FontFile2`, `FontFile3` as a bare CFF or OpenType; Type 1 is not
        embedded); and rebuilds each with `trueTypeForWord` / `cffForWord`
        (`ops/docx-font-sfnt.ts`): a new Unicode `cmap` of exactly the drawn pairs, a `name`
        table (family, style; a second program of one family and style, such as another subset
        of the face, is `Family 2`), the `OS/2` and `post` a PDF subset lacks (its ascent and
        descent read from `hhea`, else `head`), and the style bits made to agree with the names. The font's licence bits are kept: `OS/2`
-       `fsType` 2 ("restricted licence") makes the builder return `null` and the font keeps
-       its fallback, as does any font that cannot be rebuilt (the export goes on). A ligature
+       `fsType` 2 ("restricted licence") or 0x0200 (bitmaps only) makes the builder return `null`
+       and the font keeps its fallback, and an OpenType-CFF font is rebuilt with its own `fsType`, as does any font that cannot be rebuilt (the export goes on). A ligature
        glyph arrives from MuPDF as its first character with the glyph and the next ones with
        gid −1, so a glyph is held until the next shows it stands alone and is never mapped as
        its first letter. The fonts are written as `word/fonts/fontN.odttf` XORed with the key

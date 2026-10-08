@@ -14,8 +14,8 @@
  *    face are two programs); a name that carries no tag in the resources matches without it.
  * 3. `trueTypeForWord` / `cffForWord` (`docx-font-sfnt.ts`) rebuild each program as a small
  *    TrueType file whose `cmap` maps exactly those Unicode values to those glyphs. A font whose
- *    licence bits forbid embedding (OS/2 `fsType` 2), or one the builder cannot rebuild,
- *    keeps the fallback.
+ *    licence bits forbid embedding (OS/2 `fsType` 2, or 0x0200: bitmaps only), or one the builder
+ *    cannot rebuild, keeps the fallback. An OpenType-CFF font keeps its `fsType`.
  * 4. Fonts are named by family (`HelveticaWorld-Bold` → family `HelveticaWorld`, style Bold).
  *    Two different programs of one family and style (the subsets of two pages) get the family
  *    ` 2`, ` 3` … so every program stays addressable.
@@ -27,7 +27,13 @@ import type { Font, PDFDocument, PDFObject, PDFPage, Text } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import { readName, resolved } from '../engines/mupdf-write';
 import { XML_HEAD, xml } from './docx-drawing';
-import { cffForWord, type FontNames, type GlyphMapping, trueTypeForWord } from './docx-font-sfnt';
+import {
+  cffForWord,
+  type FontNames,
+  fsTypeForbidsEmbedding,
+  type GlyphMapping,
+  trueTypeForWord,
+} from './docx-font-sfnt';
 import { fontFamily } from './page-layout';
 import { type OperationContext, throwIfAborted } from './types';
 
@@ -92,14 +98,11 @@ function sfntTables(data: Uint8Array): Map<string, { offset: number; length: num
   return tables;
 }
 
-/** Whether the font's licence bits (OS/2 `fsType` = 2, "restricted licence") forbid embedding it. */
-function embeddingRestricted(
-  tables: Map<string, { offset: number; length: number }>,
-  data: Uint8Array,
-): boolean {
+/** The font's own `OS/2` fsType (its licence bits); 0, installable, when it has none. */
+function embeddingBits(tables: Map<string, { offset: number; length: number }>, data: Uint8Array): number {
   const os2 = tables.get('OS/2');
-  if (os2 === undefined || os2.length < 10 || os2.offset + 10 > data.length) return false;
-  return (u16(data, os2.offset + 8) & 0x000f) === 2;
+  if (os2 === undefined || os2.length < 10 || os2.offset + 10 > data.length) return 0;
+  return u16(data, os2.offset + 8);
 }
 
 /** A CFF INDEX at `at`: where its objects start and where it ends. */
@@ -313,8 +316,13 @@ function drawnOnPage(mupdf: Mupdf, page: PDFPage): Map<string, Drawn> {
     settle();
   };
   const device = new mupdf.Device({
-    fillText: (text) => record(text),
-    strokeText: (text) => record(text),
+    // Text drawn with no opacity (this app's own OCR layer) shows nothing, so needs no font.
+    fillText: (text, _ctm, _colorspace, _color, alpha) => {
+      if (alpha !== 0) record(text);
+    },
+    strokeText: (text, _stroke, _ctm, _colorspace, _color, alpha) => {
+      if (alpha !== 0) record(text);
+    },
   });
   try {
     page.run(device, mupdf.Matrix.identity);
@@ -597,7 +605,8 @@ function buildProgram(program: Program, names: FontNames): Uint8Array | null {
   try {
     const tables = sfntTables(data);
     if (tables !== null) {
-      if (embeddingRestricted(tables, data)) return null;
+      const fsType = embeddingBits(tables, data);
+      if (fsTypeForbidsEmbedding(fsType)) return null;
       if (tables.has('glyf'))
         return trueTypeForWord(
           data,
@@ -616,6 +625,7 @@ function buildProgram(program: Program, names: FontNames): Uint8Array | null {
         {
           ascent: (numberOf('Ascent', 800) * unitsPerEm) / 1000,
           descent: (numberOf('Descent', -200) * unitsPerEm) / 1000,
+          fsType,
         },
       );
     }

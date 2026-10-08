@@ -71,6 +71,17 @@ const FLAT_COLOURS = 256;
 const JPEG_QUALITY = 90;
 /** A polygonal clip that cuts less than this (points) off the edge of a shape or picture does not count as cutting it. */
 const POLYGON_SLACK = 0.5;
+/**
+ * A shape may reach this many page sides (the longer one) beyond the page and stay a shape; further
+ * out, Word's offsets (`wp:posOffset`, an xsd:int of EMU) would overflow, so a filled rectangle is
+ * cut to the page and anything else is drawn as a picture of the part on the page.
+ */
+const OFF_PAGE_SIDES = 5;
+/**
+ * An even-odd fill of more subpaths than this is drawn as a picture: the writer works out which
+ * subpath is a hole by testing each against the others, which grows with the square of their number.
+ */
+const MAX_EVEN_ODD_SUBPATHS = 1500;
 /** Strokes this thin are drawn this wide (a zero width is MuPDF's hairline). */
 const MIN_STROKE = 0.25;
 
@@ -249,26 +260,27 @@ function settled(box: Box): Box {
 /** The average scale of a matrix: `sqrt|det|`. */
 const averageScale = (m: Matrix): number => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
 
+/** A colour space and a colour of it, in a form `drawColor` hands to the engine's binding. */
+type Drawable = readonly [ColorSpace, Color];
+
 /**
- * The colour as the engine's binding takes it: one, three or four components (its own check
- * refuses any other count, so a DeviceN colour of two components fails here as it did there).
+ * The colour as the engine's binding takes it. Its check refuses any component count but one,
+ * three or four, so a colour of other spaces (a DeviceN of two or five inks, say) cannot be
+ * handed over as it is:
+ *  - two components pass as three: the engine reads as many as the colour space has and the
+ *    third is never looked at, so the ink values reach it as they are;
+ *  - five or more cannot pass at all (the binding's buffer holds four); the colour is drawn as
+ *    the grey its strongest ink leaves, `1 − max`: the tone of the ink, not its hue.
  */
-function drawColor(color: readonly number[]): Color {
+function drawColor(mupdf: Mupdf, colorspace: ColorSpace, color: readonly number[]): Drawable {
   const [first, second, third, fourth] = color;
-  if (color.length === 1 && first !== undefined) return [first];
-  if (color.length === 3 && first !== undefined && second !== undefined && third !== undefined) {
-    return [first, second, third];
+  if (color.length === 1) return [colorspace, [first as number]];
+  if (color.length === 2) return [colorspace, [first as number, second as number, 0]];
+  if (color.length === 3) return [colorspace, [first as number, second as number, third as number]];
+  if (color.length === 4) {
+    return [colorspace, [first as number, second as number, third as number, fourth as number]];
   }
-  if (
-    color.length === 4 &&
-    first !== undefined &&
-    second !== undefined &&
-    third !== undefined &&
-    fourth !== undefined
-  ) {
-    return [first, second, third, fourth];
-  }
-  throw new RangeError(`a colour of ${color.length} components cannot be drawn`);
+  return [mupdf.ColorSpace.DeviceGray, [1 - Math.min(1, Math.max(0, ...color))]];
 }
 
 /** A pixmap's colour of an `r g b` triple, 0xRRGGBB. */
@@ -283,7 +295,7 @@ function converted(mupdf: Mupdf, colorspace: ColorSpace, color: readonly number[
     path.lineTo(2, 2);
     path.lineTo(-1, 2);
     path.closePath();
-    device.fillPath(path, false, mupdf.Matrix.identity, colorspace, drawColor(color), 1);
+    device.fillPath(path, false, mupdf.Matrix.identity, ...drawColor(mupdf, colorspace, color), 1);
     device.close();
     const [r, g, b] = pixmap.getPixels() as unknown as [number, number, number];
     return (r << 16) | (g << 8) | b;
@@ -437,10 +449,10 @@ function renderWithoutText(
       };
       const forward = new mupdf.Device({
         fillPath(path, evenOdd, ctm, colorspace, color, alpha) {
-          if (through()) draw.fillPath(path, evenOdd, ctm, colorspace, drawColor(color), alpha);
+          if (through()) draw.fillPath(path, evenOdd, ctm, ...drawColor(mupdf, colorspace, color), alpha);
         },
         strokePath(path, stroke, ctm, colorspace, color, alpha) {
-          if (through()) draw.strokePath(path, stroke, ctm, colorspace, drawColor(color), alpha);
+          if (through()) draw.strokePath(path, stroke, ctm, ...drawColor(mupdf, colorspace, color), alpha);
         },
         clipPath(path, evenOdd, ctm) {
           if (skipping === 0) draw.clipPath(path, evenOdd, ctm);
@@ -464,7 +476,7 @@ function renderWithoutText(
         },
         fillImageMask(image, ctm, colorspace, color, alpha) {
           borrowed(image);
-          if (through()) draw.fillImageMask(image, ctm, colorspace, drawColor(color), alpha);
+          if (through()) draw.fillImageMask(image, ctm, ...drawColor(mupdf, colorspace, color), alpha);
         },
         clipImageMask(image, ctm) {
           borrowed(image);
@@ -474,7 +486,7 @@ function renderWithoutText(
           if (skipping === 0) draw.popClip();
         },
         beginMask(area, luminosity, colorspace, color) {
-          if (skipping === 0) draw.beginMask(area, luminosity, colorspace, drawColor(color));
+          if (skipping === 0) draw.beginMask(area, luminosity, ...drawColor(mupdf, colorspace, color));
         },
         endMask() {
           if (skipping === 0) draw.endMask();
@@ -550,6 +562,9 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
   const width = px1 - px0;
   const height = py1 - py0;
   const pageBox: Box = [0, 0, width, height];
+  const margin = OFF_PAGE_SIDES * Math.max(width, height);
+  /** What a shape may reach and stay a shape (see `OFF_PAGE_SIDES`). */
+  const reachable: Box = [-margin, -margin, width + margin, height + margin];
   const place = (m: Matrix): Matrix => [m[0], m[1], m[2], m[3], m[4] - px0, m[5] - py0];
   const shifted = (r: Rect): Box => [r[0] - px0, r[1] - py0, r[2] - px0, r[3] - py0];
 
@@ -706,15 +721,25 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
       contribute(visible, call);
       return;
     }
+    const holes =
+      fill?.evenOdd === true ? data.segments.filter((segment) => segment.kind === 'move').length : 0;
+    if (holes > MAX_EVEN_ODD_SUBPATHS) {
+      contribute(visible, call);
+      return;
+    }
     const extent: Box = frame.polygons.length === 0 ? reach : settled(reach);
-    if (within(extent, frame.box) && frame.polygons.every((polygon) => covers(polygon, extent))) {
+    if (
+      within(extent, frame.box) &&
+      within(reach, reachable) &&
+      frame.polygons.every((polygon) => covers(polygon, extent))
+    ) {
       emit({ kind: 'shape', box: data.box, segments: data.segments, fill: shapeFill, stroke }, reach);
       return;
     }
     if (stroke === null && data.rect !== null && frame.polygons.length === 0) {
-      const cut = intersect(data.rect, frame.box);
-      if (cut !== null)
-        emit({ kind: 'shape', box: cut, segments: cutRectangle(cut), fill: shapeFill, stroke }, cut);
+      // Unstroked, the reach is the rectangle: `visible` is its part inside the clip, and it meets the page.
+      const cut = intersect(visible, pageBox) as Box;
+      emit({ kind: 'shape', box: cut, segments: cutRectangle(cut), fill: shapeFill, stroke }, cut);
       return;
     }
     contribute(visible, call);
@@ -852,6 +877,11 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     }
   }
 
+  return { width, height, items, links: externalLinks(page, shifted), text };
+}
+
+/** The page's external links, their boxes in page space. */
+function externalLinks(page: Page, shifted: (r: Rect) => Box): SceneLink[] {
   const links: SceneLink[] = [];
   for (const link of page.getLinks()) {
     try {
@@ -860,6 +890,26 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
       link.destroy();
     }
   }
+  return links;
+}
 
-  return { width, height, items, links, text };
+/**
+ * The page as one picture of its drawing (the text left out) under its text and links: what the
+ * writer falls back to for a page `readPageScene` cannot read shape by shape, so one page's
+ * oddity costs that page its vector shapes and nothing more.
+ */
+export function readPageRaster(mupdf: Mupdf, page: Page): PageScene {
+  const text = readPageLayout(mupdf, page, { images: false });
+  const [px0, py0, px1, py1] = page.getBounds();
+  const width = px1 - px0;
+  const height = py1 - py0;
+  const box: Box = [0, 0, width, height];
+  const data = renderWithoutText(mupdf, page, box, null, new Set());
+  return {
+    width,
+    height,
+    items: [{ kind: 'raster', box, data, mime: 'image/png' }],
+    links: externalLinks(page, (r) => [r[0] - px0, r[1] - py0, r[2] - px0, r[3] - py0]),
+    text,
+  };
 }
