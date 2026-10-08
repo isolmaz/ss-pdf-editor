@@ -10,7 +10,7 @@ import * as mupdf from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import type { OcrWord } from '../engines/tesseract';
 import type { TextBox } from './layout-scene';
-import { ocrBackground, ocrTextBoxes, type RgbaImage } from './ocr-scene';
+import { dropMisreads, isMisread, ocrBackground, ocrTextBoxes, type RgbaImage } from './ocr-scene';
 
 /* ------------------------------------------------------------------ *
  * a tiny page painter
@@ -255,7 +255,7 @@ describe('ocrTextBoxes: grouping', () => {
     const run = runsOf(first)[0];
     expect(run).toMatchObject({ font: 'Arial', italic: false, link: null, bold: false, color: 0 });
     expect(
-      ocrTextBoxes(words.slice(0, 1), blank(), 0.9, 'Calibri').boxes[0]?.paragraphs[0]?.lines[0]?.runs[0]
+      ocrTextBoxes(words.slice(0, 1), blank(), 0.9, [], 'Calibri').boxes[0]?.paragraphs[0]?.lines[0]?.runs[0]
         ?.font,
     ).toBe('Calibri');
   });
@@ -271,8 +271,8 @@ describe('ocrTextBoxes: grouping', () => {
 
   it('uses the baseline tesseract found', () => {
     const words = [
-      fake('a', 10, 10, 60, 26, 0, 0, { baseline: { x0: 10, y0: 30, x1: 60, y1: 30 } }),
-      fake('b', 10, 40, 60, 56, 1, 0, { baseline: { x0: 10, y0: 62, x1: 60, y1: 62 } }),
+      fake('Ag', 10, 10, 60, 26, 0, 0, { baseline: { x0: 10, y0: 30, x1: 60, y1: 30 } }),
+      fake('Bg', 10, 40, 60, 56, 1, 0, { baseline: { x0: 10, y0: 62, x1: 60, y1: 62 } }),
     ];
     const { boxes } = ocrTextBoxes(words, blank(), 0.9);
     const paragraph = boxes[0]?.paragraphs[0];
@@ -302,23 +302,152 @@ describe('ocrTextBoxes: grouping', () => {
     expect(ocrTextBoxes(one, blank(), 0.9).boxes[0]?.paragraphs[0]?.align).toBe('left');
   });
 
-  it("keeps a paragraph's size across lines without descenders, and a clearly bigger line its own", () => {
-    // extents 14, 14, 14.5 and 10.5 (no descender): the upper quartile of the sizes
+  it("keeps a paragraph's size across lines with and without descenders", () => {
+    // sizes 14.3, 14.3, 14.8 and 14.1 from heights 14, 14, 14.5 and 10.5 (no descender): the upper quartile
     const same = [
       fake('Hgyp', 10, 10, 60, 24, 0),
       fake('Hgyp', 10, 30, 60, 44, 1),
       fake('Hgyp', 10, 50, 60, 64.5, 2),
       fake('Hxzm', 10, 70, 60, 80.5, 3),
     ];
-    const sizes = (words: OcrWord[]) =>
-      ocrTextBoxes(words, blank(), 0.9).boxes[0]?.paragraphs[0]?.lines.map((line) => line.runs[0]?.size);
-    // the last line (74 % of it) is the paragraph's size too
-    expect(sizes(same)).toEqual([14.5, 14.5, 14.5, 14.5]);
-    const heading = [
+    const boxes = ocrTextBoxes(same, blank(), 0.9).boxes;
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]?.paragraphs[0]?.lines.map((line) => line.runs[0]?.size)).toEqual([
+      14.5, 14.5, 14.5, 14.5,
+    ]);
+  });
+
+  it('sizes a line from the heights of its words by what they hold, not from the extent', () => {
+    // 'aceo' is x-height only (8 / 0.53), 'Hl' reaches the ascender (11 / 0.745), 'gy' has descenders only,
+    // 'İş' carries a mark and a cedilla, '…' has no estimate and is left out of the median
+    const sizeOf = (...words: OcrWord[]) =>
+      runsOf(ocrTextBoxes(words, blank(), 0.9).boxes[0] as TextBox)[0]?.size;
+    expect(sizeOf(fake('aceo', 10, 10, 50, 18, 0))).toBe(15);
+    expect(sizeOf(fake('Hl', 10, 10, 30, 21, 0))).toBe(15);
+    expect(sizeOf(fake('gy', 10, 10, 30, 21, 0))).toBe(14.5);
+    expect(sizeOf(fake('İş', 10, 10, 30, 24, 0))).toBe(12);
+    expect(sizeOf(fake('aceo', 10, 10, 50, 18, 0), fake('…', 55, 4, 60, 18, 0))).toBe(15);
+    // an all-symbol line falls back to the ink extent
+    expect(sizeOf(fake('—', 10, 10, 30, 20, 0))).toBe(10);
+    // a median: one tall word among three does not make the line big
+    expect(
+      sizeOf(
+        fake('aceo', 10, 10, 50, 18, 0),
+        fake('aceo', 55, 10, 95, 18, 0),
+        fake('Hl', 100, 0, 120, 31, 0),
+      ),
+    ).toBe(15);
+  });
+
+  it('puts a clearly bigger line in a box of its own at its own size', () => {
+    const lines = [
       fake('Title', 10, 10, 90, 40, 0),
       ...[1, 2, 3].map((n) => fake('Body', 10, 40 + n * 16, 90, 54 + n * 16, n)),
     ];
-    expect(sizes(heading)).toEqual([30.5, 14.5, 14.5, 14.5]);
+    const sizes = ocrTextBoxes(lines, blank(), 0.9).boxes.map((box) =>
+      box.paragraphs[0]?.lines.map((line) => line.runs[0]?.size),
+    );
+    expect(sizes).toEqual([[40.5], [14.5, 14.5, 14.5]]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * columns, regions, reading order
+ * ------------------------------------------------------------------ */
+
+const textOf = (box: TextBox): string[] =>
+  box.paragraphs.flatMap((paragraph) =>
+    paragraph.lines.map((line) => line.runs.map((entry) => entry.text).join('')),
+  );
+
+describe('ocrTextBoxes: columns and regions', () => {
+  it('cuts a tesseract line at a column gutter and keeps the words of one column together', () => {
+    const joined = [
+      fake('BECERILER', 10, 10, 90, 24, 0),
+      fake('OZET', 200, 10, 250, 24, 0),
+      fake('TypeScript', 10, 30, 90, 44, 1),
+      fake('Dokuz', 200, 30, 250, 44, 1),
+      fake('yildir', 255, 30, 300, 44, 1),
+    ];
+    const { boxes } = ocrTextBoxes(joined, blank(400), 0.9);
+    expect(boxes.map(textOf)).toEqual([
+      ['BECERILER', 'TypeScript'],
+      ['OZET', 'Dokuz yildir'],
+    ]);
+    // the left column's box ends before the right one starts
+    expect((boxes[0]?.box[2] ?? 0) < (boxes[1]?.box[0] ?? 0)).toBe(true);
+  });
+
+  it('cuts a line where the words lie in different regions, the smallest region containing a word counts', () => {
+    const words = [fake('Left', 10, 10, 40, 24, 0), fake('Right', 45, 10, 80, 24, 0)];
+    expect(ocrTextBoxes(words, blank(), 0.9).boxes).toHaveLength(1);
+    // the second word is outside the region the first lies in
+    const split = ocrTextBoxes(words, blank(), 0.9, [[0, 0, 42, 30]]);
+    expect(split.boxes.map(textOf)).toEqual([['Left'], ['Right']]);
+    // nested regions: the inner one is the first word's, the outer one the second's
+    const nested = ocrTextBoxes(words, blank(), 0.9, [
+      [0, 0, 100, 40],
+      [0, 0, 42, 30],
+    ]);
+    expect(nested.boxes.map(textOf)).toEqual([['Left'], ['Right']]);
+    // both in the same region: one line
+    expect(ocrTextBoxes(words, blank(), 0.9, [[0, 0, 100, 40]]).boxes).toHaveLength(1);
+  });
+
+  it('never joins lines of different regions into a paragraph, however well they align', () => {
+    const words = [fake('Upper', 10, 10, 60, 24, 0), fake('Lower', 10, 30, 60, 44, 1)];
+    expect(ocrTextBoxes(words, blank(), 0.9).boxes).toHaveLength(1);
+    expect(ocrTextBoxes(words, blank(), 0.9, [[0, 26, 100, 60]]).boxes).toHaveLength(2);
+  });
+
+  it('regroups lines by alignment, spacing and size, whatever paragraphs tesseract made', () => {
+    const stack = (...rows: [number, number, number, number][]) =>
+      rows.map(([x0, y0, x1, y1], index) => fake('Hgyp', x0, y0, x1, y1, index, 0));
+    const count = (words: OcrWord[]) => ocrTextBoxes(words, blank(), 0.9).boxes.length;
+    // left edges within 0.8 × the size, or centres
+    expect(count(stack([10, 10, 80, 24], [14, 30, 70, 44]))).toBe(1);
+    expect(count(stack([10, 10, 100, 24], [40, 30, 70, 44]))).toBe(1);
+    // aligned neither way
+    expect(count(stack([10, 10, 60, 24], [40, 30, 90, 44]))).toBe(2);
+    // a blank line between, or lines on top of each other
+    expect(count(stack([10, 10, 80, 24], [10, 70, 80, 84]))).toBe(2);
+    expect(count(stack([10, 10, 80, 24], [10, 12, 80, 26]))).toBe(2);
+    // a line half or twice the size
+    expect(count([fake('Hgyp', 10, 10, 80, 24, 0), fake('Hgyp', 10, 30, 80, 37, 1)])).toBe(2);
+    expect(count([fake('Hgyp', 10, 10, 80, 24, 0), fake('Hgyp', 10, 30, 80, 58, 1)])).toBe(2);
+  });
+
+  it('puts a line under the nearest paragraph it continues', () => {
+    // two columns whose lines the engine joined, three lines each, the right one 6 pt lower
+    const words = [0, 1, 2].flatMap((row) => [
+      fake('Left', 10, 10 + row * 20, 90, 24 + row * 20, row),
+      fake('Right', 200, 16 + row * 20, 290, 30 + row * 20, row),
+    ]);
+    const { boxes } = ocrTextBoxes(words, blank(400), 0.9);
+    expect(boxes.map(textOf)).toEqual([
+      ['Left', 'Left', 'Left'],
+      ['Right', 'Right', 'Right'],
+    ]);
+  });
+
+  it('reads a header, then the columns left to right, then what spans both again', () => {
+    const words = [
+      fake('Footer', 10, 200, 290, 214, 8),
+      fake('Right2', 200, 60, 290, 74, 4),
+      fake('Left1', 10, 40, 90, 54, 3),
+      fake('Right1', 200, 40, 290, 54, 3),
+      fake('Left2', 10, 60, 90, 74, 4),
+      fake('Header', 10, 10, 290, 24, 0),
+    ];
+    const { boxes } = ocrTextBoxes(words, blank(400), 0.9);
+    expect(boxes.flatMap(textOf)).toEqual(['Header', 'Left1', 'Left2', 'Right1', 'Right2', 'Footer']);
+  });
+
+  it('reads boxes no gap separates top to bottom, then left to right', () => {
+    const across = [fake('Aaa', 0, 0, 60, 12, 0), fake('Bbb', 40, 0, 100, 12, 1)];
+    expect(ocrTextBoxes(across, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Aaa', 'Bbb']);
+    const overlap = [fake('Aaa', 0, 6, 60, 18, 0), fake('Bbb', 40, 0, 100, 12, 1)];
+    expect(ocrTextBoxes(overlap, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Bbb', 'Aaa']);
   });
 });
 
@@ -347,13 +476,13 @@ describe('ocrTextBoxes: colour and weight', () => {
   it('reads a coloured word as its colour, and merges neighbours of the same look into one run', async () => {
     const page = new Page(300, 60, WHITE);
     page.text('noto', 18, 10, 40, [200, 30, 30], 'Red');
-    page.text('noto', 18, 70, 40, [205, 28, 33], 'text');
-    page.text('noto', 18, 130, 40, [20, 20, 200], 'Blue');
+    page.text('noto', 18, 50, 40, [205, 28, 33], 'text');
+    page.text('noto', 18, 92, 40, [20, 20, 200], 'Blue');
     const image = await page.render(3);
     const words = [
-      wordAt(image, 'Red', [2, 2, 65, 58]),
-      wordAt(image, 'text', [66, 2, 125, 58]),
-      wordAt(image, 'Blue', [126, 2, 298, 58]),
+      wordAt(image, 'Red', [2, 2, 46, 58]),
+      wordAt(image, 'text', [47, 2, 88, 58]),
+      wordAt(image, 'Blue', [89, 2, 298, 58]),
     ];
     const runs = runsOf(ocrTextBoxes(words, image, 0.9).boxes[0] as TextBox);
     expect(runs.map((run) => run.text)).toEqual(['Red text ', 'Blue']);
@@ -365,12 +494,12 @@ describe('ocrTextBoxes: colour and weight', () => {
     const page = new Page(300, 150, WHITE);
     const body = 'The quick brown fox jumps over';
     page.text('noto', 14, 10, 30, BLACK, body);
-    page.text('noto', 14, 10, 60, BLACK, body);
-    page.text('notoBold', 14, 10, 90, BLACK, body);
-    page.text('noto', 14, 10, 120, BLACK, body);
+    page.text('noto', 14, 10, 54, BLACK, body);
+    page.text('notoBold', 14, 10, 78, BLACK, body);
+    page.text('noto', 14, 10, 102, BLACK, body);
     const image = await page.render(3);
     const words = [0, 1, 2, 3].map((index) =>
-      wordAt(image, body, [2, index * 30 + 5, 298, index * 30 + 35], { line: index, paragraph: 0 }),
+      wordAt(image, body, [2, index * 24 + 14, 298, index * 24 + 38], { line: index, paragraph: 0 }),
     );
     const sizes = ocrTextBoxes(words, image, 0.9).boxes[0]?.paragraphs[0]?.lines.map(
       (line) => line.runs[0]?.bold,
@@ -411,6 +540,36 @@ describe('ocrTextBoxes: low confidence', () => {
     ]);
     // the text reads as the words with single spaces
     expect(runs.map((run) => run.text).join('')).toBe('Alpha b1ta gamma delta eps');
+  });
+
+  it('does not flag a symbol (or a letter alone in punctuation), however unsure the engine was', () => {
+    const words = [
+      fake('Alpha', 10, 10, 50, 22, 0),
+      fake('•', 55, 10, 62, 22, 0, 0, { confidence: 20 }),
+      fake('(O)', 66, 10, 90, 22, 0, 0, { confidence: 35 }),
+      fake('2o', 95, 10, 115, 22, 0, 0, { confidence: 35 }),
+    ];
+    const { boxes, flagged } = ocrTextBoxes(words, blank(), 0.9);
+    expect(flagged).toEqual([{ text: '2o', confidence: 0.35 }]);
+    expect(runsOf(boxes[0] as TextBox).map((run) => [run.text, run.note])).toEqual([
+      ['Alpha • (O) ', undefined],
+      ['2o', 'Low OCR confidence (35 %)'],
+    ]);
+  });
+
+  it('names a symbol-only word below 60 % a misread, and drops it only over a region', () => {
+    const star = fake('*', 50, 50, 60, 62, 0, 0, { confidence: 40 });
+    const sure = fake('+', 50, 80, 60, 92, 1, 0, { confidence: 80 });
+    const letter = fake('ab', 50, 110, 60, 122, 2, 0, { confidence: 10 });
+    expect(isMisread(star)).toBe(true);
+    expect(isMisread(sure)).toBe(false);
+    expect(isMisread(letter)).toBe(false);
+    expect(isMisread(fake('(O)', 50, 140, 70, 152, 3, 0, { confidence: 30 }))).toBe(true);
+    expect(isMisread(fake('O)', 50, 140, 70, 152, 3, 0, { confidence: 30 }))).toBe(true);
+    const words = [star, sure, letter];
+    expect(dropMisreads(words, [[40, 40, 100, 70]])).toEqual([sure, letter]);
+    expect(dropMisreads(words, [[200, 40, 300, 70]])).toEqual(words);
+    expect(dropMisreads(words, [])).toEqual(words);
   });
 
   it('spaces two noted words in a row and a noted word at the start', () => {

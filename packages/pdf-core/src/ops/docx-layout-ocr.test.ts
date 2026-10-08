@@ -180,6 +180,38 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrLowConfidence')).toBe(false);
   });
 
+  it('drops symbol-only guesses over a picture, keeps those on the page, and flags neither', async () => {
+    const guess = (text: string, x0: number, y0: number): OcrWord => ({
+      text,
+      x0,
+      y0,
+      x1: x0 + 10,
+      y1: y0 + 12,
+      confidence: 30,
+      block: 2,
+      paragraph: 2,
+      line: 2,
+    });
+    // '*' lies over the dark panel (x 40–240, y 200–300 of the 400 × 500 page), '•' on the page colour
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => [...words([96, 95, 97]), guess('*', 100, 250), guess('•', 300, 60)],
+        },
+      },
+      run,
+    );
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    expect(xml).toContain('•');
+    expect(xml).not.toContain('*');
+    expect(zip.file('word/comments.xml')).toBeNull();
+    expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrLowConfidence')).toBe(false);
+  });
+
   it('reads an invisible text layer instead of calling the recogniser', async () => {
     let calls = 0;
     const result = await exportOffice(
