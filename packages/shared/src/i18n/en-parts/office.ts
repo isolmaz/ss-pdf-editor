@@ -36,7 +36,7 @@ export const officePart = {
   'op.note.exportOffice.docxApproximate':
     'The text was exported as flowing paragraphs: exact positions on the page, multi-column flow, drawings, form fields and annotations are not. Fonts are named; where one is not installed, Word uses a similar one.',
   'op.note.exportOffice.pageImages':
-    'Each page was exported as one picture of the page at 200 dpi; the look is kept, but its text cannot be edited in Word.',
+    'Each page was exported as one picture of the page at {dpi} dpi; the look is kept, but its text cannot be edited in Word.',
   'op.note.exportOffice.pageScaled':
     'Word does not accept pages larger than 22 inches (55.88 cm); these pages were scaled down proportionally (smallest ratio {percent}%): {pages}.',
   'op.note.exportOffice.tables': '{count} ruled tables were exported as tables, with their merged cells.',

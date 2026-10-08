@@ -429,7 +429,7 @@ had to stay green. The moves, and the defects they fixed on the way:
     Export dialog's second select). `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
     page with MuPDF (`page.toPixmap`, RGB, no alpha so white paper, annotations and widgets
     included; pdf.js is not used, so the path runs in Node tests) at 200 dpi of the page's size as
-    `getBounds` gives it (after `/Rotate` and the crop box), fewer when that would pass 40 megapixels.
+    `getBounds` gives it (after `/Rotate` and the crop box), lower only when a page would exceed 40 megapixels; the note reports the lowest dpi used (`dpi`).
     JPEG (quality 90) when a `Device` pass sees `fillImage` on the page, PNG otherwise. Each page is a
     section of the page's size with every margin 0 and `w:orient` when wide, holding one
     paragraph (exact 1 pt line, 1 pt run) with a `wp:anchor` picture at the page's corner

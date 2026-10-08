@@ -55,6 +55,8 @@ export interface PageImage {
   readonly bytes: Uint8Array;
   readonly pixelWidth: number;
   readonly pixelHeight: number;
+  /** The resolution the page was drawn at (the lower of its two axes). */
+  readonly dpi: number;
 }
 
 /** Whether the page draws a raster image (not a vector drawing or text). */
@@ -105,6 +107,7 @@ function renderPage(mupdf: Mupdf, page: Page, index: number): PageImage {
       bytes,
       pixelWidth,
       pixelHeight,
+      dpi: Math.min((pixelWidth / width) * 72, (pixelHeight / height) * 72),
     };
   } finally {
     pixmap.destroy();

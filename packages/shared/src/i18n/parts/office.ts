@@ -39,7 +39,7 @@ export const officePart = {
   'op.note.exportOffice.docxApproximate':
     'Metin akan paragraflar olarak aktarıldı: sayfadaki birebir konumlar, çok sütunlu akış, çizimler, form alanları ve açıklamalar aktarılmaz. Yazı tipleri adlarıyla aktarılır; bilgisayarda yoksa Word benzerini kullanır.',
   'op.note.exportOffice.pageImages':
-    'Her sayfa, 200 dpi çözünürlükte sayfanın tek bir resmi olarak aktarıldı; görünüm korunur ama metni Word’de düzenlenemez.',
+    'Her sayfa, {dpi} dpi çözünürlükte sayfanın tek bir resmi olarak aktarıldı; görünüm korunur ama metni Word’de düzenlenemez.',
   'op.note.exportOffice.pageScaled':
     'Word 22 inçten (55,88 cm) büyük sayfa kabul etmez; şu sayfalar orantılı olarak küçültüldü (en küçük oran %{percent}): {pages}.',
   'op.note.exportOffice.tables': '{count} çizgili tablo, birleşik hücreleriyle tablo olarak aktarıldı.',
