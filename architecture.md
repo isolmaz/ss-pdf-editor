@@ -789,7 +789,9 @@ had to stay green. The moves, and the defects they fixed on the way:
 - the rotation pass and the merge's metadata step after pdf.js `extractPages`
   (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`; `compose.rotate` is now
   declared to the save verification (it may change `rotation`), where `pdf-lib.setRotation`
-  was an unknown step;
+  was an unknown step; the merge also counts the form field names used by more than one
+  document (`readFormFields` on each input) and reports `op.note.merge.sharedFields`, because
+  fields with one name share one value;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen

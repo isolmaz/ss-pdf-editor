@@ -49,6 +49,7 @@ import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { openForWrite, pageObjects, resolved, saveRewrite } from '../engines/mupdf-write';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
+import { readFormFields } from './forms';
 import {
   note,
   type OperationContext,
@@ -337,6 +338,8 @@ export async function mergeDocuments(
         }),
       );
     }
+    const sharedFields = await countSharedFieldNames([base.bytes, ...others.map((other) => other.bytes)]);
+    if (sharedFields > 0) notes.push(note('changed', 'op.note.merge.sharedFields', { count: sharedFields }));
     notes.push(note('preserved', 'op.note.merge.verified', { pages: pageCount }));
 
     return {
@@ -354,6 +357,19 @@ export async function mergeDocuments(
   } finally {
     await handle.destroy();
   }
+}
+
+/**
+ * How many fully qualified field names occur in more than one input document. The merge keeps
+ * every field, and fields with one name share one value, so typing in one changes the other.
+ */
+async function countSharedFieldNames(inputs: readonly Uint8Array[]): Promise<number> {
+  const documents = new Map<string, number>();
+  for (const bytes of inputs) {
+    const names = new Set((await readFormFields(bytes)).map((field) => field.name));
+    for (const name of names) documents.set(name, (documents.get(name) ?? 0) + 1);
+  }
+  return [...documents.values()].filter((count) => count > 1).length;
 }
 
 /**

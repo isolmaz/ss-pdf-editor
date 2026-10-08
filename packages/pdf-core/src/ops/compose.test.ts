@@ -517,3 +517,54 @@ describe('mergeDocuments refuses and measures', () => {
     expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.merge.outlineLost');
   });
 });
+
+/** A one-page document with a text field for each of `names` (a repeated name makes two fields). */
+async function withFields(...names: readonly string[]): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = new mupdf.PDFDocument();
+  doc.insertPage(-1, doc.addPage([0, 0, 100, 200], 0, {}, ''));
+  const fields = names.map((name) =>
+    doc.addObject({
+      FT: doc.newName('Tx'),
+      T: doc.newString(name),
+      Subtype: doc.newName('Widget'),
+      Rect: [0, 0, 10, 10],
+    }),
+  );
+  doc.findPage(0).put('Annots', fields);
+  doc.getTrailer().get('Root').put('AcroForm', { Fields: fields });
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+describe('mergeDocuments and form field names', () => {
+  const shared = 'op.note.merge.sharedFields';
+  const merge = (base: Uint8Array, ...others: readonly Uint8Array[]) =>
+    mergeDocuments(
+      { bytes: base, pageCount: 1 },
+      others.map((bytes, index) => ({ name: `ek${index}.pdf`, bytes, pageCount: 1 })),
+      0,
+      run,
+    );
+
+  it('says how many field names more than one merged document uses', async () => {
+    const out = await merge(
+      await withFields('name', 'only-base'),
+      await withFields('name', 'x'),
+      await withFields('x', 'y', 'name'),
+    );
+    const note = out.report.notes.find((entry) => entry.key === shared);
+    expect(note).toEqual({ kind: 'changed', key: shared, params: { count: 2 } });
+  });
+
+  it('stays silent when every document names its fields differently', async () => {
+    const out = await merge(await withFields('a', 'b'), await withFields('c'), await pages(1));
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain(shared);
+  });
+
+  it('does not count a name a single document repeats', async () => {
+    const out = await merge(await withFields('twice', 'twice'), await withFields('other'));
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain(shared);
+  });
+});

@@ -38,6 +38,8 @@ export const pageopsPart = {
   'op.note.merge.structure':
     'Motorun birleştirdiği yapı ölçüldü: {outline} yer imi, {labels} sayfa etiketi kaydı, {fields} form alanı.',
   'op.note.merge.outlineLost': 'Taban belgede {expected} yer imi vardı, sonuçta {actual} kaldı.',
+  'op.note.merge.sharedFields':
+    '{count} form alanı adı birden fazla birleştirilen belgede geçiyor; aynı adı taşıyan alanlar artık tek bir değeri paylaşır.',
   'op.note.merge.verified': 'Birleştirme doğrulandı: {pages} sayfa.',
 
   // imagesToPdf
