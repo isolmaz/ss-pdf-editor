@@ -110,11 +110,24 @@ describe('grouping lines into text boxes', () => {
       ['both'],
       ['right'],
     ]);
-    // The justified box is hardly wider than its lines (30 characters × 6 pt): little to stretch into.
+    // The justified box is exactly as wide as its lines (29 characters × 6 pt): a justified
+    // line fills its box, so any slack would move the right edge.
     const [, , justifiedBox] = boxes as [TextBox, TextBox, TextBox, TextBox];
-    expect(justifiedBox.box[2] - justifiedBox.box[0]).toBeLessThan(180);
-    expect(justifiedBox.box[2] - justifiedBox.box[0]).toBeGreaterThan(176);
+    expect(justifiedBox.box[2] - justifiedBox.box[0]).toBeCloseTo(174, 1);
     expect(textOf(justifiedBox)).toEqual([justified.filter((text) => text !== '').join('\n')]);
+  });
+
+  it('gives a justified box of squeezed lines the room their natural spaces need, so LibreOffice does not wrap them', async () => {
+    // Three lines of 4 four-letter Courier words, the spaces squeezed from 6 pt to 0.5 pt (Tw −5.5):
+    // about 97.5 pt wide where the words and natural spaces (0.278 × 10 pt) take 104 pt.
+    const squeezed = (y: number, text: string) => `BT /F1 10 Tf 40 ${y} Td -5.5 Tw (${text}) Tj ET`;
+    const texts = ['aaaa bbbb cccc dddd', 'eeee ffff gggg hhhh', 'iiii jjjj kkkk llll'];
+    const layout = await layoutOf(texts.map((text, at) => squeezed(400 - at * 13, text)).join('\n'));
+    const [box] = textBoxes(layout, []) as [TextBox];
+    expect(box.paragraphs.map((paragraph) => paragraph.align)).toEqual(['both']);
+    // 4 words of 24 pt + 3 squeezed spaces of 0.5 pt = 97.5 pt wide, 96 + 3 × 2.78 = 104.3 pt naturally,
+    // and the frame is that plus the 1.5 % margin for a substitute font a little wider.
+    expect(box.box[2] - box.box[0]).toBeCloseTo((96 + 3 * 2.78) * 1.015, 0);
   });
 
   it('joins the pieces MuPDF cuts a stretched justified line into', async () => {
@@ -294,6 +307,7 @@ describe('grouping lines into text boxes', () => {
     const char = (c: string, x: number): LayoutChar => ({
       c,
       box: [x, 90, x + 6, 102],
+      baseline: 99,
       size: 10,
       font: 'Arial',
       bold: false,
@@ -307,7 +321,9 @@ describe('grouping lines into text boxes', () => {
     const layout: PageLayout = {
       width: WIDTH,
       height: PAGE,
-      blocks: [{ kind: 'text', box: [40, 90, 72, 102], lines: [{ box: [40, 90, 72, 102], chars }] }],
+      blocks: [
+        { kind: 'text', box: [40, 90, 72, 102], lines: [{ box: [40, 90, 72, 102], dir: [1, 0], chars }] },
+      ],
       rulings: [],
       marks: [],
     };
@@ -323,6 +339,7 @@ describe('grouping lines into text boxes', () => {
           lines: [
             {
               box: [40, 90, 64, 102] as const,
+              dir: [1, 0] as const,
               chars: [char('a', 40), char('b', 46), char('c', 52), char('d', 58)],
             },
           ],
@@ -336,6 +353,7 @@ describe('grouping lines into text boxes', () => {
     const char = (c: string, x: number, overrides: Partial<LayoutChar>): LayoutChar => ({
       c,
       box: [x, 90, x + 6, 102],
+      baseline: 99,
       size: 10,
       font: 'Mystery',
       bold: false,
@@ -348,7 +366,9 @@ describe('grouping lines into text boxes', () => {
     const page = (chars: LayoutChar[]): PageLayout => ({
       width: WIDTH,
       height: PAGE,
-      blocks: [{ kind: 'text', box: [40, 90, 100, 102], lines: [{ box: [40, 90, 100, 102], chars }] }],
+      blocks: [
+        { kind: 'text', box: [40, 90, 100, 102], lines: [{ box: [40, 90, 100, 102], dir: [1, 0], chars }] },
+      ],
       rulings: [],
       marks: [],
     });
@@ -394,6 +414,26 @@ describe('grouping lines into text boxes', () => {
     expect(rotated.box[2] - rotated.box[0]).toBeLessThan(20);
   });
 
+  it('reads the direction of short labels from the line, down to a single character, and keeps neighbours apart', async () => {
+    // An axis of years run up the page (4 characters, 7 pt: shorter than 1.5 × the size
+    // between first and last centre), a single digit up, one down, and two digits down.
+    const content = [
+      'BT /F1 7 Tf 0 1 -1 0 200 100 Tm (1956) Tj ET',
+      'BT /F1 7 Tf 0 1 -1 0 220 100 Tm (1958) Tj ET',
+      'BT /F1 7 Tf 0 1 -1 0 240 100 Tm (7) Tj ET',
+      'BT /F1 7 Tf 0 -1 1 0 260 300 Tm (8) Tj ET',
+      'BT /F1 7 Tf 0 -1 1 0 280 300 Tm (19) Tj ET',
+    ].join('\n');
+    const boxes = textBoxes(await layoutOf(content), []);
+    expect(boxes.map((box) => [box.rotation, textOf(box).join('')])).toEqual([
+      [270, '1956'],
+      [270, '1958'],
+      [270, '7'],
+      [90, '8'],
+      [90, '19'],
+    ]);
+  });
+
   it('puts the box so that the first baseline lands on the PDF baseline', async () => {
     const [box] = textBoxes(await layoutOf(line('courier', 20, 40, 400, 'Satır')), []) as [TextBox];
     const lineHeight = box.paragraphs[0]?.lineHeight ?? 0;
@@ -402,6 +442,15 @@ describe('grouping lines into text boxes', () => {
     expect(lineHeight).toBeGreaterThanOrEqual(1.15 * 20);
     expect(box.box[0]).toBeCloseTo(40, 0);
     expect(box.box[2] - box.box[0]).toBeCloseTo(5 * 12 * 1.03 + 2, 0);
+  });
+
+  it('takes the baseline from the characters\u2019 origin, whatever the font\u2019s ascent and descent make of their boxes', async () => {
+    // Courier and Helvetica have different descents: the quads differ, the baseline does not.
+    for (const font of ['courier', 'helvetica', 'timesItalic'] as const) {
+      const [box] = textBoxes(await layoutOf(line(font, 20, 40, 400, 'Satır')), []) as [TextBox];
+      const lineHeight = box.paragraphs[0]?.lineHeight ?? 0;
+      expect(box.box[1] + 0.8 * lineHeight, font).toBeCloseTo(PAGE - 400, 2);
+    }
   });
 
   it('links the characters inside a link box, and only those', async () => {
@@ -502,15 +551,24 @@ describe('text box XML', () => {
     expect(second).toContain('relativeHeight="2"');
   });
 
-  it('rotates the frame about its centre: sides swapped, rot in 60000ths of a degree', () => {
-    const upward = handMade({ box: [100, 200, 120, 300], rotation: 270 });
-    const xmlText = textBoxXml(upward, 1, registry());
-    expect(xmlText).toContain('<a:xfrm rot="16200000">');
-    // The 20 × 100 visual box is a 100 × 20 frame with the same centre (110, 250).
-    expect(xmlText).toContain('<wp:extent cx="1270000" cy="254000"/>');
-    expect(xmlText).toContain(`<wp:posOffset>${60 * 12700}</wp:posOffset>`);
-    expect(xmlText).toContain(`<wp:posOffset>${240 * 12700}</wp:posOffset>`);
-    expect(xmlText).toContain('rotation:270;');
+  it('writes rotated text as a vertical text box of the visual extent: LibreOffice ignores the frame\u2019s rot', () => {
+    const upward = textBoxXml(handMade({ box: [100, 200, 120, 300], rotation: 270 }), 1, registry());
+    // No frame rotation; the text runs bottom to top inside the 20 × 100 pt box.
+    expect(upward).toContain('<a:xfrm><a:off x="0" y="0"/><a:ext cx="254000" cy="1270000"/></a:xfrm>');
+    expect(upward).not.toContain('rot="16200000"');
+    expect(upward).toContain('<wps:bodyPr rot="0" vert="vert270" wrap="none"');
+    expect(upward).toContain('<wp:extent cx="254000" cy="1270000"/>');
+    expect(upward).toContain(`<wp:posOffset>${100 * 12700}</wp:posOffset>`);
+    expect(upward).toContain(`<wp:posOffset>${200 * 12700}</wp:posOffset>`);
+    // The fallback flows the same way.
+    expect(upward).toContain(
+      '<v:textbox style="layout-flow:vertical;mso-layout-flow-alt:bottom-to-top" inset="0,0,0,0">',
+    );
+    expect(upward).toContain('margin-left:100pt;margin-top:200pt;width:20pt;height:100pt;');
+    expect(upward).not.toContain('rotation:');
+    const downward = textBoxXml(handMade({ box: [100, 200, 120, 300], rotation: 90 }), 1, registry());
+    expect(downward).toContain('<wps:bodyPr rot="0" vert="vert" wrap="none"');
+    expect(downward).toContain('<v:textbox style="layout-flow:vertical" inset="0,0,0,0">');
   });
 
   it('writes links as hyperlinks with one relationship per URI, the run style unchanged', () => {

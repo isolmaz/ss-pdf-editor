@@ -8,9 +8,10 @@
  *    with no margins. A page above Word's 22-inch limit is shrunk by one factor on both
  *    sides (`wordPageScale`); the picture is rendered from the original size, so shrinking
  *    the page loses no detail.
- *  - The picture is 200 dpi of the original page, capped at 40 megapixels. JPEG (quality 90)
- *    when the page draws any raster image — photographs, scans — where it is a fraction of
- *    the size; PNG otherwise (text and vector art stay crisp).
+ *  - The picture is 200 dpi of the original page, capped at 40 megapixels. JPEG (quality 92)
+ *    when raster images cover at least half of the page — photographs, scans — where it is a
+ *    fraction of the size; PNG otherwise (text and vector art stay crisp, and a small logo
+ *    does not put JPEG artefacts around the text).
  *  - The paragraph that carries the picture is one point high, so it never spills onto a
  *    page of its own.
  */
@@ -31,7 +32,7 @@ import {
   XML_HEAD,
   zipped,
 } from './docx-drawing';
-import { borrowed } from './page-layout';
+import { borrowed, transformBox } from './page-layout';
 import { type OperationContext, throwIfAborted } from './types';
 
 /**
@@ -40,7 +41,9 @@ import { type OperationContext, throwIfAborted } from './types';
  */
 const RENDER_DPI = 200;
 const MAX_PIXELS = 40_000_000;
-const JPEG_QUALITY = 90;
+const JPEG_QUALITY = 92;
+/** The share of the page raster images must cover for the page to be drawn as a JPEG. */
+const PHOTO_SHARE = 0.5;
 
 /** One page as a picture, with the size it takes in the document. */
 export interface PageImage {
@@ -59,13 +62,21 @@ export interface PageImage {
   readonly dpi: number;
 }
 
-/** Whether the page draws a raster image (not a vector drawing or text). */
-function drawsImage(mupdf: Mupdf, page: Page): boolean {
-  let found = false;
+/**
+ * Whether raster images cover at least `PHOTO_SHARE` of the page: the area of each drawn
+ * image inside the page, added up (images that overlap count twice, which only matters for a
+ * page that is mostly pictures anyway).
+ */
+function mostlyImages(mupdf: Mupdf, page: Page): boolean {
+  const [x0, y0, x1, y1] = page.getBounds();
+  let covered = 0;
   const device = new mupdf.Device({
-    fillImage(image) {
+    fillImage(image, ctm) {
       borrowed(image);
-      found = true;
+      const box = transformBox([0, 0, 1, 1], ctm);
+      const width = Math.min(box[2], x1) - Math.max(box[0], x0);
+      const height = Math.min(box[3], y1) - Math.max(box[1], y0);
+      if (width > 0 && height > 0) covered += width * height;
     },
   });
   try {
@@ -74,10 +85,10 @@ function drawsImage(mupdf: Mupdf, page: Page): boolean {
   } finally {
     device.destroy();
   }
-  return found;
+  return covered >= PHOTO_SHARE * (x1 - x0) * (y1 - y0);
 }
 
-/** The page, drawn at 200 dpi (fewer when that would pass 40 megapixels), as JPEG or PNG. */
+/** The page, drawn at 200 dpi (fewer when that would pass 40 megapixels), as JPEG (mostly pictures) or PNG. */
 function renderPage(mupdf: Mupdf, page: Page, index: number): PageImage {
   const [x0, y0, x1, y1] = page.getBounds();
   const width = x1 - x0;
@@ -93,7 +104,7 @@ function renderPage(mupdf: Mupdf, page: Page, index: number): PageImage {
     mupdf.Matrix.translate(-x0, -y0),
     mupdf.Matrix.scale(pixelWidth / width, pixelHeight / height),
   );
-  const photographic = drawsImage(mupdf, page);
+  const photographic = mostlyImages(mupdf, page);
   const pixmap = page.toPixmap(place, mupdf.ColorSpace.DeviceRGB, false, true);
   try {
     // `slice` copies the bytes out of the engine's memory.

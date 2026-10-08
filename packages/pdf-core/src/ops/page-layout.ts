@@ -27,6 +27,11 @@ export type Box = readonly [number, number, number, number];
 export interface LayoutChar {
   readonly c: string;
   readonly box: Box;
+  /**
+   * The y of the character's origin in page space: the baseline of upright text. (The box
+   * reaches from the font's ascent to its descent, which differ between fonts.)
+   */
+  readonly baseline: number;
   readonly size: number;
   /** Family without the subset prefix or the style suffix (`ABCDEF+Arial-BoldMT` → `Arial`). */
   readonly font: string;
@@ -43,6 +48,8 @@ export interface LayoutChar {
 
 export interface LayoutLine {
   readonly box: Box;
+  /** MuPDF's unit direction of the text along the line in page space: (1, 0) across, (0, -1) up, (0, 1) down. */
+  readonly dir: readonly [number, number];
   readonly chars: readonly LayoutChar[];
 }
 
@@ -349,6 +356,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   let chars: LayoutChar[] = [];
   let blockBox: Box = [0, 0, 0, 0];
   let lineBox: Box = [0, 0, 0, 0];
+  let lineDir: readonly [number, number] = [1, 0];
   const text = page.toStructuredText(
     options.images ? 'preserve-whitespace,preserve-images' : 'preserve-whitespace',
   );
@@ -372,13 +380,14 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         blockBox = [x0, y0, x1, y1];
         lines = [];
       },
-      beginLine(bbox) {
+      beginLine(bbox, _wmode, direction) {
         const [x0, y0] = shift(bbox[0], bbox[1]);
         const [x1, y1] = shift(bbox[2], bbox[3]);
         lineBox = [x0, y0, x1, y1];
+        lineDir = [direction[0], direction[1]];
         chars = [];
       },
-      onChar(c, _origin, font, size, quad, color) {
+      onChar(c, origin, font, size, quad, color) {
         // Read per character: the binding hands over a new `Font` wrapper for every one, and two
         // fonts may share a name (or have none) while their flags differ.
         const name = font.getName();
@@ -394,10 +403,17 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         const ys = [quad[1], quad[3], quad[5], quad[7]];
         const [x0, y0] = shift(Math.min(...xs), Math.min(...ys));
         const [x1, y1] = shift(Math.max(...xs), Math.max(...ys));
-        chars.push({ c, box: [x0, y0, x1, y1], size, color: rgb(color), ...face });
+        chars.push({
+          c,
+          box: [x0, y0, x1, y1],
+          baseline: shift(origin[0], origin[1])[1],
+          size,
+          color: rgb(color),
+          ...face,
+        });
       },
       endLine() {
-        lines.push({ box: lineBox, chars });
+        lines.push({ box: lineBox, dir: lineDir, chars });
       },
       endTextBlock() {
         blocks.push({ kind: 'text', box: blockBox, lines });
