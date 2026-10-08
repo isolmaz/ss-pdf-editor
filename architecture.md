@@ -1243,6 +1243,10 @@ result, with the writer's real step ids.
 and both `protectDocument()` and `unlockDocument()` **re-open their own output and
 verify** (cipher and permissions for protect; page count plus a text sample for unlock),
 because a mis-authenticated MuPDF save writes undecryptable garbage instead of failing.
+Encrypting rewrites the file, so a signed input (a signature field with a `/V`, counted by
+`countSignatures()` once the old password has opened it) gets a `lost` note,
+`op.note.security.signatureInvalidated`, in the report: the download path never reaches the
+save plan's signature warning.
 The Security dialog's `resultKind` is `download`: the encrypted copy is handed over, never
 applied to the open document (a protected file is read-only in the editor, so applying it
 ended in a password prompt). A run may also overrule its dialog's `resultKind` for one result

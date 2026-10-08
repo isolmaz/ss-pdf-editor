@@ -58,6 +58,7 @@ import {
   openPdf,
   savePdf,
 } from '../engines/mupdf';
+import { countSignatures } from './pdfa-prepare';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 export interface ProtectionPermissions {
@@ -171,6 +172,7 @@ export async function protectDocument(
   let produced: Uint8Array;
   let pageCount: number;
   let before: string[];
+  let signed: boolean;
   try {
     // The incoming bytes may already be password-locked. Writing an encrypted
     // document without decrypting it produces streams the engine itself cannot
@@ -189,6 +191,8 @@ export async function protectDocument(
     // re-protecting must not change what the document carries.
     pageCount = doc.countPages();
     before = samplePageTexts(doc, pageCount);
+    // Encryption rewrites every byte the signature's /ByteRange covers.
+    signed = countSignatures(doc.getTrailer().get('Root')) > 0;
     context.onProgress?.({ phase: 'encrypt', labelKey: 'op.progress.encrypt', done: 0, total: 1 });
     produced = savePdf(doc, encryptOptions);
   } catch (error) {
@@ -241,6 +245,7 @@ export async function protectDocument(
         ...(options.userPassword.length === 0
           ? [note('warning', 'op.note.security.opensWithoutPassword')]
           : []),
+        ...(signed ? [note('lost', 'op.note.security.signatureInvalidated')] : []),
         note('preserved', 'op.note.security.verified'),
       ],
       inputBytes: bytes.byteLength,
