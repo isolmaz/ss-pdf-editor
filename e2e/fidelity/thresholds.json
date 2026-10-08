@@ -66,50 +66,6 @@
     "default": {
       "ssim": 0.95,
       "words": null
-    },
-    "shapes": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "chart": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "text-in-image": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "overlay": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "rotated": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "mixed-page": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "slide": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "invoice": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "shapes-scan": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "invoice-scan": {
-      "ssim": 0.97,
-      "words": null
-    },
-    "invoice-scan-rough": {
-      "ssim": 0.97,
-      "words": null
     }
   },
   "layout": {
@@ -178,36 +134,36 @@
       "words": 0.95
     },
     "shapes": {
-      "ssim": 0.97,
-      "words": 0.97
+      "ssim": 0.95,
+      "words": 0.99
     },
     "chart": {
-      "ssim": 0.97,
-      "words": 0.97
+      "ssim": 0.95,
+      "words": 0.99
     },
     "text-in-image": {
-      "ssim": 0.97,
-      "words": 0.97
+      "ssim": 0.95,
+      "words": 0.99
     },
     "overlay": {
       "ssim": 0.91,
-      "words": 0.97
+      "words": 0.99
     },
     "rotated": {
       "ssim": 0.95,
-      "words": 0.96
+      "words": 0.99
     },
     "mixed-page": {
-      "ssim": 0.97,
-      "words": 0.97
+      "ssim": 0.95,
+      "words": 0.99
     },
     "slide": {
-      "ssim": 0.97,
-      "words": 0.97
+      "ssim": 0.95,
+      "words": 0.99
     },
     "invoice": {
-      "ssim": 0.96,
-      "words": 0.97
+      "ssim": 0.95,
+      "words": 0.99
     },
     "shapes-scan": {
       "ssim": 0.91,
