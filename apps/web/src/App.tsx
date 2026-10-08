@@ -201,7 +201,15 @@ import {
   resizeImageStamp,
   verifySignatures,
 } from './lazy-ops';
-import { auditNotice, engineValuesNotices, failureNotices, noticeLine, verificationNotices } from './notices';
+import {
+  appendWarning,
+  auditNotice,
+  engineValuesNotices,
+  failureNotices,
+  noticeLine,
+  storedCopyWarning,
+  verificationNotices,
+} from './notices';
 import {
   incompleteCapabilities,
   prepareOffline,
@@ -468,6 +476,27 @@ const TextLayer = lazy(async () => {
 function primaryLanguage(declared: string): string | null {
   const primary = declared.trim().split(/[-_]/)[0]?.toLowerCase() ?? '';
   return /^[a-z]{2,3}$/.test(primary) ? primary : null;
+}
+
+/**
+ * Open a document with the engine and fingerprint its bytes, side by side — the two only
+ * read the bytes, so neither waits for the other. `Promise.all` would reject on the first
+ * failure and abandon the other half: a fingerprint that fails after the engine opened the
+ * document left that handle (a pdf.js worker and its parsed document) alive with no owner.
+ * Both halves are awaited here, a handle the other half's failure made useless is destroyed,
+ * and the error thrown is the engine's when it failed (a password request is its answer), else
+ * the fingerprint's.
+ */
+async function openAndFingerprint(
+  opening: Promise<PdfDocumentHandle>,
+  fingerprinting: Promise<string>,
+): Promise<readonly [PdfDocumentHandle, string]> {
+  const [opened, fingerprint] = await Promise.allSettled([opening, fingerprinting]);
+  if (opened.status === 'fulfilled' && fingerprint.status === 'fulfilled') {
+    return [opened.value, fingerprint.value];
+  }
+  if (opened.status === 'fulfilled') await opened.value.destroy().catch(() => undefined);
+  throw opened.status === 'rejected' ? opened.reason : (fingerprint as PromiseRejectedResult).reason;
 }
 
 export function App({ store }: AppProps) {
@@ -1929,10 +1958,10 @@ export function App({ store }: AppProps) {
           const working = snapshots.find((item) => item.id === draft.workingId);
           if (draft.workingId !== undefined && working === undefined)
             throw new ToolError('corrupt-document', { engine: 'model' });
-          const [handle, sha256] = await Promise.all([
+          const [handle, sha256] = await openAndFingerprint(
             openWithPdfjs(working?.bytes ?? bytes),
             sha256Hex(bytes),
-          ]);
+          );
           // The handle the document was opened from, if one was kept (`recent-handles.ts`):
           // without it a restored tab could only Export, never Save over its file.
           const fileHandle = await getRecentHandle(draft.id);
@@ -2068,10 +2097,10 @@ export function App({ store }: AppProps) {
         // The fingerprint is independent of the open and only reads the bytes, so it
         // runs alongside the engine instead of after it: on a 130 MB document that is
         // a few hundred milliseconds off the path the user waits on.
-        const [handle, sha256] = await Promise.all([
+        const [handle, sha256] = await openAndFingerprint(
           openWithPdfjs(bytes, password === undefined ? {} : { password }),
           sha256Hex(bytes),
-        ]);
+        );
         const fileVerdict = checkDocumentLimits(tier, handle.pageCount, bytes.byteLength);
         if (fileVerdict.kind === 'blocked') {
           await handle.destroy();
@@ -2079,6 +2108,16 @@ export function App({ store }: AppProps) {
             engine: 'model',
             ...(fileVerdict.reason === 'pages' ? { path: file.name } : {}),
           });
+        }
+        // Read before the tab exists: it only needs the engine handle, and a rejection here
+        // is an open failure with nothing registered — the handle is released like the
+        // limit-blocked one above, and the original error is the one reported.
+        let encrypted: boolean;
+        try {
+          encrypted = (await handle.raw.getPermissions()) !== null;
+        } catch (error) {
+          await handle.destroy().catch(() => undefined);
+          throw error;
         }
         const tab = store.openDocument({
           name: file.name,
@@ -2099,24 +2138,34 @@ export function App({ store }: AppProps) {
           pageCount: handle.pageCount,
         });
         setShowHomeScreen(false);
-        const encrypted = (await handle.raw.getPermissions()) !== null;
+        let storageWarning: string | null = null;
         if (encrypted) store.setSensitive(tab.id, true);
         else {
-          await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
-          // A reference to the file, never its bytes; a sensitive session keeps none.
-          if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
+          // The tab is registered: keeping a recovery copy is not part of opening. A write
+          // that fails (storage full, OPFS unavailable) costs the copy, never the
+          // document, and is reported as exactly that — not as an open failure below.
+          try {
+            await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+            // A reference to the file, never its bytes; a sensitive session keeps none.
+            if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
+          } catch (error) {
+            storageWarning = storedCopyWarning(error, t);
+          }
         }
         setCurrentPage(0);
         // No zoom reset here: the viewer reports the scale it draws the new document at
         // (fit width), and a reset after the awaits above would overwrite that report.
         setSelectedPages([]);
         setRedactionMarks([]);
-        if (fileVerdict.kind === 'warn') setNotice(t('limit.warn.pages'));
-        if (fileVerdict.kind === 'viewing-only') {
-          setNotice(
-            t(fileVerdict.reason === 'pages' ? 'limit.viewingOnly.pages' : 'limit.viewingOnly.bytes'),
-          );
-        }
+        const limitNotice =
+          fileVerdict.kind === 'warn'
+            ? t('limit.warn.pages')
+            : fileVerdict.kind === 'viewing-only'
+              ? t(fileVerdict.reason === 'pages' ? 'limit.viewingOnly.pages' : 'limit.viewingOnly.bytes')
+              : null;
+        // One notice line: the limit and the storage warning say different things and both stay.
+        if (limitNotice !== null) setNotice(appendWarning(limitNotice, storageWarning));
+        else if (storageWarning !== null) setNotice(storageWarning);
       } catch (error) {
         const toolError =
           error instanceof ToolError ? error : new ToolError('corrupt-document', { engine: 'model' });
@@ -2236,14 +2285,23 @@ export function App({ store }: AppProps) {
     await openFromSurface(file, picked);
   }, [openFromSurface, t]);
 
-  /** Open produced bytes as a new tab (extract, split, unlock, image→PDF results). */
+  /**
+   * Open produced bytes as a new tab (extract, split, unlock, image→PDF results).
+   *
+   * It settles once the tab is registered, and a rejection means *no* tab was opened. Storing
+   * the recovery copy comes after that and is not part of opening: when it fails the tab
+   * stays and the resolved value is the warning sentence for the caller to put on its notice
+   * line (`null` when the copy is stored). The caller owns the notice because it sets its own
+   * success line right after, and the shell has one line: a warning set here would be
+   * replaced by that line.
+   */
   const openProducedTab = useCallback(
-    async (name: string, bytes: Uint8Array, signal?: AbortSignal): Promise<void> => {
+    async (name: string, bytes: Uint8Array, signal?: AbortSignal): Promise<string | null> => {
       const earlyVerdict = checkDocumentLimits(tier, 0, bytes.byteLength);
       if (earlyVerdict.kind === 'blocked') {
         throw new ToolError('file-too-large', { engine: 'model' });
       }
-      const [handle, sha256] = await Promise.all([openWithPdfjs(bytes), sha256Hex(bytes)]);
+      const [handle, sha256] = await openAndFingerprint(openWithPdfjs(bytes), sha256Hex(bytes));
       /**
        * Opening is the transition, so a cancelled caller — the tab it came from
        * was closed while the dialog's result was opening — must not leave an
@@ -2270,10 +2328,16 @@ export function App({ store }: AppProps) {
         pageCount: handle.pageCount,
       });
       setShowHomeScreen(false);
-      await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+      let warning: string | null = null;
+      try {
+        await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+      } catch (error) {
+        warning = storedCopyWarning(error, t);
+      }
       setCurrentPage(0);
+      return warning;
     },
-    [draftStorage, store, tier],
+    [draftStorage, store, t, tier],
   );
 
   /**
@@ -2313,8 +2377,8 @@ export function App({ store }: AppProps) {
             },
             { signal: controller.signal },
           );
-          await openProducedTab(pdfNameFor(file.name), pictures.bytes, controller.signal);
-          setNotice(t('convert.imageOpened'));
+          const warning = await openProducedTab(pdfNameFor(file.name), pictures.bytes, controller.signal);
+          setNotice(appendWarning(t('convert.imageOpened'), warning));
           return;
         }
         const outcome = await convertToPdf(
@@ -2327,11 +2391,16 @@ export function App({ store }: AppProps) {
           },
           { signal: controller.signal },
         );
-        await openProducedTab(pdfNameFor(file.name), outcome.bytes, controller.signal);
+        const warning = await openProducedTab(pdfNameFor(file.name), outcome.bytes, controller.signal);
         const caveats = outcome.report.notes
           .filter((item) => item.key !== 'op.note.convert.done')
           .map((item) => t(item.key, item.params));
-        setNotice([t('convert.opened', { format: formatLabel(format) }), ...caveats].join(' '));
+        setNotice(
+          appendWarning(
+            [t('convert.opened', { format: formatLabel(format) }), ...caveats].join(' '),
+            warning,
+          ),
+        );
       } catch (error) {
         pendingHomeCommand.current = null;
         if (controller.signal.aborted) return;
@@ -3414,11 +3483,11 @@ export function App({ store }: AppProps) {
         signal: controller.signal,
         onProgress: setProgress,
       });
-      await openProducedTab(
+      const warning = await openProducedTab(
         tab.name.replace(/\.pdf$/i, `-${t('security.unlock.suffix')}.pdf`),
         outcome.bytes,
       );
-      setNotice(t('locked.done'));
+      setNotice(appendWarning(t('locked.done'), warning));
     } catch (error) {
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'mupdf' });
       setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
@@ -3642,11 +3711,14 @@ export function App({ store }: AppProps) {
         }
         if (first === undefined) return;
         if (kind === 'new-tab') {
-          await openProducedTab(first.name, first.bytes, controller.signal);
+          const warning = await openProducedTab(first.name, first.bytes, controller.signal);
           setNotice(
-            result.noticeKey === undefined
-              ? t('op.result.opened', { name: first.name })
-              : t(result.noticeKey, result.noticeParams ?? {}),
+            appendWarning(
+              result.noticeKey === undefined
+                ? t('op.result.opened', { name: first.name })
+                : t(result.noticeKey, result.noticeParams ?? {}),
+              warning,
+            ),
           );
           close();
           return;
@@ -3735,9 +3807,9 @@ export function App({ store }: AppProps) {
       cancelRef.current = controller;
       setBusy(true);
       try {
-        await openProducedTab(first.name, first.bytes, controller.signal);
+        const warning = await openProducedTab(first.name, first.bytes, controller.signal);
         setStartSpec(null);
-        setNotice(t('op.result.opened', { name: first.name }));
+        setNotice(appendWarning(t('op.result.opened', { name: first.name }), warning));
       } catch (error) {
         if (controller.signal.aborted) return;
         setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
@@ -3767,10 +3839,10 @@ export function App({ store }: AppProps) {
       setBusy(true);
       let opened = false;
       try {
-        await openProducedTab(result.name, result.bytes, controller.signal);
+        const warning = await openProducedTab(result.name, result.bytes, controller.signal);
         opened = true;
         setScanOpen(false);
-        setNotice(t('scan.opened', { count: result.pageCount, name: result.name }));
+        setNotice(appendWarning(t('scan.opened', { count: result.pageCount, name: result.name }), warning));
       } catch (error) {
         if (controller.signal.aborted) return;
         setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
@@ -3800,8 +3872,10 @@ export function App({ store }: AppProps) {
       cancelRef.current = controller;
       setBusy(true);
       try {
-        await openProducedTab(file.name, file.bytes, controller.signal);
+        const warning = await openProducedTab(file.name, file.bytes, controller.signal);
         setPrintOpen(false);
+        // The print dialog has no success line of its own: the warning is the only notice.
+        if (warning !== null) setNotice(warning);
       } catch (error) {
         if (controller.signal.aborted) return;
         setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
@@ -5305,8 +5379,7 @@ export function App({ store }: AppProps) {
                 if (matchedDraft) {
                   const bytes = await draftStorage.getSource(matchedDraft.sourceKey);
                   if (bytes) {
-                    const handle = await openWithPdfjs(bytes);
-                    const sha256 = await sha256Hex(bytes);
+                    const [handle, sha256] = await openAndFingerprint(openWithPdfjs(bytes), sha256Hex(bytes));
                     const tab = store.openDocument({
                       id: matchedDraft.id,
                       name: matchedDraft.name,

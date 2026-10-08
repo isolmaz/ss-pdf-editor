@@ -1991,6 +1991,13 @@ retains any source another valid draft still references.
 When the inventory is unreadable or incomplete, the discard path deletes nothing and says
 so.
 
+Opening has one boundary: everything that can refuse a document (the engine, its permissions,
+the hash, the limits) runs before the tab is registered, and a handle opened beside a failed
+hash is destroyed. Storing the recovery copy comes after and is not part of opening: when that
+write fails, the document stays open and the notice says its recovery copy could not be stored
+and why (`draft.sourceNotStored`), next to whatever the operation reports
+(`e2e/ui-open-storage-failure.spec.ts`).
+
 Vault writes are serialised in-window through a single promise chain, and a writable that
 rejects is aborted best-effort **without replacing the error that explains what went wrong**
 — the caller must see the failure rather than a success.

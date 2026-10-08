@@ -128,6 +128,32 @@ export function failureNotices(error: unknown, fallback: MessageKey): readonly N
   return [{ key: error.messageKey }, { key: error.hintKey }];
 }
 
+/**
+ * The sentence for a document that is open but whose recovery copy (the draft source in
+ * the browser's storage, the recent-file reference) could not be written. The write is
+ * not part of opening: the tab stays, and this is what the user is told — with the
+ * storage error's own reason, not an open failure's. The browser reports a full quota as
+ * a `QuotaExceededError` DOMException, which is not a `ToolError`, so it is mapped here:
+ * a full store is `quota-exceeded`, any other storage failure is `write-failed`.
+ */
+export function storedCopyWarning(error: unknown, t: Translator): string {
+  const reason: MessageKey = isToolError(error)
+    ? error.messageKey
+    : error instanceof Error && error.name === 'QuotaExceededError'
+      ? 'error.quota-exceeded.message'
+      : 'error.write-failed.message';
+  return t('draft.sourceNotStored', { reason: t(reason) });
+}
+
+/**
+ * A success line followed by the warning the same action raised, if any. The shell has one
+ * notice line, so a later `setNotice(success)` would silently replace a warning set before
+ * it; the callers of an open that can warn put both in the one line they set.
+ */
+export function appendWarning(line: string, warning: string | null): string {
+  return warning === null ? line : `${line} ${warning}`;
+}
+
 /** The descriptor for one fact, with the reason it is not clean. */
 function factNotice(check: FactCheck): NoticeFact {
   return {
