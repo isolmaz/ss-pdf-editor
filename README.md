@@ -409,6 +409,9 @@ nothing leaving the browser.
     re-checked glyph by glyph.
   - An object-level audit reports any remaining terms, earlier revisions and leftover
     structure.
+  - The verification covers the marked areas. Bookmark titles and custom document
+    properties are not checked; the metadata option clears the title, author, subject,
+    keywords and creator fields and the XMP packet, and the notices say exactly that.
   - A staged mark stays an intent until you apply it. Saving while marks are still staged
     is refused.
 - **Sanitize.** One dialog removes what the pages do not show.

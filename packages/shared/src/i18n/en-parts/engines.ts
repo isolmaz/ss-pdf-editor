@@ -11,7 +11,8 @@ export const enginesPart = {
   'op.note.redact.imagesUntouched': 'Images untouched; only marked areas erased.',
   'op.note.redact.emptyMarks':
     'Warning: mark on page {pages} did not overlap any text; no content erased in those areas.',
-  'op.note.redact.metadataCleared': 'Metadata cleared.',
+  'op.note.redact.metadataCleared':
+    'Metadata cleared: title, author, subject, keywords, creator and the XMP packet. Custom properties are kept.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
   'op.progress.encrypt': 'Encrypting document',
