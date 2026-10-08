@@ -245,6 +245,7 @@ import {
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
+  heldByPendingRedactions,
   planSaveExecution,
   type SaveExecutionPlan,
   type SaveStepDescription,
@@ -3362,7 +3363,7 @@ export function App({ store }: AppProps) {
           // first-paint bundle.
           const spec = await dialogById(id);
           if (spec === undefined || stale()) return;
-          if (spec.changesPageGeometry && pendingOverlays(tab).redactions.length > 0) {
+          if (heldByPendingRedactions(spec) && pendingOverlays(tab).redactions.length > 0) {
             throw new ToolError('pending-redactions', { engine: 'model' });
           }
           // The image dialog's target list is document data, so it is read here, from

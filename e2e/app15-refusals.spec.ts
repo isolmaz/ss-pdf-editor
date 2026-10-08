@@ -6,6 +6,7 @@ import {
   notice,
   openApp,
   openStaged,
+  palette,
   readFile,
   rotateCurrentPage,
   stageFile,
@@ -129,4 +130,22 @@ test('Save is held back while a redaction mark is unapplied, and the file on dis
     });
   }).toPass({ timeout: 60_000 });
   expect(sha(await readFile(page, 'marked.pdf'))).toBe(sha(original));
+});
+
+test('Word and text export are held back while a redaction mark is unapplied, as Export is', async ({
+  page,
+}) => {
+  await openApp(page, 'marked.pdf', labelledPdf('Marked', 1));
+  await page.getByRole('button', { name: 'Redact (permanent removal)' }).click();
+  await dragOnPage(page, [60, 700], [330, 660]);
+  await expect(page.locator('[data-mark-family="redaction"]')).toHaveCount(1);
+
+  for (const tool of ['Export to Word, Excel or CSV', 'Export Text']) {
+    await palette(page, tool);
+    await expect(notice(page, 'Unapplied redaction marks; save and export are held.')).toBeVisible({
+      timeout: 30_000,
+    });
+    // The form that would write the marked words into a file never opens.
+    await expect(page.getByRole('region', { name: tool })).toHaveCount(0);
+  }
 });
