@@ -31,9 +31,9 @@ const SAMPLE = officeDocument([
 ]);
 
 /** The sample as a scan: its page rendered into one picture, plus `layer` as invisible text when given. */
-async function scanOf(layer?: string): Promise<Uint8Array> {
+async function scanOf(layer?: string, sample: Promise<Uint8Array> = SAMPLE): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
-  const source = mupdf.Document.openDocument((await SAMPLE).slice(), 'application/pdf');
+  const source = mupdf.Document.openDocument((await sample).slice(), 'application/pdf');
   const scan = new mupdf.PDFDocument();
   try {
     const pixmap = source
@@ -297,6 +297,40 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(xml).not.toContain('*');
     expect(zip.file('word/comments.xml')).toBeNull();
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrLowConfidence')).toBe(false);
+  });
+
+  it('reads a page with an underlined word again without the rule, and writes the word underlined', async () => {
+    // the link of the sample line, with a rule just under it
+    const underlined = officeDocument([
+      {
+        content: [
+          '1 1 1 rg 0 0 400 500 re f',
+          line('helvetica', 14, 60, 400, 'Hello world today'),
+          '0 0 0 rg 60 396 105 0.8 re f',
+        ].join('\n'),
+      },
+    ]);
+    const seen: number[] = [];
+    const result = await exportOffice(
+      await scanOf(undefined, underlined),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png) => {
+            seen.push(png.length);
+            return words([96, 95, 97]);
+          },
+        },
+      },
+      run,
+    );
+    // read twice: the second picture is the first without the rule, so it differs
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).not.toBe(seen[0]);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    expect(xml).toContain('<w:u w:val="single"/>');
   });
 
   it('reads an invisible text layer instead of calling the recogniser', async () => {

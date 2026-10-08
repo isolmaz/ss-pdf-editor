@@ -23,10 +23,14 @@ import {
   dropDuplicates,
   dropEdgeMarks,
   dropMisreads,
+  eraseRules,
+  findUnderlines,
+  markWords,
   misreadWords,
   ocrBackground,
   ocrTextBoxes,
   type RgbaImage,
+  type Rule,
 } from './ocr-scene';
 import type { Box, LayoutChar } from './page-layout';
 import { throwIfAborted } from './types';
@@ -209,25 +213,42 @@ export async function readScanPage(
 ): Promise<ScanPage | null> {
   const layer = layerWords(scene);
   if (layer.length === 0 && ocr === null) return null;
-  const { image, png } = renderScan(mupdf, page, scanDpi(scene));
+  const scan = renderScan(mupdf, page, scanDpi(scene));
+  let image = scan.image;
+  let png = scan.png;
   let words: readonly OcrWord[] = layer;
   // Words read twice are dropped from the text, but their ink is erased all the same.
   let duplicates: readonly OcrWord[] = [];
+  let rules: readonly Rule[] = [];
   if (layer.length === 0 && ocr !== null) {
     throwIfAborted(signal);
-    let read: readonly OcrWord[];
-    try {
-      read = await ocr.recognize(png, image.scale, signal);
-    } catch (error) {
-      // A recogniser that cannot run (language pack missing, offline, worker crashed) leaves
-      // the page as the picture it is; only the reader's own cancel stops the export.
-      throwIfAborted(signal);
-      if (error instanceof Error && error.name === 'AbortError') throw error;
-      return null;
+    const recognise = async (): Promise<readonly OcrWord[] | null> => {
+      try {
+        return await ocr.recognize(png, image.scale, signal);
+      } catch (error) {
+        // A recogniser that cannot run (language pack missing, offline, worker crashed) leaves
+        // the page as the picture it is; only the reader's own cancel stops the export.
+        throwIfAborted(signal);
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        return null;
+      }
+    };
+    let read = await recognise();
+    if (read === null) return null;
+    // Rules under words (links) make tesseract misread them: the page is read again without them.
+    rules = findUnderlines(image, read);
+    if (rules.length > 0) {
+      image = eraseRules(image, rules);
+      png = pngOf(mupdf, image);
+      read = (await recognise()) ?? read;
     }
     const unique = dropDuplicates(read);
-    duplicates = read.filter((word) => !unique.includes(word));
-    words = dropEdgeMarks(unique, image.width / image.scale);
+    const marks = markWords(unique);
+    duplicates = [...read.filter((word) => !unique.includes(word)), ...marks];
+    words = dropEdgeMarks(
+      unique.filter((word) => !marks.has(word)),
+      image.width / image.scale,
+    );
     throwIfAborted(signal);
   }
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
@@ -251,6 +272,8 @@ export async function readScanPage(
     ocr?.lowConfidence ?? 0,
     regions.filter((region) => region.solid).map((region) => region.box),
     advance,
+    undefined,
+    rules,
   );
   const background: SceneShape = {
     kind: 'shape',

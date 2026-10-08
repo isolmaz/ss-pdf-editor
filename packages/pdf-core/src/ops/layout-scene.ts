@@ -100,6 +100,8 @@ export interface TextRun {
   readonly size: number;
   readonly bold: boolean;
   readonly italic: boolean;
+  /** Underlined (OCR: a rule under the word was found); in the text colour. */
+  readonly underline?: true;
   readonly color: number;
   /** The external link the run belongs to, if any. */
   readonly link: string | null;
