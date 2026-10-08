@@ -427,7 +427,7 @@ describe('a pool of workers', () => {
   };
 
   it('starts as many workers as it is allowed for pages read side by side, and a page beyond them waits for one', async () => {
-    engine.allowOcrWorkers(2);
+    engine.allowOcrWorkers(2, ['tur'], 'fast');
     const { releases } = reads(3);
     const pages = [
       engine.recognizePage(input()),
@@ -448,24 +448,62 @@ describe('a pool of workers', () => {
     expect(state.workers.map((worker) => worker.recognize.length)).toEqual([1, 2]);
   });
 
-  it('keeps a pool for each language set and quality', async () => {
-    engine.allowOcrWorkers(2);
-    state.recognize = async () => ({ data: { text: 'x', confidence: 1, blocks: [] } });
-    await Promise.all([
+  it('keeps a pool for each language set and quality, and allows more than one worker only to the set it was asked for', async () => {
+    engine.allowOcrWorkers(2, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const pages = [
+      engine.recognizePage(input({ languages: ['tur'] })),
       engine.recognizePage(input({ languages: ['tur'] })),
       engine.recognizePage(input({ languages: ['eng'] })),
-      engine.recognizeWord({
-        image,
-        languages: ['eng'],
-        quality: 'fast',
-        signal: new AbortController().signal,
-      }),
-    ]);
-    expect(state.created.map((entry) => entry.languages)).toEqual([['tur'], ['eng'], ['eng']]);
+      engine.recognizePage(input({ languages: ['eng'] })),
+      engine.recognizePage(input({ languages: ['tur'], quality: 'best' })),
+    ];
+    await vi.waitFor(() => expect(releases).toHaveLength(4));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Two for Turkish, one for English (its second page waits), one for Turkish at the other quality.
+    expect(state.created.map((entry) => entry.languages)).toEqual([['tur'], ['tur'], ['eng'], ['tur']]);
+    for (const release of releases) release();
+    await vi.waitFor(() => expect(releases).toHaveLength(5));
+    releases[4]?.();
+    await Promise.all(pages);
+    expect(state.created).toHaveLength(4);
+  });
+
+  it('keeps every worker a cancelled waiter would have taken for the waiter behind it', async () => {
+    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const busy = engine.recognizePage(input());
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    const first = new AbortController();
+    const second = new AbortController();
+    const cancelled = engine.recognizePage(input({ signal: first.signal }));
+    const behind = engine.recognizePage(input({ signal: second.signal }));
+    first.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+    releases[0]?.();
+    await busy;
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    releases[1]?.();
+    await behind;
+    expect(state.created).toHaveLength(1);
+  });
+
+  it('allows no more than three workers to a set', async () => {
+    engine.allowOcrWorkers(50, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const pages = Array.from({ length: 5 }, () => engine.recognizePage(input()));
+    await vi.waitFor(() => expect(releases).toHaveLength(3));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(state.created).toHaveLength(3);
+    for (let at = 0; at < 5; at += 1) {
+      await vi.waitFor(() => expect(releases.length).toBeGreaterThan(at));
+      releases[at]?.();
+    }
+    await Promise.all(pages);
   });
 
   it('puts a cancelled read’s worker out of the pool and lets the next page start one in its place', async () => {
-    engine.allowOcrWorkers(1);
+    engine.allowOcrWorkers(1, ['tur'], 'fast');
     const { releases } = reads(2);
     const controller = new AbortController();
     const cancelled = engine.recognizePage(input({ signal: controller.signal }));
@@ -481,7 +519,7 @@ describe('a pool of workers', () => {
   });
 
   it('stops a page waiting for a worker when it is cancelled, without touching the workers', async () => {
-    engine.allowOcrWorkers(1);
+    engine.allowOcrWorkers(1, ['tur'], 'fast');
     const { releases } = reads(1);
     const busy = engine.recognizePage(input());
     await vi.waitFor(() => expect(releases).toHaveLength(1));
@@ -534,7 +572,7 @@ describe('a pool of workers', () => {
   });
 
   it('terminates what is running, what is free and what is still starting, and sends the waiting pages away', async () => {
-    engine.allowOcrWorkers(3);
+    engine.allowOcrWorkers(3, ['tur'], 'fast');
     const { releases } = reads(1);
     const first = engine.recognizePage(input());
     const second = engine.recognizePage(input());
@@ -565,12 +603,20 @@ describe('a pool of workers', () => {
     expect(state.created).toHaveLength(4);
   });
 
-  it('suggests one worker less than the cores, from one to three', () => {
-    const cores = (count: number | undefined) => {
-      vi.stubGlobal('navigator', count === undefined ? {} : { hardwareConcurrency: count });
+  it('suggests one worker less than the cores, from one to three, and one on a machine with little memory', () => {
+    const suggested = (hardwareConcurrency?: number, deviceMemory?: number) => {
+      vi.stubGlobal('navigator', {
+        ...(hardwareConcurrency === undefined ? {} : { hardwareConcurrency }),
+        ...(deviceMemory === undefined ? {} : { deviceMemory }),
+      });
       return engine.suggestedOcrWorkers();
     };
-    expect([undefined, 1, 2, 3, 4, 8, 64].map(cores)).toEqual([1, 1, 1, 2, 3, 3, 3]);
+    expect([undefined, 1, 2, 3, 4, 8, 64].map((cores) => suggested(cores))).toEqual([1, 1, 1, 2, 3, 3, 3]);
+    expect([0.5, 2, 3.5].map((memory) => suggested(8, memory))).toEqual([1, 1, 1]);
+    expect([4, 8].map((memory) => suggested(8, memory))).toEqual([3, 3]);
+    vi.unstubAllGlobals();
+    vi.stubGlobal('navigator', undefined);
+    expect(engine.suggestedOcrWorkers()).toBe(1);
     vi.unstubAllGlobals();
   });
 });

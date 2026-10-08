@@ -184,25 +184,40 @@ interface Pool {
   closed: boolean;
 }
 
-/** At most this many workers of one language set: each holds a wasm heap with the language models. */
+/** At most this many workers of a language set: each holds a wasm heap with the language models. */
 const MAX_POOL = 3;
+/** Machines reporting less memory (GiB, `navigator.deviceMemory`) than this read with one worker. */
+const MIN_MEMORY_FOR_POOL = 4;
 
 const pools = new Map<string, Pool>();
-let poolSize = 1;
+/** The one pool that is allowed more than a worker (the page reader of an export), and how many. */
+let sized: { readonly key: string; readonly size: number } | null = null;
 
-/** How many workers of each language set may read at once; 1 until a caller that reads pages side by side asks for more. Dropped back to 1 by `terminateOcrWorkers`. */
-export function allowOcrWorkers(count: number): void {
-  poolSize = Math.max(1, Math.floor(count));
+/**
+ * How many workers (at most `MAX_POOL`) the readers of `languages` at `quality` may use at once,
+ * for pages read side by side; every other language set (the second look's English alone) has
+ * one. Until a caller asks, every set has one; `terminateOcrWorkers` takes it back.
+ */
+export function allowOcrWorkers(
+  count: number,
+  languages: readonly OcrLanguageCode[],
+  quality: OcrQuality,
+): void {
+  sized = { key: workerKey(languages, quality), size: Math.max(1, Math.min(MAX_POOL, Math.floor(count))) };
 }
+
+const sizeOf = (key: string): number => (sized?.key === key ? sized.size : 1);
 
 /**
  * How many workers this machine reads pages with side by side: one per core but one, at most 3
- * (each holds a wasm heap with the language models), at least 1.
+ * (each holds a wasm heap with the language models), at least 1; one on a machine that reports
+ * less than 4 GiB of memory.
  */
 export function suggestedOcrWorkers(): number {
-  const cores = (globalThis as { navigator?: { hardwareConcurrency?: number } }).navigator
-    ?.hardwareConcurrency;
-  return Math.max(1, Math.min(MAX_POOL, (cores ?? 1) - 1));
+  const { hardwareConcurrency, deviceMemory } =
+    (globalThis as { navigator?: { hardwareConcurrency?: number; deviceMemory?: number } }).navigator ?? {};
+  if ((deviceMemory ?? MIN_MEMORY_FOR_POOL) < MIN_MEMORY_FOR_POOL) return 1;
+  return Math.max(1, Math.min(MAX_POOL, (hardwareConcurrency ?? 1) - 1));
 }
 
 function workerKey(languages: readonly OcrLanguageCode[], quality: OcrQuality): string {
@@ -270,6 +285,23 @@ function wake(pool: Pool): void {
   pool.waiting.shift()?.();
 }
 
+/** Resumes when `wake` reaches the caller (the queue is first come, first served), or throws when `signal` aborts first — and then the caller is no longer in the queue to swallow a wake meant for the next one. */
+async function waitForWorker(pool: Pool, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) throw abortError();
+  await new Promise<void>((resolve, reject) => {
+    const resume = () => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      pool.waiting.splice(pool.waiting.indexOf(resume), 1);
+      reject(abortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    pool.waiting.push(resume);
+  });
+}
+
 /** A worker of the pool, started if it has room, else the next one given back; the caller has it to itself until `giveBack`. */
 async function acquireWorker(
   languages: readonly OcrLanguageCode[],
@@ -285,7 +317,7 @@ async function acquireWorker(
   for (;;) {
     const idle = pool.idle.pop();
     if (idle !== undefined) return idle;
-    if (pool.workers.size + pool.starting.size < poolSize) {
+    if (pool.workers.size + pool.starting.size < sizeOf(key)) {
       const pending = createWorkerEntry(languages, quality);
       pool.starting.add(pending);
       try {
@@ -298,8 +330,7 @@ async function acquireWorker(
         wake(pool);
       }
     }
-    const open = pool;
-    await raceWithAbort(new Promise<void>((resolve) => open.waiting.push(resolve)), signal);
+    await waitForWorker(pool, signal);
     if (pool.closed) throw abortError();
   }
 }
@@ -331,7 +362,7 @@ async function releaseWorker(entry: WorkerEntry): Promise<void> {
 export async function terminateOcrWorkers(): Promise<void> {
   const dropped = [...pools.values()];
   pools.clear();
-  poolSize = 1;
+  sized = null;
   await Promise.all(
     dropped.map(async (pool) => {
       pool.closed = true;

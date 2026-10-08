@@ -206,4 +206,38 @@ describe('export-office dialog with a scanned page', () => {
     expect(state.created.slice(before.created)).toEqual([['tur'], ['tur'], ['tur']]);
     expect(state.terminated - before.terminated).toBe(3);
   });
+
+  it.each([
+    { navigator: { hardwareConcurrency: 8 }, pageWorkers: 3 },
+    { navigator: { hardwareConcurrency: 8, deviceMemory: 2 }, pageWorkers: 1 },
+  ])(
+    'never has more live workers than the page readers it allowed and one for the capitals read again with English alone ($pageWorkers)',
+    async ({ navigator, pageWorkers }) => {
+      const { exportOfficeDialog } = await import('./office');
+      const before = { created: state.created.length, terminated: state.terminated };
+      vi.stubGlobal('navigator', navigator);
+      try {
+        await exportOfficeDialog.run(
+          { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur', 'eng'] },
+          {
+            signal: new AbortController().signal,
+            onProgress: () => {},
+            bytes: await scanThrice(),
+            pageCount: 3,
+            name: 'tarama.pdf',
+            currentPage: 0,
+            selectedPages: [],
+            t: createTranslator('tr'),
+          },
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      const created = state.created.slice(before.created);
+      expect(created.filter((languages) => languages.length === 2)).toHaveLength(pageWorkers);
+      // The second look of all the pages shares one English worker.
+      expect(created.filter((languages) => languages.length === 1)).toEqual([['eng']]);
+      expect(state.terminated - before.terminated).toBe(pageWorkers + 1);
+    },
+  );
 });

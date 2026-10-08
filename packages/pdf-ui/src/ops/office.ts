@@ -154,7 +154,7 @@ export const exportOfficeDialog: OperationDialogSpec = {
           }
         : undefined;
     let result: Awaited<ReturnType<typeof exportOffice>>;
-    if (ocr !== undefined) allowOcrWorkers(workers);
+    if (ocr !== undefined) allowOcrWorkers(workers, languages, 'best');
     try {
       result = await exportOffice(
         context.bytes,
