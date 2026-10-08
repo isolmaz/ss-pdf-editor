@@ -139,8 +139,12 @@ functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). 
   do not appear on the rendered page.
 - **Thresholds.** `e2e/fidelity/thresholds.json` maps mode → `default` and per-sample overrides to
   `{ ssim, words }`. SSIM gates the worst page, word accuracy the whole document. `null` means
-  measured, not gated: `layout` has `null` for both, so a run reports its numbers without failing;
-  a sample's own key, even `null`, wins over the mode's `default`. To gate a number, set it a little
+  measured, not gated: a run reports such a number without failing. `page-images` gates SSIM 0.95
+  for every sample; `layout` gates SSIM 0.95 and words 0.99 for each committed sample that reaches
+  them, a floor just under the measured value for the two that do not yet (`irs-fw4-2022`,
+  `usgs-fs2020-3042`), and measured floors for the scans read by OCR (`cv-scan`, `cards-scan`,
+  `nasa-tm-vacuum-1965`); `flow` gates words only. A sample's own key, even `null`, wins over the
+  mode's `default`. To gate a number, set it a little
   under the lowest value measured on CI's LibreOffice, and say in the commit what it is.
 - **Local samples.** Every `*.pdf` in `e2e/fixtures/local/` (git-ignored: the files are the
   owner's and never leave the machine) is a sample of origin `local`; a sibling `<name>.gt.txt` is its
