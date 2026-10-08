@@ -15,6 +15,9 @@ import { loadMupdf, openPdf } from '../engines/mupdf';
 import { exportOffice } from './export-office';
 import { line, officeDocument, picture } from './export-office-fixtures';
 
+/** The pixels of a page side at 200 dpi, as the picture has them: the side in whole twips, in pixels, rounded up. */
+const covering = (points: number): number => Math.ceil(((Math.round(points * 20) / 20) * 200) / 72 - 1e-6);
+
 const run = { signal: new AbortController().signal };
 const options = { pages: [0, 1], baseName: 'plan.pdf', format: 'docx', docxLayout: 'page-images' } as const;
 
@@ -115,9 +118,10 @@ describe('exportOffice, Word as one picture per page', () => {
     expect(document.match(/<wp:positionH relativeFrom="page"><wp:posOffset>0<\/wp:posOffset>/g)).toHaveLength(
       2,
     );
-    expect(document.match(/<wp:positionV relativeFrom="page"><wp:posOffset>0<\/wp:posOffset>/g)).toHaveLength(
-      2,
-    );
+    // One twip down (635 EMU): LibreOffice lays an anchored picture one twip too high.
+    expect(
+      document.match(/<wp:positionV relativeFrom="page"><wp:posOffset>635<\/wp:posOffset>/g),
+    ).toHaveLength(2);
     expect(document).not.toContain('<wp:inline');
     const ids = [...document.matchAll(/<wp:docPr id="(\d+)"/g)].map((m) => m[1]);
     expect(new Set(ids).size).toBe(2);
@@ -163,6 +167,44 @@ describe('exportOffice, Word as one picture per page', () => {
     expect(document).toContain(`<a:ext cx="${12246 * 635}" cy="${15839 * 635}"/>`);
   });
 
+  it('draws 200 dpi from the page’s corner at one scale on both axes, in the pixels that cover the page', async () => {
+    // A black bar 36 pt wide is 100 px at 200 dpi. The page's 612.3 pt are 1700.8 px: the
+    // picture has 1701, not a page stretched to 1700 or 1702 that would move the bar's edge.
+    const bytes = await officeDocument([
+      { size: [612.3, 100], content: '0 g 0 0 36 100 re f\n' },
+      // 612 pt is 1700.0000000000002 px at 200 dpi: 1700 pixels, not 1701.
+      { size: [612, 792], content: '' },
+      // 382.677 pt (1062.99 px) is 382.7 pt in twips, 1063.06 px: the picture has the 1064 that the
+      // extent reaches into, so that a renderer copies it instead of resampling 1063 to 1064.
+      { size: [100, 382.677], content: '' },
+    ]);
+    const { file } = await exportOffice(bytes, { ...options, pages: [0, 1, 2] }, run);
+    const zip = await JSZip.loadAsync(file.bytes);
+    const mupdf = await loadMupdf();
+    const image = new mupdf.Image(
+      await (zip.file('word/media/page1.png') as JSZip.JSZipObject).async('uint8array'),
+    );
+    const pixmap = image.toPixmap();
+    try {
+      const channels = pixmap.getNumberOfComponents();
+      const pixels = pixmap.getPixels();
+      const at = (x: number): number[] => {
+        const offset = (50 * pixmap.getWidth() + x) * channels;
+        return Array.from(pixels.slice(offset, offset + 3));
+      };
+      expect(pixmap.getWidth()).toBe(1701);
+      expect(at(99)).toEqual([0, 0, 0]);
+      expect(at(100)).toEqual([255, 255, 255]);
+    } finally {
+      pixmap.destroy();
+      image.destroy();
+    }
+    const letter = await decoded(zip, 'word/media/page2.png');
+    expect([letter.width, letter.height]).toEqual([1700, 2200]);
+    const flat = await decoded(zip, 'word/media/page3.png');
+    expect(flat.height).toBe(1064);
+  });
+
   it('carries each page’s section in its own paragraph but the last, whose section is the body’s', async () => {
     const { file } = await exportOffice(await twoPages(), options, run);
     const document = await text(await JSZip.loadAsync(file.bytes), 'word/document.xml');
@@ -205,14 +247,11 @@ describe('exportOffice, Word as one picture per page', () => {
     const { file } = await exportOffice(await twoPages(), options, run);
     const zip = await JSZip.loadAsync(file.bytes);
     const first = await decoded(zip, 'word/media/page1.png');
-    expect([first.width, first.height]).toEqual([Math.round((595 * 200) / 72), Math.round((842 * 200) / 72)]);
+    expect([first.width, first.height]).toEqual([covering(595), covering(842)]);
     // The red the page was filled with (0.8, 0.2, 0.1 of 255), not the white of an empty picture.
     expect(near(first.centre, [204, 51, 26], 2)).toBe(true);
     const second = await decoded(zip, 'word/media/page2.jpeg');
-    expect([second.width, second.height]).toEqual([
-      Math.round((842 * 200) / 72),
-      Math.round((595 * 200) / 72),
-    ]);
+    expect([second.width, second.height]).toEqual([covering(842), covering(595)]);
     // The photograph (blue), through JPEG's rounding.
     expect(near(second.centre, [0, 0, 255], 8)).toBe(true);
   });
@@ -270,10 +309,7 @@ describe('exportOffice, Word as one picture per page', () => {
     expect(scaled?.params).toEqual({ pages: '2', percent: 94 });
     // The picture is 200 dpi of the original 1190 x 1684, not of the shrunk page.
     const shrunk = await decoded(zip, 'word/media/page2.png');
-    expect([shrunk.width, shrunk.height]).toEqual([
-      Math.round((1190 * 200) / 72),
-      Math.round((1684 * 200) / 72),
-    ]);
+    expect([shrunk.width, shrunk.height]).toEqual([covering(1190), covering(1684)]);
     expect(near(shrunk.centre, [204, 51, 26], 2)).toBe(true);
   });
 
@@ -328,10 +364,7 @@ describe('exportOffice, Word as one picture per page', () => {
       '<w:pgSz w:w="8000" w:h="6000" w:orient="landscape"/>',
     ]);
     const rendered = await decoded(zip, 'word/media/page1.png');
-    expect([rendered.width, rendered.height]).toEqual([
-      Math.round((400 * 200) / 72),
-      Math.round((300 * 200) / 72),
-    ]);
+    expect([rendered.width, rendered.height]).toEqual([covering(400), covering(300)]);
   });
 
   it('exports only the chosen pages, numbering them from the first picture', async () => {
