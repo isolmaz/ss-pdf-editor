@@ -748,6 +748,12 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
   the traces of a failure are uploaded for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`, the OpenSSL signing round trip.
+- **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test: every
+  sample is exported through the UI, converted back with LibreOffice 26.2.6 and compared (SSIM at
+  100 dpi per page, word accuracy in reading order per document) against the thresholds in
+  `e2e/fidelity/thresholds.json`; a `null` threshold is measured, not gated. Locally: `pnpm
+  fidelity` with `LIBREOFFICE` set to `soffice`. The report goes to the job summary and the
+  `fidelity` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 
@@ -823,7 +829,7 @@ Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
 A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
-after `verify`, `e2e`, `e2e-service-worker` and `behavior` have passed. It runs `wrangler
+after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `fidelity` have passed. It runs `wrangler
 deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
 `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
 runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.

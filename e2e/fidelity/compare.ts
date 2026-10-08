@@ -176,6 +176,9 @@ export function normalizeWords(text: string): string[] {
   let t = text;
   for (const [pattern, replacement] of QUOTES) t = t.replace(pattern, replacement);
   t = t.normalize('NFKC').replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/g, '');
+  // NFKC itself produces mappable characters (U+FE58/U+FE31 → U+2014, U+FE32 → U+2013,
+  // U+2034 → U+2032 ×3), so the mapping runs again.
+  for (const [pattern, replacement] of QUOTES) t = t.replace(pattern, replacement);
   return t.split(/\s+/u).filter((word) => word.length > 0);
 }
 
