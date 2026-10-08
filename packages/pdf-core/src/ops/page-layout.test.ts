@@ -826,29 +826,52 @@ describe('lattice tables with missing rules', () => {
     expect(findTables((await layoutOf(heading)).layout)).toEqual([]);
   });
 
-  it('adds no row for column rules that overshoot the top rule by a few points, but adds one that holds text or is as deep as a row', async () => {
+  it('adds no row for column rules that overshoot the top rule by a few points, but adds one that holds a line of text or is as deep as half a row', async () => {
+    // Rows 60 pt deep; the column rules run \`overshoot\` above the top rule.
     const grid = (overshoot: number, text: readonly [number, string][]) =>
       fixturePage(
         [
           ...text.map(([y, label]) => ({ text: label, x: 58, y, size: 10 })),
-          ...pieces(350, [58, 'A'], [158, 'B']),
+          ...pieces(340, [58, 'A'], [158, 'B']),
+          ...pieces(280, [58, 'C'], [158, 'D']),
         ],
         [
           STROKE,
           rule(50, 370, 250, 370),
-          rule(50, 340, 250, 340),
           rule(50, 310, 250, 310),
-          ...[50, 150, 250].map((x) => rule(x, 370 + overshoot, x, 310)),
+          rule(50, 250, 250, 250),
+          ...[50, 150, 250].map((x) => rule(x, 370 + overshoot, x, 250)),
         ].join('\n'),
       );
-    const [few] = findTables((await layoutOf(await grid(8, []))).layout);
-    expect(few?.ys.map(Math.round)).toEqual([130, 160, 190]);
+    const rowsOf = async (overshoot: number, text: readonly [number, string][]) =>
+      findTables((await layoutOf(await grid(overshoot, text))).layout)[0]?.ys.map(Math.round);
+    expect(await rowsOf(8, [])).toEqual([130, 190, 250]);
     // Deeper than half a row, though empty: a row of the grid.
-    const [deep] = findTables((await layoutOf(await grid(20, []))).layout);
-    expect(deep?.ys.map(Math.round)).toEqual([110, 130, 160, 190]);
-    // Holding text, though shallow.
-    const [texted] = findTables((await layoutOf(await grid(8, [[374, 'Title']]))).layout);
-    expect(texted?.ys.map(Math.round)).toEqual([122, 130, 160, 190]);
+    expect(await rowsOf(40, [])).toEqual([90, 130, 190, 250]);
+    // A line of text in the strip, which is a quarter of a row deep or more.
+    expect(await rowsOf(16, [[374, 'Title']])).toEqual([114, 130, 190, 250]);
+    expect(await rowsOf(16, [])).toEqual([130, 190, 250]);
+    // A line that only touches the strip is a caption, not a row; nor is a strip under a quarter of a row.
+    expect(await rowsOf(16, [[370, 'Title']])).toEqual([130, 190, 250]);
+    expect(await rowsOf(10, [[374, 'Title']])).toEqual([130, 190, 250]);
+  });
+
+  it('does not take a page of three columns for a table when two dividers run past a header rule and a footer rule', async () => {
+    const bytes = await fixturePage(
+      [
+        ...pieces(465, [58, 'Header']),
+        ...pieces(250, [58, 'Left'], [198, 'Middle'], [298, 'Right']),
+        ...pieces(25, [58, 'Footer']),
+      ],
+      [
+        STROKE,
+        rule(30, 450, 370, 450),
+        rule(30, 50, 370, 50),
+        rule(140, 490, 140, 10),
+        rule(260, 490, 260, 10),
+      ].join('\n'),
+    );
+    expect(findTables((await layoutOf(bytes)).layout)).toEqual([]);
   });
 
   it('keeps the box and text of a cell whose merge is rejected to its own column', async () => {

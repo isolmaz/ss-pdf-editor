@@ -765,8 +765,10 @@ function covers(
  * A grid is only completed along an axis that already has two lines of its own (a single
  * divider crossed by a rule is not a lattice), at a side that two rules reach (a heading
  * between two rules, touched by a divider, is not a table), and when the strip added holds
- * text or is at least half as wide as the cell next to it (a rule that overshoots its
- * neighbour by a few points does not make a row).
+ * text and is at least a quarter as wide as the cell next to it, or is at least half as wide
+ * (a rule that overshoots its neighbour by a few points does not make a row, nor does a
+ * divider that runs past a header rule and a footer rule make the page a table). The text
+ * is a line that lies wholly in the strip: a caption that only touches it stays a paragraph.
  */
 function completeOuterEdges(
   horizontal: readonly Ruling[],
@@ -782,7 +784,8 @@ function completeOuterEdges(
   const y1 = Math.max(...all.map((rule) => rule.y1));
   const reaching = (rules: readonly Ruling[], reach: (rule: Ruling) => boolean) =>
     rules.filter(reach).length >= 2;
-  const worth = (strip: number, pitch: number, box: Box) => strip >= pitch / 2 || hasText(box);
+  const worth = (strip: number, pitch: number, box: Box) =>
+    strip >= pitch / 2 || (strip >= pitch / 4 && hasText(box));
   const firstX = xs[0] as number;
   const lastX = xs[xs.length - 1] as number;
   const firstY = ys[0] as number;
@@ -867,7 +870,16 @@ export function findTables(layout: PageLayout): LayoutTable[] {
   for (const group of groups.values()) {
     const ys = cluster(group.h.map((rule) => rule.y0));
     const xs = cluster(group.v.map((rule) => rule.x0));
-    completeOuterEdges(group.h, group.v, xs, ys, (box) => textIn(lines, box) !== '');
+    completeOuterEdges(group.h, group.v, xs, ys, (strip) =>
+      lines.some(
+        (line) =>
+          line.box[0] >= strip[0] - 1 &&
+          line.box[1] >= strip[1] - 1 &&
+          line.box[2] <= strip[2] + 1 &&
+          line.box[3] <= strip[3] + 1 &&
+          line.chars.some((char) => char.c.trim() !== ''),
+      ),
+    );
     if (xs.length < 3 || ys.length < 2) continue;
     const rows = ys.length - 1;
     const columns = xs.length - 1;
