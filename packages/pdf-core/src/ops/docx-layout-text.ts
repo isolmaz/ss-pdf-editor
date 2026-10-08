@@ -21,7 +21,7 @@
  */
 
 import { EMU, TWIPS, xml, xmlSafe } from './docx-drawing';
-import type { EmbeddedFace } from './docx-fonts';
+import { type EmbeddedFace, standardAdvance } from './docx-fonts';
 import { wordFontName } from './export-office';
 import type { DocxRegistry, SceneLink, TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
 import type { LayoutChar, LayoutLine, PageLayout } from './page-layout';
@@ -208,6 +208,8 @@ function runsOf(
   while (items.length > 0 && (items[items.length - 1] as (typeof items)[number]).space) items.pop();
 
   const runs: TextRun[] = [];
+  /** Per run: the geometry of its characters and the sums `horizontalScale` compares. */
+  const fits: { advances: number[]; starts: number[]; ends: number[]; drawn: number; natural: number }[] = [];
   for (const item of items) {
     // A font the document embeds is named by its embedded family and set in the embedded face's own weight and slant.
     const face = item.source.face === undefined ? undefined : embedded?.(item.source.face);
@@ -220,6 +222,7 @@ function runsOf(
     const bold = face?.bold ?? item.source.bold;
     const italic = face?.italic ?? item.source.italic;
     const last = runs[runs.length - 1];
+    let at = runs.length - 1;
     if (
       last !== undefined &&
       last.font === font &&
@@ -229,7 +232,7 @@ function runsOf(
       last.color === item.source.color &&
       last.link === item.link
     ) {
-      runs[runs.length - 1] = { ...last, text: last.text + item.c };
+      runs[at] = { ...last, text: last.text + item.c };
     } else {
       runs.push({
         text: item.c,
@@ -240,9 +243,54 @@ function runsOf(
         color: item.source.color,
         link: item.link,
       });
+      fits.push({ advances: [], starts: [], ends: [], drawn: 0, natural: 0 });
+      at = runs.length - 1;
+    }
+    const fit = fits[at] as (typeof fits)[number];
+    const source = item.source;
+    const codes = [...item.c];
+    const width = source.box[2] - source.box[0];
+    for (const [k, code] of codes.entries()) {
+      const unicode = code.codePointAt(0) as number;
+      const program =
+        face?.advance(unicode) ??
+        (face === undefined ? standardAdvance(font, bold, italic, unicode) : undefined);
+      const em = program ?? (item.space ? SPACE : width / source.size / codes.length);
+      if (face !== undefined && program !== undefined && !item.space) {
+        fit.drawn += width / codes.length;
+        fit.natural += program * source.size;
+      }
+      fit.advances.push(em);
+      fit.starts.push(item.space ? Number.NaN : source.box[0] + (width * k) / codes.length);
+      fit.ends.push(item.space ? Number.NaN : source.box[0] + (width * (k + 1)) / codes.length);
     }
   }
-  return runs;
+  if (direction !== 'right') return runs;
+  return runs.map((run, at) => {
+    const fit = fits[at] as (typeof fits)[number];
+    const hscale = horizontalScale(fit.drawn, fit.natural);
+    return {
+      ...run,
+      size: run.size / Math.sqrt(hscale),
+      fit: { advances: fit.advances, starts: fit.starts, ends: fit.ends, hscale },
+    };
+  });
+}
+
+/**
+ * The factor the PDF squeezes or stretches an embedded face's glyphs by (`Tz`, a condensed
+ * instance of a face), for `w:w`: MuPDF's `LayoutChar.size` is the square root of the text
+ * matrix's determinant, so with a horizontal scale `h` the glyphs it draws (`drawn`, points)
+ * are √h × the program's own advances at that size (`natural`, points). Whole percent; 1
+ * when the two agree to 2 % (the PDF's `/Widths` and the program's `hmtx` differ by
+ * rounding) or when there is nothing sensible to compare. The run's size then is its
+ * `size / √h`, the vertical size the PDF sets.
+ */
+export function horizontalScale(drawn: number, natural: number): number {
+  if (natural <= 0) return 1;
+  const ratio = drawn / natural;
+  if (Math.abs(ratio - 1) <= 0.02 || ratio < 0.5 || ratio > 2) return 1;
+  return Math.round(ratio * ratio * 100) / 100;
 }
 
 /** A line as a row, or `null` when it holds nothing but whitespace. */
@@ -645,15 +693,119 @@ export function wordsInBoxes(boxes: readonly TextBox[]): number {
 /** Points with at most two decimals, for VML. */
 const pt = (value: number) => String(Math.round(value * 100) / 100);
 
-function runXml(run: TextRun, scale: number, registry: DocxRegistry): string {
-  const half = Math.max(2, Math.round(run.size * scale * 2));
+/** The size Word is given for a run: whole half-points of the scaled size. */
+const halfPoints = (size: number, scale: number): number => Math.max(2, Math.round(size * scale * 2));
+
+/** The largest `w:spacing` Word accepts (twentieths of a point). */
+const MAX_SPACING = 31680;
+
+/** A letter-spacing beyond this × the size is a mismatch of fonts, not the PDF's own spacing: it is not applied. */
+const MAX_LETTER_SPACING = 0.5;
+
+/**
+ * The `w:spacing` (twentieths of a point, after each character) that puts every character
+ * of a line where the PDF has it, per run per code point (`undefined` for a run with no
+ * geometry). Word and LibreOffice draw a run at the size's whole half-points with the font's
+ * own advances, so the PDF's Tc/Tw, its odd sizes (8.96 pt → 9) and its kerning would drift
+ * the words off their places; this puts each word's letters at the PDF's pitch and each
+ * space's width at the gap to the next word, tracking where Word's pen will be, so the error
+ * of the integer spacings never adds up past a twentieth of a point:
+ *
+ * - a word's letters share the residual between the natural width and the PDF's origin-to-
+ *   origin span (the last letter keeps no spacing: what follows it is the space's);
+ * - the space after the word takes whatever lands the next word's first letter on its place.
+ *
+ * A word whose letters would need more than {@link MAX_LETTER_SPACING} × size per character
+ * keeps the font's own spacing. `scale` is the document's points per PDF point.
+ */
+export function fitLine(runs: readonly TextRun[], scale: number): (number[] | undefined)[] {
+  const items: { run: number; natural: number; start: number; space: boolean; size: number }[] = [];
+  for (const [r, run] of runs.entries()) {
+    const fit = run.fit;
+    if (fit === undefined) continue;
+    const size = halfPoints(run.size, scale) / 2;
+    for (const [k, code] of [...run.text].entries()) {
+      items.push({
+        run: r,
+        natural: (fit.advances[k] as number) * size * fit.hscale,
+        start: (fit.starts[k] as number) * scale,
+        space: code === ' ',
+        size,
+      });
+    }
+  }
+  const twips = items.map(() => 0);
+  let cursor = items[0]?.start ?? 0;
+  let at = 0;
+  while (at < items.length) {
+    let stop = at;
+    while (stop < items.length && !(items[stop] as (typeof items)[number]).space) stop += 1;
+    const last = stop - 1;
+    let natural = 0;
+    for (let k = at; k < last; k += 1) natural += (items[k] as (typeof items)[number]).natural;
+    let total = 0;
+    if (last > at) {
+      const span =
+        (items[last] as (typeof items)[number]).start - (items[at] as (typeof items)[number]).start;
+      total = Math.round((span - natural) * 20);
+      if (
+        Math.abs(total) / 20 / (last - at) >
+        MAX_LETTER_SPACING * (items[at] as (typeof items)[number]).size
+      )
+        total = 0;
+      const each = Math.floor(total / (last - at));
+      const extra = total - each * (last - at);
+      for (let k = at; k < last; k += 1) twips[k] = each + (k - at >= last - at - extra ? 1 : 0);
+    }
+    cursor += natural + total / 20 + (items[last]?.natural ?? 0);
+    const next = items[stop + 1];
+    if (next !== undefined) {
+      const gap = Math.round((next.start - cursor - (items[stop] as (typeof items)[number]).natural) * 20);
+      twips[stop] = Math.max(-MAX_SPACING, Math.min(MAX_SPACING, gap));
+      cursor += (items[stop] as (typeof items)[number]).natural + (twips[stop] as number) / 20;
+    }
+    at = stop + 1;
+  }
+  const out: (number[] | undefined)[] = runs.map((run) => (run.fit === undefined ? undefined : []));
+  for (const [k, item] of items.entries()) (out[item.run] as number[]).push(twips[k] as number);
+  return out;
+}
+
+/** The pieces of a run's text that share one spacing: `[text, twips]`. */
+function spacedPieces(text: string, spacing: readonly number[] | undefined): [string, number][] {
+  if (spacing === undefined) return [[text, 0]];
+  const pieces: [string, number][] = [];
+  for (const [k, code] of [...text].entries()) {
+    const twips = spacing[k] as number;
+    const last = pieces[pieces.length - 1];
+    if (last !== undefined && last[1] === twips) last[0] += code;
+    else pieces.push([code, twips]);
+  }
+  return pieces;
+}
+
+function runXml(
+  run: TextRun,
+  spacing: readonly number[] | undefined,
+  scale: number,
+  registry: DocxRegistry,
+): string {
+  const half = halfPoints(run.size, scale);
   const font = xml(run.font);
-  const properties =
-    `<w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/>` +
-    (run.bold ? '<w:b/><w:bCs/>' : '') +
-    (run.italic ? '<w:i/><w:iCs/>' : '') +
-    `<w:color w:val="${(run.color & 0xffffff).toString(16).toUpperCase().padStart(6, '0')}"/><w:sz w:val="${half}"/><w:szCs w:val="${half}"/>`;
-  const body = `<w:r><w:rPr>${properties}</w:rPr><w:t xml:space="preserve">${xml(run.text)}</w:t></w:r>`;
+  const hscale =
+    run.fit === undefined || run.fit.hscale === 1 ? '' : `<w:w w:val="${Math.round(run.fit.hscale * 100)}"/>`;
+  const body = spacedPieces(run.text, spacing)
+    .map(([text, twips]) => {
+      const properties =
+        `<w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/>` +
+        (run.bold ? '<w:b/><w:bCs/>' : '') +
+        (run.italic ? '<w:i/><w:iCs/>' : '') +
+        `<w:color w:val="${(run.color & 0xffffff).toString(16).toUpperCase().padStart(6, '0')}"/>` +
+        (twips === 0 ? '' : `<w:spacing w:val="${twips}"/>`) +
+        `${hscale}<w:sz w:val="${half}"/><w:szCs w:val="${half}"/>`;
+      return `<w:r><w:rPr>${properties}</w:rPr><w:t xml:space="preserve">${xml(text)}</w:t></w:r>`;
+    })
+    .join('');
   return run.link === null ? body : `<w:hyperlink r:id="${registry.addLink(run.link)}">${body}</w:hyperlink>`;
 }
 
@@ -667,9 +819,10 @@ function lineRunsXml(
   const all = [...runs];
   const last = all[all.length - 1];
   if (broken && last !== undefined && !/\s$/.test(xmlSafe(last.text))) {
-    all.push({ ...last, text: ' ', link: null });
+    all.push({ ...last, text: ' ', link: null, fit: undefined });
   }
-  return all.map((run) => runXml(run, scale, registry)).join('');
+  const spacing = fitLine(all, scale);
+  return all.map((run, at) => runXml(run, spacing[at], scale, registry)).join('');
 }
 
 function paragraphXml(paragraph: TextParagraph, scale: number, registry: DocxRegistry): string {

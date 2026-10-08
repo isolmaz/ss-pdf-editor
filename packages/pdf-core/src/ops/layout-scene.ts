@@ -101,6 +101,20 @@ export interface TextRun {
   readonly color: number;
   /** The external link the run belongs to, if any. */
   readonly link: string | null;
+  /** Where the PDF puts each character of `text`, so the writer can space them alike (`fitLine`). */
+  readonly fit?: RunFit | undefined;
+}
+
+/** The PDF's geometry of a run's characters, one entry per `text` code point. */
+export interface RunFit {
+  /** Natural advance in em of each character in the face Word will draw. */
+  readonly advances: readonly number[];
+  /** Where the PDF's character starts, page points from the left (`NaN`: a space the PDF has no position for). */
+  readonly starts: readonly number[];
+  /** Where the PDF's character ends (`NaN` as above). */
+  readonly ends: readonly number[];
+  /** Glyph width ÷ natural width (`w:w`, 1 = none). */
+  readonly hscale: number;
 }
 
 export interface TextLine {

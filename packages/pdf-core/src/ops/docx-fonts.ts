@@ -22,7 +22,7 @@
  *    written obfuscated as ECMA-376 Part 1 §17.8.1 says.
  */
 
-import type { PDFDocument, PDFObject, PDFPage, Text } from 'mupdf';
+import type { Font, PDFDocument, PDFObject, PDFPage, Text } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import { readName, resolved } from '../engines/mupdf-write';
 import { XML_HEAD, xml } from './docx-drawing';
@@ -326,6 +326,50 @@ export interface EmbeddedFace {
   readonly family: string;
   readonly bold: boolean;
   readonly italic: boolean;
+  /** The advance, in em, the embedded program gives the character (`undefined` when it has no glyph for it). */
+  advance(unicode: number): number | undefined;
+}
+
+/* ------------------------------------------------------------------ *
+ * the base-14 stand-ins
+ * ------------------------------------------------------------------ */
+
+/** The MuPDF names of the metric-compatible base-14 fonts behind Arial, Times New Roman and Courier New. */
+const STANDARD: Readonly<Record<string, readonly [string, string, string, string]>> = {
+  Arial: ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'],
+  'Times New Roman': ['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'],
+  'Courier New': ['Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique'],
+};
+
+let standardEngine: Mupdf | null = null;
+const standardFonts = new Map<string, Font>();
+
+/** Makes `standardAdvance` available: the MuPDF the base-14 metrics are read from (`embedFonts` provides it). */
+export function provideStandardMetrics(mupdf: Mupdf): void {
+  if (standardEngine !== mupdf) standardFonts.clear();
+  standardEngine = mupdf;
+}
+
+/**
+ * The advance in em of a Unicode value in the stand-in Word falls back to for `family`
+ * (Arial, Times New Roman, Courier New: MuPDF's metric-compatible base-14 fonts), or
+ * `undefined` for any other family, or before `provideStandardMetrics`.
+ */
+export function standardAdvance(
+  family: string,
+  bold: boolean,
+  italic: boolean,
+  unicode: number,
+): number | undefined {
+  const names = STANDARD[family];
+  if (names === undefined || standardEngine === null) return undefined;
+  const name = names[(bold ? 1 : 0) + (italic ? 2 : 0)] as string;
+  let font = standardFonts.get(name);
+  if (font === undefined) {
+    font = new standardEngine.Font(name);
+    standardFonts.set(name, font);
+  }
+  return font.advanceGlyph(font.encodeCharacter(unicode), 0);
 }
 
 type Style = FontNames['style'];
@@ -377,6 +421,7 @@ export async function embedFonts(
   pages: readonly number[],
   context: OperationContext,
 ): Promise<EmbeddedFonts> {
+  provideStandardMetrics(mupdf);
   const programs = new Map<number, Program>();
   /** Per page: MuPDF font name → program key. */
   const used = new Map<number, Map<string, number>>();
@@ -477,10 +522,15 @@ export async function embedFonts(
       const key = used.get(pageIndex)?.get(face);
       const entry = key === undefined ? undefined : built.get(key);
       if (entry === undefined) return undefined;
+      const program = programs.get(key as number) as Program;
       return {
         family: entry.family,
         bold: entry.style.startsWith('Bold'),
         italic: entry.style.endsWith('Italic'),
+        advance(unicode) {
+          const gid = program.unicode.get(unicode);
+          return gid === undefined ? undefined : program.advance.get(gid);
+        },
       };
     },
     files,
