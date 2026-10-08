@@ -769,14 +769,18 @@ function covers(
  * (a rule that overshoots its neighbour by a few points does not make a row, nor does a
  * divider that runs past a header rule and a footer rule make the page a table). The text
  * is a line that lies wholly in the strip: a caption that only touches it stays a paragraph.
+ * A strip above or below the rules that holds lines of text one under the other (a header
+ * row and a first row that no rule separates) is cut between them into the rows they are;
+ * the cuts are returned, for they separate their rows although no rule is drawn there.
  */
 function completeOuterEdges(
   horizontal: readonly Ruling[],
   vertical: readonly Ruling[],
   xs: number[],
   ys: number[],
-  hasText: (box: Box) => boolean,
-): void {
+  textIn: (box: Box) => readonly Box[],
+): number[] {
+  const separate: number[] = [];
   const all = [...horizontal, ...vertical];
   const x0 = Math.min(...all.map((rule) => rule.x0));
   const x1 = Math.max(...all.map((rule) => rule.x1));
@@ -785,7 +789,17 @@ function completeOuterEdges(
   const reaching = (rules: readonly Ruling[], reach: (rule: Ruling) => boolean) =>
     rules.filter(reach).length >= 2;
   const worth = (strip: number, pitch: number, box: Box) =>
-    strip >= pitch / 2 || (strip >= pitch / 4 && hasText(box));
+    strip >= pitch / 2 || (strip >= pitch / 4 && textIn(box).length > 0);
+  /** The rows of text in a horizontal strip: the cuts between lines that stand one under the other. */
+  const cuts = (box: Box): number[] => {
+    const out: number[] = [];
+    let foot = Number.NEGATIVE_INFINITY;
+    for (const line of [...textIn(box)].sort((a, b) => a[1] - b[1])) {
+      if (foot !== Number.NEGATIVE_INFINITY && line[1] > foot) out.push((foot + line[1]) / 2);
+      foot = Math.max(foot, line[3]);
+    }
+    return out;
+  };
   const firstX = xs[0] as number;
   const lastX = xs[xs.length - 1] as number;
   const firstY = ys[0] as number;
@@ -800,9 +814,20 @@ function completeOuterEdges(
   if (ys.length >= 2) {
     const top = firstY - y0 > OUTER_GAP && reaching(vertical, (rule) => rule.y0 <= y0 + SNAP);
     const bottom = y1 - lastY > OUTER_GAP && reaching(vertical, (rule) => rule.y1 >= y1 - SNAP);
-    if (top && worth(firstY - y0, (ys[1] as number) - firstY, [x0, y0, x1, firstY])) ys.unshift(y0);
-    if (bottom && worth(y1 - lastY, lastY - (ys[ys.length - 2] as number), [x0, lastY, x1, y1])) ys.push(y1);
+    if (top && worth(firstY - y0, (ys[1] as number) - firstY, [x0, y0, x1, firstY])) {
+      const cut = cuts([x0, y0, x1, firstY]);
+      separate.push(...cut);
+      ys.unshift(y0, ...cut);
+      ys.sort((a, b) => a - b);
+    }
+    if (bottom && worth(y1 - lastY, lastY - (ys[ys.length - 2] as number), [x0, lastY, x1, y1])) {
+      const cut = cuts([x0, lastY, x1, y1]);
+      separate.push(...cut);
+      ys.push(y1, ...cut);
+      ys.sort((a, b) => a - b);
+    }
   }
+  return separate;
 }
 
 function textIn(lines: readonly LayoutLine[], box: Box): string {
@@ -870,15 +895,17 @@ export function findTables(layout: PageLayout): LayoutTable[] {
   for (const group of groups.values()) {
     const ys = cluster(group.h.map((rule) => rule.y0));
     const xs = cluster(group.v.map((rule) => rule.x0));
-    completeOuterEdges(group.h, group.v, xs, ys, (strip) =>
-      lines.some(
-        (line) =>
-          line.box[0] >= strip[0] - 1 &&
-          line.box[1] >= strip[1] - 1 &&
-          line.box[2] <= strip[2] + 1 &&
-          line.box[3] <= strip[3] + 1 &&
-          line.chars.some((char) => char.c.trim() !== ''),
-      ),
+    const cut = completeOuterEdges(group.h, group.v, xs, ys, (strip) =>
+      lines
+        .filter(
+          (line) =>
+            line.box[0] >= strip[0] - 1 &&
+            line.box[1] >= strip[1] - 1 &&
+            line.box[2] <= strip[2] + 1 &&
+            line.box[3] <= strip[3] + 1 &&
+            line.chars.some((char) => char.c.trim() !== ''),
+        )
+        .map((line) => line.box),
     );
     if (xs.length < 3 || ys.length < 2) continue;
     const rows = ys.length - 1;
@@ -904,6 +931,7 @@ export function findTables(layout: PageLayout): LayoutTable[] {
         let rowSpan = 1;
         while (
           row + rowSpan < rows &&
+          !cut.includes(ys[row + rowSpan] as number) &&
           !group.h.some((rule) => covers(rule, true, ys[row + rowSpan] as number, left, right))
         ) {
           rowSpan += 1;

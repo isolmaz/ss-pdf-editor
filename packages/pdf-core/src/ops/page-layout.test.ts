@@ -856,6 +856,54 @@ describe('lattice tables with missing rules', () => {
     expect(await rowsOf(10, [[374, 'Title']])).toEqual([130, 190, 250]);
   });
 
+  it('cuts a strip beyond the rules into the rows of text it holds: a header row and a first row that no rule separates', async () => {
+    // Column rules run 60 pt above (or below) the outer row rules: two lines of text in the strip.
+    const grid = (above: boolean) =>
+      fixturePage(
+        above
+          ? [
+              ...pieces(345, [58, 'Head'], [158, 'Name']),
+              ...pieces(318, [58, '1'], [158, 'First']),
+              ...pieces(280, [58, '2'], [158, 'Second']),
+              ...pieces(250, [58, '3'], [158, 'Third']),
+            ]
+          : [
+              ...pieces(340, [58, 'Head'], [158, 'Name']),
+              ...pieces(310, [58, '1'], [158, 'First']),
+              ...pieces(282, [58, '2'], [158, 'Second']),
+              ...pieces(252, [58, '3'], [158, 'Third']),
+            ],
+        above
+          ? [
+              STROKE,
+              rule(50, 300, 250, 300),
+              rule(50, 270, 250, 270),
+              rule(50, 240, 250, 240),
+              ...[50, 150, 250].map((x) => rule(x, 360, x, 240)),
+            ].join('\n')
+          : [
+              STROKE,
+              rule(50, 360, 250, 360),
+              rule(50, 330, 250, 330),
+              rule(50, 300, 250, 300),
+              ...[50, 150, 250].map((x) => rule(x, 360, x, 240)),
+            ].join('\n'),
+      );
+    for (const above of [true, false]) {
+      const [table] = findTables((await layoutOf(await grid(above))).layout);
+      expect(table?.ys).toHaveLength(5);
+      const rows = [0, 1, 2, 3].map((row) =>
+        table?.cells.filter((cell) => cell.row === row).map((cell) => cell.text),
+      );
+      expect(rows).toEqual([
+        ['Head', 'Name'],
+        ['1', 'First'],
+        ['2', 'Second'],
+        ['3', 'Third'],
+      ]);
+    }
+  });
+
   it('does not take a page of three columns for a table when two dividers run past a header rule and a footer rule', async () => {
     const bytes = await fixturePage(
       [
