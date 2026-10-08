@@ -17,7 +17,7 @@ import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics } from './docx-fonts';
-import { chooseOpenFont, type OpenFont, ocrAdvance } from './docx-ocr-font';
+import { chooseOpenFont, type OpenFonts, ocrAdvance } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import { type ReadWord, refineWords } from './ocr-refine';
@@ -72,8 +72,6 @@ export interface ScanPage {
   readonly flagged: readonly Omit<FlaggedWord, 'page'>[];
   /** Pictures added (regions), for the totals. */
   readonly regions: number;
-  /** The open family the text is set in (`chooseOpenFont`); `null` when it is set in the stand-ins. */
-  readonly open: OpenFont | null;
 }
 
 const isVisible = (char: { readonly c: string; readonly invisible?: true }): boolean =>
@@ -218,6 +216,7 @@ export async function readScanPage(
   scene: PageScene,
   ocr: OcrOptions | null,
   signal: AbortSignal,
+  fonts: OpenFonts,
 ): Promise<ScanPage | null> {
   const layer = layerWords(scene);
   if (layer.length === 0 && ocr === null) return null;
@@ -289,7 +288,7 @@ export async function readScanPage(
   // Set in the stand-in that fits the word boxes best; the words as set tell whether the scan is
   // in one of the open families, and then the page is set again in that family's own advances.
   let set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(null), undefined, rules);
-  const open = await chooseOpenFont(mupdf, image, set.measured);
+  const open = await chooseOpenFont(mupdf, image, set.measured, fonts);
   if (open !== null) {
     set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
   }
@@ -314,6 +313,5 @@ export async function readScanPage(
     boxes,
     flagged,
     regions: pictures.length,
-    open,
   };
 }

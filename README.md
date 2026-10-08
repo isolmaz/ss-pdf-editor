@@ -990,7 +990,7 @@ License 1.1 (the licence texts are copied to `dist/licenses/`):
 
 - **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
-  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic (the sans
-  families also medium and semi-bold). Each covers the Turkish letters. Lato was left out because
+  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
+  Each covers the Turkish letters. Lato was left out because
   its faces lack Ğ/ğ, İ and Ş/ş.
 - **Interface and signatures:** Space Grotesk, DM Sans, Dancing Script and Great Vibes.

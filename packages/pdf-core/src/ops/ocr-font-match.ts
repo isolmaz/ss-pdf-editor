@@ -250,7 +250,7 @@ const median = (values: readonly number[]): number => {
 };
 
 /** Up to `MAX_WORDS` words, each next one the one with the most letters not yet seen (longer first among equals). */
-function varied(words: readonly MatchWord[]): MatchWord[] {
+export function varied(words: readonly MatchWord[]): MatchWord[] {
   const pool = words.filter(
     (word) =>
       !word.bold &&

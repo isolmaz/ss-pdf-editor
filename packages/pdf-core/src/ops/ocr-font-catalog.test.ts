@@ -60,11 +60,11 @@ describe('OPEN_FAMILIES', () => {
     expect(kind('roboto-mono')).toBe('mono');
   });
 
-  it('gives every family the four basic styles and the sans families Medium and SemiBold too', () => {
+  it('gives every family the four basic styles and no other', () => {
     for (const family of OPEN_FAMILIES) {
-      const { regular, italic, bold, boldItalic, medium, semiBold } = family.files;
+      const { regular, italic, bold, boldItalic, ...others } = family.files;
       expect([regular, italic, bold, boldItalic].every((path) => path?.startsWith('/fonts/'))).toBe(true);
-      expect(medium !== undefined && semiBold !== undefined).toBe(family.kind === 'sans');
+      expect(others).toEqual({});
     }
   });
 
@@ -119,9 +119,9 @@ describe('loadOpenFace', () => {
     const stub = serveDisk();
     const roboto = OPEN_FAMILIES.find((family) => family.id === 'roboto');
     if (roboto === undefined) throw new Error('catalog lost Roboto');
-    const bytes = await loadOpenFace(roboto, 'semiBold');
-    expect(stub).toHaveBeenCalledWith(roboto.files.semiBold);
-    expect(bytes).toEqual(diskBytes(roboto.files.semiBold ?? ''));
+    const bytes = await loadOpenFace(roboto, 'boldItalic');
+    expect(stub).toHaveBeenCalledWith(roboto.files.boldItalic);
+    expect(bytes).toEqual(diskBytes(roboto.files.boldItalic ?? ''));
   });
 
   it('reads every face of every family', async () => {
@@ -147,10 +147,14 @@ describe('loadOpenFace', () => {
   it('is null for a face the family does not ship, without a request', async () => {
     const loadOpenFace = await freshLoader();
     const stub = serveDisk();
-    const mono = OPEN_FAMILIES.find((family) => family.id === 'roboto-mono');
-    if (mono === undefined) throw new Error('catalog lost Roboto Mono');
-    expect(await loadOpenFace(mono, 'semiBold')).toBeNull();
-    expect(await loadOpenFace(mono, 'medium')).toBeNull();
+    const regularOnly: OpenFamily = {
+      id: 'ghost',
+      name: 'Ghost',
+      kind: 'sans',
+      files: { regular: '/fonts/ghost/Ghost-Regular.ttf' },
+    };
+    expect(await loadOpenFace(regularOnly, 'italic')).toBeNull();
+    expect(await loadOpenFace(regularOnly, 'boldItalic')).toBeNull();
     expect(stub).not.toHaveBeenCalled();
   });
 
