@@ -11,6 +11,7 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { paragraphTexts } from './docx-text';
 import { expect, test } from './test';
 import { scannedPdf } from './tool-fixture';
 import { openPdf, runCommand } from './ui-helpers';
@@ -61,9 +62,7 @@ test('a scanned page exports to Word as text boxes read by OCR, with the report 
   const document = (await word.file('word/document.xml')?.async('string')) ?? '';
   expect(document).toContain('<wps:txbx');
   // The words are text in the document (OCR noise allowed: nine in ten of them must be there).
-  const text = (document.match(/<w:t[ >][^<]*/g) ?? [])
-    .map((part) => part.replace(/^<w:t[^>]*>/, ''))
-    .join(' ');
+  const text = paragraphTexts(document).join('\n');
   const expected = LINES.flatMap((line) => line.split(' '));
   const found = expected.filter((word) => text.includes(word));
   expect(

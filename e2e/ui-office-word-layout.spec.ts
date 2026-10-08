@@ -12,6 +12,7 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { paragraphTexts } from './docx-text';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
 import { openPdf, runCommand } from './ui-helpers';
@@ -119,12 +120,13 @@ test('Word as the exact layout (the default): text boxes with the words, a live 
   const word = await JSZip.loadAsync(readFileSync(path));
   const document = (await word.file('word/document.xml')?.async('string')) ?? '';
   expect(document).toContain('<wps:txbx');
+  const paragraphs = paragraphTexts(document).map((text) => text.trim());
   for (const text of [
     'Quarterly report',
     'Revenue grew steadily through the year',
     'and costs stayed flat.',
   ]) {
-    expect(document, text).toContain(text);
+    expect(paragraphs.join('\n'), text).toContain(text);
   }
   expect(document.match(/<w:pgSz [^>]*\/>/g)).toEqual(['<w:pgSz w:w="11900" w:h="16840"/>']);
 
