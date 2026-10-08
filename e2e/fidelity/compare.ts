@@ -373,3 +373,27 @@ export function compareWords(expected: readonly string[], actual: readonly strin
     expected.length === 0 ? (actual.length === 0 ? 1 : 0) : Math.max(0, 1 - distance / expected.length);
   return { accuracy, distance, missing, extra, substituted };
 }
+
+/**
+ * How many of `expected` words occur in `actual`, each actual word used at most once, order
+ * ignored: the share of a picture's text a conversion recovered (as live text), however it was laid out.
+ * `own` is the page's real text, whose words are set aside from `actual` first, so a word the
+ * picture shares with the live text does not count as recovered by it.
+ */
+export function recoveredWords(
+  expected: readonly string[],
+  actual: readonly string[],
+  own: readonly string[] = [],
+): number {
+  const pool = new Map<string, number>();
+  for (const word of actual) pool.set(word, (pool.get(word) ?? 0) + 1);
+  for (const word of own) pool.set(word, Math.max(0, (pool.get(word) ?? 0) - 1));
+  let found = 0;
+  for (const word of expected) {
+    const left = pool.get(word) ?? 0;
+    if (left === 0) continue;
+    pool.set(word, left - 1);
+    found += 1;
+  }
+  return found;
+}

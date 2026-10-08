@@ -36,11 +36,79 @@
     },
     "usgs-fs2020-3042": {
       "words": 0.99
+    },
+    "shapes": {
+      "words": 0.95
+    },
+    "chart": {
+      "words": 0.84
+    },
+    "text-in-image": {
+      "words": 0.95
+    },
+    "overlay": {
+      "words": 0.64
+    },
+    "rotated": {
+      "words": 0.87
+    },
+    "mixed-page": {
+      "words": 0.95
+    },
+    "slide": {
+      "words": 0.95
+    },
+    "invoice": {
+      "words": 0.93
     }
   },
   "page-images": {
     "default": {
       "ssim": 0.95,
+      "words": null
+    },
+    "shapes": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "chart": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "text-in-image": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "overlay": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "rotated": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "mixed-page": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "slide": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "invoice": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "shapes-scan": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "invoice-scan": {
+      "ssim": 0.97,
+      "words": null
+    },
+    "invoice-scan-rough": {
+      "ssim": 0.97,
       "words": null
     }
   },
@@ -108,6 +176,50 @@
     "nasa-tm-vacuum-1965": {
       "ssim": 0.6,
       "words": 0.95
+    },
+    "shapes": {
+      "ssim": 0.97,
+      "words": 0.97
+    },
+    "chart": {
+      "ssim": 0.97,
+      "words": 0.97
+    },
+    "text-in-image": {
+      "ssim": 0.97,
+      "words": 0.97
+    },
+    "overlay": {
+      "ssim": 0.91,
+      "words": 0.97
+    },
+    "rotated": {
+      "ssim": 0.95,
+      "words": 0.96
+    },
+    "mixed-page": {
+      "ssim": 0.97,
+      "words": 0.97
+    },
+    "slide": {
+      "ssim": 0.97,
+      "words": 0.97
+    },
+    "invoice": {
+      "ssim": 0.96,
+      "words": 0.97
+    },
+    "shapes-scan": {
+      "ssim": 0.91,
+      "words": 0.39
+    },
+    "invoice-scan": {
+      "ssim": 0.87,
+      "words": 0.36
+    },
+    "invoice-scan-rough": {
+      "ssim": 0.64,
+      "words": 0.29
     }
   }
 }

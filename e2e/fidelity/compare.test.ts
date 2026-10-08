@@ -7,6 +7,7 @@ import {
   intendedPageScale,
   joinHyphenation,
   normalizeWords,
+  recoveredWords,
   resizeBilinear,
   ssim,
 } from './compare';
@@ -345,5 +346,21 @@ describe('fitToReference', () => {
   it('resamples a larger difference', () => {
     const image = page(100, 80);
     expect(fitToReference(image, 110, 88)).toEqual(resizeBilinear(image, 110, 88));
+  });
+});
+
+describe('recoveredWords', () => {
+  it('counts each actual word once, in any order', () => {
+    expect(recoveredWords(['a', 'b', 'b', 'c'], ['b', 'a', 'x', 'b'])).toBe(3);
+    expect(recoveredWords(['a', 'a'], ['a'])).toBe(1);
+  });
+
+  it('sets the live text aside first, so shared words are not credited to the picture', () => {
+    expect(recoveredWords(['bilet', 'fiyat'], ['bilet', 'fiyat'], ['bilet'])).toBe(1);
+    expect(recoveredWords(['bilet'], ['bilet'], ['bilet'])).toBe(0);
+  });
+
+  it('is zero for no match', () => {
+    expect(recoveredWords(['a'], [])).toBe(0);
   });
 });

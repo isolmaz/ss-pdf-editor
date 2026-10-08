@@ -1,7 +1,7 @@
 /**
- * The repository's own PDF→Word fidelity samples: six Turkish-language, vector-built pages plus two
- * scan derivatives, all generated in code (no binary assets, no network, no clock) so a run
- * always sees the very same bytes.
+ * The repository's own PDF→Word fidelity samples: Turkish-language, vector-built pages (six here,
+ * eight graphics-heavy ones in `samples-graphics.ts`) plus scan derivatives, all generated in code
+ * (no binary assets, no network, no clock) so a run always sees the very same bytes.
  *
  * Every vector page is real, selectable text in an embedded Noto Sans face (see `sample-builder.ts`)
  * with a correct `ToUnicode` map, so ç ğ ı İ ö ş ü survive extraction. Each page is drawn in
@@ -10,8 +10,9 @@
  * ruled table that continues on a second page, a drawn form, rounded cards on a coloured page, and
  * text over a full-bleed picture with a translucent band.
  *
- * The two scans (`cv-scan`, `cards-scan`) are the vector pages rendered at 200 dpi into an
- * image-only PDF: the OCR path's input. Their ground truth is the vector original's own text.
+ * The scans (`cv-scan`, `cards-scan`, `shapes-scan`, `invoice-scan`, and the rough `invoice-scan-rough`
+ * at 150 dpi with skew, noise and uneven light) are vector pages rendered into an image-only PDF:
+ * the OCR path's input. Their ground truth is the vector original's own text.
  */
 
 import {
@@ -23,7 +24,18 @@ import {
   type Rgb,
   rasterizeToImagePdf,
   SamplePdf,
+  type ScanDefects,
 } from './sample-builder';
+import {
+  buildChart,
+  buildInvoice,
+  buildMixedPage,
+  buildOverlay,
+  buildRotated,
+  buildShapes,
+  buildSlide,
+  buildTextInImage,
+} from './samples-graphics';
 
 export { rasterizeToImagePdf } from './sample-builder';
 
@@ -41,6 +53,12 @@ export interface FidelitySample {
   readonly bytes: Uint8Array;
   /** Per-page plain text in reading order; always present when `ocr` is true. */
   readonly groundTruth?: readonly string[];
+  /**
+   * Text that exists only as pixels inside an embedded picture on a vector page, one string per
+   * picture. It is not part of the text a converter can read, so it is kept out of `groundTruth`;
+   * the report shows how much of it a conversion recovered (none is expected without OCR).
+   */
+  readonly imageText?: readonly string[];
 }
 
 /** The licence line of everything this module generates. */
@@ -48,6 +66,10 @@ const GENERATED_LICENSE = 'AGPL-3.0-or-later (generated in this repository)';
 
 /** The resolution of the scan derivatives. */
 const SCAN_DPI = 200;
+
+/** The rough scan: 150 dpi, the sheet 2.5° skewed, sensor noise, one corner lit less than the other. */
+const ROUGH_SCAN: ScanDefects = { skewDegrees: 2.5, noiseSigma: 14, unevenLight: 0.3 };
+const ROUGH_SCAN_DPI = 150;
 
 // ---------------------------------------------------------------------------
 // shared palette and layout helpers
@@ -845,26 +867,46 @@ function buildTextOverImage(pdf: SamplePdf): void {
 // ---------------------------------------------------------------------------
 
 /** Build one vector sample from a page-drawing function. */
-async function vector(id: string, title: string, draw: (pdf: SamplePdf) => void): Promise<FidelitySample> {
+async function vector(
+  id: string,
+  title: string,
+  /** Draws the page; returns the words drawn inside pictures, if any. */
+  draw: (pdf: SamplePdf) => unknown,
+): Promise<FidelitySample> {
   const pdf = await SamplePdf.create();
-  draw(pdf);
-  return { id, title, origin: 'generated', license: GENERATED_LICENSE, ocr: false, bytes: pdf.save() };
+  const drawn = await draw(pdf);
+  const imageText = Array.isArray(drawn) ? (drawn as readonly string[]) : undefined;
+  return {
+    id,
+    title,
+    origin: 'generated',
+    license: GENERATED_LICENSE,
+    ocr: false,
+    bytes: pdf.save(),
+    ...(imageText === undefined ? {} : { imageText }),
+  };
 }
 
 /** A scan of `source`: image-only, same page size, ground truth from the vector original's text. */
-async function scanOf(source: FidelitySample, id: string, title: string): Promise<FidelitySample> {
+async function scanOf(
+  source: FidelitySample,
+  id: string,
+  title: string,
+  dpi = SCAN_DPI,
+  defects: ScanDefects = {},
+): Promise<FidelitySample> {
   return {
     id,
     title,
     origin: 'generated',
     license: GENERATED_LICENSE,
     ocr: true,
-    bytes: await rasterizeToImagePdf(source.bytes, SCAN_DPI),
+    bytes: await rasterizeToImagePdf(source.bytes, dpi, defects),
     groundTruth: await extractPageTexts(source.bytes),
   };
 }
 
-/** The eight generated samples: six vector pages, then the two scans of `cv` and `cards`. */
+/** The generated samples: the vector pages, the graphics-heavy pages, then the scans. */
 export async function generatedSamples(): Promise<FidelitySample[]> {
   const cv = await vector('cv', 'Résumé with sidebar, photo and hyperlinks', buildCv);
   const columns = await vector(
@@ -880,6 +922,38 @@ export async function generatedSamples(): Promise<FidelitySample[]> {
     'Text over a full-bleed picture with a translucent band',
     buildTextOverImage,
   );
+  const shapes = await vector(
+    'shapes',
+    'Geometry: shapes, arrows, curves, dashes, a flow diagram',
+    buildShapes,
+  );
+  const chart = await vector('chart', 'Vector charts: pie, bar and line with axes and legends', buildChart);
+  const textInImage = await vector(
+    'text-in-image',
+    'Vector text plus two pictures that contain text',
+    buildTextInImage,
+  );
+  const overlay = await vector(
+    'overlay',
+    'Photo with translucent band, gradient header, soft-masked emblem',
+    buildOverlay,
+  );
+  const rotated = await vector(
+    'rotated',
+    'Rotated text, vertical table header, side labels and a stamp',
+    buildRotated,
+  );
+  const mixedPage = await vector(
+    'mixed-page',
+    'Vector heading above a scanned typed paragraph',
+    buildMixedPage,
+  );
+  const slide = await vector('slide', '16:9 slide with icons, placeholder and footer', buildSlide);
+  const invoice = await vector(
+    'invoice',
+    'Invoice with logo, ruled table, totals and a QR-like grid',
+    buildInvoice,
+  );
   return [
     cv,
     columns,
@@ -889,5 +963,22 @@ export async function generatedSamples(): Promise<FidelitySample[]> {
     overImage,
     await scanOf(cv, 'cv-scan', 'Résumé, scanned at 200 dpi (no text layer)'),
     await scanOf(cards, 'cards-scan', 'Dashboard cards, scanned at 200 dpi (no text layer)'),
+    shapes,
+    chart,
+    textInImage,
+    overlay,
+    rotated,
+    mixedPage,
+    slide,
+    invoice,
+    await scanOf(shapes, 'shapes-scan', 'Geometry page, scanned at 200 dpi (no text layer)'),
+    await scanOf(invoice, 'invoice-scan', 'Invoice, scanned at 200 dpi (no text layer)'),
+    await scanOf(
+      invoice,
+      'invoice-scan-rough',
+      'Invoice, rough scan: 150 dpi, skewed 2.5°, noisy, uneven light',
+      ROUGH_SCAN_DPI,
+      ROUGH_SCAN,
+    ),
   ];
 }
