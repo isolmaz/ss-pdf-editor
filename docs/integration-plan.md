@@ -31,7 +31,7 @@ second agent can verify; a step is done when its check holds, not when someone s
 | 5 | Independent review | Reviewer records PASS; every FAIL fixed by a new commit and re-reviewed |
 | 6 | Merge | `pre-coverage` tag on the old `main`; merge commit; deploy job and live smoke check green |
 | 7 | Protect `main` | Pull request required; required checks as in "How every change lands"; force-push and deletion blocked |
-| 8 | Branch clean-up | Every local branch whose content is not in `main` is kept as an `archive/<name>` tag on `origin` before it is deleted; the `archive` remote (the previous repository) is left as it is |
+| 8 | Branch clean-up | Every local branch other than `main` is deleted only after its tip is kept: as a local `archive/<name>` tag and in a verified `git bundle` outside the work tree. History from before the public repository is not pushed to the public `origin`; the private `archive` remote (the previous repository) is left as it is |
 | 9 | Final sync | On `main`: docs, site, code and CI agree; final report with the HEAD SHA, CI runs, coverage and live site status |
 
 Rollback: `git` back to the `pre-coverage` tag for the code, `wrangler rollback` for the live

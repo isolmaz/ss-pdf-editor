@@ -203,14 +203,15 @@ jobs:
       - run: pnpm ci:behavior
 
   # Only a push to `main` deploys, and only once every check above passed. Deploys run one at a time
-  # and are never cancelled half way. The job needs nothing beyond the read-only token of the
+  # and are never cancelled half way; a run whose commit is no longer main's head deploys nothing, so
+  # an older push whose checks finished late cannot replace a newer build. The job needs nothing beyond the read-only token of the
   # workflow: the Cloudflare credentials are repository secrets, passed only to the wrangler steps.
   deploy:
     name: deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [verify, e2e, e2e-service-worker, behavior]
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment:
       name: production
       url: https://pdf.isolmaz.com
@@ -229,16 +230,36 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm fetch:engines --sync
-      - run: pnpm build
-      - run: pnpm assemble:dist
+      # The newest push to main is the one that deploys. A newer push queues its own deploy behind
+      # this one (same concurrency group), so checking here is enough.
+      - name: Check this commit is still main's head
+        id: head
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          head=$(git ls-remote "https://github.com/$REPOSITORY" refs/heads/main | cut -f1)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main has moved on to ${head:-an unknown commit}; $GITHUB_SHA is not deployed"
+          fi
+
+      - if: steps.head.outputs.current == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.head.outputs.current == 'true'
+        run: pnpm fetch:engines --sync
+      - if: steps.head.outputs.current == 'true'
+        run: pnpm build
+      - if: steps.head.outputs.current == 'true'
+        run: pnpm assemble:dist
 
       # `wrangler deployments list --json` is sorted oldest first, so the last entry is the live
       # one; the version taking most of its traffic is what a rollback returns to. An empty answer
       # (a Worker that was never deployed) leaves nothing to roll back to, and the rollback step says so.
       - name: Record the version being replaced
         id: previous
+        if: steps.head.outputs.current == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -260,19 +281,25 @@ jobs:
           echo "version=$previous" >> "$GITHUB_OUTPUT"
 
       - name: Deploy
+        id: deploy
+        if: steps.head.outputs.current == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@4.135.0 deploy
 
+      # The check caps itself at about eight minutes; the step timeout makes a hang a failure the
+      # rollback below reacts to, rather than a cancelled job that leaves the new build live.
       - name: Smoke check the live site
         id: smoke
+        if: steps.deploy.outcome == 'success'
+        timeout-minutes: 12
         run: node tools/deploy/smoke.mjs https://pdf.isolmaz.com
 
       # `--yes` keeps the rollback from prompting. The smoke step has already failed the job; this
-      # step puts the previous version back.
+      # step puts the previous version back. It also runs when the job is cancelled after the deploy.
       - name: Roll back to the previous version
-        if: failure() && steps.smoke.outcome == 'failure'
+        if: (failure() || cancelled()) && steps.deploy.outcome == 'success' && steps.smoke.outcome != 'success'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

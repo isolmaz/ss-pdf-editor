@@ -18,8 +18,10 @@
  *     except `Cache-Control` (a caching policy, not a security header), with the declared value.
  *
  * A deploy takes a moment to reach every edge, so the whole set is retried: up to
- * `ATTEMPTS` times, `DELAY_MS` apart. Exit 0 when one attempt passes, 1 when none does (the
- * last attempt's failures are printed), 2 on a usage error or an unreadable `<dist-dir>`.
+ * `ATTEMPTS` times, `DELAY_MS` apart, and never past `DEADLINE_MS`: a site that hangs must end
+ * as a failed check the deploy job can roll back, not run into the job's timeout. Exit 0 when
+ * one attempt passes, 1 when none does (the last attempt's failures are printed), 2 on a usage
+ * error or an unreadable `<dist-dir>`.
  * Node built-ins only, plus the `_headers` parser `tools/preview-dist.mjs` already uses.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -29,7 +31,8 @@ import { headersFor, parseHeadersFile } from '../vite/hosting.mjs';
 
 const ATTEMPTS = 10;
 const DELAY_MS = 6_000;
-const REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 10_000;
+const DEADLINE_MS = 5 * 60_000;
 const ENTRY_POINTS = ['/', '/en/', '/editor/', '/sw.js'];
 
 const USAGE = 'usage: node tools/deploy/smoke.mjs <base-url> [dist-dir=dist]';
@@ -141,8 +144,11 @@ async function checkOnce() {
   return failures;
 }
 
+const deadline = Date.now() + DEADLINE_MS;
 let failures = [];
-for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+let attempt = 0;
+while (attempt < ATTEMPTS && Date.now() < deadline) {
+  attempt += 1;
   failures = await checkOnce();
   if (failures.length === 0) {
     console.log(
@@ -151,9 +157,9 @@ for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     process.exit(0);
   }
   console.log(`smoke: attempt ${attempt}/${ATTEMPTS} failed (${failures.length} problem(s))`);
-  if (attempt < ATTEMPTS) await sleep(DELAY_MS);
+  if (attempt < ATTEMPTS && Date.now() + DELAY_MS < deadline) await sleep(DELAY_MS);
 }
 
-console.error(`\nsmoke: ${origin} is not serving this build after ${ATTEMPTS} attempts:`);
+console.error(`\nsmoke: ${origin} is not serving this build after ${attempt} attempt(s):`);
 for (const failure of failures) console.error(`  x ${failure}`);
 process.exit(1);

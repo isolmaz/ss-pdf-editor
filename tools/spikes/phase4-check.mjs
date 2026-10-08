@@ -500,8 +500,8 @@ try {
    * accessibility, batch — are advanced. A run that never leaves the simple mode searches a
    * UI that deliberately does not offer them, which is what the four failures before this
    * check looked like. The way out is the user's own: the settings dialog's mode choice
-   * (`SettingsDialog.tsx`), which the shell stores and announces on `pdf-mode-change` so
-   * every surface re-filters. Seeding the storage key instead would
+   * (`SettingsDialog.tsx`), which the shell stores and hands to every surface, so each one
+   * re-filters. Seeding the storage key instead would
    * test a state the interface cannot reach; flipping the app's default would hide the
    * filter from the harness rather than exercise it.
    */

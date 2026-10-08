@@ -2425,9 +2425,10 @@ merges are merge commits.
 - `deploy` runs only on a push to `main` and needs every job above: `wrangler deploy` with the
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
   <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
-  `dist/`; if the smoke check fails, `wrangler rollback` returns the Worker to the previous
-  version and the job fails. One deploy runs at a time (a concurrency group that is not
-  cancelled). `pnpm run worker:deploy` is the same publish by hand.
+  `dist/`; if the smoke check fails or runs past its time limit, `wrangler rollback` returns the
+  Worker to the previous version and the job fails. One deploy runs at a time (a concurrency
+  group; a running deploy is never cancelled), and a commit that is no longer `main`'s head when
+  its deploy starts deploys nothing. `pnpm run worker:deploy` is the same publish by hand.
 - `.github/workflows/nightly.yml` (daily and on demand) runs `pnpm coverage --min-lines=98`,
   which fails under 98 % total lines and uploads the report, and the Playwright suite in four
   shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.

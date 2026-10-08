@@ -814,9 +814,10 @@ Deployment is a Cloudflare Worker that serves `dist/` as static assets
 A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
 after `verify`, `e2e`, `e2e-service-worker` and `behavior` have passed. It runs `wrangler
 deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
-`tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails, the job
-runs `wrangler rollback` to the previous version and fails. Only one deploy runs at a time; a
-waiting deploy is not cancelled.
+`tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
+runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.
+Only one deploy runs at a time and a running one is never cancelled; a commit that is no longer
+`main`'s head when its deploy starts deploys nothing.
 
 To build and deploy by hand:
 

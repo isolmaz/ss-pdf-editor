@@ -57,9 +57,11 @@ and on manual dispatch:
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`.
 - **`deploy`** runs only on a push to `main`, after every job above has passed: `wrangler deploy`
   with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
-  `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails, the job
-  runs `wrangler rollback` to the previous version and fails. Deploys run one at a time and a
-  waiting one is not cancelled.
+  `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
+  runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.
+  Deploys run one at a time and a running one is never cancelled; a commit that is no longer
+  `main`'s head when its deploy starts deploys nothing, so a late older run cannot replace a
+  newer build.
 
 `.github/workflows/nightly.yml` runs daily and on manual dispatch. It runs `pnpm coverage
 --min-lines=98`, which fails when total line coverage is under 98 % and uploads the report, and
