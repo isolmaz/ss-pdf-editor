@@ -116,12 +116,48 @@ LibreOffice (`LIBREOFFICE=/path/to/soffice`, else `soffice` on the PATH), render
 MuPDF and compares them: SSIM at 100 dpi (rendered at 200 dpi and
 averaged) per page, word accuracy per document. It needs the
 assembled `dist/` like `pnpm e2e`, and it is its own Playwright project, present only when
-`FIDELITY` is set, so `pnpm e2e` and `pnpm coverage` never run it. Filters:
-`FIDELITY_SAMPLES`, `FIDELITY_MODES` and `FIDELITY_ORIGINS` (see the top of
-`e2e/fidelity/fidelity.spec.ts`). The results are `test-results/fidelity/` (the DOCX and PDF of each
-run, `report.json`, `report.md`). `e2e/fidelity/thresholds.json` holds the gates per mode and
-sample; `null` means measured, not gated. A new export mode is one entry in the spec's `MODES`
-table. The comparison functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`).
+`FIDELITY` is set, so `pnpm e2e` and `pnpm coverage` never run it. The results are
+`test-results/fidelity/` (the DOCX and PDF of each run, `report.json`, `report.md`). The comparison
+functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). Details:
+
+- **Modes.** The spec's `MODES` table has one entry per way of exporting, each picking its radio
+  buttons in the dialog: `flow` (Flowing text), `page-images` (One picture per page) and `layout`
+  (Text and pictures, exact layout). A new Word layout is one more entry, plus its keys in
+  `thresholds.json`. A sample that is image-only is judged against its ground truth (the text of the
+  page it was made from), not against its own words, so the OCR path of `layout` is measured the same way.
+- **Filters** (comma-separated, set before `pnpm fidelity`; the list is at the top of
+  `e2e/fidelity/fidelity.spec.ts`): `FIDELITY_MODES=layout` runs one mode; `FIDELITY_SAMPLES=cv,form`
+  runs the samples whose id contains one of those words; `FIDELITY_ORIGINS=generated,public` drops
+  the local ones. Arguments after `pnpm fidelity` go to Playwright (`pnpm fidelity --workers=1`).
+  `E2E_WORKERS` caps the browsers.
+- **Two worktrees at once.** Playwright serves `dist/` on port 4178; give each checkout its own
+  `E2E_PORT` (`E2E_PORT=4179 pnpm fidelity`) so neither measures the other's build, and run each
+  checkout's own `pnpm build && pnpm assemble:dist` first.
+- **LibreOffice.** `LIBREOFFICE` is the path to `soffice` (`soffice.exe` on Windows). CI uses 26.2.6;
+  another version can move the numbers, so compare runs made with the same one. The conversion
+  to PDF turns comment export off (`ExportNotes`), so the comments that mark low-confidence OCR words
+  do not appear on the rendered page.
+- **Thresholds.** `e2e/fidelity/thresholds.json` maps mode → `default` and per-sample overrides to
+  `{ ssim, words }`. SSIM gates the worst page, word accuracy the whole document. `null` means
+  measured, not gated: `layout` has `null` for both, so a run reports its numbers without failing;
+  a sample's own key, even `null`, wins over the mode's `default`. To gate a number, set it a little
+  under the lowest value measured on CI's LibreOffice, and say in the commit what it is.
+- **Local samples.** Every `*.pdf` in `e2e/fixtures/local/` (git-ignored: the files are the
+  owner's and never leave the machine) is a sample of origin `local`; a sibling `<name>.gt.txt` is its
+  ground truth, pages separated by a form feed or a line holding only `\f`. A PDF without any text is
+  treated as a scan. Without that folder the run has only the generated samples and the
+  redistributable ones in `e2e/fidelity/corpus.json`; the owner's CV and its transcript are not in
+  the repository, so the numbers measured on them cannot be reproduced by anyone else.
+- **OCR evaluation tools.** `tools/measure/ocr/` benchmarks Tesseract against PaddleOCR and OnnxTR
+  engines and layout models in Chromium, on 24 synthetic Turkish pages and, when present, the
+  local CV; `docs/ocr-evaluation.md` has the results (why Tesseract with Turkish + English is the
+  shipped engine, and why words under 90 % confidence are flagged). `tools/measure/ocr/README.md`
+  lists the commands (`setup.mjs`, `build-testset.mjs`, `run.mjs`, `score.mjs`, `diff-words.mjs`);
+  they install their own dependencies into a temp folder and never touch `package.json`. They are
+  run by hand, not by CI. To measure what the exact layout does with a scan end to end, use `pnpm
+  fidelity` with `FIDELITY_MODES=layout` on the scan samples (`cv-scan`, `cards-scan`, or a local one);
+  to change the engine or the threshold, rerun the benchmark and update `docs/ocr-evaluation.md` in
+  the same commit.
 
 A test that installs, updates or reloads through the service worker is tagged `@service-worker`
 (`test('…', { tag: '@service-worker' }, …)`): those run in their own Playwright project once the rest
