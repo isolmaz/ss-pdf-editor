@@ -809,7 +809,8 @@ describe('lattice tables with missing rules', () => {
     const [table] = findTables((await layoutOf(await reportPage())).layout);
     expect(table?.xs).toHaveLength(4);
     expect(table?.ys).toHaveLength(4);
-    expect(table?.cells.every((cell) => Object.values(cell.borders ?? {}).every(Boolean))).toBe(true);
+    const drawn = { top: true, right: true, bottom: true, left: true };
+    expect(table?.cells.map((cell) => cell.borders)).toEqual(table?.cells.map(() => drawn));
   });
 
   it('does not merge a cell across a missing rule when that makes a hole in another merged cell', async () => {
@@ -843,5 +844,15 @@ describe('lattice tables with missing rules', () => {
     expect(spans('D')).toEqual([1, 1]);
     // Cells tile the grid: 3 × 3 minus the one under B.
     expect(table?.cells).toHaveLength(8);
+  });
+});
+
+describe('rules that do not make a lattice', () => {
+  it('finds no table in horizontal rules alone', async () => {
+    const bytes = await fixturePage(
+      [...pieces(380, [58, 'A'], [158, 'B']), ...pieces(350, [58, 'C'], [158, 'D'])],
+      [STROKE, '50 370 m 250 370 l S', '50 340 m 250 340 l S', '50 400 m 250 400 l S'].join('\n'),
+    );
+    expect(findTables((await layoutOf(bytes)).layout)).toEqual([]);
   });
 });
