@@ -1693,6 +1693,11 @@ async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExpo
   if (layout.ocr.pages.length > 0) {
     notes.push(note('changed', 'op.note.exportOffice.ocrPages', { pages: layout.ocr.pages.join(', ') }));
   }
+  if (layout.ocr.families.length > 0) {
+    notes.push(
+      note('preserved', 'op.note.exportOffice.ocrFont', { families: layout.ocr.families.join(', ') }),
+    );
+  }
   if (layout.ocr.flagged.length > 0) {
     notes.push(
       note('warning', 'op.note.exportOffice.ocrLowConfidence', {

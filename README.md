@@ -319,17 +319,33 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
         no visible text is read with Tesseract, in the browser, with the best model, in the
         languages ticked in the form (default Turkish and English; the 27 OCR languages are
         offered). The page is rendered at the scan's own resolution (150–300 dpi). The words
-        become editable text boxes with the size, colour and bold measured from the scan and
-        the family (Arial, Times New Roman or Courier New) whose letter widths fit the words
-        best, each word at its scanned place. What OCR did not read (photos, logos, cards,
-        shading) is cut out as pictures behind the text, over a page-sized rectangle of the
-        page colour, and the words are erased from them. Icons and bullets that OCR made into
-        symbols, a word read twice and the specks along a scanner's edge are not text. When the
-        PDF already has an invisible OCR text layer (this app's OCR leaves one), its words are
-        used and OCR is not run. A word read with less than 90 % confidence is marked with a
-        Word comment, and the report lists those words by page. With no language ticked a scan
-        stays a picture and the report says so. How the engine and the 90 % threshold were
-        chosen: [docs/ocr-evaluation.md](docs/ocr-evaluation.md).
+        become editable text boxes with the size and colour measured from the scan, bold per
+        word (from the width of its strokes), italic per line (from whether the ink stands
+        straighter when it is sheared back), underline where a rule lies under the word (a
+        link), and the family (Arial, Times New Roman or Courier New) whose letter widths fit
+        the words best, each word at its scanned place. Paragraphs are put in reading order
+        column by column, and a grid of cards row by row. What OCR did not read (photos, logos,
+        cards, shading) is cut out as pictures behind the text, over a page-sized rectangle of
+        the page colour, and the words are erased from them, with their accents and dots and
+        the faint ripples a JPEG leaves around letters. Icons, link-icon corners, bars between
+        items and bullets that OCR made into symbols, the dot of an İ read as a word of its own,
+        a word read twice and the specks along a scanner's edge are not text.
+      - **Reading a scan twice.** A page with underlined words is read a second time with the
+        underlines erased, because a link's rule makes OCR misread the letters above it. Every
+        word OCR is less than 95 % sure of is then read again alone, enlarged up to three
+        times, with the ticked languages together; the new reading is kept only if it is surer
+        and changes letters into letters, never dropping or adding a character. A run of
+        capitals ("SQL") is read again with English alone, which has no word "sol" to pull it
+        astray. A word with a gap wider than a space inside it (a phone number run together) is
+        split at the gap and each piece read alone. At most 150 such reads are made per page
+        (words with a gap first, then the least sure); if one cannot run, the first reading
+        stands.
+      - **Scan details.** When the PDF already has an invisible OCR text layer (this app's OCR
+        leaves one), its words are used and OCR is not run. A word read with less than 90 %
+        confidence is marked with a Word comment, and the report lists those words by page.
+        With no language ticked, or when the engine cannot start, a scan stays a picture and
+        the report says so. How the engine and the 90 % threshold were chosen:
+        [docs/ocr-evaluation.md](docs/ocr-evaluation.md).
     - **Flowing text** is described above.
     - **One picture per page** draws every page exactly as a viewer shows it (annotations and
       form fields included, on white paper) and puts it in its own section as one picture
@@ -965,3 +981,16 @@ licensed AGPL-3.0-or-later. It also ships Ghostscript (AGPL-3.0-only, through
 `@bentopdf/gs-wasm`) for PDF/A conversion; the combined work is distributed under the
 GNU Affero General Public License version 3. The editor's **Help → Source code (AGPL-3.0)** command links
 to this repository, as section 13 of the licence requires.
+
+### Bundled fonts
+
+The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm packages, served from
+the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
+License 1.1 (the licence texts are copied to `dist/licenses/`):
+
+- **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
+  to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
+  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
+  Each covers the Turkish letters. Lato was left out because
+  its faces lack Ğ/ğ, İ and Ş/ş.
+- **Interface and signatures:** Space Grotesk, DM Sans, Dancing Script and Great Vibes.

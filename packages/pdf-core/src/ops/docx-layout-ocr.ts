@@ -16,17 +16,23 @@
 import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
-import { provideStandardMetrics, standardAdvance } from './docx-fonts';
+import { provideStandardMetrics } from './docx-fonts';
+import { chooseOpenFont, type OpenFonts, ocrAdvance } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
+import { type ReadWord, refineWords } from './ocr-refine';
 import {
   dropDuplicates,
   dropEdgeMarks,
   dropMisreads,
+  eraseRules,
+  findUnderlines,
+  markWords,
   misreadWords,
   ocrBackground,
   ocrTextBoxes,
   type RgbaImage,
+  type Rule,
 } from './ocr-scene';
 import type { Box, LayoutChar } from './page-layout';
 import { throwIfAborted } from './types';
@@ -36,6 +42,10 @@ export interface OcrOptions {
   /** The words of a rendered page: its PNG, pixels per page point, an abort signal. Boxes in page points, y down. */
   readonly recognize: (png: Uint8Array, scale: number, signal: AbortSignal) => Promise<readonly OcrWord[]>;
   readonly lowConfidence: number;
+  /** Reads the PNG of one cropped word again (see `ocr-refine.ts`); without it the first read stands. */
+  readonly readWord?: ReadWord;
+  /** Whether `readWord` with `'english'` reads with another set of languages than with `'all'` (not when English is the only one, or not among them); default no. */
+  readonly englishAlone?: boolean;
 }
 
 /** The pictures cover at least this much of the page for it to be a scan. */
@@ -206,35 +216,63 @@ export async function readScanPage(
   scene: PageScene,
   ocr: OcrOptions | null,
   signal: AbortSignal,
+  fonts: OpenFonts,
 ): Promise<ScanPage | null> {
   const layer = layerWords(scene);
   if (layer.length === 0 && ocr === null) return null;
-  const { image, png } = renderScan(mupdf, page, scanDpi(scene));
+  const scan = renderScan(mupdf, page, scanDpi(scene));
+  let image = scan.image;
+  let png = scan.png;
   let words: readonly OcrWord[] = layer;
   // Words read twice are dropped from the text, but their ink is erased all the same.
   let duplicates: readonly OcrWord[] = [];
+  let rules: readonly Rule[] = [];
   if (layer.length === 0 && ocr !== null) {
     throwIfAborted(signal);
-    let read: readonly OcrWord[];
-    try {
-      read = await ocr.recognize(png, image.scale, signal);
-    } catch (error) {
-      // A recogniser that cannot run (language pack missing, offline, worker crashed) leaves
-      // the page as the picture it is; only the reader's own cancel stops the export.
-      throwIfAborted(signal);
-      if (error instanceof Error && error.name === 'AbortError') throw error;
-      return null;
+    const recognise = async (): Promise<readonly OcrWord[] | null> => {
+      try {
+        return await ocr.recognize(png, image.scale, signal);
+      } catch (error) {
+        // A recogniser that cannot run (language pack missing, offline, worker crashed) leaves
+        // the page as the picture it is; only the reader's own cancel stops the export.
+        throwIfAborted(signal);
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        return null;
+      }
+    };
+    let read = await recognise();
+    if (read === null) return null;
+    // Rules under words (links) make tesseract misread them: the page is read again without them.
+    rules = findUnderlines(image, read);
+    if (rules.length > 0) {
+      image = eraseRules(image, rules);
+      png = pngOf(mupdf, image);
+      read = (await recognise()) ?? read;
+    }
+    if (ocr.readWord !== undefined) {
+      try {
+        read = await refineWords(read, image, (crop) => pngOf(mupdf, crop), ocr.readWord, signal, {
+          englishAlone: ocr.englishAlone === true,
+        });
+      } catch (error) {
+        // The second look is a bonus: when it cannot run (a worker that crashed, no memory for another
+        // one) the first read stands; only the reader's own cancel stops the export.
+        throwIfAborted(signal);
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+      }
     }
     const unique = dropDuplicates(read);
-    duplicates = read.filter((word) => !unique.includes(word));
-    words = dropEdgeMarks(unique, image.width / image.scale);
+    const marks = markWords(unique);
+    duplicates = [...read.filter((word) => !unique.includes(word)), ...marks];
+    words = dropEdgeMarks(
+      unique.filter((word) => !marks.has(word)),
+      image.width / image.scale,
+    );
     throwIfAborted(signal);
   }
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
   // dropped, and the page is erased again only if one lies outside.
   provideStandardMetrics(mupdf);
-  const advance = (family: string, bold: boolean, italic: boolean, unicode: number) =>
-    standardAdvance(family, bold, italic, unicode);
   const misread = misreadWords(words);
   const text = words.filter((word) => !misread.has(word));
   const first = ocrBackground(image, [...text, ...duplicates]);
@@ -245,13 +283,16 @@ export async function readScanPage(
   );
   const { pageColor, regions } =
     kept.length === text.length ? first : ocrBackground(image, [...kept, ...duplicates]);
-  const { boxes, flagged } = ocrTextBoxes(
-    kept,
-    image,
-    ocr?.lowConfidence ?? 0,
-    regions.filter((region) => region.solid).map((region) => region.box),
-    advance,
-  );
+  const solid = regions.filter((region) => region.solid).map((region) => region.box);
+  const lowConfidence = ocr?.lowConfidence ?? 0;
+  // Set in the stand-in that fits the word boxes best; the words as set tell whether the scan is
+  // in one of the open families, and then the page is set again in that family's own advances.
+  let set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(null), undefined, rules);
+  const open = await chooseOpenFont(mupdf, image, set.measured, fonts);
+  if (open !== null) {
+    set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
+  }
+  const { boxes, flagged } = set;
   const background: SceneShape = {
     kind: 'shape',
     box: [0, 0, scene.width, scene.height],

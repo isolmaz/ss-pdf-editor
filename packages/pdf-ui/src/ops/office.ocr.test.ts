@@ -21,6 +21,7 @@ const JSZip = createRequire(new URL('../../../pdf-core/package.json', import.met
 const state = vi.hoisted(() => ({
   created: [] as string[][],
   recognized: [] as Blob[],
+  terminated: 0,
 }));
 
 vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
@@ -28,10 +29,13 @@ vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
   createWorker: async (languages: string[]) => {
     state.created.push(languages);
     return {
+      setParameters: async () => {},
       recognize: async (image: Blob) => {
         state.recognized.push(image);
         return {
           data: {
+            // What a crop of one word reads as (the page read has blocks and ignores it).
+            text: ' SQL\n',
             confidence: 90,
             blocks: [
               {
@@ -41,6 +45,7 @@ vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
                       {
                         words: [
                           { text: 'Merhaba', bbox: { x0: 100, y0: 100, x1: 300, y1: 140 }, confidence: 95 },
+                          { text: 'SOL', bbox: { x0: 320, y0: 100, x1: 400, y1: 140 }, confidence: 99 },
                         ],
                       },
                     ],
@@ -51,7 +56,9 @@ vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
           },
         };
       },
-      terminate: async () => {},
+      terminate: async () => {
+        state.terminated += 1;
+      },
     };
   },
 }));
@@ -99,8 +106,11 @@ describe('export-office dialog with a scanned page', () => {
       { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur', 'eng', 'not-a-language'] },
       context,
     );
-    expect(state.created).toEqual([['tur', 'eng']]);
-    expect(state.recognized).toHaveLength(1);
+    // The page, then the capitals read again with English alone (the crop of "SOL").
+    expect(state.recognized).toHaveLength(2);
+    expect(state.created).toEqual([['tur', 'eng'], ['eng']]);
+    // both workers (the page reader and the English-only one) are released when the export is done
+    expect(state.terminated).toBe(2);
     expect((state.recognized[0] as Blob).type).toBe('image/png');
     expect((state.recognized[0] as Blob).size).toBeGreaterThan(1000);
     expect(result.report.notes.map((entry) => entry.key)).toContain('op.note.exportOffice.ocrPages');
@@ -109,5 +119,52 @@ describe('export-office dialog with a scanned page', () => {
     // The word may be written in pieces (a run per fitted part); read together they are the word.
     const written = [...document.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((match) => match[1]).join('');
     expect(written).toContain('Merhaba');
+    expect(written).toContain('SQL');
+  });
+
+  it('does not load English to read capitals again when it is not among the chosen languages', async () => {
+    const { exportOfficeDialog } = await import('./office');
+    const before = state.recognized.length;
+    const result = await exportOfficeDialog.run(
+      { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur'] },
+      {
+        signal: new AbortController().signal,
+        onProgress: () => {},
+        bytes: await scan(),
+        pageCount: 1,
+        name: 'tarama.pdf',
+        currentPage: 0,
+        selectedPages: [],
+        t: createTranslator('tr'),
+      },
+    );
+    expect(state.recognized.length - before).toBe(1);
+    expect(state.terminated).toBe(3);
+    expect(state.created.slice(-1)).toEqual([['tur']]);
+    expect(result.files).toHaveLength(1);
+  });
+
+  it('releases the workers when the export fails after the page was read', async () => {
+    const { exportOfficeDialog } = await import('./office');
+    const before = state.terminated;
+    await expect(
+      exportOfficeDialog.run(
+        { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur'] },
+        {
+          signal: new AbortController().signal,
+          // the page has been read when the writer reports the write phase
+          onProgress: (progress) => {
+            if (progress.phase === 'write') throw new Error('the report could not be shown');
+          },
+          bytes: await scan(),
+          pageCount: 1,
+          name: 'tarama.pdf',
+          currentPage: 0,
+          selectedPages: [],
+          t: createTranslator('tr'),
+        },
+      ),
+    ).rejects.toThrow('the report could not be shown');
+    expect(state.terminated).toBe(before + 1);
   });
 });

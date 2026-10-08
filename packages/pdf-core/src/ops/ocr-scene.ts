@@ -76,6 +76,18 @@ const EDGE_BAND = 0.03;
 const TALL_SYMBOL = 1.5;
 /** A symbol between two sure words of its line, each at most this × the typical word height away, is text. */
 const SEPARATOR_REACH = 2;
+/** Two groups are columns when their vertical extents overlap by this share of the shorter. */
+const COLUMN_OVERLAP = 0.33;
+/** A horizontal gap at least this × the widest vertical one is cut first… */
+const ROW_PREFERENCE = 0.6;
+/** …when it is also at least this × the page's typical line size: the blank line between two paragraphs is not the gap between rows of cards (and cutting there would interleave two columns of text) — unless the vertical gap is no wider than a gutter (`GUTTER` × the size: the space between the cells of a table) or a side of it holds no paragraph of more than one line (a column of line numbers, of labels). */
+const ROW_MIN_GAP = 2.5;
+/** An opening bracket with at most one letter or digit after it: the corner of an external-link icon read as text — unless a closing bracket follows on its line ("(5 pages)"). */
+const OPENING_BRACKET = /^[[({<][\p{L}\p{N}]?$/u;
+const CLOSING_BRACKET = /[)\]}>]/;
+/** A symbol of one or two characters (a pipe is a character of the text, whatever its height) taller than this × its line's words and narrower than this × its height: a rule of the design (a bar between items), not text. */
+const TALL_BAR = 1.3;
+const BAR_ASPECT = 0.5;
 /** Two words overlapping by more than this share of the smaller one are one word read twice. */
 const DUPLICATE_OVERLAP = 0.3;
 
@@ -102,25 +114,48 @@ const STROKE_INK = 0.5;
 /** Two runs whose colours differ by less than this (any channel) are one run. */
 const SAME_COLOUR = 40;
 
-/** A line is bold when its median stroke (in em) is this × the page's median. */
-const BOLD_RATIO = 1.2;
+/**
+ * A line is bold when its stroke (in em) is this × the page's median; a word of a line that is
+ * not, when its own is at least `BOLD_WORD` × over at least `BOLD_EVIDENCE` ink rows (fewer: it
+ * takes the weight of its neighbours when both are bold, else it is not).
+ */
+const BOLD_RATIO = 1.3;
+const BOLD_WORD = 1.22;
+const BOLD_EVIDENCE = 60;
 
 /**
- * Italic: a stem of upright text keeps its place from row to row, one of italic text moves left
- * going down. The ink runs of each row are matched one-to-one with those of the row below (same
- * width, ±1 px) and the centres' shifts are averaged (leftward positive); diagonals of v w y
- * cancel, stems dominate. A line leans when the mean shift of its stems is at least
- * `ITALIC_SLANT` px per row over at least `ITALIC_STEMS` matched pairs.
+ * Italic: the ink of a line is sheared back by each of these tangents of the slant (rows above
+ * the word's middle moving left, undoing a lean to the right); the shear that makes the
+ * columns' ink sharpest (Σ column sums²) is the slant. A line leans when the sharpest shear is
+ * at least `ITALIC_SLANT` and beats the upright reading by `ITALIC_GAIN`.
  */
-const ITALIC_SLANT = 0.18;
-const ITALIC_STEMS = 100;
-const MAX_SHIFT = 1.5;
+const SHEARS = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35] as const;
+const ITALIC_SLANT = 0.1;
+const ITALIC_GAIN = 1.05;
 const MAX_RUN = 64;
+const STROKE_SHARE = 0.6;
 
 /** Ring thickness (pixels) the background is read from. */
 const RING = 3;
 /** How far a word's erased box reaches beyond the ink box, × its height. */
 const ERASE_PAD = 0.15;
+/** …and for a word with a mark above or a cedilla below, that far (× its height) on that side. */
+const MARK_PAD = 0.4;
+const MARKED_ABOVE = /[İĞÖÜÂÊÎÔÛ]/;
+const CEDILLA = /[ÇŞçşĢģ]/;
+
+/**
+ * A scan saved as JPEG has faint ripples around letters, up to a block (16 px) away from the
+ * ink: the erased box of a word grows over them, side by side, while the next row or column
+ * holds nothing but pixels within `RIPPLE_DIFFERENCE` of the fill (anything stronger — the ink
+ * of the next word, a rule, a card edge — stops it).
+ */
+const RIPPLE_REACH = 16;
+const RIPPLE_DIFFERENCE = 17;
+/** A stretch of this many points (or this share of the box's side, if shorter) at one level that is 3 or more off the fill is a tint, not a ripple. */
+const RIPPLE_FLAT_RUN = 8;
+const RIPPLE_FLAT_SHARE = 0.8;
+const RIPPLE_FLAT_OFFSET = 3;
 
 /** Channel difference from the page colour that makes a pixel part of a picture. */
 const DIFFERENCE = 12;
@@ -148,6 +183,64 @@ function pixelBox(image: RgbaImage, x0: number, y0: number, x1: number, y1: numb
   const px1 = Math.min(width, Math.max(px0 + 1, Math.ceil(x1 * scale)));
   const py1 = Math.min(height, Math.max(py0 + 1, Math.ceil(y1 * scale)));
   return [px0, py0, px1, py1];
+}
+
+/**
+ * Whether the pixels at `at(from)` … `at(to - 1)` (indices into `data`) are ripples around the
+ * fill: all within `RIPPLE_DIFFERENCE` of it, and without a flat stretch — one level, off the
+ * fill by 3 or more, over `flatRun` pixels — which is a tint or a card of its own, not noise.
+ */
+function ripples(
+  data: Uint8Array,
+  fill: Rgb,
+  from: number,
+  to: number,
+  at: (i: number) => number,
+  flatRun: number,
+): boolean {
+  const level = (index: number): number =>
+    ((data[index] as number) +
+      (data[index + 1] as number) +
+      (data[index + 2] as number) -
+      fill[0] -
+      fill[1] -
+      fill[2]) /
+    3;
+  let run = 0;
+  let previous = 0;
+  for (let i = from; i < to; i += 1) {
+    const index = at(i);
+    if (distance(data, index, fill) > RIPPLE_DIFFERENCE) return false;
+    const offset = level(index);
+    const off = Math.abs(offset) >= RIPPLE_FLAT_OFFSET;
+    run = off ? (run > 0 && Math.abs(offset - previous) <= 1 ? run + 1 : 1) : 0;
+    previous = offset;
+    if (run >= flatRun) return false;
+  }
+  return true;
+}
+
+/** `box` grown over the faint ripples around it (see `RIPPLE_REACH`), side by side. */
+function growOverRipples(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  scale: number,
+  box: PixelBox,
+  fill: Rgb,
+): PixelBox {
+  let [x0, y0, x1, y1] = box;
+  const flatRun = (length: number): number =>
+    Math.max(2, Math.min(Math.round(RIPPLE_FLAT_RUN * scale), Math.floor(RIPPLE_FLAT_SHARE * length)));
+  const quiet = (y: number): boolean =>
+    ripples(data, fill, x0, x1, (x) => (y * width + x) * 4, flatRun(x1 - x0));
+  const stirred = (x: number): boolean =>
+    ripples(data, fill, y0, y1, (y) => (y * width + x) * 4, flatRun(y1 - y0));
+  for (let step = 0; step < RIPPLE_REACH && y0 > 0 && quiet(y0 - 1); step += 1) y0 -= 1;
+  for (let step = 0; step < RIPPLE_REACH && y1 < height && quiet(y1); step += 1) y1 += 1;
+  for (let step = 0; step < RIPPLE_REACH && x0 > 0 && stirred(x0 - 1); step += 1) x0 -= 1;
+  for (let step = 0; step < RIPPLE_REACH && x1 < width && stirred(x1); step += 1) x1 += 1;
+  return [x0, y0, x1, y1];
 }
 
 /** Count one more sample in a histogram bin. */
@@ -223,8 +316,8 @@ interface WordInk {
   readonly color: Rgb;
   /** Lengths of the horizontal ink runs (1…MAX_RUN px), counted over the word's rows. */
   readonly runs: Int32Array;
-  /** Σ of the shifts (px, leftward going down) of the stems matched between rows, and how many pairs matched. */
-  readonly lean: { readonly sum: number; readonly pairs: number };
+  /** Σ column sums² of the ink after each of `SHEARS`; all zero where the word has no ink. */
+  readonly sharpness: Float64Array;
 }
 
 /** The ink of one word: its colour and the lengths of its strokes. */
@@ -240,7 +333,8 @@ function measureWord(image: RgbaImage, word: OcrWord): WordInk {
     }
   }
   const runs = new Int32Array(MAX_RUN + 1);
-  if (strongest < MIN_CONTRAST) return { color: [0, 0, 0], runs, lean: { sum: 0, pairs: 0 } };
+  const sharpness = new Float64Array(SHEARS.length);
+  if (strongest < MIN_CONTRAST) return { color: [0, 0, 0], runs, sharpness };
   const histogram = new Int32Array(768);
   const wide = x1 - x0;
   const mask = new Uint8Array(wide * (y1 - y0));
@@ -270,64 +364,55 @@ function measureWord(image: RgbaImage, word: OcrWord): WordInk {
       histogramMedian(histogram, 512, inked),
     ],
     runs,
-    lean: stemLean(mask, wide, y1 - y0),
+    sharpness: shearSharpness(mask, wide, y1 - y0),
   };
 }
 
-/** The ink runs (start, end exclusive) of one row of a mask. */
-function rowRuns(mask: Uint8Array, wide: number, y: number): [number, number][] {
-  const runs: [number, number][] = [];
-  let start = -1;
-  for (let x = 0; x <= wide; x += 1) {
-    const on = x < wide && mask[y * wide + x] === 1;
-    if (on && start < 0) start = x;
-    else if (!on && start >= 0) {
-      runs.push([start, x]);
-      start = -1;
+/** Σ column sums² of the ink `mask` (`wide` × `tall`) sheared back by each of `SHEARS`. */
+function shearSharpness(mask: Uint8Array, wide: number, tall: number): Float64Array {
+  const out = new Float64Array(SHEARS.length);
+  const middle = (tall - 1) / 2;
+  const pad = Math.ceil((SHEARS[SHEARS.length - 1] as number) * middle) + 1;
+  for (const [index, shear] of SHEARS.entries()) {
+    const columns = new Int32Array(wide + 2 * pad);
+    for (let y = 0; y < tall; y += 1) {
+      const shift = pad + Math.round(shear * (y - middle));
+      for (let x = 0; x < wide; x += 1) {
+        if (mask[y * wide + x] === 1) columns[x + shift] = (columns[x + shift] as number) + 1;
+      }
     }
+    let sum = 0;
+    for (const column of columns) sum += column * column;
+    out[index] = sum;
   }
-  return runs;
+  return out;
 }
 
-/** The shifts of the stems of a mask (`wide` × `tall`): runs matched one-to-one, of the same width ±1, with those of the row below. */
-function stemLean(mask: Uint8Array, wide: number, tall: number): { sum: number; pairs: number } {
-  let sum = 0;
-  let pairs = 0;
-  let above = rowRuns(mask, wide, 0);
-  for (let y = 1; y < tall; y += 1) {
-    const below = rowRuns(mask, wide, y);
-    for (const run of above) {
-      const over = below.filter((other) => other[0] < run[1] && other[1] > run[0]);
-      const only = over[0];
-      if (over.length !== 1 || only === undefined) continue;
-      if (above.filter((other) => other[0] < only[1] && other[1] > only[0]).length !== 1) continue;
-      if (Math.abs(only[1] - only[0] - (run[1] - run[0])) > 1) continue;
-      const shift = (run[0] + run[1] - only[0] - only[1]) / 2;
-      if (Math.abs(shift) > MAX_SHIFT) continue;
-      sum += shift;
-      pairs += 1;
-    }
-    above = below;
+/** Whether the ink leans: the sharpest of `SHEARS` is a real slant and clearly sharper than upright. */
+function leans(sharpness: Float64Array): boolean {
+  let best = 0;
+  for (let index = 1; index < sharpness.length; index += 1) {
+    if ((sharpness[index] as number) > (sharpness[best] as number)) best = index;
   }
-  return { sum, pairs };
+  return (
+    (SHEARS[best] as number) >= ITALIC_SLANT &&
+    (sharpness[best] as number) >= ITALIC_GAIN * (sharpness[0] as number)
+  );
 }
 
-/** Whether the stems lean: enough matched pairs, and on average a real slant. */
-function leans(sum: number, pairs: number): boolean {
-  return pairs >= ITALIC_STEMS && sum >= ITALIC_SLANT * pairs;
-}
-
-/** The median of a run-length histogram, in pixels; 0 when it is empty. */
-function medianRun(runs: Int32Array): number {
+/** The stroke width of a run-length histogram, in pixels: the mean of its shortest `STROKE_SHARE` (the stems; long runs are bars and joins). 0 when it is empty. */
+function strokeRun(runs: Int32Array): number {
   let total = 0;
   for (const count of runs) total += count;
-  let seen = 0;
-  let length = 1;
-  for (; length < MAX_RUN; length += 1) {
-    seen += runs[length] as number;
-    if (seen * 2 >= total) break;
+  const keep = Math.ceil(total * STROKE_SHARE);
+  let sum = 0;
+  let taken = 0;
+  for (let length = 1; length <= MAX_RUN && taken < keep; length += 1) {
+    const used = Math.min(runs[length] as number, keep - taken);
+    sum += used * length;
+    taken += used;
   }
-  return total === 0 ? 0 : length;
+  return taken === 0 ? 0 : sum / taken;
 }
 
 const median = (values: readonly number[]): number => {
@@ -369,6 +454,15 @@ export function misreadWords(words: readonly OcrWord[]): Set<OcrWord> {
   const typical = words.length === 0 ? Infinity : medianHeight(words);
   const reach = SEPARATOR_REACH * typical;
   // A symbol with a sure word of its own line close on both sides is a separator of the text (| — •), not a graphic.
+  // Typical height of the words with letters or digits on the word's line (else of the page).
+  const lineHeights = new Map<number | undefined, number>();
+  const lineTypical = (word: OcrWord): number => {
+    if (!lineHeights.has(word.line)) {
+      const own = words.filter((other) => other.line === word.line && LETTER_OR_DIGIT.test(other.text));
+      lineHeights.set(word.line, own.length === 0 ? typical : medianHeight(own));
+    }
+    return lineHeights.get(word.line) as number;
+  };
   const separates = (word: OcrWord): boolean => {
     const sure = words.filter(
       (other) => other !== word && other.line === word.line && other.confidence >= MISREAD_CONFIDENCE,
@@ -378,6 +472,10 @@ export function misreadWords(words: readonly OcrWord[]): Set<OcrWord> {
       sure.some((other) => other.x0 >= word.x1 - 1 && other.x0 - word.x1 <= reach)
     );
   };
+  const closed = (word: OcrWord): boolean =>
+    words.some(
+      (other) => other.line === word.line && other.x0 >= word.x1 - 1 && CLOSING_BRACKET.test(other.text),
+    );
   return new Set(
     words.filter(
       (word) =>
@@ -385,12 +483,252 @@ export function misreadWords(words: readonly OcrWord[]): Set<OcrWord> {
           (word.confidence < MISREAD_CONFIDENCE ||
             (ICON_GLYPH.test(word.text) && word.y1 - word.y0 > TALL_SYMBOL * typical)) &&
           !separates(word)) ||
+        (OPENING_BRACKET.test(word.text) && !closed(word)) ||
+        (SYMBOLIC.test(word.text) &&
+          word.text !== '|' &&
+          word.text.length <= 2 &&
+          word.y1 - word.y0 > TALL_BAR * lineTypical(word) &&
+          word.x1 - word.x0 < BAR_ASPECT * (word.y1 - word.y0)) ||
         (word.text.length <= 2 &&
           word.y1 - word.y0 > TALL_STEM * typical &&
           word.x1 - word.x0 < STEM_ASPECT * (word.y1 - word.y0)) ||
         (word.confidence < MISREAD_LETTERS && /^\p{L}+$/u.test(word.text)),
     ),
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * underlines
+ * ------------------------------------------------------------------ */
+
+/** A thin horizontal rule under text, page points (y down). */
+export interface Rule {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/** A rule row is inked over this share of the word's width. */
+const UNDERLINE_COVER = 0.9;
+/** The rule is at most this × the word's height thick (at least 2 px), and lies this far (× height) above / below the word's bottom edge. */
+const UNDERLINE_THICK = 0.16;
+const UNDERLINE_ABOVE = 0.35;
+const UNDERLINE_BELOW = 0.45;
+/** It reaches beyond the words it lies under by at most this × their height: a rule of the design is longer. */
+const UNDERLINE_REACH = 0.8;
+/** The words one rule runs under are at most this × their height apart (a space, not a cell's width), and no line of the design this × their height long meets its ends. */
+const UNDERLINE_GROUP_GAP = 1.5;
+const UNDERLINE_SIDE = 0.7;
+/** A word under which the rule is looked for has at least this many letters or digits, and is at least this × its height wide. */
+const UNDERLINE_MIN_CHARS = 2;
+const UNDERLINE_MIN_WIDTH = 1.2;
+
+/** Whether the rule runs under most of the word, at its bottom. */
+function underlines(rule: Rule, word: OcrWord): boolean {
+  const h = word.y1 - word.y0;
+  const across = Math.min(rule.x1, word.x1) - Math.max(rule.x0, word.x0);
+  return (
+    across >= 0.6 * (word.x1 - word.x0) &&
+    rule.y0 >= word.y1 - UNDERLINE_ABOVE * h - 1 &&
+    rule.y1 <= word.y1 + UNDERLINE_BELOW * h + 1
+  );
+}
+
+/**
+ * The rules drawn under the words of a page: for each word, the rows just around its bottom
+ * edge that are inked over nearly its whole width, thin, with plain background on both sides
+ * of them; each is followed to where the ink ends, and kept when it lies under the words (not
+ * far beyond them: a divider or the border of a card).
+ */
+export function findUnderlines(image: RgbaImage, words: readonly OcrWord[]): Rule[] {
+  const { data, width, height, scale } = image;
+  const found: Rule[] = [];
+  for (const word of words) {
+    if ((word.text.match(/[\p{L}\p{N}]/gu) ?? []).length < UNDERLINE_MIN_CHARS) continue;
+    const h = word.y1 - word.y0;
+    if (word.x1 - word.x0 < UNDERLINE_MIN_WIDTH * h) continue;
+    const [x0, y0, x1, y1] = pixelBox(image, word.x0, word.y0, word.x1, word.y1);
+    const background = ringMedian(data, width, height, [x0, y0, x1, y1], RING);
+    let strongest = 0;
+    for (let y = y0; y < y1; y += 1)
+      for (let x = x0; x < x1; x += 1)
+        strongest = Math.max(strongest, distance(data, (y * width + x) * 4, background));
+    if (strongest < MIN_CONTRAST) continue;
+    const inked = (x: number, y: number): boolean =>
+      distance(data, (y * width + x) * 4, background) >= STROKE_INK * strongest;
+    const cover = (y: number): number => {
+      let count = 0;
+      for (let x = x0; x < x1; x += 1) if (inked(x, y)) count += 1;
+      return count / (x1 - x0);
+    };
+    const top = Math.max(0, Math.floor(y1 - UNDERLINE_ABOVE * h * scale));
+    const bottom = Math.min(height - 1, Math.ceil(y1 + UNDERLINE_BELOW * h * scale));
+    const thick = Math.max(2, Math.round(UNDERLINE_THICK * h * scale));
+    let y = top;
+    while (y <= bottom) {
+      if (cover(y) < UNDERLINE_COVER) {
+        y += 1;
+        continue;
+      }
+      let end = y;
+      while (end + 1 <= bottom && cover(end + 1) >= UNDERLINE_COVER) end += 1;
+      const plain = (row: number): boolean => row < 0 || row >= height || cover(row) < 0.6;
+      if (end - y + 1 <= thick && plain(y - 1) && plain(end + 1)) {
+        // follow the rule's middle row left and right to where its ink ends
+        const row = Math.floor((y + end) / 2);
+        let left = x0;
+        let gap = 0;
+        for (let x = x0 - 1; x >= 0 && gap < 3; x -= 1) {
+          if (inked(x, row)) {
+            left = x;
+            gap = 0;
+          } else gap += 1;
+        }
+        let right = x1;
+        gap = 0;
+        for (let x = x1; x < width && gap < 3; x += 1) {
+          if (inked(x, row)) {
+            right = x + 1;
+            gap = 0;
+          } else gap += 1;
+        }
+        found.push({ x0: left / scale, y0: y / scale, x1: right / scale, y1: (end + 1) / scale });
+      }
+      y = end + 1;
+    }
+  }
+  return found.filter((rule) => {
+    const under = words.filter((word) => {
+      const h = word.y1 - word.y0;
+      return (
+        word.x1 > rule.x0 &&
+        word.x0 < rule.x1 &&
+        rule.y0 >= word.y1 - UNDERLINE_ABOVE * h - 1 &&
+        rule.y1 <= word.y1 + UNDERLINE_BELOW * h + 1
+      );
+    });
+    if (under.length === 0) return false;
+    const reach = UNDERLINE_REACH * medianHeight(under);
+    const sorted = [...under].sort((a, b) => a.x0 - b.x0);
+    // The words are one group (a link of several words), not the words of cells a border runs along.
+    const joined = sorted.every(
+      (word, at) =>
+        at === 0 || word.x0 - (sorted[at - 1] as OcrWord).x1 <= UNDERLINE_GROUP_GAP * medianHeight(under),
+    );
+    return (
+      joined &&
+      rule.x0 >= (sorted[0] as OcrWord).x0 - reach &&
+      rule.x1 <= Math.max(...under.map((word) => word.x1)) + reach &&
+      !meetsVerticalRule(image, rule, medianHeight(under))
+    );
+  });
+}
+
+/**
+ * Whether a line of the design runs up or down from an end of the rule (the side or the corner
+ * of a table cell, a card): ink in a column at the rule's end, as long as most of a word's height,
+ * right above or right below it. A link's underline ends in the air.
+ */
+function meetsVerticalRule(image: RgbaImage, rule: Rule, wordHeight: number): boolean {
+  const { data, width, height, scale } = image;
+  const y0 = Math.floor(rule.y0 * scale);
+  const y1 = Math.min(height, Math.ceil(rule.y1 * scale));
+  const middle = Math.min(height - 1, Math.floor((y0 + y1 - 1) / 2));
+  const x0 = Math.max(0, Math.floor(rule.x0 * scale));
+  const x1 = Math.min(width, Math.ceil(rule.x1 * scale));
+  const background = ringMedian(data, width, height, [x0, y0, x1, y1], RING);
+  const ink = distance(data, (middle * width + Math.floor((x0 + x1) / 2)) * 4, background);
+  const inked = (x: number, y: number): boolean =>
+    x >= 0 &&
+    x < width &&
+    y >= 0 &&
+    y < height &&
+    distance(data, (y * width + x) * 4, background) >= STROKE_INK * ink;
+  const length = Math.ceil(UNDERLINE_SIDE * wordHeight * scale);
+  const run = (x: number, from: number, step: 1 | -1): boolean => {
+    for (let at = 0; at < length; at += 1) if (!inked(x, from + step * at)) return false;
+    return true;
+  };
+  for (const end of [x0, x1 - 1]) {
+    for (let x = end - 1; x <= end + 1; x += 1) {
+      if (run(x, y0 - 1, -1) || run(x, y1, 1)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The image without the rules: each rule's rows (and one row beyond on each side, for the
+ * anti-aliased edge) take the colour of the row below them, except where a letter's descender
+ * crosses the rule (ink above and below it).
+ */
+export function eraseRules(image: RgbaImage, rules: readonly Rule[]): RgbaImage {
+  const { width, height, scale } = image;
+  const data = new Uint8Array(image.data);
+  for (const rule of rules) {
+    const x0 = Math.max(0, Math.floor(rule.x0 * scale));
+    const x1 = Math.min(width, Math.ceil(rule.x1 * scale));
+    const y0 = Math.max(0, Math.floor(rule.y0 * scale) - 1);
+    const y1 = Math.min(height, Math.ceil(rule.y1 * scale) + 1);
+    const above = Math.max(0, y0 - 1);
+    const below = Math.min(height - 1, y1);
+    const [r, g, b] = ringMedian(data, width, height, [x0, y0, x1, y1], RING);
+    const background: Rgb = [r, g, b];
+    for (let x = x0; x < x1; x += 1) {
+      const crossed =
+        distance(data, (above * width + x) * 4, background) >= MIN_CONTRAST &&
+        distance(data, (below * width + x) * 4, background) >= MIN_CONTRAST;
+      if (crossed) continue;
+      for (let y = y0; y < y1; y += 1) {
+        const at = (y * width + x) * 4;
+        data[at] = r;
+        data[at + 1] = g;
+        data[at + 2] = b;
+      }
+    }
+  }
+  return { width, height, data, scale };
+}
+
+/** A word of at most two characters smaller than this × the word it sits on is that word's mark, not a word. */
+const MARK_SIZE = 0.5;
+/** The mark lies within this × the word's height above it (or below it), and over its first this × width plus the same reach. */
+const MARK_REACH = 0.6;
+
+/** A mark is one character or nothing but punctuation: the word "is" under a heading is a word. */
+const MARK_TEXT = /^(?:.|[^\p{L}\p{N}]{2})$/su;
+
+/**
+ * The words that are the mark of another: tesseract reads the dot of an İ, a cedilla or an
+ * accent as a word of its own ("H", ".") just above or below the word it belongs to, on a text
+ * line of its own. They are not text; the caller erases them with the word. A short word
+ * among the words of its own line is a word, however close the line above or below it is.
+ */
+export function markWords(words: readonly OcrWord[]): Set<OcrWord> {
+  const marks = new Set<OcrWord>();
+  for (const mark of words) {
+    if (!MARK_TEXT.test(mark.text)) continue;
+    if (mark.line !== undefined && words.some((word) => word.line === mark.line && word.text.length > 2)) {
+      continue;
+    }
+    const h = mark.y1 - mark.y0;
+    const centre = (mark.x0 + mark.x1) / 2;
+    const owner = words.some((word) => {
+      const big = word.y1 - word.y0;
+      return (
+        word !== mark &&
+        word.text.length > 2 &&
+        h < MARK_SIZE * big &&
+        centre >= word.x0 - MARK_REACH * big &&
+        centre <= word.x1 &&
+        ((word.y0 - mark.y1 <= MARK_REACH * big && word.y0 - mark.y1 >= -0.2 * big) ||
+          (mark.y0 - word.y1 <= MARK_REACH * big && mark.y0 - word.y1 >= -0.2 * big))
+      );
+    });
+    if (owner) marks.add(mark);
+  }
+  return marks;
 }
 
 /** Words without the one- and two-character ones in the outer 3 % of the page width: the dark scanner edge and its specks. */
@@ -506,6 +844,7 @@ interface Token {
   readonly text: string;
   readonly bold: boolean;
   readonly italic: boolean;
+  readonly underline: boolean;
   readonly color: Rgb;
   readonly note: string | undefined;
   /** The word's box, page points from the left. */
@@ -682,6 +1021,7 @@ function runsOf(
       last.run.note === undefined &&
       last.run.bold === token.bold &&
       last.run.italic === token.italic &&
+      (last.run.underline === true) === token.underline &&
       sameColour(last.color, token.color)
     ) {
       last.run = { ...last.run, text: last.run.text + text };
@@ -695,6 +1035,7 @@ function runsOf(
         size,
         bold: token.bold,
         italic: token.italic,
+        ...(token.underline ? { underline: true as const } : {}),
         color: rgbNumber(token.color),
         link: null,
         ...(token.note === undefined ? {} : { note: token.note }),
@@ -782,32 +1123,101 @@ const boundsOf = (lines: readonly Line[]): Box => [
   Math.max(...lines.map((line) => line.y1)),
 ];
 
+/** Whether the items before and after `at` stand side by side (their vertical extents overlap by a third of the shorter one): columns, not a heading beside a block below it. */
+function sideBySide<T>(sorted: readonly T[], at: number, boxOf: (item: T) => Box): boolean {
+  const extent = (items: readonly T[]): [number, number] => [
+    Math.min(...items.map((item) => boxOf(item)[1])),
+    Math.max(...items.map((item) => boxOf(item)[3])),
+  ];
+  const [top0, bottom0] = extent(sorted.slice(0, at));
+  const [top1, bottom1] = extent(sorted.slice(at));
+  const overlap = Math.min(bottom0, bottom1) - Math.max(top0, top1);
+  return overlap >= COLUMN_OVERLAP * Math.min(bottom0 - top0, bottom1 - top1);
+}
+
+/** Whether paragraphs of more than one line stand on both sides of the vertical cut: columns of text, not a column of numbers or labels beside a text. */
+function textColumns<T>(cut: { sorted: T[]; at: number }, linesOf: (item: T) => number): boolean {
+  return (
+    cut.sorted.slice(0, cut.at).some((item) => linesOf(item) > 1) &&
+    cut.sorted.slice(cut.at).some((item) => linesOf(item) > 1)
+  );
+}
+
 /**
- * Reading order by recursive cuts: items are split at the widest gap that no box crosses,
- * horizontal (top part first) or vertical (left part first) — a column gutter outweighs the
- * space between a heading and its list, so a sidebar is read before the main column — and what
- * no gap divides is read top to bottom. A tie goes to the horizontal gap.
+ * Reading order by recursive cuts: items are split at the widest gap that no box crosses on
+ * each axis; a vertical gap (columns, left part first) wins only when it is wider than the
+ * horizontal one divided by `ROW_PREFERENCE` — a column gutter outweighs the space between a
+ * heading and its list, so a sidebar is read before the main column, but a grid of cards is read
+ * row by row — and what no gap divides is read in rows.
  */
-function readingOrder<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
+function readingOrder<T>(
+  items: readonly T[],
+  boxOf: (item: T) => Box,
+  size: number,
+  linesOf: (item: T) => number,
+): T[] {
   if (items.length < 2) return [...items];
-  let cut: { sorted: T[]; at: number; gap: number } | undefined;
+  const cuts: ({ sorted: T[]; at: number; gap: number } | undefined)[] = [undefined, undefined];
   for (const axis of [1, 0] as const) {
     const sorted = [...items].sort((a, b) => boxOf(a)[axis] - boxOf(b)[axis]);
     let end = boxOf(sorted[0] as T)[axis + 2] as number;
     for (let at = 1; at < sorted.length; at += 1) {
       const box = boxOf(sorted[at] as T);
       const gap = (box[axis] as number) - end;
-      if (gap > 0 && (cut === undefined || gap > cut.gap)) cut = { sorted, at, gap };
+      const best = cuts[axis];
+      if (
+        gap > 0 &&
+        (best === undefined || gap > best.gap) &&
+        (axis === 1 || sideBySide(sorted, at, boxOf))
+      ) {
+        cuts[axis] = { sorted, at, gap };
+      }
       end = Math.max(end, box[axis + 2] as number);
     }
   }
+  const [columns, rows] = cuts;
+  const cut =
+    rows !== undefined &&
+    (columns === undefined ||
+      (rows.gap >= ROW_PREFERENCE * columns.gap &&
+        (rows.gap >= ROW_MIN_GAP * size || columns.gap < GUTTER * size || !textColumns(columns, linesOf))))
+      ? rows
+      : columns;
   if (cut !== undefined) {
     return [
-      ...readingOrder(cut.sorted.slice(0, cut.at), boxOf),
-      ...readingOrder(cut.sorted.slice(cut.at), boxOf),
+      ...readingOrder(cut.sorted.slice(0, cut.at), boxOf, size, linesOf),
+      ...readingOrder(cut.sorted.slice(cut.at), boxOf, size, linesOf),
     ];
   }
-  return [...items].sort((a, b) => boxOf(a)[1] - boxOf(b)[1] || boxOf(a)[0] - boxOf(b)[0]);
+  return inRows(items, boxOf);
+}
+
+/** Items no gap divides: top to bottom in rows (an item joins a row when it overlaps a member by half of the smaller height), each row left to right. */
+function inRows<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
+  const rows: T[][] = [];
+  for (const item of [...items].sort((a, b) => boxOf(a)[1] - boxOf(b)[1] || boxOf(a)[0] - boxOf(b)[0])) {
+    const box = boxOf(item);
+    const row = rows.find((members) =>
+      members.some((member) => {
+        const other = boxOf(member);
+        const overlap = Math.min(box[3], other[3]) - Math.max(box[1], other[1]);
+        return overlap >= 0.5 * Math.min(box[3] - box[1], other[3] - other[1]);
+      }),
+    );
+    if (row === undefined) rows.push([item]);
+    else row.push(item);
+  }
+  return rows.flatMap((row) => row.sort((a, b) => boxOf(a)[0] - boxOf(b)[0]));
+}
+
+/** A word as the page sets it: its box (page points, y down), the size, weight and slant of its run, and how sure OCR was (0–100). */
+export interface MeasuredWord {
+  readonly text: string;
+  readonly box: Box;
+  readonly size: number;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly confidence: number;
 }
 
 /**
@@ -817,6 +1227,7 @@ function readingOrder<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
  * each is a run of its own with a `note`. With `advance` the page is set in the stand-in family
  * whose letter widths fit the word boxes best (`font` names one instead) and every run carries
  * where the scan has its letters, so the writer places each word where the scan has it.
+ * `measured` lists the words as they were set, for whoever judges the typeface.
  */
 export function ocrTextBoxes(
   words: readonly OcrWord[],
@@ -825,10 +1236,18 @@ export function ocrTextBoxes(
   regions: readonly Box[] = [],
   advance?: Advance,
   font?: string,
-): { boxes: TextBox[]; flagged: { text: string; confidence: number }[] } {
+  rules: readonly Rule[] = [],
+): {
+  boxes: TextBox[];
+  flagged: { text: string; confidence: number }[];
+  measured: MeasuredWord[];
+} {
   const flagged: { text: string; confidence: number }[] = [];
+  const measured: MeasuredWord[] = [];
   const inks = new Map<OcrWord, WordInk>();
-  const paragraphs = readingOrder(groupParagraphs(groupLines(words, regionIndex(regions))), boundsOf);
+  const lines = groupLines(words, regionIndex(regions));
+  const typical = lines.length === 0 ? 0 : median(lines.map((line) => line.size));
+  const paragraphs = readingOrder(groupParagraphs(lines), boundsOf, typical, (paragraph) => paragraph.length);
   const lineStroke = new Map<Line, number>();
   const sizes = new Map<Line, number>();
   const slants = new Map<Line, boolean>();
@@ -845,21 +1264,16 @@ export function ocrTextBoxes(
       const rounded = Math.max(1, Math.round(size * 2) / 2);
       sizes.set(line, rounded);
       const runs = new Int32Array(MAX_RUN + 1);
-      let leanSum = 0;
-      let leanPairs = 0;
+      const sharp = new Float64Array(SHEARS.length);
       for (const word of line.words) {
         const ink = measureWord(image, word);
         inks.set(word, ink);
-        // Digits and symbols have diagonals that do not cancel (7 4 9 /): only words of letters count.
-        if (/\p{L}{2}/u.test(word.text)) {
-          leanSum += ink.lean.sum;
-          leanPairs += ink.lean.pairs;
-        }
+        for (const [index, value] of ink.sharpness.entries()) sharp[index] = (sharp[index] ?? 0) + value;
         for (let length = 1; length <= MAX_RUN; length += 1)
           runs[length] = (runs[length] ?? 0) + (ink.runs[length] ?? 0);
       }
-      lineStroke.set(line, medianRun(runs) / (rounded * image.scale));
-      slants.set(line, leans(leanSum, leanPairs));
+      lineStroke.set(line, strokeRun(runs) / (rounded * image.scale));
+      slants.set(line, leans(sharp));
     }
   }
   const pageStroke = median([...lineStroke.values()]);
@@ -870,15 +1284,35 @@ export function ocrTextBoxes(
     const baselines: number[] = [];
     for (const line of lines) {
       const size = sizes.get(line) as number;
-      const bold = pageStroke > 0 && (lineStroke.get(line) as number) >= BOLD_RATIO * pageStroke;
+      const lineBold = pageStroke > 0 && (lineStroke.get(line) as number) >= BOLD_RATIO * pageStroke;
+      const own = line.words.map((word): boolean | undefined => {
+        const { runs } = inks.get(word) as WordInk;
+        let evidence = 0;
+        for (const count of runs) evidence += count;
+        return evidence < BOLD_EVIDENCE
+          ? undefined
+          : strokeRun(runs) / (size * image.scale) >= BOLD_WORD * pageStroke;
+      });
       const italic = slants.get(line) as boolean;
       const tokens = line.words.map((word, at): Token => {
+        const bold =
+          own[at] === true ||
+          (own[at] === undefined && (lineBold || (own[at - 1] === true && own[at + 1] === true)));
         const low = word.confidence / 100 < lowConfidence && !SYMBOLIC.test(word.text);
         if (low) flagged.push({ text: word.text, confidence: word.confidence / 100 });
+        measured.push({
+          text: word.text,
+          box: [word.x0, word.y0, word.x1, word.y1],
+          size,
+          bold,
+          italic,
+          confidence: word.confidence,
+        });
         return {
           text: at === 0 && line.words.length > 1 && BULLET_LIKE.test(word.text) ? '\u2022' : word.text,
           bold,
           italic,
+          underline: rules.some((rule) => underlines(rule, word)),
           color: (inks.get(word) as WordInk).color,
           note: low ? `Low OCR confidence (${Math.round(word.confidence)} %)` : undefined,
           x0: word.x0,
@@ -912,7 +1346,7 @@ export function ocrTextBoxes(
     };
     boxes.push({ box: [x0, top, x0 + width, bottom], rotation: 0, paragraphs: [paragraph] });
   }
-  return { boxes, flagged };
+  return { boxes, flagged, measured };
 }
 
 /* ------------------------------------------------------------------ *
@@ -982,10 +1416,14 @@ export function ocrBackground(
   const data = new Uint8Array(image.data);
 
   for (const word of words) {
-    const pad = ERASE_PAD * (word.y1 - word.y0);
-    const box = pixelBox(image, word.x0 - pad, word.y0 - pad, word.x1 + pad, word.y1 + pad);
-    const [x0, y0, x1, y1] = box;
+    const h = word.y1 - word.y0;
+    const pad = ERASE_PAD * h;
+    // A mark above (İ Ö Ü Ğ) or a cedilla below (Ç Ş) can lie outside the box tesseract gave the letters.
+    const above = MARKED_ABOVE.test(word.text) ? MARK_PAD * h : pad;
+    const below = CEDILLA.test(word.text) ? MARK_PAD * h : pad;
+    const box = pixelBox(image, word.x0 - pad, word.y0 - above, word.x1 + pad, word.y1 + below);
     const [r, g, b] = ringMedian(data, width, height, box, RING);
+    const [x0, y0, x1, y1] = growOverRipples(data, width, height, scale, box, [r, g, b]);
     for (let y = y0; y < y1; y += 1) {
       for (let x = x0; x < x1; x += 1) {
         const at = (y * width + x) * 4;

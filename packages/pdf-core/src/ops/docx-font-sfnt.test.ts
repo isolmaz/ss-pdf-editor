@@ -134,6 +134,15 @@ function without(bytes: Uint8Array, ...drop: string[]): Uint8Array {
   return buildSfnt(directory(bytes).version, tables);
 }
 
+/** `bytes` with the table `tag` replaced by `data`. */
+function replaced(bytes: Uint8Array, tag: string, data: Uint8Array): Uint8Array {
+  const tables: Record<string, Uint8Array> = {};
+  for (const entry of directory(bytes).tables) {
+    tables[entry.tag] = entry.tag === tag ? data : bytes.slice(entry.offset, entry.offset + entry.length);
+  }
+  return buildSfnt(directory(bytes).version, tables);
+}
+
 /** `bytes` with one table's bytes edited. */
 function patched(bytes: Uint8Array, tag: string, edit: (data: Uint8Array) => void): Uint8Array {
   const copy = bytes.slice();
@@ -229,6 +238,56 @@ async function pdfSubset(): Promise<{ program: Uint8Array; gids: Map<number, num
 function mapOf(gids: ReadonlyMap<number, number>): GlyphMapping[] {
   return [...gids].map(([unicode, gid]) => ({ unicode, gid }));
 }
+
+describe('trueTypeForWord: the notices of the font', () => {
+  const map: GlyphMapping[] = [{ unicode: 0x41, gid: 36 }];
+  const NOTICES = ['3/0', '3/7', '3/13', '3/14'];
+
+  it('keeps the copyright, trademark and licence records of the font when asked, and only those', () => {
+    const own = nameRecords(table(REGULAR, 'name'));
+    for (const key of NOTICES) expect(own.get(key), key).toBeTruthy();
+    expect(own.get('3/13')).toContain('SIL Open Font License');
+    const bytes = trueTypeForWord(REGULAR, map, NAMES, { keepNotices: true }) as Uint8Array;
+    expectValidSfnt(bytes, 0x00010000);
+    const kept = nameRecords(table(bytes, 'name'));
+    for (const key of NOTICES) expect(kept.get(key), key).toBe(own.get(key));
+    expect(kept.get('3/1')).toBe('Sample Face');
+    expect(kept.get('3/6')).toBe('SampleFace-Regular');
+    // the records stay in the table's sort order
+    const name = table(bytes, 'name');
+    const dv = new DataView(name.buffer, name.byteOffset, name.byteLength);
+    const keys = Array.from({ length: dv.getUint16(2) }, (_, index) => {
+      const at = 6 + 12 * index;
+      return [dv.getUint16(at), dv.getUint16(at + 2), dv.getUint16(at + 4), dv.getUint16(at + 6)] as const;
+    });
+    const sorted = [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]);
+    expect(keys).toEqual(sorted);
+  });
+
+  it('drops them by default', () => {
+    const bytes = trueTypeForWord(REGULAR, map, NAMES) as Uint8Array;
+    const names = nameRecords(table(bytes, 'name'));
+    for (const key of NOTICES) expect(names.has(key), key).toBe(false);
+  });
+
+  it('keeps nothing from a font without a name table, with a stub of one, or with records cut off', () => {
+    const noName = without(REGULAR, 'name');
+    const stub = replaced(REGULAR, 'name', new Uint8Array(4));
+    const header = table(REGULAR, 'name');
+    const cut = replaced(REGULAR, 'name', header.slice(0, 6 + 12 * 3 + 5));
+    const dv = new DataView(header.buffer, header.byteOffset, header.byteLength);
+    const records = dv.getUint16(2);
+    // every record present, but their strings lie beyond the table's end
+    const noStrings = replaced(REGULAR, 'name', header.slice(0, 6 + 12 * records));
+    for (const font of [noName, stub, cut, noStrings]) {
+      const bytes = trueTypeForWord(font, map, NAMES, { keepNotices: true }) as Uint8Array;
+      expectValidSfnt(bytes, 0x00010000);
+      const names = nameRecords(table(bytes, 'name'));
+      expect(names.get('3/1')).toBe('Sample Face');
+      for (const key of NOTICES) expect(names.has(key), key).toBe(false);
+    }
+  });
+});
 
 describe('trueTypeForWord', () => {
   it('gives a PDF subset a Unicode cmap that selects the glyphs the PDF draws, and a name Word finds', async () => {
