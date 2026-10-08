@@ -483,6 +483,7 @@ export class SamplePdf {
   private readonly opacityList: number[] = [];
   private readonly shadingList: { readonly coords: number[]; readonly from: Rgb; readonly to: Rgb }[] = [];
   private readonly masks = new Map<MuPixmap, MuPixmap>();
+  private readonly jpegs = new Set<MuPixmap>();
   private readonly advances = new Map<string, number>();
 
   private constructor(
@@ -531,7 +532,7 @@ export class SamplePdf {
     return `GS${index}`;
   }
 
-  /** The resource name of an axial shading from `from` to `to` along `coords` (PDF user space), registered on first use. */
+  /** The resource name of an axial shading from `from` to `to` along `coords` (PDF user space), registered; every call adds a new shading (no deduplication). */
   shadingName(coords: number[], from: Rgb, to: Rgb): string {
     this.shadingList.push({ coords, from, to });
     return `Sh${this.shadingList.length - 1}`;
@@ -544,7 +545,7 @@ export class SamplePdf {
       const mask = this.masks.get(pixmap);
       const image =
         mask === undefined
-          ? new this.mupdf.Image(pixmap)
+          ? new this.mupdf.Image(this.jpegs.has(pixmap) ? pixmap.asJPEG(90) : pixmap)
           : new this.mupdf.Image(pixmap, new this.mupdf.Image(mask));
       this.imageObjects.push(this.doc.addImage(image));
       index = this.imageObjects.length - 1;
@@ -651,9 +652,13 @@ export class SamplePdf {
     return color;
   }
 
-  /** Hand a pixmap MuPDF made elsewhere (a rendered snippet) to this document: `save` frees it with the others. */
-  adopt(pixmap: MuPixmap): MuPixmap {
+  /**
+   * Hand a pixmap MuPDF made elsewhere (a rendered snippet) to this document: `save` frees it with
+   * the others. With `jpeg` it is embedded as a JPEG (quality 90), as a scanner's output is.
+   */
+  adopt(pixmap: MuPixmap, jpeg = false): MuPixmap {
     this.pixmaps.push(pixmap);
+    if (jpeg) this.jpegs.add(pixmap);
     return pixmap;
   }
 
@@ -804,12 +809,17 @@ function degrade(pixmap: MuPixmap, defects: ScanDefects): void {
       const at = y * stride + x * 3;
       for (let channel = 0; channel < 3; channel += 1) {
         let value: number = LID[channel] ?? 255;
-        if (x0 >= 0 && y0 >= 0 && x0 + 1 < width && y0 + 1 < height) {
+        if (x0 >= 0 && y0 >= 0 && x0 < width && y0 < height) {
           const fx = sx - x0;
           const fy = sy - y0;
-          const base = y0 * stride + x0 * 3 + channel;
-          const top = (source[base] ?? 0) * (1 - fx) + (source[base + 3] ?? 0) * fx;
-          const bottom = (source[base + stride] ?? 0) * (1 - fx) + (source[base + stride + 3] ?? 0) * fx;
+          const x1 = Math.min(x0 + 1, width - 1);
+          const y1 = Math.min(y0 + 1, height - 1);
+          const row0 = y0 * stride;
+          const row1 = y1 * stride;
+          const top =
+            (source[row0 + x0 * 3 + channel] ?? 0) * (1 - fx) + (source[row0 + x1 * 3 + channel] ?? 0) * fx;
+          const bottom =
+            (source[row1 + x0 * 3 + channel] ?? 0) * (1 - fx) + (source[row1 + x1 * 3 + channel] ?? 0) * fx;
           value = top * (1 - fy) + bottom * fy;
         }
         samples[at + channel] = Math.max(0, Math.min(255, Math.round(value * light + grain)));
