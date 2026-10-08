@@ -552,7 +552,9 @@ describe('sceneItemXml: even-odd fills', () => {
     }
     const started = performance.now();
     const root = render(shape({ box: [0, 0, 600, 160], segments, fill: evenOdd }));
-    expect(performance.now() - started).toBeLessThan(1000);
+    // Testing every subpath against every other polygon took 117 s for these 4 000; a few
+    // seconds' room keeps a busy machine (the whole suite under coverage) from failing it.
+    expect(performance.now() - started).toBeLessThan(10_000);
     const subpaths = subpathPoints(one(root, 'a:path')).map((p) => Math.sign(area(p)));
     expect(subpaths).toHaveLength(4000);
     const [outer, inner, firstSquare, lastSquare] = [subpaths[0], subpaths[1], subpaths[2], subpaths[3999]];

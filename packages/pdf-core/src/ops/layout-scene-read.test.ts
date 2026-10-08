@@ -195,6 +195,182 @@ describe('layout scene: shapes', () => {
   });
 });
 
+/** An axial shading `/Sh1` of one colour: a drawing Word cannot make, so it becomes part of a raster. */
+const shadingOf = (doc: InstanceType<Mupdf['PDFDocument']>) => ({
+  Sh1: doc.addObject({
+    ShadingType: 2,
+    ColorSpace: 'DeviceRGB',
+    Coords: [0, 0, 800, 0],
+    Function: { FunctionType: 2, Domain: [0, 1], C0: [0, 0, 1], C1: [0, 0, 1], N: 1 },
+    Extend: [true, true],
+  }),
+});
+
+describe('layout scene: what Word cannot draw is grouped into islands', () => {
+  const patch = (x: number, y: number, w = 4, h = 4) => `q ${x} ${y} ${w} ${h} re W n /Sh1 sh Q`;
+
+  it('joins patches that a later one bridges into one island, and turns a page of too many into one raster', async () => {
+    const lone = Array.from({ length: 1600 }, (_, index) =>
+      patch((index % 40) * 20, 40 + Math.floor(index / 40) * 20),
+    );
+    const { scene } = await sceneOfRaw({
+      size: [800, 900],
+      // Two patches 26 pt apart, then one over both: a single island, the second one absorbed.
+      // A patch wholly off the page counts for nothing; a picture drawn after the spill is part of the raster too.
+      content: [
+        patch(0, 0),
+        patch(30, 0),
+        patch(2, 0, 30),
+        patch(-100, -100),
+        ...lone,
+        'q 20 0 0 20 100 870 cm /Im1 Do Q',
+      ].join('\n'),
+      images: { Im1: { width: 2, height: 2, at: () => [255, 0, 0] } },
+      resources: (doc) => ({ Shading: shadingOf(doc) }),
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    close((scene.items[0] as SceneRaster).box, [0, 10, 784, 900]);
+  });
+
+  it('draws nothing for a patch with no width', async () => {
+    const { scene } = await sceneOfRaw({
+      content: patch(10, 10, 0, 50),
+      resources: (doc) => ({ Shading: shadingOf(doc) }),
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual([]);
+  });
+
+  it('keeps patches that are far apart as separate rasters, and joins those that touch', async () => {
+    const { scene } = await sceneOfRaw({
+      content: [patch(10, 10), patch(100, 10), patch(14, 10, 40)].join('\n'),
+      resources: (doc) => ({ Shading: shadingOf(doc) }),
+    });
+    // The third patch touches the first only: two islands.
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster', 'raster']);
+  });
+});
+
+describe('layout scene: drawings that are not read', () => {
+  it('leaves out a picture that lies wholly off the page', async () => {
+    const { scene } = await sceneOfRaw({
+      content: 'q 100 0 0 100 1000 1000 cm /Im1 Do Q',
+      images: { Im1: { width: 2, height: 2, at: () => [255, 0, 0] } },
+    });
+    expect(scene.items).toEqual([]);
+  });
+
+  it('keeps the corners a turned picture leaves empty see-through, as PNG', async () => {
+    const { mupdf, scene } = await sceneOfRaw({
+      content: 'q 70 40 -40 70 200 100 cm /Im1 Do Q',
+      images: { Im1: { width: 2, height: 2, at: () => [255, 0, 0] } },
+    });
+    const [image] = scene.items as [SceneImage];
+    expect(image.kind).toBe('image');
+    expect(image.mime).toBe('image/png');
+    const png = decode(mupdf, image.data);
+    expect(png.at(1, 1)[3]).toBe(0);
+    expect(png.at(Math.floor(png.width / 2), Math.floor(png.height / 2))).toEqual([255, 0, 0, 255]);
+  });
+
+  it('draws a picture with a soft mask as a raster that keeps its see-through part', async () => {
+    const mupdf = await loadMupdf();
+    const { scene } = await sceneOfRaw({
+      content: 'q 100 0 0 100 100 100 cm /Im2 Do Q',
+      resources: (doc) => {
+        const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 4, 4], true);
+        const samples = pixmap.getPixels();
+        for (let y = 0; y < 4; y += 1)
+          for (let x = 0; x < 4; x += 1) samples.set([255, 0, 0, x < 2 ? 0 : 255], (y * 4 + x) * 4);
+        const image = new mupdf.Image(pixmap);
+        const object = doc.addImage(image);
+        image.destroy();
+        pixmap.destroy();
+        return { XObject: { Im2: object } };
+      },
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    const png = decode(mupdf, (scene.items[0] as SceneRaster).data);
+    expect(png.at(2, Math.floor(png.height / 2))[3]).toBe(0);
+    expect(png.at(png.width - 3, Math.floor(png.height / 2))).toEqual([255, 0, 0, 255]);
+  });
+
+  it('leaves out a picture MuPDF cannot decode, and reads the rest of the page', async () => {
+    const { scene } = await sceneOfRaw({
+      content: 'q 100 0 0 100 100 100 cm /Broken Do Q 0 0 1 rg 10 10 50 50 re f',
+      resources: (doc) => ({
+        XObject: {
+          Broken: doc.addStream(new Uint8Array([1, 2, 3, 4, 5]), {
+            Type: 'XObject',
+            Subtype: 'Image',
+            Width: 2,
+            Height: 2,
+            ColorSpace: 'DeviceRGB',
+            BitsPerComponent: 3,
+          }),
+        },
+      }),
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['shape']);
+  });
+
+  it('does not read what a tiling pattern draws as page items: a shading, a stencil and a picture in a tile', async () => {
+    const mupdf = await loadMupdf();
+    const { scene } = await sceneOfRaw({
+      content: '/Pattern cs /P1 scn 50 50 200 200 re f',
+      resources: (doc) => {
+        const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 2, 2], false);
+        pixmap.getPixels().set([255, 0, 0, 0, 255, 0, 0, 0, 255, 9, 9, 9]);
+        const image = new mupdf.Image(pixmap);
+        const picture = doc.addImage(image);
+        image.destroy();
+        pixmap.destroy();
+        const stencil = doc.addStream(new Uint8Array([0xf0, 0xf0, 0x0f, 0x0f, 0xf0, 0xf0, 0x0f, 0x0f]), {
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: 8,
+          Height: 8,
+          ImageMask: true,
+          BitsPerComponent: 1,
+        });
+        const pattern = doc.addStream(
+          '/Sh1 sh q 10 0 0 10 0 0 cm /Pic Do Q q 10 0 0 10 0 0 cm /Stencil Do Q',
+          {
+            Type: 'Pattern',
+            PatternType: 1,
+            PaintType: 1,
+            TilingType: 1,
+            BBox: [0, 0, 10, 10],
+            XStep: 10,
+            YStep: 10,
+            Resources: { Shading: shadingOf(doc), XObject: { Pic: picture, Stencil: stencil } },
+          },
+        );
+        return { Pattern: { P1: pattern } };
+      },
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    close((scene.items[0] as SceneRaster).box, [50, 250, 250, 450]);
+  });
+
+  it('draws nothing for a fill or a stroke of no path', async () => {
+    const { scene } = await sceneOfRaw({ content: '0 0 1 rg f S' });
+    expect(scene.items).toEqual([]);
+  });
+
+  it('reads the drawing of an optional-content layer like any other', async () => {
+    const { scene } = await sceneOfRaw({
+      content: '/OC /L1 BDC 1 0 0 rg 50 50 100 100 re f EMC',
+      resources: (doc) => {
+        const layer = doc.addObject({ Type: 'OCG', Name: 'Layer 1' });
+        const root = doc.getTrailer().get('Root');
+        root.put('OCProperties', { OCGs: [layer], D: { Order: [layer], ON: [layer] } });
+        return { Properties: { L1: layer } };
+      },
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['shape']);
+  });
+});
+
 describe('layout scene: pictures', () => {
   it('reads a picture at its box with its colour', async () => {
     const { mupdf, scene } = await sceneOf(

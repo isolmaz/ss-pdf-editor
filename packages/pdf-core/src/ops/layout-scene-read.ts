@@ -20,7 +20,7 @@
  *   straight-edged polygon but no rectangle (Antenna House wraps every table rule in one that
  *   is a little wider than the rule) leaves a shape or picture alone when it lies wholly
  *   inside the polygon (`POLYGON_SLACK` aside: the rule's ends and edges may be a hair beyond
- *   its pointed ends) and rasters it otherwise. Every other clip (a curve, a stroked path, text, an image mask), a soft mask, a transparency group
+ *   its pointed ends) and rasters it otherwise. Every other clip (a curve, text, an image mask), a soft mask, a transparency group
  *   with a blend mode, a tiling pattern, a shading and a stencil image mask puts the
  *   content it covers in a raster *island* — Word has no equivalent. A group's alpha
  *   multiplies into what is drawn inside it. A knockout group with the normal blend mode
@@ -478,14 +478,12 @@ function renderWithoutText(
         clipPath(path, evenOdd, ctm) {
           if (skipping === 0) draw.clipPath(path, evenOdd, ctm);
         },
-        clipStrokePath(path, stroke, ctm) {
-          if (skipping === 0) draw.clipStrokePath(path, stroke, ctm);
-        },
+        // MuPDF's PDF interpreter clips text of every render mode (4–7) with `clipText`, and a
+        // stroked path or stroked text never clips in PDF; layers are applied by the interpreter
+        // (a hidden one is not run), so `clipStrokePath`, `clipStrokeText`, `beginLayer` and
+        // `endLayer` are never called for a page and are not forwarded.
         clipText(text, ctm) {
           if (skipping === 0) draw.clipText(text, ctm);
-        },
-        clipStrokeText(text, stroke, ctm) {
-          if (skipping === 0) draw.clipStrokeText(text, stroke, ctm);
         },
         fillShade(shade, ctm, alpha) {
           borrowed(shade);
@@ -529,12 +527,6 @@ function renderWithoutText(
         endTile() {
           if (skipping > 0) skipping -= 1;
           else draw.endTile();
-        },
-        beginLayer(name) {
-          if (skipping === 0) draw.beginLayer(name);
-        },
-        endLayer() {
-          if (skipping === 0) draw.endLayer();
         },
       });
       try {
@@ -778,13 +770,7 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
       if (data.rect !== null || data.rings === null) open(data.box, { exact: data.rect !== null });
       else open(data.box, {}, { rings: data.rings, evenOdd });
     },
-    clipStrokePath(path, stroke, ctm) {
-      open(shifted(path.getBounds(stroke, ctm)), { exact: false });
-    },
     clipText() {
-      open(null, { exact: false });
-    },
-    clipStrokeText() {
       open(null, { exact: false });
     },
     clipImageMask(image, ctm) {
@@ -870,12 +856,12 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     device.destroy();
   }
 
-  const raster = (box: Box, drawn: ReadonlySet<number> | null): SceneRaster | null => {
+  /** `box` is part of the page (every contribution is cut to it), so whole pixels round out to a box on it. */
+  const raster = (box: Box, drawn: ReadonlySet<number> | null): SceneRaster => {
     const aligned = intersect(
       [Math.floor(box[0]), Math.floor(box[1]), Math.ceil(box[2]), Math.ceil(box[3])],
       pageBox,
-    );
-    if (aligned === null) return null;
+    ) as Box;
     return {
       kind: 'raster',
       box: aligned,
@@ -886,15 +872,11 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
   const items: SceneItem[] = [];
   const spilled = everything as Box | null;
   if (spilled !== null) {
-    const all = raster(spilled, null);
-    if (all !== null) items.push(all);
+    items.push(raster(spilled, null));
   } else {
     for (const slot of slots) {
       if (slot.kind === 'item') items.push(slot.item);
-      else if (!slot.absorbed) {
-        const picture = raster(slot.box, slot.calls);
-        if (picture !== null) items.push(picture);
-      }
+      else if (!slot.absorbed) items.push(raster(slot.box, slot.calls));
     }
   }
 

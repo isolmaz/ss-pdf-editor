@@ -86,6 +86,17 @@ describe('export-office dialog', () => {
     expect(word.files?.[0]?.name).toBe('rapor.docx');
   });
 
+  it('names the sheet of a page without a table in the interface language', async () => {
+    const dialog = await dialogIn('en-US');
+    const result = await dialog.run(
+      { scope: 'all', format: 'xlsx' },
+      contextFor(await fixturePage([{ text: 'Merhaba dunya', x: 50, y: 400, size: 12 }])),
+    );
+    const zip = await JSZip.loadAsync(result.files?.[0]?.bytes ?? new Uint8Array());
+    const workbook = (await zip.file('xl/workbook.xml')?.async('string')) ?? '';
+    expect(workbook).toContain('name="Sayfa 1"');
+  });
+
   it('offers the Word layout only for Word, the exact layout first and by default', async () => {
     const dialog = await dialogIn('en-US');
     const layout = dialog.fields.find((candidate) => candidate.id === 'layout');
