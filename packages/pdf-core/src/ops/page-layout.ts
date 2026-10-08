@@ -761,25 +761,44 @@ function covers(
  * undrawn line, so the cells along it are cells of the grid (a column of a form whose rules
  * stop at the first row line, a table framed on two sides only). The lines are added to
  * `xs` and `ys` in place; no rule is added, so the cells' sides there are drawn blank.
+ *
+ * A grid is only completed along an axis that already has two lines of its own (a single
+ * divider crossed by a rule is not a lattice), at a side that two rules reach (a heading
+ * between two rules, touched by a divider, is not a table), and when the strip added holds
+ * text or is at least half as wide as the cell next to it (a rule that overshoots its
+ * neighbour by a few points does not make a row).
  */
 function completeOuterEdges(
   horizontal: readonly Ruling[],
   vertical: readonly Ruling[],
   xs: number[],
   ys: number[],
+  hasText: (box: Box) => boolean,
 ): void {
   const all = [...horizontal, ...vertical];
   const x0 = Math.min(...all.map((rule) => rule.x0));
   const x1 = Math.max(...all.map((rule) => rule.x1));
   const y0 = Math.min(...all.map((rule) => rule.y0));
   const y1 = Math.max(...all.map((rule) => rule.y1));
-  if (xs.length > 0) {
-    if ((xs[0] as number) - x0 > OUTER_GAP) xs.unshift(x0);
-    if (x1 - (xs[xs.length - 1] as number) > OUTER_GAP) xs.push(x1);
+  const reaching = (rules: readonly Ruling[], reach: (rule: Ruling) => boolean) =>
+    rules.filter(reach).length >= 2;
+  const worth = (strip: number, pitch: number, box: Box) => strip >= pitch / 2 || hasText(box);
+  const firstX = xs[0] as number;
+  const lastX = xs[xs.length - 1] as number;
+  const firstY = ys[0] as number;
+  const lastY = ys[ys.length - 1] as number;
+  // The rules decide the other axis too: read both before either is changed.
+  if (xs.length >= 2) {
+    const left = firstX - x0 > OUTER_GAP && reaching(horizontal, (rule) => rule.x0 <= x0 + SNAP);
+    const right = x1 - lastX > OUTER_GAP && reaching(horizontal, (rule) => rule.x1 >= x1 - SNAP);
+    if (left && worth(firstX - x0, (xs[1] as number) - firstX, [x0, y0, firstX, y1])) xs.unshift(x0);
+    if (right && worth(x1 - lastX, lastX - (xs[xs.length - 2] as number), [lastX, y0, x1, y1])) xs.push(x1);
   }
-  if (ys.length > 0) {
-    if ((ys[0] as number) - y0 > OUTER_GAP) ys.unshift(y0);
-    if (y1 - (ys[ys.length - 1] as number) > OUTER_GAP) ys.push(y1);
+  if (ys.length >= 2) {
+    const top = firstY - y0 > OUTER_GAP && reaching(vertical, (rule) => rule.y0 <= y0 + SNAP);
+    const bottom = y1 - lastY > OUTER_GAP && reaching(vertical, (rule) => rule.y1 >= y1 - SNAP);
+    if (top && worth(firstY - y0, (ys[1] as number) - firstY, [x0, y0, x1, firstY])) ys.unshift(y0);
+    if (bottom && worth(y1 - lastY, lastY - (ys[ys.length - 2] as number), [x0, lastY, x1, y1])) ys.push(y1);
   }
 }
 
@@ -848,7 +867,7 @@ export function findTables(layout: PageLayout): LayoutTable[] {
   for (const group of groups.values()) {
     const ys = cluster(group.h.map((rule) => rule.y0));
     const xs = cluster(group.v.map((rule) => rule.x0));
-    completeOuterEdges(group.h, group.v, xs, ys);
+    completeOuterEdges(group.h, group.v, xs, ys, (box) => textIn(lines, box) !== '');
     if (xs.length < 3 || ys.length < 2) continue;
     const rows = ys.length - 1;
     const columns = xs.length - 1;
@@ -868,7 +887,7 @@ export function findTables(layout: PageLayout): LayoutTable[] {
           columnSpan += 1;
         }
         const left = xs[column] as number;
-        const right = xs[column + columnSpan] as number;
+        let right = xs[column + columnSpan] as number;
         // Grow down while no horizontal rule separates this cell from the one below.
         let rowSpan = 1;
         while (
@@ -888,6 +907,7 @@ export function findTables(layout: PageLayout): LayoutTable[] {
         if (clash) {
           columnSpan = 1;
           rowSpan = 1;
+          right = xs[column + 1] as number;
         }
         for (let r = row; r < row + rowSpan; r += 1) {
           for (let c = column; c < column + columnSpan; c += 1) covered.add(`${r}:${c}`);

@@ -785,24 +785,100 @@ describe('lattice tables with missing rules', () => {
   const rule = (x0: number, y0: number, x1: number, y1: number) => `${x0} ${y0} m ${x1} ${y1} l S`;
 
   it('completes the grid at an outer border that is not drawn, and leaves those sides blank', async () => {
-    // Two row rules and one column rule that runs past them: the table has no frame.
+    // Two row rules and two column rules that run past them: the table has no frame.
     const bytes = await fixturePage(
       [
-        ...pieces(380, [58, 'A'], [158, 'B']),
-        ...pieces(350, [58, 'C'], [158, 'D']),
-        ...pieces(320, [58, 'E'], [158, 'F']),
+        ...pieces(380, [58, 'A'], [158, 'B'], [258, 'C']),
+        ...pieces(350, [58, 'D'], [158, 'E'], [258, 'F']),
+        ...pieces(320, [58, 'G'], [158, 'H'], [258, 'I']),
       ],
-      [STROKE, rule(50, 370, 250, 370), rule(50, 340, 250, 340), rule(150, 400, 150, 310)].join('\n'),
+      [
+        STROKE,
+        rule(50, 370, 350, 370),
+        rule(50, 340, 350, 340),
+        rule(150, 400, 150, 310),
+        rule(250, 400, 250, 310),
+      ].join('\n'),
     );
     const [table] = findTables((await layoutOf(bytes)).layout);
-    expect(table?.xs.map(Math.round)).toEqual([50, 150, 250]);
+    expect(table?.xs.map(Math.round)).toEqual([50, 150, 250, 350]);
     expect(table?.ys.map(Math.round)).toEqual([100, 130, 160, 190]);
-    expect(cellTexts(table ?? { cells: [] })).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
+    expect(cellTexts(table ?? { cells: [] })).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']);
     const sides = (text: string) => table?.cells.find((cell) => cell.text === text)?.borders;
     // The first row has no rule above it, the middle one has both, the last none below.
     expect(sides('A')).toEqual({ top: false, bottom: true, left: false, right: true });
-    expect(sides('D')).toEqual({ top: true, bottom: true, left: true, right: false });
-    expect(sides('E')).toEqual({ top: true, bottom: false, left: false, right: true });
+    expect(sides('E')).toEqual({ top: true, bottom: true, left: true, right: true });
+    expect(sides('I')).toEqual({ top: true, bottom: false, left: true, right: false });
+  });
+
+  it('adds no line for a divider crossed by one rule, nor for a heading between two rules that a divider touches', async () => {
+    // A column divider and a page-wide footer rule: one rule across the other is no lattice.
+    const footer = await fixturePage(
+      [...pieces(380, [58, 'A'], [258, 'B']), ...pieces(300, [58, 'C'], [258, 'D'])],
+      [STROKE, rule(30, 250, 370, 250), rule(200, 450, 200, 250)].join('\n'),
+    );
+    expect(findTables((await layoutOf(footer)).layout)).toEqual([]);
+    // A heading between two rules, a divider below them touching both.
+    const heading = await fixturePage(
+      [...pieces(380, [58, 'Heading']), ...pieces(300, [58, 'C'], [258, 'D'])],
+      [STROKE, rule(30, 400, 370, 400), rule(30, 360, 370, 360), rule(200, 400, 200, 250)].join('\n'),
+    );
+    expect(findTables((await layoutOf(heading)).layout)).toEqual([]);
+  });
+
+  it('adds no row for column rules that overshoot the top rule by a few points, but adds one that holds text or is as deep as a row', async () => {
+    const grid = (overshoot: number, text: readonly [number, string][]) =>
+      fixturePage(
+        [
+          ...text.map(([y, label]) => ({ text: label, x: 58, y, size: 10 })),
+          ...pieces(350, [58, 'A'], [158, 'B']),
+        ],
+        [
+          STROKE,
+          rule(50, 370, 250, 370),
+          rule(50, 340, 250, 340),
+          rule(50, 310, 250, 310),
+          ...[50, 150, 250].map((x) => rule(x, 370 + overshoot, x, 310)),
+        ].join('\n'),
+      );
+    const [few] = findTables((await layoutOf(await grid(8, []))).layout);
+    expect(few?.ys.map(Math.round)).toEqual([130, 160, 190]);
+    // Deeper than half a row, though empty: a row of the grid.
+    const [deep] = findTables((await layoutOf(await grid(20, []))).layout);
+    expect(deep?.ys.map(Math.round)).toEqual([110, 130, 160, 190]);
+    // Holding text, though shallow.
+    const [texted] = findTables((await layoutOf(await grid(8, [[374, 'Title']]))).layout);
+    expect(texted?.ys.map(Math.round)).toEqual([122, 130, 160, 190]);
+  });
+
+  it('keeps the box and text of a cell whose merge is rejected to its own column', async () => {
+    const [x0, x1, x2, x3] = TABLE_XS;
+    const [y0, y1, y2, y3] = TABLE_YS;
+    const bytes = await fixturePage(
+      [
+        ...pieces(360, [58, 'A'], [158, 'B'], [258, 'C']),
+        ...pieces(330, [58, 'D'], [258, 'F']),
+        ...pieces(318, [158, 'Bb']),
+        ...pieces(300, [58, 'G'], [158, 'H'], [258, 'I']),
+      ],
+      [
+        STROKE,
+        rule(x0, y0, x3, y0),
+        `${x0} ${y1} m ${x1} ${y1} l S ${x2} ${y1} m ${x3} ${y1} l S`,
+        rule(x0, y2, x3, y2),
+        rule(x0, y3, x3, y3),
+        rule(x0, y0, x0, y3),
+        `${x1} ${y0} m ${x1} ${y1} l S ${x1} ${y2} m ${x1} ${y3} l S`,
+        rule(x2, y0, x2, y3),
+        rule(x3, y0, x3, y3),
+      ].join('\n'),
+    );
+    const [table] = findTables((await layoutOf(bytes)).layout);
+    const d = table?.cells.find((cell) => cell.row === 1 && cell.column === 0);
+    expect(d?.columnSpan).toBe(1);
+    expect(d?.box.map(Math.round)).toEqual([50, 150, 150, 180]);
+    expect(d?.text).toBe('D');
+    expect(d?.borders).toEqual({ top: true, bottom: true, left: true, right: false });
   });
 
   it('keeps the grid of a table whose rules reach its edges, without adding a line', async () => {
