@@ -14,6 +14,8 @@ export const pageopsPart = {
   'op.note.compose.verified': 'Composition verified: {pages} page(s).',
   'op.note.merge.metadata':
     'Metadata from added documents not carried over; Info and XMP taken from base document.',
+  'op.note.merge.encryptionDropped':
+    'Password protection of the merged documents was not carried over; the merged file is unprotected.',
   'op.note.merge.structure':
     'Merged structure measured: {outline} bookmark(s), {labels} page label entries, {fields} form field(s).',
   'op.note.merge.outlineLost': 'Base document had {expected} bookmark(s), result retained {actual}.',

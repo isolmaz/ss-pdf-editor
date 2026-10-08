@@ -49,6 +49,7 @@ import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { openForWrite, pageObjects, resolved, saveRewrite } from '../engines/mupdf-write';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
+import { inspectProtection } from './security';
 import {
   note,
   type OperationContext,
@@ -322,6 +323,9 @@ export async function mergeDocuments(
       document.destroy();
     }
     const notes: OperationNote[] = [note('lost', 'op.note.merge.metadata')];
+    if (await anyEncrypted([base.bytes, ...others.map((other) => other.bytes)])) {
+      notes.push(note('lost', 'op.note.merge.encryptionDropped'));
+    }
     notes.push(
       note('preserved', 'op.note.merge.structure', {
         outline: structure.outline,
@@ -354,6 +358,17 @@ export async function mergeDocuments(
   } finally {
     await handle.destroy();
   }
+}
+
+/**
+ * Whether any merge input carries an `/Encrypt` dictionary. An owner-password document opens
+ * without a password, the engine merges it, and the output has no encryption at all.
+ */
+async function anyEncrypted(inputs: readonly Uint8Array[]): Promise<boolean> {
+  for (const bytes of inputs) {
+    if ((await inspectProtection(bytes)).encrypted) return true;
+  }
+  return false;
 }
 
 /**

@@ -517,3 +517,46 @@ describe('mergeDocuments refuses and measures', () => {
     expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.merge.outlineLost');
   });
 });
+
+/** Re-save `bytes` with owner-password encryption only: it opens without a password. */
+async function ownerLocked(bytes: Uint8Array): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  const locked = new Uint8Array(
+    doc.saveToBuffer('encrypt=aes-256,owner-password=sahip,permissions=-3904').asUint8Array(),
+  );
+  doc.destroy();
+  return locked;
+}
+
+describe('mergeDocuments and password protection', () => {
+  const dropped = 'op.note.merge.encryptionDropped';
+
+  it.each([
+    ['the base', true, false],
+    ['an added document', false, true],
+  ])('says the protection is not carried over when %s is encrypted', async (_name, lockBase, lockOther) => {
+    const base = lockBase ? await ownerLocked(await pages(1)) : await pages(1);
+    const other = lockOther ? await ownerLocked(await pages(1)) : await pages(1);
+    const out = await mergeDocuments(
+      { bytes: base, pageCount: 1 },
+      [{ name: 'ek.pdf', bytes: other, pageCount: 1 }],
+      0,
+      run,
+    );
+    const note = out.report.notes.find((entry) => entry.key === dropped);
+    expect(note?.kind).toBe('lost');
+    expect(new TextDecoder('latin1').decode(out.bytes)).not.toContain('/Encrypt');
+  });
+
+  it('adds no such note when no merged document is encrypted', async () => {
+    const out = await mergeDocuments(
+      { bytes: await pages(1), pageCount: 1 },
+      [{ name: 'ek.pdf', bytes: await pages(1), pageCount: 1 }],
+      0,
+      run,
+    );
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain(dropped);
+  });
+});
