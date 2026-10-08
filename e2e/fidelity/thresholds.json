@@ -1,5 +1,16 @@
 {
   "flow": {
-    "default": { "ssim": null, "words": null }
+    "default": { "ssim": null, "words": null },
+    "cards": { "words": 0.99 },
+    "columns": { "words": 0.91 },
+    "cv": { "words": 0.98 },
+    "form": { "words": 0.99 },
+    "table": { "words": 0.99 },
+    "text-over-image": { "words": 0.99 },
+    "irs-f1040-2022": { "words": 0.57 },
+    "irs-fw4-2022": { "words": 0.75 },
+    "irs-p15-2022": { "words": 0.99 },
+    "usgs-fs2020-3002": { "words": 0.95 },
+    "usgs-fs2020-3042": { "words": 0.99 }
   }
 }
