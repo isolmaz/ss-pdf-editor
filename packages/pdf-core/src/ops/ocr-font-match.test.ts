@@ -1,0 +1,127 @@
+/**
+ * The font matcher on synthetic scans: pages set in a real font with MuPDF (Helvetica, Times,
+ * Courier, and the Noto Sans the app ships), at 150 and 200 dpi, with and without noise and with
+ * the OCR's size estimate off by 3 %. The candidates are the faces Word would choose between:
+ * Arial, Times New Roman and Courier New (the base-14 faces) and Noto Sans (its file).
+ */
+
+import { readFileSync } from 'node:fs';
+import type { Font } from 'mupdf';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { loadMupdf, type Mupdf } from '../engines/mupdf';
+import { type FaceCandidate, type MatchWord, matchFamily } from './ocr-font-match';
+import { renderScan } from './ocr-font-match.fixtures';
+
+const NOTO = new Uint8Array(
+  readFileSync(new URL('../../../../public/fonts/noto/NotoSans-Regular.ttf', import.meta.url)),
+);
+
+const CANDIDATES: readonly FaceCandidate[] = [
+  { family: 'Arial', kind: 'sans', bytes: null },
+  { family: 'Times New Roman', kind: 'serif', bytes: null },
+  { family: 'Courier New', kind: 'mono', bytes: null },
+  { family: 'Noto Sans', kind: 'sans', bytes: NOTO },
+];
+
+let mupdf: Mupdf;
+const faces = new Map<string, Font>();
+beforeAll(async () => {
+  mupdf = await loadMupdf();
+  faces.set('Arial', new mupdf.Font('Helvetica'));
+  faces.set('Times New Roman', new mupdf.Font('Times-Roman'));
+  faces.set('Courier New', new mupdf.Font('Courier'));
+  faces.set('Noto Sans', new mupdf.Font('NotoSans-Regular', NOTO));
+});
+
+describe('matchFamily', () => {
+  const cases = CANDIDATES.flatMap(({ family }) =>
+    [150, 200].flatMap((dpi) => [0, 40].map((amplitude) => ({ family, dpi, amplitude }))),
+  );
+
+  it.each(cases)(
+    '$family scan at $dpi dpi, noise $amplitude: that family, clearly ahead',
+    ({ family, dpi, amplitude }) => {
+      const { image, words } = renderScan(mupdf, faces.get(family) as Font, {
+        dpi,
+        size: 11,
+        amplitude,
+        sizeError: 1.03,
+      });
+      const match = matchFamily(mupdf, image, words, CANDIDATES);
+      expect(match.family).toBe(family);
+      expect(match.score).toBeGreaterThan(0.5);
+      expect(match.score - (match.runnerUp?.score ?? 0)).toBeGreaterThan(0.1);
+    },
+  );
+
+  it('is deterministic and independent of the candidates order', () => {
+    const { image, words } = renderScan(mupdf, faces.get('Noto Sans') as Font, {
+      dpi: 150,
+      size: 11,
+      amplitude: 20,
+    });
+    const first = matchFamily(mupdf, image, words, CANDIDATES);
+    const reversed = matchFamily(mupdf, image, words, [...CANDIDATES].reverse());
+    expect(reversed).toEqual(first);
+  });
+
+  it('compares at most 40 words and only regular ones of four letters or more', () => {
+    const { image, words } = renderScan(mupdf, faces.get('Times New Roman') as Font, {
+      dpi: 150,
+      size: 11,
+      amplitude: 0,
+    });
+    // Marking every word bold or italic leaves nothing to compare: all families score 0.
+    const marked = words.map((word, at) => ({ ...word, bold: at % 2 === 0, italic: at % 2 === 1 }));
+    const none = matchFamily(mupdf, image, marked, CANDIDATES);
+    expect(none).toEqual({ family: 'Arial', score: 0, runnerUp: { family: 'Times New Roman', score: 0 } });
+    // Words of three letters do not count either.
+    const short = words.map((word) => ({ ...word, text: word.text.slice(0, 3) }));
+    expect(matchFamily(mupdf, image, short, CANDIDATES).score).toBe(0);
+    // A few good words among bold ones are enough.
+    const some = marked.map((word, at) => (at < 12 ? { ...word, bold: false, italic: false } : word));
+    expect(matchFamily(mupdf, image, some, CANDIDATES).family).toBe('Times New Roman');
+  });
+
+  it('leaves out words a candidate has no glyph for, words off the page and words on blank paper', () => {
+    const { image, words } = renderScan(mupdf, faces.get('Courier New') as Font, {
+      dpi: 150,
+      size: 11,
+      amplitude: 10,
+    });
+    const box = words[0]?.box as MatchWord['box'];
+    const odd: MatchWord[] = [
+      { text: '漢字漢字', box, size: 11, bold: false, italic: false },
+      { text: 'abcd', box: [-50, -50, -49, -49], size: 11, bold: false, italic: false },
+      { text: 'abcd', box: [500, 750, 530, 760], size: 11, bold: false, italic: false },
+      { text: 'abcd', box: [100, 820, 140, 832], size: 11, bold: false, italic: false },
+    ];
+    const blank = { ...image, data: new Uint8Array(image.data.length).fill(255) };
+    expect(matchFamily(mupdf, blank, [...words, ...odd], CANDIDATES).score).toBe(0);
+    // Few enough words that all of them are compared; the odd ones are skipped, the others decide.
+    const match = matchFamily(mupdf, image, [...odd, ...words.slice(0, 12)], CANDIDATES);
+    expect(match.family).toBe('Courier New');
+  });
+
+  it('reads light text on a dark ground', () => {
+    const { image, words } = renderScan(mupdf, faces.get('Times New Roman') as Font, {
+      dpi: 150,
+      size: 11,
+      amplitude: 0,
+    });
+    const data = image.data.map((value, at) => (at % 4 === 3 ? value : 255 - value));
+    expect(matchFamily(mupdf, { ...image, data }, words, CANDIDATES).family).toBe('Times New Roman');
+  });
+
+  it('returns a lone candidate without a runner-up and refuses none', () => {
+    const { image, words } = renderScan(mupdf, faces.get('Arial') as Font, {
+      dpi: 150,
+      size: 11,
+      amplitude: 0,
+    });
+    const lone = matchFamily(mupdf, image, words, [CANDIDATES[0] as FaceCandidate]);
+    expect(lone.family).toBe('Arial');
+    expect(lone.runnerUp).toBeNull();
+    expect(() => matchFamily(mupdf, image, words, [])).toThrow(RangeError);
+  });
+});
