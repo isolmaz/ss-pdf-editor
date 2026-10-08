@@ -59,20 +59,40 @@ describe('isVisible', () => {
   });
 
   it('shows a field with no condition and hides one whose driver has no value', () => {
-    expect(isVisible({ kind: 'checkbox', id: 'a', labelKey: 'op.scope', defaultValue: false }, {})).toBe(
+    expect(isVisible({ kind: 'checkbox', id: 'a', labelKey: 'op.scope', defaultValue: false }, {}, [])).toBe(
       true,
     );
-    expect(isVisible(field(['x']), {})).toBe(false);
+    expect(isVisible(field(['x']), {}, [])).toBe(false);
   });
 
   it('compares scalars by identity and lists by their content', () => {
-    expect(isVisible(field(['x', 'y']), { driver: 'y' })).toBe(true);
-    expect(isVisible(field(['x']), { driver: 'z' })).toBe(false);
-    expect(isVisible(field([true]), { driver: true })).toBe(true);
-    expect(isVisible(field([['a', 'b']]), { driver: ['a', 'b'] })).toBe(true);
-    expect(isVisible(field([['a', 'b']]), { driver: ['a', 'c'] })).toBe(false);
-    expect(isVisible(field([['a', 'b']]), { driver: ['a'] })).toBe(false);
-    expect(isVisible(field([['a']]), { driver: 'a' })).toBe(false);
+    expect(isVisible(field(['x', 'y']), { driver: 'y' }, [])).toBe(true);
+    expect(isVisible(field(['x']), { driver: 'z' }, [])).toBe(false);
+    expect(isVisible(field([true]), { driver: true }, [])).toBe(true);
+    expect(isVisible(field([['a', 'b']]), { driver: ['a', 'b'] }, [])).toBe(true);
+    expect(isVisible(field([['a', 'b']]), { driver: ['a', 'c'] }, [])).toBe(false);
+    expect(isVisible(field([['a', 'b']]), { driver: ['a'] }, [])).toBe(false);
+    expect(isVisible(field([['a']]), { driver: 'a' }, [])).toBe(false);
+  });
+
+  it('hides a field whose driver is itself hidden, however the driver is set', () => {
+    const driver: FieldSpec = {
+      ...field(['x']),
+      id: 'driver',
+      visibleWhen: { field: 'root', equals: ['on'] },
+    };
+    const dependent = field(['x']);
+    const fields = [driver, dependent];
+    // `driver` is still 'x' (its default) while its own condition fails: the dependent must not show.
+    expect(isVisible(dependent, { root: 'off', driver: 'x' }, fields)).toBe(false);
+    expect(isVisible(dependent, { root: 'on', driver: 'x' }, fields)).toBe(true);
+    expect(isVisible(dependent, { root: 'on', driver: 'z' }, fields)).toBe(false);
+  });
+
+  it('does not loop on conditions that depend on each other', () => {
+    const a: FieldSpec = { ...field(['x']), id: 'a', visibleWhen: { field: 'b', equals: ['x'] } };
+    const b: FieldSpec = { ...field(['x']), id: 'b', visibleWhen: { field: 'a', equals: ['x'] } };
+    expect(isVisible(a, { a: 'x', b: 'x' }, [a, b])).toBe(true);
   });
 });
 

@@ -79,6 +79,31 @@ function words(confidences: readonly [number, number, number]): OcrWord[] {
   }));
 }
 
+/** A blank page of `side` × `side` points that is one small picture stretched over it (a scan too big to render whole). */
+async function hugeScan(side: number): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const scan = new mupdf.PDFDocument();
+  try {
+    const tile = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 8, 8], false);
+    tile.clear(255);
+    const image = scan.addImage(new mupdf.Image(tile));
+    tile.destroy();
+    const page = scan.addPage(
+      [0, 0, side, side],
+      0,
+      { XObject: { Im0: image } },
+      `q ${side} 0 0 ${side} 0 0 cm /Im0 Do Q\n`,
+    );
+    scan.insertPage(-1, page);
+    const saved = scan.saveToBuffer('compress');
+    const bytes = saved.asUint8Array().slice();
+    saved.destroy();
+    return bytes;
+  } finally {
+    scan.destroy();
+  }
+}
+
 const options = { pages: [0], baseName: 'scan.pdf', format: 'docx', docxLayout: 'layout' } as const;
 
 async function text(zip: JSZip, name: string): Promise<string> {
@@ -279,6 +304,99 @@ describe('exact layout: a scanned page read by OCR', () => {
     );
     expect(calls).toBe(0);
   });
+
+  it('keeps the page a picture and says OCR was not available when the recogniser fails', async () => {
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => {
+            throw new Error('the language pack could not be fetched');
+          },
+        },
+      },
+      run,
+    );
+    const unavailable = result.notes.find((note) => note.key === 'op.note.exportOffice.ocrUnavailable');
+    expect(unavailable).toMatchObject({ kind: 'warning', params: { pages: '1' } });
+    expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrPages')).toBe(false);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    expect(Object.keys(zip.files).some((name) => name.startsWith('word/media/'))).toBe(true);
+  });
+
+  it('still stops when the recogniser itself reports the cancellation', async () => {
+    await expect(
+      exportOffice(
+        await scanOf(),
+        {
+          ...options,
+          ocr: {
+            lowConfidence: 0.9,
+            recognize: async () => {
+              throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
+            },
+          },
+        },
+        run,
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('renders a huge scan within the pixel cap and still puts the words where they are on the page', async () => {
+    const side = 3200;
+    const seen: { scale: number; png: Uint8Array }[] = [];
+    const result = await exportOffice(
+      await hugeScan(side),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png, scale) => {
+            seen.push({ scale, png });
+            return [
+              {
+                text: 'Far',
+                x0: 1000,
+                x1: 1100,
+                y0: 2000,
+                y1: 2030,
+                confidence: 96,
+                block: 1,
+                paragraph: 1,
+                line: 1,
+              },
+            ];
+          },
+        },
+      },
+      run,
+    );
+    expect(seen).toHaveLength(1);
+    // The PNG's own size (IHDR: width, height as big-endian words at bytes 16 and 20): at most 40 megapixels.
+    const header = new DataView((seen[0]?.png ?? new Uint8Array(24)).buffer.slice(0, 24));
+    expect(header.getUint32(16) * header.getUint32(20)).toBeLessThanOrEqual(40_000_000);
+    expect(seen[0]?.scale).toBeLessThan(200 / 72);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+    const document = new DOMParser().parseFromString(xml, 'text/xml');
+    const box = Array.from(document.getElementsByTagNameNS(WP, 'anchor')).find((anchor) =>
+      Array.from(anchor.getElementsByTagNameNS(W, 't'))
+        .map((t) => t.textContent)
+        .join('')
+        .includes('Far'),
+    );
+    expect(box).toBeDefined();
+    // Word's page is smaller than the PDF's: the word keeps its place in proportion.
+    const left = Number(box?.getElementsByTagNameNS(WP, 'posOffset')[0]?.textContent) / 12700;
+    const top = Number(box?.getElementsByTagNameNS(WP, 'posOffset')[1]?.textContent) / 12700;
+    const shrink = 1584 / side;
+    expect(left).toBeCloseTo(1000 * shrink, -1);
+    expect(top).toBeGreaterThan(1900 * shrink);
+    expect(top).toBeLessThan(2030 * shrink);
+  }, 120_000);
 
   it('stops with an AbortError when cancelled while recognising', async () => {
     const controller = new AbortController();

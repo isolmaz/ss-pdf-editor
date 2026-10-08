@@ -149,10 +149,23 @@ function sameValue(left: FieldValue, right: FieldValue): boolean {
   return left === right;
 }
 
-/** A field is shown unless its condition names another field that disagrees. */
-export function isVisible(field: FieldSpec, values: DialogParams): boolean {
+/**
+ * A field is shown unless its condition names another field that disagrees, or that is
+ * itself hidden (a hidden field keeps its default value, which would otherwise still satisfy
+ * the condition). `seen` ends a cycle of conditions.
+ */
+export function isVisible(
+  field: FieldSpec,
+  values: DialogParams,
+  fields: readonly FieldSpec[],
+  seen: ReadonlySet<string> = new Set(),
+): boolean {
   const condition = field.visibleWhen;
   if (condition === undefined) return true;
+  const driver = fields.find((candidate) => candidate.id === condition.field);
+  const through = new Set(seen).add(field.id);
+  if (driver !== undefined && !seen.has(driver.id) && !isVisible(driver, values, fields, through))
+    return false;
   const current = values[condition.field];
   if (current === undefined) return false;
   return condition.equals.some((expected) => sameValue(expected, current));
@@ -187,7 +200,7 @@ export function fieldErrors(
 ): Readonly<Record<string, string>> {
   const errors: Record<string, string> = {};
   for (const field of fields) {
-    if (!isVisible(field, values)) continue;
+    if (!isVisible(field, values, fields)) continue;
 
     if (field.kind === 'pageScope') {
       const value = typeof values[field.id] === 'string' ? (values[field.id] as string) : '';
@@ -328,7 +341,7 @@ export function FieldList({
 
   /** One field's control. A plain function, not a nested component: it owns no state. */
   const renderField = (field: FieldSpec): ReactNode => {
-    if (!isVisible(field, values)) return null;
+    if (!isVisible(field, values, fields)) return null;
     const label = t(field.labelKey);
     const hint = field.hintKey === undefined ? undefined : t(field.hintKey);
     const error = errors[field.id];
@@ -789,7 +802,7 @@ export function FieldList({
     );
 
   const essential = fields.filter((field) => field.advanced !== true);
-  const advanced = fields.filter((field) => field.advanced === true && isVisible(field, values));
+  const advanced = fields.filter((field) => field.advanced === true && isVisible(field, values, fields));
   // An error inside the closed section would be a confirm button disabled for no
   // visible reason: the section opens itself while one of its fields is wrong.
   const advancedError = advanced.some((field) => errors[field.id] !== undefined);

@@ -118,7 +118,7 @@ const coverPixels = (points: number, scale: number, perPoint: number): number =>
  * reach over it (under two more than the exact count on each side, counting the twip rounding),
  * stays within `MAX_PIXELS`: the positive root of `(width · k + 2)(height · k + 2) = MAX_PIXELS`.
  */
-function cappedPerPoint(width: number, height: number): number {
+export function cappedPerPoint(width: number, height: number): number {
   const area = width * height;
   const sides = (width + height) * 2;
   return (Math.sqrt(sides * sides + 4 * area * (MAX_PIXELS - 4)) - sides) / (2 * area);

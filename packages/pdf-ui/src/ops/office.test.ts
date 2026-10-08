@@ -10,6 +10,7 @@ import { xlsxToHtml } from 'pdf-core/ops/convert-ooxml';
 import { fixturePage, reportPage } from 'pdf-core/ops/layout-fixtures';
 import { createTranslator } from 'pdf-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { isVisible } from '../dialogs/fields';
 import type { OpRunContext } from '../dialogs/types';
 
 interface ZipReader {
@@ -155,6 +156,20 @@ describe('export-office dialog', () => {
     expect(Array.isArray(options) ? options.map((option) => option.value) : []).toEqual(
       expect.arrayContaining(['tur', 'eng', 'deu']),
     );
+  });
+
+  it('offers the scan languages only with the exact Word layout, not for Excel or CSV', async () => {
+    const dialog = await dialogIn('en-US');
+    const field = dialog.fields.find((candidate) => candidate.id === 'ocrLanguages');
+    expect(field).toBeDefined();
+    if (field === undefined) return;
+    const shown = (format: string) =>
+      isVisible(field, { format, layout: 'layout', ocrLanguages: ['eng'] }, dialog.fields);
+    expect(shown('docx')).toBe(true);
+    // `layout` keeps its default while its own field is hidden, so the format has to hide this one too.
+    expect(shown('xlsx')).toBe(false);
+    expect(shown('csv')).toBe(false);
+    expect(isVisible(field, { format: 'docx', layout: 'flow' }, dialog.fields)).toBe(false);
   });
 
   it('exports a page with text without reading it with OCR, whatever the scan languages', async () => {

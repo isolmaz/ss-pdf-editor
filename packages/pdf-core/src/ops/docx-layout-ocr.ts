@@ -17,6 +17,7 @@ import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics, standardAdvance } from './docx-fonts';
+import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import {
   dropDuplicates,
@@ -142,7 +143,9 @@ function scanDpi(scene: PageScene): number {
 /** The page drawn as it shows, opaque, as RGBA pixels and as a PNG. */
 function renderScan(mupdf: Mupdf, page: Page, dpi: number): { image: RgbaImage; png: Uint8Array } {
   const [x0, y0, x1, y1] = page.getBounds();
-  const scale = dpi / 72;
+  // Within the pixel budget of the page images, however large the page: a poster at 300 dpi
+  // would be over a hundred megapixels, twice (pixels and PNG). Everything after this reads `image.scale`.
+  const scale = Math.min(dpi / 72, cappedPerPoint(x1 - x0, y1 - y0));
   const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, false);
   try {
     const width = pixmap.getWidth();
@@ -201,8 +204,8 @@ const rectangle = (box: Box): SceneShape['segments'] => [
 
 /**
  * The scan page rebuilt: words from the invisible layer if there is one, else from
- * `ocr.recognize` (`null`: there is none, and the page has no layer — the caller keeps the page
- * as it was). The page's vector shapes stay above the pictures.
+ * `ocr.recognize` (`null`: there is none or it failed, and the page has no layer — the caller
+ * keeps the page as it was). The page's vector shapes stay above the pictures.
  */
 export async function readScanPage(
   mupdf: Mupdf,
@@ -219,7 +222,16 @@ export async function readScanPage(
   let duplicates: readonly OcrWord[] = [];
   if (layer.length === 0 && ocr !== null) {
     throwIfAborted(signal);
-    const read = await ocr.recognize(png, image.scale, signal);
+    let read: readonly OcrWord[];
+    try {
+      read = await ocr.recognize(png, image.scale, signal);
+    } catch (error) {
+      // A recogniser that cannot run (language pack missing, offline, worker crashed) leaves
+      // the page as the picture it is; only the reader's own cancel stops the export.
+      throwIfAborted(signal);
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      return null;
+    }
     const unique = dropDuplicates(read);
     duplicates = read.filter((word) => !unique.includes(word));
     words = dropEdgeMarks(unique, image.width / image.scale);

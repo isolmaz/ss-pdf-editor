@@ -325,18 +325,23 @@ export function horizontalScale(drawn: number, natural: number): number {
   return Math.round(ratio * ratio * 100) / 100;
 }
 
-/** A line as a row, or `null` when it holds nothing but whitespace. */
+/** Text a reader sees: not whitespace, and not drawn invisibly (render mode 3, alpha 0: an OCR layer). */
+const isSolid = (char: LayoutChar): boolean => !isSpace(char) && char.invisible !== true;
+
+/** A line as a row, or `null` when it holds nothing but whitespace or invisible text. */
 function rowOf(
   line: LayoutLine,
   links: readonly SceneLink[],
   serifs: ReadonlySet<string>,
   embedded: FaceLookup | undefined,
 ): Row | null {
-  const solid = line.chars.filter((char) => !isSpace(char));
+  // Invisible characters are never Word text: they would double what the page shows.
+  const shown = line.chars.filter((char) => char.invisible !== true);
+  const solid = shown.filter((char) => !isSpace(char));
   if (solid.length === 0) return null;
-  const first = line.chars.indexOf(solid[0] as LayoutChar);
-  const last = line.chars.lastIndexOf(solid[solid.length - 1] as LayoutChar);
-  const chars = line.chars.slice(first, last + 1);
+  const first = shown.indexOf(solid[0] as LayoutChar);
+  const last = shown.lastIndexOf(solid[solid.length - 1] as LayoutChar);
+  const chars = shown.slice(first, last + 1);
   const direction = directionOf(line);
   const runs = runsOf(chars, links, direction, serifs, embedded);
   const text = runs.map((run) => run.text).join('');
@@ -369,26 +374,35 @@ function rowOf(
  * or a block with no other line to measure against (a footer's two ends), stay apart.
  */
 function joinPieces(lines: readonly LayoutLine[]): LayoutLine[] {
-  const extent = (item: LayoutLine) => {
-    const solid = item.chars.filter((char) => !isSpace(char));
-    return {
-      x0: Math.min(...solid.map((char) => char.box[0])),
-      x1: Math.max(...solid.map((char) => char.box[2])),
-    };
-  };
-  const filled = lines.filter((item) => item.chars.some((char) => !isSpace(char)));
+  // Each line's extent once, and the lines ordered by left and by right edge, so the block's
+  // edges without the pieces at hand are found by skipping those few, not by measuring every line again.
+  const extents = new Map<LayoutLine, { x0: number; x1: number }>();
+  for (const item of lines) {
+    const solid = item.chars.filter(isSolid);
+    if (solid.length === 0) continue;
+    let x0 = Number.POSITIVE_INFINITY;
+    let x1 = Number.NEGATIVE_INFINITY;
+    for (const char of solid) {
+      x0 = Math.min(x0, char.box[0]);
+      x1 = Math.max(x1, char.box[2]);
+    }
+    extents.set(item, { x0, x1 });
+  }
+  const extent = (item: LayoutLine) => extents.get(item) as { x0: number; x1: number };
+  const byLeft = [...extents.keys()].sort((p, q) => extent(p).x0 - extent(q).x0);
+  const byRight = [...extents.keys()].sort((p, q) => extent(q).x1 - extent(p).x1);
   const out: LayoutLine[] = [];
   let at = 0;
   while (at < lines.length) {
     const first = lines[at] as LayoutLine;
     const pieces = [first];
-    if (filled.includes(first) && directionOf(first) === 'right') {
+    if (extents.has(first) && directionOf(first) === 'right') {
       let end = at + 1;
       while (end < lines.length) {
         const next = lines[end] as LayoutLine;
         const last = pieces[pieces.length - 1] as LayoutLine;
         const sameBaseline =
-          filled.includes(next) &&
+          extents.has(next) &&
           directionOf(next) === 'right' &&
           Math.abs(next.box[1] - first.box[1]) <= 1 &&
           Math.abs(next.box[3] - first.box[3]) <= 1 &&
@@ -398,31 +412,38 @@ function joinPieces(lines: readonly LayoutLine[]): LayoutLine[] {
         end += 1;
       }
     }
-    const others = filled.filter((item) => !pieces.includes(item));
-    const left = Math.min(...others.map((item) => extent(item).x0));
-    const right = Math.max(...others.map((item) => extent(item).x1));
-    const gaps = pieces
-      .slice(1)
-      .map((piece, index) => extent(piece).x0 - extent(pieces[index] as LayoutLine).x1);
-    const even = gaps.every((gap) => Math.abs(gap - (gaps[0] as number)) <= 1.5);
-    const reachesRight = extent(pieces[pieces.length - 1] as LayoutLine).x1 >= right - 2.5;
-    const spans = reachesRight && extent(first).x0 <= left + 2;
-    if (pieces.length > 1 && others.length > 0 && even && (gaps.length > 1 ? reachesRight : spans)) {
-      out.push({
-        box: [
-          Math.min(...pieces.map((piece) => piece.box[0])),
-          Math.min(...pieces.map((piece) => piece.box[1])),
-          Math.max(...pieces.map((piece) => piece.box[2])),
-          Math.max(...pieces.map((piece) => piece.box[3])),
-        ],
-        dir: first.dir,
-        chars: pieces.flatMap((piece) => piece.chars),
-      });
-      at += pieces.length;
-    } else {
-      out.push(first);
-      at += 1;
+    if (pieces.length > 1) {
+      const apart = new Set(pieces);
+      const leftmost = byLeft.find((item) => !apart.has(item));
+      const rightmost = byRight.find((item) => !apart.has(item));
+      // A block with no other line to measure against (a footer's two ends) stays apart.
+      if (leftmost !== undefined && rightmost !== undefined) {
+        const left = extent(leftmost).x0;
+        const right = extent(rightmost).x1;
+        const gaps = pieces
+          .slice(1)
+          .map((piece, index) => extent(piece).x0 - extent(pieces[index] as LayoutLine).x1);
+        const even = gaps.every((gap) => Math.abs(gap - (gaps[0] as number)) <= 1.5);
+        const reachesRight = extent(pieces[pieces.length - 1] as LayoutLine).x1 >= right - 2.5;
+        const spans = reachesRight && extent(first).x0 <= left + 2;
+        if (even && (gaps.length > 1 ? reachesRight : spans)) {
+          out.push({
+            box: [
+              Math.min(...pieces.map((piece) => piece.box[0])),
+              Math.min(...pieces.map((piece) => piece.box[1])),
+              Math.max(...pieces.map((piece) => piece.box[2])),
+              Math.max(...pieces.map((piece) => piece.box[3])),
+            ],
+            dir: first.dir,
+            chars: pieces.flatMap((piece) => piece.chars),
+          });
+          at += pieces.length;
+          continue;
+        }
+      }
     }
+    out.push(first);
+    at += 1;
   }
   return out;
 }
