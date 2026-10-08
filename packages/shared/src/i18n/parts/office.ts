@@ -45,6 +45,7 @@ export const officePart = {
     'Sayfa düzeni yeniden kuruldu: {boxes} metin kutusu, {shapes} şekil ve {pictures} resim yerlerinde duruyor; metin düzenlenebilir.',
   'op.note.exportOffice.layoutRasters':
     'Word’ün çizemediği {count} bölge (renk geçişleri, maskeler) resim olarak yerleştirildi.',
+  'op.note.exportOffice.fontsEmbedded': '{count} yazı tipi belgeye gömüldü; metin özgün harflerle görünür.',
   'op.note.exportOffice.pageImages':
     'Her sayfa, {dpi} dpi çözünürlükte sayfanın tek bir resmi olarak aktarıldı; görünüm korunur ama metni Word’de düzenlenemez.',
   'op.note.exportOffice.pageScaled':

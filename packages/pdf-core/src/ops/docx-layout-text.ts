@@ -20,6 +20,7 @@
  */
 
 import { EMU, TWIPS, xml, xmlSafe } from './docx-drawing';
+import type { EmbeddedFace } from './docx-fonts';
 import { wordFontName } from './export-office';
 import type { DocxRegistry, SceneLink, TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
 import type { LayoutChar, LayoutLine, PageLayout } from './page-layout';
@@ -146,12 +147,16 @@ function serifFamilies(layout: PageLayout): ReadonlySet<string> {
   return new Set([...votes].filter(([, vote]) => vote > 0).map(([family]) => family));
 }
 
+/** The embedded face (if any) of a MuPDF font name on the page being written. */
+export type FaceLookup = (face: string) => EmbeddedFace | undefined;
+
 /** Runs of a line: split on font, size (0.5 pt), weight, slant, colour and link. */
 function runsOf(
   chars: readonly LayoutChar[],
   links: readonly SceneLink[],
   direction: Direction,
   serifs: ReadonlySet<string>,
+  embedded: FaceLookup | undefined,
 ): TextRun[] {
   // Characters with a space between words where the PDF has none but a gap.
   const items: { c: string; source: LayoutChar; link: string | null; space: boolean }[] = [];
@@ -184,17 +189,23 @@ function runsOf(
 
   const runs: TextRun[] = [];
   for (const item of items) {
-    const font = wordFontName(item.source.font, {
-      serif: serifs.has(item.source.font),
-      mono: item.source.mono,
-    });
+    // A font the document embeds is named by its embedded family and set in the embedded face's own weight and slant.
+    const face = item.source.face === undefined ? undefined : embedded?.(item.source.face);
+    const font =
+      face?.family ??
+      wordFontName(item.source.font, {
+        serif: serifs.has(item.source.font),
+        mono: item.source.mono,
+      });
+    const bold = face?.bold ?? item.source.bold;
+    const italic = face?.italic ?? item.source.italic;
     const last = runs[runs.length - 1];
     if (
       last !== undefined &&
       last.font === font &&
       Math.abs(last.size - item.source.size) < 0.5 &&
-      last.bold === item.source.bold &&
-      last.italic === item.source.italic &&
+      last.bold === bold &&
+      last.italic === italic &&
       last.color === item.source.color &&
       last.link === item.link
     ) {
@@ -204,8 +215,8 @@ function runsOf(
         text: item.c,
         font,
         size: item.source.size,
-        bold: item.source.bold,
-        italic: item.source.italic,
+        bold,
+        italic,
         color: item.source.color,
         link: item.link,
       });
@@ -215,14 +226,19 @@ function runsOf(
 }
 
 /** A line as a row, or `null` when it holds nothing but whitespace. */
-function rowOf(line: LayoutLine, links: readonly SceneLink[], serifs: ReadonlySet<string>): Row | null {
+function rowOf(
+  line: LayoutLine,
+  links: readonly SceneLink[],
+  serifs: ReadonlySet<string>,
+  embedded: FaceLookup | undefined,
+): Row | null {
   const solid = line.chars.filter((char) => !isSpace(char));
   if (solid.length === 0) return null;
   const first = line.chars.indexOf(solid[0] as LayoutChar);
   const last = line.chars.lastIndexOf(solid[solid.length - 1] as LayoutChar);
   const chars = line.chars.slice(first, last + 1);
   const direction = directionOf(solid);
-  const runs = runsOf(chars, links, direction, serifs);
+  const runs = runsOf(chars, links, direction, serifs, embedded);
   const text = runs.map((run) => run.text).join('');
   let x0 = Number.POSITIVE_INFINITY;
   let y0 = Number.POSITIVE_INFINITY;
@@ -524,7 +540,7 @@ function rotated(row: Row): TextBox {
  * differ, so lines carry on a paragraph (and paragraphs stack into a box) across consecutive
  * blocks as long as the size, pitch and edge rules hold; a picture block ends both.
  */
-export function textBoxes(layout: PageLayout, links: readonly SceneLink[]): TextBox[] {
+export function textBoxes(layout: PageLayout, links: readonly SceneLink[], embedded?: FaceLookup): TextBox[] {
   // Stacked paragraphs per box, or a rotated box; built once the page's alignments are known.
   const parts: (Para[] | TextBox)[] = [];
   const serifs = serifFamilies(layout);
@@ -551,7 +567,7 @@ export function textBoxes(layout: PageLayout, links: readonly SceneLink[]): Text
       continue;
     }
     for (const line of joinPieces(block.lines)) {
-      const row = rowOf(line, links, serifs);
+      const row = rowOf(line, links, serifs, embedded);
       if (row === null) continue;
       if (row.direction !== 'right') {
         end();

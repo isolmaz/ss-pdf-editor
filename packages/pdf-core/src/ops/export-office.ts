@@ -1333,6 +1333,9 @@ async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExpo
   if (layout.rasters > 0) {
     notes.push(note('changed', 'op.note.exportOffice.layoutRasters', { count: layout.rasters }));
   }
+  if (layout.fonts > 0) {
+    notes.push(note('preserved', 'op.note.exportOffice.fontsEmbedded', { count: layout.fonts }));
+  }
   if (layout.textless.length > 0) {
     notes.push(note('warning', 'op.note.exportOffice.noText', { pages: layout.textless.join(', ') }));
   }

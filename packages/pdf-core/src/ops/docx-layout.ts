@@ -29,6 +29,7 @@ import {
   xml,
   zipped,
 } from './docx-drawing';
+import { embedFonts } from './docx-fonts';
 import { sceneItemXml } from './docx-layout-shapes';
 import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
 import { DocxRegistry, type PageScene, type TextBox } from './layout-scene';
@@ -64,6 +65,8 @@ export interface LayoutDocx {
   readonly textless: readonly number[];
   /** Characters the PDF has no Unicode for (U+FFFD), over all pages. */
   readonly unreadable: number;
+  /** Fonts of the PDF embedded in the document (`docx-fonts.ts`). */
+  readonly fonts: number;
 }
 
 /** The font most of the text is set in: the document's default font. */
@@ -106,6 +109,7 @@ export async function writeLayoutDocx(
 ): Promise<LayoutDocx> {
   const mupdf = await loadMupdf();
   const registry = new DocxRegistry(WORD_Z_BASE);
+  const fonts = await embedFonts(mupdf, doc, pages, context);
   const paragraphs: string[] = [];
   const allBoxes: TextBox[] = [];
   const scaled: { page: number; scale: number }[] = [];
@@ -133,7 +137,7 @@ export async function writeLayoutDocx(
     const scale = wordPageScale(scene.width, scene.height);
     if (scale < 1) scaled.push({ page: index + 1, scale });
     const section = pageSectionXml(scene.width * scale, scene.height * scale);
-    const boxes = textBoxes(scene.text, scene.links);
+    const boxes = textBoxes(scene.text, scene.links, (face) => fonts.faceOf(index, face));
     if (boxes.length === 0) textless.push(index + 1);
     allBoxes.push(...boxes);
     for (const item of scene.items) {
@@ -166,15 +170,18 @@ export async function writeLayoutDocx(
     ...new Set(registry.media.map((media): MediaExtension => (media.name.endsWith('.png') ? 'png' : 'jpeg'))),
   ];
   const files: Record<string, string | Uint8Array> = {
-    '[Content_Types].xml': contentTypesXml(extensions),
+    '[Content_Types].xml': fonts.contentTypes(contentTypesXml(extensions)),
     '_rels/.rels': PACKAGE_RELS('word/document.xml'),
     'docProps/core.xml': corePropertiesXml(title),
     'word/document.xml': wordDocumentXml(body, SHAPE_NAMESPACES),
     'word/styles.xml': stylesXml(bodyFontOf(allBoxes), language),
-    'word/_rels/document.xml.rels': documentRelsXml(
-      registry.media.map((media) => media.name),
-      registry.links,
+    'word/_rels/document.xml.rels': fonts.documentRels(
+      documentRelsXml(
+        registry.media.map((media) => media.name),
+        registry.links,
+      ),
     ),
+    ...fonts.files,
   };
   for (const media of registry.media) files[`word/media/${media.name}`] = media.data;
   return {
@@ -188,5 +195,6 @@ export async function writeLayoutDocx(
     scaled,
     textless,
     unreadable,
+    fonts: fonts.count,
   };
 }

@@ -30,6 +30,8 @@ export interface LayoutChar {
   readonly size: number;
   /** Family without the subset prefix or the style suffix (`ABCDEF+Arial-BoldMT` → `Arial`). */
   readonly font: string;
+  /** The font's full name as MuPDF has it, subset tag included (`ABCDEF+Arial-BoldMT`): what the fonts of the page resources are matched by. */
+  readonly face?: string;
   readonly bold: boolean;
   readonly italic: boolean;
   readonly mono: boolean;
@@ -382,6 +384,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         const name = font.getName();
         const face = {
           font: fontFamily(name),
+          face: name,
           bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
           italic: font.isItalic() || /italic|oblique/i.test(name),
           mono: font.isMono(),

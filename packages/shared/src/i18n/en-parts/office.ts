@@ -41,6 +41,8 @@ export const officePart = {
     'The page layout was rebuilt: {boxes} text boxes, {shapes} shapes and {pictures} pictures at their places; the text can be edited.',
   'op.note.exportOffice.layoutRasters':
     '{count} regions Word cannot draw (gradients, masks) were placed as pictures.',
+  'op.note.exportOffice.fontsEmbedded':
+    '{count} fonts were embedded in the document, so the text shows in its original typefaces.',
   'op.note.exportOffice.pageImages':
     'Each page was exported as one picture of the page at {dpi} dpi; the look is kept, but its text cannot be edited in Word.',
   'op.note.exportOffice.pageScaled':
