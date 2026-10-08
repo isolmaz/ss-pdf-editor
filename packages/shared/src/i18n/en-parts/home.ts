@@ -78,7 +78,7 @@ export const homePart = {
   'home.noStarred': 'No starred documents yet.',
   'home.noMatch': 'No document matches your search.',
   'home.privacyNotice':
-    'Your documents never leave this device. This list keeps only the file name, size and page count.',
+    'Your documents never leave this device. This list keeps only the file name, size, page count, when it was last opened and whether it is starred.',
   'home.colName': 'Document name',
   'home.colPages': 'Pages',
   'home.colLastOpened': 'Last opened',

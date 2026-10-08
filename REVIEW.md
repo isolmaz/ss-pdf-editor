@@ -1,13 +1,13 @@
 # Review guide
 
-Every commit of `git log --reverse origin/main..HEAD` is listed below exactly once, grouped by risk, highest first: what was wrong, and the test that proves it; the only exception is the commit that last updated this guide. A commit that fits two groups is in the higher one. Test names are quoted as they appear in the test files.
+This is the review guide of pull request #28, which merged `test/coverage` into `main` as `8a7d6db`. Every commit of `git log --reverse pre-coverage..8a7d6db^2` is listed below exactly once, grouped by risk, highest first: what was wrong, and the test that proves it. A commit that fits two groups is in the higher one. Test names are quoted as they appear in the test files.
 
 | Group | What | Commits |
 | --- | --- | --- |
 | 1 | Data integrity, security, signatures: wrong file or document content, lost data, verification | 22 |
 | 2 | Other behaviour fixes a user sees | 22 |
 | 3 | Code removed as unreachable, and refactors, without behaviour change | 23 |
-| 4 | Tooling, CI, coverage, docs | 20 |
+| 4 | Tooling, CI, coverage, docs | 21 |
 | 5 | Test-only | 25 |
 
 ## How to review
@@ -17,7 +17,7 @@ Every commit of `git log --reverse origin/main..HEAD` is listed below exactly on
 3. Skim group 4. Sample group 5 for tests that cannot fail. A test is real when it asserts behaviour (a produced file read back, an exact message, an exact count) and fails when that behaviour breaks. Reject: `skip`, `only`, `todo`, `fixme`; coverage-ignore comments (`c8 ignore`, `v8 ignore`, `istanbul ignore`); assertions on text that is always there; a test that only runs code. A starting search over everything the branch adds:
 
 ```
-git diff origin/main..HEAD -- '*.test.ts' '*.test.tsx' 'e2e/*.ts' | grep -nE '^\+.*(\.only\(|\.skip\(|\.todo\(|\.fixme\(|c8 ignore|v8 ignore|istanbul ignore)'
+git diff pre-coverage..8a7d6db^2 -- '*.test.ts' '*.test.tsx' 'e2e/*.ts' | grep -nE '^\+.*(\.only\(|\.skip\(|\.todo\(|\.fixme\(|c8 ignore|v8 ignore|istanbul ignore)'
 ```
 
 `playwright.config.ts` sets `forbidOnly` when `CI` is set.
@@ -182,8 +182,10 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - `2524520` Drop the tag editor's unreachable generic refusal
   Removes `tags.err.generic` (“That change is not possible.”): `applyStructureEdits` refuses only with a `StructEditError`, so the notice is read from the refusal's reason directly. No behaviour change claimed; production code +10 −10 lines (the rest is tests).
 
-## 4. Tooling, CI, coverage, docs (20)
+## 4. Tooling, CI, coverage, docs (21)
 
+- `a365ae4` Close the other update tests' page before their origin; the outline survives rasterising
+  `e2e/flows-modes.spec.ts` and `e2e/app15-update.spec.ts` get the teardown order of `cb9e6bf`; README and the `optimize.ts` header no longer say rasterising loses the outline; this guide. No product behaviour change.
 - `d63b2ce` List every commit since the first guide, and the /Prev fix's proof, in the review guide
   This guide and `tools/review/revert-proof.json`. No product behaviour change.
 - `fd5376d` List the read-aloud fix and the CI and docs commits in the review guide
