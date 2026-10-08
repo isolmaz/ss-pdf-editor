@@ -499,7 +499,20 @@ had to stay green. The moves, and the defects they fixed on the way:
     fallback back, so the `verify` step still compares the words written with the words found.
     Text that runs up or down the page (MuPDF's line direction, which holds for one character too) is a
     vertical text box (`bodyPr vert="vert270"` / `"vert"` on the visual box): LibreOffice ignores
-    `a:xfrm rot` on a text box. A line's baseline is its characters' origin (`LayoutChar.baseline`);
+    `a:xfrm rot` on a text box (measured with LibreOffice 26 for every other form of a text box
+    too: DrawingML with and without `txBox`, a rotated group, VML `rotation`: the frame turns, its text
+    does not). Text at any other angle (not across, up or down within 1.5°, upside down included) is
+    a box of its own whose frame is turned by the line's angle about its centre (`a:xfrm rot`,
+    `effectExtent` for the room the turn takes, VML `rotation`): LibreOffice draws the frame turned
+    but its text level (across, in the same place and at the PDF's advances), Word turns both:
+    `a:xfrm rot` rotates the shape about its centre ([MS-OE376 xfrm](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/9ce071a0-4053-4714-9025-1951253cab2a)) and the
+    text rotates with it unless `bodyPr upright="1"` ([ECMA-376 `bodyPr`](https://c-rex.net/samples/ooxml/e1/part4/OOXML_P4_DOCX_bodyPr_topic_ID0EMGMKB.html)); Word itself was not run
+    here. `w14:alpha` is written as the transparency (see `runXml`: [MS-DOCX] says opacity, LibreOffice reads and writes transparency). The frame is placed so that the first
+    glyph's origin (`LayoutChar.pen`: origin and quad advance, read for slanted lines only) is
+    `TEXT_LEFT` in and 0.8 line heights down in the frame's own axes, and the line is fitted along
+    them. Text drawn with a fill opacity below 1 (`LayoutChar.alpha`, from the page device's
+    `fillText`) is written `w14:textFill` with the colour and `w14:alpha` (LibreOffice reads the value as transparency: 100 % − opacity) beside the solid `w:color`
+    (`w14` is declared ignorable), which LibreOffice honours. A line's baseline is its characters' origin (`LayoutChar.baseline`);
     the box top is that minus 0.8 × the exact line height, and the box starts `TEXT_LEFT` (0.1 pt)
     left of the first glyph origin, where LibreOffice puts it. The 22-inch rule above applies too: a
     larger page is scaled down (`wordPageScale`) and everything on it with it. XML shared with the

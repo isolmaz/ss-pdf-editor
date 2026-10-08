@@ -21,6 +21,7 @@ import {
   renderRegion,
   rgb,
   segmentInside,
+  slanted,
   textRows,
 } from './page-layout';
 
@@ -166,6 +167,31 @@ describe('page layout', () => {
     expect([x0, y0, x1, y1].map(Math.round)).toEqual([160, 310, 240, 390]);
     const image = png(figures[0] ?? [0, 0, 0, 0]);
     expect([...image.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  });
+
+  it('calls a line slanted unless it runs across, down or up the page within 1.5°', () => {
+    expect(
+      [
+        [1, 0],
+        [1, 0.02],
+        [0, 1],
+        [0.02, 1],
+        [0, -1],
+        [-0.02, -1],
+      ].map((dir) => slanted(dir as [number, number])),
+    ).toEqual([false, false, false, false, false, false]);
+    const at = (degrees: number): [number, number] => [
+      Math.cos((degrees * Math.PI) / 180),
+      Math.sin((degrees * Math.PI) / 180),
+    ];
+    expect([3, 45, 135, 180, 270 - 3, 315].map((degrees) => slanted(at(degrees)))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it('reads a bold face from its name: Bold, Black, Demi and the foundries\u2019 -Dem, not Demeter or a Medium', () => {

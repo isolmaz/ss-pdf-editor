@@ -529,6 +529,65 @@ describe('grouping lines into text boxes', () => {
     expect(rotated.box[2] - rotated.box[0]).toBeLessThan(20);
   });
 
+  it('turns a box by the angle of a line set at a slant, its first glyph origin and advances where the PDF has them', async () => {
+    // 45° up the page (PDF y grows up, so the page's clockwise angle is 315°); Courier at 10 pt advances 6 pt a character.
+    const c = Math.SQRT1_2;
+    const text = 'egik metin';
+    const content = [
+      line('courier', 10, 40, 450, 'yatay'),
+      `BT /F1 10 Tf ${c} ${c} ${-c} ${c} 100 300 Tm (${text}) Tj ET`,
+    ].join('\n');
+    const boxes = textBoxes(await layoutOf(content), []);
+    expect(boxes.map(textOf)).toEqual([['yatay'], [text]]);
+    const [, turned] = boxes as [TextBox, TextBox];
+    expect(turned.rotation).toBeCloseTo(315, 3);
+    // Put the PDF's first origin (100, PAGE − 300) into the box's own axes: it is TEXT_LEFT in, 0.8 line heights down.
+    const [x0, y0, x1, y1] = turned.box;
+    const width = x1 - x0;
+    const height = y1 - y0;
+    const angle = (turned.rotation * Math.PI) / 180;
+    const dx = 100 - (x0 + x1) / 2;
+    const dy = PAGE - 300 - (y0 + y1) / 2;
+    const localX = dx * Math.cos(angle) + dy * Math.sin(angle) + width / 2;
+    const localY = -dx * Math.sin(angle) + dy * Math.cos(angle) + height / 2;
+    expect(localX).toBeCloseTo(0.1, 2);
+    expect(localY).toBeCloseTo(0.8 * height, 2);
+    expect(width).toBeCloseTo(text.length * 6 * 1.03 + 2, 0);
+    // The glyphs are 6 pt apart on the box's axis, the first at the origin.
+    const fit = turned.paragraphs[0]?.lines[0]?.runs[0]?.fit;
+    expect(fit?.starts[0]).toBeCloseTo(x0 + 0.1, 2);
+    expect(fit?.starts[1]).toBeCloseTo(x0 + 0.1 + 6, 2);
+    expect(fit?.ends[text.length - 1]).toBeCloseTo(x0 + 0.1 + text.length * 6, 1);
+  });
+
+  it('turns text upside down by 180° and a word apart from its neighbour into a space', async () => {
+    const content = 'BT /F1 10 Tf -1 0 0 -1 300 200 Tm (ab cd) Tj ET';
+    const [box] = textBoxes(await layoutOf(content), []) as [TextBox];
+    expect(box.rotation).toBeCloseTo(180, 3);
+    expect(textOf(box)).toEqual(['ab cd']);
+  });
+
+  it('writes a translucent fill as the run\u2019s opacity, split from the solid text beside it', async () => {
+    // The fixture's `/GS1` is 40 % opacity; the second word follows the first with no gap, drawn solid.
+    const content = [
+      'q /GS1 gs 1 0 0 rg BT /F1 10 Tf 40 400 Td (soluk) Tj ET Q',
+      '1 0 0 rg BT /F1 10 Tf 70 400 Td (opak) Tj ET',
+    ].join('\n');
+    const [box] = textBoxes(await layoutOf(content), []) as [TextBox];
+    const runs = box.paragraphs[0]?.lines[0]?.runs ?? [];
+    expect(runs.map((item) => [item.text, item.alpha])).toEqual([
+      ['soluk', 0.4],
+      ['opak', undefined],
+    ]);
+    const xmlText = textBoxXml(box, 1, new DocxRegistry());
+    expect(xmlText).toContain(
+      '<w14:textFill><w14:solidFill><w14:srgbClr w14:val="FF0000"><w14:alpha w14:val="60000"/></w14:srgbClr></w14:solidFill></w14:textFill>',
+    );
+    // Only the translucent run carries it (the text is written twice, DrawingML and VML), its solid colour stays beside it.
+    expect(xmlText.split('<w14:textFill>')).toHaveLength(3);
+    expect(xmlText.split('<w:color w:val="FF0000"/>').length).toBeGreaterThanOrEqual(3);
+  });
+
   it('reads the direction of short labels from the line, down to a single character, and keeps neighbours apart', async () => {
     // An axis of years run up the page (4 characters, 7 pt: shorter than 1.5 × the size
     // between first and last centre), a single digit up, one down, and two digits down.
@@ -700,6 +759,54 @@ describe('text box XML', () => {
     const downward = textBoxXml(handMade({ box: [100, 200, 120, 300], rotation: 90 }), 1, registry());
     expect(downward).toContain('<wps:bodyPr rot="0" vert="vert" wrap="none"');
     expect(downward).toContain('<v:textbox style="layout-flow:vertical" inset="0,0,0,0">');
+  });
+
+  it('writes a box at another angle as a frame turned about its centre, with the room the turn takes', () => {
+    // 200 × 20 pt at 45°: the frame's bounding box is 155.6 pt square.
+    const turned = textBoxXml(handMade({ box: [100, 200, 300, 220], rotation: 45 }), 1, registry());
+    expect(turned).toContain(
+      '<a:xfrm rot="2700000"><a:off x="0" y="0"/><a:ext cx="2540000" cy="254000"/></a:xfrm>',
+    );
+    expect(turned).toContain('<wps:bodyPr rot="0" vert="horz" wrap="none"');
+    expect(turned).toContain('<wp:extent cx="2540000" cy="254000"/>');
+    // The anchor is the frame before the turn.
+    expect(turned).toContain(`<wp:posOffset>${100 * 12700}</wp:posOffset>`);
+    expect(turned).toContain(`<wp:posOffset>${200 * 12700}</wp:posOffset>`);
+    // Beyond the frame: (155.6 − 200) / 2 < 0 sideways, clamped to 0, and (155.6 − 20) / 2 = 67.8 pt above and below.
+    const above = Math.round((((200 + 20) * Math.SQRT1_2 - 20) / 2) * 12700);
+    expect(turned).toContain(`<wp:effectExtent l="0" t="${above}" r="0" b="${above}"/>`);
+    expect(turned).toContain('margin-left:100pt;margin-top:200pt;width:200pt;height:20pt;rotation:45;');
+    const tall = textBoxXml(handMade({ box: [100, 200, 120, 400], rotation: 30 }), 1, registry());
+    expect(tall).toContain('<a:xfrm rot="1800000">');
+    expect(tall).toMatch(/<wp:effectExtent l="\d+" t="0" r="\d+" b="0"\/>/);
+    // Upright and vertical boxes carry no frame turn or spill.
+    for (const rotation of [0, 90, 270]) {
+      const plain = textBoxXml(handMade({ rotation }), 1, registry());
+      expect(plain).not.toContain('<a:xfrm rot=');
+      expect(plain).toContain('<wp:effectExtent l="0" t="0" r="0" b="0"/>');
+      expect(plain).not.toContain('rotation:');
+    }
+  });
+
+  it('writes the text colour of a translucent run with its opacity, once per piece', () => {
+    const faded = textBoxXml(
+      handMade({
+        paragraphs: [
+          {
+            align: 'left',
+            lineHeight: 12,
+            lines: [{ runs: [run('soluk', { color: 0xffffff, alpha: 0.55 })] }],
+          },
+        ],
+      }),
+      1,
+      registry(),
+    );
+    expect(faded).toContain('<w:color w:val="FFFFFF"/>');
+    expect(faded).toContain(
+      '<w:szCs w:val="20"/><w14:textFill><w14:solidFill><w14:srgbClr w14:val="FFFFFF"><w14:alpha w14:val="45000"/></w14:srgbClr></w14:solidFill></w14:textFill></w:rPr>',
+    );
+    expect(textBoxXml(handMade(), 1, registry())).not.toContain('w14:');
   });
 
   it('writes links as hyperlinks with one relationship per URI, the run style unchanged', () => {
