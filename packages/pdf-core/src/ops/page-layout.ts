@@ -770,7 +770,9 @@ function covers(
  * divider that runs past a header rule and a footer rule make the page a table). The text
  * is a line that lies wholly in the strip: a caption that only touches it stays a paragraph.
  * A strip above or below the rules that holds lines of text one under the other (a header
- * row and a first row that no rule separates) is cut between them into the rows they are;
+ * row and a first row that no rule separates) is cut between them into the rows they are,
+ * where the gap between two lines is at least half a line (a header cell wrapped in two
+ * lines stays one row);
  * the cuts are returned, for they separate their rows although no rule is drawn there.
  */
 function completeOuterEdges(
@@ -778,7 +780,7 @@ function completeOuterEdges(
   vertical: readonly Ruling[],
   xs: number[],
   ys: number[],
-  textIn: (box: Box) => readonly Box[],
+  linesIn: (box: Box) => readonly Box[],
 ): number[] {
   const separate: number[] = [];
   const all = [...horizontal, ...vertical];
@@ -789,13 +791,14 @@ function completeOuterEdges(
   const reaching = (rules: readonly Ruling[], reach: (rule: Ruling) => boolean) =>
     rules.filter(reach).length >= 2;
   const worth = (strip: number, pitch: number, box: Box) =>
-    strip >= pitch / 2 || (strip >= pitch / 4 && textIn(box).length > 0);
+    strip >= pitch / 2 || (strip >= pitch / 4 && linesIn(box).length > 0);
   /** The rows of text in a horizontal strip: the cuts between lines that stand one under the other. */
   const cuts = (box: Box): number[] => {
     const out: number[] = [];
     let foot = Number.NEGATIVE_INFINITY;
-    for (const line of [...textIn(box)].sort((a, b) => a[1] - b[1])) {
-      if (foot !== Number.NEGATIVE_INFINITY && line[1] > foot) out.push((foot + line[1]) / 2);
+    for (const line of [...linesIn(box)].sort((a, b) => a[1] - b[1])) {
+      if (foot !== Number.NEGATIVE_INFINITY && line[1] - foot >= (line[3] - line[1]) / 2)
+        out.push((foot + line[1]) / 2);
       foot = Math.max(foot, line[3]);
     }
     return out;

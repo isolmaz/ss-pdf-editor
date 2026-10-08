@@ -904,6 +904,37 @@ describe('lattice tables with missing rules', () => {
     }
   });
 
+  it('keeps a header cell wrapped in two lines one row, and still cuts rows that stand a line apart', async () => {
+    // Rules 30 pt apart; the header \`Unit / Price\` wraps at \`leading\` points in the 60 pt strip above the top rule.
+    const grid = (leading: number) =>
+      fixturePage(
+        [
+          ...pieces(345, [58, 'Unit'], [158, 'Name']),
+          ...pieces(345 - leading, [58, 'Price'], [158, 'Text']),
+          ...pieces(280, [58, '2'], [158, 'Second']),
+          ...pieces(250, [58, '3'], [158, 'Third']),
+        ],
+        [
+          STROKE,
+          rule(50, 300, 250, 300),
+          rule(50, 270, 250, 270),
+          rule(50, 240, 250, 240),
+          ...[50, 150, 250].map((x) => rule(x, 360, x, 240)),
+        ].join('\n'),
+      );
+    for (const leading of [14, 16]) {
+      const [table] = findTables((await layoutOf(await grid(leading))).layout);
+      expect(table?.ys).toHaveLength(4);
+      expect(table?.cells.filter((cell) => cell.row === 0).map((cell) => cell.text)).toEqual([
+        'Unit\nPrice',
+        'Name\nText',
+      ]);
+    }
+    // A line of leading beyond the line itself is a row of its own.
+    const [apart] = findTables((await layoutOf(await grid(26))).layout);
+    expect(apart?.ys).toHaveLength(5);
+  });
+
   it('does not take a page of three columns for a table when two dividers run past a header rule and a footer rule', async () => {
     const bytes = await fixturePage(
       [
