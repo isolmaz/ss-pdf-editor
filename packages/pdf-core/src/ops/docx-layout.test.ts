@@ -451,3 +451,64 @@ describe('exact layout: what Word cannot draw', () => {
     });
   });
 });
+
+/** A one-page PDF from a raw content stream whose resources are `build(doc)`. */
+async function rawPage(
+  content: string,
+  build: (
+    doc: InstanceType<Awaited<ReturnType<typeof loadMupdf>>['PDFDocument']>,
+  ) => Record<string, unknown> = () => ({}),
+): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  doc.insertPage(0, doc.addPage([0, 0, 400, 500], 0, build(doc), content));
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** The fill colours (`a:srgbClr`) of the DrawingML shapes, in order. */
+const fills = (document: Document): string[] =>
+  all(document, A, 'srgbClr').map((color) => color.getAttribute('val') as string);
+
+describe('exact layout: drawings the page makes that Word cannot take as they are', () => {
+  const options = { pages: [0], baseName: 'plan.pdf', format: 'docx', docxLayout: 'layout' } as const;
+
+  it('exports a DeviceN fill of two inks with the colour of its CMYK alternate', async () => {
+    const tint = (doc: InstanceType<Awaited<ReturnType<typeof loadMupdf>>['PDFDocument']>) =>
+      doc.addStream('{ 0 0 }', {
+        FunctionType: 4,
+        Domain: [0, 1, 0, 1],
+        Range: [0, 1, 0, 1, 0, 1, 0, 1],
+      });
+    const duotone = await rawPage('/CS0 cs 0.5 0.5 scn 50 50 100 100 re f', (doc) => ({
+      ColorSpace: { CS0: doc.addObject(['DeviceN', ['Cyan', 'Magenta'], 'DeviceCMYK', tint(doc)]) },
+    }));
+    const cmyk = await rawPage('0.5 0.5 0 0 k 50 50 100 100 re f');
+    const result = await exportOffice(duotone, options, run);
+    expect(result.file.name).toBe('plan.docx');
+    const expected = fills((await written(cmyk, [0])).document);
+    const actual = fills((await written(duotone, [0])).document);
+    expect(actual).toEqual(expected);
+    expect(actual).toHaveLength(1);
+  });
+
+  it('keeps every offset and extent of a rectangle far off the page inside xsd:int, and its colour', async () => {
+    const huge = await rawPage('0.9 0.9 0.9 rg -200000 -200000 400000 400000 re f');
+    const result = await written(huge, [0]);
+    const numbers = [
+      ...all(result.document, WP, 'posOffset').map((node) => Number(node.textContent)),
+      ...all(result.document, WP, 'extent').flatMap((node) => [
+        Number(node.getAttribute('cx')),
+        Number(node.getAttribute('cy')),
+      ]),
+    ];
+    expect(numbers.length).toBeGreaterThan(0);
+    for (const value of numbers) expect(Math.abs(value)).toBeLessThanOrEqual(2_147_483_647);
+    // The page is 400 × 500 pt: the shape is no larger than it.
+    const [extent] = all(result.document, WP, 'extent') as [Element];
+    expect(Number(extent.getAttribute('cx'))).toBe(400 * 12700);
+    expect(Number(extent.getAttribute('cy'))).toBe(500 * 12700);
+    expect(fills(result.document)).toEqual(['E5E5E5']);
+  });
+});

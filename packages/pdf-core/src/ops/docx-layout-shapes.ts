@@ -313,12 +313,27 @@ function reversed(sub: Subpath): Subpath {
 function nonzeroFromEvenOdd(subs: Subpath[]): Subpath[] {
   if (subs.length < 2) return subs;
   const polygons = subs.map(polygonOf);
+  // A point is only tested against the polygons whose box holds it: cheap comparisons first,
+  // the walk round every edge only for the few that nest.
+  const bounds = polygons.map((polygon) => {
+    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const [x, y] of polygon) {
+      box.x0 = Math.min(box.x0, x);
+      box.y0 = Math.min(box.y0, y);
+      box.x1 = Math.max(box.x1, x);
+      box.y1 = Math.max(box.y1, y);
+    }
+    return box;
+  });
   return subs.map((sub, i) => {
     const area = signedArea(polygons[i] as Point[]);
     if (area === 0) return sub;
+    const [px, py] = sub.start;
     let depth = 0;
     for (let j = 0; j < subs.length; j++) {
-      if (j !== i && contains(polygons[j] as Point[], sub.start)) depth += 1;
+      const box = bounds[j] as (typeof bounds)[number];
+      if (j === i || px < box.x0 || px > box.x1 || py < box.y0 || py > box.y1) continue;
+      if (contains(polygons[j] as Point[], sub.start)) depth += 1;
     }
     const wantPositive = depth % 2 === 0;
     return area > 0 === wantPositive ? sub : reversed(sub);

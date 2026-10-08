@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
+import { buildCff } from './docx-font-fixtures';
+import { cffForWord } from './docx-font-sfnt';
 import { obfuscateFont } from './docx-fonts';
 import { exportOffice } from './export-office';
 import { line, officeDocument } from './export-office-fixtures';
@@ -28,8 +30,34 @@ const noto = (file: string): Uint8Array =>
   );
 const notoRegular = (): Uint8Array => noto('400Regular/NotoSans_400Regular.ttf');
 
+/** Writes `fsType` into the `OS/2` table of the TrueType `program`, in place (or hides the table). */
+function setFsType(program: Uint8Array, fsType: number | 'none'): void {
+  const dv = new DataView(program.buffer, program.byteOffset, program.byteLength);
+  for (let index = 0; index < dv.getUint16(4); index += 1) {
+    const record = 12 + index * 16;
+    if (String.fromCharCode(...program.subarray(record, record + 4)) === 'OS/2') {
+      // `'none'`: the table is renamed, so the font has no `OS/2` of its own.
+      if (fsType === 'none')
+        program.set(
+          [...'OS/9'].map((character) => character.charCodeAt(0)),
+          record,
+        );
+      else dv.setUint16(dv.getUint32(record + 8) + 8, fsType);
+      return;
+    }
+  }
+  throw new Error('the program has no OS/2 table');
+}
+
 /** A one-page PDF of `text` set in Noto Sans, embedded as a Type0 / Identity-H font (the fidelity samples' way). */
-async function notoPdf(text: string): Promise<Uint8Array> {
+async function notoPdf(
+  text: string,
+  {
+    fsType,
+    invisible = false,
+    stroked = false,
+  }: { fsType?: number | 'none'; invisible?: boolean; stroked?: boolean } = {},
+): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
   const doc = new mupdf.PDFDocument();
   const font = new mupdf.Font('NotoSans-Regular', notoRegular());
@@ -44,11 +72,26 @@ async function notoPdf(text: string): Promise<Uint8Array> {
     const page = doc.addPage(
       [0, 0, 400, 300],
       0,
-      { Font: { F0: object } },
-      `BT /F0 18 Tf 40 200 Td <${hex}> Tj ET\n`,
+      { Font: { F0: object }, ExtGState: { Hidden: { Type: 'ExtGState', ca: 0, CA: 0 } } },
+      `${invisible ? '/Hidden gs ' : ''}BT ${stroked ? '1 Tr ' : ''}/F0 18 Tf 40 200 Td <${hex}> Tj ET\n`,
     );
     doc.insertPage(0, page);
     doc.subsetFonts();
+    if (fsType !== undefined) {
+      // MuPDF will not embed such a font itself; other producers do, so the program is patched in the file.
+      const file = doc
+        .findPage(0)
+        .get('Resources')
+        .get('Font')
+        .get('F0')
+        .get('DescendantFonts')
+        .get(0)
+        .get('FontDescriptor')
+        .get('FontFile2');
+      const program = new Uint8Array(file.readStream().asUint8Array());
+      setFsType(program, fsType);
+      file.writeStream(program);
+    }
     return new Uint8Array(doc.saveToBuffer('garbage=compact,compress').asUint8Array());
   } finally {
     font.destroy();
@@ -149,6 +192,112 @@ describe('exact layout with an embedded TrueType font', () => {
     } finally {
       font.destroy();
     }
+  });
+});
+
+describe('exact layout: which fonts are embedded', () => {
+  const embedded = async (bytes: Uint8Array) => {
+    const result = await exportOffice(bytes, options, run);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    return Object.keys(zip.files).filter((name) => name.endsWith('.odttf'));
+  };
+
+  it('embeds nothing of a font that allows only bitmaps to be embedded', async () => {
+    expect(await embedded(await notoPdf('Stanbul', { fsType: 0x0200 }))).toEqual([]);
+    expect(await embedded(await notoPdf('Stanbul', { fsType: 0x0002 }))).toEqual([]);
+    expect(await embedded(await notoPdf('Stanbul', { fsType: 0x0004 }))).toHaveLength(1);
+    // A font with no OS/2 table has no licence bits to forbid it.
+    expect(await embedded(await notoPdf('Stanbul', { fsType: 'none' }))).toHaveLength(1);
+  });
+
+  it('embeds no font for text drawn with no opacity, as the OCR layer of this app is', async () => {
+    expect(await embedded(await notoPdf('Stanbul', { invisible: true }))).toEqual([]);
+    expect(await embedded(await notoPdf('Stanbul'))).toHaveLength(1);
+    // Outlined text counts the same way: seen, it needs its font; with no opacity, it does not.
+    expect(await embedded(await notoPdf('Stanbul', { stroked: true }))).toHaveLength(1);
+    expect(await embedded(await notoPdf('Stanbul', { stroked: true, invisible: true }))).toEqual([]);
+  });
+});
+
+describe('exact layout with an embedded OpenType-CFF font', () => {
+  /** A one-page PDF drawing "A" in an OpenType-CFF CID font whose `OS/2` has `fsType`. */
+  async function openTypePdf(fsType: number): Promise<Uint8Array> {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    try {
+      const program = cffForWord(
+        buildCff(),
+        [{ unicode: 0x41, gid: 1 }],
+        new Map([[1, 600]]),
+        { family: 'Sample', style: 'Regular' },
+        { ascent: 900, descent: -250, fsType },
+      ) as Uint8Array;
+      const descriptor = doc.addObject({
+        Type: 'FontDescriptor',
+        FontName: 'AAAAAA+Sample',
+        Flags: 4,
+        FontBBox: [-200, -1500, 2000, 900],
+        ItalicAngle: 0,
+        Ascent: 900,
+        Descent: -250,
+        CapHeight: 700,
+        StemV: 80,
+        FontFile3: doc.addStream(program, { Subtype: 'OpenType' }),
+      });
+      const cid = doc.addObject({
+        Type: 'Font',
+        Subtype: 'CIDFontType0',
+        BaseFont: 'AAAAAA+Sample',
+        CIDSystemInfo: { Registry: '(Adobe)', Ordering: '(Identity)', Supplement: 0 },
+        FontDescriptor: descriptor,
+        DW: 600,
+      });
+      const toUnicode = doc.addStream(
+        '/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /X def /CMapType 2 def ' +
+          '1 begincodespacerange <0000> <FFFF> endcodespacerange 1 beginbfchar <0001> <0041> endbfchar endcmap end end',
+        {},
+      );
+      const font = doc.addObject({
+        Type: 'Font',
+        Subtype: 'Type0',
+        BaseFont: 'AAAAAA+Sample',
+        Encoding: 'Identity-H',
+        DescendantFonts: [cid],
+        ToUnicode: toUnicode,
+      });
+      doc.insertPage(
+        0,
+        doc.addPage([0, 0, 400, 300], 0, { Font: { F0: font } }, 'BT /F0 18 Tf 40 200 Td <0001> Tj ET\n'),
+      );
+      return new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  it('keeps the font licence bits in the embedded program', async () => {
+    for (const fsType of [0x0004, 0x0008]) {
+      const result = await exportOffice(await openTypePdf(fsType), options, run);
+      const zip = await JSZip.loadAsync(result.file.bytes);
+      const table = (await zip.file('word/fontTable.xml')?.async('string')) ?? '';
+      const key = /w:fontKey="(\{[^"]+\})"/.exec(table)?.[1] as string;
+      const odttf = await zip.file('word/fonts/font1.odttf')?.async('uint8array');
+      const bytes = obfuscateFont(odttf as Uint8Array, key);
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      let found = -1;
+      for (let index = 0; index < dv.getUint16(4); index += 1) {
+        const record = 12 + index * 16;
+        if (String.fromCharCode(...bytes.subarray(record, record + 4)) === 'OS/2')
+          found = dv.getUint16(dv.getUint32(record + 8) + 8);
+      }
+      expect(found).toBe(fsType);
+    }
+  });
+
+  it('embeds nothing of one that allows only bitmaps', async () => {
+    const result = await exportOffice(await openTypePdf(0x0200), options, run);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    expect(Object.keys(zip.files).filter((name) => name.endsWith('.odttf'))).toEqual([]);
   });
 });
 

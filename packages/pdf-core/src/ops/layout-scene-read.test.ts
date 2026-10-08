@@ -552,3 +552,173 @@ describe('layout scene: text', () => {
     expect(scene.items).toEqual([]);
   });
 });
+
+/** A `/DeviceN` space of `inks` over DeviceCMYK, its tint transform the PostScript `program`. */
+function deviceN(doc: InstanceType<Mupdf['PDFDocument']>, inks: readonly string[], program: string) {
+  const tint = doc.addStream(program, {
+    FunctionType: 4,
+    Domain: inks.flatMap(() => [0, 1]),
+    Range: [0, 1, 0, 1, 0, 1, 0, 1],
+  });
+  return doc.addObject(['DeviceN', inks, 'DeviceCMYK', tint]);
+}
+
+describe('layout scene: colours the binding cannot draw as they come', () => {
+  it('reads a DeviceN fill of two inks as its CMYK alternate does', async () => {
+    const { scene } = await sceneOfRaw({
+      content: '/CS0 cs 0.5 0.5 scn 50 50 50 50 re f',
+      resources: (doc) => ({ ColorSpace: { CS0: deviceN(doc, ['Cyan', 'Magenta'], '{ 0 0 }') } }),
+    });
+    const { scene: alternate } = await sceneOf(await contentOnly('0.5 0.5 0 0 k 50 50 50 50 re f'));
+    const color = (shapes(scene.items)[0] as SceneShape).fill?.color;
+    expect(color).toBeDefined();
+    expect(color).toBe((shapes(alternate.items)[0] as SceneShape).fill?.color);
+  });
+
+  it('reads a DeviceN stroke of two inks', async () => {
+    const { scene } = await sceneOfRaw({
+      content: '/CS0 CS 1 0 SCN 4 w 50 50 m 150 50 l S',
+      resources: (doc) => ({ ColorSpace: { CS0: deviceN(doc, ['Cyan', 'Magenta'], '{ 0 0 }') } }),
+    });
+    const { scene: alternate } = await sceneOf(await contentOnly('1 0 0 0 K 4 w 50 50 m 150 50 l S'));
+    const stroke = (shapes(scene.items)[0] as SceneShape).stroke?.color;
+    expect(stroke).toBe((shapes(alternate.items)[0] as SceneShape).stroke?.color);
+  });
+
+  it('reads a DeviceN fill of five inks as a grey of its strongest ink', async () => {
+    const { scene } = await sceneOfRaw({
+      content: '/CS0 cs 0.2 0.4 0.6 0.3 0.1 scn 50 50 50 50 re f',
+      resources: (doc) => ({
+        ColorSpace: { CS0: deviceN(doc, ['A', 'B', 'C', 'D', 'E'], '{ pop pop 0 }') },
+      }),
+    });
+    const color = (shapes(scene.items)[0] as SceneShape).fill?.color ?? 0;
+    close([color >> 16, (color >> 8) & 255, color & 255], [102, 102, 102], -1);
+  });
+
+  it('draws DeviceN fills of two and five inks into a raster too', async () => {
+    const { mupdf, scene } = await sceneOfRaw({
+      content: [
+        'q 50 50 m 150 50 l 100 150 l h W n',
+        '/CS0 cs 1 0 scn 0 0 200 200 re f Q',
+        'q 250 50 m 350 50 l 300 150 l h W n',
+        '/CS1 cs 0.2 0.4 0.6 0.3 0.1 scn 200 0 200 200 re f Q',
+      ].join('\n'),
+      resources: (doc) => ({
+        ColorSpace: {
+          CS0: deviceN(doc, ['Cyan', 'Magenta'], '{ 0 0 }'),
+          CS1: deviceN(doc, ['A', 'B', 'C', 'D', 'E'], '{ pop pop 0 }'),
+        },
+      }),
+    });
+    const [cyan, grey] = scene.items as [SceneRaster, SceneRaster];
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster', 'raster']);
+    const first = decode(mupdf, cyan.data);
+    const [r, , b] = first.at(first.width / 2, first.height / 2);
+    expect(b).toBeGreaterThan(r);
+    const second = decode(mupdf, grey.data);
+    close(second.at(second.width / 2, second.height / 2).slice(0, 3), [102, 102, 102], -1);
+  });
+});
+
+describe('layout scene: stencil masks in a raster', () => {
+  it('paints a stencil mask into the raster in its fill colour, a DeviceN one included', async () => {
+    const { mupdf, scene } = await sceneOfRaw({
+      content: '/CS0 cs 1 0 scn q 100 0 0 100 50 50 cm /Stencil Do Q',
+      resources: (doc) => ({
+        ColorSpace: { CS0: deviceN(doc, ['Cyan', 'Magenta'], '{ 0 0 }') },
+        XObject: {
+          Stencil: doc.addStream(new Uint8Array(8).fill(0), {
+            Type: 'XObject',
+            Subtype: 'Image',
+            Width: 8,
+            Height: 8,
+            ImageMask: true,
+            BitsPerComponent: 1,
+          }),
+        },
+      }),
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    const [mask] = scene.items as [SceneRaster];
+    close(mask.box, [50, 350, 150, 450]);
+    const png = decode(mupdf, mask.data);
+    const [r, , b, a] = png.at(png.width / 2, png.height / 2);
+    expect(a).toBeGreaterThan(250);
+    expect(b).toBeGreaterThan(r);
+  });
+});
+
+describe('layout scene: compound paths', () => {
+  const squares = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) => `${(index % 50) * 6} ${Math.floor(index / 50) * 6} 4 4 re`,
+    ).join(' ');
+
+  it('keeps an even-odd path of a few hundred subpaths a shape', async () => {
+    const { scene } = await sceneOf(await contentOnly(`0 g ${squares(300)} f*`));
+    expect(scene.items.map((item) => item.kind)).toEqual(['shape']);
+  });
+
+  it('draws an even-odd path of more than 1500 subpaths as a picture, a nonzero one of the same still a shape', async () => {
+    const { mupdf, scene } = await sceneOf(await contentOnly(`0 g ${squares(1600)} f*`));
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    const [all] = scene.items as [SceneRaster];
+    expect(decode(mupdf, all.data).at(4, decode(mupdf, all.data).height - 4)[3]).toBe(255);
+    const { scene: nonzero } = await sceneOf(await contentOnly(`0 g ${squares(1600)} f`));
+    expect(nonzero.items.map((item) => item.kind)).toEqual(['shape']);
+  });
+});
+
+describe('layout scene: drawing far off the page', () => {
+  it('cuts a filled rectangle that reaches far off the page to the page, keeping its colour', async () => {
+    const { scene } = await sceneOf(
+      await contentOnly('0.9 0.9 0.9 rg -200000 -200000 400000 400000 re f 0 g 100 100 50 50 re f'),
+    );
+    const [paper, ink] = shapes(scene.items) as [SceneShape, SceneShape];
+    expect(scene.items).toHaveLength(2);
+    close(paper.box, [0, 0, 400, 500]);
+    expect(paper.fill?.color).toBe(0xe5e5e5);
+    expect(paper.segments.length).toBeGreaterThan(0);
+    expect(ink.fill?.color).toBe(0);
+  });
+
+  it('keeps a rectangle that reaches a little off the page whole', async () => {
+    const { scene } = await sceneOf(await contentOnly('0 g -20 -20 440 540 re f'));
+    close((shapes(scene.items)[0] as SceneShape).box, [-20, -20, 420, 520]);
+  });
+
+  it('draws a stroke and a curved fill far off the page as pictures of the page part', async () => {
+    const { mupdf, scene } = await sceneOf(
+      await contentOnly(
+        [
+          '0 0 1 RG 6 w -200000 250 m 200000 250 l S',
+          '1 0 0 rg -200000 -200000 m 200000 -200000 l 0 200000 l f',
+        ].join('\n'),
+      ),
+    );
+    expect(scene.items.length).toBeGreaterThan(0);
+    for (const item of scene.items) {
+      expect(item.kind).toBe('raster');
+      const box = item.kind === 'raster' ? item.box : [0, 0, 0, 0];
+      expect(box[0]).toBeGreaterThanOrEqual(0);
+      expect(box[1]).toBeGreaterThanOrEqual(0);
+      expect(box[2]).toBeLessThanOrEqual(400);
+      expect(box[3]).toBeLessThanOrEqual(500);
+    }
+    const [first] = scene.items as [SceneRaster];
+    expect(decode(mupdf, first.data).width).toBeGreaterThan(0);
+  });
+
+  it('cuts the fill of an outlined rectangle far off the page and draws its outline as a picture', async () => {
+    const { scene } = await sceneOf(
+      await contentOnly('0 1 0 rg 0 0 1 RG 6 w -200000 -200000 400000 400000 re B'),
+    );
+    expect(scene.items.map((item) => item.kind)).toEqual(['shape', 'raster']);
+    const [fill, outline] = scene.items as [SceneShape, SceneRaster];
+    close(fill.box, [0, 0, 400, 500]);
+    expect(fill.fill?.color).toBe(0x00ff00);
+    close(outline.box, [0, 0, 400, 500]);
+  });
+});
