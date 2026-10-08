@@ -17,7 +17,34 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.13
         version: 2.5.13
+      '@expo-google-fonts/inter':
+        specifier: 0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/merriweather':
+        specifier: 0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/montserrat':
+        specifier: 0.4.2
+        version: 0.4.2
       '@expo-google-fonts/noto-sans':
+        specifier: 0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/noto-serif':
+        specifier: 0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/open-sans':
+        specifier: 0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/poppins':
+        specifier: 0.4.1
+        version: 0.4.1
+      '@expo-google-fonts/roboto':
+        specifier: 0.4.3
+        version: 0.4.3
+      '@expo-google-fonts/roboto-mono':
+        specifier: 0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/source-sans-3':
         specifier: 0.4.2
         version: 0.4.2
       '@tesseract.js-data/ara':
@@ -586,8 +613,35 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@expo-google-fonts/inter@0.4.2':
+    resolution: {integrity: sha512-syfiImMaDmq7cFi0of+waE2M4uSCyd16zgyWxdPOY7fN2VBmSLKEzkfbZgeOjJq61kSqPBNNtXjggiQiSD6gMQ==}
+
+  '@expo-google-fonts/merriweather@0.4.2':
+    resolution: {integrity: sha512-jUlmDzo5hQ36fPDXZvdt2VIZGCFkdg2Gfx+oWnbzvfygdCvx3AIe8O74IdsN1IZ65mxSSgsajM1c2XV2L/eYkw==}
+
+  '@expo-google-fonts/montserrat@0.4.2':
+    resolution: {integrity: sha512-Xyq7rKJhhZOE1Xk4wKSSVoUeOkFmQEMhtZ3pdFrgYckGZMs115Apmld1AI8Ju+yrl5GzDdfRCCqRr33dvEDYUA==}
+
   '@expo-google-fonts/noto-sans@0.4.2':
     resolution: {integrity: sha512-zYD8G2ijWLxqmquoQgghNh/x9p0yxWwArD0oxO1oXY1qx5vOd4t0Kbhnu/Cx8RTy08OgA8RtxuULZFaXwVPnPw==}
+
+  '@expo-google-fonts/noto-serif@0.4.2':
+    resolution: {integrity: sha512-1xvAYegrtpCuPPunSyhvhV9FHWEzCWjikEoUJkvHt+WWvt+h7lKr+vkXNpqwFQM4W3KjXOccfLd5s04xLMjjDQ==}
+
+  '@expo-google-fonts/open-sans@0.4.2':
+    resolution: {integrity: sha512-gvhPqLXYnltWgll3iBwRGUwf5yN2HCh4mgQmFoQ8oU66LTs23oX4N7T3t0BDsKfP/1Z8F8+4c7wSkA11Nnk4kA==}
+
+  '@expo-google-fonts/poppins@0.4.1':
+    resolution: {integrity: sha512-LiX5oEryJqDt3UmWwr4oqf11hGMz/JEffkkNcZ3UtGwyoMFzXmBmTwcrAWrEttxypxmLNmPykDg+CY2VjKve9A==}
+
+  '@expo-google-fonts/roboto-mono@0.4.2':
+    resolution: {integrity: sha512-TkWqMKicHKbWclt3dZuzHgBXE4OZgenz+Bp8XT26/wKcWvUXnzGvS7C140QYCsq+CKZsa+0JTZppq2Wfyx0SCQ==}
+
+  '@expo-google-fonts/roboto@0.4.3':
+    resolution: {integrity: sha512-kX3wmpmu06fN1yOwYWMdjYJWNUYW6xUiAGeHbvPzzSEb3A3j23JelQ3tAgwQNKgEKRq6wtMmzixy2r7y9c8dsA==}
+
+  '@expo-google-fonts/source-sans-3@0.4.2':
+    resolution: {integrity: sha512-pqnxji7ox1jwLGnX5xSGDpk7C5F6VjyQnBe4NT0xrcBFTW+oxxF4ug6eol3y7ucCk/bYjgg3GFLeKvKbFlHnHA==}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -2074,7 +2128,25 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
+  '@expo-google-fonts/inter@0.4.2': {}
+
+  '@expo-google-fonts/merriweather@0.4.2': {}
+
+  '@expo-google-fonts/montserrat@0.4.2': {}
+
   '@expo-google-fonts/noto-sans@0.4.2': {}
+
+  '@expo-google-fonts/noto-serif@0.4.2': {}
+
+  '@expo-google-fonts/open-sans@0.4.2': {}
+
+  '@expo-google-fonts/poppins@0.4.1': {}
+
+  '@expo-google-fonts/roboto-mono@0.4.2': {}
+
+  '@expo-google-fonts/roboto@0.4.3': {}
+
+  '@expo-google-fonts/source-sans-3@0.4.2': {}
 
   '@floating-ui/core@1.8.0':
     dependencies:

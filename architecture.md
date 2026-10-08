@@ -731,7 +731,21 @@ had to stay green. The moves, and the defects they fixed on the way:
          Times New Roman and
          Courier New whose per-word width ratios agree best (judged from 8 words of three
          letters up; Arial wins unless another's spread is under 0.8 × its), measured with
-         the metric-compatible standard fonts MuPDF carries (`standardAdvance`). Each word
+         the metric-compatible standard fonts MuPDF carries (`standardAdvance`). The page's words
+         OCR is at least 90 % sure of are then drawn again, in the stand-ins and in the regular
+         of every open family of `ocr-font-catalog.ts` (`matchFamily`, `ocr-font-match.ts`: ink
+         overlap and proportions, the median over up to 40 words); an open family sets the page
+         only when it is ahead of both the runner-up and the best stand-in by 0.05
+         (`CLEAR_MARGIN`), otherwise the stand-in chosen by widths stays (and offline, or with
+         a file missing, it stays too). The page is then set again with that family's own
+         advances, its runs name it, and the package embeds the faces the runs use (regular,
+         bold, italic, bold italic) like a PDF's own fonts (`EmbeddedFonts.plus`). The whole
+         program is embedded, only its `cmap` reduced to the characters the runs use, so
+         each face costs its file size in the DOCX (about 0.1–1 MB; up to four faces per
+         family); `fsType` (installable) and the copyright and licence name records (IDs 0, 7,
+         13, 14) are kept. The family is loaded once per export and Word is given a name no
+         PDF font of the document has ("Roboto 2" beside a PDF's own "Roboto"), chosen
+         before the runs are set. The report names the family (`ocrFont`). Each word
          carries where the scan has its letters (`RunFit`), so the writer fits it like a PDF's
          text; a box more than 25 % narrower or 35 % wider than the word's natural width is
          not trusted and its letters are set at the natural pitch from its left edge. A word
@@ -892,7 +906,7 @@ counter-turn as the mark's rotation; `writeAnnotationsToFile` hands it to
 `transformPdfAnnotations`, which turns the geometry and the appearance together, so the file
 shows the text upright the way it was typed.
 
-`assets.ts` centralises the same-origin asset paths (`/engines/**`, `/fonts/noto/**`). The
+`assets.ts` centralises the same-origin asset paths (`/engines/**`, `/fonts/noto/**`; the catalog of open fonts names its own paths under `/fonts/`). The
 Tesseract paths are all passed explicitly to `createWorker` — worker, core (the SIMD+LSTM
 `.wasm.js` **file**, not a directory, so the build variant is not chosen at runtime) and
 language data — precisely because tesseract.js otherwise falls back to its CDN defaults.
@@ -2670,11 +2684,14 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
 
-Inventory: 269 pinned files across eight groups — `mupdf` (3), `pdfjs` (211: worker,
+Inventory: 308 pinned files across seventeen groups — `mupdf` (3), `pdfjs` (211: worker,
 cmaps, standard fonts, wasm), `tesseract` (33: module, worker, core `.wasm.js` + `.wasm`,
 Turkish and English in `fast` and `best`, 25 more languages in `best`), `ghostscript` (2:
-`gs.js` loader and `gs.wasm`, from `@bentopdf/gs-wasm`), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
-Dancing Script and Great Vibes, latin and latin-ext, for typed signatures).
+`gs.js` loader and `gs.wasm`, from `@bentopdf/gs-wasm`), `space-grotesk` (6), `dm-sans` (8), `noto` (5: Noto Sans regular, italic, bold, bold italic, semi-bold),
+`handwriting` (4: Dancing Script and Great Vibes, latin and latin-ext, for typed signatures) and the open
+families of the OCR font catalog (`ops/ocr-font-catalog.ts`; SIL OFL-1.1 static TTFs, Turkish letters checked): `roboto`,
+`open-sans`, `montserrat`, `inter`, `source-sans-3`, `poppins`, `merriweather`, `noto-serif` and `roboto-mono` (4 each: regular, italic, bold, bold italic). `loadOpenFace` reads one
+through a same-origin fetch and answers `null` when the file is missing or the network is down.
 
 `tools/verify-assets.mjs` is the verification half of the pair: it re-hashes every pinned
 file and fails on any difference, never writing. `tools/hooks/guard.mjs` (pre-commit and
