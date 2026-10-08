@@ -67,7 +67,7 @@ const ALIGN = 0.8;
 
 /** Lines on baselines at most this × the size apart are cells of one row. */
 const ROW_BAND = 0.5;
-/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre); rows need a column of figures too (`amountLike`: the right-most cell of both rows for two cells, any cell for more)… */
+/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre); rows need a column of figures too (`amountLike`: the left-most or the right-most cell of both rows for two cells, a figure under a figure for more)… */
 const TABLE_CELLS = 3;
 /** …and rows of three cells or more further apart than this × the size are not one table (rows are padded: twice the size is usual; two cells reach `MAX_LEADING` only: cards, paragraph breaks of two columns). */
 const TABLE_MAX_LEADING = 4;
@@ -1092,6 +1092,8 @@ function groupLines(words: readonly OcrWord[], regionOf: (word: OcrWord) => numb
 
 const rightmost = (row: readonly Line[]): Line =>
   row.reduce((best, line) => (line.x1 > best.x1 ? line : best));
+const leftmost = (row: readonly Line[]): Line =>
+  row.reduce((best, line) => (line.x0 < best.x0 ? line : best));
 
 /** A cell of figures: more digits than letters (an amount, a quantity, a percentage, a date). */
 function amountLike(cell: Line): boolean {
@@ -1105,24 +1107,27 @@ function amountLike(cell: Line): boolean {
  * brings closer than the row's own baseline.
  */
 function gridPair(above: readonly Line[], below: readonly Line[], leading: number): boolean {
-  const amounts = (row: readonly Line[]) => amountLike(rightmost(row));
   const size = Math.max(...above.map((line) => line.size), ...below.map((line) => line.size));
   const cells = Math.min(above.length, below.length);
   const need = cells >= TABLE_CELLS ? TABLE_CELLS : 2;
   const reachDown = cells >= TABLE_CELLS ? TABLE_MAX_LEADING : MAX_LEADING;
   if (leading > reachDown * size || cells < need) return false;
-  // A table has a column of figures; side-by-side blocks of short lines (skill lists, label blocks) are columns. Two cells need it in the right-most cell of both rows.
-  const figures = need === 2 ? amounts(above) && amounts(below) : [...above, ...below].some(amountLike);
-  if (!figures) return false;
   const reach = ALIGN * size;
-  const stands = (cell: Line) =>
-    above.some(
-      (over) =>
-        over.region === cell.region &&
-        (Math.abs(over.x0 - cell.x0) <= reach ||
-          Math.abs(over.x1 - cell.x1) <= reach ||
-          Math.abs((over.x0 + over.x1) / 2 - (cell.x0 + cell.x1) / 2) <= reach),
-    );
+  const sameColumn = (over: Line, cell: Line) =>
+    over.region === cell.region &&
+    (Math.abs(over.x0 - cell.x0) <= reach ||
+      Math.abs(over.x1 - cell.x1) <= reach ||
+      Math.abs((over.x0 + over.x1) / 2 - (cell.x0 + cell.x1) / 2) <= reach);
+  // A table has a column of figures; side-by-side blocks of short lines (skill lists, label blocks) are columns. Two cells need it in the left-most or in the right-most cell of both rows; more cells, a figure under a figure.
+  const edge = (pick: (row: readonly Line[]) => Line) => amountLike(pick(above)) && amountLike(pick(below));
+  const figures =
+    need === 2
+      ? edge(rightmost) || edge(leftmost)
+      : below.some(
+          (cell) => amountLike(cell) && above.some((over) => amountLike(over) && sameColumn(over, cell)),
+        );
+  if (!figures) return false;
+  const stands = (cell: Line) => above.some((over) => sameColumn(over, cell));
   const words = [...above, ...below].reduce((sum, cell) => sum + cell.words.length, 0);
   return below.filter(stands).length >= need && words <= TABLE_CELL_WORDS * (above.length + below.length);
 }

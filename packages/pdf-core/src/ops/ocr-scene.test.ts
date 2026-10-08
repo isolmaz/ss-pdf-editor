@@ -790,7 +790,7 @@ describe('ocrTextBoxes: tables read by row', () => {
     expect(order).toHaveLength(13);
   });
 
-  it('keeps a wrapped line a little indented, its size shrunk by having no descenders, in its row', () => {
+  it('keeps a wrapped line a little indented in its row, the rows above it having no figures', () => {
     const wrapped = [
       ...row(
         100,
@@ -812,7 +812,7 @@ describe('ocrTextBoxes: tables read by row', () => {
         ],
         1,
       ),
-      fake('Hgy', 70, 136, 100, 148, 9, 0),
+      fake('Wed', 65, 138, 95, 150, 9, 0),
       ...row(
         160,
         [
@@ -825,7 +825,7 @@ describe('ocrTextBoxes: tables read by row', () => {
       ),
     ];
     const order = ocrTextBoxes(wrapped, blank(400), 0.9).boxes.flatMap(textOf);
-    expect(order.indexOf('Hgy')).toBeLessThan(order.indexOf('Alan'));
+    expect(order.indexOf('Wed')).toBeLessThan(order.indexOf('Alan'));
     expect(order.indexOf('5,00')).toBeLessThan(order.indexOf('Alan'));
   });
 
@@ -840,6 +840,64 @@ describe('ocrTextBoxes: tables read by row', () => {
     expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
       'Java',
       'Rust',
+      'Perl',
+      'Docker',
+      'Nginx',
+      'Redis',
+      'Linux',
+      'Mac',
+      'Win',
+    ]);
+  });
+
+  it('reads rows with figures in the left-most cell (years, list numbers) as a table', () => {
+    const timeline = [
+      ...row(
+        10,
+        [
+          ['2019', 10, 50],
+          ['Built', 150, 200],
+        ],
+        0,
+      ),
+      ...row(
+        32,
+        [
+          ['2021', 10, 50],
+          ['Shipped', 150, 210],
+        ],
+        1,
+      ),
+      ...row(
+        54,
+        [
+          ['2023', 10, 50],
+          ['Grew', 150, 190],
+        ],
+        2,
+      ),
+    ];
+    expect(ocrTextBoxes(timeline, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      '2019',
+      'Built',
+      '2021',
+      'Shipped',
+      '2023',
+      'Grew',
+    ]);
+  });
+
+  it('needs the figure of a wide grid under another figure, not just one somewhere in the lists', () => {
+    const list = (names: string[], x: number, first: number) =>
+      names.map((text, at) => fake(text, x, 10 + at * 14, x + 50, 22 + at * 14, first + at));
+    const words = [
+      ...list(['Java', 'PMP 2019', 'Perl'], 10, 0),
+      ...list(['Docker', 'Nginx', 'Redis'], 100, 10),
+      ...list(['Linux', 'Mac', 'Win'], 190, 20),
+    ];
+    expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      'Java',
+      'PMP 2019',
       'Perl',
       'Docker',
       'Nginx',

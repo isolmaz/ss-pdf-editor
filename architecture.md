@@ -696,9 +696,9 @@ had to stay green. The moves, and the defects they fixed on the way:
          0.5 × the size), and consecutive rows form a table when at least 3 cells of each (2
          for label and amount rows) stand under cells of the row above by left edge, right edge
          or centre, the cells average at most 4 words, the rows are at most 4 × the size apart
-         (2 × for two cells), and there is a column of figures (more digits than letters: any
-         cell for 3 or more, the right-most cell of both rows for 2), so side-by-side lists of
-         short lines stay columns. A line alone on its baseline keeps the table open only as the
+         (2 × for two cells), and there is a column of figures (more digits than letters: a
+         figure under a figure for 3 or more cells, the left-most or the right-most cell of
+         both rows for 2), so side-by-side lists of short lines stay columns. A line alone on its baseline keeps the table open only as the
          second line of a wrapped cell (it continues a cell above by the paragraph rule); any
          other line ends it. Every cell line is a paragraph of its own, and a table is one item
          of the cut below, read row by row inside (`inRows` of its paragraphs), so an invoice's
