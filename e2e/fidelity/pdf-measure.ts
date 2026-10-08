@@ -5,7 +5,7 @@
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { type Gray, joinHyphenation } from './compare';
+import { downsample2, type Gray, joinHyphenation } from './compare';
 
 interface MupdfPixmap {
   getWidth(): number;
@@ -32,8 +32,8 @@ interface Mupdf {
   ColorSpace: { DeviceGray: unknown };
 }
 
-/** Pixels per PDF point at 100 dpi. */
-const SCALE = 100 / 72;
+/** Pixels per PDF point at 200 dpi; `downsample2` brings the render to 100 dpi. */
+const SCALE = 200 / 72;
 
 let mupdf: Promise<Mupdf> | undefined;
 
@@ -54,7 +54,12 @@ export interface MeasuredPage {
   text: string;
 }
 
-/** Render every page at 100 dpi (grayscale, no alpha) and extract its text. */
+/**
+ * Render every page at 200 dpi (grayscale, no alpha), average 2×2 boxes down to 100 dpi and
+ * extract its text. Rendering both PDFs at the finer resolution first means a page that is
+ * one embedded picture is resampled by the same filter as a vector page, not by the renderer's
+ * own image downscaling.
+ */
 export async function measurePdf(bytes: Uint8Array): Promise<MeasuredPage[]> {
   const { Document, Matrix, ColorSpace } = await load();
   const doc = Document.openDocument(bytes, 'application/pdf');
@@ -79,7 +84,7 @@ export async function measurePdf(bytes: Uint8Array): Promise<MeasuredPage[]> {
           try {
             pages.push({
               size: [x1 - x0, y1 - y0],
-              gray: { width, height, data },
+              gray: downsample2({ width, height, data }),
               text: joinHyphenation(text.asText()),
             });
           } finally {

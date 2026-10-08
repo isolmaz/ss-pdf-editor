@@ -763,7 +763,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`, the OpenSSL signing round trip.
 - **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test: every
   sample is exported through the UI in each Word layout (`flow`, `page-images`, `layout`), converted
-  back with LibreOffice and compared (SSIM at 100 dpi per page, word accuracy in reading order per
+  back with LibreOffice and compared (SSIM at 100 dpi (rendered at 200 dpi and averaged) per page, word accuracy in reading order per
   document) against the thresholds in `e2e/fidelity/thresholds.json`; a `null` threshold is
   measured, not gated. Locally: `pnpm fidelity` with `LIBREOFFICE` set to the path of `soffice`. The
   report goes to the job summary and the `fidelity` artifact.

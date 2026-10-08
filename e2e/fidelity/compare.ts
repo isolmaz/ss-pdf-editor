@@ -103,6 +103,58 @@ export function ssim(a: Gray, b: Gray): number {
   return total / muX.length;
 }
 
+/**
+ * Average every 2×2 block of `image` into one pixel (rounded to the nearest integer). The
+ * harness renders at 200 dpi and compares at 100 dpi through this, so both sides are resampled by
+ * the same box filter instead of one being rasterised directly and the other downscaled by the
+ * renderer with a half-pixel phase shift. An odd last row or column has no partner and is
+ * dropped, the same way on both sides.
+ */
+export function downsample2(image: Gray): Gray {
+  const width = image.width >> 1;
+  const height = image.height >> 1;
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const top = 2 * y * image.width;
+    const bottom = top + image.width;
+    for (let x = 0; x < width; x++) {
+      const i = 2 * x;
+      const sum =
+        (image.data[top + i] as number) +
+        (image.data[top + i + 1] as number) +
+        (image.data[bottom + i] as number) +
+        (image.data[bottom + i + 1] as number);
+      data[y * width + x] = (sum + 2) >> 2;
+    }
+  }
+  return { width, height, data };
+}
+
+/** Word refuses a page side above 22 inches. */
+const WORD_MAX_SIDE_PT = 1584;
+/** How far the converted page size may be from the scaled original and still be that scaling. */
+const SCALE_TOLERANCE = 0.01;
+
+/**
+ * The exports shrink a page whose side exceeds Word's 22-inch limit by
+ * `s = min(1, 1584/w, 1584/h)`. When `converted` (points) equals `original × s` within 1 % on
+ * both sides, that is the intended scaling and `s` is returned (the converted render is then
+ * resized to the original's size and compared); otherwise, and for pages that need no scaling,
+ * `null`.
+ */
+export function intendedPageScale(
+  original: readonly [number, number],
+  converted: readonly [number, number],
+): number | null {
+  const [w, h] = original;
+  if (!(w > 0 && h > 0)) return null;
+  const s = Math.min(1, WORD_MAX_SIDE_PT / w, WORD_MAX_SIDE_PT / h);
+  if (s >= 1) return null;
+  const near = (actual: number, expected: number) =>
+    Math.abs(actual - expected) <= expected * SCALE_TOLERANCE;
+  return near(converted[0], w * s) && near(converted[1], h * s) ? s : null;
+}
+
 /** Bilinear resampling (pixel-centre aligned, edges clamped) of `image` to `width × height`. */
 export function resizeBilinear(image: Gray, width: number, height: number): Gray {
   if (image.width === width && image.height === height) return image;
@@ -127,6 +179,30 @@ export function resizeBilinear(image: Gray, width: number, height: number): Gray
         (image.data[y1 * image.width + x1] as number) * wx;
       data[y * width + x] = Math.round(top * (1 - wy) + bottom * wy);
     }
+  }
+  return { width, height, data };
+}
+
+/** A converted page this many pixels (at 100 dpi) off the original's size differs by rounding only. */
+const ROUNDING_PX = 2;
+
+/**
+ * `image` laid over a `width × height` canvas for comparison with a reference of that size. When
+ * each side is at most {@link ROUNDING_PX} pixels off, the difference is page-size rounding (Word
+ * and LibreOffice keep twips and hundredths of a millimetre): the content keeps its scale and its
+ * top-left origin, the excess is cropped and a shortfall is padded white. Resampling those pages
+ * would stretch the whole page by a fraction of a pixel and shift its far edge. A larger difference
+ * is resampled bilinearly, the page being compared as a whole.
+ */
+export function fitToReference(image: Gray, width: number, height: number): Gray {
+  if (image.width === width && image.height === height) return image;
+  if (Math.abs(image.width - width) > ROUNDING_PX || Math.abs(image.height - height) > ROUNDING_PX) {
+    return resizeBilinear(image, width, height);
+  }
+  const data = new Uint8Array(width * height).fill(255);
+  const w = Math.min(width, image.width);
+  for (let y = 0; y < Math.min(height, image.height); y++) {
+    data.set(image.data.subarray(y * image.width, y * image.width + w), y * width);
   }
   return { width, height, data };
 }

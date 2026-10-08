@@ -20,7 +20,12 @@ export interface PageResult {
   ssim: number;
   /** The converted PDF has no such page. */
   missing?: boolean;
-  /** Page sizes (points) differ by more than 2 %: not resized, not comparable. */
+  /**
+   * The page exceeded Word's 22-inch limit and the export scaled it by this factor (< 1); the
+   * converted render was resized to the original's pixel size before the comparison.
+   */
+  scaled?: number;
+  /** Page sizes (points) differ by more than 2 % (and are not the intended scaling): not resized, not comparable. */
   sizeFailure?: { original: [number, number]; converted: [number, number] };
   /** Per-page word comparison; present only when both PDFs have the same page count. */
   words?: {
@@ -105,17 +110,25 @@ function thresholdText(threshold: Threshold): string {
   return `${ssimPart}; ${wordsPart}`;
 }
 
+/** "p2 94.1 %, p5 50.0 %" for the pages the export scaled to Word's 22-inch limit, else "–". */
+function scaledText(result: FidelityResult): string {
+  const scaled = result.pages.flatMap((p) =>
+    p.scaled === undefined ? [] : [`p${p.page} ${(p.scaled * 100).toFixed(1)} %`],
+  );
+  return scaled.length > 0 ? scaled.join(', ') : '–';
+}
+
 export function renderMarkdown(results: readonly FidelityResult[]): string {
   const count = (verdict: Verdict) => results.filter((r) => r.verdict === verdict).length;
   const lines = [
     '# PDF → Word export fidelity',
     '',
-    '_SSIM: structural similarity of original and round-tripped page, rendered at 100 dpi in grayscale (1 = identical); min/mean are over pages. Word accuracy: 1 − word edit distance ÷ number of original words, words in reading order, line-end hyphenation joined on both sides._',
+    '_SSIM: structural similarity of original and round-tripped page, rendered at 200 dpi in grayscale and averaged (2×2 boxes) to 100 dpi before the comparison (1 = identical); min/mean are over pages. Pages the export scaled to the 22-inch page limit of Word are resized to the size of the original and compared normally; the Scaled column names them. Word accuracy: 1 − word edit distance ÷ number of original words, words in reading order, line-end hyphenation joined on both sides._',
     '',
     `${results.length} sample × mode runs: ${count('pass')} pass, ${count('fail')} fail, ${count('error')} error, ${count('measured')} measured only (no gate).`,
     '',
-    '| Sample | Origin | Mode | Pages (in → out) | Min SSIM | Mean SSIM | Word accuracy | Missing / extra | First 10 missing words | Threshold | Verdict |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Sample | Origin | Mode | Pages (in → out) | Scaled | Min SSIM | Mean SSIM | Word accuracy | Missing / extra | First 10 missing words | Threshold | Verdict |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const r of results) {
     lines.push(
@@ -124,6 +137,7 @@ export function renderMarkdown(results: readonly FidelityResult[]): string {
         cell(r.origin),
         cell(r.mode),
         `${r.originalPages} → ${r.convertedPages ?? '?'}`,
+        scaledText(r),
         ssimText(r.minSsim),
         ssimText(r.meanSsim),
         pct(r.wordAccuracy),

@@ -110,7 +110,8 @@ names it with `test.use({ allowedErrors: [/…/] })`.
 `pnpm fidelity` measures how faithful "Export to Word" is (`e2e/fidelity/`). Each sample × export
 mode opens the PDF in the app, exports the DOCX through the dialog, converts it back to PDF with
 LibreOffice (`LIBREOFFICE=/path/to/soffice`, else `soffice` on the PATH), renders both PDFs with
-MuPDF at 100 dpi and compares them: SSIM per page, word accuracy per document. It needs the
+MuPDF and compares them: SSIM at 100 dpi (rendered at 200 dpi and
+averaged) per page, word accuracy per document. It needs the
 assembled `dist/` like `pnpm e2e`, and it is its own Playwright project, present only when
 `FIDELITY` is set, so `pnpm e2e` and `pnpm coverage` never run it. Filters:
 `FIDELITY_SAMPLES`, `FIDELITY_MODES` and `FIDELITY_ORIGINS` (see the top of

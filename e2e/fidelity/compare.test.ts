@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { compareWords, type Gray, joinHyphenation, normalizeWords, resizeBilinear, ssim } from './compare';
+import {
+  compareWords,
+  downsample2,
+  fitToReference,
+  type Gray,
+  intendedPageScale,
+  joinHyphenation,
+  normalizeWords,
+  resizeBilinear,
+  ssim,
+} from './compare';
 
 /** A deterministic generator: the tests must not depend on `Math.random`. */
 function prng(seed: number): () => number {
@@ -251,5 +261,75 @@ describe('compareWords', () => {
       expect(result.distance).toBe(reference(x, y));
       expect(result.distance).toBe(result.missing.length + result.extra.length + result.substituted.length);
     }
+  });
+});
+
+describe('downsample2', () => {
+  it('averages exact 2×2 blocks and rounds to the nearest integer', () => {
+    // 4×2: blocks [10 20 / 30 40] → 25 and [0 0 / 0 1] → 0.25 → 0, [255 255 / 255 254] → 254.75 → 255
+    const image: Gray = {
+      width: 4,
+      height: 2,
+      data: Uint8Array.from([10, 20, 0, 0, 30, 40, 0, 1]),
+    };
+    const half = downsample2(image);
+    expect(half.width).toBe(2);
+    expect(half.height).toBe(1);
+    expect(Array.from(half.data)).toEqual([25, 0]);
+    const high: Gray = { width: 2, height: 2, data: Uint8Array.from([255, 255, 255, 254]) };
+    expect(Array.from(downsample2(high).data)).toEqual([255]);
+  });
+
+  it('drops an odd last row and column the same way for any image of that size', () => {
+    const image: Gray = { width: 5, height: 3, data: Uint8Array.from({ length: 15 }, (_, i) => i * 10) };
+    const half = downsample2(image);
+    expect([half.width, half.height]).toEqual([2, 1]);
+    // blocks (0,10,50,60) → 30 and (20,30,70,80) → 50
+    expect(Array.from(half.data)).toEqual([30, 50]);
+  });
+
+  it('makes a one-pixel shift at the finer resolution cost less than the same shift at 100 dpi', () => {
+    const fine = page(400, 300);
+    const coarse = downsample2(fine);
+    const afterBox = ssim(coarse, downsample2(shifted(fine, 1)));
+    const atCoarse = ssim(coarse, shifted(coarse, 1));
+    expect(afterBox).toBeGreaterThan(atCoarse);
+    expect(afterBox).toBeLessThan(1);
+  });
+});
+
+describe('intendedPageScale', () => {
+  const s = 1584 / 1684;
+
+  it('returns the factor when the converted page is the original scaled by it (±1 %)', () => {
+    expect(intendedPageScale([1190, 1684], [1190 * s, 1584])).toBeCloseTo(s, 12);
+    expect(intendedPageScale([1190, 1684], [1190 * s * 1.009, 1584 * 0.991])).toBeCloseTo(s, 12);
+    expect(intendedPageScale([3168, 400], [1584, 200])).toBe(0.5);
+  });
+
+  it('is null outside the tolerance, for unscaled originals and for other sizes', () => {
+    expect(intendedPageScale([1190, 1684], [1190 * s * 1.02, 1584])).toBeNull();
+    expect(intendedPageScale([1190, 1684], [1190, 1684])).toBeNull();
+    expect(intendedPageScale([1190, 1684], [1190 * s, 1584 * 0.98])).toBeNull();
+    expect(intendedPageScale([595, 842], [595 * 0.9, 842 * 0.9])).toBeNull();
+    expect(intendedPageScale([1584, 1584], [1584, 1584])).toBeNull();
+    expect(intendedPageScale([0, 0], [10, 10])).toBeNull();
+  });
+});
+
+describe('fitToReference', () => {
+  it('crops and pads a rounding-sized difference at the top-left origin instead of stretching', () => {
+    const image: Gray = { width: 4, height: 2, data: Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]) };
+    const cropped = fitToReference(image, 3, 2);
+    expect([cropped.width, cropped.height]).toEqual([3, 2]);
+    expect(Array.from(cropped.data)).toEqual([1, 2, 3, 5, 6, 7]);
+    const padded = fitToReference(image, 5, 3);
+    expect(Array.from(padded.data)).toEqual([1, 2, 3, 4, 255, 5, 6, 7, 8, 255, 255, 255, 255, 255, 255]);
+    expect(fitToReference(image, 4, 2)).toBe(image);
+  });
+
+  it('resamples a larger difference', () => {
+    const image = page(100, 80);
+    expect(fitToReference(image, 110, 88)).toEqual(resizeBilinear(image, 110, 88));
   });
 });

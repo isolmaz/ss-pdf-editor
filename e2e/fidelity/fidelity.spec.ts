@@ -4,8 +4,9 @@
  *
  * Every sample (generated, public, local) × every export mode in `MODES` is one test: the
  * PDF is opened in the real app, exported through the dialog and saved, LibreOffice turns
- * the DOCX back into a PDF, and MuPDF renders both PDFs at 100 dpi. Per page the structural
- * similarity (SSIM) of the two renderings is measured, and the words of the original (or the
+ * the DOCX back into a PDF, and MuPDF renders both PDFs at 200 dpi and averages 2×2 boxes down to
+ * 100 dpi. Per page the structural similarity (SSIM at 100 dpi, rendered at 200 dpi and
+ * averaged) of the two renderings is measured, and the words of the original (or the
  * sample's ground truth, for scans) are compared with the words of the round trip.
  *
  * Run it with `pnpm fidelity` (needs `dist/` built and assembled, and LibreOffice). The
@@ -34,7 +35,15 @@ import { join } from 'node:path';
 import type { Locator } from 'playwright/test';
 import { expect, test } from '../test';
 import { openPdf, runCommand } from '../ui-helpers';
-import { compareWords, joinHyphenation, normalizeWords, resizeBilinear, ssim } from './compare';
+import {
+  compareWords,
+  fitToReference,
+  intendedPageScale,
+  joinHyphenation,
+  normalizeWords,
+  resizeBilinear,
+  ssim,
+} from './compare';
 import { localSamples, publicSamples } from './corpus';
 import { toPdf } from './libreoffice';
 import { type MeasuredPage, measurePdf } from './pdf-measure';
@@ -215,9 +224,16 @@ function measure(
       notes.push(`page ${index + 1}: absent from the converted PDF (SSIM counted as 0)`);
       return result;
     }
+    const scaled = intendedPageScale(source.size, target.size);
+    if (scaled !== null) {
+      result.scaled = scaled;
+      notes.push(
+        `page ${index + 1}: scaled to ${(scaled * 100).toFixed(1)} % by Word's 22-inch page limit, compared after resizing the converted render to the original's size`,
+      );
+    }
     const dw = Math.abs(target.gray.width - source.gray.width) / source.gray.width;
     const dh = Math.abs(target.gray.height - source.gray.height) / source.gray.height;
-    if (dw > SIZE_TOLERANCE || dh > SIZE_TOLERANCE) {
+    if (scaled === null && (dw > SIZE_TOLERANCE || dh > SIZE_TOLERANCE)) {
       result.sizeFailure = {
         original: [Math.round(source.size[0]), Math.round(source.size[1])],
         converted: [Math.round(target.size[0]), Math.round(target.size[1])],
@@ -227,7 +243,11 @@ function measure(
       );
       return result;
     }
-    result.ssim = ssim(source.gray, resizeBilinear(target.gray, source.gray.width, source.gray.height));
+    const fitted =
+      scaled === null
+        ? fitToReference(target.gray, source.gray.width, source.gray.height)
+        : resizeBilinear(target.gray, source.gray.width, source.gray.height);
+    result.ssim = ssim(source.gray, fitted);
     return result;
   });
 
