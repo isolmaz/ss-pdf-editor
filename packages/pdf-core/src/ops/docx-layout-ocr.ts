@@ -17,7 +17,7 @@ import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics } from './docx-fonts';
-import { loadOpenFont, type OpenFont, ocrAdvance } from './docx-ocr-font';
+import { chooseOpenFont, type OpenFont, ocrAdvance } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import { type ReadWord, refineWords } from './ocr-refine';
@@ -72,7 +72,7 @@ export interface ScanPage {
   readonly flagged: readonly Omit<FlaggedWord, 'page'>[];
   /** Pictures added (regions), for the totals. */
   readonly regions: number;
-  /** The open font the text may be set in (`OPEN_FONT`); `null` when it could not be loaded. */
+  /** The open family the text is set in (`chooseOpenFont`); `null` when it is set in the stand-ins. */
   readonly open: OpenFont | null;
 }
 
@@ -274,8 +274,6 @@ export async function readScanPage(
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
   // dropped, and the page is erased again only if one lies outside.
   provideStandardMetrics(mupdf);
-  const open = await loadOpenFont(mupdf);
-  const advance = ocrAdvance(open);
   const misread = misreadWords(words);
   const text = words.filter((word) => !misread.has(word));
   const first = ocrBackground(image, [...text, ...duplicates]);
@@ -286,15 +284,16 @@ export async function readScanPage(
   );
   const { pageColor, regions } =
     kept.length === text.length ? first : ocrBackground(image, [...kept, ...duplicates]);
-  const { boxes, flagged } = ocrTextBoxes(
-    kept,
-    image,
-    ocr?.lowConfidence ?? 0,
-    regions.filter((region) => region.solid).map((region) => region.box),
-    advance,
-    undefined,
-    rules,
-  );
+  const solid = regions.filter((region) => region.solid).map((region) => region.box);
+  const lowConfidence = ocr?.lowConfidence ?? 0;
+  // Set in the stand-in that fits the word boxes best; the words as set tell whether the scan is
+  // in one of the open families, and then the page is set again in that family's own advances.
+  let set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(null), undefined, rules);
+  const open = await chooseOpenFont(mupdf, image, set.measured);
+  if (open !== null) {
+    set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
+  }
+  const { boxes, flagged } = set;
   const background: SceneShape = {
     kind: 'shape',
     box: [0, 0, scene.width, scene.height],

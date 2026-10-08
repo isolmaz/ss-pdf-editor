@@ -862,9 +862,7 @@ export type Advance = (family: string, bold: boolean, italic: boolean, unicode: 
 
 /** The stand-in families a scan's text is set in, sans first: it wins unless another is clearly closer. */
 const FAMILIES = ['Arial', 'Times New Roman', 'Courier New'] as const;
-/** The open fonts the app ships, tried after the stand-ins; one the `advance` has no metrics for is never picked. */
-const OPEN_FAMILIES = ['Noto Sans'] as const;
-/** A family replaces the best so far (Arial first) when the spread of its word-width ratios is under this × that one's. */
+/** A family replaces Arial when the spread of its word-width ratios is under this × Arial's. */
 const SWITCH_SPREAD = 0.8;
 /** Words (3 or more letters or digits) needed before the page's family is judged. */
 const MIN_WORDS = 8;
@@ -883,8 +881,7 @@ const advanceOf = (advance: Advance, family: string, bold: boolean, italic: bool
 function pickFamily(lines: readonly Line[], advance: Advance): string {
   let best: string = FAMILIES[0];
   let bestSpread = Infinity;
-  for (const family of [...FAMILIES, ...OPEN_FAMILIES]) {
-    if (advance(family, false, false, 97) === undefined) continue;
+  for (const family of FAMILIES) {
     const logs: number[] = [];
     for (const line of lines) {
       for (const word of line.words) {
@@ -898,7 +895,7 @@ function pickFamily(lines: readonly Line[], advance: Advance): string {
     if (logs.length < MIN_WORDS) return FAMILIES[0];
     const centre = median(logs);
     const spread = median(logs.map((value) => Math.abs(value - centre)));
-    if (family === best || spread < SWITCH_SPREAD * bestSpread) {
+    if (family === FAMILIES[0] || spread < SWITCH_SPREAD * bestSpread) {
       best = family;
       bestSpread = spread;
     }
@@ -1213,6 +1210,16 @@ function inRows<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
   return rows.flatMap((row) => row.sort((a, b) => boxOf(a)[0] - boxOf(b)[0]));
 }
 
+/** A word as the page sets it: its box (page points, y down), the size, weight and slant of its run, and how sure OCR was (0–100). */
+export interface MeasuredWord {
+  readonly text: string;
+  readonly box: Box;
+  readonly size: number;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly confidence: number;
+}
+
 /**
  * The text boxes of a recognised page: one per paragraph, in reading order. `regions` are the
  * boxes of the solid regions `ocrBackground` found (cards, bands, photos; not loose marks): lines and paragraphs never cross their edge.
@@ -1220,6 +1227,7 @@ function inRows<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
  * each is a run of its own with a `note`. With `advance` the page is set in the stand-in family
  * whose letter widths fit the word boxes best (`font` names one instead) and every run carries
  * where the scan has its letters, so the writer places each word where the scan has it.
+ * `measured` lists the words as they were set, for whoever judges the typeface.
  */
 export function ocrTextBoxes(
   words: readonly OcrWord[],
@@ -1229,8 +1237,13 @@ export function ocrTextBoxes(
   advance?: Advance,
   font?: string,
   rules: readonly Rule[] = [],
-): { boxes: TextBox[]; flagged: { text: string; confidence: number }[] } {
+): {
+  boxes: TextBox[];
+  flagged: { text: string; confidence: number }[];
+  measured: MeasuredWord[];
+} {
   const flagged: { text: string; confidence: number }[] = [];
+  const measured: MeasuredWord[] = [];
   const inks = new Map<OcrWord, WordInk>();
   const lines = groupLines(words, regionIndex(regions));
   const typical = lines.length === 0 ? 0 : median(lines.map((line) => line.size));
@@ -1287,6 +1300,14 @@ export function ocrTextBoxes(
           (own[at] === undefined && (lineBold || (own[at - 1] === true && own[at + 1] === true)));
         const low = word.confidence / 100 < lowConfidence && !SYMBOLIC.test(word.text);
         if (low) flagged.push({ text: word.text, confidence: word.confidence / 100 });
+        measured.push({
+          text: word.text,
+          box: [word.x0, word.y0, word.x1, word.y1],
+          size,
+          bold,
+          italic,
+          confidence: word.confidence,
+        });
         return {
           text: at === 0 && line.words.length > 1 && BULLET_LIKE.test(word.text) ? '\u2022' : word.text,
           bold,
@@ -1325,7 +1346,7 @@ export function ocrTextBoxes(
     };
     boxes.push({ box: [x0, top, x0 + width, bottom], rotation: 0, paragraphs: [paragraph] });
   }
-  return { boxes, flagged };
+  return { boxes, flagged, measured };
 }
 
 /* ------------------------------------------------------------------ *

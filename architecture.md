@@ -731,11 +731,16 @@ had to stay green. The moves, and the defects they fixed on the way:
          Times New Roman and
          Courier New whose per-word width ratios agree best (judged from 8 words of three
          letters up; Arial wins unless another's spread is under 0.8 × its), measured with
-         the metric-compatible standard fonts MuPDF carries (`standardAdvance`). Noto Sans, the
-         one open text font the app ships (`public/fonts/noto`, SIL OFL, loaded through
-         `engines/noto.ts`), is a fourth candidate under the same rule (`docx-ocr-font.ts`); a
-         page set in it names it in its runs and the package embeds it (regular, and the shipped
-         semi-bold as the bold) like a PDF's own fonts (`EmbeddedFonts.plus`). Each word
+         the metric-compatible standard fonts MuPDF carries (`standardAdvance`). The page's words
+         OCR is at least 90 % sure of are then drawn again, in the stand-ins and in the regular
+         of every open family of `ocr-font-catalog.ts` (`matchFamily`, `ocr-font-match.ts`: ink
+         overlap and proportions, the median over up to 40 words); an open family sets the page
+         only when it is ahead of both the runner-up and the best stand-in by 0.05
+         (`CLEAR_MARGIN`), otherwise the stand-in chosen by widths stays (and offline, or with
+         a file missing, it stays too). The page is then set again with that family's own
+         advances, its runs name it, and the package embeds the faces the runs use — regular,
+         bold, italic, bold italic, each cut to its characters, `fsType` kept — like a PDF's own
+         fonts (`EmbeddedFonts.plus`); the report names the family (`ocrFont`). Each word
          carries where the scan has its letters (`RunFit`), so the writer fits it like a PDF's
          text; a box more than 25 % narrower or 35 % wider than the word's natural width is
          not trusted and its letters are set at the natural pitch from its left edge. A word

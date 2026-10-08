@@ -82,6 +82,8 @@ export interface LayoutDocx {
     readonly pages: readonly number[];
     readonly flagged: readonly FlaggedWord[];
     readonly unavailable: readonly number[];
+    /** The open font families the scans' text is set in and the package carries (`docx-ocr-font.ts`). */
+    readonly families: readonly string[];
   };
 }
 
@@ -154,9 +156,9 @@ export async function writeLayoutDocx(
   const mupdf = await loadMupdf();
   const registry = new DocxRegistry(WORD_Z_BASE);
   const embedded = await embedFonts(mupdf, doc, pages, context);
-  /** The scan pages' text boxes, and the open font they may be set in. */
+  /** The scan pages' text boxes, and the open families they are set in. */
   const scanBoxes: TextBox[] = [];
-  let openFont: OpenFont | null = null;
+  const openFonts = new Map<string, OpenFont>();
   const paragraphs: string[] = [];
   const allBoxes: TextBox[] = [];
   const scaled: { page: number; scale: number }[] = [];
@@ -197,7 +199,7 @@ export async function writeLayoutDocx(
     if (scan !== null) {
       ocrPages.push(index + 1);
       scanBoxes.push(...scan.boxes);
-      openFont = scan.open;
+      if (scan.open !== null && !openFonts.has(scan.open.name)) openFonts.set(scan.open.name, scan.open);
       for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
     }
     if (boxes.length === 0) textless.push(index + 1);
@@ -225,7 +227,8 @@ export async function writeLayoutDocx(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throwIfAborted(context.signal);
-  const fonts = openFont === null ? embedded : embedded.plus(openFontFiles(openFont, scanBoxes));
+  const openFiles = openFontFiles([...openFonts.values()], scanBoxes);
+  const fonts = embedded.plus(openFiles);
   context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
   // The last page's section is the body's own `w:sectPr`.
   const body = paragraphs.join('') + lastSection;
@@ -275,6 +278,11 @@ export async function writeLayoutDocx(
     textless,
     unreadable,
     fonts: fonts.count,
-    ocr: { pages: ocrPages, flagged, unavailable },
+    ocr: {
+      pages: ocrPages,
+      flagged,
+      unavailable,
+      families: [...new Set(openFiles.map((file) => file.family))],
+    },
   };
 }
