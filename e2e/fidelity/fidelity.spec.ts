@@ -180,7 +180,9 @@ function measure(
   if (!samePageCount) {
     const note = `page count ${original.length} → ${converted.length}`;
     notes.push(note);
-    violations.push(note);
+    // A page count is part of the look: it fails where the look is gated. Flowing text
+    // reflows by design, and its gate is on the words alone.
+    if (threshold.ssim !== null) violations.push(note);
   }
 
   const pages: PageResult[] = original.map((source, index) => {

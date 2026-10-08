@@ -407,17 +407,56 @@ had to stay green. The moves, and the defects they fixed on the way:
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
     rule between two cells merges them). Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
-    every row ("stream"). Prose set in columns is told apart by its long pieces.
+    every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
+    blocks: two columns that each hold a text block of three or more lines with a median line
+    of 20 characters or more are two columns of text whose lines share baselines, not a table
+    (read row by row across them, a reader would take the columns in turn no more), provided
+    the block is the column's own (it holds no piece of the other column) or its lines wrap
+    (each but the last holds words and fills the column's width): a table of 20-to-30-character
+    cells is often one block of both columns, with cells of every length, and stays a table. A line is cut
+    into segments where a gap between visible characters is wider than about two spaces
+    (`lineSegments`), and a segment is placed — outside a table, in a table, in a cell — as a
+    whole, by its centre, except that a segment is cut where a column edge of its table lies in
+    a gap of spaces between two visible characters (two cells that one line reads across the rule
+    with a single space): no word is ever cut at the edge of a table or between two cells.
   - **Drawings.** Curves, polygons that are not rectangles, shadings and pictures seed
     regions that grow over every mark they touch. A region holding a line of prose is left
     to the text, and so is one crossing a table or covering most of the page. The region is
-    rendered at 144 dpi as one picture, labels included, and its text leaves the flow. Above
+    rendered at 144 dpi as one picture without its text (`renderRegion` runs the page through a
+    device that hands everything but text to a draw device): the text on a drawing stays text
+    in the flow. A drawing that has text on it, like a raster picture that text stands on, is
+    anchored behind the text (`wp:anchor`, `behindDoc`) to a paragraph one point high that
+    holds its place in the flow, and takes no room there: the anchor hangs from that paragraph
+    (`positionV relativeFrom="paragraph"`), and that paragraph stands right before the items that are
+    on the drawing (a quarter of their area under it), its space before being a paragraph of its own
+    above it, since Word and LibreOffice measure the anchor from different places of a paragraph.
+    The offset is the distance the flow puts between the holder and the first of those items less
+    the one the PDF has between the drawing's top and that item, so the labels and the text after
+    the drawing follow it wherever the flow puts it, a card in the next column after the one before
+    it included. When the items on a drawing are not one run in the flow (another drawing's text
+    comes between them) the drawing is an inline picture before the first of them instead, and
+    no text lands on white paper; a picture no item stands on (a stamp over a corner of two lines)
+    stays inline where MuPDF read it. Only that run of items is laid out without the `MAX_GAP`
+    clamp. The first item after the run starts at or under the feet of the run's pictures (those of
+    drawings side by side, with no horizontal overlap, are all kept, each seen from the newest
+    holder; a picture that lies on a bigger one, a photograph on a full-page background, drops it:
+    the text after it is on the background, not under it), also when it is another
+    column's and beside them in the PDF, since the flow would print it over the drawing; its gap
+    below the feet is clamped again. Gaps
+    inside the drawing's height are not clamped to `MAX_GAP`, and the first item below it starts
+    at or under its foot. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
   - **Word (flow).** Each page is a section with the page's size, orientation and margins. Blocks
     are cut into paragraphs where a line ends short, a gap opens, the size changes or a
     bullet or a number (one or two digits and `.` or `)`, then a space) starts. A hyphen that
     breaks a word before a lower-case letter is removed, even when it is set in another style than
     the letters before it (the join reads the line's last characters across its runs).
+    Lines that share a row and follow each other along it (MuPDF cuts the dots of a leader into
+    a line each) are joined first. A character belongs to one table (ruled before spread, the
+    smallest first), so a nested or overlapping table does not write its words twice. Tables that
+    stand next to each other with nothing between them (a row of key caps drawn as grids) get a
+    hairline paragraph between them: Word and LibreOffice fuse tables that touch into one. An inline
+    picture is shrunk to fit the page's text area less one body-size line.
     Paragraphs of several lines that start a third of the way across are a second column,
     and alignment and indents are measured in a paragraph's own column. Sizes at least
     1.3× the body size (1.15× when bold) become `Heading1`–`3` by rank. `w:lang` is the
@@ -2436,7 +2475,7 @@ deploy scripts.
 
 The release path is a pull request, then GitHub Actions, then a deploy that only a push to
 `main` triggers. `main` is protected: a pull request is required, the required checks are
-`verify`, `e2e` (4 shards), `e2e-service-worker` and `behavior`, force-pushes are blocked, and
+`verify`, `e2e` (4 shards), `e2e-service-worker`, `behavior` and `fidelity`, force-pushes are blocked, and
 merges are merge commits.
 
 - `.github/workflows/ci.yml` runs on `pull_request`, `push` to `main` and `workflow_dispatch`.

@@ -77,7 +77,7 @@ a flaky test fails the night.
 own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker` and `behavior` must pass, and force-pushes are blocked. Pull requests are
+`e2e-service-worker`, `behavior` and `fidelity` must pass, and force-pushes are blocked. Pull requests are
 merged with a merge commit, never squashed or rebased, so each commit keeps naming one fix and
 its test. A reviewer who did not write the change records PASS or FAIL on the pull request, and
 documentation that does not describe a behaviour change is a FAIL. [`REVIEW.md`](REVIEW.md), the
@@ -97,7 +97,9 @@ build's source maps and added to the unit figures statement by statement
 with an error when the total line coverage is under 98 % (the nightly run does this). On a machine
 you are working on, `E2E_WORKERS=4` caps the browsers Playwright runs at once and
 `VITEST_MAX_WORKERS=8` the unit workers; both apply to `pnpm e2e`, `pnpm unit` and
-`pnpm coverage`. Code that runs in a web worker (Ghostscript) or in the service worker is not
+`pnpm coverage`. Playwright serves `dist/` on port 4178 and, outside CI, reuses a server already
+listening there; when two checkouts run their suites at once, give each its own `E2E_PORT` so
+neither tests the other's build. Code that runs in a web worker (Ghostscript) or in the service worker is not
 recorded by a page, so it is not in the browser figures.
 
 The OCR specs generate their own inputs (a scan rendered from known printed lines, and a text PDF),
