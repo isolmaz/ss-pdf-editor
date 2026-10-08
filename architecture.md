@@ -786,10 +786,18 @@ had to stay green. The moves, and the defects they fixed on the way:
 - page boxes, resize, scale, shift, content rotation and auto-crop (`ops/page-boxes.ts`), where
   a content transform wraps the page's streams through `wrapPageContent` and auto-crop now
   measures on the document it edits instead of opening a second copy, and a page that needed no change is counted once in the unchanged-pages note (it used to be counted twice);
-- the rotation pass and the merge's metadata step after pdf.js `extractPages`
-  (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`; `compose.rotate` is now
+- the rotation pass, the repeated-page repair and the merge's metadata step after pdf.js
+  `extractPages` (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`; `compose.rotate` is now
   declared to the save verification (it may change `rotation`), where `pdf-lib.setRotation`
-  was an unknown step;
+  was an unknown step. A page repeated in a composition needs one pdf.js entry per copy level,
+  and each entry is its own document to the engine: it merges the outline once per entry and keeps a
+  GoTo link only when the target is inside the entry, so a copy lost its links and every bookmark
+  came back appended once per copy. The same MuPDF pass that turns pages therefore copies the
+  original's `/Link` annotations onto each copy (same rectangles, same targets) and deletes the
+  top-level bookmark subtrees that point only at copies; only bookmarks that point at no page (a
+  URL, an action) cannot be told from their repeats, and the report says so
+  (`op.note.compose.outlineCopies`). A composition that repeats no page and turns none is still
+  never rewritten;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
@@ -2286,7 +2294,8 @@ the user just typed.
 
 Structural page actions (rotate, delete, duplicate, move, insert, replace) go through
 `composeDocument`, i.e. pdf.js `extractPages` on the live document, so annotations, form
-values, outlines and page labels travel with the pages. `planPageAction()` computes the new
+values, outlines and page labels travel with the pages. A duplicated page keeps its links and the outline stays
+as it was: the copies are repaired after the engine call (`ops/compose.ts`, listed with the MuPDF writers). `planPageAction()` computes the new
 page list purely, so the effect of an action on the page order is reviewable without
 rendering anything. Applying a result re-checks that the tab and working version it started
 from are still current; if not, the operation throws `aborted` and the model is untouched.

@@ -30,7 +30,7 @@ export const pageopsPart = {
     'Bileşim yeni bir katalog yazar: görünüm tercihleri, dil, çıktı amaçları, katman (OCG) yapılandırması ve açılış eylemi taşınmaz.',
   'op.note.compose.rotation': '{count} sayfaya döndürme uygulandı (kaynak döndürme + istenen açı).',
   'op.note.compose.outlineCopies':
-    'Çoğaltılan sayfa nedeniyle içindekiler ağacı {copies} kez yinelendi (extractPages davranışı).',
+    'Sayfa göstermeyen yer imleri (bağlantılar, eylemler) çoğaltılan sayfalar nedeniyle {copies} kez yinelendi (extractPages davranışı).',
   'op.note.compose.verified': 'Bileşim doğrulandı: {pages} sayfa.',
 
   // mergeDocuments

@@ -10,7 +10,7 @@ export const pageopsPart = {
     'Composition writes a new catalog: viewer preferences, language, output intents, layer (OCG) config and open action are not carried over.',
   'op.note.compose.rotation': 'Rotation applied to {count} page(s) (source rotation + requested angle).',
   'op.note.compose.outlineCopies':
-    'Outline tree repeated {copies} times due to duplicated pages (extractPages behavior).',
+    'Bookmarks that point at no page (links, actions) are repeated {copies} times because of the duplicated pages (extractPages behavior).',
   'op.note.compose.verified': 'Composition verified: {pages} page(s).',
   'op.note.merge.metadata':
     'Metadata from added documents not carried over; Info and XMP taken from base document.',
