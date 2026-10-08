@@ -275,25 +275,42 @@ interface Drawn {
 /** The faces (MuPDF font names) the visible text of the page uses, with the glyphs they draw. */
 function drawnOnPage(mupdf: Mupdf, page: PDFPage): Map<string, Drawn> {
   const drawn = new Map<string, Drawn>();
+  const remember = (font: Font, gid: number, unicode: number): void => {
+    const name = font.getName();
+    let face = drawn.get(name);
+    if (face === undefined) {
+      face = {
+        unicode: new Map(),
+        advance: new Map(),
+        bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
+        italic: font.isItalic() || /italic|oblique/i.test(name),
+      };
+      drawn.set(name, face);
+    }
+    if (!face.unicode.has(unicode)) face.unicode.set(unicode, gid);
+    if (!face.advance.has(gid)) face.advance.set(gid, font.advanceGlyph(gid));
+  };
   const record = (text: Text): void => {
+    // A ligature glyph comes as its first character with the glyph, then each further character
+    // with gid -1 (measured on mupdf@1.28.1). It is no glyph for that first character alone (an
+    // "fi" would draw in every "f"), so a glyph is held until the next one shows it stands alone.
+    let held: { font: Font; gid: number; unicode: number } | undefined;
+    const settle = (): void => {
+      if (held !== undefined) remember(held.font, held.gid, held.unicode);
+      held = undefined;
+    };
     text.walk({
       showGlyph(font, _trm, gid, unicode) {
-        if (gid === 0 || unicode < 32 || unicode === 0xfffd) return;
-        const name = font.getName();
-        let face = drawn.get(name);
-        if (face === undefined) {
-          face = {
-            unicode: new Map(),
-            advance: new Map(),
-            bold: font.isBold() || /bold|black|heavy|semibold|demi/i.test(name),
-            italic: font.isItalic() || /italic|oblique/i.test(name),
-          };
-          drawn.set(name, face);
+        if (gid < 0) {
+          held = undefined;
+          return;
         }
-        if (!face.unicode.has(unicode)) face.unicode.set(unicode, gid);
-        if (!face.advance.has(gid)) face.advance.set(gid, font.advanceGlyph(gid));
+        settle();
+        if (gid === 0 || unicode < 32 || unicode === 0xfffd) return;
+        held = { font, gid, unicode };
       },
     });
+    settle();
   };
   const device = new mupdf.Device({
     fillText: (text) => record(text),

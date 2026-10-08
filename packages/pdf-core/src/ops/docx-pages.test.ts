@@ -153,6 +153,16 @@ describe('exportOffice, Word as one picture per page', () => {
     expect(notes[1]?.params).toEqual({ dpi: 200 });
   });
 
+  it('makes the picture exactly the section’s size when the page is not a whole number of twips', async () => {
+    const bytes = await officeDocument([{ size: [612.3, 791.968], content: fill(612.3, 791.968) }]);
+    const { file } = await exportOffice(bytes, { ...options, pages: [0] }, run);
+    const document = await text(await JSZip.loadAsync(file.bytes), 'word/document.xml');
+    // 791.968 pt is 15839.36 twips: the section takes 15839, and the picture the same (× 635 EMU).
+    expect(sizes(document)).toEqual(['<w:pgSz w:w="12246" w:h="15839"/>']);
+    expect(document).toContain(`<wp:extent cx="${12246 * 635}" cy="${15839 * 635}"/>`);
+    expect(document).toContain(`<a:ext cx="${12246 * 635}" cy="${15839 * 635}"/>`);
+  });
+
   it('carries each page’s section in its own paragraph but the last, whose section is the body’s', async () => {
     const { file } = await exportOffice(await twoPages(), options, run);
     const document = await text(await JSZip.loadAsync(file.bytes), 'word/document.xml');
@@ -254,7 +264,7 @@ describe('exportOffice, Word as one picture per page', () => {
       Number(m[1]),
       Number(m[2]),
     ]);
-    expect(extents[1]).toEqual([Math.round(1190 * factor * 12700), 1584 * 12700]);
+    expect(extents[1]).toEqual([Math.round(1190 * factor * 20) * 635, 1584 * 12700]);
     const scaled = notes.find((entry) => entry.key === 'op.note.exportOffice.pageScaled');
     expect(scaled?.kind).toBe('changed');
     expect(scaled?.params).toEqual({ pages: '2', percent: 94 });
