@@ -39,6 +39,12 @@ import type { LayoutChar, LayoutLine, PageLayout } from './page-layout';
 const BASELINE_IN_LINE = 0.8;
 
 /**
+ * How far right of a text box's left edge LibreOffice puts the first glyph's origin (measured
+ * 0.1 pt on every line of three samples, with zero insets): the box is that much further left.
+ */
+const TEXT_LEFT = 0.1;
+
+/**
  * Where a text box's top edge goes so that a first line of height `lineHeight` has its
  * baseline on the PDF's `baseline` (page space, y down).
  */
@@ -574,7 +580,9 @@ function upright(group: readonly Para[]): TextBox {
     ? (right - left) * justifiedFactor(rows)
     : (right - left) * WIDTH_FACTOR + WIDTH_PAD;
   const kind = classOf(first.align);
-  const x0 = kind === 'center' ? (left + right) / 2 - width / 2 : kind === 'right' ? right - width : left;
+  const x0 =
+    (kind === 'center' ? (left + right) / 2 - width / 2 : kind === 'right' ? right - width : left) -
+    TEXT_LEFT;
   const top = boxTop((first.rows[0] as Row).baseline, first.lineHeight);
   const height = group.reduce((sum, para) => sum + para.lineHeight * para.rows.length, 0);
   const bottom = Math.max(top + height, ...rows.map((row) => row.y1));
@@ -708,8 +716,9 @@ const MAX_LETTER_SPACING = 0.5;
  * geometry). Word and LibreOffice draw a run at the size's whole half-points with the font's
  * own advances, so the PDF's Tc/Tw, its odd sizes (8.96 pt → 9) and its kerning would drift
  * the words off their places; this puts each word's letters at the PDF's pitch and each
- * space's width at the gap to the next word, tracking where Word's pen will be, so the error
- * of the integer spacings never adds up past a twentieth of a point:
+ * space's width at the gap to the next word, tracking where the pen will be (LibreOffice
+ * truncates every portion to whole twentieths of a point, 0.05 pt a portion, which drifted a
+ * line by half a point over ten words), so the error never adds up past a twentieth of a point:
  *
  * - a word's letters share the residual between the natural width and the PDF's origin-to-
  *   origin span (the last letter keeps no spacing: what follows it is the space's);
@@ -735,7 +744,8 @@ export function fitLine(runs: readonly TextRun[], scale: number): (number[] | un
     }
   }
   const twips = items.map(() => 0);
-  let cursor = items[0]?.start ?? 0;
+  // Where the pen is, in twentieths of a point.
+  let cursor = (items[0]?.start ?? 0) * 20;
   let at = 0;
   while (at < items.length) {
     let stop = at;
@@ -757,12 +767,26 @@ export function fitLine(runs: readonly TextRun[], scale: number): (number[] | un
       const extra = total - each * (last - at);
       for (let k = at; k < last; k += 1) twips[k] = each + (k - at >= last - at - extra ? 1 : 0);
     }
-    cursor += natural + total / 20 + (items[last]?.natural ?? 0);
+    // LibreOffice truncates each portion (a run's characters of one spacing) to whole twips.
+    let portion = 0;
+    for (let k = at; k <= last; k += 1) {
+      const item = items[k] as (typeof items)[number];
+      if (
+        k > at &&
+        (item.run !== (items[k - 1] as (typeof items)[number]).run || twips[k] !== twips[k - 1])
+      ) {
+        cursor += Math.floor(portion);
+        portion = 0;
+      }
+      portion += item.natural * 20 + (twips[k] as number);
+    }
+    cursor += Math.floor(portion);
     const next = items[stop + 1];
     if (next !== undefined) {
-      const gap = Math.round((next.start - cursor - (items[stop] as (typeof items)[number]).natural) * 20);
-      twips[stop] = Math.max(-MAX_SPACING, Math.min(MAX_SPACING, gap));
-      cursor += (items[stop] as (typeof items)[number]).natural + (twips[stop] as number) / 20;
+      const blank = Math.floor((items[stop] as (typeof items)[number]).natural * 20);
+      const gap = Math.round(next.start * 20 - cursor);
+      twips[stop] = Math.max(-MAX_SPACING, Math.min(MAX_SPACING, gap - blank));
+      cursor += blank + (twips[stop] as number);
     }
     at = stop + 1;
   }
@@ -825,6 +849,12 @@ function lineRunsXml(
   return all.map((run, at) => runXml(run, spacing[at], scale, registry)).join('');
 }
 
+/**
+ * A justified paragraph is written left-aligned: `fitLine` puts every word where the PDF has
+ * it, and LibreOffice's own justification stretched the already-fitted spaces a second time
+ * (p15: words drifted 0.65 pt a space, SSIM 0.61 → 0.92 once left alone). Centre and right
+ * stay: the fitted line is as wide as the PDF's.
+ */
 function paragraphXml(paragraph: TextParagraph, scale: number, registry: DocxRegistry): string {
   const line = Math.max(1, Math.round(paragraph.lineHeight * scale * TWIPS));
   const lines = paragraph.lines
@@ -832,7 +862,7 @@ function paragraphXml(paragraph: TextParagraph, scale: number, registry: DocxReg
     .join('<w:r><w:br/></w:r>');
   return (
     `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="${line}" w:lineRule="exact"/>` +
-    `<w:jc w:val="${paragraph.align}"/></w:pPr>${lines}</w:p>`
+    `<w:jc w:val="${paragraph.align === 'both' ? 'left' : paragraph.align}"/></w:pPr>${lines}</w:p>`
   );
 }
 
