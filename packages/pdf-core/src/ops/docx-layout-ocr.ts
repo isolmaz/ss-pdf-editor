@@ -18,7 +18,7 @@ import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import { ocrBackground, ocrTextBoxes, type RgbaImage } from './ocr-scene';
-import type { Box } from './page-layout';
+import type { Box, LayoutChar } from './page-layout';
 import { throwIfAborted } from './types';
 
 /** What the writer needs to read a scan: a recogniser and the confidence (0–1) below which a word is flagged. */
@@ -81,7 +81,7 @@ export function layerWords(scene: PageScene): OcrWord[] {
     block += 1;
     for (const textLine of textBlock.lines) {
       line += 1;
-      let chars: typeof textLine.chars = [];
+      let chars: LayoutChar[] = [];
       const flush = (): void => {
         const first = chars[0];
         if (first === undefined) return;
