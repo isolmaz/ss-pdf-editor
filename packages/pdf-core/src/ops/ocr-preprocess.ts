@@ -31,13 +31,17 @@ const SKEW_FINE = 0.05;
 /** The turn applied: between these (degrees), if the peak stands this far above the mean score. */
 const SKEW_MIN = 0.3;
 const SKEW_MAX = 5.9;
-const SKEW_CONFIDENCE = 1.3;
+const SKEW_CONFIDENCE = 2.5;
 const SKEW_LONG_SIDE = 1100;
 const SKEW_POINTS = 60000;
 const SKEW_MARGIN = 0.03;
+/** Ink points (of text, at the reduced size) needed to measure a skew: about two lines of text. A page number or a few specks measure noise. */
+const SKEW_MIN_INK = 2000;
 /** An ink pixel in a window this dense is part of a picture or a rule, not a line of text. */
 const SOLID_DENSITY = 0.7;
 const SOLID_WINDOW = 9;
+/** Ink joined into one piece longer than this share of the page's long side is a rule, a frame or a card: text is not that long unbroken, and one straight stroke would out-vote the lines. */
+const LONG_STROKE = 0.1;
 
 /** Luma of an RGBA picture. */
 export function toGrey(image: RgbaImage): Grey {
@@ -108,18 +112,62 @@ export interface Skew {
   readonly confidence: number;
 }
 
-/** The ink points of a page for the skew search: centred, subsampled, without pictures and rules and the margin. */
+/**
+ * Clears the 8-connected pieces of the ink `mask` (`width` × `height`, 1 where inked) whose
+ * bounding box is more than `limit` pixels long on a side.
+ */
+function dropLongStrokes(mask: Uint8Array, width: number, height: number, limit: number): void {
+  const seen = new Uint8Array(mask.length);
+  const queue = new Int32Array(mask.length);
+  for (let start = 0; start < mask.length; start += 1) {
+    if (mask[start] === 0 || seen[start] === 1) continue;
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = start;
+    seen[start] = 1;
+    let minX = width;
+    let maxX = -1;
+    let minY = height;
+    let maxY = -1;
+    while (head < tail) {
+      const at = queue[head++] as number;
+      const x = at % width;
+      const y = (at - x) / width;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      for (let v = Math.max(0, y - 1); v <= Math.min(height - 1, y + 1); v += 1) {
+        for (let u = Math.max(0, x - 1); u <= Math.min(width - 1, x + 1); u += 1) {
+          const next = v * width + u;
+          if (mask[next] === 1 && seen[next] === 0) {
+            seen[next] = 1;
+            queue[tail++] = next;
+          }
+        }
+      }
+    }
+    if (Math.max(maxX - minX, maxY - minY) + 1 > limit) {
+      for (let i = 0; i < tail; i += 1) mask[queue[i] as number] = 0;
+    }
+  }
+}
+
+/** The ink points of a page for the skew search: centred, subsampled, without pictures, rules, long strokes and the margin. */
 function inkPoints(grey: Grey): { xs: Float32Array; ys: Float32Array; diagonal: number } | null {
   const factor = Math.max(1, Math.round(Math.max(grey.width, grey.height) / SKEW_LONG_SIDE));
   const small = downscale(grey, factor);
   const { width, height } = small;
   const threshold = otsu(small.data);
+  const ink = new Uint8Array(width * height);
+  for (let i = 0; i < ink.length; i += 1) ink[i] = (small.data[i] as number) <= threshold ? 1 : 0;
+  dropLongStrokes(ink, width, height, Math.ceil(LONG_STROKE * Math.max(width, height)));
   const stride = width + 1;
   const sums = new Int32Array(stride * (height + 1));
   for (let y = 0; y < height; y += 1) {
     let row = 0;
     for (let x = 0; x < width; x += 1) {
-      if ((small.data[y * width + x] as number) <= threshold) row += 1;
+      row += ink[y * width + x] as number;
       sums[(y + 1) * stride + x + 1] = (sums[y * stride + x + 1] as number) + row;
     }
   }
@@ -129,7 +177,7 @@ function inkPoints(grey: Grey): { xs: Float32Array; ys: Float32Array; diagonal: 
   const found: number[] = [];
   for (let y = marginY; y < height - marginY; y += 1) {
     for (let x = marginX; x < width - marginX; x += 1) {
-      if ((small.data[y * width + x] as number) > threshold) continue;
+      if (ink[y * width + x] === 0) continue;
       const x0 = Math.max(0, x - half);
       const x1 = Math.min(width, x + half + 1);
       const y0 = Math.max(0, y - half);
@@ -143,7 +191,7 @@ function inkPoints(grey: Grey): { xs: Float32Array; ys: Float32Array; diagonal: 
     }
   }
   const total = found.length / 2;
-  if (total < 200) return null;
+  if (total < SKEW_MIN_INK) return null;
   const step = Math.max(1, Math.ceil(total / SKEW_POINTS));
   const used = Math.ceil(total / step);
   const xs = new Float32Array(used);

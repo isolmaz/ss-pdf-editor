@@ -33,19 +33,28 @@ const SENTENCES = [
   'A wizard job is to vex chumps quickly in fog',
 ];
 
-/** Ten lines of text; `degrees` is the skew (positive: lines descend to the right), `color` the ink. */
-function pageContent(degrees: number, color = '0 0 0'): string {
+/** Operators in the sheet's own frame, turned by `degrees` (positive: lines descend to the right) about the page centre. */
+function turned(degrees: number, operators: string): string {
   const phi = (-degrees * Math.PI) / 180;
   const c = Math.cos(phi).toFixed(6);
   const s = Math.sin(phi).toFixed(6);
-  const lines = SENTENCES.map((text, at) => line('helvetica', 12, -160, 170 - at * 34, text, color));
-  return `q ${c} ${s} ${-s} ${c} 200 250 cm\n${lines.join('\n')}\nQ`;
+  return `q ${c} ${s} ${-s} ${c} 200 250 cm\n${operators}\nQ`;
 }
 
-/** The page drawn at `dpi` as RGBA pixels. */
-async function render(content: string, dpi: number): Promise<RgbaImage> {
+/** Ten lines of text, level, in the sheet's own frame; `color` the ink. */
+const textLines = (color = '0 0 0'): string =>
+  SENTENCES.map((text, at) => line('helvetica', 12, -160, 170 - at * 34, text, color)).join('\n');
+
+/** Ten lines of text; `degrees` is the skew (positive: lines descend to the right), `color` the ink. */
+const pageContent = (degrees: number, color = '0 0 0'): string => turned(degrees, textLines(color));
+
+/** The page (400 × 500 pt, or `size`) drawn at `dpi` as RGBA pixels. */
+async function render(content: string, dpi: number, size?: readonly [number, number]): Promise<RgbaImage> {
   const mupdf = await loadMupdf();
-  const doc = mupdf.Document.openDocument((await officeDocument([{ content }])).slice(), 'application/pdf');
+  const doc = mupdf.Document.openDocument(
+    (await officeDocument([{ content, ...(size === undefined ? {} : { size }) }])).slice(),
+    'application/pdf',
+  );
   try {
     const pixmap = doc
       .loadPage(0)
@@ -79,7 +88,76 @@ const grey = (width: number, height: number, fill: (x: number, y: number) => num
   return { width, height, data };
 };
 
+/**
+ * What is not a line of text but draws long straight ink: a crooked card's outline (three
+ * weights), a crooked dark card, one hairline across the page, a thick diagonal and two thinner
+ * ones. Each is drawn `degrees` off level on a page of level text.
+ */
+const STROKES: Readonly<Record<string, (degrees: number) => string>> = {
+  'a crooked card outline, 0.5 pt': (d) => turned(d, '0.5 w -150 -230 300 80 re S'),
+  'a crooked card outline, 1 pt': (d) => turned(d, '1 w -150 -230 300 80 re S'),
+  'a crooked card outline, 2 pt': (d) => turned(d, '2 w -150 -230 300 80 re S'),
+  'a crooked dark card': (d) => turned(d, '0.15 g -150 -230 300 80 re f'),
+  'one 1-pt line, 5 inches long': (d) => turned(d, '1 w -180 -190 m 180 -190 l S'),
+  'a 3-pt diagonal': (d) => turned(d, '3 w -170 200 m 170 200 l S'),
+  'two 2-pt diagonals': (d) => turned(d, '2 w -170 200 m 170 200 l S 2 w -170 215 m 170 215 l S'),
+};
+
 describe('skew', () => {
+  for (const [name, stroke] of Object.entries(STROKES)) {
+    it(`leaves level text alone beside ${name}, at 3° and -3°, at 150 and 300 dpi`, async () => {
+      for (const degrees of [3, -3]) {
+        for (const dpi of [150, 300]) {
+          const image = await render(`${pageContent(0)}\n${stroke(degrees)}`, dpi);
+          const found = detectSkew(toGrey(image));
+          expect(isSkewed(found), `${degrees}° at ${dpi} dpi: ${JSON.stringify(found)}`).toBe(false);
+        }
+      }
+    });
+  }
+
+  it('lets the text decide on a crooked page with a level frame and a level rule', async () => {
+    const frame = '1 w -170 -235 340 470 re S 0.5 w -150 -200 m 150 -200 l S';
+    for (const degrees of [3, -2.4]) {
+      const found = detectSkew(toGrey(await render(`${pageContent(degrees)}\n${turned(0, frame)}`, 150)));
+      expect(Math.abs(found.angle - degrees)).toBeLessThan(0.2);
+      expect(isSkewed(found)).toBe(true);
+    }
+  });
+
+  it('leaves a page with one short line (a page number) alone, however the line measures', async () => {
+    for (const dpi of [150, 300]) {
+      const image = await render(line('helvetica', 10, 180, 40, 'Page 3'), dpi);
+      expect(isSkewed(detectSkew(toGrey(image))), `${dpi} dpi`).toBe(false);
+    }
+  });
+
+  it('leaves a sheet whose text runs up the page alone, level or a little crooked, in small and large type', async () => {
+    const large = SENTENCES.map((text, at) => line('helvetica', 28, -160, 170 - at * 78, text)).join('\n');
+    for (const operators of [textLines(), large]) {
+      for (const degrees of [0, 1.4, 4.5, -1.5]) {
+        for (const quarter of [90, 270]) {
+          const found = detectSkew(toGrey(await render(turned(quarter + degrees, operators), 150)));
+          expect(isSkewed(found), `${quarter}+${degrees}°: ${JSON.stringify(found)}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('asks for a clear peak: a skew that stands only a little above the rest is not turned', () => {
+    expect(isSkewed({ angle: 3, confidence: 2.4 })).toBe(false);
+    expect(isSkewed({ angle: 3, confidence: 4 })).toBe(true);
+  });
+
+  it('finds the skew of text on a page with a ruled table drawn at the same skew, the rules not counted', async () => {
+    // The table's rules are one piece with its frame, longer than text ever is: the lines decide.
+    const rules =
+      '1 w -170 -235 340 470 re S -170 100 m 170 100 l S -170 0 m 170 0 l S -170 -100 m 170 -100 l S';
+    const found = detectSkew(toGrey(await render(turned(-2.5, `${textLines()}\n${rules}`), 150)));
+    expect(Math.abs(found.angle + 2.5)).toBeLessThan(0.2);
+    expect(isSkewed(found)).toBe(true);
+  });
+
   it('finds a 3° skew within 0.2° and a skew of the other sign with its sign', async () => {
     for (const degrees of [3, -2.4]) {
       const found = detectSkew(toGrey(await render(pageContent(degrees), 150)));
