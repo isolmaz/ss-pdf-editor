@@ -270,7 +270,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     page, each page keeps its size and orientation, and two-column text is read column by
     column. Ruled tables become Word tables with their merged cells. Tables without rules
     are recognised from the spacing of the text and become borderless tables. Pictures keep
-    their transparency; charts and drawings made of vector graphics are carried as pictures.
+    their transparency; charts and drawings made of vector graphics are carried as pictures, their labels staying text over them.
     A picture that cannot be read, or one inside a table cell, is left out, and the report
     says how many.
   - **Word layout.** Word has two layouts, chosen in the Export dialog and in the form. *Flowing
@@ -568,8 +568,9 @@ The limits are defined once, in
   - Exact positions, text boxes, headers and footers, form fields and annotations are not
     reproduced. A paragraph that continues in the next column stays split in two.
   - A table without rules is a guess from the spacing; the report says how many there were.
-  - A chart or drawing becomes a picture, its labels included, so its text cannot be
-    edited.
+  - A chart or drawing becomes a picture drawn without its text; the labels on it stay
+    editable text over the picture, which sits behind them and moves with the text around
+    it.
   - Scanned pages have no text to export until OCR has added it.
 - **Scanning with the camera.**
   - The page is found from its edges, so a page of the same brightness as what it lies on,

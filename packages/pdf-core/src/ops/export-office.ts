@@ -234,8 +234,8 @@ interface Picture {
   readonly box: Box;
   readonly png: Uint8Array;
   /**
-   * Text stands on it: it is anchored at its place on the page, behind the text, and takes
-   * no room in the flow — inline it would push the text it carries to the next page.
+   * Text stands on it: it is anchored behind the text to a paragraph that holds its place in
+   * the flow, and takes no room there — inline it would push the text it carries to the next page.
    */
   readonly behind: boolean;
 }
@@ -508,21 +508,56 @@ function ownersOf(page: ReadPage): Map<LayoutChar, LayoutTable> {
 }
 
 /**
+ * A segment cut where one of `edges` lies in a gap of spaces between two of its visible
+ * characters — a rule between two cells that MuPDF read as one line with one space across
+ * it. Never inside a word, whose characters touch. The spaces of a gap stay with the piece
+ * before it.
+ */
+function cutAtEdges(segment: readonly LayoutChar[], edges: readonly number[]): LayoutChar[][] {
+  let piece: LayoutChar[] = [];
+  const pieces = [piece];
+  let previous: LayoutChar | null = null;
+  let pending: LayoutChar[] = [];
+  for (const char of segment) {
+    if (char.c.trim() === '') {
+      pending.push(char);
+      continue;
+    }
+    const before: LayoutChar | null = previous;
+    const cut =
+      before !== null && pending.length > 0 && edges.some((x) => x >= before.box[2] && x <= char.box[0]);
+    if (cut) {
+      piece.push(...pending);
+      piece = [char];
+      pieces.push(piece);
+    } else piece.push(...pending, char);
+    pending = [];
+    previous = char;
+  }
+  piece.push(...pending);
+  return pieces;
+}
+
+/**
  * The lines of each cell of a table, from the characters it owns: a character goes to the
- * cell it lies in, or the one nearest when it sits on an edge.
+ * cell it lies in, or the one nearest when it sits on an edge. A segment goes whole to one
+ * cell, unless a column edge of the table lies in a gap inside it.
  */
 function cellLines(page: ReadPage, table: LayoutTable, owners: Map<LayoutChar, LayoutTable>) {
   const lines = new Map<TableCell, LayoutChar[][]>();
+  const edges = table.xs.slice(1, -1);
   for (const block of page.layout.blocks) {
     if (block.kind !== 'text') continue;
     for (const line of block.lines) {
       const parts = new Map<TableCell, LayoutChar[]>();
-      for (const segment of lineSegments(line.chars)) {
-        if (segment.some((char) => owners.get(char) !== table)) continue;
-        const cell =
-          table.cells.find((candidate) => segmentInside(segment, candidate.box, 0)) ??
-          (table.cells.find((candidate) => segmentInside(segment, candidate.box, 1)) as TableCell);
-        parts.set(cell, [...(parts.get(cell) ?? []), ...segment]);
+      for (const whole of lineSegments(line.chars)) {
+        if (whole.some((char) => owners.get(char) !== table)) continue;
+        for (const segment of cutAtEdges(whole, edges)) {
+          const cell =
+            table.cells.find((candidate) => segmentInside(segment, candidate.box, 0)) ??
+            (table.cells.find((candidate) => segmentInside(segment, candidate.box, 1)) as TableCell);
+          parts.set(cell, [...(parts.get(cell) ?? []), ...segment]);
+        }
       }
       for (const [cell, chars] of parts) lines.set(cell, [...(lines.get(cell) ?? []), chars]);
     }
@@ -603,7 +638,47 @@ function pageItems(page: ReadPage): Item[] {
     if (at === -1) items.push(grid);
     else items.splice(at, 0, grid);
   }
-  return items;
+  return placePictures(items);
+}
+
+function isBehind(item: Item): item is Picture {
+  return item.kind === 'picture' && item.behind;
+}
+
+/** The share of an item's area that a box covers. */
+function coveredBy(item: Box, box: Box): number {
+  const across = Math.min(item[2], box[2]) - Math.max(item[0], box[0]);
+  const down = Math.min(item[3], box[3]) - Math.max(item[1], box[1]);
+  const area = (item[2] - item[0]) * (item[3] - item[1]);
+  return across > 0 && down > 0 && area > 0 ? (across * down) / area : 0;
+}
+
+/** An item is on a picture when the picture covers this much of it. */
+const STANDS_ON = 0.25;
+
+/**
+ * A picture behind the text hangs from a holder paragraph that stands right before the items
+ * on it, so that the picture and its text move together in the flow. When those items are not
+ * one run in the flow — another drawing's text, or a column's, comes between them — nothing
+ * keeps the text on the picture, and it would land on white paper: the picture is then an
+ * ordinary inline one, right before its first item, and the text stays readable under it.
+ */
+function placePictures(items: readonly Item[]): Item[] {
+  const flow = items.filter((item) => !isBehind(item));
+  const placed = items.filter(isBehind).map((picture) => {
+    const stands = flow.flatMap((item, index) =>
+      coveredBy(item.box, picture.box) >= STANDS_ON ? [index] : [],
+    );
+    const at = stands[0] ?? flow.length;
+    const together = stands.every((index, run) => index === at + run);
+    return { at, item: together ? picture : { ...picture, behind: false } };
+  });
+  const ordered: Item[] = [];
+  flow.forEach((item, index) => {
+    ordered.push(...placed.filter((entry) => entry.at === index).map((entry) => entry.item), item);
+  });
+  ordered.push(...placed.filter((entry) => entry.at >= flow.length).map((entry) => entry.item));
+  return ordered;
 }
 
 function contains(outer: Box, inner: Box): boolean {
@@ -713,13 +788,15 @@ function graphicXml(id: number, name: string, cx: number, cy: number): string {
  * A picture as a paragraph. In the flow it is inline, at its size and indent, shrunk to the
  * column and to `maxHeight` — a picture as tall as the page's text area, with the line it
  * stands in, would not fit the page and be sent to the next. Behind the text it is anchored
- * at its place on the page, in a paragraph one point high that carries the page break and
- * the section like any other.
+ * `offset` points below the top of its holder, a paragraph one point high that takes the
+ * item's space before (as a paragraph of its own above it) and carries the page break and the section like any other: it moves
+ * with the flow, so the text laid out after it stays where the PDF has it on the picture.
  */
 function pictureXml(
   picture: Picture,
   column: Column,
   before: number,
+  offset: number,
   extra: string,
   maxHeight: number,
   context: DocxContext,
@@ -735,12 +812,20 @@ function pictureXml(
   if (picture.behind) {
     const cx = Math.max(1, Math.round(width * EMU));
     const cy = Math.max(1, Math.round(height * EMU));
+    // The space before is a paragraph of its own: Word measures an anchor from the text of its
+    // paragraph and LibreOffice from the top of it, space before included.
+    const gap = Math.round(before * TWIPS);
+    const spacer =
+      gap > 0
+        ? `<w:p><w:pPr>${pageBreak}<w:spacing w:before="0" w:after="0" w:line="${gap}" w:lineRule="exact"/></w:pPr></w:p>`
+        : '';
     return (
-      `<w:p><w:pPr>${pageBreak}<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>${section}</w:pPr>` +
+      spacer +
+      `<w:p><w:pPr>${spacer === '' ? pageBreak : ''}<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>${section}</w:pPr>` +
       `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${id}" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">` +
       '<wp:simplePos x="0" y="0"/>' +
       `<wp:positionH relativeFrom="page"><wp:posOffset>${Math.round(picture.box[0] * EMU)}</wp:posOffset></wp:positionH>` +
-      `<wp:positionV relativeFrom="page"><wp:posOffset>${Math.round(picture.box[1] * EMU)}</wp:posOffset></wp:positionV>` +
+      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${Math.round(offset * EMU)}</wp:posOffset></wp:positionV>` +
       `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>` +
       `<wp:docPr id="${id}" name="Picture ${id}"/>` +
       '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
@@ -908,19 +993,52 @@ function docxPage(
     `<w:pgMar w:top="${twips(margins.top)}" w:right="${twips(margins.right)}" w:bottom="${twips(margins.bottom)}" ` +
     `w:left="${twips(margins.left)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
   const out: string[] = [];
+  // `previousBottom` is where the flow stands, in the PDF's own coordinates; `floor` is the
+  // lowest foot of a picture behind the text so far. Gaps are clamped to MAX_GAP, except those
+  // inside such a picture, which keep the text on it where the PDF has it (the flow stands at
+  // the foot of the item before, even when that is higher up the page than where it was: the
+  // text of a card in the next column), and the first item below it starts at or under its foot.
   let previousBottom = margins.top;
-  items.forEach((item, index) => {
+  let floor = 0;
+  const planned = items.map((item) => {
+    const top = item.box[1];
+    const inside = top < floor - 1;
+    const before = inside
+      ? Math.max(0, top - previousBottom)
+      : Math.max(0, floor - previousBottom) + clamp(top - Math.max(previousBottom, floor), 0, MAX_GAP);
+    // The holder of a picture behind the text is one point high.
+    if (isBehind(item)) {
+      previousBottom += before + 1;
+      floor = Math.max(floor, item.box[3]);
+    } else previousBottom = inside ? item.box[3] : Math.max(previousBottom, item.box[3]);
+    return { item, before };
+  });
+  /**
+   * How far below its holder's top a picture behind the text hangs: the text after it is
+   * where the flow puts it, and the picture is as far above the first of it as the PDF has it.
+   */
+  const offsetOf = (index: number, top: number): number => {
+    let reach = 0;
+    let lead = top;
+    for (const next of planned.slice(index + 1)) {
+      reach += 1 + next.before;
+      if (!isBehind(next.item)) {
+        lead = next.item.box[1];
+        break;
+      }
+    }
+    return reach - (lead - top);
+  };
+  planned.forEach(({ item, before }, index) => {
     const breakBefore = index === 0 && !first ? 'pageBreakBefore' : '';
     const section = index === items.length - 1 && !last ? sectPr : '';
-    const behind = item.kind === 'picture' && item.behind;
-    const before = behind ? 0 : clamp(item.box[1] - previousBottom, 0, MAX_GAP);
-    if (!behind) previousBottom = Math.max(previousBottom, item.box[3]);
+    const offset = isBehind(item) ? offsetOf(index, item.box[1]) : 0;
     if (item.kind === 'paragraph') {
       out.push(paragraphXml(item, columnOf(item.box), before, breakBefore + section, context));
     } else if (item.kind === 'picture') {
       // One line's room, a body size, is left under a picture that stands alone on a page.
       const room = height - margins.top - margins.bottom - context.bodySize;
-      out.push(pictureXml(item, columnOf(item.box), before, breakBefore + section, room, context));
+      out.push(pictureXml(item, columnOf(item.box), before, offset, breakBefore + section, room, context));
     } else {
       // A table cannot carry a page break or a section; a hairline paragraph does.
       if (breakBefore !== '')

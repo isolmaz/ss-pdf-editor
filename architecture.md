@@ -410,18 +410,34 @@ had to stay green. The moves, and the defects they fixed on the way:
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
     of 20 characters or more are two columns of text whose lines share baselines, not a table
-    (read row by row across them, a reader would take the columns in turn no more). A line is cut
+    (read row by row across them, a reader would take the columns in turn no more), provided
+    the block is the column's own (it holds no piece of the other column) or its lines wrap
+    (each but the last holds words and fills the column's width): a table of 20-to-30-character
+    cells is often one block of both columns, with cells of every length, and stays a table. A line is cut
     into segments where a gap between visible characters is wider than about two spaces
     (`lineSegments`), and a segment is placed — outside a table, in a table, in a cell — as a
-    whole, by its centre: no word is ever cut at the edge of a table or between two cells.
+    whole, by its centre, except that a segment is cut where a column edge of its table lies in
+    a gap of spaces between two visible characters (two cells that one line reads across the rule
+    with a single space): no word is ever cut at the edge of a table or between two cells.
   - **Drawings.** Curves, polygons that are not rectangles, shadings and pictures seed
     regions that grow over every mark they touch. A region holding a line of prose is left
     to the text, and so is one crossing a table or covering most of the page. The region is
     rendered at 144 dpi as one picture without its text (`renderRegion` runs the page through a
     device that hands everything but text to a draw device): the text on a drawing stays text
     in the flow. A drawing that has text on it, like a raster picture that text stands on, is
-    anchored behind the text at its place on the page (`wp:anchor`, `behindDoc`, in a
-    paragraph one point high) and takes no room in the flow. Above
+    anchored behind the text (`wp:anchor`, `behindDoc`) to a paragraph one point high that
+    holds its place in the flow, and takes no room there: the anchor hangs from that paragraph
+    (`positionV relativeFrom="paragraph"`), and that paragraph stands right before the items that are
+    on the drawing (a quarter of their area under it), its space before being a paragraph of its own
+    above it, since Word and LibreOffice measure the anchor from different places of a paragraph.
+    The offset is the distance the flow puts between the holder and the first of those items less
+    the one the PDF has between the drawing's top and that item, so the labels and the text after
+    the drawing follow it wherever the flow puts it, a card in the next column after the one before
+    it included. When the items on a drawing are not one run in the flow (another drawing's text
+    comes between them) the drawing is an inline picture before the first of them instead, and
+    no text lands on white paper. Gaps
+    inside the drawing's height are not clamped to `MAX_GAP`, and the first item below it starts
+    at or under its foot. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
   - **Word (flow).** Each page is a section with the page's size, orientation and margins. Blocks
     are cut into paragraphs where a line ends short, a gap opens, the size changes or a
