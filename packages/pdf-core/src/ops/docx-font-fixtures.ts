@@ -59,6 +59,8 @@ export interface CffOptions {
   readonly bbox?: readonly number[] | null;
   readonly defaultWidth?: number | null;
   readonly cid?: 'with-fd' | 'bad-fd' | 'no-fd';
+  /** With `cid: 'with-fd'`: add an FDSelect (every glyph in the one font DICT), as a CID-keyed CFF FreeType can open has. */
+  readonly fdSelect?: boolean;
   readonly nameCount?: number;
   /** INDEX offset size for the Name, Top DICT and CharStrings INDEXes. */
   readonly offSize?: number;
@@ -97,6 +99,7 @@ export function buildCff(options: CffOptions = {}): Uint8Array {
     charset: number;
     privateAt: number;
     fdArray: number;
+    fdSelect: number;
   }): number[] => {
     const cid = options.cid !== undefined;
     return [
@@ -112,7 +115,12 @@ export function buildCff(options: CffOptions = {}): Uint8Array {
       ...(cid
         ? options.cid === 'no-fd'
           ? []
-          : [...encodeOffset(offsets.fdArray), 12, 36]
+          : [
+              ...encodeOffset(offsets.fdArray),
+              12,
+              36,
+              ...(options.fdSelect ? [...encodeOffset(offsets.fdSelect), 12, 37] : []),
+            ]
         : [
             ...encodeOffset(priv.length),
             ...encodeOffset(options.badPrivate ? 9_999_999 : offsets.privateAt),
@@ -121,7 +129,7 @@ export function buildCff(options: CffOptions = {}): Uint8Array {
     ];
   };
   const sizeOfTop = index(
-    [topDict({ charStrings: 0, charset: 0, privateAt: 0, fdArray: 0 })],
+    [topDict({ charStrings: 0, charset: 0, privateAt: 0, fdArray: 0, fdSelect: 0 })],
     offSize,
   ).length;
   const afterTop = header.length + names.length + sizeOfTop + strings.length + subrs.length;
@@ -130,11 +138,13 @@ export function buildCff(options: CffOptions = {}): Uint8Array {
   const privateAt = charStringsAt + charStrings.length;
   const fdArrayAt = privateAt + priv.length;
   const fdArray = index([fdDict(privateAt)]);
+  const fdSelect = options.fdSelect ? [0, ...new Array<number>(glyphs).fill(0)] : [];
   const top = topDict({
     charStrings: charStringsAt,
     charset: charsetAt,
     privateAt,
     fdArray: options.cid === 'bad-fd' ? 9_999_999 : fdArrayAt,
+    fdSelect: fdArrayAt + fdArray.length,
   });
   const body = options.cid === 'with-fd' || options.cid === 'bad-fd' ? fdArray : [];
   return new Uint8Array([
@@ -147,5 +157,6 @@ export function buildCff(options: CffOptions = {}): Uint8Array {
     ...charStrings,
     ...priv,
     ...body,
+    ...(body.length > 0 ? fdSelect : []),
   ]);
 }

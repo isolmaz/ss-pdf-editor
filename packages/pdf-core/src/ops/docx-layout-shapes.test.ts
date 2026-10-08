@@ -561,11 +561,58 @@ describe('sceneItemXml: even-odd fills', () => {
     expect(lastSquare).toBe(outer);
   });
 
+  it('writes a lone subpath the same whether the fill is even-odd or not', () => {
+    const segments = rectSegments(10, 10, 90, 90);
+    const oddly = render(shape({ box: [0, 0, 100, 100], segments, fill: evenOdd }));
+    const plain = render(shape({ box: [0, 0, 100, 100], segments, fill: { ...evenOdd, evenOdd: false } }));
+    expect(one(oddly, 'a:path').toString()).toBe(one(plain, 'a:path').toString());
+  });
+
+  it('keeps a subpath that encloses nothing as it is, between ones that nest', () => {
+    // A hairline (move, line, close: no area) in the middle of a frame with a hole.
+    const hairline: PathSegment[] = [
+      { kind: 'move', to: [5, 5] },
+      { kind: 'line', to: [95, 5] },
+      { kind: 'close' },
+    ];
+    const segments = [...rectSegments(0, 0, 100, 100), ...hairline, ...rectSegments(30, 30, 70, 70)];
+    const root = render(shape({ box: [0, 0, 100, 100], segments, fill: evenOdd }));
+    const [outer, line, hole] = subpathPoints(one(root, 'a:path'));
+    expect(area(line as [number, number][])).toBe(0);
+    expect(line).toEqual([
+      [5 * EMU, 5 * EMU],
+      [95 * EMU, 5 * EMU],
+    ]);
+    expect(Math.sign(area(hole as [number, number][]))).toBe(-Math.sign(area(outer as [number, number][])));
+  });
+
   it('leaves subpaths side by side as they are', () => {
     const segments = [...rectSegments(0, 0, 40, 40), ...rectSegments(60, 0, 100, 40)];
     const root = render(shape({ box: [0, 0, 100, 40], segments, fill: evenOdd }));
     const [left, right] = subpathPoints(one(root, 'a:path'));
     expect(Math.sign(area(left as [number, number][]))).toBe(Math.sign(area(right as [number, number][])));
+  });
+});
+
+describe('sceneItemXml: a path that draws before it moves', () => {
+  const e = (v: number): number => Math.round(v * EMU);
+
+  it('starts at its first point, and carries on from the start of a closed subpath', () => {
+    const segments: PathSegment[] = [
+      { kind: 'line', to: [100, 0] },
+      { kind: 'line', to: [100, 50] },
+      { kind: 'close' },
+      { kind: 'line', to: [50, 80] },
+    ];
+    const root = render(shape({ box: [0, 0, 100, 100], segments }));
+    const path = one(root, 'a:path');
+    const moves = all(path, 'a:moveTo').map((move) => pts(move));
+    expect(moves).toEqual([[[e(100), e(0)]], [[e(100), e(0)]]]);
+    expect(all(path, 'a:lnTo').map((step) => pts(step))).toEqual([
+      [[e(100), e(0)]],
+      [[e(100), e(50)]],
+      [[e(50), e(80)]],
+    ]);
   });
 });
 

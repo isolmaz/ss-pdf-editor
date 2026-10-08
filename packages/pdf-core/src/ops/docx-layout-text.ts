@@ -235,7 +235,6 @@ function runsOf(
     const next = items[at + 1];
     if (next === undefined || next.link !== item.link) item.link = null;
   }
-  while (items.length > 0 && (items[items.length - 1] as (typeof items)[number]).space) items.pop();
 
   const runs: TextRun[] = [];
   /** Per run: the geometry of its characters and the sums `horizontalScale` compares. */

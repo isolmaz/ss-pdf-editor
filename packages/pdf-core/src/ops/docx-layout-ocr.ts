@@ -69,10 +69,9 @@ const isVisible = (char: { readonly c: string; readonly invisible?: true }): boo
 
 /** Whether the page shows no text and is mostly pictures: a scan, with or without an invisible text layer. */
 export function isScanPage(scene: PageScene): boolean {
-  for (const block of scene.text.blocks) {
-    if (block.kind !== 'text') continue;
-    for (const line of block.lines) if (line.chars.some(isVisible)) return false;
-  }
+  // The scene reads the page's text without pictures, so its blocks are text.
+  for (const block of scene.text.blocks)
+    for (const line of block.kind === 'text' ? block.lines : []) if (line.chars.some(isVisible)) return false;
   let covered = 0;
   for (const item of scene.items) {
     if (item.kind === 'shape') continue;
@@ -86,15 +85,14 @@ export function layerWords(scene: PageScene): OcrWord[] {
   const words: OcrWord[] = [];
   let block = 0;
   let line = 0;
-  for (const textBlock of scene.text.blocks) {
-    if (textBlock.kind !== 'text') continue;
+  // The scene reads the page's text without pictures, so its blocks are text.
+  for (const textBlock of scene.text.blocks.flatMap((entry) => (entry.kind === 'text' ? [entry] : []))) {
     block += 1;
     for (const textLine of textBlock.lines) {
       line += 1;
       let chars: LayoutChar[] = [];
       const flush = (): void => {
-        const first = chars[0];
-        if (first === undefined) return;
+        const first = chars[0] as LayoutChar;
         const x0 = Math.min(...chars.map((char) => char.box[0]));
         const x1 = Math.max(...chars.map((char) => char.box[2]));
         const size = Math.max(...chars.map((char) => char.size));
@@ -114,25 +112,20 @@ export function layerWords(scene: PageScene): OcrWord[] {
         });
         chars = [];
       };
-      for (const char of textLine.chars) {
-        if (char.invisible !== true) continue;
-        if (char.c.trim() === '') flush();
-        else chars.push(char);
+      for (const char of textLine.chars.filter((c) => c.invisible === true)) {
+        if (char.c.trim() !== '') chars.push(char);
+        else if (chars.length > 0) flush();
       }
-      flush();
+      if (chars.length > 0) flush();
     }
   }
   return words;
 }
 
-/** Whether the page has an invisible text layer worth reading. */
-export const hasLayer = (scene: PageScene): boolean => layerWords(scene).length > 0;
-
 /** The resolution the scan is read at: its largest picture's own, within 150–300 dpi. */
 function scanDpi(scene: PageScene): number {
   let best: SceneImage | null = null;
-  for (const item of scene.items) {
-    if (item.kind !== 'image') continue;
+  for (const item of scene.items.filter((entry): entry is SceneImage => entry.kind === 'image')) {
     const area = (item.box[2] - item.box[0]) * (item.box[3] - item.box[1]);
     if (best === null || area > (best.box[2] - best.box[0]) * (best.box[3] - best.box[1])) best = item;
   }

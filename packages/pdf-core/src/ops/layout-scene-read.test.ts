@@ -292,6 +292,33 @@ describe('layout scene: rasters', () => {
     expect(blue).toBe(png.width * png.height);
   });
 
+  it('repeats a dash of an odd length, as PDF does, so the pattern alternates dash and gap', async () => {
+    const { scene } = await sceneOf(await contentOnly('0 0 0 RG 2 w [5 2 1] 0 d 20 100 m 200 100 l S'));
+    const [stroke] = shapes(scene.items) as [SceneShape];
+    expect(stroke.stroke?.dash).toEqual([5, 2, 1, 5, 2, 1]);
+  });
+
+  it.each([
+    ['clipped to the outline of text', '7 Tr'],
+    ['clipped to outlined text', '1 w 5 Tr'],
+    ['clipped to outlined and filled text', '1 w 6 Tr'],
+    ['clipped to filled text', '4 Tr'],
+  ])('draws a fill %s as a raster of the part the letters let through', async (_name, mode) => {
+    const { mupdf, scene } = await sceneOf(
+      await contentOnly(
+        [`q BT /F1 120 Tf ${mode} 20 300 Td (MM) Tj ET`, '1 0 0 rg 0 0 400 500 re f Q'].join('\n'),
+      ),
+    );
+    const rasters = scene.items.filter((item): item is SceneRaster => item.kind === 'raster');
+    expect(rasters).toHaveLength(1);
+    const png = decode(mupdf, (rasters[0] as SceneRaster).data);
+    const opaque = new Set<number>();
+    for (let y = 0; y < png.height; y += 1)
+      for (let x = 0; x < png.width; x += 1) opaque.add(png.at(x, y)[3] === 0 ? 0 : 1);
+    // Some pixels are red (inside a letter), some are cut away.
+    expect([...opaque].sort()).toEqual([0, 1]);
+  });
+
   it('draws what a circular clip cuts as a raster, and cuts a rectangle to a rectangular clip', async () => {
     const { mupdf, scene } = await sceneOf(
       await contentOnly(

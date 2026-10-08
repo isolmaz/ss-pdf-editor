@@ -373,6 +373,16 @@ describe('exact layout: exportOffice', () => {
     expect(textless).toMatchObject({ kind: 'warning', params: { pages: '1' } });
   });
 
+  it('sets a document with no text at all in Arial by default', async () => {
+    const result = await exportOffice(
+      await officeDocument([{ content: '0.5 g 10 10 50 50 re f' }]),
+      options,
+      run,
+    );
+    const styles = await text(await JSZip.loadAsync(result.file.bytes), 'word/styles.xml');
+    expect(styles).toContain('w:ascii="Arial"');
+  });
+
   it('rejects an empty selection and an aborted run', async () => {
     await expect(exportOffice(await linked([FIRST]), { ...options, pages: [] }, run)).rejects.toMatchObject({
       code: 'selection-empty',

@@ -1581,6 +1581,27 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
     expect(blocks[at + 1]).toContain('Last line of the page');
   });
 
+  it('keeps a stamp over a corner of the last line of the page inline, after that line', async () => {
+    const bytes = await officeDocument([
+      {
+        images: { Im1: red },
+        content: [
+          courier(50, 100, 'Last line of the page'),
+          // 30 x 25 pt over the lower left of the line and below it: a little of the line's box.
+          picture('Im1', 50, 80, 30, 25),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const document = await documentXml(file.bytes);
+    expect(document).not.toContain('<wp:anchor');
+    const blocks = bodyBlocks(document).filter((block) => block.startsWith('<w:p>'));
+    const line = blocks.findIndex((block) => block.includes('Last line of the page'));
+    const stamp = blocks.findIndex((block) => block.includes('<wp:inline'));
+    expect(line).toBeGreaterThanOrEqual(0);
+    expect(stamp).toBeGreaterThan(line);
+  });
+
   it('keeps the gaps of a two-column page whose left column holds a labelled drawing, so the page is one page long', async () => {
     const bytes = await officeDocument([
       {
