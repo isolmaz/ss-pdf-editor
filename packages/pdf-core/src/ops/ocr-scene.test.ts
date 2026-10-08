@@ -591,6 +591,352 @@ describe('ocrTextBoxes: columns and regions', () => {
   });
 });
 
+describe('ocrTextBoxes: tables read by row', () => {
+  /** One row of cells: [text, x0, x1], 12 pt tall, at `top`; every cell is a line of its own. */
+  const row = (top: number, cells: readonly (readonly [string, number, number])[], line: number): OcrWord[] =>
+    cells.map(([text, x0, x1], at) => fake(text, x0, top, x1, top + 12, line, at));
+  const invoice = (): OcrWord[] => [
+    ...row(
+      100,
+      [
+        ['No', 10, 30],
+        ['Aciklama', 60, 120],
+        ['Adet', 180, 210],
+        ['Tutar', 250, 290],
+      ],
+      0,
+    ),
+    ...row(
+      124,
+      [
+        ['1', 10, 30],
+        ['Web', 60, 90],
+        ['2', 180, 210],
+        ['500,00', 250, 290],
+      ],
+      1,
+    ),
+    ...row(
+      148,
+      [
+        ['2', 10, 30],
+        ['Alan adi', 60, 120],
+        ['1', 180, 210],
+        ['40,00', 250, 290],
+      ],
+      2,
+    ),
+    ...row(
+      172,
+      [
+        ['3', 10, 30],
+        ['Bakim', 60, 100],
+        ['6', 180, 210],
+        ['900,00', 250, 290],
+      ],
+      3,
+    ),
+  ];
+
+  it('reads the single-line cells of a grid row by row, not each column as a paragraph', () => {
+    const { boxes } = ocrTextBoxes(invoice(), blank(400), 0.9);
+    expect(boxes.flatMap(textOf)).toEqual([
+      'No',
+      'Aciklama',
+      'Adet',
+      'Tutar',
+      '1',
+      'Web',
+      '2',
+      '500,00',
+      '2',
+      'Alan adi',
+      '1',
+      '40,00',
+      '3',
+      'Bakim',
+      '6',
+      '900,00',
+    ]);
+  });
+
+  it('reads rows padded to more than twice the font size as a table too', () => {
+    const padded = [
+      ...row(
+        100,
+        [
+          ['A', 10, 30],
+          ['B', 100, 130],
+          ['C', 200, 230],
+        ],
+        0,
+      ),
+      ...row(
+        136,
+        [
+          ['D', 10, 30],
+          ['E', 100, 130],
+          ['F', 200, 230],
+        ],
+        1,
+      ),
+      ...row(
+        172,
+        [
+          ['G', 10, 30],
+          ['H', 100, 130],
+          ['I', 200, 230],
+        ],
+        2,
+      ),
+    ];
+    expect(ocrTextBoxes(padded, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+      'E',
+      'F',
+      'G',
+      'H',
+      'I',
+    ]);
+  });
+
+  it('keeps the table as one unit among the text above and below it', () => {
+    const words = [fake('Title', 10, 10, 120, 24, 8), ...invoice(), fake('Totals', 10, 260, 120, 274, 9)];
+    const order = ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf);
+    expect(order[0]).toBe('Title');
+    expect(order.slice(1, 5)).toEqual(['No', 'Aciklama', 'Adet', 'Tutar']);
+    expect(order[order.length - 1]).toBe('Totals');
+    expect(order).toHaveLength(18);
+  });
+
+  it('reads label and value rows of two cells by row when the rows are loosely spaced', () => {
+    const words = [
+      ...row(
+        10,
+        [
+          ['Subtotal', 10, 70],
+          ['100,00', 200, 250],
+        ],
+        0,
+      ),
+      ...row(
+        40,
+        [
+          ['Tax', 10, 40],
+          ['20,00', 200, 250],
+        ],
+        1,
+      ),
+      ...row(
+        70,
+        [
+          ['Total', 10, 50],
+          ['120,00', 200, 250],
+        ],
+        2,
+      ),
+    ];
+    expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      'Subtotal',
+      '100,00',
+      'Tax',
+      '20,00',
+      'Total',
+      '120,00',
+    ]);
+  });
+
+  it('reads a cell that wraps onto a second line as one paragraph, in its row, and the table goes on below it', () => {
+    const wrapped = [
+      ...row(
+        100,
+        [
+          ['No', 10, 30],
+          ['Aciklama', 60, 120],
+          ['Adet', 180, 210],
+          ['Tutar', 250, 290],
+        ],
+        0,
+      ),
+      ...row(
+        124,
+        [
+          ['1', 10, 30],
+          ['Web', 60, 90],
+          ['2', 180, 210],
+          ['500,00', 250, 290],
+        ],
+        1,
+      ),
+      fake('devam', 60, 136, 100, 148, 9, 0),
+      ...row(
+        160,
+        [
+          ['2', 10, 30],
+          ['Alan', 60, 120],
+          ['1', 180, 210],
+          ['40,00', 250, 290],
+        ],
+        2,
+      ),
+    ];
+    const { boxes } = ocrTextBoxes(wrapped, blank(400), 0.9);
+    expect(boxes.map(textOf)).toContainEqual(['Web', 'devam']);
+    const order = boxes.flatMap(textOf);
+    expect(order.indexOf('500,00')).toBeLessThan(order.indexOf('Alan'));
+    expect(order.indexOf('devam')).toBeLessThan(order.indexOf('Alan'));
+    expect(order.indexOf('Alan')).toBeLessThan(order.indexOf('40,00'));
+  });
+
+  /** A line of seven words from `x0`, as tesseract reads it. */
+  const prose = (name: string, x0: number, top: number, line: number): OcrWord[] =>
+    ['one', 'two', 'three', 'four', 'five', 'six', name].map((text, at) =>
+      fake(text, x0 + at * 17, top, x0 + at * 17 + 14, top + 12, line, 0),
+    );
+
+  it('keeps two columns of prose column by column although their lines share baselines', () => {
+    const column = (name: string, x: number, first: number) =>
+      [0, 1, 2, 3].flatMap((at) => prose(`${name}${at}`, x, 10 + at * 14, first + at));
+    const words = [...column('L', 10, 0), ...column('R', 170, 10)];
+    const order = ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf);
+    expect(order).toEqual([
+      ...[0, 1, 2, 3].map((at) => `one two three four five six L${at}`),
+      ...[0, 1, 2, 3].map((at) => `one two three four five six R${at}`),
+    ]);
+  });
+
+  it('does not take rows for a table when the cells below do not stand under the cells above', () => {
+    const words = [
+      ...row(
+        100,
+        [
+          ['A', 10, 30],
+          ['B', 100, 130],
+          ['C', 200, 230],
+        ],
+        0,
+      ),
+      ...row(
+        124,
+        [
+          ['D', 55, 75],
+          ['E', 150, 170],
+          ['F', 250, 270],
+        ],
+        1,
+      ),
+    ];
+    expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toHaveLength(6);
+  });
+
+  it('does not take rows too far apart, or with a row of one cell, for a table', () => {
+    const far = [
+      ...row(
+        10,
+        [
+          ['A', 10, 30],
+          ['B', 100, 130],
+          ['C', 200, 230],
+        ],
+        0,
+      ),
+      ...row(
+        120,
+        [
+          ['D', 10, 30],
+          ['E', 100, 130],
+          ['F', 200, 230],
+        ],
+        1,
+      ),
+    ];
+    expect(ocrTextBoxes(far, blank(400), 0.9).boxes.flatMap(textOf)).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
+    const lone = [
+      ...row(
+        10,
+        [
+          ['A', 10, 30],
+          ['B', 100, 130],
+          ['C', 200, 230],
+        ],
+        0,
+      ),
+      ...row(34, [['D', 10, 30]], 1),
+    ];
+    expect(ocrTextBoxes(lone, blank(400), 0.9).boxes.flatMap(textOf)).toHaveLength(4);
+  });
+
+  it('treats two tables with text between them as two tables', () => {
+    const words = [
+      ...row(
+        10,
+        [
+          ['A', 10, 30],
+          ['B', 100, 130],
+          ['C', 200, 230],
+        ],
+        0,
+      ),
+      ...row(
+        34,
+        [
+          ['D', 10, 30],
+          ['E', 100, 130],
+          ['F', 200, 230],
+        ],
+        1,
+      ),
+      fake('Between', 10, 150, 90, 162, 2),
+      ...row(
+        250,
+        [
+          ['G', 10, 30],
+          ['H', 100, 130],
+          ['I', 200, 230],
+        ],
+        3,
+      ),
+      ...row(
+        274,
+        [
+          ['J', 10, 30],
+          ['K', 100, 130],
+          ['L', 200, 230],
+        ],
+        4,
+      ),
+    ];
+    expect(ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf)).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+      'E',
+      'F',
+      'Between',
+      'G',
+      'H',
+      'I',
+      'J',
+      'K',
+      'L',
+    ]);
+  });
+
+  it('does not take rows of long cells for a table, however far apart the rows are', () => {
+    const cells = (top: number, line: number) => [
+      ...prose('A', 10, top, line),
+      ...prose('B', 150, top, line + 1),
+      ...prose('C', 290, top, line + 2),
+    ];
+    const words = [...cells(10, 0), ...cells(40, 3)];
+    expect(ocrTextBoxes(words, blank(500), 0.9).boxes.flatMap(textOf)).toHaveLength(6);
+  });
+});
+
 /* ------------------------------------------------------------------ *
  * family and fit
  * ------------------------------------------------------------------ */
