@@ -14,6 +14,9 @@ test-results/
 # `pnpm coverage` output
 /coverage/
 
+# The owner's local PDFs for the fidelity run are never committed
+e2e/fixtures/local/
+
 # Keys and environment files must never be committed
 .env*
 *.pem
