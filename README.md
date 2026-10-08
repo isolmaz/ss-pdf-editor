@@ -312,7 +312,10 @@ nothing leaving the browser.
   of (re-editing the corners of a page ends with **Apply**), then A4, Letter or
   fit-to-image pages and a JPEG quality. A photo that cannot be opened is reported, and the
   notice stays while the next photo opens. The PDF opens as a new tab; you are offered the
-  OCR tool on it, which makes it searchable.
+  OCR tool on it, which makes it searchable. If the PDF cannot be opened (another operation
+  is still running, it is over a size or page limit, or opening fails), the scan dialog says
+  why and stays open with your pages, and **Create PDF** can be pressed again; no tab is
+  opened.
 - **Into an open document.** In **Insert pages**, the source **Scan with camera** inserts
   the straightened pages after the page you choose.
 
@@ -489,11 +492,11 @@ These describe how the build works; they are not promises.
 - **The service worker caches static assets only.** It never stores document bytes.
 - **Drafts stay local.** Unsaved work is kept in the origin-private file system (OPFS).
   - A **sensitive session** saves nothing; any document opened with a password starts one.
-  - The recent list keeps the file name, size and page count in `localStorage`. In
-    Chromium it also keeps a *handle* to the file in IndexedDB — a reference the browser
-    asks permission for again, never the file's bytes. A sensitive session keeps no handle:
-    marking a document sensitive, or purging it, forgets its handle, and so do removing an
-    entry and clearing the list.
+  - The recent list keeps the file name, size, page count, when it was last opened and
+    whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
+    file in IndexedDB — a reference the browser asks permission for again, never the file's
+    bytes. A sensitive session keeps no handle: marking a document sensitive, or purging it,
+    forgets its handle, and so do removing an entry and clearing the list.
   - A signature picture is kept only when you tick **Remember on this device**: in
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.
@@ -504,6 +507,11 @@ These describe how the build works; they are not promises.
     waited for.
   - When drafts are restored at start-up, the document you opened meanwhile stays in front;
     a draft whose document you already opened is skipped, and the others are restored.
+  - If the browser's storage refuses the recovery copy of a document you open (storage
+    full, for example), the document still opens and the notice says that its recovery copy
+    could not be stored and why; until a draft save succeeds, its unsaved changes would not
+    survive a closed tab or a crash. A later draft save that fails the same way shows the
+    same sentence.
 - **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
   the UI never claims that it does.
 

@@ -1138,7 +1138,10 @@ red outline (and a disabled "add") for a folded quad.
 **Doors.** `ScanDialog` has two modes. `document` (home card, File menu, palette, tool grid:
 command `file.scan`, opened through `openDialog('scan-camera')` because it is not an operation
 dialog) makes the PDF and the shell opens it as a new tab through the same `openProducedTab` the
-other standalone operations use; with the "offer OCR" box ticked the existing OCR dialog opens
+other standalone operations use; when the shell does not open the PDF (another operation
+running, a limit, a failure), `onDocument` resolves with the reason and the dialog shows it and
+stays open with its pages, because the shell's notice would sit behind the modal; with the
+"offer OCR" box ticked the existing OCR dialog opens
 on the new tab afterwards (not a second recogniser). `pages` serves the new `scan` field kind
 of `OperationDialogSpec`: the Insert pages dialog's source "Scan with camera" holds the JPEG
 files the scanner returns and feeds them to the existing image path of `insertPages`.
@@ -1996,7 +1999,9 @@ the hash, the limits) runs before the tab is registered, and a handle opened bes
 hash is destroyed. Storing the recovery copy comes after and is not part of opening: when that
 write fails, the document stays open and the notice says its recovery copy could not be stored
 and why (`draft.sourceNotStored`), next to whatever the operation reports
-(`e2e/ui-open-storage-failure.spec.ts`).
+(`e2e/ui-open-storage-failure.spec.ts`). A draft save that the browser's storage refuses
+later shows the same sentence, and not again while the notice already says it, so a store that
+stays full does not replace the operation's line.
 
 Vault writes are serialised in-window through a single promise chain, and a writable that
 rejects is aborted best-effort **without replacing the error that explains what went wrong**
