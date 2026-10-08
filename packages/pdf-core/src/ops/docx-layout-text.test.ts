@@ -565,6 +565,33 @@ describe('grouping lines into text boxes', () => {
     const [box] = textBoxes(await layoutOf(content), []) as [TextBox];
     expect(box.rotation).toBeCloseTo(180, 3);
     expect(textOf(box)).toEqual(['ab cd']);
+    // Upside-down glyph boxes are not a synthetic oblique: the text stays upright, not italic.
+    expect(box.paragraphs[0]?.lines[0]?.runs.map((item) => item.italic)).toEqual([false]);
+  });
+
+  it('keeps a line within about 26° of the vertical a vertical box, and turns a line beyond it', async () => {
+    // 20° off vertical (dir.y 0.94) was and stays a vertical box; 30° off (dir.y 0.87) is at a slant.
+    const turn = (degrees: number, x: number): string => {
+      const s = Math.sin((degrees * Math.PI) / 180);
+      const c = Math.cos((degrees * Math.PI) / 180);
+      return `BT /F1 10 Tf ${s} ${c} ${-c} ${s} ${x} 100 Tm (sinir) Tj ET`;
+    };
+    const content = [
+      turn(20, 100),
+      turn(-20, 160),
+      turn(30, 220),
+      turn(-30, 280),
+      // The same two sides for text running down the page.
+      `BT /F1 10 Tf ${Math.sin((20 * Math.PI) / 180)} ${-Math.cos((20 * Math.PI) / 180)} ${Math.cos((20 * Math.PI) / 180)} ${Math.sin((20 * Math.PI) / 180)} 340 400 Tm (inis) Tj ET`,
+      `BT /F1 10 Tf ${Math.sin((30 * Math.PI) / 180)} ${-Math.cos((30 * Math.PI) / 180)} ${Math.cos((30 * Math.PI) / 180)} ${Math.sin((30 * Math.PI) / 180)} 370 400 Tm (inis) Tj ET`,
+    ].join('\n');
+    const boxes = textBoxes(await layoutOf(content), []);
+    const turned = boxes.map((box) =>
+      box.rotation === 90 || box.rotation === 270 ? box.rotation : 'angled',
+    );
+    expect(turned.filter((kind) => kind === 'angled')).toHaveLength(3);
+    expect(turned.filter((kind) => kind === 270)).toHaveLength(2);
+    expect(turned.filter((kind) => kind === 90)).toHaveLength(1);
   });
 
   it('writes a translucent fill as the run\u2019s opacity, split from the solid text beside it', async () => {

@@ -154,14 +154,14 @@ function dominantSize(chars: readonly LayoutChar[]): number {
 /**
  * Whether the line runs down or up the page rather than across it, by MuPDF's direction of
  * the line (which is right for a single character too, where no two positions compare).
- * A line that is none of across, down and up (within 1.5°, `slanted`) is `angled`: a text
- * box turned by the line's angle.
+ * Text turned less than about 25° from the vertical counts as running down or up (a vertical
+ * text box, which Word and LibreOffice both draw). Any other line that is not across (within
+ * 1.5°, `slanted`) is `angled`: a text box turned by the line's angle.
  */
 function directionOf(line: LayoutLine): Direction {
-  if (slanted(line.dir)) return 'angled';
   const [, y] = line.dir;
-  if (Math.abs(y) < 0.5) return 'right';
-  return y > 0 ? 'down' : 'up';
+  if (Math.abs(y) >= 0.9) return y > 0 ? 'down' : 'up';
+  return slanted(line.dir) ? 'angled' : 'right';
 }
 
 /** Where a character starts and ends along its (slanted) line, from the line's first glyph origin. */
@@ -259,7 +259,8 @@ function runsOf(
   const runs: TextRun[] = [];
   /** Per run: the geometry of its characters and the sums `horizontalScale` compares. */
   const fits: { advances: number[]; starts: number[]; ends: number[]; drawn: number; natural: number }[] = [];
-  const shear = shearOf(chars);
+  // A slanted line's glyph boxes are wider than their pitch by the slant of the line, not of the glyphs.
+  const shear = direction === 'angled' ? 0 : shearOf(chars);
   for (const item of items) {
     // A font the document embeds is named by its embedded family and set in the embedded face's own weight and slant.
     const face = item.source.face === undefined ? undefined : embedded?.(item.source.face);
@@ -1019,13 +1020,12 @@ function runXml(
     run.fit === undefined || run.fit.hscale === 1 ? '' : `<w:w w:val="${Math.round(run.fit.hscale * 100)}"/>`;
   const hex = (run.color & 0xffffff).toString(16).toUpperCase().padStart(6, '0');
   // A translucent run keeps its solid `w:color` for readers without Word 2010's text fill.
-  // `w14:alpha`'s value is written as the *transparency* (1 − opacity). [MS-DOCX] describes the
-  // element like DrawingML's `a:alpha`, "specifies its input color with the specific opacity"
-  // (https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/133bd2fe-ad4c-4422-a120-9c3a1a3a4e30),
-  // but LibreOffice, which reads and writes Word's files, takes and writes the value for text as the
-  // transparency (`DocxAttributeOutput`: `m_nCharTransparence` → `w14:alpha`, where `a:alpha` is
-  // written as 100 % − transparency) and measured 10000 nearly solid and 88000 nearly clear. The
-  // spec and LibreOffice disagree; Word itself was not available to settle it.
+  // `w14:alpha`'s value is the *transparency* (1 − opacity), unlike DrawingML's `a:alpha` (opacity;
+  // [MS-DOCX] CT_SchemeColor, https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/133bd2fe-ad4c-4422-a120-9c3a1a3a4e30).
+  // Evidence: LibreOffice's test document semi-transparent-text.docx, authored by Word 14.0, carries
+  // `w14:alpha 74000` and is asserted as 74 % text transparency, LibreOffice's DOCX export writes the
+  // text's transparency into it, and LibreOffice 26 drew 10000 nearly solid and 88000 nearly clear. As
+  // in Word's files and the Open XML SDK's order, `w14:textFill` follows the standard rPr children.
   const fill =
     run.alpha === undefined
       ? ''
