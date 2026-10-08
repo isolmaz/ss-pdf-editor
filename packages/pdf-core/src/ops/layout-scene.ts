@@ -54,6 +54,8 @@ export interface SceneImage {
   readonly box: Box;
   readonly data: Uint8Array;
   readonly mime: 'image/png' | 'image/jpeg';
+  /** The picture's own resolution, source pixels per page point (the bytes above may be scaled down). */
+  readonly nativeScale?: number;
 }
 
 /**
@@ -175,6 +177,19 @@ export class DocxRegistry {
     const rid = `rIdLink${this.links.length + 1}`;
     this.links.push({ rid, uri });
     return rid;
+  }
+
+  /** The comments of the document (`word/comments.xml`), by id. */
+  readonly comments: { readonly id: number; readonly note: string }[] = [];
+
+  /** `body` (runs) between a comment's range markers, followed by the run that references the comment. */
+  commented(note: string, body: string): string {
+    const id = this.comments.length;
+    this.comments.push({ id, note });
+    return (
+      `<w:commentRangeStart w:id="${id}"/>${body}<w:commentRangeEnd w:id="${id}"/>` +
+      `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${id}"/></w:r>`
+    );
   }
 
   /** The next `wp:docPr` id. */

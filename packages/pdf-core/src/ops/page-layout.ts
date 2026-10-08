@@ -19,7 +19,7 @@
  * ("stream" mode).
  */
 
-import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade } from 'mupdf';
+import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade, Text } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 
 export type Box = readonly [number, number, number, number];
@@ -44,6 +44,8 @@ export interface LayoutChar {
   readonly serif: boolean;
   /** `0xRRGGBB`. */
   readonly color: number;
+  /** Drawn invisibly (render mode 3, or a zero alpha): the text layer a scan's OCR leaves behind. */
+  readonly invisible?: true;
 }
 
 export interface LayoutLine {
@@ -354,6 +356,9 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   const blocks: LayoutBlock[] = [];
   let lines: LayoutLine[] = [];
   let chars: LayoutChar[] = [];
+  /** Every line's `chars` with each character's origin (page space, unshifted), for `invisible`. */
+  const walked: { readonly chars: LayoutChar[]; readonly origins: (readonly [number, number])[] }[] = [];
+  let origins: (readonly [number, number])[] = [];
   let blockBox: Box = [0, 0, 0, 0];
   let lineBox: Box = [0, 0, 0, 0];
   let lineDir: readonly [number, number] = [1, 0];
@@ -386,6 +391,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         lineBox = [x0, y0, x1, y1];
         lineDir = [direction[0], direction[1]];
         chars = [];
+        origins = [];
       },
       onChar(c, origin, font, size, quad, color) {
         // Read per character: the binding hands over a new `Font` wrapper for every one, and two
@@ -403,6 +409,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         const ys = [quad[1], quad[3], quad[5], quad[7]];
         const [x0, y0] = shift(Math.min(...xs), Math.min(...ys));
         const [x1, y1] = shift(Math.max(...xs), Math.max(...ys));
+        origins.push([origin[0], origin[1]]);
         chars.push({
           c,
           box: [x0, y0, x1, y1],
@@ -413,6 +420,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         });
       },
       endLine() {
+        walked.push({ chars, origins });
         lines.push({ box: lineBox, dir: lineDir, chars });
       },
       endTextBlock() {
@@ -446,7 +454,24 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
     if (width * height > area * 0.6 || (width < 0.5 && height < 0.5)) return;
     marks.push({ box: [x0, y0, x1, y1], seed });
   };
+  /** The origins of the glyphs drawn invisibly, on a grid of a quarter point. */
+  const hidden = new Set<string>();
+  const hide = (text: Text, ctm: Matrix): void => {
+    text.walk({
+      showGlyph(_font, trm) {
+        const [x, y] = apply(ctm, trm[4], trm[5]);
+        hidden.add(`${Math.round(x * 4)},${Math.round(y * 4)}`);
+      },
+    });
+  };
   const device = new mupdf.Device({
+    fillText(text, ctm, _colorspace, _color, alpha) {
+      if (alpha === 0) hide(text, ctm);
+    },
+    strokeText(text, _stroke, ctm, _colorspace, _color, alpha) {
+      if (alpha === 0) hide(text, ctm);
+    },
+    ignoreText: hide,
     fillShade(shade, ctm) {
       borrowed(shade);
       mark(transformBox(shade.getBounds(), ctm), true);
@@ -491,6 +516,19 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
     device.close();
   } finally {
     device.destroy();
+  }
+  if (hidden.size > 0) {
+    for (const line of walked) {
+      for (const [at, origin] of line.origins.entries()) {
+        const gx = Math.round(origin[0] * 4);
+        const gy = Math.round(origin[1] * 4);
+        let found = false;
+        for (let dx = -1; dx <= 1 && !found; dx += 1) {
+          for (let dy = -1; dy <= 1 && !found; dy += 1) found = hidden.has(`${gx + dx},${gy + dy}`);
+        }
+        if (found) line.chars[at] = { ...(line.chars[at] as LayoutChar), invisible: true };
+      }
+    }
   }
 
   return { width: px1 - px0, height: py1 - py0, blocks, rulings, marks };

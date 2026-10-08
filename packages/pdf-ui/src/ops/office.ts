@@ -9,6 +9,7 @@
  * JSZip and the read-back check mammoth.
  */
 
+import { OCR_LANGUAGE_CODES_ALL, type OcrLanguageCode, recognizePage } from 'pdf-core/engines/tesseract';
 import {
   type CsvDelimiter,
   type DocxLayout,
@@ -16,7 +17,11 @@ import {
   type OfficeFormat,
 } from 'pdf-core/ops/export-office';
 import type { OperationDialogSpec } from '../dialogs/types';
+import { OCR_LANGUAGE_LABELS } from './ocr';
 import { resolveScope } from './scope';
+
+/** A word below this confidence (0–1) is marked with a Word comment: the threshold measured in `docs/ocr-evaluation.md`. */
+const LOW_CONFIDENCE = 0.9;
 
 /**
  * Excel splits a CSV on the list separator of the computer's region, and that is `;`
@@ -72,6 +77,21 @@ export const exportOfficeDialog: OperationDialogSpec = {
       ],
     },
     {
+      id: 'ocrLanguages',
+      kind: 'checkboxList',
+      labelKey: 'export.office.ocrLanguages',
+      hintKey: 'export.office.ocrLanguagesHint',
+      // Turkish and English: the pair measured best in `docs/ocr-evaluation.md`.
+      defaultValue: ['tur', 'eng'],
+      columns: 2,
+      // One condition per field: the exact layout is the only one that reads scans.
+      visibleWhen: { field: 'layout', equals: ['layout'] },
+      options: OCR_LANGUAGE_CODES_ALL.map((language) => ({
+        value: language,
+        labelKey: OCR_LANGUAGE_LABELS[language],
+      })),
+    },
+    {
       id: 'delimiter',
       kind: 'radio',
       labelKey: 'export.office.delimiter',
@@ -94,12 +114,33 @@ export const exportOfficeDialog: OperationDialogSpec = {
     )
       ? (params.layout as DocxLayout)
       : 'layout';
+    // Scanned pages of the exact layout are read with OCR, in the chosen languages.
+    const languages = (Array.isArray(params.ocrLanguages) ? params.ocrLanguages : []).filter(
+      (language): language is OcrLanguageCode => OCR_LANGUAGE_CODES_ALL.includes(language as OcrLanguageCode),
+    );
+    const ocr =
+      format === 'docx' && docxLayout === 'layout' && languages.length > 0
+        ? {
+            lowConfidence: LOW_CONFIDENCE,
+            recognize: async (png: Uint8Array, scale: number, signal: AbortSignal) =>
+              (
+                await recognizePage({
+                  image: new Blob([png as unknown as BlobPart], { type: 'image/png' }),
+                  scale,
+                  languages,
+                  quality: 'best',
+                  signal,
+                })
+              ).words,
+          }
+        : undefined;
     const result = await exportOffice(
       context.bytes,
       {
         pages,
         format,
         docxLayout,
+        ...(ocr === undefined ? {} : { ocr }),
         baseName: context.name,
         csvDelimiter: delimiter,
         sheetName: {

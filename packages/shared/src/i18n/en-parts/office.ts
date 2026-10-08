@@ -19,6 +19,9 @@ export const officePart = {
   'export.office.layout.pageImages': 'One picture per page (exact look)',
   'export.office.layout.pageImagesHint':
     'Each page becomes one picture that looks exactly like the page; its text cannot be edited in Word.',
+  'export.office.ocrLanguages': 'Languages of scanned pages',
+  'export.office.ocrLanguagesHint':
+    'Pages without text (scans) are read with OCR in these languages and become editable text in Word; words it was unsure of get a comment.',
   'export.office.delimiter': 'Delimiter',
   'export.office.delimiter.comma': 'Comma (,)',
   'export.office.delimiter.semicolon': 'Semicolon (;) — what Excel expects in many European locales',
@@ -65,6 +68,12 @@ export const officePart = {
     'No ruled table was found on these pages; their text was split into columns by its spacing, so check the columns: {pages}.',
   'op.note.exportOffice.noText':
     'These pages hold no readable text (they look scanned); run OCR first for editable text: {pages}.',
+  'op.note.exportOffice.ocrPages':
+    'These pages are pictures, so they were read with OCR; their text is editable text boxes in Word and the rest sits behind it as pictures: {pages}.',
+  'op.note.exportOffice.ocrLowConfidence':
+    '{count} words were read with low confidence and marked with a comment in Word (page number in brackets): {words}',
+  'op.note.exportOffice.ocrUnavailable':
+    'These pages are pictures but OCR was not available for this export; they stayed pictures and their text cannot be edited: {pages}.',
   'op.note.exportOffice.unreadable':
     '{count} characters have no Unicode meaning in the document and could not be exported (they show as �).',
 } as const;

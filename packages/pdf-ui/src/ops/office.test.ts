@@ -141,4 +141,34 @@ describe('export-office dialog', () => {
     expect(await documentOf(flow.files[0]?.bytes)).not.toContain('<wps:txbx');
     expect(flow.report.notes.map((entry) => entry.key)).toContain('op.note.exportOffice.docxApproximate');
   });
+
+  it('offers the scan languages with the exact layout, Turkish and English by default', async () => {
+    const dialog = await dialogIn('en-US');
+    const field = dialog.fields.find((candidate) => candidate.id === 'ocrLanguages');
+    expect(field).toMatchObject({
+      kind: 'checkboxList',
+      labelKey: 'export.office.ocrLanguages',
+      defaultValue: ['tur', 'eng'],
+      visibleWhen: { field: 'layout', equals: ['layout'] },
+    });
+    const options = field !== undefined && 'options' in field ? field.options : [];
+    expect(Array.isArray(options) ? options.map((option) => option.value) : []).toEqual(
+      expect.arrayContaining(['tur', 'eng', 'deu']),
+    );
+  });
+
+  it('exports a page with text without reading it with OCR, whatever the scan languages', async () => {
+    const dialog = await dialogIn('en-US');
+    const pdf = await fixturePage([{ text: 'Merhaba', x: 50, y: 400, size: 12 }]);
+    for (const ocrLanguages of [['tur', 'eng'], []]) {
+      const result = await dialog.run(
+        { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages },
+        contextFor(pdf),
+      );
+      const keys = result.report.notes.map((entry) => entry.key);
+      expect(keys).toContain('op.note.exportOffice.layout');
+      expect(keys).not.toContain('op.note.exportOffice.ocrPages');
+      expect(keys).not.toContain('op.note.exportOffice.ocrUnavailable');
+    }
+  });
 });

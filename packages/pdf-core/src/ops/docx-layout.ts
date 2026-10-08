@@ -30,11 +30,20 @@ import {
   zipped,
 } from './docx-drawing';
 import { embedFonts } from './docx-fonts';
+import {
+  type FlaggedWord,
+  isScanPage,
+  type OcrOptions,
+  readScanPage,
+  type ScanPage,
+} from './docx-layout-ocr';
 import { sceneItemXml } from './docx-layout-shapes';
 import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
 import { DocxRegistry, type PageScene, type TextBox } from './layout-scene';
 import { readPageScene } from './layout-scene-read';
 import { type OperationContext, throwIfAborted } from './types';
+
+export type { OcrOptions } from './docx-layout-ocr';
 
 /**
  * Word's own first `relativeHeight`. Stacked from 1, LibreOffice paints the page-sized
@@ -67,6 +76,26 @@ export interface LayoutDocx {
   readonly unreadable: number;
   /** Fonts of the PDF embedded in the document (`docx-fonts.ts`). */
   readonly fonts: number;
+  /** Scanned pages: those read by OCR (1-based), the words it was unsure of, and the scans left as pictures for want of a recogniser. */
+  readonly ocr: {
+    readonly pages: readonly number[];
+    readonly flagged: readonly FlaggedWord[];
+    readonly unavailable: readonly number[];
+  };
+}
+
+const COMMENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml';
+const COMMENT_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments';
+
+/** `word/comments.xml`: one comment per noted run, by the id its range carries. */
+function commentsXml(comments: readonly { readonly id: number; readonly note: string }[]): string {
+  const list = comments
+    .map(
+      ({ id, note }) =>
+        `<w:comment w:id="${id}" w:author="SsPdfEditor" w:initials="OCR"><w:p><w:r><w:t xml:space="preserve">${xml(note)}</w:t></w:r></w:p></w:comment>`,
+    )
+    .join('');
+  return `${XML_HEAD}<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${list}</w:comments>`;
 }
 
 /** The font most of the text is set in: the document's default font. */
@@ -92,6 +121,7 @@ function stylesXml(font: string, language: string): string {
     `<w:sz w:val="${half}"/><w:szCs w:val="${half}"/>${language === '' ? '' : `<w:lang w:val="${xml(language)}"/>`}</w:rPr></w:rPrDefault>` +
     '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
     '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>' +
+    '<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>' +
     '</w:styles>'
   );
 }
@@ -106,6 +136,7 @@ export async function writeLayoutDocx(
   title: string,
   language: string,
   context: OperationContext,
+  ocr: OcrOptions | null = null,
 ): Promise<LayoutDocx> {
   const mupdf = await loadMupdf();
   const registry = new DocxRegistry(WORD_Z_BASE);
@@ -114,6 +145,9 @@ export async function writeLayoutDocx(
   const allBoxes: TextBox[] = [];
   const scaled: { page: number; scale: number }[] = [];
   const textless: number[] = [];
+  const ocrPages: number[] = [];
+  const unavailable: number[] = [];
+  const flagged: FlaggedWord[] = [];
   let shapes = 0;
   let pictures = 0;
   let rasters = 0;
@@ -129,29 +163,39 @@ export async function writeLayoutDocx(
     });
     const page = doc.loadPage(index);
     let scene: PageScene;
+    let scan: ScanPage | null = null;
     try {
       scene = readPageScene(mupdf, page);
+      if (isScanPage(scene)) {
+        scan = await readScanPage(mupdf, page, scene, ocr, context.signal);
+        if (scan === null) unavailable.push(index + 1);
+      }
     } finally {
       page.destroy();
     }
     const scale = wordPageScale(scene.width, scene.height);
     if (scale < 1) scaled.push({ page: index + 1, scale });
     const section = pageSectionXml(scene.width * scale, scene.height * scale);
-    const boxes = textBoxes(scene.text, scene.links, (face) => fonts.faceOf(index, face));
+    const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => fonts.faceOf(index, face));
+    const items = scan?.items ?? scene.items;
+    if (scan !== null) {
+      ocrPages.push(index + 1);
+      for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
+    }
     if (boxes.length === 0) textless.push(index + 1);
     allBoxes.push(...boxes);
-    for (const item of scene.items) {
+    for (const item of items) {
       if (item.kind === 'shape') shapes += 1;
       else if (item.kind === 'image') pictures += 1;
       else rasters += 1;
     }
-    for (const block of scene.text.blocks) {
+    for (const block of scan === null ? scene.text.blocks : []) {
       if (block.kind !== 'text') continue;
       for (const line of block.lines) {
         for (const char of line.chars) if (char.c === '\uFFFD') unreadable += 1;
       }
     }
-    const drawings = scene.items.map((item) => sceneItemXml(item, scale, registry)).join('');
+    const drawings = items.map((item) => sceneItemXml(item, scale, registry)).join('');
     const text = boxes.map((box) => textBoxXml(box, scale, registry)).join('');
     const isLast = done === pages.length - 1;
     if (isLast) lastSection = section;
@@ -166,23 +210,39 @@ export async function writeLayoutDocx(
   context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
   // The last page's section is the body's own `w:sectPr`.
   const body = paragraphs.join('') + lastSection;
+  /** The comments part's declaration added to the content types or the relationships, when there are comments. */
+  const withComments = (part: string, kind: 'types' | 'rels' = 'rels'): string => {
+    if (registry.comments.length === 0) return part;
+    return kind === 'types'
+      ? part.replace(
+          '</Types>',
+          `<Override PartName="/word/comments.xml" ContentType="${COMMENT_TYPE}"/></Types>`,
+        )
+      : part.replace(
+          '</Relationships>',
+          `<Relationship Id="rIdComments" Type="${COMMENT_REL}" Target="comments.xml"/></Relationships>`,
+        );
+  };
   const extensions = [
     ...new Set(registry.media.map((media): MediaExtension => (media.name.endsWith('.png') ? 'png' : 'jpeg'))),
   ];
   const files: Record<string, string | Uint8Array> = {
-    '[Content_Types].xml': fonts.contentTypes(contentTypesXml(extensions)),
+    '[Content_Types].xml': withComments(fonts.contentTypes(contentTypesXml(extensions)), 'types'),
     '_rels/.rels': PACKAGE_RELS('word/document.xml'),
     'docProps/core.xml': corePropertiesXml(title),
     'word/document.xml': wordDocumentXml(body, SHAPE_NAMESPACES),
     'word/styles.xml': stylesXml(bodyFontOf(allBoxes), language),
-    'word/_rels/document.xml.rels': fonts.documentRels(
-      documentRelsXml(
-        registry.media.map((media) => media.name),
-        registry.links,
+    'word/_rels/document.xml.rels': withComments(
+      fonts.documentRels(
+        documentRelsXml(
+          registry.media.map((media) => media.name),
+          registry.links,
+        ),
       ),
     ),
     ...fonts.files,
   };
+  if (registry.comments.length > 0) files['word/comments.xml'] = commentsXml(registry.comments);
   for (const media of registry.media) files[`word/media/${media.name}`] = media.data;
   return {
     bytes: await zipped(files),
@@ -196,5 +256,6 @@ export async function writeLayoutDocx(
     textless,
     unreadable,
     fonts: fonts.count,
+    ocr: { pages: ocrPages, flagged, unavailable },
   };
 }

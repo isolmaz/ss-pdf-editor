@@ -807,7 +807,14 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
         return;
       }
       const picture = pictureOf(mupdf, image, matrix, full, shown, alpha * frame.alpha);
-      if (picture !== null) emit({ kind: 'image', box: shown, ...picture }, shown);
+      if (picture !== null) {
+        const side = Math.max(full[2] - full[0], full[3] - full[1]);
+        const nativeScale = side > 0 ? Math.max(image.getWidth(), image.getHeight()) / side : undefined;
+        emit(
+          { kind: 'image', box: shown, ...picture, ...(nativeScale === undefined ? {} : { nativeScale }) },
+          shown,
+        );
+      }
     },
   });
   try {
