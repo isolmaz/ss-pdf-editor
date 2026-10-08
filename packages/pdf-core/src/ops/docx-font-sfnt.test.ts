@@ -423,6 +423,8 @@ describe('trueTypeForWord', () => {
     const dangling = REGULAR.slice(0, 12 + 16 * 3);
     expect(trueTypeForWord(dangling, map, NAMES)).toBeNull(); // the tables are cut off
     expect(trueTypeForWord(REGULAR.slice(0, 20), map, NAMES)).toBeNull(); // the directory is cut off
+    const directory = 12 + 16 * new DataView(REGULAR.buffer, REGULAR.byteOffset).getUint16(4);
+    expect(trueTypeForWord(REGULAR.slice(0, directory + 8), map, NAMES)).toBeNull(); // the directory is whole, the tables are cut off
     expect(trueTypeForWord(without(REGULAR, 'head'), map, NAMES)).toBeNull();
     expect(trueTypeForWord(without(REGULAR, 'maxp'), map, NAMES)).toBeNull();
     expect(trueTypeForWord(without(REGULAR, 'glyf'), map, NAMES)).toBeNull();
@@ -560,6 +562,7 @@ describe('cffForWord', () => {
     };
     expect(upem(buildCff({ matrix: ['0.0005', '0', '0', '0.0005', '0', '0'] }))).toBe(2000);
     expect(upem(buildCff({ matrix: ['5E-4', '0', '0', '5E-4', '0', '0'] }))).toBe(2000);
+    expect(upem(buildCff({ matrix: ['0.00005E1', '0', '0', '0.00005E1', '0', '0'] }))).toBe(2000); // a positive exponent
     expect(upem(buildCff({ matrix: null }))).toBe(1000);
     expect(upem(buildCff({ matrix: ['0', '0', '0', '0', '0', '0'] }))).toBe(1000);
     expect(upem(buildCff({ matrix: ['0.00001', '0', '0', '0.00001', '0', '0'] }))).toBe(16384);

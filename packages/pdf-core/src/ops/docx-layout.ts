@@ -201,9 +201,9 @@ export async function writeLayoutDocx(
       else if (item.kind === 'image') pictures += 1;
       else rasters += 1;
     }
+    // The scene reads the page's text without pictures, so its blocks are text.
     for (const block of scan === null ? scene.text.blocks : []) {
-      if (block.kind !== 'text') continue;
-      for (const line of block.lines) {
+      for (const line of block.kind === 'text' ? block.lines : []) {
         for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
       }
     }

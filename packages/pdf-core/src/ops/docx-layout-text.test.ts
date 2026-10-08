@@ -131,6 +131,27 @@ describe('grouping lines into text boxes', () => {
     expect(textOf(justifiedBox)).toEqual([justified.filter((text) => text !== '').join('\n')]);
   });
 
+  it('writes no space after the last visible word, when only invisible text follows it', async () => {
+    const hidden = line('courier', 12, 40 + 0.6 * 12 * 8, 400, 'secret').replace('BT', 'BT 3 Tr');
+    const layout = await layoutOf([line('courier', 12, 40, 400, 'Visible '), hidden].join('\n'));
+    const boxes = textBoxes(layout, []);
+    expect(boxes.map((box) => textOf(box))).toEqual([['Visible']]);
+  });
+
+  it("starts a new paragraph where the line spacing stops being the paragraph's own", async () => {
+    // Two lines 14 apart, then one 18 apart: all left-aligned and no further than a line apart, but not the same spacing.
+    const layout = await layoutOf(
+      [
+        line('courier', 12, 40, 440, 'bir satir burada'),
+        line('courier', 12, 40, 426, 'ikinci satir var'),
+        line('courier', 12, 40, 408, 'ucuncu satir ayri'),
+      ].join('\n'),
+    );
+    const boxes = textBoxes(layout, []);
+    expect(boxes).toHaveLength(1);
+    expect(textOf(boxes[0] as TextBox)).toEqual(['bir satir burada\nikinci satir var', 'ucuncu satir ayri']);
+  });
+
   it('reads several lines that share a middle as one centred paragraph', async () => {
     const lines = ['Ozet', 'Rapor basligi', 'bir iki'];
     const layout = await layoutOf(

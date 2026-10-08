@@ -199,6 +199,62 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrUnavailable')).toBe(false);
   });
 
+  it('names each unsure word once, the first twenty only, and says there are more', async () => {
+    const unsure = (text: string, at: number): OcrWord => ({
+      text,
+      x0: 20 + (at % 10) * 30,
+      x1: 40 + (at % 10) * 30,
+      y0: 20 + Math.floor(at / 10) * 20,
+      y1: 32 + Math.floor(at / 10) * 20,
+      confidence: 30,
+      block: 3,
+      paragraph: 3,
+      line: 3 + Math.floor(at / 10),
+    });
+    // 'again' is read twice on the page; 25 distinct words in all.
+    const found = [
+      ...Array.from({ length: 24 }, (_, at) => unsure(`w${at}`, at)),
+      unsure('again', 24),
+      unsure('again', 25),
+    ];
+    const result = await exportOffice(
+      await scanOf(),
+      { ...options, ocr: { lowConfidence: 0.9, recognize: async () => found } },
+      run,
+    );
+    const flagged = result.notes.find((note) => note.key === 'op.note.exportOffice.ocrLowConfidence');
+    const listed = String(flagged?.params?.words).split(', ');
+    expect(flagged?.params?.count).toBe(26);
+    expect(listed).toHaveLength(21);
+    expect(listed.slice(0, 3)).toEqual(['w0 (1)', 'w1 (1)', 'w2 (1)']);
+    expect(listed.at(-1)).toBe('…');
+    expect(new Set(listed).size).toBe(21);
+  });
+
+  it('lists a word read twice once when there are few words', async () => {
+    const unsure = (text: string, x0: number): OcrWord => ({
+      text,
+      x0,
+      x1: x0 + 20,
+      y0: 20,
+      y1: 32,
+      confidence: 30,
+      block: 3,
+      paragraph: 3,
+      line: 3,
+    });
+    const result = await exportOffice(
+      await scanOf(),
+      {
+        ...options,
+        ocr: { lowConfidence: 0.9, recognize: async () => [unsure('again', 20), unsure('again', 100)] },
+      },
+      run,
+    );
+    const flagged = result.notes.find((note) => note.key === 'op.note.exportOffice.ocrLowConfidence');
+    expect(flagged?.params).toEqual({ count: 2, words: 'again (1)' });
+  });
+
   it('writes no comments part when every word is sure', async () => {
     const result = await exportOffice(
       await scanOf(),

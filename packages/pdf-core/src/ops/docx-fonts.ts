@@ -583,12 +583,6 @@ export async function embedFonts(
 
 /** The Word-ready font for a program, or `null` when it cannot or may not be embedded. */
 function buildProgram(program: Program, names: FontNames): Uint8Array | null {
-  let data: Uint8Array;
-  try {
-    data = new Uint8Array(program.source.file.readStream().asUint8Array());
-  } catch {
-    return null;
-  }
   const map = (convert: (gid: number) => number | undefined): GlyphMapping[] => {
     const out: GlyphMapping[] = [];
     for (const [unicode, gid] of program.unicode) {
@@ -603,6 +597,7 @@ function buildProgram(program: Program, names: FontNames): Uint8Array | null {
     return value.isNumber() ? value.asNumber() : fallback;
   };
   try {
+    const data = new Uint8Array(program.source.file.readStream().asUint8Array());
     const tables = sfntTables(data);
     if (tables !== null) {
       const fsType = embeddingBits(tables, data);
