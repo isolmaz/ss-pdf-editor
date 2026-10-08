@@ -413,7 +413,7 @@ had to stay green. The moves, and the defects they fixed on the way:
     to the text, and so is one crossing a table or covering most of the page. The region is
     rendered at 144 dpi as one picture, labels included, and its text leaves the flow. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
-  - **Word.** Each page is a section with the page's size, orientation and margins. Blocks
+  - **Word (flow).** Each page is a section with the page's size, orientation and margins. Blocks
     are cut into paragraphs where a line ends short, a gap opens, the size changes or a
     bullet or a number (one or two digits and `.` or `)`, then a space) starts. A hyphen that
     breaks a word before a lower-case letter is removed, even when it is set in another style than
@@ -425,6 +425,21 @@ had to stay green. The moves, and the defects they fixed on the way:
     word count must equal the words written. A picture MuPDF could not draw, and one inside a
     ruled table (whose cells carry text only), is left out of the file and counted in a `lost`
     note (`op.note.exportOffice.picturesLost`).
+  - **Word layout** (`OfficeExportOptions.docxLayout`, `flow` by default; the UI's `layout` field and the
+    Export dialog's second select). `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
+    page with MuPDF (`page.toPixmap`, RGB, no alpha so white paper, annotations and widgets
+    included; pdf.js is not used, so the path runs in Node tests) at 200 dpi of the page's size as
+    `getBounds` gives it (after `/Rotate` and the crop box), fewer when that would pass 40 megapixels.
+    JPEG (quality 90) when a `Device` pass sees `fillImage` on the page, PNG otherwise. Each page is a
+    section of the page's size with every margin 0 and `w:orient` when wide, holding one
+    paragraph (exact 1 pt line, 1 pt run) with a `wp:anchor` picture at the page's corner
+    (`behindDoc`, `wrapNone`; children in the schema's order). **The 22-inch rule:** Word refuses a
+    page side above 22 in (1584 pt, 31 680 twips), so `wordPageScale` shrinks both sides of a larger
+    page by `min(1, 1584/w, 1584/h)`; the pixels are still those of the original size, and the
+    report names the pages and the smallest ratio (`op.note.exportOffice.pageScaled`). The XML both
+    writers share (escaping, package parts, `zipped`, the section and the anchor) is in
+    `ops/docx-drawing.ts`. The file is read back with mammoth like the flowing one; it holds no
+    words, so none must be found.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
     is not read back (the XLSX path reports no `verify` step; only Word and CSV do). CSV rows are read back through `parseCsv`. A CSV text
     cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,

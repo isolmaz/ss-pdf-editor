@@ -3,10 +3,17 @@
  *
  * A download like the text export: the pages in scope are read as layout and written in
  * the chosen format, and the core's own report says what came across and what did not.
- * Its own chunk, because the writer carries JSZip and the read-back check mammoth.
+ * A Word file is either flowing text (editable) or one picture per page (exact look); the
+ * choice shows only while Word is the format. Its own chunk, because the writer carries
+ * JSZip and the read-back check mammoth.
  */
 
-import { type CsvDelimiter, exportOffice, type OfficeFormat } from 'pdf-core/ops/export-office';
+import {
+  type CsvDelimiter,
+  type DocxLayout,
+  exportOffice,
+  type OfficeFormat,
+} from 'pdf-core/ops/export-office';
 import type { OperationDialogSpec } from '../dialogs/types';
 import { resolveScope } from './scope';
 
@@ -44,6 +51,21 @@ export const exportOfficeDialog: OperationDialogSpec = {
       ],
     },
     {
+      id: 'layout',
+      kind: 'radio',
+      labelKey: 'export.office.layout',
+      defaultValue: 'flow',
+      visibleWhen: { field: 'format', equals: ['docx'] },
+      options: [
+        { value: 'flow', labelKey: 'export.office.layout.flow', hintKey: 'export.office.layout.flowHint' },
+        {
+          value: 'page-images',
+          labelKey: 'export.office.layout.pageImages',
+          hintKey: 'export.office.layout.pageImagesHint',
+        },
+      ],
+    },
+    {
       id: 'delimiter',
       kind: 'radio',
       labelKey: 'export.office.delimiter',
@@ -61,11 +83,13 @@ export const exportOfficeDialog: OperationDialogSpec = {
       ? (params.format as OfficeFormat)
       : 'docx';
     const delimiter: CsvDelimiter = params.delimiter === 'semicolon' ? ';' : ',';
+    const docxLayout: DocxLayout = params.layout === 'page-images' ? 'page-images' : 'flow';
     const result = await exportOffice(
       context.bytes,
       {
         pages,
         format,
+        docxLayout,
         baseName: context.name,
         csvDelimiter: delimiter,
         sheetName: {

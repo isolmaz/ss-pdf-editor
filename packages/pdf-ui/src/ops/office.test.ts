@@ -74,4 +74,48 @@ describe('export-office dialog', () => {
     );
     expect(word.files?.[0]?.name).toBe('rapor.docx');
   });
+
+  it('offers the Word layout only for Word, flowing text first', async () => {
+    const dialog = await dialogIn('en-US');
+    const layout = dialog.fields.find((candidate) => candidate.id === 'layout');
+    expect(layout).toMatchObject({
+      kind: 'radio',
+      labelKey: 'export.office.layout',
+      defaultValue: 'flow',
+      visibleWhen: { field: 'format', equals: ['docx'] },
+    });
+    const options = layout !== undefined && 'options' in layout ? layout.options : [];
+    expect(Array.isArray(options)).toBe(true);
+    if (!Array.isArray(options)) return;
+    expect(options.map((option) => option.value)).toEqual(['flow', 'page-images']);
+  });
+
+  it('writes one picture per page when the layout says so, and flowing text for anything else', async () => {
+    const dialog = await dialogIn('en-US');
+    const pdf = await fixturePage([{ text: 'Merhaba', x: 50, y: 400, size: 12 }]);
+    // A ZIP names its entries in plain text in their headers.
+    const entries = (bytes: Uint8Array | undefined): string => new TextDecoder('latin1').decode(bytes);
+
+    const pictures = await dialog.run(
+      { scope: 'all', format: 'docx', layout: 'page-images' },
+      contextFor(pdf),
+    );
+    expect(entries(pictures.files[0]?.bytes)).toContain('word/media/page1.png');
+    expect(pictures.report.notes.map((entry) => entry.key)).toContain('op.note.exportOffice.pageImages');
+
+    // Flowing text is the choice, and what an unknown or missing value falls back to.
+    const asked: Record<string, string>[] = [
+      { scope: 'all', format: 'docx', layout: 'flow' },
+      { scope: 'all', format: 'docx', layout: 'sideways' },
+      { scope: 'all', format: 'docx' },
+    ];
+    for (const params of asked) {
+      const flow = await dialog.run(params, contextFor(pdf));
+      expect(entries(flow.files[0]?.bytes), JSON.stringify(params)).not.toContain('word/media/');
+      expect(
+        flow.report.notes.map((entry) => entry.key),
+        JSON.stringify(params),
+      ).toContain('op.note.exportOffice.docxApproximate');
+    }
+  });
 });
