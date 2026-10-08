@@ -12,6 +12,13 @@ export const officePart = {
   'export.office.format.xlsxHint': 'Her çizgili tablo bir sayfa; tablosuz sayfalar satır satır.',
   'export.office.format.csv': 'CSV',
   'export.office.format.csvHint': 'Tablolar tek dosyada, aralarında boş satırla.',
+  'export.office.layout': 'Word düzeni',
+  'export.office.layout.flow': 'Akan metin (düzenlemeye uygun)',
+  'export.office.layout.flowHint':
+    'Paragraflar, başlıklar ve tablolar Word’de düzenlenebilir; sayfanın birebir görünümü korunmaz.',
+  'export.office.layout.pageImages': 'Tek resim (her sayfa birebir)',
+  'export.office.layout.pageImagesHint':
+    'Her sayfa, görünümü birebir korunan tek bir resim olur; metni Word’de düzenlenemez.',
   'export.office.delimiter': 'Ayırıcı',
   'export.office.delimiter.comma': 'Virgül (,)',
   'export.office.delimiter.semicolon': 'Noktalı virgül (;) — Türkçe Excel bunu bekler',
@@ -31,6 +38,10 @@ export const officePart = {
     '{pages} sayfa {format} dosyasına aktarıldı ve dosya yeniden okunarak doğrulandı.',
   'op.note.exportOffice.docxApproximate':
     'Metin akan paragraflar olarak aktarıldı: sayfadaki birebir konumlar, çok sütunlu akış, çizimler, form alanları ve açıklamalar aktarılmaz. Yazı tipleri adlarıyla aktarılır; bilgisayarda yoksa Word benzerini kullanır.',
+  'op.note.exportOffice.pageImages':
+    'Her sayfa, {dpi} dpi çözünürlükte sayfanın tek bir resmi olarak aktarıldı; görünüm korunur ama metni Word’de düzenlenemez.',
+  'op.note.exportOffice.pageScaled':
+    'Word 22 inçten (55,88 cm) büyük sayfa kabul etmez; şu sayfalar orantılı olarak küçültüldü (en küçük oran %{percent}): {pages}.',
   'op.note.exportOffice.tables': '{count} çizgili tablo, birleşik hücreleriyle tablo olarak aktarıldı.',
   'op.note.exportOffice.streamTables':
     'Çizgisiz {count} tablo, metnin aralıklarından tanınıp kenarlıksız tablo olarak aktarıldı; sütunlarını kontrol edin.',

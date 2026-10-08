@@ -10,6 +10,13 @@ export const officePart = {
   'export.office.format.xlsxHint': 'One sheet per ruled table; pages without one row by row.',
   'export.office.format.csv': 'CSV',
   'export.office.format.csvHint': 'The tables in one file, an empty line between them.',
+  'export.office.layout': 'Word layout',
+  'export.office.layout.flow': 'Flowing text (best for editing)',
+  'export.office.layout.flowHint':
+    'Paragraphs, headings and tables you can edit in Word; the exact look of the page is not kept.',
+  'export.office.layout.pageImages': 'One picture per page (exact look)',
+  'export.office.layout.pageImagesHint':
+    'Each page becomes one picture that looks exactly like the page; its text cannot be edited in Word.',
   'export.office.delimiter': 'Delimiter',
   'export.office.delimiter.comma': 'Comma (,)',
   'export.office.delimiter.semicolon': 'Semicolon (;) — what Excel expects in many European locales',
@@ -28,6 +35,10 @@ export const officePart = {
     '{pages} pages were exported to {format}, and the file was read back to check it.',
   'op.note.exportOffice.docxApproximate':
     'The text was exported as flowing paragraphs: exact positions on the page, multi-column flow, drawings, form fields and annotations are not. Fonts are named; where one is not installed, Word uses a similar one.',
+  'op.note.exportOffice.pageImages':
+    'Each page was exported as one picture of the page at {dpi} dpi; the look is kept, but its text cannot be edited in Word.',
+  'op.note.exportOffice.pageScaled':
+    'Word does not accept pages larger than 22 inches (55.88 cm); these pages were scaled down proportionally (smallest ratio {percent}%): {pages}.',
   'op.note.exportOffice.tables': '{count} ruled tables were exported as tables, with their merged cells.',
   'op.note.exportOffice.streamTables':
     '{count} tables without rules were recognised from the spacing of the text and exported as borderless tables; check their columns.',
