@@ -5,7 +5,7 @@ PaddleOCR / OnnxTR pipeline running on onnxruntime-web? All engines were run ful
 (Playwright), WASM execution provider, 4 threads, below-normal process priority, no network at inference time.
 Reproduce with `tools/measure/ocr/README.md`.
 
-The "CV" columns and rows are measured on the owner's own résumé (`e2e/fixtures/local/ibrahim_Solmaz_Ozgecmis.pdf` and its
+The "CV" columns and rows are measured on the owner's own résumé (a PDF in the git-ignored folder e2e/fixtures/local and its
 transcript `.gt.txt`). Those files are private, git-ignored and not in the repository, so the CV numbers below are a record
 that others cannot rerun; everything marked synthetic (24 generated Turkish pages) is reproducible with the tools in
 `tools/measure/ocr/`. The one-off scripts that drew the two layout test pages (`lay1`, `lay2`) and the classical
@@ -114,7 +114,7 @@ Findings behind the numbers:
 
 Words that every engine got wrong on the CV were re-checked on 1818-px crops: `gerçekleştirdim.MSSQL` (the PDF really has
 no space after the full stop: GT correct), `HTML5` (correct), `Şub 2024 – Tem 2025` (the dash is an en dash: GT correct;
-scoring folds dashes anyway). **No corrections were needed to `ibrahim_Solmaz_Ozgecmis.gt.txt`.**
+scoring folds dashes anyway). **No corrections were needed to the CV transcript.**
 
 ## Low-confidence threshold (pooled over all 25 images; "flagged" = word confidence < θ)
 
@@ -190,7 +190,7 @@ scans after a round trip through LibreOffice) come from `pnpm fidelity` (`FIDELI
 
 - Test set (`tools/measure/ocr/build-testset.mjs`, `texts.mjs`): 24 synthetic pages rendered with mupdf from Turkish text (prose, ALL CAPS, digits/mixed,
   small sizes 8–10 pt, noise/blur, dark card) with per-word ink boxes as ground truth, plus the owner's CV
-  (`e2e/fixtures/local/ibrahim_Solmaz_Ozgecmis.pdf`, 53-line GT `.gt.txt`, local only, never uploaded).
+  (a PDF in the git-ignored folder e2e/fixtures/local, 53-line GT `.gt.txt`, local only, never uploaded).
 - Normalisation before scoring: NFC, curly quotes/dashes folded, whitespace collapsed; `|` removed on the CV (drawn dividers).
   CER/WER = Levenshtein / GT length, micro-averaged. Turkish-letter recall from the character alignment.
 - Cold/warm timings from `run.mjs` in a fresh Chromium context per config; WASM EP, `numThreads = 4`, `crossOriginIsolated` page served by

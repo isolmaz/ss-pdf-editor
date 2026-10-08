@@ -146,7 +146,7 @@ functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). 
   `nasa-tm-vacuum-1965`); `flow` gates words only. A sample's own key, even `null`, wins over the
   mode's `default`. To gate a number, set it a little
   under the lowest value measured on CI's LibreOffice, and say in the commit what it is.
-- **Local samples.** Every `*.pdf` in `e2e/fixtures/local/` (git-ignored: the files are the
+- **Local samples.** Every `*.pdf` in the folder e2e/fixtures/local (git-ignored, so absent from a fresh clone: the files are the
   owner's and never leave the machine) is a sample of origin `local`; a sibling `<name>.gt.txt` is its
   ground truth, pages separated by a form feed or a line holding only `\f`. A PDF without any text is
   treated as a scan. Without that folder the run has only the generated samples and the

@@ -21,7 +21,7 @@ What the scripts need that is not in the repository:
   DejaVu Sans, DejaVu Serif, Carlito). Point `OCRBENCH_FONTS` at a folder with those `.ttf` files (a LibreOffice install's
   `Fonts` folder has them), or put them in `WORK/fonts`; a missing file stops the script and names it.
 - **The owner CV (local only).** The `cv` image (and its `.gt.txt` transcript) comes from
-  `e2e/fixtures/local/ibrahim_Solmaz_Ozgecmis.pdf` and `.gt.txt`. That folder is git-ignored: the CV is private owner data, never
+  the owner's PDF and `.gt.txt` in e2e/fixtures/local (named in `lib.mjs`). That folder is git-ignored: the CV is private owner data, never
   committed, never uploaded, and the CV rows of `docs/ocr-evaluation.md` cannot be reproduced without it. Without the files
   `build-testset.mjs` says so and skips the `cv` image; every other number (the 24 synthetic pages) is reproducible by anyone.
 - **Layout pages.** The two synthetic layout pages (`lay1.png`, `lay2.png` in `WORK/testset/images/`) were drawn by a one-off
