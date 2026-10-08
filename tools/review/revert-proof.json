@@ -586,5 +586,13 @@
     ],
     "run": ["apps/web/src/components/ActivityOverlay.test.tsx"],
     "filter": "shows an indeterminate full bar"
+  },
+  {
+    "commit": "f2ec3811a5c0a640b52f172905164d7e2b5de4cd",
+    "title": "Read aloud in the document's language, or the interface's when it declares none",
+    "kind": "e2e",
+    "tests": ["e2e/ui-read-aloud-lang.spec.ts", "e2e/ui-read-aloud.spec.ts"],
+    "run": ["e2e/ui-read-aloud-lang.spec.ts"],
+    "filter": "is read with the local English voice|is read with the German voice"
   }
 ]

@@ -1,18 +1,18 @@
 # Review guide
 
-The branch is 96 commits ahead of `origin/main` (`git log --reverse origin/main..HEAD`). Each one is listed below exactly once, grouped by risk, highest first: what was wrong, and the test that proves it. A commit that fits two groups is in the higher one. Test names are quoted as they appear in the test files.
+Every commit of `git log --reverse origin/main..HEAD` is listed below exactly once, grouped by risk, highest first: what was wrong, and the test that proves it; the only exception is the commit that last updated this guide. A commit that fits two groups is in the higher one. Test names are quoted as they appear in the test files.
 
 | Group | What | Commits |
 | --- | --- | --- |
 | 1 | Data integrity, security, signatures: wrong file or document content, lost data, verification | 21 |
-| 2 | Other behaviour fixes a user sees | 21 |
+| 2 | Other behaviour fixes a user sees | 22 |
 | 3 | Code removed as unreachable, and refactors, without behaviour change | 23 |
-| 4 | Tooling, CI, coverage, docs | 11 |
+| 4 | Tooling, CI, coverage, docs | 13 |
 | 5 | Test-only | 20 |
 
 ## How to review
 
-1. Read groups 1 and 2 in full: 42 commits, each with the defect, the changed code and the test. The claim to check is that the named test fails without the fix. `revert-proof` below does that mechanically; your job is to judge that the test asserts the right thing.
+1. Read groups 1 and 2 in full: 43 commits, each with the defect, the changed code and the test. The claim to check is that the named test fails without the fix. `revert-proof` below does that mechanically; your job is to judge that the test asserts the right thing.
 2. Read the diff of group 3 for the "no behaviour change" claim only. The production line counts show where to spend time: `d486147` and `a73ecd1` are the large ones.
 3. Skim group 4. Sample group 5 for tests that cannot fail. A test is real when it asserts behaviour (a produced file read back, an exact message, an exact count) and fails when that behaviour breaks. Reject: `skip`, `only`, `todo`, `fixme`; coverage-ignore comments (`c8 ignore`, `v8 ignore`, `istanbul ignore`); assertions on text that is always there; a test that only runs code. A starting search over everything the branch adds:
 
@@ -24,7 +24,7 @@ git diff origin/main..HEAD -- '*.test.ts' '*.test.tsx' 'e2e/*.ts' | grep -nE '^\
 
 ## revert-proof
 
-`tools/review/revert-proof.json` lists every fix commit of groups 1 and 2 with the test files it touched (`tests`), the files that hold the proving tests (`run`, optional) and a name filter (`filter`) that selects only the proving tests. `kind` is `unit` (Vitest, 30 entries) or `e2e` (Playwright, 12 entries); `kind: "none"` would mark a fix with no automated proof (there is none). `testCommit` (optional) names a later commit that carries the test, and `note` says where an entry covers only part of its commit.
+`tools/review/revert-proof.json` lists every fix commit of groups 1 and 2 with the test files it touched (`tests`), the files that hold the proving tests (`run`, optional) and a name filter (`filter`) that selects only the proving tests. `kind` is `unit` (Vitest, 30 entries) or `e2e` (Playwright, 13 entries); `kind: "none"` would mark a fix with no automated proof (there is none). `testCommit` (optional) names a later commit that carries the test, and `note` says where an entry covers only part of its commit.
 
 ```
 node tools/review/revert-proof.mjs [--shard i/n] [--only <sha-prefix>]
@@ -83,8 +83,10 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - `5b382d5` Keep the user's document in front when a draft restores while it opens
   Startup recovery read which document was in front before awaiting each draft's stored file handle, so a document opened during that wait lost the front to the restored draft and the next edit (a placed picture) landed in, and the export carried the marks of, the wrong document. **Test:** `e2e/ui-recovery-race.spec.ts` “a draft restored while the user opens a document does not take the front from it”.
 
-## 2. Other behaviour fixes a user sees (21)
+## 2. Other behaviour fixes a user sees (22)
 
+- `f2ec381` Read aloud in the document's language, or the interface's when it declares none
+  Read-aloud only ever looked for a local Turkish voice, so on a device without one no document could be read aloud, in either interface language. **Test:** `e2e/ui-read-aloud-lang.spec.ts` “an English interface and a document without /Lang are read with the local English voice”; “a document whose catalog says /Lang de-DE is read with the German voice, not the interface-language one”.
 - `c83ff55` Stop a vault sweep probe waiting for a window that closed
   A tab closed just before a sweep could still hold its window lock when the probe listed live windows; it never answered, so the probe waited the full 10 s and refused the sweep. **Test:** `apps/web/src/vault-channel.test.ts` “stops waiting for a listed window once its lock is gone, and a failed re-query changes nothing”; `apps/web/src/vault-channel.test.ts` “keeps waiting for a listed window whose lock is still held, and stops asking once it answers”.
 - `80e2ddd` Cancel text edits cleanly during verification and test the text read path
@@ -177,8 +179,12 @@ Known gaps in the proof, so nobody reads more into it than is there:
 - `2524520` Drop the tag editor's unreachable generic refusal
   Removes `tags.err.generic` (“That change is not possible.”): `applyStructureEdits` refuses only with a `StructEditError`, so the notice is read from the refusal's reason directly. No behaviour change claimed; production code +10 −10 lines (the rest is tests).
 
-## 4. Tooling, CI, coverage, docs (11)
+## 4. Tooling, CI, coverage, docs (13)
 
+- `2667a9c` Run the whole suite on GitHub, deploy main after a smoke check, and check docs against the tree
+  `.github/workflows/ci.yml`, `nightly.yml`, `revert-proof.yml`, `tools/deploy/smoke.mjs`, `tools/audit/docs-sync.mjs`, `pnpm coverage --min-lines`. No product behaviour change.
+- `6b94d9f` Bring README, CONTRIBUTING, architecture and the site in line with the code
+  Documentation and site copy only. No product behaviour change.
 - `11c3ca0` test(coverage): pnpm coverage measures the unit and browser suites together
   Adds `pnpm coverage` (unit and browser V8 coverage merged by `tools/coverage/report.mjs`), the e2e recording hook in `e2e/test.ts`, a `COVERAGE_BUILD` unminified build switch in `apps/web/vite.config.ts` and the coverage block in `vitest.config.ts`. No product behaviour change.
 - `1f2fd3c` docs(site): the landing, legal and 404 pages say what the editor does today, in both languages
