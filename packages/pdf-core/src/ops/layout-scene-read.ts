@@ -269,8 +269,8 @@ type Drawable = readonly [ColorSpace, Color];
  * handed over as it is:
  *  - two components pass as three: the engine reads as many as the colour space has and the
  *    third is never looked at, so the ink values reach it as they are;
- *  - five or more cannot pass at all (the binding's buffer holds four); the colour is drawn as
- *    the grey its strongest ink leaves, `1 − max`: the tone of the ink, not its hue.
+ *  - five or more cannot pass at all (the binding's buffer holds four), so the colour is
+ *    converted to RGB first (`rgbOfInks`) and drawn as that.
  */
 function drawColor(mupdf: Mupdf, colorspace: ColorSpace, color: readonly number[]): Drawable {
   const [first, second, third, fourth] = color;
@@ -280,7 +280,28 @@ function drawColor(mupdf: Mupdf, colorspace: ColorSpace, color: readonly number[
   if (color.length === 4) {
     return [colorspace, [first as number, second as number, third as number, fourth as number]];
   }
-  return [mupdf.ColorSpace.DeviceGray, [1 - Math.min(1, Math.max(0, ...color))]];
+  return [mupdf.ColorSpace.DeviceRGB, rgbOfInks(mupdf, colorspace, color)];
+}
+
+/**
+ * A colour of a space of any number of components as RGB (0…1): one pixel of that space, the
+ * inks at 8 bits, converted by the engine (so through the space's tint transform and alternate).
+ * A PDF's own colour is one of a handful of inks, so the quantising is far below what shows.
+ */
+function rgbOfInks(mupdf: Mupdf, colorspace: ColorSpace, color: readonly number[]): [number, number, number] {
+  const inks = new mupdf.Pixmap(colorspace, [0, 0, 1, 1], false);
+  try {
+    inks.getPixels().set(color.map((ink) => Math.round(Math.min(1, Math.max(0, ink)) * 255)));
+    const rgb = inks.convertToColorSpace(mupdf.ColorSpace.DeviceRGB, false);
+    try {
+      const [r, g, b] = rgb.getPixels() as unknown as [number, number, number];
+      return [r / 255, g / 255, b / 255];
+    } finally {
+      rgb.destroy();
+    }
+  } finally {
+    inks.destroy();
+  }
 }
 
 /** A pixmap's colour of an `r g b` triple, 0xRRGGBB. */

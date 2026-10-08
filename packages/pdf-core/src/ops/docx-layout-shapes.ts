@@ -1,13 +1,15 @@
 /**
  * The drawing of an "exact layout" page (`layout-scene.ts`) as Word drawings: each scene item
- * is one run holding one anchored drawing — a DrawingML shape for a vector path, a picture
- * for an image or a raster. Every drawing is placed from the page's corner, behind the text,
+ * is one run holding one anchored drawing — a DrawingML shape for a vector path; an image or a
+ * raster is a picture-filled rectangle (a `wps:wsp` with a `blipFill`, not a `pic:pic`:
+ * LibreOffice paints a `pic:pic` above every shape whatever the `relativeHeight`). Every drawing is placed from the page's corner, behind the text,
  * with no wrapping; its `relativeHeight` and `wp:docPr` id come from the document's
  * `DocxRegistry`, so calling in paint order keeps the paint order.
  *
  * - A shape is `wps:wsp` in `mc:AlternateContent` (Word 2010+, and what LibreOffice reads);
  *   the document root declares `wps` and `mc` (`SHAPE_NAMESPACES`, which also
- *   declares what the text boxes need).
+ *   declares what the text boxes need). A picture-filled rectangle has a VML `mc:Fallback`
+ *   (the text boxes' way); a vector shape has none.
  * - An upright rectangle is `prstGeom rect` (editable in Word as a rectangle); any other
  *   path is `custGeom`, its points in EMU relative to the shape's box.
  * - A box thinner than the stroke (a horizontal or vertical rule has no height or width) is
@@ -54,7 +56,8 @@ export function sceneItemXml(item: SceneItem, scale: number, registry: DocxRegis
  * A picture is a rectangle filled with the picture, like every other drawing here: LibreOffice
  * keeps a `pic:pic` in front of the shapes of the page whatever their `relativeHeight` (the
  * translucent panels laid over a photo were hidden behind it, SSIM 0.88 → 0.97), while shapes
- * stack among themselves by it.
+ * stack among themselves by it. Like a shape it carries a VML fallback (`v:rect` with a
+ * `v:fill` of the same relationship id, position, size and `z-index`).
  */
 function pictureRun(
   item: SceneImage | SceneRaster,
@@ -85,9 +88,17 @@ function pictureRun(
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
     `<a:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>` +
     '<a:ln><a:noFill/></a:ln></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic>' +
-    '</wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>'
+    '</wp:anchor></w:drawing></mc:Choice>' +
+    // What a reader of VML only (mammoth, older Word) takes: the same rectangle, filled with the picture.
+    '<mc:Fallback><w:pict>' +
+    `<v:rect style="position:absolute;margin-left:${vmlPoints(x0 * scale)}pt;margin-top:${vmlPoints(y0 * scale)}pt;width:${vmlPoints(cx / EMU)}pt;height:${vmlPoints(cy / EMU)}pt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page;z-index:${relativeHeight}" stroked="f">` +
+    `<v:fill r:id="${rid}" type="frame"/></v:rect></w:pict></mc:Fallback>` +
+    '</mc:AlternateContent></w:r>'
   );
 }
+
+/** Points with at most two decimals, for VML. */
+const vmlPoints = (value: number): string => String(Math.round(value * 100) / 100);
 
 /* ------------------------------------------------------------------ *
  * shapes

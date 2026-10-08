@@ -591,7 +591,7 @@ describe('sceneItemXml: pictures', () => {
     expect(names(first)).toEqual(['w:r']);
     const alternate = kids(kids(first)[0] as Element)[0] as Element;
     expect(names(kids(first)[0] as Element)).toEqual(['mc:AlternateContent']);
-    expect(names(alternate)).toEqual(['mc:Choice']);
+    expect(names(alternate)).toEqual(['mc:Choice', 'mc:Fallback']);
     expect(names(kids(alternate)[0] as Element)).toEqual(['w:drawing']);
     // A rectangle filled with the picture: a shape, so that it stacks with the page's other shapes.
     expect(one(first, 'a:prstGeom').getAttribute('prst')).toBe('rect');
@@ -616,6 +616,29 @@ describe('sceneItemXml: pictures', () => {
     ]);
     expect(one(anchor, 'wp:docPr').getAttribute('name')).toBe('Picture 1');
     expect(one(second, 'wp:docPr').getAttribute('name')).toBe('Picture 2');
+  });
+
+  it('carries a VML fallback: the same rectangle, filled by the same relationship, at the same z', () => {
+    const registry = new DocxRegistry();
+    const image: SceneImage = { kind: 'image', box: [10.126, 20, 110, 70.004], data: png, mime: 'image/png' };
+    const root = render(image, 0.5, registry);
+    const fallback = one(root, 'mc:Fallback');
+    expect(fallback.parentNode?.nodeName).toBe('mc:AlternateContent');
+    expect(names(fallback)).toEqual(['w:pict']);
+    const rect = one(fallback, 'v:rect');
+    expect(rect.getAttribute('stroked')).toBe('f');
+    // Points at two decimals: 5.063, 10, 49.94, 25.0 (the size is the extent the Choice has).
+    expect(rect.getAttribute('style')).toBe(
+      `position:absolute;margin-left:5.06pt;margin-top:10pt;width:49.94pt;height:25pt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page;z-index:${num(one(root, 'wp:anchor'), 'relativeHeight')}`,
+    );
+    const fill = one(rect, 'v:fill');
+    expect(fill.getAttribute('type')).toBe('frame');
+    expect(fill.getAttribute('r:id')).toBe(one(root, 'a:blip').getAttribute('r:embed'));
+    expect(registry.media).toHaveLength(1);
+    // A raster is written the same way.
+    const raster = render({ kind: 'raster', box: [0, 0, 30, 30], data: png, mime: 'image/png' }, 1, registry);
+    expect(one(raster, 'v:fill').getAttribute('r:id')).toBe('rIdImage2');
+    expect(one(raster, 'v:rect').getAttribute('style')).toContain('width:30pt;height:30pt;');
   });
 
   it('names a raster so and takes its z and id from the same registry as shapes', () => {

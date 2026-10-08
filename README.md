@@ -307,7 +307,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
       - **Shapes, pictures, links.** Lines, rectangles, curves, fills and strokes (colour,
         transparency, dashes, caps, joins) are Word shapes (an upright rectangle is a Word
         rectangle). Pictures are anchored where they sit, with their transform, soft mask and
-        clip applied (JPEG for an opaque photograph, PNG otherwise). `http:`, `https:` and
+        clip applied (JPEG for an opaque photograph, PNG otherwise), each as a rectangle filled
+        with the picture, so that it stacks with the shapes in paint order. `http:`, `https:` and
         `mailto:` links are links on the text. What Word cannot draw is placed as a picture
         instead, rendered without the text so the text stays editable: gradients, patterns,
         soft masks, blend modes and clips that are curves, text or image masks (a clip with

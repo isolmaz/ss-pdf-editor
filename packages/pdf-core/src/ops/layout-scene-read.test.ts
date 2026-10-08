@@ -585,39 +585,56 @@ describe('layout scene: colours the binding cannot draw as they come', () => {
     expect(stroke).toBe((shapes(alternate.items)[0] as SceneShape).stroke?.color);
   });
 
-  it('reads a DeviceN fill of five inks as a grey of its strongest ink', async () => {
+  const FIVE_INKS = ['Cyan', 'Magenta', 'Yellow', 'Black', 'Spot'];
+  /** CMYK plus a spot ink the tint transform ignores. */
+  const fiveInkSpace = (doc: InstanceType<Mupdf['PDFDocument']>) => deviceN(doc, FIVE_INKS, '{ pop }');
+
+  it('reads a DeviceN fill of five inks (CMYK and a spot) with the hue its tint transform gives', async () => {
     const { scene } = await sceneOfRaw({
-      content: '/CS0 cs 0.2 0.4 0.6 0.3 0.1 scn 50 50 50 50 re f',
-      resources: (doc) => ({
-        ColorSpace: { CS0: deviceN(doc, ['A', 'B', 'C', 'D', 'E'], '{ pop pop 0 }') },
-      }),
+      content: '/CS0 cs 0 1 0 0 0 scn 50 50 50 50 re f',
+      resources: (doc) => ({ ColorSpace: { CS0: fiveInkSpace(doc) } }),
     });
+    const { scene: alternate } = await sceneOf(await contentOnly('0 1 0 0 k 50 50 50 50 re f'));
     const color = (shapes(scene.items)[0] as SceneShape).fill?.color ?? 0;
-    close([color >> 16, (color >> 8) & 255, color & 255], [102, 102, 102], -1);
+    const expected = (shapes(alternate.items)[0] as SceneShape).fill?.color ?? 0;
+    // The ink is held at 8 bits on its way, so a channel may differ by one.
+    for (const shift of [16, 8, 0]) {
+      expect(Math.abs(((color >> shift) & 255) - ((expected >> shift) & 255))).toBeLessThanOrEqual(1);
+    }
+    // Magenta: red high, green low.
+    expect(color >> 16).toBeGreaterThan(200);
+    expect((color >> 8) & 255).toBeLessThan(80);
   });
 
-  it('draws DeviceN fills of two and five inks into a raster too', async () => {
-    const { mupdf, scene } = await sceneOfRaw({
-      content: [
+  it('draws DeviceN fills of two and five inks into a raster with their own hues', async () => {
+    const content = (first: string, second: string) =>
+      [
         'q 50 50 m 150 50 l 100 150 l h W n',
-        '/CS0 cs 1 0 scn 0 0 200 200 re f Q',
+        `${first} 0 0 200 200 re f Q`,
         'q 250 50 m 350 50 l 300 150 l h W n',
-        '/CS1 cs 0.2 0.4 0.6 0.3 0.1 scn 200 0 200 200 re f Q',
-      ].join('\n'),
+        `${second} 200 0 200 200 re f Q`,
+      ].join('\n');
+    const { mupdf, scene } = await sceneOfRaw({
+      content: content('/CS0 cs 1 0 scn', '/CS1 cs 0 1 0 0 0 scn'),
       resources: (doc) => ({
-        ColorSpace: {
-          CS0: deviceN(doc, ['Cyan', 'Magenta'], '{ 0 0 }'),
-          CS1: deviceN(doc, ['A', 'B', 'C', 'D', 'E'], '{ pop pop 0 }'),
-        },
+        ColorSpace: { CS0: deviceN(doc, ['Cyan', 'Magenta'], '{ 0 0 }'), CS1: fiveInkSpace(doc) },
       }),
     });
-    const [cyan, grey] = scene.items as [SceneRaster, SceneRaster];
+    const { mupdf: same, scene: alternate } = await sceneOfRaw({
+      content: content('1 0 0 0 k', '0 1 0 0 k'),
+    });
     expect(scene.items.map((item) => item.kind)).toEqual(['raster', 'raster']);
-    const first = decode(mupdf, cyan.data);
-    const [r, , b] = first.at(first.width / 2, first.height / 2);
-    expect(b).toBeGreaterThan(r);
-    const second = decode(mupdf, grey.data);
-    close(second.at(second.width / 2, second.height / 2).slice(0, 3), [102, 102, 102], -1);
+    const centre = (m: Mupdf, item: SceneRaster) => {
+      const png = decode(m, item.data);
+      return png.at(png.width / 2, png.height / 2);
+    };
+    for (const index of [0, 1]) {
+      const got = centre(mupdf, scene.items[index] as SceneRaster);
+      const want = centre(same, alternate.items[index] as SceneRaster);
+      got.forEach((channel, at) => {
+        expect(Math.abs(channel - (want[at] as number))).toBeLessThanOrEqual(1);
+      });
+    }
   });
 });
 

@@ -523,8 +523,9 @@ had to stay green. The moves, and the defects they fixed on the way:
        rectangle reaching further than five page sides off the page is cut to the page and any
        other shape that far out is an island (Word's offsets are 32-bit); an even-odd fill of
        more than 1500 subpaths is an island (finding its holes is quadratic); and a colour of
-       a space the binding cannot pass on (a DeviceN of two inks goes through as it is; five
-       or more inks are drawn as the grey `1 − max ink`) never throws. A page the reader
+       a space the binding cannot pass on never throws (a DeviceN of two inks goes through as
+       it is; of five or more inks it is converted to RGB first, one 8-bit pixel of the space
+       run through MuPDF's own tint transform, so a CMYK-and-spot fill keeps its hue). A page the reader
        fails on for any other reason is written as `readPageRaster`'s one picture of the
        page under its text boxes and links.
     2. **Text boxes** (`textBoxes`, `ops/docx-layout-text.ts`). MuPDF's lines (pieces of a
@@ -556,7 +557,7 @@ had to stay green. The moves, and the defects they fixed on the way:
        in EMU relative to the box; a box thinner than its stroke (a rule) is widened to the
        stroke around its centre. DrawingML has no fill rule, so an even-odd fill is one nonzero
        path whose subpaths alternate in direction by nesting depth (crossing subpaths cannot be
-       written). A picture or raster is an anchored `pic:pic`. `DocxRegistry` hands out the
+       written). A picture or raster is a *rectangle filled with the picture* (a `wps:wsp` with a `blipFill`, `prstGeom rect` and no outline), not a `pic:pic`: LibreOffice paints a `pic:pic` in front of every shape of the page whatever its `relativeHeight` (translucent panels laid over a photo vanished behind it), while shapes stack among themselves by it. Like a shape it has a VML `mc:Fallback` (`v:rect` with a `v:fill type="frame"` of the same relationship id, position, size and `z-index`) for readers of VML only. `DocxRegistry` hands out the
        relationship ids, `wp:docPr` ids and `relativeHeight`, starting at Word's own base
        251658240 (stacked from 1, LibreOffice paints the page-sized background over everything
        after it), so calling in paint order keeps the paint order: first the scene's items,
