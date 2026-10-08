@@ -16,6 +16,7 @@
 import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
+import { provideStandardMetrics, standardAdvance } from './docx-fonts';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import {
   dropDuplicates,
@@ -224,6 +225,9 @@ export async function readScanPage(
   }
   // Regions are found with the guesses at graphics left in; the guesses that lie over one are
   // dropped, and the page is erased again only if one lies outside.
+  provideStandardMetrics(mupdf);
+  const advance = (family: string, bold: boolean, unicode: number) =>
+    standardAdvance(family, bold, false, unicode);
   const misread = misreadWords(words);
   const text = words.filter((word) => !misread.has(word));
   const first = ocrBackground(image, text);
@@ -238,6 +242,7 @@ export async function readScanPage(
     image,
     ocr?.lowConfidence ?? 0,
     regions.filter((region) => region.solid).map((region) => region.box),
+    advance,
   );
   const background: SceneShape = {
     kind: 'shape',

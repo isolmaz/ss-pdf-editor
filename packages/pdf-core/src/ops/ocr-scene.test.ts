@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import type { OcrWord } from '../engines/tesseract';
 import type { TextBox } from './layout-scene';
 import {
+  type Advance,
   dropDuplicates,
   dropEdgeMarks,
   dropMisreads,
@@ -263,8 +264,8 @@ describe('ocrTextBoxes: grouping', () => {
     const run = runsOf(first)[0];
     expect(run).toMatchObject({ font: 'Arial', italic: false, link: null, bold: false, color: 0 });
     expect(
-      ocrTextBoxes(words.slice(0, 1), blank(), 0.9, [], 'Calibri').boxes[0]?.paragraphs[0]?.lines[0]?.runs[0]
-        ?.font,
+      ocrTextBoxes(words.slice(0, 1), blank(), 0.9, [], undefined, 'Calibri').boxes[0]?.paragraphs[0]
+        ?.lines[0]?.runs[0]?.font,
     ).toBe('Calibri');
   });
 
@@ -451,11 +452,137 @@ describe('ocrTextBoxes: columns and regions', () => {
     expect(boxes.flatMap(textOf)).toEqual(['Header', 'Left1', 'Left2', 'Right1', 'Right2', 'Footer']);
   });
 
+  it('reads a column before the next when the gutter is wider than the space between a heading and its text', () => {
+    const words = [
+      fake('Side', 10, 40, 60, 54, 0),
+      fake('Main', 120, 40, 170, 54, 0),
+      fake('Bullet', 10, 60, 60, 74, 1),
+      fake('Body', 120, 60, 170, 74, 1),
+    ];
+    expect(ocrTextBoxes(words, blank(), 0.9).boxes.flatMap(textOf)).toEqual([
+      'Side',
+      'Bullet',
+      'Main',
+      'Body',
+    ]);
+  });
+
   it('reads boxes no gap separates top to bottom, then left to right', () => {
     const across = [fake('Aaa', 0, 0, 60, 12, 0), fake('Bbb', 40, 0, 100, 12, 1)];
     expect(ocrTextBoxes(across, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Aaa', 'Bbb']);
     const overlap = [fake('Aaa', 0, 6, 60, 18, 0), fake('Bbb', 40, 0, 100, 12, 1)];
     expect(ocrTextBoxes(overlap, blank(), 0.9).boxes.flatMap(textOf)).toEqual(['Bbb', 'Aaa']);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * family and fit
+ * ------------------------------------------------------------------ */
+
+/** Three faces with advances that differ by letter, and Courier's constant 0.6; `undefined` for anything else, and for ž in every one. */
+const ADVANCES: Record<string, (code: number) => number> = {
+  Arial: (code) => 0.4 + (code % 5) * 0.1,
+  'Times New Roman': (code) => 0.3 + (code % 7) * 0.1,
+  'Courier New': () => 0.6,
+};
+const advance: Advance = (family, _bold, code) => (code === 0x17e ? undefined : ADVANCES[family]?.(code));
+
+const WORDS = [
+  'macros',
+  'summon',
+  'mourns',
+  'common',
+  'ounces',
+  'women',
+  'seven',
+  'crumes',
+  'ramose',
+  'overs',
+  'arcane',
+];
+
+/** Words of a 20 pt line, as wide as `family` sets them; x-height only, so their size reads 20. */
+function setIn(family: string, texts: readonly string[] = WORDS): OcrWord[] {
+  let x = 10;
+  return texts.map((text, index) => {
+    const width = [...text].reduce(
+      (sum, char) => sum + (ADVANCES[family] as (code: number) => number)(char.codePointAt(0) as number) * 20,
+      0,
+    );
+    const word = fake(text, x, 40, x + width, 40 + 0.53 * 20, 0, 0, { confidence: 98 });
+    x += width + 8;
+    return { ...word, line: Math.floor(index / 3) };
+  });
+}
+
+describe('ocrTextBoxes: family and fit', () => {
+  const familyOf = (words: OcrWord[]) =>
+    runsOf(ocrTextBoxes(words, blank(1500), 0.9, [], advance).boxes[0] as TextBox)[0]?.font;
+
+  it('sets the page in the family whose letter widths fit the word boxes best, Arial unless another is clearly closer', () => {
+    expect(familyOf(setIn('Arial'))).toBe('Arial');
+    expect(familyOf(setIn('Times New Roman'))).toBe('Times New Roman');
+    expect(familyOf(setIn('Courier New'))).toBe('Courier New');
+    // too few words to tell
+    expect(familyOf(setIn('Courier New', WORDS.slice(0, 5)))).toBe('Arial');
+  });
+
+  it("carries where the scan has every letter: a word's box spread over its letters by their advances, spaces unplaced", () => {
+    const words = [
+      fake('macros', 100, 10, 160, 20.6, 0),
+      fake('žmac', 170, 10, 224, 20.6, 0),
+      fake('macros', 240, 10, 250, 20.6, 0),
+    ];
+    const run = runsOf(ocrTextBoxes(words, blank(), 0.9, [], advance).boxes[0] as TextBox)[0];
+    const fit = run?.fit;
+    expect(run?.text).toBe('macros žmac macros');
+    expect(fit?.advances).toHaveLength(18);
+    expect(fit?.hscale).toBe(1);
+    // the first word ends where its box does, the second starts where its box does, the space between is not placed
+    expect(fit?.starts[0]).toBe(100);
+    expect(fit?.ends[5]).toBeCloseTo(160, 9);
+    expect(fit?.starts[7]).toBe(170);
+    expect(fit?.ends[10]).toBeCloseTo(224, 9);
+    expect(Number.isNaN(fit?.starts[6])).toBe(true);
+    expect(Number.isNaN(fit?.ends[6])).toBe(true);
+    // a box far narrower than the word's natural width is not trusted: its letters keep the natural pitch from its left edge
+    const natural = (fit?.advances.slice(12) ?? []).reduce((sum, em) => sum + em, 0) * (run?.size ?? 0);
+    expect(fit?.starts[12]).toBe(240);
+    expect(fit?.ends[17]).toBeCloseTo(240 + natural, 9);
+    // a letter the face has no glyph for takes half an em
+    expect(fit?.advances[7]).toBe(0.5);
+    expect(
+      (fit?.starts ?? []).slice(0, 6).every((start, at, all) => at === 0 || start > (all[at - 1] as number)),
+    ).toBe(true);
+  });
+
+  it('sets a line whose box grew taller than its words are wide at a little over the width-based size', () => {
+    const tall = setIn('Arial').map((word) => ({ ...word, y1: word.y0 + 0.53 * 40 }));
+    const sizeAt = (adv?: Advance) =>
+      runsOf(ocrTextBoxes(tall, blank(1500), 0.9, [], adv).boxes[0] as TextBox)[0]?.size;
+    expect(sizeAt(undefined)).toBe(40);
+    expect(sizeAt(advance)).toBe(22);
+    // a line whose words fill the box keeps the size its heights give; a line of short words has no width to judge by
+    const plain = ocrTextBoxes(setIn('Arial'), blank(1500), 0.9, [], advance).boxes[0] as TextBox;
+    expect(runsOf(plain)[0]?.size).toBe(20);
+    const short = ocrTextBoxes([fake('ab', 10, 10, 30, 22, 0)], blank(), 0.9, [], advance)
+      .boxes[0] as TextBox;
+    expect(runsOf(short)[0]?.size).toBeGreaterThan(0);
+  });
+
+  it('places the words around a noted one too, and leaves a family it has no metrics for unfitted', () => {
+    const words = [
+      fake('macros', 10, 10, 60, 20.6, 0),
+      fake('summon', 70, 10, 120, 20.6, 0, 0, { confidence: 30 }),
+      fake('mourns', 130, 10, 180, 20.6, 0),
+    ];
+    const runs = runsOf(ocrTextBoxes(words, blank(), 0.9, [], advance).boxes[0] as TextBox);
+    expect(runs.map((run) => run.text)).toEqual(['macros ', 'summon', ' mourns']);
+    expect(runs.map((run) => run.fit?.starts.length)).toEqual([7, 6, 7]);
+    expect(Number.isNaN(runs[2]?.fit?.starts[0])).toBe(true);
+    expect(runs[2]?.fit?.starts[1]).toBe(130);
+    const plain = runsOf(ocrTextBoxes(words, blank(), 0.9, [], advance, 'Calibri').boxes[0] as TextBox);
+    expect(plain.every((run) => run.fit === undefined && run.font === 'Calibri')).toBe(true);
   });
 });
 

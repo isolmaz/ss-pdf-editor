@@ -24,7 +24,7 @@
  */
 
 import type { OcrWord } from '../engines/tesseract';
-import type { TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
+import type { RunFit, TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
 import type { Box } from './page-layout';
 
 export interface RgbaImage {
@@ -75,7 +75,7 @@ const STEM_ASPECT = 0.35;
 const EDGE_BAND = 0.03;
 const TALL_SYMBOL = 1.5;
 /** Two words overlapping by more than this share of the smaller one are one word read twice. */
-const DUPLICATE_OVERLAP = 0.5;
+const DUPLICATE_OVERLAP = 0.3;
 
 /** Word's natural line is about this × size; where the first baseline sits inside the line. */
 const SINGLE_LINE = 1.2;
@@ -431,6 +431,9 @@ interface Token {
   readonly bold: boolean;
   readonly color: Rgb;
   readonly note: string | undefined;
+  /** The word's box, page points from the left. */
+  readonly x0: number;
+  readonly x1: number;
 }
 
 const sameColour = (a: Rgb, b: Rgb): boolean =>
@@ -438,16 +441,138 @@ const sameColour = (a: Rgb, b: Rgb): boolean =>
   Math.abs(a[1] - b[1]) <= SAME_COLOUR &&
   Math.abs(a[2] - b[2]) <= SAME_COLOUR;
 
-/** The runs of a line: neighbours with the same look are one run; a noted word stands alone. */
-function runsOf(tokens: readonly Token[], size: number, font: string): TextRun[] {
-  const runs: { run: TextRun; color: Rgb }[] = [];
+/** The advance (em) of a Unicode value in a stand-in family (Arial, Times New Roman, Courier New), `undefined` where unknown. */
+export type Advance = (family: string, bold: boolean, unicode: number) => number | undefined;
+
+/** The stand-in families a scan's text is set in, sans first: it wins unless another is clearly closer. */
+const FAMILIES = ['Arial', 'Times New Roman', 'Courier New'] as const;
+/** A family replaces Arial when the spread of its word-width ratios is under this × Arial's. */
+const SWITCH_SPREAD = 0.8;
+/** Words (3 or more letters or digits) needed before the page's family is judged. */
+const MIN_WORDS = 8;
+/** Advance of a character the family has no glyph for, em. */
+const FALLBACK_ADVANCE = 0.5;
+
+const advanceOf = (advance: Advance, family: string, bold: boolean, code: number): number =>
+  advance(family, bold, code) ?? FALLBACK_ADVANCE;
+
+/**
+ * The family the page's words are set in: for each stand-in, the ratio of every word's box width
+ * to the width the family gives it at its line's size; the family whose ratios agree best (the
+ * median distance from their median, in log) is the one — a typewriter's words are all
+ * 0.6 em a letter, a serif's are not Arial's.
+ */
+function pickFamily(lines: readonly Line[], advance: Advance): string {
+  let best: string = FAMILIES[0];
+  let bestSpread = Infinity;
+  for (const family of FAMILIES) {
+    const logs: number[] = [];
+    for (const line of lines) {
+      for (const word of line.words) {
+        if ((word.text.match(/[\p{L}\p{N}]/gu) ?? []).length < 3) continue;
+        let em = 0;
+        for (const char of word.text) em += advanceOf(advance, family, false, char.codePointAt(0) as number);
+        logs.push(Math.log((word.x1 - word.x0) / (em * line.size)));
+      }
+    }
+    if (logs.length < MIN_WORDS) return FAMILIES[0];
+    const centre = median(logs);
+    const spread = median(logs.map((value) => Math.abs(value - centre)));
+    if (family === FAMILIES[0] || spread < SWITCH_SPREAD * bestSpread) {
+      best = family;
+      bestSpread = spread;
+    }
+  }
+  return best;
+}
+
+/** A line whose height-based size exceeds the one its word widths give by this factor has an inflated height (a speck joined the box). */
+const INFLATED = 1.3;
+/** …and is set at the width-based size × this. */
+const INFLATED_KEEP = 1.1;
+
+/**
+ * The size of a line: its heights' (`line.size`), unless the words are much narrower than that
+ * size lets `family` set them — a box that grew over a speck or an accent of the line below —
+ * then a little over what the widths give.
+ */
+function sizeOf(line: Line, family: string, advance: Advance | undefined): number {
+  if (advance === undefined) return line.size;
+  const sizes: number[] = [];
+  for (const word of line.words) {
+    if ((word.text.match(/[\p{L}\p{N}]/gu) ?? []).length < 3) continue;
+    let em = 0;
+    for (const char of word.text) em += advanceOf(advance, family, false, char.codePointAt(0) as number);
+    sizes.push((word.x1 - word.x0) / em);
+  }
+  if (sizes.length === 0) return line.size;
+  const byWidth = median(sizes);
+  return line.size > INFLATED * byWidth ? INFLATED_KEEP * byWidth : line.size;
+}
+
+/** A word box this much narrower or wider than the word's natural width is not trusted (a misread, a box grown over a mark): its letters are set at the natural pitch from the box's left edge. */
+const FIT_LOW = 0.75;
+const FIT_HIGH = 1.35;
+
+/** One piece of a run's text: a word with the page positions of its box ends, or a space (`NaN`). */
+interface Part {
+  readonly text: string;
+  readonly x0: number;
+  readonly x1: number;
+}
+
+/** Where the scan has each character of a run: a word's letters spread over its box by their advances, spaces unplaced. */
+function fitOf(
+  parts: readonly Part[],
+  family: string,
+  bold: boolean,
+  size: number,
+  advance: Advance,
+): RunFit {
+  const advances: number[] = [];
+  const starts: number[] = [];
+  const ends: number[] = [];
+  for (const part of parts) {
+    const ems = [...part.text].map((char) => advanceOf(advance, family, bold, char.codePointAt(0) as number));
+    const total = ems.reduce((sum, em) => sum + em, 0);
+    const natural = total * size;
+    const width = part.x1 - part.x0;
+    const span = width < FIT_LOW * natural || width > FIT_HIGH * natural ? natural : width;
+    let seen = 0;
+    for (const em of ems) {
+      advances.push(em);
+      starts.push(part.x0 + (span * seen) / total);
+      seen += em;
+      ends.push(part.x0 + (span * seen) / total);
+    }
+  }
+  return { advances, starts, ends, hscale: 1 };
+}
+
+/** The runs of a line: neighbours with the same look are one run; a noted word stands alone. With `advance`, each run carries where the scan has its letters. */
+function runsOf(
+  tokens: readonly Token[],
+  size: number,
+  family: string,
+  advance: Advance | undefined,
+): TextRun[] {
+  const metrics = advance !== undefined && advance(family, false, 97) !== undefined ? advance : undefined;
+  const space: Part = { text: ' ', x0: Number.NaN, x1: Number.NaN };
+  const runs: { run: TextRun; color: Rgb; parts: Part[] }[] = [];
   for (const [index, token] of tokens.entries()) {
     const last = runs[runs.length - 1];
+    const word: Part = { text: token.text, x0: token.x0, x1: token.x1 };
     let text = token.text;
+    let lead = false;
     if (index > 0 && last !== undefined) {
       // The space belongs to the run before, unless that run is a noted word.
-      if (last.run.note === undefined) last.run = { ...last.run, text: `${last.run.text} ` };
-      else text = ` ${text}`;
+      if (last.run.note === undefined) {
+        last.run = { ...last.run, text: `${last.run.text} ` };
+        last.parts.push(space);
+      } else {
+        text = ` ${text}`;
+        lead = true;
+      }
     }
     if (
       last !== undefined &&
@@ -457,12 +582,13 @@ function runsOf(tokens: readonly Token[], size: number, font: string): TextRun[]
       sameColour(last.color, token.color)
     ) {
       last.run = { ...last.run, text: last.run.text + text };
+      last.parts.push(word);
       continue;
     }
     runs.push({
       run: {
         text,
-        font,
+        font: family,
         size,
         bold: token.bold,
         italic: false,
@@ -471,9 +597,12 @@ function runsOf(tokens: readonly Token[], size: number, font: string): TextRun[]
         ...(token.note === undefined ? {} : { note: token.note }),
       },
       color: token.color,
+      parts: lead ? [space, word] : [word],
     });
   }
-  return runs.map((entry) => entry.run);
+  return runs.map(({ run, parts }) =>
+    metrics === undefined ? run : { ...run, fit: fitOf(parts, family, run.bold, size, metrics) },
+  );
 }
 
 /**
@@ -551,22 +680,29 @@ const boundsOf = (lines: readonly Line[]): Box => [
 ];
 
 /**
- * Reading order by recursive cuts: items are split at a horizontal gap that no box crosses
- * (top part first), else at a vertical one (left part first), and what no gap divides is read
- * top to bottom.
+ * Reading order by recursive cuts: items are split at the widest gap that no box crosses,
+ * horizontal (top part first) or vertical (left part first) — a column gutter outweighs the
+ * space between a heading and its list, so a sidebar is read before the main column — and what
+ * no gap divides is read top to bottom. A tie goes to the horizontal gap.
  */
 function readingOrder<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
   if (items.length < 2) return [...items];
+  let cut: { sorted: T[]; at: number; gap: number } | undefined;
   for (const axis of [1, 0] as const) {
     const sorted = [...items].sort((a, b) => boxOf(a)[axis] - boxOf(b)[axis]);
     let end = boxOf(sorted[0] as T)[axis + 2] as number;
     for (let at = 1; at < sorted.length; at += 1) {
       const box = boxOf(sorted[at] as T);
-      if (box[axis] > end) {
-        return [...readingOrder(sorted.slice(0, at), boxOf), ...readingOrder(sorted.slice(at), boxOf)];
-      }
+      const gap = (box[axis] as number) - end;
+      if (gap > 0 && (cut === undefined || gap > cut.gap)) cut = { sorted, at, gap };
       end = Math.max(end, box[axis + 2] as number);
     }
+  }
+  if (cut !== undefined) {
+    return [
+      ...readingOrder(cut.sorted.slice(0, cut.at), boxOf),
+      ...readingOrder(cut.sorted.slice(cut.at), boxOf),
+    ];
   }
   return [...items].sort((a, b) => boxOf(a)[1] - boxOf(b)[1] || boxOf(a)[0] - boxOf(b)[0]);
 }
@@ -575,28 +711,32 @@ function readingOrder<T>(items: readonly T[], boxOf: (item: T) => Box): T[] {
  * The text boxes of a recognised page: one per paragraph, in reading order. `regions` are the
  * boxes of the solid regions `ocrBackground` found (cards, bands, photos; not loose marks): lines and paragraphs never cross their edge.
  * `flagged` lists the words with a letter or digit whose confidence is below `lowConfidence`;
- * each is a run of its own with a `note`.
+ * each is a run of its own with a `note`. With `advance` the page is set in the stand-in family
+ * whose letter widths fit the word boxes best (`font` names one instead) and every run carries
+ * where the scan has its letters, so the writer places each word where the scan has it.
  */
 export function ocrTextBoxes(
   words: readonly OcrWord[],
   image: RgbaImage,
   lowConfidence: number,
   regions: readonly Box[] = [],
-  font = 'Arial',
+  advance?: Advance,
+  font?: string,
 ): { boxes: TextBox[]; flagged: { text: string; confidence: number }[] } {
   const flagged: { text: string; confidence: number }[] = [];
   const inks = new Map<OcrWord, WordInk>();
   const paragraphs = readingOrder(groupParagraphs(groupLines(words, regionIndex(regions))), boundsOf);
   const lineStroke = new Map<Line, number>();
   const sizes = new Map<Line, number>();
+  const family = font ?? (advance === undefined ? FAMILIES[0] : pickFamily(paragraphs.flat(), advance));
 
   for (const lines of paragraphs) {
     const upper = quantile(
-      lines.map((line) => line.size),
+      lines.map((line) => sizeOf(line, family, advance)),
       0.75,
     );
     for (const line of lines) {
-      const own = line.size;
+      const own = sizeOf(line, family, advance);
       const size = own >= SIZE_SNAP_LOW * upper && own <= SIZE_SNAP_HIGH * upper ? upper : own;
       const rounded = Math.max(1, Math.round(size * 2) / 2);
       sizes.set(line, rounded);
@@ -627,10 +767,12 @@ export function ocrTextBoxes(
           bold,
           color: (inks.get(word) as WordInk).color,
           note: low ? `Low OCR confidence (${Math.round(word.confidence)} %)` : undefined,
+          x0: word.x0,
+          x1: word.x1,
         };
       });
       baselines.push(line.baseline);
-      textLines.push({ runs: runsOf(tokens, size, font) });
+      textLines.push({ runs: runsOf(tokens, size, family, advance) });
     }
     const firstSize = sizes.get(lines[0] as Line) as number;
     const gaps = baselines.slice(1).map((baseline, index) => baseline - (baselines[index] as number));
