@@ -216,7 +216,7 @@ describe('evaluateEvidence with several timestamp tokens', () => {
       await stampOf(setup, new Uint8Array([9]), day(2, 2)),
     ]);
     const reported = await evaluateEvidence(input(allBad.cms, allBad.signer, allBad.ca));
-    expect(reported.timestamp?.status).not.toBe('valid');
+    expect(reported.timestamp).toMatchObject({ status: 'invalid', genTime: day(2, 1).toISOString() });
     expect(reported.validationTimeSource).not.toBe('timestamp');
   });
 
