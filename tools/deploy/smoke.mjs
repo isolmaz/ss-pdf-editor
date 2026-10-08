@@ -143,7 +143,8 @@ async function checkOnce() {
     try {
       const response = await get(path);
       const body = Buffer.from(await response.arrayBuffer());
-      if (isChallenge(response)) challenged.push(path);
+      // Only an HTML page may be challenged: the worker's bytes are a check the challenge must not hide.
+      if (path !== '/sw.js' && isChallenge(response)) challenged.push(path);
       else if (response.status !== 200)
         failures.push(`${path}: expected 200, got ${describeStatus(response)}`);
       else if (path === '/sw.js' && !body.equals(localWorkerBytes)) {
