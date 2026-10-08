@@ -6,6 +6,9 @@
  * wrong word count fails the export's read-back.
  */
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import mammoth from 'mammoth';
 import { describe, expect, it } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
@@ -17,7 +20,8 @@ import {
   wordDocumentXml,
   zipped,
 } from './docx-drawing';
-import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
+import { embedFonts, provideStandardMetrics } from './docx-fonts';
+import { fitLine, horizontalScale, textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
 import { wordFontName } from './export-office';
 import { line, officeDocument } from './export-office-fixtures';
 import { DocxRegistry, type SceneLink, type TextBox, type TextRun } from './layout-scene';
@@ -688,5 +692,199 @@ describe('words written against words read back', () => {
     const { text } = await readBack(boxes);
     expect(wordsInBoxes(boxes)).toBe(2 + 2 + 1 + 3 + 2);
     expect(count(text)).toBe(wordsInBoxes(boxes));
+  });
+});
+
+describe('fitting each line to the PDF\u2019s glyph positions', () => {
+  /** Where Word draws every non-space character of the first text box: its pen x walked along the written runs. */
+  function penPositions(xmlText: string, advance: (c: string) => number): number[] {
+    const content = /<w:txbxContent>(.*?)<\/w:txbxContent>/.exec(xmlText)?.[1] ?? '';
+    const xs: number[] = [];
+    let pen = 0;
+    for (const match of content.matchAll(
+      /<w:r><w:rPr>(.*?)<\/w:rPr><w:t xml:space="preserve">(.*?)<\/w:t><\/w:r>/g,
+    )) {
+      const size = Number(/<w:sz w:val="(\d+)"/.exec(match[1] as string)?.[1]) / 2;
+      const spacing = Number(/<w:spacing w:val="(-?\d+)"/.exec(match[1] as string)?.[1] ?? 0) / 20;
+      const hscale = Number(/<w:w w:val="(\d+)"/.exec(match[1] as string)?.[1] ?? 100) / 100;
+      for (const c of match[2] as string) {
+        if (c !== ' ') xs.push(pen);
+        pen += advance(c) * size * hscale + spacing;
+      }
+    }
+    return xs;
+  }
+
+  const solid = (layout: PageLayout) =>
+    layout.blocks.flatMap((block) =>
+      block.kind === 'text'
+        ? block.lines.flatMap((item) => item.chars.filter((char) => char.c.trim() !== ''))
+        : [],
+    );
+
+  it('writes no spacing for runs that carry no PDF geometry, and none for text that already fits', () => {
+    expect(textBoxXml(handMade(), 1, new DocxRegistry())).not.toContain('<w:spacing w:val');
+  });
+
+  it('measures a line without base-14 metrics from the PDF\u2019s own glyph widths', async () => {
+    // Courier: 0.6 em a glyph, Tc 0.3: the 8.96 pt size is written as 9 pt, the Tc as spacing.
+    const layout = await layoutOf('BT /F1 8.96 Tf 40 400 Td 0.3 Tc (abc def) Tj ET');
+    const [box] = textBoxes(layout, []) as [TextBox];
+    const fit = box.paragraphs[0]?.lines[0]?.runs[0]?.fit;
+    expect(fit?.advances.map((em) => Math.round(em * 1000) / 1000)).toEqual([
+      0.6, 0.6, 0.6, 0.278, 0.6, 0.6, 0.6,
+    ]);
+    expect(fit?.hscale).toBe(1);
+    // Nothing to measure the stand-in with yet: Courier New is the PDF's own widths.
+    const xmlText = textBoxXml(box, 1, new DocxRegistry());
+    expect(xmlText).toContain('<w:sz w:val="18"/>');
+    const xs = penPositions(xmlText, () => 0.6);
+    const chars = solid(layout);
+    expect(xs).toHaveLength(chars.length);
+  });
+
+  it('puts every character of an odd-sized, character- and word-spaced Helvetica line where the PDF has it', async () => {
+    const mupdf = await loadMupdf();
+    provideStandardMetrics(mupdf);
+    const helvetica = new mupdf.Font('Helvetica');
+    const advance = (c: string) =>
+      helvetica.advanceGlyph(helvetica.encodeCharacter(c.codePointAt(0) as number), 0);
+    const layout = await layoutOf(
+      'BT /F3 8.96 Tf 40 400 Td 0.3 Tc 4 Tw (Merhaba dunya yeniden gelmis) Tj ET\nBT /F3 8.96 Tf 40 380 Td -0.2 Tc (Kisa satir) Tj ET',
+    );
+    for (const box of textBoxes(layout, [])) {
+      const xmlText = textBoxXml(box, 1, new DocxRegistry());
+      expect(xmlText).toContain('<w:sz w:val="18"/>');
+      expect(xmlText).toMatch(/<w:spacing w:val="-?\d+"\/><w:sz/);
+    }
+    // Both lines are one box: one paragraph or two, every word starts within a twentieth of a point.
+    const [first] = textBoxes(layout, []) as [TextBox];
+    const xmlText = textBoxXml(first, 1, new DocxRegistry());
+    const xs = penPositions(xmlText, advance);
+    const chars = solid(layout).slice(0, xs.length);
+    const base = (chars[0] as LayoutChar).box[0];
+    const firstLine = chars.filter((char) => Math.abs(char.baseline - (chars[0] as LayoutChar).baseline) < 1);
+    for (const [k, char] of firstLine.entries()) {
+      // Word starts are exact; letters inside a word share one spacing, so a wide letter is off by a few hundredths.
+      const wordStart = k === 0 || (firstLine[k - 1] as LayoutChar).box[2] < char.box[0] - 1;
+      expect(Math.abs(base + (xs[k] as number) - char.box[0])).toBeLessThan(wordStart ? 0.03 : 0.12);
+    }
+  });
+
+  it('scales the glyphs of an embedded face the PDF draws narrower (Tz) and takes the advances from the program', async () => {
+    const mupdf = await loadMupdf();
+    const program = new Uint8Array(
+      readFileSync(
+        join(
+          dirname(createRequire(import.meta.url).resolve('@expo-google-fonts/noto-sans/package.json')),
+          '400Regular/NotoSans_400Regular.ttf',
+        ),
+      ),
+    );
+    const doc = new mupdf.PDFDocument();
+    const noto = new mupdf.Font('NotoSans-Regular', program);
+    const text = 'Istanbul agaclari';
+    let hex = '';
+    for (const character of text)
+      hex += noto
+        .encodeCharacter(character.codePointAt(0) as number)
+        .toString(16)
+        .padStart(4, '0');
+    doc.insertPage(
+      0,
+      doc.addPage(
+        [0, 0, 400, 300],
+        0,
+        { Font: { F0: doc.addFont(noto) } },
+        `BT /F0 18 Tf 80 Tz 40 200 Td <${hex}> Tj ET\n`,
+      ),
+    );
+    doc.subsetFonts();
+    const reopened = mupdf.PDFDocument.openDocument(
+      doc.saveToBuffer('garbage=compact,compress').asUint8Array(),
+      'application/pdf',
+    );
+    const fonts = await embedFonts(mupdf, reopened, [0], { signal: new AbortController().signal });
+    const layout = readPageLayout(mupdf, reopened.loadPage(0), { images: false });
+    const [box] = textBoxes(layout, [], (face) => fonts.faceOf(0, face)) as [TextBox];
+    const fit = box.paragraphs[0]?.lines[0]?.runs[0]?.fit;
+    // The run's natural width is the sum of MuPDF's advances.
+    const expected = [...text].map((c) =>
+      noto.advanceGlyph(noto.encodeCharacter(c.codePointAt(0) as number), 0),
+    );
+    expect(fit?.advances).toHaveLength(text.length);
+    for (const [k, c] of [...text].entries()) {
+      if (c !== ' ') expect(fit?.advances[k]).toBeCloseTo(expected[k] as number, 3);
+    }
+    expect(fit?.hscale).toBe(0.8);
+    // MuPDF's size is 18 · √0.8; the run is set at the PDF's 18 pt, 80 % wide.
+    expect(box.paragraphs[0]?.lines[0]?.runs[0]?.size).toBeCloseTo(18, 2);
+    expect(textBoxXml(box, 1, new DocxRegistry())).toContain('<w:w w:val="80"/>');
+  });
+
+  it('reads the horizontal scale of embedded glyphs: whole percent, 1 inside 2 % or with nothing to compare', () => {
+    expect(horizontalScale(9, 10)).toBe(0.81);
+    expect(horizontalScale(10.1, 10)).toBe(1);
+    expect(horizontalScale(10, 0)).toBe(1);
+    expect(horizontalScale(4, 10)).toBe(1);
+    expect(horizontalScale(50, 10)).toBe(1);
+  });
+
+  const fitted = (text: string, starts: number[], advances: number[]): TextRun =>
+    run(text, {
+      fit: { advances, starts, ends: starts.map((s, k) => s + (advances[k] as number) * 10), hscale: 1 },
+    });
+
+  it('shares a word\u2019s residual over its letters, split between two whole spacings, and the gap goes to the space', () => {
+    // "abcd ef": letters 5 pt wide; the PDF has the word's last letter 0.5 pt further than natural (+ 10 twips over 3 letters).
+    const starts = [0, 5, 10, 15.5, Number.NaN, 30, 35];
+    const [spacing] = fitLine([fitted('abcd ef', starts, [0.5, 0.5, 0.5, 0.5, 0.25, 0.5, 0.5])], 1);
+    // 3 gaps × 3.33: two letters of 3, one of 4 (the extras last); the last letter none.
+    expect(spacing?.slice(0, 4)).toEqual([3, 3, 4, 0]);
+    // The pen is at 15.5 + 5 after "abcd"; the space has to end at 30: 30 − 20.5 − 2.5 = 7 pt.
+    expect(spacing?.[4]).toBe(140);
+    expect(spacing?.slice(5)).toEqual([0, 0]);
+  });
+
+  it('leaves a word alone whose spacing would be more than half its size, and runs with no geometry', () => {
+    const wild = fitted('abc', [0, 30, 60], [0.5, 0.5, 0.5]);
+    expect(fitLine([wild, run('x')], 1)).toEqual([[0, 0, 0], undefined]);
+  });
+
+  it('keeps the whole-line pen on the PDF\u2019s across a space the fit ends on', () => {
+    const trailing = fitted('ab ', [0, 5, Number.NaN], [0.5, 0.5, 0.25]);
+    expect(fitLine([trailing], 1)).toEqual([[0, 0, 0]]);
+    expect(fitLine([], 1)).toEqual([]);
+  });
+
+  it('writes a run whose spacing changes as one `w:r` per spacing, inside one hyperlink', () => {
+    const box = handMade({
+      paragraphs: [
+        {
+          align: 'left',
+          lineHeight: 12,
+          lines: [
+            {
+              runs: [
+                fitted('abcd ef', [0, 5, 10, 15.5, Number.NaN, 30, 35], [0.5, 0.5, 0.5, 0.5, 0.25, 0.5, 0.5]),
+              ].map((item) => ({ ...item, link: 'https://example.com' })),
+            },
+          ],
+        },
+      ],
+    });
+    const xmlText = textBoxXml(box, 1, new DocxRegistry());
+    const content = /<w:txbxContent>(.*?)<\/w:txbxContent>/.exec(xmlText)?.[1] ?? '';
+    expect(content.match(/<w:hyperlink /g)).toHaveLength(1);
+    expect(
+      [...content.matchAll(/<w:spacing w:val="(-?\d+)"\/>.*?<w:t [^>]*>(.*?)<\/w:t>/g)].map((m) => [
+        m[1],
+        m[2],
+      ]),
+    ).toEqual([
+      ['3', 'ab'],
+      ['4', 'c'],
+      ['140', ' '],
+    ]);
   });
 });
