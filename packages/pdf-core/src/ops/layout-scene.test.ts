@@ -47,4 +47,10 @@ describe('DocxRegistry', () => {
     expect(registry.nextDrawingId()).toBe(4);
     expect(new DocxRegistry().nextDrawingId()).toBe(1);
   });
+
+  it('starts the stacking above the position it is given', () => {
+    const registry = new DocxRegistry(1000);
+    expect([registry.nextZ(), registry.nextZ()]).toEqual([1001, 1002]);
+    expect(new DocxRegistry().nextZ()).toBe(1);
+  });
 });

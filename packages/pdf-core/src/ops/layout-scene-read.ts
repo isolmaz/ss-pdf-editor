@@ -325,9 +325,19 @@ function pictureOf(
 
 /**
  * The page's drawing inside `box` (page space, points) as a PNG on a transparent ground at
- * 2×: every call the page makes is forwarded to a `DrawDevice`, except the text.
+ * 2×: the calls the page makes are forwarded to a `DrawDevice`, except the text. Of the
+ * drawing calls (counted in run order, as `readPageScene` counts them) only those in `drawn`
+ * go through, with the ones in `always` (a soft mask's or a tile's own content); a `null`
+ * `drawn` lets all through. What Word draws as shapes and pictures of its own, under or over
+ * the island, is not in the raster, or it would be painted twice.
  */
-function renderWithoutText(mupdf: Mupdf, page: Page, box: Box): Uint8Array {
+function renderWithoutText(
+  mupdf: Mupdf,
+  page: Page,
+  box: Box,
+  drawn: ReadonlySet<number> | null,
+  always: ReadonlySet<number>,
+): Uint8Array {
   const [px0, py0] = page.getBounds();
   const width = box[2] - box[0];
   const height = box[3] - box[1];
@@ -347,43 +357,83 @@ function renderWithoutText(mupdf: Mupdf, page: Page, box: Box): Uint8Array {
       pixmap,
     );
     try {
+      /** The drawing call being forwarded: counted, and let through when it belongs in this raster. */
+      let leaf = 0;
+      /** Inside a tile the raster leaves out: how many tiles deep. */
+      let skipping = 0;
+      const through = (): boolean => {
+        const index = leaf;
+        leaf += 1;
+        return skipping === 0 && (drawn === null || drawn.has(index) || always.has(index));
+      };
       const forward = new mupdf.Device({
-        fillPath: (path, evenOdd, ctm, colorspace, color, alpha) =>
-          draw.fillPath(path, evenOdd, ctm, colorspace, drawColor(color), alpha),
-        strokePath: (path, stroke, ctm, colorspace, color, alpha) =>
-          draw.strokePath(path, stroke, ctm, colorspace, drawColor(color), alpha),
-        clipPath: (path, evenOdd, ctm) => draw.clipPath(path, evenOdd, ctm),
-        clipStrokePath: (path, stroke, ctm) => draw.clipStrokePath(path, stroke, ctm),
-        clipText: (text, ctm) => draw.clipText(text, ctm),
-        clipStrokeText: (text, stroke, ctm) => draw.clipStrokeText(text, stroke, ctm),
+        fillPath(path, evenOdd, ctm, colorspace, color, alpha) {
+          if (through()) draw.fillPath(path, evenOdd, ctm, colorspace, drawColor(color), alpha);
+        },
+        strokePath(path, stroke, ctm, colorspace, color, alpha) {
+          if (through()) draw.strokePath(path, stroke, ctm, colorspace, drawColor(color), alpha);
+        },
+        clipPath(path, evenOdd, ctm) {
+          if (skipping === 0) draw.clipPath(path, evenOdd, ctm);
+        },
+        clipStrokePath(path, stroke, ctm) {
+          if (skipping === 0) draw.clipStrokePath(path, stroke, ctm);
+        },
+        clipText(text, ctm) {
+          if (skipping === 0) draw.clipText(text, ctm);
+        },
+        clipStrokeText(text, stroke, ctm) {
+          if (skipping === 0) draw.clipStrokeText(text, stroke, ctm);
+        },
         fillShade(shade, ctm, alpha) {
           borrowed(shade);
-          draw.fillShade(shade, ctm, alpha);
+          if (through()) draw.fillShade(shade, ctm, alpha);
         },
         fillImage(image, ctm, alpha) {
           borrowed(image);
-          draw.fillImage(image, ctm, alpha);
+          if (through()) draw.fillImage(image, ctm, alpha);
         },
         fillImageMask(image, ctm, colorspace, color, alpha) {
           borrowed(image);
-          draw.fillImageMask(image, ctm, colorspace, drawColor(color), alpha);
+          if (through()) draw.fillImageMask(image, ctm, colorspace, drawColor(color), alpha);
         },
         clipImageMask(image, ctm) {
           borrowed(image);
-          draw.clipImageMask(image, ctm);
+          if (skipping === 0) draw.clipImageMask(image, ctm);
         },
-        popClip: () => draw.popClip(),
-        beginMask: (area, luminosity, colorspace, color) =>
-          draw.beginMask(area, luminosity, colorspace, drawColor(color)),
-        endMask: () => draw.endMask(),
-        beginGroup: (area, colorspace, isolated, knockout, blendmode, alpha) =>
-          draw.beginGroup(area, colorspace, isolated, knockout, blendmode, alpha),
-        endGroup: () => draw.endGroup(),
-        beginTile: (area, view, xstep, ystep, ctm, id, docId) =>
-          draw.beginTile(area, view, xstep, ystep, ctm, id, docId),
-        endTile: () => draw.endTile(),
-        beginLayer: (name) => draw.beginLayer(name),
-        endLayer: () => draw.endLayer(),
+        popClip() {
+          if (skipping === 0) draw.popClip();
+        },
+        beginMask(area, luminosity, colorspace, color) {
+          if (skipping === 0) draw.beginMask(area, luminosity, colorspace, drawColor(color));
+        },
+        endMask() {
+          if (skipping === 0) draw.endMask();
+        },
+        beginGroup(area, colorspace, isolated, knockout, blendmode, alpha) {
+          if (skipping === 0) draw.beginGroup(area, colorspace, isolated, knockout, blendmode, alpha);
+        },
+        endGroup() {
+          if (skipping === 0) draw.endGroup();
+        },
+        beginTile(area, view, xstep, ystep, ctm, id, docId) {
+          if (!through()) {
+            // Another island's pattern (or inside one): its content runs, unseen.
+            skipping += 1;
+            return 0;
+          }
+          return draw.beginTile(area, view, xstep, ystep, ctm, id, docId);
+        },
+        endTile() {
+          if (skipping > 0) skipping -= 1;
+          else draw.endTile();
+        },
+        beginLayer(name) {
+          if (skipping === 0) draw.beginLayer(name);
+        },
+        endLayer() {
+          if (skipping === 0) draw.endLayer();
+        },
       });
       try {
         page.run(forward, mupdf.Matrix.identity);
@@ -417,6 +467,8 @@ interface Island {
   readonly kind: 'island';
   box: Box;
   absorbed: boolean;
+  /** The drawing calls (in run order) the island is made of. */
+  readonly calls: Set<number>;
 }
 
 type Slot = Island | { readonly kind: 'item'; readonly item: SceneShape | SceneImage };
@@ -447,6 +499,15 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
 
   const slots: Slot[] = [];
   let islands: Island[] = [];
+  /** How many drawing calls the run has made, and which of them are a mask's or a tile's own content. */
+  let calls = 0;
+  const inner = new Set<number>();
+  const nextCall = (): number => {
+    const call = calls;
+    calls += 1;
+    if (top().ignore) inner.add(call);
+    return call;
+  };
   let shapes = 0;
   /** Set once the page has too many items: the box everything drawn since reaches. */
   let everything: Box | null = null;
@@ -466,8 +527,8 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     reaches.clear();
   };
 
-  /** Reach of what Word cannot draw: it goes into the island that touches it, or a new one. */
-  const contribute = (box: Box): void => {
+  /** Reach of what Word cannot draw (the drawing call `call`): it goes into the island that touches it, or a new one. */
+  const contribute = (box: Box, call: number): void => {
     const visible = intersect(box, pageBox);
     if (visible === null) return;
     if (everything !== null) {
@@ -488,14 +549,17 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
       }
     }
     if (hit.size === 0) {
-      const island: Island = { kind: 'island', box: union, absorbed: false };
+      const island: Island = { kind: 'island', box: union, absorbed: false, calls: new Set([call]) };
       slots.push(island);
       islands.push(island);
     } else {
       const [survivor] = islands.filter((island) => hit.has(island)) as [Island];
       survivor.box = union;
+      survivor.calls.add(call);
       for (const island of hit) {
-        if (island !== survivor) island.absorbed = true;
+        if (island === survivor) continue;
+        island.absorbed = true;
+        for (const other of island.calls) survivor.calls.add(other);
       }
       islands = islands.filter((island) => !island.absorbed);
     }
@@ -548,6 +612,7 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     strokeState: StrokeState | null,
     color: number,
     alpha: number,
+    call: number,
   ): void => {
     const frame = top();
     if (frame.ignore) return;
@@ -562,7 +627,7 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     if (visible === null || intersect(visible, pageBox) === null) return;
     const shapeFill = fill === null ? null : { ...fill, alpha: fill.alpha * frame.alpha };
     if (!frame.exact) {
-      contribute(visible);
+      contribute(visible, call);
       return;
     }
     if (within(reach, frame.box)) {
@@ -575,15 +640,15 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
         emit({ kind: 'shape', box: cut, segments: cutRectangle(cut), fill: shapeFill, stroke }, cut);
       return;
     }
-    contribute(visible);
+    contribute(visible, call);
   };
 
   const device = new mupdf.Device({
     fillPath(path, evenOdd, ctm, colorspace, color, alpha) {
-      addPath(path, ctm, { color: colorOf(colorspace, color), alpha, evenOdd }, null, 0, alpha);
+      addPath(path, ctm, { color: colorOf(colorspace, color), alpha, evenOdd }, null, 0, alpha, nextCall());
     },
     strokePath(path, stroke, ctm, colorspace, color, alpha) {
-      addPath(path, ctm, null, stroke, colorOf(colorspace, color), alpha);
+      addPath(path, ctm, null, stroke, colorOf(colorspace, color), alpha, nextCall());
     },
     clipPath(path, _evenOdd, ctm) {
       const data = readPath(path, place(ctm));
@@ -619,10 +684,11 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     },
     endGroup: close,
     beginTile(area, _view, _xstep, _ystep, ctm) {
+      const call = nextCall();
       const frame = top();
       if (!frame.ignore) {
         // The enclosing clip is the pattern's path; without a finite one, the area (in pattern space).
-        contribute(frame.box.every(Number.isFinite) ? frame.box : transformBox(area, place(ctm)));
+        contribute(frame.box.every(Number.isFinite) ? frame.box : transformBox(area, place(ctm)), call);
       }
       open(null, { ignore: true });
       return 0;
@@ -630,20 +696,23 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     endTile: close,
     fillShade(shade, ctm) {
       borrowed(shade);
+      const call = nextCall();
       const frame = top();
       if (frame.ignore) return;
       const visible = intersect(transformBox(shade.getBounds(), place(ctm)), frame.box);
-      if (visible !== null) contribute(visible);
+      if (visible !== null) contribute(visible, call);
     },
     fillImageMask(image, ctm) {
       borrowed(image);
+      const call = nextCall();
       const frame = top();
       if (frame.ignore) return;
       const visible = intersect(transformBox([0, 0, 1, 1], place(ctm)), frame.box);
-      if (visible !== null) contribute(visible);
+      if (visible !== null) contribute(visible, call);
     },
     fillImage(image, ctm, alpha) {
       borrowed(image);
+      const call = nextCall();
       const frame = top();
       if (frame.ignore) return;
       const matrix = place(ctm);
@@ -651,7 +720,7 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
       const visible = intersect(full, frame.box);
       if (visible === null || intersect(visible, pageBox) === null) return;
       if (!frame.exact) {
-        contribute(visible);
+        contribute(visible, call);
         return;
       }
       const shown = intersect(visible, pageBox) as Box;
@@ -670,24 +739,29 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     device.destroy();
   }
 
-  const raster = (box: Box): SceneRaster | null => {
+  const raster = (box: Box, drawn: ReadonlySet<number> | null): SceneRaster | null => {
     const aligned = intersect(
       [Math.floor(box[0]), Math.floor(box[1]), Math.ceil(box[2]), Math.ceil(box[3])],
       pageBox,
     );
     if (aligned === null) return null;
-    return { kind: 'raster', box: aligned, data: renderWithoutText(mupdf, page, aligned), mime: 'image/png' };
+    return {
+      kind: 'raster',
+      box: aligned,
+      data: renderWithoutText(mupdf, page, aligned, drawn, inner),
+      mime: 'image/png',
+    };
   };
   const items: SceneItem[] = [];
   const spilled = everything as Box | null;
   if (spilled !== null) {
-    const all = raster(spilled);
+    const all = raster(spilled, null);
     if (all !== null) items.push(all);
   } else {
     for (const slot of slots) {
       if (slot.kind === 'item') items.push(slot.item);
       else if (!slot.absorbed) {
-        const picture = raster(slot.box);
+        const picture = raster(slot.box, slot.calls);
         if (picture !== null) items.push(picture);
       }
     }

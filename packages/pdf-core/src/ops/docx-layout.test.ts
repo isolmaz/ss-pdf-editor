@@ -180,6 +180,13 @@ describe('exact layout: one page', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("stacks every anchor above Word's own base height, or LibreOffice paints a page-sized shape over the rest", async () => {
+    const { document } = await written(await linked([FIRST]), [0]);
+    const zs = anchors(document).map((anchor) => anchor.z);
+    expect(zs.length).toBeGreaterThan(0);
+    for (const z of zs) expect(z).toBeGreaterThan(251658240);
+  });
+
   it('holds the words in text boxes, in reading order', async () => {
     const { document } = await written(await linked([FIRST]), [0]);
     const texts = anchors(document)

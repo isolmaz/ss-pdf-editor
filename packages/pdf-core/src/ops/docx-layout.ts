@@ -35,6 +35,13 @@ import { DocxRegistry, type PageScene, type TextBox } from './layout-scene';
 import { readPageScene } from './layout-scene-read';
 import { type OperationContext, throwIfAborted } from './types';
 
+/**
+ * Word's own first `relativeHeight`. Stacked from 1, LibreOffice paints the page-sized
+ * background shape (height 1) over every shape and picture drawn after it; from Word's base
+ * up it keeps the order.
+ */
+const WORD_Z_BASE = 251658240;
+
 /** The body size of the document's default style, points (the text boxes carry their own). */
 const BODY_SIZE = 11;
 
@@ -98,7 +105,7 @@ export async function writeLayoutDocx(
   context: OperationContext,
 ): Promise<LayoutDocx> {
   const mupdf = await loadMupdf();
-  const registry = new DocxRegistry();
+  const registry = new DocxRegistry(WORD_Z_BASE);
   const paragraphs: string[] = [];
   const allBoxes: TextBox[] = [];
   const scaled: { page: number; scale: number }[] = [];
