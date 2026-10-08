@@ -55,6 +55,9 @@ and on manual dispatch:
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker
   --no-deps`.
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`.
+- **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test (below),
+  with a LibreOffice installed from the official `.deb` tarball pinned by version and sha256. It
+  does not gate `deploy`; the report goes to the job summary and the `fidelity` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed: `wrangler deploy`
   with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
   `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
@@ -103,6 +106,18 @@ Every spec imports `test` and `expect` from `e2e/test.ts`, not from `playwright/
 fixture fails a test when any page of its browser context (a second window, the print window too)
 logged a console error or threw an uncaught exception. A test that provokes an error on purpose
 names it with `test.use({ allowedErrors: [/…/] })`.
+
+`pnpm fidelity` measures how faithful "Export to Word" is (`e2e/fidelity/`). Each sample × export
+mode opens the PDF in the app, exports the DOCX through the dialog, converts it back to PDF with
+LibreOffice (`LIBREOFFICE=/path/to/soffice`, else `soffice` on the PATH), renders both PDFs with
+MuPDF at 100 dpi and compares them: SSIM per page, word accuracy per document. It needs the
+assembled `dist/` like `pnpm e2e`, and it is its own Playwright project, present only when
+`FIDELITY` is set, so `pnpm e2e` and `pnpm coverage` never run it. Filters:
+`FIDELITY_SAMPLES`, `FIDELITY_MODES` and `FIDELITY_ORIGINS` (see the top of
+`e2e/fidelity/fidelity.spec.ts`). The results are `test-results/fidelity/` (the DOCX and PDF of each
+run, `report.json`, `report.md`). `e2e/fidelity/thresholds.json` holds the gates per mode and
+sample; `null` means measured, not gated. A new export mode is one entry in the spec's `MODES`
+table. The comparison functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`).
 
 A test that installs, updates or reloads through the service worker is tagged `@service-worker`
 (`test('…', { tag: '@service-worker' }, …)`): those run in their own Playwright project once the rest

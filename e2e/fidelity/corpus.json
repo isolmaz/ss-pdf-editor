@@ -1,0 +1,87 @@
+[
+  {
+    "id": "irs-f1040-2022",
+    "title": "IRS Form 1040 (2022), U.S. Individual Income Tax Return",
+    "url": "https://www.irs.gov/pub/irs-prior/f1040--2022.pdf",
+    "sha256": "7f7933e17b2701e8555164f18bd9d93e8891c7bc0d6e45d8df6d84a2cf78b48f",
+    "bytes": 156045,
+    "license": "US federal government work, not subject to copyright (IRS.gov: \"Content ... created or maintained by federal employees in the course of their duties is not subject to copyright and may be freely copied\")",
+    "licenseUrl": "https://www.irs.gov/about-irs/use-of-content-from-irsgov",
+    "source": "irs.gov",
+    "ocr": false
+  },
+  {
+    "id": "irs-i1040tt-2022",
+    "title": "IRS 2022 Tax Table (Form 1040 instructions)",
+    "url": "https://www.irs.gov/pub/irs-prior/i1040tt--2022.pdf",
+    "sha256": "3c39b0db2ada9f9fe5ab60183860c0c3cfe675920f46dc539aab6448e7c1301b",
+    "bytes": 2878285,
+    "license": "US federal government work, not subject to copyright (IRS.gov: \"Content ... created or maintained by federal employees in the course of their duties is not subject to copyright and may be freely copied\")",
+    "licenseUrl": "https://www.irs.gov/about-irs/use-of-content-from-irsgov",
+    "source": "irs.gov",
+    "pages": [4],
+    "ocr": false
+  },
+  {
+    "id": "irs-p15-2022",
+    "title": "IRS Publication 15 (2022), Employer's Tax Guide, dense two-column page",
+    "url": "https://www.irs.gov/pub/irs-prior/p15--2022.pdf",
+    "sha256": "da84afd9ea390ad1f6ed1190530268bdcbb18e2d460d0e35a3fba67b2f076929",
+    "bytes": 1533264,
+    "license": "US federal government work, not subject to copyright (IRS.gov: \"Content ... created or maintained by federal employees in the course of their duties is not subject to copyright and may be freely copied\")",
+    "licenseUrl": "https://www.irs.gov/about-irs/use-of-content-from-irsgov",
+    "source": "irs.gov",
+    "pages": [2],
+    "ocr": false
+  },
+  {
+    "id": "irs-fw4-2022",
+    "title": "IRS Form W-4 (2022), Employee's Withholding Certificate",
+    "url": "https://www.irs.gov/pub/irs-prior/fw4--2022.pdf",
+    "sha256": "8b4c3d8fe967fb1ed3c5fca54b34a44c72efea239cd395bd6bfeac84937c7a15",
+    "bytes": 175956,
+    "license": "US federal government work, not subject to copyright (IRS.gov: \"Content ... created or maintained by federal employees in the course of their duties is not subject to copyright and may be freely copied\")",
+    "licenseUrl": "https://www.irs.gov/about-irs/use-of-content-from-irsgov",
+    "source": "irs.gov",
+    "ocr": false
+  },
+  {
+    "id": "usgs-fs2020-3042",
+    "title": "USGS Fact Sheet 2020-3042, Earthquake Information Products and Tools from ANSS",
+    "url": "https://pubs.usgs.gov/fs/2020/3042/fs20203042.pdf",
+    "sha256": "3c4d24f38137736082c89843f7aded9bd45ed6259672311328b71c9f5aa14192",
+    "bytes": 1877796,
+    "license": "US federal government work, public domain (USGS-authored information; the used pages credit no third-party copyrighted material)",
+    "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+    "source": "pubs.usgs.gov",
+    "ocr": false
+  },
+  {
+    "id": "usgs-fs2020-3002",
+    "title": "USGS Fact Sheet 2020-3002, Water Resources of Union Parish, Louisiana (pages 3-4)",
+    "url": "https://pubs.usgs.gov/fs/2020/3002/fs20203002.pdf",
+    "sha256": "8a0900a566763b8f4e7404b5d90a03b59ff5415643a42f0d84c21dd9ff205217",
+    "bytes": 855739,
+    "license": "US federal government work, public domain (USGS-authored information; the used pages credit no third-party copyrighted material)",
+    "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+    "source": "pubs.usgs.gov",
+    "pages": [2, 3],
+    "ocr": false
+  },
+  {
+    "id": "nasa-tm-vacuum-1965",
+    "title": "NASA Marshall TM, Vacuum Compatibility of Engineering Materials (1965 typewritten scan)",
+    "url": "https://ntrs.nasa.gov/api/citations/19650008734/downloads/19650008734.pdf",
+    "sha256": "b9421eb72c114280c3ba9104e59986beab0d98c2f99f8048b260f2095a642fd2",
+    "bytes": 2122780,
+    "license": "US federal government work (NASA Marshall Space Flight Center authors); NASA NTRS rights record: GOV_PUBLIC_USE_PERMITTED, no third-party material",
+    "licenseUrl": "https://ntrs.nasa.gov/api/citations/19650008734",
+    "source": "ntrs.nasa.gov",
+    "pages": [7, 8],
+    "ocr": true,
+    "groundTruth": [
+      "VACUUM COMPATIBILITY OF ENGINEERING MATERIALS\n(LIQUIDS AND SEMI-SOLIDS)\nBy J. G. Austin and J. B. Gayle\nGeorge C. Marshall Space Flight Center\nSUMMARY\nThe rates of evaporation of 20 liquid and semi-solid materials in a vacuum environment were determined by both continuous and before-and-after weighings. The effect of temperature on rate of evaporation was determined for 11 of the 20 materials. Tests were made at one to three temperatures, ranging from room temperature to 154 C. The weight loss varied from 0.6 milligram (twice the limit of detection) to 100 percent. Testing times ranged from 1 to 500 hours. Comparisons of the evaporation rates of the various liquids and semi-solids should be attempted cautiously.\nINTRODUCTION\nVacuum compatibility is a major factor influencing the selection of materials for space applications. Many materials lose weight when exposed to reduced pressure. Both the extent of this loss and any corresponding changes in material properties depend on a number of factors, including the temperature and radiation levels to which the material is subjected and the chemical, physical, and mechanical characteristics of the material. For this reason, specifications for acceptance or rejection of materials for space applications should include the environmental conditions associated with the intended application.\nWeight loss is an ambiguous criterion for the selection of materials for space environments. For example, a grease may evaporate to a considerable extent but continue to function satisfactorily. However, the vaporized portion may condense on cooler adjacent surfaces and, thereby, cause malfunction of the system, as has occurred in at least one known incident with electronic circuitry. It should be noted that materials which are susceptible to oxidation may perform more satisfactorily in vacuum than in air at normal atmospheric pressure. In any event, knowledge obtained by visual examination of the samples before and after testing can be used for preliminary screening, thus reducing the number of materials which must be subjected to altitude simulation tests in hardware configurations.",
+      "A program for testing the compatibility of materials in vacuum was initiated in the Materials Division in 1959. The equipment used for this investigation, the test procedures, and the results obtained for a number of materials have been discussed in previous reports (Ref. 1, 2, 3). This report presents additional results obtained for a variety of liquid and semi-solid materials.\nEXPERIMENTAL PROCEDURE\nThree vacuum systems, designated 4A, 4B, and 4D, were used. All systems used four-inch diffusion pumps and differed primarily in the degree of automatic operation and type of balance. Both weighing and pumping operations used in the 4A system were manual. The 4D system (FIG 1) had an automatic balance (FIG 2) and manually operated pumping equipment. Both weighing and pumping operations used in the 4B system were automatic. The systems were equipped with ceramic ovens (FIG 3) for elevated temperature experimentation.\nAll weight loss determinations were made with the samples contained in Knudsen cells (FIG 4 and 5). Each sample was weighed into the lower section of the cell; then, the top section, which contained a 0.3302-centimeter diameter orifice, was secured in place by a rolled and crimped mechanical seal of the mated flanges. The initial sample weight was determined by difference.\nTwo types of balances were used for each run: an ordinary analytical balance for before-and-after weighing and a Cahn magnetic electrobalance (FIG 2) for weighing in vacuum. In the 4B and 4D systems, the automatic balances provided a continuous recording of the weight; however, in the 4A system, the balance was operated manually. The zero settings and calibrations of the balances were checked between runs. By placing thermocouples at various locations in the bell jar, it was determined that heating was confined largely to the ovens; consequently, thermal effects on the balances were small.\nAfter a sample was placed in the vacuum chamber, a pressure of less than 10-4 torr was achieved in approximately one hour; then, when applicable, the specimen was heated to the selected test temperature in 15-30 minutes. In all cases, the ultimate pressure was less than 10-5 torr. Temperatures were governed by maximum anticipated service temperatures, by the approximate upper temperature limit (for use in air) specified by the manufacturer, or by arbitrary selection.\nIn most instances, runs were terminated when the sample attained constant weight or exhibited less than 0.1 milligram weight change in any eight-hour period. After the specimens cooled to room temperature, they were removed from vacuum and weighed on the analytical balance.\n2"
+    ]
+  }
+]
