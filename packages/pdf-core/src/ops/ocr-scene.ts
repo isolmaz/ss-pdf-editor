@@ -1403,15 +1403,8 @@ function commonColor(data: Uint8Array): Rgb {
   ];
 }
 
-/**
- * The page without its words: every word box is filled with the background around it, the
- * page colour is the commonest colour left, and each connected region that differs from it is
- * cropped out of the erased image.
- */
-export function ocrBackground(
-  image: RgbaImage,
-  words: readonly OcrWord[],
-): { pageColor: number; regions: { box: Box; rgba: RgbaImage; solid: boolean }[] } {
+/** The image with every word box filled with the background around it (a copy; `words` in page points on the image's own scale). */
+export function eraseWords(image: RgbaImage, words: readonly OcrWord[]): RgbaImage {
   const { width, height, scale } = image;
   const data = new Uint8Array(image.data);
 
@@ -1434,6 +1427,20 @@ export function ocrBackground(
       }
     }
   }
+  return { width, height, data, scale };
+}
+
+/**
+ * The page without its words: every word box is filled with the background around it, the
+ * page colour is the commonest colour left, and each connected region that differs from it is
+ * cropped out of the erased image.
+ */
+export function ocrBackground(
+  image: RgbaImage,
+  words: readonly OcrWord[],
+): { pageColor: number; regions: { box: Box; rgba: RgbaImage; solid: boolean }[] } {
+  const { width, height, scale } = image;
+  const { data } = eraseWords(image, words);
 
   const page = commonColor(data);
   const mask = new Uint8Array(width * height);

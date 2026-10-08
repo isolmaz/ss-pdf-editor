@@ -120,6 +120,17 @@ assembled `dist/` like `pnpm e2e`, and it is its own Playwright project, present
 `test-results/fidelity/` (the DOCX and PDF of each run, `report.json`, `report.md`). The comparison
 functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). Details:
 
+- **Samples.** `e2e/fidelity/samples.ts` generates the repository's own pages in code, all Turkish
+  text in embedded Noto Sans: `cv`, `columns`, `table`, `form`, `cards`, `text-over-image` and the
+  scans `cv-scan` and `cards-scan`; and, from `samples-graphics.ts`, the graphics-heavy pages
+  `shapes` (geometry and a flow diagram), `chart` (pie, bar and line charts), `text-in-image`
+  (vector text plus two pictures that contain text), `overlay` (photo with a 50 % band, gradient
+  header, soft-masked emblem, translucent text and panels), `rotated` (text at 45°, 90° and 270°, a
+  stamp), `mixed-page` (vector heading above a scanned typed paragraph), `slide` (16:9) and
+  `invoice`. Their scans are `shapes-scan`, `invoice-scan` (200 dpi) and `invoice-scan-rough`
+  (150 dpi, skewed 2.5°, noisy, unevenly lit). The text that exists only as pixels in a picture
+  (`text-in-image`, `mixed-page`) is the sample's `imageText`; the report's "Text inside pictures"
+  table counts how many of its words the conversion holds as text (none is expected without OCR).
 - **Modes.** The spec's `MODES` table has one entry per way of exporting, each picking its radio
   buttons in the dialog: `flow` (Flowing text), `page-images` (One picture per page) and `layout`
   (Text and pictures, exact layout). A new Word layout is one more entry, plus its keys in
@@ -140,10 +151,13 @@ functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). 
 - **Thresholds.** `e2e/fidelity/thresholds.json` maps mode → `default` and per-sample overrides to
   `{ ssim, words }`. SSIM gates the worst page, word accuracy the whole document. `null` means
   measured, not gated: a run reports such a number without failing. `page-images` gates SSIM 0.95
-  for every sample; `layout` gates SSIM 0.95 and words 0.99 for each committed sample that reaches
+  by default and 0.97 for the graphics samples below; `layout` gates SSIM 0.95 and words 0.99 for each committed sample that reaches
   them, a floor just under the measured value for the two that do not yet (`irs-fw4-2022`,
   `usgs-fs2020-3042`), and measured floors for the scans read by OCR (`cv-scan`, `cards-scan`,
-  `nasa-tm-vacuum-1965`); `flow` gates words only. A sample's own key, even `null`, wins over the
+  `nasa-tm-vacuum-1965`), and a floor 0.02 (SSIM) / 0.03 (words) under the measured value for each
+  graphics sample and its scans (words are not gated for a result under 10 %, nor in `flow` for a
+  scan); `flow` gates words only (0.05 under the measured value for the graphics samples). The text
+  inside pictures (below) is measured, never gated. A sample's own key, even `null`, wins over the
   mode's `default`. To gate a number, set it a little
   under the lowest value measured on CI's LibreOffice, and say in the commit what it is.
 - **Local samples.** Every `*.pdf` in the folder e2e/fixtures/local (git-ignored, so absent from a fresh clone: the files are the
@@ -159,7 +173,7 @@ functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). 
   lists the commands (`setup.mjs`, `build-testset.mjs`, `run.mjs`, `score.mjs`, `diff-words.mjs`);
   they install their own dependencies into a temp folder and never touch `package.json`. They are
   run by hand, not by CI. To measure what the exact layout does with a scan end to end, use `pnpm
-  fidelity` with `FIDELITY_MODES=layout` on the scan samples (`cv-scan`, `cards-scan`, or a local one);
+  fidelity` with `FIDELITY_MODES=layout` on the scan samples (`cv-scan`, `cards-scan`, `invoice-scan-rough`, or a local one);
   to change the engine or the threshold, rerun the benchmark and update `docs/ocr-evaluation.md` in
   the same commit.
 

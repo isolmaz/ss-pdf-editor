@@ -422,6 +422,8 @@ export interface EmbeddedFonts {
   readonly count: number;
   /** The embedded face for a MuPDF font name (`LayoutChar.face`) on page `pageIndex`, or `undefined`. */
   faceOf(pageIndex: number, face: string): EmbeddedFace | undefined;
+  /** The family names the programs are embedded under (what a run's `w:rFonts` names). */
+  readonly families: ReadonlySet<string>;
   /** The `word/…` parts to add to the package (empty when nothing is embedded). */
   readonly files: Readonly<Record<string, string | Uint8Array>>;
   /** `[Content_Types].xml` / `word/_rels/document.xml.rels` with the font parts added. */
@@ -429,7 +431,8 @@ export interface EmbeddedFonts {
   documentRels(base: string): string;
   /**
    * The same fonts with `extra` added (Word-ready programs the document's text is set in by
-   * name, like the open font of a scan); one whose family and style is already embedded is left out.
+   * name, like the open font of a scan, which is named so that it does not clash with a family
+   * of `families`); one whose family and style is already embedded is left out.
    */
   plus(extra: readonly FontFile[]): EmbeddedFonts;
 }
@@ -444,6 +447,7 @@ export interface FontFile {
 /** Nothing embedded. */
 const NONE: EmbeddedFonts = {
   count: 0,
+  families: new Set(),
   faceOf: () => undefined,
   files: {},
   contentTypes: (base) => base,
@@ -576,6 +580,7 @@ function packageFonts(entries: readonly FontFile[], faceOf: EmbeddedFonts['faceO
 
   return {
     count: entries.length,
+    families: new Set(entries.map((entry) => entry.family)),
     faceOf,
     files,
     contentTypes: (base) =>

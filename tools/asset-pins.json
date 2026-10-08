@@ -134,19 +134,9 @@
           "sha256": "c8c09e4bd08de7b901b4561f16ce9bb1ab3ffa420cfaef9f2a40286e14300e75"
         },
         {
-          "path": "fonts/inter/Inter-Medium.ttf",
-          "bytes": 342892,
-          "sha256": "f1738576525e86db1d5cf63a6c1b56e0a7e2a2898b499ac93db95f2e7a9f9cd5"
-        },
-        {
           "path": "fonts/inter/Inter-Regular.ttf",
           "bytes": 342408,
           "sha256": "a414b48aa577ef2c62ebb135341ddeef33ee26a4f5dc9f787f93c1aab08ebb50"
-        },
-        {
-          "path": "fonts/inter/Inter-SemiBold.ttf",
-          "bytes": 343632,
-          "sha256": "f30e9d2574c3bec5144347ff965f9841c8f06857f0b7383000f8c9489a161841"
         }
       ]
     },
@@ -206,19 +196,9 @@
           "sha256": "7e87c0f96b39fbb919b30aef8991323d0b257649f391e6456bcf03c231448f49"
         },
         {
-          "path": "fonts/montserrat/Montserrat-Medium.ttf",
-          "bytes": 330872,
-          "sha256": "cd161cba3a3cdcf68ad721920fcd164c87e7b7cc9e6bad510278c3fa378d91d2"
-        },
-        {
           "path": "fonts/montserrat/Montserrat-Regular.ttf",
           "bytes": 330948,
           "sha256": "ef9cf99f0175bef530b88934bd904fcf56f773cec6fd4dfb8ccaf7ce2bbd395e"
-        },
-        {
-          "path": "fonts/montserrat/Montserrat-SemiBold.ttf",
-          "bytes": 333988,
-          "sha256": "9c4db3814875410e7d64fdc8e69676c3b84968bb15bf3ace8b3944c59fbc56b6"
         }
       ]
     },
@@ -271,11 +251,6 @@
           "path": "fonts/noto/NotoSans-Italic.ttf",
           "bytes": 642344,
           "sha256": "feb3e57888ce3acb604f270c278cfb304c674306518771619ddbdefca42a066b"
-        },
-        {
-          "path": "fonts/noto/NotoSans-Medium.ttf",
-          "bytes": 631052,
-          "sha256": "8c1dc004996029f804283dd398ca2a05d4d33ebcba5c0d25ea13fd2026572279"
         },
         {
           "path": "fonts/noto/NotoSans-Regular.ttf",
@@ -345,19 +320,9 @@
           "sha256": "dd74eb2d271b57ef5c382a97403818715bfb6b1d53d7fa6da9c88336763651fb"
         },
         {
-          "path": "fonts/open-sans/OpenSans-Medium.ttf",
-          "bytes": 130976,
-          "sha256": "23e3e3945f88eaeb3152fc70eab7377e0c76f3a3c28f2f24b041f87fb8b001a3"
-        },
-        {
           "path": "fonts/open-sans/OpenSans-Regular.ttf",
           "bytes": 130832,
           "sha256": "33e93bec67d91c396876db50694213802a39e43a911bb5c22322f0dbdf4d5e43"
-        },
-        {
-          "path": "fonts/open-sans/OpenSans-SemiBold.ttf",
-          "bytes": 130760,
-          "sha256": "126a7c4db92d11e83360fb8cb120b880a5a619845fd545a7556d41e96d1aa9e7"
         }
       ]
     },
@@ -1452,19 +1417,9 @@
           "sha256": "3225cec6a018310497ea9ee116aa43b2a833464fed6156dceb9a3a4424bb8613"
         },
         {
-          "path": "fonts/poppins/Poppins-Medium.ttf",
-          "bytes": 156520,
-          "sha256": "8d909883de81344e0fbcfef30e931872e92d9aeecdf85b6dcf6e0b28c078e98e"
-        },
-        {
           "path": "fonts/poppins/Poppins-Regular.ttf",
           "bytes": 158240,
           "sha256": "707fdc5c8bab57a90061c6a8ed7b70d5ffb82fc810e994e79f90bace890c255a"
-        },
-        {
-          "path": "fonts/poppins/Poppins-SemiBold.ttf",
-          "bytes": 155232,
-          "sha256": "248c0244b350ec68880996aa6be6d7796274b49992d5fcbbefe251906aa4ea36"
         }
       ]
     },
@@ -1493,19 +1448,9 @@
           "sha256": "6a372c348dc20c246b92d60b9bda3c0a9ffedc129790ed3f31faf89daa99d793"
         },
         {
-          "path": "fonts/roboto/Roboto-Medium.ttf",
-          "bytes": 159296,
-          "sha256": "79343dc641a2e8d48a703a4667b71fc8dc6565cc8ce47dfc34fc52c12aadbf38"
-        },
-        {
           "path": "fonts/roboto/Roboto-Regular.ttf",
           "bytes": 159108,
           "sha256": "15256405ecb0d880678833a582760efad538ab2932318b52c8105b267d159459"
-        },
-        {
-          "path": "fonts/roboto/Roboto-SemiBold.ttf",
-          "bytes": 159876,
-          "sha256": "32fe2086b0e54eca85a68eb74e3d89bb16a7ffe59085d6dc7d079f5b3c26d6ab"
         }
       ]
     },
@@ -1565,19 +1510,9 @@
           "sha256": "f17facaa9ed293bb38526db3638e240510b7393c37ffa70e5c48f39575de44ab"
         },
         {
-          "path": "fonts/source-sans-3/SourceSans3-Medium.ttf",
-          "bytes": 380736,
-          "sha256": "5a879bfa79e820c4ab275dbed47fa9a3ca1c9f5c7283605ea645f16476b45f14"
-        },
-        {
           "path": "fonts/source-sans-3/SourceSans3-Regular.ttf",
           "bytes": 381020,
           "sha256": "7ca2b9c4677ce81daf8a7feafb1680f5d228065698b500c5a24e22831e2ae849"
-        },
-        {
-          "path": "fonts/source-sans-3/SourceSans3-SemiBold.ttf",
-          "bytes": 380892,
-          "sha256": "554fa345ebef3febe9a6233a0b25ee38000dd1687c8d6ed5fafeaa9bf1e0cd78"
         }
       ]
     },

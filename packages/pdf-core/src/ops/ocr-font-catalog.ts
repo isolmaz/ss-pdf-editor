@@ -13,7 +13,7 @@
  */
 
 /** A face of a family: the keys of {@link OpenFamily.files}. */
-export type OpenFaceStyle = 'regular' | 'italic' | 'bold' | 'boldItalic' | 'medium' | 'semiBold';
+export type OpenFaceStyle = 'regular' | 'italic' | 'bold' | 'boldItalic';
 
 export interface OpenFamily {
   /** Stable key (also the name of the family's package). */
@@ -27,49 +27,46 @@ export interface OpenFamily {
     italic?: string;
     bold?: string;
     boldItalic?: string;
-    medium?: string;
-    semiBold?: string;
   };
 }
 
-/** The six faces a sans family ships; serif and mono families ship the first four. */
-function faces(dir: string, file: string, weights: boolean): OpenFamily['files'] {
+/** The four faces every family ships (the semi-bold and medium cuts are not offered: a bold run is set in the Bold). */
+function faces(dir: string, file: string): OpenFamily['files'] {
   const path = (style: string): string => `/fonts/${dir}/${file}-${style}.ttf`;
   return {
     regular: path('Regular'),
     italic: path('Italic'),
     bold: path('Bold'),
     boldItalic: path('BoldItalic'),
-    ...(weights ? { medium: path('Medium'), semiBold: path('SemiBold') } : {}),
   };
 }
 
 /** Every family the app ships, Noto Sans first (the one the writers already embed). */
 export const OPEN_FAMILIES: readonly OpenFamily[] = [
-  { id: 'noto-sans', name: 'Noto Sans', kind: 'sans', files: faces('noto', 'NotoSans', true) },
-  { id: 'roboto', name: 'Roboto', kind: 'sans', files: faces('roboto', 'Roboto', true) },
-  { id: 'open-sans', name: 'Open Sans', kind: 'sans', files: faces('open-sans', 'OpenSans', true) },
-  { id: 'montserrat', name: 'Montserrat', kind: 'sans', files: faces('montserrat', 'Montserrat', true) },
-  { id: 'inter', name: 'Inter', kind: 'sans', files: faces('inter', 'Inter', true) },
+  { id: 'noto-sans', name: 'Noto Sans', kind: 'sans', files: faces('noto', 'NotoSans') },
+  { id: 'roboto', name: 'Roboto', kind: 'sans', files: faces('roboto', 'Roboto') },
+  { id: 'open-sans', name: 'Open Sans', kind: 'sans', files: faces('open-sans', 'OpenSans') },
+  { id: 'montserrat', name: 'Montserrat', kind: 'sans', files: faces('montserrat', 'Montserrat') },
+  { id: 'inter', name: 'Inter', kind: 'sans', files: faces('inter', 'Inter') },
   {
     id: 'source-sans-3',
     name: 'Source Sans 3',
     kind: 'sans',
-    files: faces('source-sans-3', 'SourceSans3', true),
+    files: faces('source-sans-3', 'SourceSans3'),
   },
-  { id: 'poppins', name: 'Poppins', kind: 'sans', files: faces('poppins', 'Poppins', true) },
+  { id: 'poppins', name: 'Poppins', kind: 'sans', files: faces('poppins', 'Poppins') },
   {
     id: 'merriweather',
     name: 'Merriweather',
     kind: 'serif',
-    files: faces('merriweather', 'Merriweather', false),
+    files: faces('merriweather', 'Merriweather'),
   },
-  { id: 'noto-serif', name: 'Noto Serif', kind: 'serif', files: faces('noto-serif', 'NotoSerif', false) },
+  { id: 'noto-serif', name: 'Noto Serif', kind: 'serif', files: faces('noto-serif', 'NotoSerif') },
   {
     id: 'roboto-mono',
     name: 'Roboto Mono',
     kind: 'mono',
-    files: faces('roboto-mono', 'RobotoMono', false),
+    files: faces('roboto-mono', 'RobotoMono'),
   },
 ];
 

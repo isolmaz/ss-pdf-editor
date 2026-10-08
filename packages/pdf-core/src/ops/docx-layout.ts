@@ -29,12 +29,18 @@ import {
   xml,
   zipped,
 } from './docx-drawing';
-import { embedFonts } from './docx-fonts';
+import { type EmbeddedFonts, embedFonts } from './docx-fonts';
 import { isMixedPage, isScanPage, visibleBoxes } from './docx-layout-mixed';
-import { type FlaggedWord, type OcrOptions, readScanPage, type ScanPage } from './docx-layout-ocr';
+import {
+  type FlaggedWord,
+  type OcrOptions,
+  readPictureText,
+  readScanPage,
+  type ScanPage,
+} from './docx-layout-ocr';
 import { sceneItemXml } from './docx-layout-shapes';
 import { textBoxes, textBoxXml, wordsInBoxes } from './docx-layout-text';
-import { type OpenFont, openFontFiles } from './docx-ocr-font';
+import { type OpenFonts, openFontFiles, openFontsFor, releaseOpenFonts } from './docx-ocr-font';
 import { DocxRegistry, type PageScene, type TextBox } from './layout-scene';
 import { readPageRaster, readPageScene } from './layout-scene-read';
 import { type OperationContext, throwIfAborted } from './types';
@@ -153,11 +159,31 @@ export async function writeLayoutDocx(
   ocr: OcrOptions | null = null,
 ): Promise<LayoutDocx> {
   const mupdf = await loadMupdf();
-  const registry = new DocxRegistry(WORD_Z_BASE);
   const embedded = await embedFonts(mupdf, doc, pages, context);
-  /** The scan pages' text boxes, and the open families they are set in. */
+  // The open families the scans are set in are named against the PDF's own fonts and loaded once.
+  const openFonts = openFontsFor(embedded.families);
+  try {
+    return await writePages(mupdf, doc, pages, title, language, context, ocr, embedded, openFonts);
+  } finally {
+    releaseOpenFonts(openFonts);
+  }
+}
+
+/** `writeLayoutDocx` after the PDF's fonts are embedded. */
+async function writePages(
+  mupdf: Mupdf,
+  doc: PDFDocument,
+  pages: readonly number[],
+  title: string,
+  language: string,
+  context: OperationContext,
+  ocr: OcrOptions | null,
+  embedded: EmbeddedFonts,
+  openFonts: OpenFonts,
+): Promise<LayoutDocx> {
+  const registry = new DocxRegistry(WORD_Z_BASE);
+  /** The scan pages' text boxes, for the open families' faces. */
   const scanBoxes: TextBox[] = [];
-  const openFonts = new Map<string, OpenFont>();
   const paragraphs: string[] = [];
   const allBoxes: TextBox[] = [];
   const scaled: { page: number; scale: number }[] = [];
@@ -186,11 +212,14 @@ export async function writeLayoutDocx(
     try {
       scene = readSceneOf(mupdf, page);
       if (isScanPage(scene)) {
-        scan = await readScanPage(mupdf, page, scene, ocr, context.signal);
+        scan = await readScanPage(mupdf, page, scene, ocr, context.signal, openFonts);
         if (scan === null) unavailable.push(index + 1);
       } else if (ocr !== null && isMixedPage(scene)) {
         // Real text over a scan: the text stays vector text, the scan's words are read with OCR (or `null`: nothing scanned to read).
-        scan = await readScanPage(mupdf, page, scene, ocr, context.signal, visibleBoxes(scene));
+        scan = await readScanPage(mupdf, page, scene, ocr, context.signal, openFonts, visibleBoxes(scene));
+      } else if (ocr !== null) {
+        // A picture on a page of vector text that holds text itself: its words become text boxes over it.
+        scan = await readPictureText(mupdf, page, scene, ocr, context.signal, openFonts, visibleBoxes(scene));
       }
     } finally {
       page.destroy();
@@ -209,7 +238,6 @@ export async function writeLayoutDocx(
       else ocrPages.push(index + 1);
       if (scan.layerRejected) untrusted.push(index + 1);
       scanBoxes.push(...scan.boxes);
-      if (scan.open !== null && !openFonts.has(scan.open.name)) openFonts.set(scan.open.name, scan.open);
       for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
     }
     if (boxes.length === 0) textless.push(index + 1);
@@ -237,7 +265,8 @@ export async function writeLayoutDocx(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throwIfAborted(context.signal);
-  const openFiles = openFontFiles([...openFonts.values()], scanBoxes);
+  const open = [...openFonts.loaded.values()];
+  const openFiles = openFontFiles(open, scanBoxes);
   const fonts = embedded.plus(openFiles);
   context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
   // The last page's section is the body's own `w:sectPr`.
@@ -294,7 +323,9 @@ export async function writeLayoutDocx(
       unavailable,
       mixed: mixedPages,
       untrusted,
-      families: [...new Set(openFiles.map((file) => file.family))],
+      families: open
+        .filter((family) => openFiles.some((file) => file.family === family.name))
+        .map((family) => family.family),
     },
   };
 }

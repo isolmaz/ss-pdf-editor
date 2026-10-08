@@ -13,7 +13,7 @@
  */
 
 import type { OcrWord } from '../engines/tesseract';
-import type { PageScene } from './layout-scene';
+import type { PageScene, SceneImage } from './layout-scene';
 import type { RgbaImage } from './ocr-scene';
 import type { Box, LayoutChar } from './page-layout';
 
@@ -33,6 +33,12 @@ const MIN_INK = 0.003;
 const MAX_INK: number = 0.3;
 /** A pixel is ink when its luminance is this far from the picture's background. */
 const INK_CONTRAST = 64;
+/** A picture is searched for text when it covers at least this share of the page … */
+const MIN_PICTURE = 0.02;
+/** … and its words stand when there are at least this many … */
+const MIN_PICTURE_WORDS = 3;
+/** … read with at least this mean confidence (0–100). */
+const PICTURE_CONFIDENCE = 60;
 /** A masked box drops the OCR words overlapping it by more than this share of the word. */
 const MASKED_SHARE = 0.5;
 /** An unsure word this close to a masked box (pixels) is a sliver of a glyph the mask cut. */
@@ -50,7 +56,7 @@ const hasVisibleText = (scene: PageScene): boolean =>
   linesOf(scene).some((line) => line.chars.some(isVisible));
 
 /** The boxes of the page's pictures (`SceneImage`, `SceneRaster`). */
-const pictureBoxes = (scene: PageScene): Box[] =>
+export const pictureBoxes = (scene: PageScene): Box[] =>
   scene.items.flatMap((item) => (item.kind === 'shape' ? [] : [item.box]));
 
 /** Whether the pictures cover at least half the page. */
@@ -154,14 +160,12 @@ export function maskBoxes(image: RgbaImage, boxes: readonly Box[]): RgbaImage {
 }
 
 /**
- * Whether the pictures of the page hold ink of their own in `image` (the page with the visible
- * text masked): some of their pixels, but not most, differ from the picture's background.
+ * The boxes (page points) of `boxes` that hold ink of their own in `image` (the page with the
+ * visible text masked): some of their pixels, but not most, differ from the box's background.
  * Nothing left is a picture the text lies over; most of it is a photograph.
  */
-export function hasScanInk(image: RgbaImage, scene: PageScene): boolean {
-  let ink = 0;
-  let total = 0;
-  for (const box of pictureBoxes(scene)) {
+export function inkBoxes(image: RgbaImage, boxes: readonly Box[]): Box[] {
+  return boxes.filter((box) => {
     const [x0, y0, x1, y1] = pixelsOf(image, box, 0);
     const luminance: number[] = [];
     const bins = new Array<number>(16).fill(0);
@@ -173,15 +177,40 @@ export function hasScanInk(image: RgbaImage, scene: PageScene): boolean {
           0.587 * (image.data[at + 1] as number) +
           0.114 * (image.data[at + 2] as number);
         luminance.push(value);
-        bins[Math.min(15, value >> 4)] = (bins[Math.min(15, value >> 4)] as number) + 1;
+        const bin = Math.min(15, value >> 4);
+        bins[bin] = (bins[bin] as number) + 1;
       }
     }
-    if (luminance.length === 0) continue;
+    if (luminance.length === 0) return false;
     const background = (bins.indexOf(Math.max(...bins)) + 0.5) * 16;
-    total += luminance.length;
-    ink += luminance.filter((value) => Math.abs(value - background) > INK_CONTRAST).length;
-  }
-  return total > 0 && ink / total >= MIN_INK && ink / total <= MAX_INK;
+    const ink = luminance.filter((value) => Math.abs(value - background) > INK_CONTRAST).length;
+    return ink / luminance.length >= MIN_INK && ink / luminance.length <= MAX_INK;
+  });
+}
+
+/** The pictures of a page big enough to hold text a reader would want: at least 2 % of the page. */
+export function textPictures(scene: PageScene): SceneImage[] {
+  return scene.items.filter(
+    (item): item is SceneImage =>
+      item.kind === 'image' &&
+      (item.box[2] - item.box[0]) * (item.box[3] - item.box[1]) >= MIN_PICTURE * scene.width * scene.height,
+  );
+}
+
+/**
+ * The words that lie in `box` (their centre does), when there are enough of them and they were
+ * read surely: a few unsure words are what OCR makes of a photograph or a logo.
+ */
+export function wordsInPicture(words: readonly OcrWord[], box: Box): OcrWord[] {
+  const inside = words.filter(
+    (word) =>
+      (word.x0 + word.x1) / 2 >= box[0] &&
+      (word.x0 + word.x1) / 2 <= box[2] &&
+      (word.y0 + word.y1) / 2 >= box[1] &&
+      (word.y0 + word.y1) / 2 <= box[3],
+  );
+  const sure = inside.reduce((sum, word) => sum + word.confidence, 0) / Math.max(1, inside.length);
+  return inside.length >= MIN_PICTURE_WORDS && sure >= PICTURE_CONFIDENCE ? inside : [];
 }
 
 /**

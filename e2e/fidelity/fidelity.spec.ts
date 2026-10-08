@@ -41,6 +41,7 @@ import {
   intendedPageScale,
   joinHyphenation,
   normalizeWords,
+  recoveredWords,
   resizeBilinear,
   ssim,
 } from './compare';
@@ -334,11 +335,27 @@ for (const sample of samples) {
         const pdfPath = await toPdf(docxPath, FIDELITY_DIR);
         const converted = await measurePdf(new Uint8Array(readFileSync(pdfPath)));
         const measured = measure(sample, original, converted, threshold);
+        const pictureWords =
+          sample.imageText === undefined ? [] : normalizeWords(sample.imageText.join('\n'));
+        const pictureText =
+          sample.imageText === undefined
+            ? {}
+            : {
+                pictureText: {
+                  words: pictureWords.length,
+                  recovered: recoveredWords(
+                    pictureWords,
+                    converted.flatMap((p) => normalizeWords(p.text)),
+                    original.flatMap((p) => normalizeWords(p.text)),
+                  ),
+                },
+              };
         const result: FidelityResult = {
           ...identity,
           originalPages: original.length,
           convertedPages: converted.length,
           ...measured,
+          ...pictureText,
           files: { docx: `${base}.docx`, pdf: `${base}.pdf` },
         };
         writeResult(result);

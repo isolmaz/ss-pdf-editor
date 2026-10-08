@@ -14,12 +14,14 @@ import { loadMupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import {
   dropMasked,
-  hasScanInk,
+  inkBoxes,
   isMixedPage,
   isScanPage,
   layerTrusted,
   maskBoxes,
+  textPictures,
   visibleBoxes,
+  wordsInPicture,
 } from './docx-layout-mixed';
 import { exportOffice } from './export-office';
 import { line, officeDocument } from './export-office-fixtures';
@@ -49,7 +51,11 @@ const BLANK = officeDocument([{ content: '0.85 0.92 1 rg 0 0 400 500 re f' }]);
  * The sample as a page of one picture, then `over` drawn on top (the resources are Helvetica `F1`
  * and a Courier `F2` whose `/ToUnicode` hands code 1 over as U+0001, which reads back as U+FFFD).
  */
-async function scanWith(over: string, sample: Promise<Uint8Array> = SAMPLE): Promise<Uint8Array> {
+async function scanWith(
+  over: string,
+  sample: Promise<Uint8Array> = SAMPLE,
+  placement = 'q 400 0 0 500 0 0 cm',
+): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
   const source = mupdf.Document.openDocument((await sample).slice(), 'application/pdf');
   const scan = new mupdf.PDFDocument();
@@ -77,7 +83,7 @@ async function scanWith(over: string, sample: Promise<Uint8Array> = SAMPLE): Pro
       [0, 0, 400, 500],
       0,
       { XObject: { Im0: image }, Font: fonts },
-      `q 400 0 0 500 0 0 cm /Im0 Do Q\n${over}\n`,
+      `${placement} /Im0 Do Q\n${over}\n`,
     );
     scan.insertPage(-1, page);
     const saved = scan.saveToBuffer('compress');
@@ -287,6 +293,85 @@ describe('exact layout: real text over a scan', () => {
   });
 });
 
+describe('exact layout: text inside a picture on a page of vector text', () => {
+  /** The sample's picture at half size, in the lower middle of the page: x 100–300, y 150–400 from the top. */
+  const placement = 'q 200 0 0 250 100 100 cm';
+  /** Where the picture's line of text lies on the page (the sample's 60…165 × 89…103 halved, shifted by the picture's corner). */
+  const inPicture = (confidence = 90): OcrWord[] => [
+    word('Hello', 130, 146, 194, 201, confidence),
+    word('world', 148, 165, 194, 201, confidence),
+    word('today', 167, 182, 194, 201, confidence),
+  ];
+
+  it('makes the words of the picture text boxes, keeps the typed header once and the picture behind', async () => {
+    const seen: Uint8Array[] = [];
+    const result = await exportOffice(
+      await scanWith(HEADER, SAMPLE, placement),
+      {
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async (png) => {
+            seen.push(png);
+            // the header is masked out of what OCR is given, yet a stray read of it is among the words
+            return [...inPicture(), word('Typed', 60, 95, 20, 34), word('stray', 20, 40, 450, 470, 95)];
+          },
+        },
+      },
+      run,
+    );
+    expect(seen).toHaveLength(1);
+    const body = (await written(result.file.bytes)).replaceAll(' ', '');
+    expect(occurrences(body, 'Typedheader')).toBe(2);
+    expect(occurrences(body, 'Helloworldtoday')).toBe(2);
+    expect(body).not.toContain('stray');
+    expect(result.notes.find((note) => note.key === 'op.note.exportOffice.ocrMixedPages')?.params).toEqual({
+      pages: '1',
+    });
+    // the picture is still there, set again without its words
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    expect(Object.keys(zip.files).some((name) => name.startsWith('word/media/'))).toBe(true);
+  });
+
+  it('leaves the page as it was for a picture without ink, unsure words, too few words, or no recogniser', async () => {
+    let calls = 0;
+    const cases: [Promise<Uint8Array>, () => Promise<OcrWord[]>][] = [
+      [scanWith(HEADER, BLANK, placement), async () => inPicture()],
+      [scanWith(HEADER, SAMPLE, placement), async () => inPicture(40)],
+      [scanWith(HEADER, SAMPLE, placement), async () => inPicture().slice(0, 2)],
+      [
+        scanWith(HEADER, SAMPLE, placement),
+        async () => {
+          throw new Error('the language pack could not be fetched');
+        },
+      ],
+    ];
+    for (const [bytes, recognize] of cases) {
+      const result = await exportOffice(
+        await bytes,
+        {
+          ...options,
+          ocr: {
+            lowConfidence: 0.9,
+            recognize: async (...args) => {
+              calls += 1;
+              void args;
+              return recognize();
+            },
+          },
+        },
+        run,
+      );
+      const body = (await written(result.file.bytes)).replaceAll(' ', '');
+      expect(occurrences(body, 'Typedheader')).toBe(2);
+      expect(body).not.toContain('Helloworldtoday');
+      expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrMixedPages')).toBe(false);
+    }
+    // the blank picture is not even read
+    expect(calls).toBe(3);
+  });
+});
+
 describe('exact layout: the invisible layer trust gate', () => {
   const garbage =
     'BT /F2 14 Tf 3 Tr 60 400 Td (\\001\\001\\001\\001 \\001\\001\\001\\001 \\001\\001\\001\\001\\001) Tj ET';
@@ -441,28 +526,45 @@ describe('mixed page helpers', () => {
     expect(Array.from(maskBoxes(page, [[0, 0, 40, 40]]).data.subarray(0, 3))).toEqual([255, 255, 255]);
   });
 
-  it('finds ink in a picture only when some of it, not most, differs from its background', () => {
-    const scene = {
-      width: 40,
-      height: 40,
-      items: [
-        { kind: 'shape', box: [0, 0, 40, 40] },
-        { kind: 'image', box: [0, 0, 40, 40] },
-        { kind: 'image', box: [100, 100, 120, 120] },
-      ],
-    } as unknown as PageScene;
+  it('finds the boxes with ink of their own: some of their pixels, not most, differ from the background', () => {
+    const inside: [number, number, number, number] = [0, 0, 40, 40];
+    const elsewhere: [number, number, number, number] = [100, 100, 120, 120];
     const blank = image(40, 40, [255, 255, 255]);
-    expect(hasScanInk(blank, scene)).toBe(false);
+    expect(inkBoxes(blank, [inside])).toEqual([]);
     const marked = image(40, 40, [255, 255, 255]);
     for (let y = 10; y < 14; y += 1)
       for (let x = 5; x < 35; x += 1) marked.data.set([0, 0, 0], (y * 40 + x) * 4);
-    expect(hasScanInk(marked, scene)).toBe(true);
-    expect(hasScanInk(image(40, 40, [0, 0, 0]), scene)).toBe(false);
+    expect(inkBoxes(marked, [inside, elsewhere])).toEqual([inside]);
+    expect(inkBoxes(image(40, 40, [0, 0, 0]), [inside])).toEqual([]);
     const photo = image(40, 40, [255, 255, 255]);
     for (let y = 0; y < 40; y += 1)
       for (let x = 0; x < 20; x += 1) photo.data.set([0, 0, 0], (y * 40 + x) * 4);
-    expect(hasScanInk(photo, scene)).toBe(false);
-    expect(hasScanInk(blank, { ...scene, items: [] } as unknown as PageScene)).toBe(false);
+    expect(inkBoxes(photo, [inside])).toEqual([]);
+  });
+
+  it('searches the pictures of at least 2 % of the page for text', async () => {
+    const scene = await sceneOf(await scanWith(HEADER, SAMPLE, 'q 200 0 0 250 100 100 cm'));
+    expect(textPictures(scene)).toHaveLength(1);
+    const small = await sceneOf(await scanWith(HEADER, SAMPLE, 'q 20 0 0 20 100 100 cm'));
+    expect(textPictures(small)).toHaveLength(0);
+    expect(textPictures(await sceneOf(await SAMPLE))).toHaveLength(0);
+  });
+
+  it('takes the words of a picture only when there are enough and they are sure', () => {
+    const box: [number, number, number, number] = [100, 100, 200, 200];
+    const at = (x: number, confidence: number) => word('w', x, x + 10, 140, 150, confidence);
+    const sure = [at(110, 90), at(130, 80), at(150, 70)];
+    expect(wordsInPicture([...sure, at(300, 90)], box)).toEqual(sure);
+    expect(wordsInPicture([at(110, 90), at(130, 80), at(300, 90)], box)).toEqual([]);
+    expect(wordsInPicture([at(110, 50), at(130, 50), at(150, 50)], box)).toEqual([]);
+    expect(wordsInPicture([], box)).toEqual([]);
+    // above, below and left of the box
+    expect(
+      wordsInPicture(
+        [word('w', 110, 120, 50, 60), word('w', 110, 120, 250, 260), word('w', 10, 20, 140, 150)],
+        box,
+      ),
+    ).toEqual([]);
   });
 
   it('drops words on a masked box and unsure slivers next to one, and keeps the rest', () => {

@@ -12,6 +12,7 @@ import type { RgbaImage } from './ocr-scene';
 const matches: FamilyMatch[] = [];
 vi.mock('./ocr-font-match', () => ({
   matchFamily: vi.fn(() => matches.shift()),
+  varied: (words: unknown[]) => words,
 }));
 
 const image: RgbaImage = { width: 1, height: 1, data: new Uint8Array(4), scale: 1 };
@@ -23,8 +24,9 @@ async function chosen(all: FamilyMatch, standard?: FamilyMatch): Promise<string 
   matches.push(all);
   if (standard !== undefined) matches.push(standard);
   vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }));
-  const { chooseOpenFont } = await import('./docx-ocr-font');
-  const open = await chooseOpenFont(mupdf, image, []);
+  const { chooseOpenFont, openFontsFor } = await import('./docx-ocr-font');
+  const word = { text: 'words', box: [0, 0, 1, 1], size: 1, bold: false, italic: false, confidence: 98 };
+  const open = await chooseOpenFont(mupdf, image, [word as never], openFontsFor(new Set()));
   return open === null ? null : open.name;
 }
 

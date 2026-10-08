@@ -11,15 +11,23 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import JSZip from 'jszip';
-import type { Font } from 'mupdf';
+import type { Font, PDFDocument } from 'mupdf';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf, type Mupdf, openPdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { embedFonts, obfuscateFont, provideStandardMetrics } from './docx-fonts';
-import { chooseOpenFont, type OpenFont, ocrAdvance, openFontFiles } from './docx-ocr-font';
+import {
+  chooseOpenFont,
+  type OpenFace,
+  type OpenFont,
+  ocrAdvance,
+  openFontFiles,
+  openFontsFor,
+  releaseOpenFonts,
+} from './docx-ocr-font';
 import { exportOffice } from './export-office';
 import type { TextBox, TextRun } from './layout-scene';
-import { renderScan, type Scan } from './ocr-font-match.fixtures';
+import { renderScan, type Scan, SENTENCES } from './ocr-font-match.fixtures';
 import type { MeasuredWord } from './ocr-scene';
 import type { OperationContext } from './types';
 
@@ -39,20 +47,45 @@ function serveFonts(): void {
   );
 }
 
+/** The Windows-platform string of `name` record `id` in a TrueType program (empty when there is none). */
+function nameRecord(bytes: Uint8Array, id: number): string {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let index = 0; index < dv.getUint16(4); index += 1) {
+    const entry = 12 + 16 * index;
+    if (String.fromCharCode(...bytes.subarray(entry, entry + 4)) !== 'name') continue;
+    const table = dv.getUint32(entry + 8);
+    const storage = table + dv.getUint16(table + 4);
+    for (let record = 0; record < dv.getUint16(table + 2); record += 1) {
+      const at = table + 6 + 12 * record;
+      if (dv.getUint16(at) !== 3 || dv.getUint16(at + 6) !== id) continue;
+      const start = storage + dv.getUint16(at + 10);
+      const raw = bytes.subarray(start, start + dv.getUint16(at + 8));
+      return String.fromCharCode(
+        ...Array.from(
+          { length: raw.length / 2 },
+          (_, at) => ((raw[2 * at] as number) << 8) | (raw[2 * at + 1] as number),
+        ),
+      );
+    }
+  }
+  return '';
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 /** A scan of the sentences set in `family`, and the words the way `ocrTextBoxes` reports them. */
-async function scanIn(family: 'Inter' | 'Helvetica' | 'Times-Roman'): Promise<{
+async function scanIn(family: 'Inter' | 'Roboto' | 'Helvetica' | 'Times-Roman'): Promise<{
   mupdf: Mupdf;
   scan: Scan;
   measured: MeasuredWord[];
 }> {
   const mupdf = await loadMupdf();
+  const open = { Inter: '/fonts/inter/Inter-Regular.ttf', Roboto: '/fonts/roboto/Roboto-Regular.ttf' };
   const font: Font =
-    family === 'Inter'
-      ? new mupdf.Font('Inter-Regular', publicFile('/fonts/inter/Inter-Regular.ttf'))
+    family === 'Inter' || family === 'Roboto'
+      ? new mupdf.Font(`${family}-Regular`, publicFile(open[family]))
       : new mupdf.Font(family);
   const scan = renderScan(mupdf, font, { dpi: 200, size: 11, amplitude: 20 });
   return { mupdf, scan, measured: scan.words.map((word) => ({ ...word, confidence: 98 })) };
@@ -62,7 +95,7 @@ describe('the open family of a scan', () => {
   it('is Inter for a scan set in it, with the faces the family has', async () => {
     serveFonts();
     const { mupdf, scan, measured } = await scanIn('Inter');
-    const open = (await chooseOpenFont(mupdf, scan.image, measured)) as OpenFont;
+    const open = (await chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))) as OpenFont;
     expect(open.name).toBe('Inter');
     expect(open.bold).toBeDefined();
     expect(open.italic).toBeDefined();
@@ -73,21 +106,26 @@ describe('the open family of a scan', () => {
     serveFonts();
     for (const family of ['Helvetica', 'Times-Roman'] as const) {
       const { mupdf, scan, measured } = await scanIn(family);
-      expect(await chooseOpenFont(mupdf, scan.image, measured)).toBeNull();
+      expect(await chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))).toBeNull();
     }
   });
 
-  it('judges only the words OCR is sure of', async () => {
-    serveFonts();
+  it('judges only the words OCR is sure of, and fetches no font when there is none', async () => {
+    // a fresh module: the loader keeps what it fetched
+    vi.resetModules();
+    const fetched = vi.fn(async () => new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', fetched);
+    const fresh = await import('./docx-ocr-font');
     const { mupdf, scan, measured } = await scanIn('Inter');
-    // every word unsure: nothing to draw, every family scores 0, no family is ahead
+    const unsure = measured.map((word) => ({ ...word, confidence: 50 }));
+    expect(await fresh.chooseOpenFont(mupdf, scan.image, unsure, fresh.openFontsFor(new Set()))).toBeNull();
+    // sure, but too short to compare, or not regular: still nothing to judge
+    const unjudgeable = measured.map((word) => ({ ...word, text: 'ab' }));
     expect(
-      await chooseOpenFont(
-        mupdf,
-        scan.image,
-        measured.map((word) => ({ ...word, confidence: 50 })),
-      ),
+      await fresh.chooseOpenFont(mupdf, scan.image, unjudgeable, fresh.openFontsFor(new Set())),
     ).toBeNull();
+    expect(await fresh.chooseOpenFont(mupdf, scan.image, [], fresh.openFontsFor(new Set()))).toBeNull();
+    expect(fetched).not.toHaveBeenCalled();
   });
 
   it('is none offline or without the files: the stand-ins stay', async () => {
@@ -98,7 +136,7 @@ describe('the open family of a scan', () => {
     });
     const fresh = await import('./docx-ocr-font');
     const { mupdf, scan, measured } = await scanIn('Inter');
-    expect(await fresh.chooseOpenFont(mupdf, scan.image, measured)).toBeNull();
+    expect(await fresh.chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))).toBeNull();
   });
 
   it('keeps the family whose regular loads when the others are missing, and the faces it has', async () => {
@@ -110,11 +148,45 @@ describe('the open family of a scan', () => {
     );
     const fresh = await import('./docx-ocr-font');
     const { mupdf, scan, measured } = await scanIn('Inter');
-    const open = (await fresh.chooseOpenFont(mupdf, scan.image, measured)) as OpenFont;
+    const open = (await fresh.chooseOpenFont(
+      mupdf,
+      scan.image,
+      measured,
+      openFontsFor(new Set()),
+    )) as OpenFont;
     expect(open.name).toBe('Inter');
     expect(open.bold).toBeUndefined();
     expect(open.italic).toBeUndefined();
     expect(open.boldItalic).toBeUndefined();
+  });
+});
+
+describe('the open families of an export', () => {
+  it('are named against the PDF fonts, loaded once and freed at the end', async () => {
+    serveFonts();
+    const { mupdf, scan, measured } = await scanIn('Inter');
+    const fonts = openFontsFor(new Set(['Inter', 'Arial']));
+    const first = (await chooseOpenFont(mupdf, scan.image, measured, fonts)) as OpenFont;
+    // a PDF font called Inter is embedded: the scan's runs and font table say Inter 2
+    expect([first.name, first.family]).toEqual(['Inter 2', 'Inter']);
+    expect(fonts.names.has('Inter 2')).toBe(true);
+    // the next scan page of the export has the same family: the same fonts, not another parse
+    expect(await chooseOpenFont(mupdf, scan.image, measured, fonts)).toBe(first);
+    expect(fonts.loaded.size).toBe(1);
+    const crowded = (await chooseOpenFont(
+      mupdf,
+      scan.image,
+      measured,
+      openFontsFor(new Set(['Inter', 'Inter 2'])),
+    )) as OpenFont;
+    expect(crowded.name).toBe('Inter 3');
+    const destroyed = [first.regular, first.bold, first.italic, first.boldItalic].map((face) =>
+      vi.spyOn((face as OpenFace).font, 'destroy'),
+    );
+    releaseOpenFonts(fonts);
+    for (const spy of destroyed) expect(spy).toHaveBeenCalledTimes(1);
+    expect(fonts.loaded.size).toBe(0);
+    releaseOpenFonts(openFontsFor(new Set()));
   });
 });
 
@@ -123,7 +195,7 @@ describe('the advances of the open family', () => {
     serveFonts();
     const { mupdf, scan, measured } = await scanIn('Inter');
     provideStandardMetrics(mupdf);
-    const open = (await chooseOpenFont(mupdf, scan.image, measured)) as OpenFont;
+    const open = (await chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))) as OpenFont;
     const advance = ocrAdvance(open);
     const regular = advance('Inter', false, false, 0x6d) as number;
     const bold = advance('Inter', true, false, 0x6d) as number;
@@ -139,7 +211,7 @@ describe('the advances of the open family', () => {
   it('are the nearest face the family has when a face is missing', async () => {
     serveFonts();
     const { mupdf, scan, measured } = await scanIn('Inter');
-    const open = (await chooseOpenFont(mupdf, scan.image, measured)) as OpenFont;
+    const open = (await chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))) as OpenFont;
     const { bold: _bold, italic: _italic, boldItalic: _boldItalic, ...regularOnly } = open;
     const advance = ocrAdvance(regularOnly);
     const regular = advance('Inter', false, false, 0x6d);
@@ -176,7 +248,7 @@ describe('the font files of a scan', () => {
   async function interFont(): Promise<OpenFont> {
     serveFonts();
     const { mupdf, scan, measured } = await scanIn('Inter');
-    return (await chooseOpenFont(mupdf, scan.image, measured)) as OpenFont;
+    return (await chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))) as OpenFont;
   }
 
   it('are the faces the runs use, each with the characters they use, as TrueType', async () => {
@@ -253,6 +325,11 @@ describe('fonts added to the embedded ones', () => {
     const { mupdf, doc } = await notoPdfDoc();
     const fonts = await embedFonts(mupdf, doc, [0], run);
     expect(fonts.count).toBe(1);
+    expect([...fonts.families]).toEqual(['NotoSans']);
+    expect(fonts.plus([]).families.size).toBe(1);
+    expect([
+      ...fonts.plus([{ family: 'Noto Sans', style: 'Bold', bytes: new Uint8Array(8) }]).families,
+    ]).toEqual(['NotoSans', 'Noto Sans']);
     const program = publicFile('/fonts/noto/NotoSans-Regular.ttf');
     expect(fonts.plus([{ family: 'NotoSans', style: 'Regular', bytes: program }])).toBe(fonts);
     const more = fonts.plus([{ family: 'Noto Sans', style: 'Bold', bytes: program }]);
@@ -268,7 +345,11 @@ describe('fonts added to the embedded ones', () => {
 
 describe('exact layout: a scan set in an open family', () => {
   /** The scan's picture as one page of a PDF, 200 dpi, and the words as the recogniser would give them (page points). */
-  async function pdfOf(mupdf: Mupdf, scan: Scan): Promise<Uint8Array> {
+  async function pdfOf(
+    mupdf: Mupdf,
+    scan: Scan,
+    firstPage?: (doc: PDFDocument) => void,
+  ): Promise<Uint8Array> {
     const { image } = scan;
     const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, image.width, image.height], true);
     pixmap.getPixels().set(image.data);
@@ -276,6 +357,7 @@ describe('exact layout: a scan set in an open family', () => {
     const width = image.width / image.scale;
     const height = image.height / image.scale;
     const picture = doc.addImage(new mupdf.Image(pixmap.asPNG()));
+    firstPage?.(doc);
     doc.insertPage(
       -1,
       doc.addPage(
@@ -285,6 +367,7 @@ describe('exact layout: a scan set in an open family', () => {
         `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q\n`,
       ),
     );
+    if (firstPage !== undefined) doc.subsetFonts();
     const saved = doc.saveToBuffer('compress');
     const bytes = saved.asUint8Array().slice();
     saved.destroy();
@@ -305,14 +388,15 @@ describe('exact layout: a scan set in an open family', () => {
     }));
 
   async function exported(
-    family: 'Inter' | 'Helvetica' | 'Times-Roman',
+    family: 'Inter' | 'Roboto' | 'Helvetica' | 'Times-Roman',
     write: typeof exportOffice = exportOffice,
+    firstPage?: (doc: PDFDocument) => void,
   ) {
     const { mupdf, scan } = await scanIn(family);
     const result = await write(
-      await pdfOf(mupdf, scan),
+      await pdfOf(mupdf, scan, firstPage),
       {
-        pages: [0],
+        pages: firstPage === undefined ? [0] : [0, 1],
         baseName: 'scan.pdf',
         format: 'docx',
         docxLayout: 'layout',
@@ -346,6 +430,60 @@ describe('exact layout: a scan set in an open family', () => {
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.fontsEmbedded')).toBe(true);
     const named = result.notes.find((note) => note.key === 'op.note.exportOffice.ocrFont');
     expect(named?.params).toEqual({ families: 'Inter' });
+    // the font keeps its copyright and licence records
+    const kept = obfuscateFont(program as Uint8Array, key);
+    expect(nameRecord(kept, 0)).toContain('Copyright');
+    expect(nameRecord(kept, 13)).toContain('SIL Open Font License');
+    expect(nameRecord(kept, 14)).toContain('https://');
+  });
+
+  it('is embedded beside a PDF font of the same name, and the scan runs name the open one', async () => {
+    serveFonts();
+    const mupdf = await loadMupdf();
+    // a page of the PDF's own, drawn in a Roboto subset: embedded as the family "Roboto"
+    const roboto = new mupdf.Font('Roboto-Regular', publicFile('/fonts/roboto/Roboto-Regular.ttf'));
+    const hex = [...'Hello']
+      .map((char) =>
+        roboto
+          .encodeCharacter(char.codePointAt(0) as number)
+          .toString(16)
+          .padStart(4, '0'),
+      )
+      .join('');
+    const { result, zip, document, table, programs } = await exported('Roboto', exportOffice, (doc) =>
+      doc.insertPage(
+        -1,
+        doc.addPage(
+          [0, 0, 200, 100],
+          0,
+          { Font: { F0: doc.addFont(roboto) } },
+          `BT /F0 18 Tf 20 50 Td <${hex}> Tj ET\n`,
+        ),
+      ),
+    );
+    // both programs are embedded, under two names
+    expect(programs.length).toBeGreaterThanOrEqual(2);
+    expect(table).toContain('<w:font w:name="Roboto"><w:embedRegular ');
+    expect(table).toContain('<w:font w:name="Roboto 2"><w:embedRegular ');
+    expect(document).toContain('w:ascii="Roboto 2"');
+    expect(result.notes.find((note) => note.key === 'op.note.exportOffice.ocrFont')?.params).toEqual({
+      families: 'Roboto',
+    });
+    // the scan's program is the open one: it covers every character the scan sets, the PDF's subset does not
+    const programOf = async (name: string): Promise<Font> => {
+      const found = new RegExp(
+        `<w:font w:name="${name}"><w:embedRegular r:id="rIdFont(\\d+)" w:fontKey="(\\{[^"]+\\})"`,
+      ).exec(table) as RegExpExecArray;
+      const bytes = await zip.file(`word/fonts/font${found[1]}.odttf`)?.async('uint8array');
+      return new mupdf.Font(name, obfuscateFont(bytes as Uint8Array, found[2] as string));
+    };
+    const open = await programOf('Roboto 2');
+    const subset = await programOf('Roboto');
+    const scanned = new Set(SENTENCES.join(' ').replaceAll(' ', ''));
+    for (const char of scanned) expect(open.encodeCharacter(char.codePointAt(0) as number), char).not.toBe(0);
+    expect([...scanned].some((char) => subset.encodeCharacter(char.codePointAt(0) as number) === 0)).toBe(
+      true,
+    );
   });
 
   it("keeps Arial and embeds nothing when the words are Helvetica's", async () => {

@@ -21,8 +21,16 @@ import type { Page } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { provideStandardMetrics } from './docx-fonts';
-import { dropMasked, hasScanInk, layerTrusted, maskBoxes } from './docx-layout-mixed';
-import { chooseOpenFont, type OpenFont, ocrAdvance } from './docx-ocr-font';
+import {
+  dropMasked,
+  inkBoxes,
+  layerTrusted,
+  maskBoxes,
+  pictureBoxes,
+  textPictures,
+  wordsInPicture,
+} from './docx-layout-mixed';
+import { chooseOpenFont, type OpenFonts, ocrAdvance } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import { type ReadWord, refineWords } from './ocr-refine';
@@ -31,6 +39,7 @@ import {
   dropEdgeMarks,
   dropMisreads,
   eraseRules,
+  eraseWords,
   findUnderlines,
   markWords,
   misreadWords,
@@ -77,8 +86,6 @@ export interface ScanPage {
   readonly flagged: readonly Omit<FlaggedWord, 'page'>[];
   /** Pictures added (regions), for the totals. */
   readonly regions: number;
-  /** The open family the text is set in (`chooseOpenFont`); `null` when it is set in the stand-ins. */
-  readonly open: OpenFont | null;
   /** The page also shows real text, kept as it is by the caller (`visible` of `readScanPage`). */
   readonly mixed: boolean;
   /** The page's invisible text layer was not trusted (`layerTrusted`) and the page was read with OCR instead. */
@@ -261,6 +268,120 @@ async function readWords(
   return { words, duplicates: [...read.filter((word) => !unique.includes(word)), ...marks], rules, image };
 }
 
+/** The words as positioned text boxes, set in the stand-in that fits their boxes best, or in the open family they appear to be set in (`chooseOpenFont`). */
+async function setWords(
+  mupdf: Mupdf,
+  image: RgbaImage,
+  words: readonly OcrWord[],
+  lowConfidence: number,
+  solid: readonly Box[],
+  rules: readonly Rule[],
+  fonts: OpenFonts,
+): Promise<ReturnType<typeof ocrTextBoxes>> {
+  // The words as set tell whether the scan is in one of the open families, and then the page is
+  // set again in that family's own advances.
+  const set = ocrTextBoxes(words, image, lowConfidence, solid, ocrAdvance(null), undefined, rules);
+  const open = await chooseOpenFont(mupdf, image, set.measured, fonts);
+  return open === null
+    ? set
+    : ocrTextBoxes(words, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
+}
+
+/** A picture's own pixels as RGBA, on the scale of its box (pixels per page point). */
+function decodePicture(mupdf: Mupdf, data: Uint8Array, box: Box): RgbaImage {
+  const picture = new mupdf.Image(data);
+  const pixmap = picture.toPixmap();
+  try {
+    const width = pixmap.getWidth();
+    const height = pixmap.getHeight();
+    const channels = pixmap.getNumberOfComponents();
+    const stride = pixmap.getStride();
+    const from = pixmap.getPixels();
+    const out = new Uint8Array(width * height * 4);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const source = y * stride + x * channels;
+        const target = (y * width + x) * 4;
+        out[target] = from[source] as number;
+        out[target + 1] = from[source + (channels > 2 ? 1 : 0)] as number;
+        out[target + 2] = from[source + (channels > 2 ? 2 : 0)] as number;
+        out[target + 3] = pixmap.getAlpha() && channels >= 2 ? (from[source + channels - 1] as number) : 255;
+      }
+    }
+    return { width, height, data: out, scale: width / Math.max(1e-6, box[2] - box[0]) };
+  } finally {
+    pixmap.destroy();
+    picture.destroy();
+  }
+}
+
+/**
+ * The text inside the pictures of a page that is not a scan (a screenshot, a sign, a table
+ * saved as an image): the page is rendered with its visible text masked, OCR reads what is
+ * left, and the words in a picture that holds ink and enough surely read words become text
+ * boxes over the picture, which is set again without them. The rest of the page is as it was
+ * (`null`: no picture has words, or OCR cannot run, and the caller keeps the page).
+ */
+export async function readPictureText(
+  mupdf: Mupdf,
+  page: Page,
+  scene: PageScene,
+  ocr: OcrOptions,
+  signal: AbortSignal,
+  fonts: OpenFonts,
+  visible: readonly Box[],
+): Promise<ScanPage | null> {
+  const candidates = textPictures(scene);
+  if (candidates.length === 0) return null;
+  const scan = renderScan(mupdf, page, scanDpi(scene));
+  const masked = maskBoxes(scan.image, visible);
+  const inked = inkBoxes(
+    masked,
+    candidates.map((picture) => picture.box),
+  );
+  if (inked.length === 0) return null;
+  throwIfAborted(signal);
+  const read = await readWords(
+    mupdf,
+    masked,
+    visible.length > 0 ? pngOf(mupdf, masked) : scan.png,
+    ocr,
+    signal,
+  );
+  if (read === null) return null;
+  provideStandardMetrics(mupdf);
+  const outside = dropMasked(read.words, visible, read.image.scale);
+  const misread = misreadWords(outside);
+  const text = outside.filter((word) => !misread.has(word));
+  const found = new Map<SceneImage, OcrWord[]>();
+  for (const picture of candidates) {
+    if (!inked.includes(picture.box)) continue;
+    const inside = wordsInPicture(text, picture.box);
+    if (inside.length > 0) found.set(picture, inside);
+  }
+  if (found.size === 0) return null;
+  const items = scene.items.map((item): SceneItem => {
+    const words = item.kind === 'image' ? found.get(item) : undefined;
+    if (item.kind !== 'image' || words === undefined) return item;
+    // The picture's own pixels, without the words (in its box's frame).
+    const own = decodePicture(mupdf, item.data, item.box);
+    const erased = eraseWords(
+      own,
+      words.map((word) => ({
+        ...word,
+        x0: word.x0 - item.box[0],
+        x1: word.x1 - item.box[0],
+        y0: word.y0 - item.box[1],
+        y1: word.y1 - item.box[1],
+      })),
+    );
+    return { ...item, data: pngOf(mupdf, erased), mime: 'image/png' };
+  });
+  const all = [...found.values()].flat();
+  const { boxes, flagged } = await setWords(mupdf, read.image, all, ocr.lowConfidence, [], read.rules, fonts);
+  return { items, boxes, flagged, regions: 0, mixed: true, layerRejected: false };
+}
+
 /**
  * The scan page rebuilt: words from the invisible layer if there is one it can trust, else from
  * `ocr.recognize` (`null`: there is none or it failed, and the page has no layer — the caller
@@ -277,6 +398,7 @@ export async function readScanPage(
   scene: PageScene,
   ocr: OcrOptions | null,
   signal: AbortSignal,
+  fonts: OpenFonts,
   visible: readonly Box[] = [],
 ): Promise<ScanPage | null> {
   const mixed = visible.length > 0;
@@ -287,7 +409,7 @@ export async function readScanPage(
   const useLayer = layer.length > 0 && trusted;
   const scan = renderScan(mupdf, page, scanDpi(scene));
   const masked = maskBoxes(scan.image, visible);
-  if (mixed && !useLayer && !hasScanInk(masked, scene)) return null;
+  if (mixed && !useLayer && inkBoxes(masked, pictureBoxes(scene)).length === 0) return null;
   let image = masked;
   let words: readonly OcrWord[] = layer;
   let duplicates: readonly OcrWord[] = [];
@@ -325,15 +447,7 @@ export async function readScanPage(
   const { pageColor, regions } =
     kept.length === text.length ? first : ocrBackground(image, [...kept, ...duplicates]);
   const solid = regions.filter((region) => region.solid).map((region) => region.box);
-  const lowConfidence = ocr?.lowConfidence ?? 0;
-  // Set in the stand-in that fits the word boxes best; the words as set tell whether the scan is
-  // in one of the open families, and then the page is set again in that family's own advances.
-  let set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(null), undefined, rules);
-  const open = await chooseOpenFont(mupdf, image, set.measured);
-  if (open !== null) {
-    set = ocrTextBoxes(kept, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
-  }
-  const { boxes, flagged } = set;
+  const { boxes, flagged } = await setWords(mupdf, image, kept, ocr?.lowConfidence ?? 0, solid, rules, fonts);
   const background: SceneShape = {
     kind: 'shape',
     box: [0, 0, scene.width, scene.height],
@@ -354,7 +468,6 @@ export async function readScanPage(
     boxes,
     flagged,
     regions: pictures.length,
-    open,
     mixed,
     layerRejected: reread,
   };
