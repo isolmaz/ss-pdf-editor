@@ -16,10 +16,13 @@ function scroller(page: Page): Locator {
   return page.locator(PAGE).first().locator('xpath=../..');
 }
 
+/**
+ * Page one's drawn size; zero while pdf.js swaps the canvas for a re-render at the new
+ * scale, so a poll reads "not there yet" and asks again instead of failing.
+ */
 async function pageSize(page: Page): Promise<{ width: number; height: number }> {
   const box = await page.locator(`${PAGE} canvas`).first().boundingBox();
-  if (box === null) throw new Error('page one has no box');
-  return { width: box.width, height: box.height };
+  return box === null ? { width: 0, height: 0 } : { width: box.width, height: box.height };
 }
 
 test('fit width and fit page follow the window when it is resized; a fixed zoom does not', async ({
@@ -67,7 +70,7 @@ test('fit width and fit page follow the window when it is resized; a fixed zoom 
   await expect.poll(async () => Math.round((await pageSize(page)).width)).toBe(Math.round((595 * 96) / 72));
   await page.setViewportSize({ width: 1300, height: 700 });
   await expect.poll(async () => Math.abs((await paneSize()).width - small.width)).toBeGreaterThan(50);
-  expect(Math.round((await pageSize(page)).width)).toBe(Math.round((595 * 96) / 72));
+  await expect.poll(async () => Math.round((await pageSize(page)).width)).toBe(Math.round((595 * 96) / 72));
 });
 
 test('a value typed into a form widget of the page is what the export holds', async ({ page }) => {

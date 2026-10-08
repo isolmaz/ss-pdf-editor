@@ -39,6 +39,16 @@ async function outline(page: Page): Promise<number[]> {
 }
 
 test.describe('without a camera permission', () => {
+  // A refused permission prompt, the same on every host: left to the browser, a machine
+  // without a camera device (a CI runner) answers `NotFoundError` before it ever asks.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      navigator.mediaDevices.getUserMedia = async () => {
+        throw new DOMException('Permission denied', 'NotAllowedError');
+      };
+    });
+  });
+
   test('the refusal is named, photos are chosen from files, the corners are corrected and the pages become a PDF', async ({
     page,
   }) => {
