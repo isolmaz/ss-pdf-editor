@@ -70,6 +70,31 @@ const OCR_EXTRA_LANGUAGES = [
 ];
 
 /**
+ * The static TTF rows of one `@expo-google-fonts/*` family: `file` is the family's name in the
+ * package's file names (`NotoSerif` → `400Regular/NotoSerif_400Regular.ttf`), copied out as
+ * `<file>-<Style>.ttf`. Medium and SemiBold are listed only by the sans families, which a document
+ * uses for headings; the serif and mono faces ship the four basic styles.
+ */
+function fontFamilyEntries(file, { weights = false } = {}) {
+  const styles = [
+    ['400Regular', 'Regular'],
+    ['400Regular_Italic', 'Italic'],
+    ['700Bold', 'Bold'],
+    ['700Bold_Italic', 'BoldItalic'],
+    ...(weights
+      ? [
+          ['500Medium', 'Medium'],
+          ['600SemiBold', 'SemiBold'],
+        ]
+      : []),
+  ];
+  return styles.map(([dir, style]) => ({
+    from: `${dir}/${file}_${dir}.ttf`,
+    to: `${file}-${style}.ttf`,
+  }));
+}
+
+/**
  * The engine table.
  *
  * `entries[].from` is relative to the package root, `entries[].to` is relative to the engine's
@@ -214,11 +239,68 @@ const ENGINES = [
     // drawn by the MuPDF writers is embedded from a real TTF rather than a base-14 font: the built-in faces
     // carry no Turkish diacritics (Ğ/ğ, İ/ı, Ş/ş) and cannot be subset reliably. Two of the
     // eighteen weights the package ships: regular for body text, semibold for headings and
-    // Bates-style stamps.
-    entries: [
-      { from: '400Regular/NotoSans_400Regular.ttf', to: 'NotoSans-Regular.ttf' },
-      { from: '600SemiBold/NotoSans_600SemiBold.ttf', to: 'NotoSans-SemiBold.ttf' },
-    ],
+    // Bates-style stamps. The italic, bold, bold-italic and medium faces are for the OCR
+    // font catalog (`pdf-core/src/ops/ocr-font-catalog.ts`), which offers this family beside
+    // the ones below so a scanned page exported to Word can use the face that matches the scan.
+    entries: fontFamilyEntries('NotoSans', { weights: true }),
+  },
+  // The open families of that catalog (all OFL-1.1; each package's LICENSE_FONT is the
+  // licence of its font files). Static TTFs only; every regular face covers the Turkish
+  // letters Ğ/ğ, İ/ı, Ş/ş, Ç/ç, Ö/ö, Ü/ü (checked with MuPDF). Lato was left out: its
+  // package's faces have no Ğ/ğ, İ or Ş/ş.
+  {
+    id: 'roboto',
+    package: '@expo-google-fonts/roboto',
+    target: 'fonts/roboto',
+    entries: fontFamilyEntries('Roboto', { weights: true }),
+  },
+  {
+    id: 'open-sans',
+    package: '@expo-google-fonts/open-sans',
+    target: 'fonts/open-sans',
+    entries: fontFamilyEntries('OpenSans', { weights: true }),
+  },
+  {
+    id: 'montserrat',
+    package: '@expo-google-fonts/montserrat',
+    target: 'fonts/montserrat',
+    entries: fontFamilyEntries('Montserrat', { weights: true }),
+  },
+  {
+    id: 'inter',
+    package: '@expo-google-fonts/inter',
+    target: 'fonts/inter',
+    entries: fontFamilyEntries('Inter', { weights: true }),
+  },
+  {
+    id: 'source-sans-3',
+    package: '@expo-google-fonts/source-sans-3',
+    target: 'fonts/source-sans-3',
+    entries: fontFamilyEntries('SourceSans3', { weights: true }),
+  },
+  {
+    id: 'poppins',
+    package: '@expo-google-fonts/poppins',
+    target: 'fonts/poppins',
+    entries: fontFamilyEntries('Poppins', { weights: true }),
+  },
+  {
+    id: 'merriweather',
+    package: '@expo-google-fonts/merriweather',
+    target: 'fonts/merriweather',
+    entries: fontFamilyEntries('Merriweather'),
+  },
+  {
+    id: 'noto-serif',
+    package: '@expo-google-fonts/noto-serif',
+    target: 'fonts/noto-serif',
+    entries: fontFamilyEntries('NotoSerif'),
+  },
+  {
+    id: 'roboto-mono',
+    package: '@expo-google-fonts/roboto-mono',
+    target: 'fonts/roboto-mono',
+    entries: fontFamilyEntries('RobotoMono'),
   },
   {
     id: 'tesseract',

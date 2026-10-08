@@ -981,3 +981,16 @@ licensed AGPL-3.0-or-later. It also ships Ghostscript (AGPL-3.0-only, through
 `@bentopdf/gs-wasm`) for PDF/A conversion; the combined work is distributed under the
 GNU Affero General Public License version 3. The editor's **Help → Source code (AGPL-3.0)** command links
 to this repository, as section 13 of the licence requires.
+
+### Bundled fonts
+
+The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm packages, served from
+the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
+License 1.1 (the licence texts are copied to `dist/licenses/`):
+
+- **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
+  to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
+  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic (the sans
+  families also medium and semi-bold). Each covers the Turkish letters. Lato was left out because
+  its faces lack Ğ/ğ, İ and Ş/ş.
+- **Interface and signatures:** Space Grotesk, DM Sans, Dancing Script and Great Vibes.

@@ -109,6 +109,119 @@
         }
       ]
     },
+    "inter": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/inter",
+          "version": "0.4.2",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/inter/Inter-Bold.ttf",
+          "bytes": 344072,
+          "sha256": "fbe825cbfc749317f57a1433d3905aa9d3f388732fd29b8e8a36f34845e3bc3e"
+        },
+        {
+          "path": "fonts/inter/Inter-BoldItalic.ttf",
+          "bytes": 347824,
+          "sha256": "bcc655acbd25f44eed4894f3c65f836503476db411c540d8dd5b616ef60c1825"
+        },
+        {
+          "path": "fonts/inter/Inter-Italic.ttf",
+          "bytes": 345956,
+          "sha256": "c8c09e4bd08de7b901b4561f16ce9bb1ab3ffa420cfaef9f2a40286e14300e75"
+        },
+        {
+          "path": "fonts/inter/Inter-Medium.ttf",
+          "bytes": 342892,
+          "sha256": "f1738576525e86db1d5cf63a6c1b56e0a7e2a2898b499ac93db95f2e7a9f9cd5"
+        },
+        {
+          "path": "fonts/inter/Inter-Regular.ttf",
+          "bytes": 342408,
+          "sha256": "a414b48aa577ef2c62ebb135341ddeef33ee26a4f5dc9f787f93c1aab08ebb50"
+        },
+        {
+          "path": "fonts/inter/Inter-SemiBold.ttf",
+          "bytes": 343632,
+          "sha256": "f30e9d2574c3bec5144347ff965f9841c8f06857f0b7383000f8c9489a161841"
+        }
+      ]
+    },
+    "merriweather": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/merriweather",
+          "version": "0.4.2",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/merriweather/Merriweather-Bold.ttf",
+          "bytes": 1064804,
+          "sha256": "d9587d1266fb18da859f44a0ada7bdc5e7cb68af29ea87aa7caab2607cd74579"
+        },
+        {
+          "path": "fonts/merriweather/Merriweather-BoldItalic.ttf",
+          "bytes": 1069360,
+          "sha256": "7edc04d596294242b71a01369f7e57da772247a30bbd77f27db215c4da93f231"
+        },
+        {
+          "path": "fonts/merriweather/Merriweather-Italic.ttf",
+          "bytes": 1069152,
+          "sha256": "49e68975bce0f7b11c3836f1b63d06e9c3eecfc3d7ebf7b0724c6680a3b2f425"
+        },
+        {
+          "path": "fonts/merriweather/Merriweather-Regular.ttf",
+          "bytes": 1064500,
+          "sha256": "f1541057f1765ffa5ee7eb873f01bec1dd2238c85a8b1602c462fd8eda92b6df"
+        }
+      ]
+    },
+    "montserrat": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/montserrat",
+          "version": "0.4.2",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/montserrat/Montserrat-Bold.ttf",
+          "bytes": 335788,
+          "sha256": "7fa93d7daa5c2f881a6727229c211782de6b76008fbd6346b3d7664e8fc83f43"
+        },
+        {
+          "path": "fonts/montserrat/Montserrat-BoldItalic.ttf",
+          "bytes": 342016,
+          "sha256": "001a59b0f2c541080033b83ca6dfacce03095d99caa3594835f51b7c6d9ce758"
+        },
+        {
+          "path": "fonts/montserrat/Montserrat-Italic.ttf",
+          "bytes": 337132,
+          "sha256": "7e87c0f96b39fbb919b30aef8991323d0b257649f391e6456bcf03c231448f49"
+        },
+        {
+          "path": "fonts/montserrat/Montserrat-Medium.ttf",
+          "bytes": 330872,
+          "sha256": "cd161cba3a3cdcf68ad721920fcd164c87e7b7cc9e6bad510278c3fa378d91d2"
+        },
+        {
+          "path": "fonts/montserrat/Montserrat-Regular.ttf",
+          "bytes": 330948,
+          "sha256": "ef9cf99f0175bef530b88934bd904fcf56f773cec6fd4dfb8ccaf7ce2bbd395e"
+        },
+        {
+          "path": "fonts/montserrat/Montserrat-SemiBold.ttf",
+          "bytes": 333988,
+          "sha256": "9c4db3814875410e7d64fdc8e69676c3b84968bb15bf3ace8b3944c59fbc56b6"
+        }
+      ]
+    },
     "mupdf": {
       "packages": [
         {
@@ -145,6 +258,26 @@
       ],
       "files": [
         {
+          "path": "fonts/noto/NotoSans-Bold.ttf",
+          "bytes": 630968,
+          "sha256": "13a813c49624ae3ba3c5c6e72c5ebffc4b9e1e6ea32f421c04069b037c6ad431"
+        },
+        {
+          "path": "fonts/noto/NotoSans-BoldItalic.ttf",
+          "bytes": 644344,
+          "sha256": "7e34616e092593c340449baf9a259075a054c6419511ccf21ff0d83a1c9dd0d0"
+        },
+        {
+          "path": "fonts/noto/NotoSans-Italic.ttf",
+          "bytes": 642344,
+          "sha256": "feb3e57888ce3acb604f270c278cfb304c674306518771619ddbdefca42a066b"
+        },
+        {
+          "path": "fonts/noto/NotoSans-Medium.ttf",
+          "bytes": 631052,
+          "sha256": "8c1dc004996029f804283dd398ca2a05d4d33ebcba5c0d25ea13fd2026572279"
+        },
+        {
           "path": "fonts/noto/NotoSans-Regular.ttf",
           "bytes": 629024,
           "sha256": "fe8c022f48d8dd29f17b744d16f9346f4357e16f7d4f7be58b000ae7c291b614"
@@ -153,6 +286,78 @@
           "path": "fonts/noto/NotoSans-SemiBold.ttf",
           "bytes": 631364,
           "sha256": "e691fe27813ec6ed11d0a5be4c6c1f6739996ed682462eaa3244a6185217dd6c"
+        }
+      ]
+    },
+    "noto-serif": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/noto-serif",
+          "version": "0.4.2",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/noto-serif/NotoSerif-Bold.ttf",
+          "bytes": 506864,
+          "sha256": "1b941681106aae26ead3a24c6f15b51f994b1b26adce8742a37ce96648f0fe0a"
+        },
+        {
+          "path": "fonts/noto-serif/NotoSerif-BoldItalic.ttf",
+          "bytes": 534540,
+          "sha256": "2400339667ad2701320aa671e337d1632731e56b397564afe14e981124b899c6"
+        },
+        {
+          "path": "fonts/noto-serif/NotoSerif-Italic.ttf",
+          "bytes": 534156,
+          "sha256": "15d5f8050fc1f142545e7a26a50bd07a0434eca535d4d98aad9d5e8f03741e43"
+        },
+        {
+          "path": "fonts/noto-serif/NotoSerif-Regular.ttf",
+          "bytes": 504932,
+          "sha256": "a7e8ea1ab7e7d368b001c892d6148325fffc849a46e030e55e1bdc597bbe939d"
+        }
+      ]
+    },
+    "open-sans": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/open-sans",
+          "version": "0.4.2",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/open-sans/OpenSans-Bold.ttf",
+          "bytes": 130860,
+          "sha256": "5f4c6f0c6beae94863a099a7a538059c480f91587f1abffc06552e9fa3a44f40"
+        },
+        {
+          "path": "fonts/open-sans/OpenSans-BoldItalic.ttf",
+          "bytes": 136360,
+          "sha256": "c7e0a936ff0f08b6726cf205126a5e6dd6ae1340111325f7e86cbba1408e82d7"
+        },
+        {
+          "path": "fonts/open-sans/OpenSans-Italic.ttf",
+          "bytes": 136604,
+          "sha256": "dd74eb2d271b57ef5c382a97403818715bfb6b1d53d7fa6da9c88336763651fb"
+        },
+        {
+          "path": "fonts/open-sans/OpenSans-Medium.ttf",
+          "bytes": 130976,
+          "sha256": "23e3e3945f88eaeb3152fc70eab7377e0c76f3a3c28f2f24b041f87fb8b001a3"
+        },
+        {
+          "path": "fonts/open-sans/OpenSans-Regular.ttf",
+          "bytes": 130832,
+          "sha256": "33e93bec67d91c396876db50694213802a39e43a911bb5c22322f0dbdf4d5e43"
+        },
+        {
+          "path": "fonts/open-sans/OpenSans-SemiBold.ttf",
+          "bytes": 130760,
+          "sha256": "126a7c4db92d11e83360fb8cb120b880a5a619845fd545a7556d41e96d1aa9e7"
         }
       ]
     },
@@ -1219,6 +1424,160 @@
           "path": "engines/pdfjs/wasm/quickjs-eval.wasm",
           "bytes": 469105,
           "sha256": "7bcacc9f22cacf7e9b23866d2a6d1639693d40c7f144e41b7c69ed37ba9cbe8f"
+        }
+      ]
+    },
+    "poppins": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/poppins",
+          "version": "0.4.1",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/poppins/Poppins-Bold.ttf",
+          "bytes": 153944,
+          "sha256": "7219547ee25334cbac0fe4b3acf0bf631e48ebb622c71af038edaaa652c60875"
+        },
+        {
+          "path": "fonts/poppins/Poppins-BoldItalic.ttf",
+          "bytes": 176588,
+          "sha256": "9d4d9f3c2c289eaec403660ec215bdc45e62b49f978807714bfc31ca7916c8fe"
+        },
+        {
+          "path": "fonts/poppins/Poppins-Italic.ttf",
+          "bytes": 182012,
+          "sha256": "3225cec6a018310497ea9ee116aa43b2a833464fed6156dceb9a3a4424bb8613"
+        },
+        {
+          "path": "fonts/poppins/Poppins-Medium.ttf",
+          "bytes": 156520,
+          "sha256": "8d909883de81344e0fbcfef30e931872e92d9aeecdf85b6dcf6e0b28c078e98e"
+        },
+        {
+          "path": "fonts/poppins/Poppins-Regular.ttf",
+          "bytes": 158240,
+          "sha256": "707fdc5c8bab57a90061c6a8ed7b70d5ffb82fc810e994e79f90bace890c255a"
+        },
+        {
+          "path": "fonts/poppins/Poppins-SemiBold.ttf",
+          "bytes": 155232,
+          "sha256": "248c0244b350ec68880996aa6be6d7796274b49992d5fcbbefe251906aa4ea36"
+        }
+      ]
+    },
+    "roboto": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/roboto",
+          "version": "0.4.3",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/roboto/Roboto-Bold.ttf",
+          "bytes": 159900,
+          "sha256": "4aaf8c5b661a386998c2e70cf2b87e2440f5404e0b8fd81164f0413fb3435ec6"
+        },
+        {
+          "path": "fonts/roboto/Roboto-BoldItalic.ttf",
+          "bytes": 166256,
+          "sha256": "c6a5e7c224d3bf6698e5d3c124f0f0220cad20d5d413920447a96f033a0292ee"
+        },
+        {
+          "path": "fonts/roboto/Roboto-Italic.ttf",
+          "bytes": 165268,
+          "sha256": "6a372c348dc20c246b92d60b9bda3c0a9ffedc129790ed3f31faf89daa99d793"
+        },
+        {
+          "path": "fonts/roboto/Roboto-Medium.ttf",
+          "bytes": 159296,
+          "sha256": "79343dc641a2e8d48a703a4667b71fc8dc6565cc8ce47dfc34fc52c12aadbf38"
+        },
+        {
+          "path": "fonts/roboto/Roboto-Regular.ttf",
+          "bytes": 159108,
+          "sha256": "15256405ecb0d880678833a582760efad538ab2932318b52c8105b267d159459"
+        },
+        {
+          "path": "fonts/roboto/Roboto-SemiBold.ttf",
+          "bytes": 159876,
+          "sha256": "32fe2086b0e54eca85a68eb74e3d89bb16a7ffe59085d6dc7d079f5b3c26d6ab"
+        }
+      ]
+    },
+    "roboto-mono": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/roboto-mono",
+          "version": "0.4.2",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/roboto-mono/RobotoMono-Bold.ttf",
+          "bytes": 87696,
+          "sha256": "92649d819cc4c20480b23a47aaa111769924eb31c66b6ecdcf6f573662558c83"
+        },
+        {
+          "path": "fonts/roboto-mono/RobotoMono-BoldItalic.ttf",
+          "bytes": 95100,
+          "sha256": "5bc2918abfd7399aff52e0a7ee22c97d544601f7ae8ff3b49ad176497acff1ed"
+        },
+        {
+          "path": "fonts/roboto-mono/RobotoMono-Italic.ttf",
+          "bytes": 94836,
+          "sha256": "82629b0b8a721ce1a79942f68b39438512b406dad2a4a7476c94b72e7794b2f4"
+        },
+        {
+          "path": "fonts/roboto-mono/RobotoMono-Regular.ttf",
+          "bytes": 87540,
+          "sha256": "e4bf45837847d4abfa5a502b807a83393aa138727bdb9ea9c93fb17d53208d95"
+        }
+      ]
+    },
+    "source-sans-3": {
+      "packages": [
+        {
+          "name": "@expo-google-fonts/source-sans-3",
+          "version": "0.4.2",
+          "license": "MIT AND OFL-1.1"
+        }
+      ],
+      "files": [
+        {
+          "path": "fonts/source-sans-3/SourceSans3-Bold.ttf",
+          "bytes": 380864,
+          "sha256": "87b3daebd990ba83ee0d7b2a9076c3edd09aacd5cbb6029797c569a4f740c16f"
+        },
+        {
+          "path": "fonts/source-sans-3/SourceSans3-BoldItalic.ttf",
+          "bytes": 237200,
+          "sha256": "b66029c11e09452eaa321abe93883970bc0f3eacc347a1c9d5828db9d379cbb0"
+        },
+        {
+          "path": "fonts/source-sans-3/SourceSans3-Italic.ttf",
+          "bytes": 237228,
+          "sha256": "f17facaa9ed293bb38526db3638e240510b7393c37ffa70e5c48f39575de44ab"
+        },
+        {
+          "path": "fonts/source-sans-3/SourceSans3-Medium.ttf",
+          "bytes": 380736,
+          "sha256": "5a879bfa79e820c4ab275dbed47fa9a3ca1c9f5c7283605ea645f16476b45f14"
+        },
+        {
+          "path": "fonts/source-sans-3/SourceSans3-Regular.ttf",
+          "bytes": 381020,
+          "sha256": "7ca2b9c4677ce81daf8a7feafb1680f5d228065698b500c5a24e22831e2ae849"
+        },
+        {
+          "path": "fonts/source-sans-3/SourceSans3-SemiBold.ttf",
+          "bytes": 380892,
+          "sha256": "554fa345ebef3febe9a6233a0b25ee38000dd1687c8d6ed5fafeaa9bf1e0cd78"
         }
       ]
     },

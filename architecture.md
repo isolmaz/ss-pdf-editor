@@ -896,7 +896,7 @@ counter-turn as the mark's rotation; `writeAnnotationsToFile` hands it to
 `transformPdfAnnotations`, which turns the geometry and the appearance together, so the file
 shows the text upright the way it was typed.
 
-`assets.ts` centralises the same-origin asset paths (`/engines/**`, `/fonts/noto/**`). The
+`assets.ts` centralises the same-origin asset paths (`/engines/**`, `/fonts/noto/**`; the catalog of open fonts names its own paths under `/fonts/`). The
 Tesseract paths are all passed explicitly to `createWorker` — worker, core (the SIMD+LSTM
 `.wasm.js` **file**, not a directory, so the build variant is not chosen at runtime) and
 language data — precisely because tesseract.js otherwise falls back to its CDN defaults.
@@ -2674,11 +2674,15 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
 
-Inventory: 269 pinned files across eight groups — `mupdf` (3), `pdfjs` (211: worker,
+Inventory: 321 pinned files across seventeen groups — `mupdf` (3), `pdfjs` (211: worker,
 cmaps, standard fonts, wasm), `tesseract` (33: module, worker, core `.wasm.js` + `.wasm`,
 Turkish and English in `fast` and `best`, 25 more languages in `best`), `ghostscript` (2:
-`gs.js` loader and `gs.wasm`, from `@bentopdf/gs-wasm`), `space-grotesk` (6), `dm-sans` (8), `noto` (2) and `handwriting` (4:
-Dancing Script and Great Vibes, latin and latin-ext, for typed signatures).
+`gs.js` loader and `gs.wasm`, from `@bentopdf/gs-wasm`), `space-grotesk` (6), `dm-sans` (8), `noto` (6: Noto Sans regular, italic, bold, bold italic, medium, semi-bold),
+`handwriting` (4: Dancing Script and Great Vibes, latin and latin-ext, for typed signatures) and the open
+families of the OCR font catalog (`ops/ocr-font-catalog.ts`; SIL OFL-1.1 static TTFs, Turkish letters checked): `roboto`,
+`open-sans`, `montserrat`, `inter`, `source-sans-3` and `poppins` (6 each: regular, italic, bold, bold italic,
+medium, semi-bold) and `merriweather`, `noto-serif` and `roboto-mono` (4 each). `loadOpenFace` reads one
+through a same-origin fetch and answers `null` when the file is missing or the network is down.
 
 `tools/verify-assets.mjs` is the verification half of the pair: it re-hashes every pinned
 file and fails on any difference, never writing. `tools/hooks/guard.mjs` (pre-commit and
