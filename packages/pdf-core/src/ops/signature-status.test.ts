@@ -1146,6 +1146,37 @@ describe('the signature value itself', () => {
     expect((await onlyVerdict(bytes)).integrity).toBe('valid');
   });
 
+  it('verifies the product-signed P-521 signature whose r or s starts with two zero octets', async () => {
+    // r and s < 2^521 sit in 66 octets each, so a half's first octet is 0 or 1 and about one
+    // half in a thousand also has a zero second octet: the integer is then 64 octets, not 65.
+    // The product signer used to write it with a redundant 0x00 — not DER — and this verifier
+    // rightly read the file as invalid. WebCrypto cannot be told which signature to pick, so
+    // the signing is repeated until one half has that shape: about 1 in 512 signatures, so
+    // 20 000 attempts miss with odds near e^-39, and the cap fails the test with its own
+    // message well inside the timeout even on a slow machine.
+    const signer = await identity('P-521');
+    const sign = crypto.subtle.sign.bind(crypto.subtle);
+    const twoZeros = (raw: Uint8Array, at: number) =>
+      raw[at] === 0 && raw[at + 1] === 0 && (raw[at + 2] ?? 0) < 0x80;
+    let attempts = 0;
+    const spy = vi.spyOn(crypto.subtle, 'sign').mockImplementation(async (algorithm, key, data) => {
+      for (;;) {
+        attempts += 1;
+        if (attempts > 20_000) throw new Error('no P-521 signature of the wanted shape in 20000 attempts');
+        const signature = await sign(algorithm, key, data);
+        const raw = new Uint8Array(signature);
+        if (twoZeros(raw, 0) || twoZeros(raw, 66)) return signature;
+      }
+    });
+    let bytes: Uint8Array;
+    try {
+      bytes = await signedPdf(cmsBy(signer, { digest: 'SHA-512' }));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await onlyVerdict(bytes)).toMatchObject({ integrity: 'valid', signer: 'Ayşe Signer' });
+  }, 60_000);
+
   const R = new Uint8Array(32).fill(0x11);
   it.each([
     ['not a SEQUENCE', () => Uint8Array.of(1, 2, 3)],

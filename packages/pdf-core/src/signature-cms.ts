@@ -29,7 +29,6 @@ import {
   AlgorithmIdentifier as Asn1AlgorithmIdentifier,
   Attribute,
   Certificate,
-  createCMSECDSASignature,
   EncapsulatedContentInfo,
   IssuerAndSerialNumber,
   SignedAndUnsignedAttributes,
@@ -45,6 +44,48 @@ function compareBytes(left: Uint8Array, right: Uint8Array): number {
   const first = String.fromCharCode(...left);
   const second = String.fromCharCode(...right);
   return Number(first > second) - Number(first < second);
+}
+
+/** One DER `TLV` with a minimal definite length (X.690 §8.1.3). */
+function derTlv(tag: number, content: Uint8Array): Uint8Array {
+  const lengthBytes: number[] = [];
+  for (let rest = content.length; rest > 0; rest = Math.floor(rest / 256)) lengthBytes.unshift(rest % 256);
+  const header =
+    content.length < 0x80 ? [tag, content.length] : [tag, 0x80 | lengthBytes.length, ...lengthBytes];
+  const out = new Uint8Array(header.length + content.length);
+  out.set(header);
+  out.set(content, header.length);
+  return out;
+}
+
+/** An unsigned big-endian magnitude as a DER `INTEGER`: no redundant leading zero, one sign pad if needed. */
+function derInteger(magnitude: Uint8Array): Uint8Array {
+  let start = 0;
+  while (start < magnitude.length - 1 && magnitude[start] === 0) start += 1;
+  const significant = magnitude.subarray(start);
+  const padded = new Uint8Array(significant.length + 1);
+  padded.set(significant, 1);
+  return derTlv(0x02, significant.subarray(0, 1).some((first) => first >= 0x80) ? padded : significant);
+}
+
+/**
+ * The CMS form of a WebCrypto ECDSA signature: IEEE P1363 `r ‖ s`, each half as wide as the
+ * curve's field, becomes `ECDSA-Sig-Value ::= SEQUENCE { r INTEGER, s INTEGER }` (RFC 3279
+ * §2.2.3) in *minimal* DER.
+ *
+ * Why this is not pkijs's `createCMSECDSASignature`: that helper drops at most **one** leading
+ * zero octet of each half, so a scalar with two or more (about 1 signature in 500 on P-521,
+ * 1 in 65 536 on P-256) comes out as an `INTEGER` with a redundant `0x00` — not DER, and
+ * refused by every strict reader, this repository's own verifier included. The signature was
+ * right and the file still read as invalid, at random.
+ */
+export function ecdsaSignatureToDer(raw: Uint8Array): Uint8Array {
+  if (raw.length === 0 || raw.length % 2 !== 0) {
+    throw new Error(`an ECDSA signature is r and s of equal width; got ${raw.length} bytes`);
+  }
+  const half = raw.length / 2;
+  const integers = [derInteger(raw.subarray(0, half)), derInteger(raw.subarray(half))];
+  return derTlv(0x30, Uint8Array.from(integers.flatMap((integer) => [...integer])));
 }
 
 /** The digest algorithms a PAdES B-B signature may use, widest first. */
@@ -292,7 +333,10 @@ export async function detachedCmsSignature(
   );
   // WebCrypto returns fixed-width r || s; CMS carries DER ECDSA-Sig-Value.
   signerInfo.signature = new OctetString({
-    valueHex: identity.privateKey.algorithm.name === 'ECDSA' ? createCMSECDSASignature(signature) : signature,
+    valueHex:
+      identity.privateKey.algorithm.name === 'ECDSA'
+        ? (ecdsaSignatureToDer(new Uint8Array(signature)).buffer as ArrayBuffer)
+        : signature,
   });
 
   /**
