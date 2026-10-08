@@ -423,7 +423,7 @@ had to stay green. The moves, and the defects they fixed on the way:
     anchored behind the text at its place on the page (`wp:anchor`, `behindDoc`, in a
     paragraph one point high) and takes no room in the flow. Above
     2000 marks a page counts as one drawing, since growing it mark by mark is quadratic.
-  - **Word.** Each page is a section with the page's size, orientation and margins. Blocks
+  - **Word (flow).** Each page is a section with the page's size, orientation and margins. Blocks
     are cut into paragraphs where a line ends short, a gap opens, the size changes or a
     bullet or a number (one or two digits and `.` or `)`, then a space) starts. A hyphen that
     breaks a word before a lower-case letter is removed, even when it is set in another style than
@@ -441,6 +441,21 @@ had to stay green. The moves, and the defects they fixed on the way:
     word count must equal the words written. A picture MuPDF could not draw, and one inside a
     ruled table (whose cells carry text only), is left out of the file and counted in a `lost`
     note (`op.note.exportOffice.picturesLost`).
+  - **Word layout** (`OfficeExportOptions.docxLayout`, `flow` by default; the UI's `layout` field and the
+    Export dialog's second select). `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
+    page with MuPDF (`page.toPixmap`, RGB, no alpha so white paper, annotations and widgets
+    included; pdf.js is not used, so the path runs in Node tests) at 200 dpi of the page's size as
+    `getBounds` gives it (after `/Rotate` and the crop box), lower only when a page would exceed 40 megapixels; the note reports the lowest dpi used (`dpi`).
+    JPEG (quality 90) when a `Device` pass sees `fillImage` on the page, PNG otherwise. Each page is a
+    section of the page's size with every margin 0 and `w:orient` when wide, holding one
+    paragraph (exact 1 pt line, 1 pt run) with a `wp:anchor` picture at the page's corner
+    (`behindDoc`, `wrapNone`; children in the schema's order). **The 22-inch rule:** Word refuses a
+    page side above 22 in (1584 pt, 31 680 twips), so `wordPageScale` shrinks both sides of a larger
+    page by `min(1, 1584/w, 1584/h)`; the pixels are still those of the original size, and the
+    report names the pages and the smallest ratio (`op.note.exportOffice.pageScaled`). The XML both
+    writers share (escaping, package parts, `zipped`, the section and the anchor) is in
+    `ops/docx-drawing.ts`. The file is read back with mammoth like the flowing one; it holds no
+    words, so none must be found.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
     is not read back (the XLSX path reports no `verify` step; only Word and CSV do). CSV rows are read back through `parseCsv`. A CSV text
     cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,
@@ -2449,7 +2464,12 @@ merges are merge commits.
   `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading the HTML report
   and, on failure, the traces (7 days). `e2e-service-worker` needs `e2e` and runs
   `playwright test --project=service-worker --no-deps`. `behavior` needs `verify` and runs
-  `pnpm ci:behavior` (the OpenSSL signing round trip).
+  `pnpm ci:behavior` (the OpenSSL signing round trip). `fidelity` needs `verify` and runs
+  `pnpm fidelity`: every sample is exported to DOCX through the UI, converted back with
+  LibreOffice 26.2.6 (official `.deb` tarball pinned by version and sha256) and compared, SSIM at
+  100 dpi per page and word accuracy in reading order per document, against
+  `e2e/fidelity/thresholds.json` (`null` = measured, not gated); locally `pnpm fidelity` with
+  `LIBREOFFICE` set. The report goes to the job summary and the `fidelity` artifact.
 - `deploy` runs only on a push to `main` and needs every job above: `wrangler deploy` with the
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
   <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
@@ -2490,7 +2510,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`) and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. `--skip-e2e` reports the unit suite alone; `--min-lines=<percent>` fails the run under that total (the nightly workflow passes 98). `E2E_WORKERS` caps the browsers and `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
 | Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
-| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
+| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `fidelity` (`pnpm fidelity`: DOCX export round trip through LibreOffice, SSIM and word accuracy against `e2e/fidelity/thresholds.json`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
 | Nightly | `.github/workflows/nightly.yml`: `pnpm coverage --min-lines=98` (fails under 98 % total lines, uploads the report) and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
 | Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
 | Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |

@@ -273,6 +273,14 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     their transparency; charts and drawings made of vector graphics are carried as pictures.
     A picture that cannot be read, or one inside a table cell, is left out, and the report
     says how many.
+  - **Word layout.** Word has two layouts, chosen in the Export dialog and in the form. *Flowing
+    text* (the default, above) is the one to edit. *One picture per page* draws every page
+    exactly as a viewer shows it (annotations and form fields included, on white paper), at
+    200 dpi (lower only when a page would exceed 40 megapixels), and puts it in its own section as one picture anchored behind the text: JPEG
+    for a page that holds a photograph or scan, PNG otherwise. The look is exact, but the
+    text cannot be edited in Word. Word's pages stop at 22 inches (55.88 cm) a side, so a
+    larger page is shrunk in proportion to fit, and the report says which pages and by how
+    much.
   - **Excel (XLSX):** one sheet per table, with merged cells and the column widths of the
     rules. A page without any table becomes one sheet of its rows. A value becomes a number
     only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
@@ -281,7 +289,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     expects in your region. A text cell that starts with `=`, `+`, `-` or `@` would run as a
     formula when the file is opened, so it is written with a leading `'` (negative numbers
     are left alone), and the report counts them.
-  - A Word file is read back with mammoth (an independent reader) and a CSV file with a CSV
+  - A Word file (either layout) is read back with mammoth (an independent reader) and a CSV file with a CSV
     parser before it is offered; an Excel file is not read back. The report says what was
     approximated.
 
@@ -748,6 +756,12 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
   the traces of a failure are uploaded for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`, the OpenSSL signing round trip.
+- **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test: every
+  sample is exported through the UI, converted back with LibreOffice 26.2.6 and compared (SSIM at
+  100 dpi per page, word accuracy in reading order per document) against the thresholds in
+  `e2e/fidelity/thresholds.json`; a `null` threshold is measured, not gated. Locally: `pnpm
+  fidelity` with `LIBREOFFICE` set to `soffice`. The report goes to the job summary and the
+  `fidelity` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 
@@ -823,7 +837,7 @@ Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
 A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
-after `verify`, `e2e`, `e2e-service-worker` and `behavior` have passed. It runs `wrangler
+after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `fidelity` have passed. It runs `wrangler
 deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
 `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
 runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.
