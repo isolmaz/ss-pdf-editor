@@ -2425,7 +2425,9 @@ merges are merge commits.
 - `deploy` runs only on a push to `main` and needs every job above: `wrangler deploy` with the
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
   <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
-  `dist/`; if the smoke check fails or runs past its time limit, `wrangler rollback` returns the
+  `dist/` (an HTML page the zone's bot protection challenges from the runner's network, 403 with
+  `cf-mitigated: challenge`, is reported rather than failed; this build's content-hashed editor
+  scripts, their headers and `/sw.js` are checked either way); if the smoke check fails or runs past its time limit, `wrangler rollback` returns the
   Worker to the previous version and the job fails. One deploy runs at a time (a concurrency
   group; a running deploy is never cancelled), and a commit that is no longer `main`'s head when
   its deploy starts deploys nothing. `pnpm run worker:deploy` is the same publish by hand.
