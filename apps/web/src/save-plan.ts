@@ -168,3 +168,23 @@ export function planSaveExecution(input: SaveExecutionInput): SaveExecutionPlan 
     steps: input.executedSteps,
   };
 }
+
+/** The parts of an operation dialog that decide whether unapplied redaction marks hold it. */
+export interface HeldDialog {
+  readonly resultKind: 'replace' | 'new-tab' | 'download';
+  readonly standalone?: boolean;
+  readonly changesPageGeometry?: boolean;
+}
+
+/**
+ * Whether a dialog must be refused while redaction marks are staged but not applied. Save
+ * and Export are held for the same reason (`error.pending-redactions`): a file that leaves
+ * the tab — a download such as Word, text or a split, or a new tab such as PDF/A — would
+ * still carry the content the marks were meant to remove. A dialog that applies to the tab
+ * (`replace`) keeps the marks pending, unless it moves pages under them; one that starts a
+ * new document (`standalone`) never reads this one.
+ */
+export function heldByPendingRedactions(spec: HeldDialog): boolean {
+  if (spec.changesPageGeometry === true) return true;
+  return spec.standalone !== true && spec.resultKind !== 'replace';
+}

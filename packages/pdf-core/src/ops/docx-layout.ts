@@ -2,7 +2,9 @@
  * The "exact layout" Word layout of `exportOffice` (`docxLayout: 'layout'`): each page is
  * rebuilt in Word with the geometry it has in the PDF.
  *
- *  - A page is read once (`readPageScene`): the drawing in paint order, the links, the text.
+ *  - A page is read once (`readPageScene`): the drawing in paint order, the links, the text, and
+ *    the text the form fields' and annotations' appearances draw (a field's value is in its
+ *    appearance, not in the page's content), set in text boxes like the rest.
  *  - A section is the page's size with no margins; a page above Word's 22-inch limit is
  *    shrunk by one factor on both sides (`wordPageScale`), text sizes and offsets with it.
  *  - The page's one paragraph is a point high and holds every drawing as an anchored run:
@@ -30,10 +32,11 @@ import {
   zipped,
 } from './docx-drawing';
 import { type EmbeddedFonts, embedFonts } from './docx-fonts';
+import { isMixedPage, isScanPage, visibleBoxes } from './docx-layout-mixed';
 import {
   type FlaggedWord,
-  isScanPage,
   type OcrOptions,
+  readPictureText,
   readScanPage,
   type ScanPage,
 } from './docx-layout-ocr';
@@ -73,6 +76,8 @@ export interface LayoutDocx {
   readonly scaled: readonly { readonly page: number; readonly scale: number }[];
   /** 1-based numbers of the pages without any text. */
   readonly textless: readonly number[];
+  /** Form fields with a value that no appearance shows, so the document cannot carry it. */
+  readonly unseenFields: number;
   /** Characters the PDF has no Unicode for (U+FFFD), over all pages. */
   readonly unreadable: number;
   /** Fonts of the PDF embedded in the document (`docx-fonts.ts`). */
@@ -82,6 +87,10 @@ export interface LayoutDocx {
     readonly pages: readonly number[];
     readonly flagged: readonly FlaggedWord[];
     readonly unavailable: readonly number[];
+    /** Pages with real text over a scan (1-based): the text stays as it is and the scan's words were read with OCR. */
+    readonly mixed: readonly number[];
+    /** Pages whose invisible text layer was not trusted (unreadable characters, turned lines) and were read with OCR instead. */
+    readonly untrusted: readonly number[];
     /** The open font families the scans' text is set in and the package carries (`docx-ocr-font.ts`). */
     readonly families: readonly string[];
   };
@@ -185,11 +194,14 @@ async function writePages(
   const textless: number[] = [];
   const ocrPages: number[] = [];
   const unavailable: number[] = [];
+  const mixedPages: number[] = [];
+  const untrusted: number[] = [];
   const flagged: FlaggedWord[] = [];
   let shapes = 0;
   let pictures = 0;
   let rasters = 0;
   let unreadable = 0;
+  let unseenFields = 0;
   let lastSection = '';
   /** A page read: its scene, and what OCR made of it if it is a scan (`unavailable`: it is one, and there is no reading of it). */
   const readPage = async (
@@ -199,8 +211,16 @@ async function writePages(
     const page = doc.loadPage(index);
     try {
       const scene = readSceneOf(mupdf, page);
-      // `readScanPage` is done with the page when it first waits, so a page read beside this one can use the document.
-      const scan = isScanPage(scene) ? await readScanPage(mupdf, page, scene, ocr, signal, openFonts) : null;
+      // The readers are done with the page when they first wait, so a page read beside this one can use the document.
+      let scan: ScanPage | null = null;
+      if (isScanPage(scene)) scan = await readScanPage(mupdf, page, scene, ocr, signal, openFonts);
+      else if (ocr !== null && isMixedPage(scene)) {
+        // Real text over a scan: the text stays vector text, the scan's words are read with OCR (or `null`: nothing scanned to read).
+        scan = await readScanPage(mupdf, page, scene, ocr, signal, openFonts, visibleBoxes(scene));
+      } else if (ocr !== null) {
+        // A picture on a page of vector text that holds text itself: its words become text boxes over it.
+        scan = await readPictureText(mupdf, page, scene, ocr, signal, openFonts, visibleBoxes(scene));
+      }
       return { scene, scan, unavailable: scan === null && isScanPage(scene) };
     } finally {
       page.destroy();
@@ -235,10 +255,20 @@ async function writePages(
       const scale = wordPageScale(scene.width, scene.height);
       if (scale < 1) scaled.push({ page: index + 1, scale });
       const section = pageSectionXml(scene.width * scale, scene.height * scale);
-      const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face));
+      const faceOf = (face: string) => embedded.faceOf(index, face);
+      const vector = scan === null || scan.mixed;
+      // The fields' text goes in boxes of its own, on a scan too: a scan's picture does not show it.
+      const boxes = [
+        ...(vector ? textBoxes(scene.text, scene.links, faceOf) : []),
+        ...(scan?.boxes ?? []),
+        ...textBoxes(scene.appearances, scene.links, faceOf),
+      ];
+      unseenFields += scene.unseenFields;
       const items = scan?.items ?? scene.items;
       if (scan !== null) {
-        ocrPages.push(index + 1);
+        if (scan.mixed) mixedPages.push(index + 1);
+        else ocrPages.push(index + 1);
+        if (scan.layerRejected) untrusted.push(index + 1);
         scanBoxes.push(...scan.boxes);
         for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
       }
@@ -249,8 +279,8 @@ async function writePages(
         else if (item.kind === 'image') pictures += 1;
         else rasters += 1;
       }
-      // The scene reads the page's text without pictures, so its blocks are text.
-      for (const block of scan === null ? scene.text.blocks : []) {
+      // The scene reads the page's text without pictures, so its blocks are text; a field's or an annotation's text counts too.
+      for (const block of [...(vector ? scene.text.blocks : []), ...scene.appearances.blocks]) {
         for (const line of block.kind === 'text' ? block.lines : []) {
           for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
         }
@@ -322,12 +352,15 @@ async function writePages(
     rasters,
     scaled,
     textless,
+    unseenFields,
     unreadable,
     fonts: fonts.count,
     ocr: {
       pages: ocrPages,
       flagged,
       unavailable,
+      mixed: mixedPages,
+      untrusted,
       families: open
         .filter((family) => openFiles.some((file) => file.family === family.name))
         .map((family) => family.family),

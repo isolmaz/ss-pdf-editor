@@ -148,6 +148,9 @@ export const ocrDialog: OperationDialogSpec = {
     );
 
     const recognised = outcome.pages.filter((page) => !page.skipped).length;
+    // Nothing recognised means the operation left every selected page alone because it already
+    // had text (reading pages that yield no words throws instead), so say that rather than
+    // "no text found".
     return {
       files: [{ name: context.name, bytes: outcome.bytes, mime: 'application/pdf' }],
       report: {
@@ -155,11 +158,11 @@ export const ocrDialog: OperationDialogSpec = {
         notes: [
           ...outcome.report.notes,
           ...(skipped.length === 0 ? [] : [note('preserved', 'ocr.skipped', { count: skipped.length })]),
-          ...(recognised === 0 ? [note('warning', 'ocr.empty')] : []),
         ],
       },
-      noticeKey: recognised === 0 ? 'ocr.empty' : 'ocr.done',
-      ...(recognised === 0 ? {} : { noticeParams: { count: recognised } }),
+      ...(recognised > 0
+        ? { noticeKey: 'ocr.done', noticeParams: { count: recognised } }
+        : { noticeKey: 'ocr.skipped', noticeParams: { count: skipped.length } }),
     };
   },
 };

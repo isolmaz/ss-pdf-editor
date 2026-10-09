@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   appliedVersionBytes,
   extendsBytes,
+  heldByPendingRedactions,
   planSaveExecution,
   signatureWarning,
   signedBytesFate,
@@ -240,5 +241,19 @@ describe('planSaveExecution', () => {
     const dirty = planSaveExecution(input(master, { engineDirty: true })).changeSet;
     expect(dirty.forms).toBe(true);
     expect(dirty.annotations).toBe(true);
+  });
+});
+
+describe('heldByPendingRedactions', () => {
+  it('holds every dialog whose file leaves the tab, and the ones that move pages under the marks', () => {
+    // Word, text, split and protect download a file; PDF/A and extract open a new tab.
+    expect(heldByPendingRedactions({ resultKind: 'download' })).toBe(true);
+    expect(heldByPendingRedactions({ resultKind: 'new-tab' })).toBe(true);
+    expect(heldByPendingRedactions({ resultKind: 'replace', changesPageGeometry: true })).toBe(true);
+  });
+
+  it('lets a change to the tab itself and a new blank or converted document through', () => {
+    expect(heldByPendingRedactions({ resultKind: 'replace' })).toBe(false);
+    expect(heldByPendingRedactions({ resultKind: 'new-tab', standalone: true })).toBe(false);
   });
 });

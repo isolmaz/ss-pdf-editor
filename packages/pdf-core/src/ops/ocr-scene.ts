@@ -1643,6 +1643,32 @@ function commonColor(data: Uint8Array): Rgb {
   ];
 }
 
+/** The image with every word box filled with the background around it, and the fills. */
+function eraseFills(image: RgbaImage, words: readonly OcrWord[]): { data: Uint8Array; fills: Fill[] } {
+  const { width, height, scale } = image;
+  const data = new Uint8Array(image.data);
+  const fills: Fill[] = [];
+
+  for (const word of words) {
+    const h = word.y1 - word.y0;
+    const pad = ERASE_PAD * h;
+    // A mark above (İ Ö Ü Ğ) or a cedilla below (Ç Ş) can lie outside the box tesseract gave the letters.
+    const above = MARKED_ABOVE.test(word.text) ? MARK_PAD * h : pad;
+    const below = CEDILLA.test(word.text) ? MARK_PAD * h : pad;
+    const box = pixelBox(image, word.x0 - pad, word.y0 - above, word.x1 + pad, word.y1 + below);
+    const [r, g, b] = ringMedian(data, width, height, box, RING);
+    const fill: Fill = { box: growOverRipples(data, width, height, scale, box, [r, g, b]), color: [r, g, b] };
+    paint(data, width, fill);
+    fills.push(fill);
+  }
+  return { data, fills };
+}
+
+/** The image with every word box filled with the background around it (a copy; `words` in page points on the image's own scale). */
+export function eraseWords(image: RgbaImage, words: readonly OcrWord[]): RgbaImage {
+  return { ...image, data: eraseFills(image, words).data };
+}
+
 /**
  * The page without its words: every word box is filled with the background around it, the
  * page colour is the commonest colour left, and each connected region that differs from it is
@@ -1660,21 +1686,7 @@ export function ocrBackground(
   turn?: { readonly scan: RgbaImage; readonly angle: number },
 ): { pageColor: number; regions: { box: Box; placed: Box; rgba: RgbaImage; solid: boolean }[] } {
   const { width, height, scale } = image;
-  const data = new Uint8Array(image.data);
-  const fills: Fill[] = [];
-
-  for (const word of words) {
-    const h = word.y1 - word.y0;
-    const pad = ERASE_PAD * h;
-    // A mark above (İ Ö Ü Ğ) or a cedilla below (Ç Ş) can lie outside the box tesseract gave the letters.
-    const above = MARKED_ABOVE.test(word.text) ? MARK_PAD * h : pad;
-    const below = CEDILLA.test(word.text) ? MARK_PAD * h : pad;
-    const box = pixelBox(image, word.x0 - pad, word.y0 - above, word.x1 + pad, word.y1 + below);
-    const [r, g, b] = ringMedian(data, width, height, box, RING);
-    const fill: Fill = { box: growOverRipples(data, width, height, scale, box, [r, g, b]), color: [r, g, b] };
-    paint(data, width, fill);
-    fills.push(fill);
-  }
+  const { data, fills } = eraseFills(image, words);
   // The pixels the pictures are cut from: the page itself, or the scan with the same fills.
   let cut = data;
   if (turn !== undefined) {

@@ -15,9 +15,15 @@ export const enginesPart = {
   'op.note.redact.imagesUntouched': 'Images untouched; only marked areas erased.',
   'op.note.redact.emptyMarks':
     'Warning: mark on page {pages} did not overlap any text; no content erased in those areas.',
-  'op.note.redact.metadataCleared': 'Metadata cleared.',
+  'op.note.redact.metadataCleared':
+    'Metadata cleared: title, author, subject, keywords, creator and the XMP packet. Custom properties are kept.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
+  'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
+  'op.note.redact.xfaDropped':
+    'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining AcroForm fields keep their values.',
+  'op.note.redact.annotationsRemoved':
+    '{count} annotation(s) (comments, markup) under the marked areas removed.',
   'op.progress.encrypt': 'Encrypting document',
   'op.progress.decrypt': 'Removing password',
   'op.progress.redact': 'Erasing areas',
@@ -26,7 +32,8 @@ export const enginesPart = {
   'op.progress.ocr.save': 'Writing text layer',
   'op.note.ocr.layerAdded': 'Invisible text layer of {words} word(s) added to {pages} page(s) ({dpi} DPI).',
   'op.note.ocr.skippedPages': '{count} page(s) with text skipped.',
-  'op.note.ocr.overwriteIsAdditive': 'Overwrite mode does not delete existing text; new layer is added.',
+  'op.note.ocr.overwriteIsAdditive':
+    '"Read again" does not delete existing text; the recognised words are added as a new layer.',
   'op.note.ocr.lowConfidence': 'Page {page}: low recognition confidence ({confidence}%).',
   'op.note.ocr.hiddenLayer': 'Text layer rendered invisibly; text is selectable and searchable.',
   'op.note.ocr.bestModel':

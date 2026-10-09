@@ -43,6 +43,7 @@ import {
   normalizeWords,
   recoveredWords,
   resizeBilinear,
+  setAsidePictureWords,
   ssim,
 } from './compare';
 import { localSamples, publicSamples } from './corpus';
@@ -180,6 +181,8 @@ function measure(
   original: readonly MeasuredPage[],
   converted: readonly MeasuredPage[],
   threshold: Threshold,
+  /** The words of the text inside the pictures, when the export reads the pictures (OCR): they are live text then, not extra. */
+  pictureWords: readonly string[] = [],
 ): Pick<
   FidelityResult,
   | 'pages'
@@ -202,7 +205,11 @@ function measure(
   const expectedPages = original.map((p, i) =>
     normalizeWords(truth ? joinHyphenation(truth[i] ?? '') : p.text),
   );
-  const actualPages = converted.map((p) => normalizeWords(p.text));
+  const convertedPages = converted.map((p) => normalizeWords(p.text));
+  const actualPages =
+    pictureWords.length === 0
+      ? convertedPages
+      : setAsidePictureWords(convertedPages, pictureWords, expectedPages);
   const samePageCount = original.length === converted.length;
   if (!samePageCount) {
     const note = `page count ${original.length} → ${converted.length}`;
@@ -334,9 +341,16 @@ for (const sample of samples) {
         await exportThroughUi(page, sample, mode, docxPath);
         const pdfPath = await toPdf(docxPath, FIDELITY_DIR);
         const converted = await measurePdf(new Uint8Array(readFileSync(pdfPath)));
-        const measured = measure(sample, original, converted, threshold);
         const pictureWords =
           sample.imageText === undefined ? [] : normalizeWords(sample.imageText.join('\n'));
+        // The exact layout reads the pictures with OCR, so their text is live text there.
+        const measured = measure(
+          sample,
+          original,
+          converted,
+          threshold,
+          mode.id === 'layout' ? pictureWords : [],
+        );
         const pictureText =
           sample.imageText === undefined
             ? {}
