@@ -405,7 +405,15 @@ had to stay green. The moves, and the defects they fixed on the way:
   - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
     paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
-    rule between two cells merges them). Tables without rules come from runs of rows that
+    rule between two cells merges them, unless that would make a region that runs into
+    a cell already placed, which then stays single). A rule group whose outer border is not
+    drawn is completed with an undrawn grid line at that side, but only along an axis that
+    already has two lines of its own, at a side that two rules reach, and when the strip holds
+    a line of text that lies wholly in it and is a quarter as deep as the cell next to it, or
+    is half as deep: a divider crossed by one rule, a heading between two rules, or rules that
+    overshoot by a few points are not a lattice. The Word table carries no table-wide borders
+    (`tblBorders` all `nil`); each cell gets `tcBorders` for the sides a rule covers by 75 % or
+    more, so the undrawn edges stay blank. Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
@@ -499,7 +507,20 @@ had to stay green. The moves, and the defects they fixed on the way:
     fallback back, so the `verify` step still compares the words written with the words found.
     Text that runs up or down the page (MuPDF's line direction, which holds for one character too) is a
     vertical text box (`bodyPr vert="vert270"` / `"vert"` on the visual box): LibreOffice ignores
-    `a:xfrm rot` on a text box. A line's baseline is its characters' origin (`LayoutChar.baseline`);
+    `a:xfrm rot` on a text box (measured with LibreOffice 26 for every other form of a text box
+    too: DrawingML with and without `txBox`, a rotated group, VML `rotation`: the frame turns, its text
+    does not). Text at any other angle (not across, up or down within 1.5°, upside down included) is
+    a box of its own whose frame is turned by the line's angle about its centre (`a:xfrm rot`,
+    `effectExtent` for the room the turn takes, VML `rotation`): LibreOffice draws the frame turned
+    but its text level (across, in the same place and at the PDF's advances), Word turns both:
+    `a:xfrm rot` rotates the shape about its centre ([MS-OE376 xfrm](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/9ce071a0-4053-4714-9025-1951253cab2a)) and the
+    text rotates with it unless `bodyPr upright="1"` ([ECMA-376 `bodyPr`](https://c-rex.net/samples/ooxml/e1/part4/OOXML_P4_DOCX_bodyPr_topic_ID0EMGMKB.html)); Word itself was not run
+    here. `w14:alpha` is the transparency, unlike DrawingML's `a:alpha`: LibreOffice's test document semi-transparent-text.docx, authored by Word 14.0, has `w14:alpha 74000` asserted as 74 % transparency (see `runXml`). The frame is placed so that the first
+    glyph's origin (`LayoutChar.pen`: origin and quad advance, read for slanted lines only) is
+    `TEXT_LEFT` in and 0.8 line heights down in the frame's own axes, and the line is fitted along
+    them. Text drawn with a fill opacity below 1 (`LayoutChar.alpha`, from the page device's
+    `fillText`) is written `w14:textFill` with the colour and `w14:alpha` (the value is the transparency, 100 % − opacity) beside the solid `w:color`
+    (`w14` is declared ignorable), which LibreOffice honours. A line's baseline is its characters' origin (`LayoutChar.baseline`);
     the box top is that minus 0.8 × the exact line height, and the box starts `TEXT_LEFT` (0.1 pt)
     left of the first glyph origin, where LibreOffice puts it. The 22-inch rule above applies too: a
     larger page is scaled down (`wordPageScale`) and everything on it with it. XML shared with the
@@ -601,6 +622,38 @@ had to stay green. The moves, and the defects they fixed on the way:
          and without a layer `readScanPage` returns `null`, the page keeps its pictures, and
          `ocrUnavailable` lists it; a recogniser that throws (a language pack missing, offline,
          a crashed worker) does the same, and only the reader's own cancel stops the export.
+       - *Crooked scans* (`ops/ocr-preprocess.ts`). Before the recogniser runs, `uprightScan`
+         measures the skew of the render (projection profile of the ink on a copy of at most
+         1100 px: ink pixels without pictures, the outer 3 % and every piece of ink — 8-connected —
+         longer than a tenth of the page's long side, which is a rule, a frame or a card's edge and
+         would out-vote the lines of text by being one straight stroke, or at most 2 px high and
+         at least 4 wide, a dash of a dashed rule or a hairline fragment; at most 60 000 points,
+         projected across the lines for angles of ±6° in 0.5° and then 0.05° steps, the sharpest
+         histogram wins). The page is turned only when there are at least 2000 points (a page
+         number measures noise), |angle| is 0.3°–5.9° and the best score is at least 2.5 × the
+         mean of the coarse scores (level text pages measure 4–22 and the rough sample 4, a sheet of
+         text running up the page 1.4–2.0, a lone page number 1.7–2.1); otherwise `null`, and the
+         page is read exactly as before. The limit that remains is a dashed or dotted rule at
+         another angle than the text that is thicker than a sliver: measured on level 12 pt text
+         beside a 5-inch rule crooked by 3° or 1°, 1 pt dashes still turn pages of 5 lines or
+         fewer and of eight lines of 12 characters, and 2–3 pt dashes pages of up to eight lines
+         of 25 characters; eight lines of 43 characters held against every dash tried. A turned page is read on an *upright copy* (the render turned about
+         the page centre on the same canvas, bilinear, the corners that come in repeating the
+         nearest edge pixel): the recogniser, the underline search, the second look, the words'
+         lines and paragraphs and the table reader's rows (which group by baseline) are all in
+         the copy's frame. The scan itself keeps its pixels: `ocrBackground(image, words, turn)`
+         finds the page colour and the regions on the copy but paints each word's fill on the
+         scan where it lands (a scan pixel takes the colour when its centre, turned back, is
+         inside the fill's box: the quad, so the lines beside a skewed word are not touched; the
+         ring colour and the ripple growth are the copy's), cuts the pictures from that erased
+         scan and places them by `placed`, the box of the scan that holds the region;
+         `eraseRulesTurned` does the same for an underline. At the end `turnBoxes` puts each text
+         box on the scan: its centre goes where the page centre's rotation by the skew puts it,
+         `rotation` is the skew angle (0–360, clockwise, as a slanted line's), and the letters'
+         positions move with the frame; `textBoxXml` writes it as a frame turned by `a:xfrm rot`
+         like a slanted PDF line, so the text sits on the scan's own lines, which Word draws
+         turned and LibreOffice draws level at the same centre. A page read from its own text
+         layer is never turned.
        - *Underlines.* Rules under words make Tesseract misread them (a link's underline cuts
          the descenders). `findUnderlines` looks, for every word of at least two letters or
          digits and at least 1.2 × its height wide, at the rows from 0.35 × its height above its
@@ -646,6 +699,24 @@ had to stay green. The moves, and the defects they fixed on the way:
             the first reading's when both are the same length. Each read sets its own mode for
             that call only (8 for a word, 3 for an export page) and the shared worker is left in
             the engine's default single-block mode (6), which "Make searchable" reads in.
+         4. *Other readings.* What lost in 2 and 3 stays with the word as `OcrWord.alternatives`, each
+            with the confidence it was read at: the first read when a reread or the capitals
+            replaced it, and a reread that was not taken (another shape, or less sure). Once the page's face is known (the open family's regular
+            or the stand-in's base-14 face), `settleReadings` (`docx-ocr-font.ts`, `chooseReadings`
+            in `ocr-font-match.ts`) draws every reading of such a word at its box and size and
+            lays it over the ink of the scan like the family match does (shape, with the proportions
+            of the ink box, so a reading of another length cannot be stretched into place; unlike
+            the family match, which takes a median over many words, one word decides here, so the
+            drawing is also tried on boxes a pixel wider, narrower, taller and shorter than the
+            ink's and the best stands: a pixel more or less in a trimmed box is not a reading); a
+            reading other than the settled one replaces it only when it scores 0.15 higher
+            (`READING_MARGIN`: "9020" for "%20" where the scan has a 9, not "i" for "l") and at
+            least 0.3 (`READING_FLOOR`: two drawings that do not lie on the ink are no evidence
+            however far apart), and only for words of 16 px to the em or more (`READING_MIN_EM`: at
+            a smaller size a pixel of tolerance is a tenth of the glyphs and the proportions stop
+            keeping another length out; those words keep their text), and the page is then set
+            again with that reading and the confidence it was read at, so the low-confidence flag
+            follows the text written. Only words the second look read have alternatives.
        - *Rules for what Tesseract returned.* `dropDuplicates` keeps, of two words overlapping by
          more than 30 % of the smaller box (one word read at two segmentations), the one whose
          box is larger (the surer when equal); the dropped ones are still erased from the
@@ -692,6 +763,17 @@ had to stay green. The moves, and the defects they fixed on the way:
          1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
          paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
          ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart.
+         The cells of a table never join a paragraph: rows are lines on one baseline (within
+         0.5 × the size), and consecutive rows form a table when at least 3 cells of each (2
+         for label and amount rows) stand under cells of the row above by left edge, right edge
+         or centre, the cells average at most 4 words, the rows are at most 4 × the size apart
+         (2 × for two cells), and there is a column of figures (more digits than letters: a
+         figure under a figure for 3 or more cells, the left-most or the right-most cell of
+         both rows for 2), so side-by-side lists of short lines stay columns. A line alone on its baseline keeps the table open only as the
+         second line of a wrapped cell (it continues a cell above by the paragraph rule); any
+         other line ends it. Every cell line is a paragraph of its own, and a table is one item
+         of the cut below, read row by row inside (`inRows` of its paragraphs), so an invoice's
+         descriptions are not read before its quantities.
          *Reading order* is by recursive cuts (`readingOrder`): the paragraphs are split at the
          widest horizontal gap no box crosses (the part above first) and at the widest vertical
          one (the part to the left first), a vertical cut counting only where the two parts
@@ -713,6 +795,10 @@ had to stay green. The moves, and the defects they fixed on the way:
          a speck (more than 1.3 × the size the word widths give) is set at 1.1 × the width-based
          size; a line within 0.88–1.1 × of its paragraph's upper-quartile size is set at that
          size, and sizes are rounded to half-points.
+         A paragraph's box starts where the middle of its lines' baselines says (each line's
+         baseline less its index × the line height the paragraph is set at, the median of them;
+         that is the scan's pitch unless the first line's size is larger, as Word sets it at the
+         size), so one line whose baseline Tesseract misjudged does not carry the box.
          The colour is the median of the word's ink pixels (those at least 60 % as far from the
          local background as its strongest pixel).
          *Bold* is per word. The stroke of a word is the mean of the shortest 60 % of its
@@ -2562,7 +2648,8 @@ why. The rules:
 Check coverage and its honest edges: rotation and view box on every page; page text
 identity (size plus the head of the extracted text) positionally on every page up to 64
 pages and on first/middle/last above that; form names and values against the session's
-inventory; outline titles and page labels read from both documents. Two facts are reported
+inventory (fields that share a name, as a merge of two forms leaves them, are paired in
+document order); outline titles and page labels read from both documents. Two facts are reported
 `unsupported` **by construction** and never claimed: `annotations` (the reference's page
 annotations do not include the engine's pending annotation storage, so a count could not
 tell a dropped annotation from one this run is writing) and `signatures` (validity needs

@@ -103,6 +103,8 @@ export interface TextRun {
   /** Underlined (OCR: a rule under the word was found); in the text colour. */
   readonly underline?: true;
   readonly color: number;
+  /** The text's fill opacity when it is drawn translucent (0…1 exclusive; absent: solid); `w14:textFill`. */
+  readonly alpha?: number;
   /** The external link the run belongs to, if any. */
   readonly link: string | null;
   /** A remark on the run (OCR: a word the engine was unsure of); the writer shows it as a comment. */

@@ -10,10 +10,12 @@
  */
 
 import {
+  allowOcrWorkers,
   OCR_LANGUAGE_CODES_ALL,
   type OcrLanguageCode,
   recognizePage,
   recognizeWord,
+  suggestedOcrWorkers,
   terminateOcrWorkers,
 } from 'pdf-core/engines/tesseract';
 import {
@@ -124,6 +126,7 @@ export const exportOfficeDialog: OperationDialogSpec = {
     const languages = (Array.isArray(params.ocrLanguages) ? params.ocrLanguages : []).filter(
       (language): language is OcrLanguageCode => OCR_LANGUAGE_CODES_ALL.includes(language as OcrLanguageCode),
     );
+    const workers = suggestedOcrWorkers();
     const ocr =
       format === 'docx' && docxLayout === 'layout' && languages.length > 0
         ? {
@@ -147,9 +150,11 @@ export const exportOfficeDialog: OperationDialogSpec = {
                 signal,
               }),
             englishAlone: languages.length > 1 && languages.includes('eng'),
+            concurrency: workers,
           }
         : undefined;
     let result: Awaited<ReturnType<typeof exportOffice>>;
+    if (ocr !== undefined) allowOcrWorkers(workers, languages, 'best');
     try {
       result = await exportOffice(
         context.bytes,
