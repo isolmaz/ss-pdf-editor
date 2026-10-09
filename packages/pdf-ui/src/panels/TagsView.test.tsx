@@ -1551,6 +1551,30 @@ describe('TagsView: an untagged file', () => {
     expect((screen.getByRole('button', { name: 'Tag document' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Nothing to tag on this page.')).toBeTruthy();
   });
+
+  it('keeps standing when a re-read finds blocks and pages the plan was not made for', async () => {
+    // The editor is not remounted for a new `read`: its plan stays the one the first read made,
+    // while the candidates it is handed are the new read's.
+    const { rerender, props } = await mountUntagged();
+    engine.readTagCandidates.mockResolvedValue({
+      pages: [
+        { ...PAGE_ZERO, candidates: [candidate('n1', { text: 'Fresh' })] },
+        { ...PAGE_ZERO, pageIndex: 1, candidates: [candidate('n2')] },
+      ],
+      notes: [],
+      bodySize: 12,
+    });
+    rerender(<TagsView {...props} read={async () => new Uint8Array([9])} />);
+    await waitFor(() => expect(engine.readTagCandidates).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    // The rows are the plan's, named by what the new read can no longer describe: their ids.
+    expect(planIds()).toEqual(['b1', 'b2', 'f3', 'f4', 'b5']);
+    expect(within(planRow('b1')).getByText('b1')).toBeTruthy();
+    // The boxes follow the pages the plan has; the page it has no plan for is left out.
+    expect(readingOrderStore.snapshot().pages.map((entry) => [entry.pageIndex, entry.items])).toEqual([
+      [0, []],
+    ]);
+  });
 });
 
 describe('TagsView: tagging an untagged file', () => {

@@ -12,6 +12,7 @@ import userEvent from '@testing-library/user-event';
 import { PDFJS_ASSETS } from 'pdf-core/assets';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { createTranslator } from 'pdf-shared';
+import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { PdfViewerPane, type PdfViewerPaneProps, type ViewerApi } from './PdfViewerPane';
 
@@ -1268,6 +1269,21 @@ describe('the overlay host', () => {
   });
 });
 
+/**
+ * Renders after the pane in the same tree: when the tree is removed, its layout cleanup runs once
+ * React has detached the pane's refs but before the pane's own effect cleanup has removed its
+ * window listeners — the moment a mouse move can land with no container.
+ */
+function MouseMovesOnLeave() {
+  useLayoutEffect(
+    () => () => {
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 60, clientY: 130 }));
+    },
+    [],
+  );
+  return null;
+}
+
 describe('the hand tool', () => {
   const container = () =>
     (document.querySelector('[data-viewer-overlay]') as HTMLElement).parentElement as HTMLElement;
@@ -1300,6 +1316,30 @@ describe('the hand tool', () => {
     expect(scroll.className).toContain('cursor-grab ');
     await user.pointer({ target: scroll, coords: { clientX: 0, clientY: 0 } });
     expect([scroll.scrollLeft, scroll.scrollTop]).toEqual([240, 270]);
+  });
+
+  it('lets a mouse move that lands once the pane is detached pass, and the page where it was', async () => {
+    const errors: unknown[] = [];
+    const record = (event: ErrorEvent) => errors.push(event.error ?? event.message);
+    window.addEventListener('error', record);
+    const cb = callbacks();
+    const view = render(
+      <>
+        <PdfViewerPane {...paneProps(makeDocument().handle, cb, { handTool: true })} />
+        <MouseMovesOnLeave />
+      </>,
+    );
+    await settle(() => expect(cb.onReady).toHaveBeenCalledOnce());
+    const scroll = container();
+    scroll.scrollLeft = 200;
+    scroll.scrollTop = 300;
+    fireEvent.mouseDown(scroll, { button: 0, clientX: 100, clientY: 100 });
+    expect(scroll.className).toContain('cursor-grabbing');
+    // React detaches the pane's refs before it removes the window listener, and the move lands between.
+    view.unmount();
+    window.removeEventListener('error', record);
+    expect(errors).toEqual([]);
+    expect([scroll.scrollLeft, scroll.scrollTop]).toEqual([200, 300]);
   });
 
   it('ignores the other buttons', async () => {

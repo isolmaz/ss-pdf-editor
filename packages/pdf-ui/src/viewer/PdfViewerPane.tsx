@@ -472,10 +472,11 @@ export function PdfViewerPane({
   useEffect(() => {
     if (!isPanning) return undefined;
     const onMouseMove = (event: MouseEvent) => {
-      // `isPanning` is only set together with the container and the drag's start, and both
-      // are kept until the mouse-up that ends it removes this listener.
-      const container = containerRef.current as HTMLDivElement;
-      const start = panStartRef.current as NonNullable<typeof panStartRef.current>;
+      // React detaches the container's ref when the pane is removed, before this effect's cleanup
+      // removes the listener, so a move can land with no container.
+      const container = containerRef.current;
+      const start = panStartRef.current;
+      if (container === null || start === null) return;
       const dx = event.clientX - start.clientX;
       const dy = event.clientY - start.clientY;
       container.scrollLeft = start.scrollLeft - dx;

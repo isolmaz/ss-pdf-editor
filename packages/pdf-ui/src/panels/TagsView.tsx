@@ -1097,16 +1097,19 @@ function UntaggedEditor({
   useEffect(() => {
     const pages: OverlayPage[] = [];
     for (const entry of candidates.pages) {
-      // The plan starts with every candidate page, and its order and roles with every candidate of it.
-      const pagePlan = plan[entry.pageIndex] as PagePlanState;
+      // The plan is made once, from the first read; a later read (the `read` prop changed under the
+      // same editor) can hand over pages and blocks it was not made for, which are left out here.
+      const pagePlan = plan[entry.pageIndex];
+      if (pagePlan === undefined) continue;
       const items: OverlayItem[] = [];
       let number = 0;
       for (const id of pagePlan.order) {
-        const candidate = entry.candidates.find((value) => value.id === id) as TagCandidate;
+        const candidate = entry.candidates.find((value) => value.id === id);
+        // Every planned block has a role (the plan starts with one for each).
         const role = pagePlan.roles[id] as string;
         if (role === 'Artifact') continue;
         number += 1;
-        if (candidate.rect !== null) items.push({ key: id, number, role, rect: candidate.rect });
+        if (candidate?.rect != null) items.push({ key: id, number, role, rect: candidate.rect });
       }
       pages.push({
         pageIndex: entry.pageIndex,
@@ -1183,7 +1186,8 @@ function UntaggedEditor({
 
   let number = 0;
   const rows = (state?.order ?? []).map((id) => {
-    const candidate = lookup.get(id) as TagCandidate;
+    // After a re-read the plan can still list a block the new read no longer has.
+    const candidate = lookup.get(id);
     const role = (state as PagePlanState).roles[id] as string;
     if (role !== 'Artifact') number += 1;
     return { id, candidate, role, number: role === 'Artifact' ? null : number };
@@ -1240,7 +1244,9 @@ function UntaggedEditor({
                       aria-pressed={isSelected}
                       className="min-w-0 flex-1 truncate rounded-sm text-start text-xs text-kumo-default"
                     >
-                      {row.candidate.kind === 'figure' ? t(key('tags.untagged.figure')) : row.candidate.text}
+                      {row.candidate?.kind === 'figure'
+                        ? t(key('tags.untagged.figure'))
+                        : (row.candidate?.text ?? row.id)}
                     </button>
                     <select
                       value={row.role}
@@ -1277,7 +1283,7 @@ function UntaggedEditor({
                       testId="plan-down"
                     />
                   </div>
-                  {row.candidate.kind === 'figure' && row.role === 'Figure' ? (
+                  {row.candidate?.kind === 'figure' && row.role === 'Figure' ? (
                     <label className="flex items-center gap-1 ps-5">
                       <span className="sr-only">{t(key('tags.alt.label'))}</span>
                       <input
