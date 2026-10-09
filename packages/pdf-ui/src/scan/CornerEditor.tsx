@@ -47,10 +47,11 @@ export function CornerEditor({ t, imageUrl, aspect, quad, onChange }: CornerEdit
   const [size, setSize] = useState({ width: 1, height: 1 });
   const valid = isConvexQuad(quad);
 
+  // The stage is always mounted while a handle, the only thing that reads it, can be used.
+  const stageBounds = () => (stage.current as HTMLDivElement).getBoundingClientRect();
+
   const pointOf = (event: PointerEvent): Point | null => {
-    const element = stage.current;
-    if (element === null) return null;
-    const rectangle = element.getBoundingClientRect();
+    const rectangle = stageBounds();
     if (rectangle.width === 0 || rectangle.height === 0) return null;
     return {
       x: (event.clientX - rectangle.left) / rectangle.width,
@@ -105,8 +106,8 @@ export function CornerEditor({ t, imageUrl, aspect, quad, onChange }: CornerEdit
             onPointerDown={(event) => {
               event.preventDefault();
               event.currentTarget.setPointerCapture(event.pointerId);
-              const bounds = stage.current?.getBoundingClientRect();
-              if (bounds !== undefined) setSize({ width: bounds.width, height: bounds.height });
+              const bounds = stageBounds();
+              setSize({ width: bounds.width, height: bounds.height });
               setDragging(index);
             }}
             onPointerMove={(event) => {

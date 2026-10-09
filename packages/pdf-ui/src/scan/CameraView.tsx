@@ -75,8 +75,9 @@ export function CameraView({ t, onPhotos, pageCount, onShowPages, disabled }: Ca
   useEffect(() => {
     if (camera.status !== 'live') return;
     const timer = window.setInterval(() => {
-      const video = videoRef.current;
-      if (video === null || video.readyState < 2 || document.hidden) return;
+      // The video is always mounted while the camera is live, and the timer dies with the view.
+      const video = videoRef.current as HTMLVideoElement;
+      if (video.readyState < 2 || document.hidden) return;
       const frame = frameToRaster(video, 400);
       if (frame === null) return;
       const found = detectPage(frame);
@@ -106,7 +107,6 @@ export function CameraView({ t, onPhotos, pageCount, onShowPages, disabled }: Ca
   }, [camera.status, videoRef]);
 
   const shoot = async () => {
-    if (capturing || disabled) return;
     setCapturing(true);
     setFailure(null);
     try {
@@ -227,10 +227,11 @@ export function CameraView({ t, onPhotos, pageCount, onShowPages, disabled }: Ca
               <Select<string>
                 size="sm"
                 aria-labelledby={deviceLabelId}
-                value={camera.deviceId ?? ''}
+                // With two cameras listed the hook has chosen one: the list and the id are set together.
+                value={camera.deviceId as string}
                 renderValue={(value) => camera.devices.find((device) => device.id === value)?.label ?? value}
                 onValueChange={(next) => {
-                  if (next !== null && next !== camera.deviceId) start(next);
+                  if (next !== camera.deviceId) start(next);
                 }}
               >
                 {camera.devices.map((device) => (
