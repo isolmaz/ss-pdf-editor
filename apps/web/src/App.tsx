@@ -6,10 +6,9 @@ import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
 // and the engine chunk it pulls in is what the ≤250 KiB budget is there to keep
 // out.
-import type { ReviewRecordRequest } from 'pdf-core/ops/annotation-review';
 import type { MarkTransform } from 'pdf-core/ops/annotation-transform';
 import { transformPdfAnnotations } from 'pdf-core/ops/annotation-transform';
-import { marksFromEngineEntries, type ReviewState, readAnnotations } from 'pdf-core/ops/annotations';
+import { marksFromEngineEntries, readAnnotations } from 'pdf-core/ops/annotations';
 import {
   CONVERT_ACCEPT,
   CONVERT_PICKER_ACCEPT,
@@ -150,6 +149,8 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { createOpfsDraftStorage } from './drafts';
 import { compressionPresets } from './export-presets';
 import { createAttachmentActions } from './features/attachments/attachments';
+import { CommentsDock } from './features/comments/CommentsDock';
+import { useCommentReview } from './features/comments/review';
 import {
   armStampTool,
   clearNotice,
@@ -333,10 +334,6 @@ interface DialogInput {
 /**
  * Dock panels that own a capability's *writer* are loaded when the tab is opened.
  */
-const CommentsPanel = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.CommentsPanel };
-});
 const FormPanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
   return { default: module.FormPanel };
@@ -3830,81 +3827,15 @@ export function App({ store }: AppProps) {
     [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setHandle, store, t],
   );
 
-  /**
-   * A reply or a review state for a comment (`ops/annotation-review.ts`). A mark the
-   * session holds keeps it until the mark itself is written (`writeAnnotationsToFile`);
-   * a comment the file already carries gets it written now, as one journal step that
-   * undo takes back whole.
-   */
-  const answerComment = useCallback(
-    (
-      target: { readonly pending: boolean; readonly id: string; readonly pageIndex: number },
-      answer:
-        | { readonly kind: 'reply'; readonly contents: string }
-        | { readonly kind: 'state'; readonly state: ReviewState },
-    ) => {
-      const createdAt = new Date().toISOString();
-      const author = annotationAuthor;
-      if (target.pending) {
-        setAnnotations((current) =>
-          current.map((mark) => {
-            if (mark.id !== target.id) return mark;
-            if (answer.kind === 'reply') {
-              return {
-                ...mark,
-                replies: [
-                  ...(mark.replies ?? []),
-                  { id: crypto.randomUUID(), author, contents: answer.contents, createdAt },
-                ],
-              };
-            }
-            return { ...mark, review: { state: answer.state, author, at: createdAt } };
-          }),
-        );
-        const id = store.active?.id;
-        if (id !== undefined) store.setDirty(id, true);
-        showNotice(
-          answer.kind === 'reply'
-            ? t('ann.reply.pendingDone')
-            : author.trim() === ''
-              ? t(`ann.state.${answer.state}`)
-              : t('ann.state.by', { state: t(`ann.state.${answer.state}`), author }),
-        );
-        return;
-      }
-      const record: ReviewRecordRequest =
-        answer.kind === 'reply'
-          ? {
-              kind: 'reply',
-              pageIndex: target.pageIndex,
-              parentId: target.id,
-              id: crypto.randomUUID(),
-              author,
-              createdAt,
-              contents: answer.contents,
-            }
-          : {
-              kind: 'state',
-              pageIndex: target.pageIndex,
-              parentId: target.id,
-              id: crypto.randomUUID(),
-              author,
-              createdAt,
-              state: answer.state,
-            };
-      writeFileAnnotation(
-        { key: answer.kind === 'reply' ? 'ann.reply.added' : 'ann.state.changed' },
-        async (base, signal) => {
-          const { writeCommentReview } = await import('pdf-core/ops/annotation-review');
-          return writeCommentReview(base, [record], { signal });
-        },
-        answer.kind === 'reply'
-          ? t('ann.reply.done')
-          : t('ann.state.done', { state: t(`ann.state.${answer.state}`) }),
-      );
-    },
-    [annotationAuthor, setAnnotations, store, t, writeFileAnnotation],
-  );
+  /** Replies, review states and taking a reply back (`features/comments/review.ts`). */
+  const commentReview = useCommentReview({
+    session: store,
+    t,
+    author: annotationAuthor,
+    setAnnotations,
+    writeFileAnnotation,
+    removeTargets,
+  });
 
   /**
    * Add the candidates the user kept as real form fields: one journal step that undo takes
@@ -5200,76 +5131,53 @@ export function App({ store }: AppProps) {
                       onRedo={() => void stepHistoryNow('redo')}
                     />
                   ) : rightTab === 'comments' ? (
-                    <Suspense
-                      fallback={
-                        <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
-                          {t('panel.comments')}
-                        </p>
+                    <CommentsDock
+                      t={t}
+                      marks={visibleMarks.annotations}
+                      existing={existingAnnotations}
+                      // The panel's rows name marks by id; the selection is one key
+                      // space, so the highlighted row is derived from the target list
+                      // rather than by re-spelling a key.
+                      selectedId={
+                        markTargets.find(
+                          (target) => target.family === 'annotation' && selectedKeys.includes(target.key),
+                        )?.id ?? null
                       }
-                    >
-                      <CommentsPanel
-                        t={t}
-                        marks={visibleMarks.annotations}
-                        existing={existingAnnotations}
-                        // The panel's rows name marks by id; the selection is one key
-                        // space, so the highlighted row is derived from the target list
-                        // rather than by re-spelling a key.
-                        selectedId={
-                          markTargets.find(
-                            (target) => target.family === 'annotation' && selectedKeys.includes(target.key),
-                          )?.id ?? null
+                      onSelect={(id) => {
+                        // The panel toggles: a second click on the selected row
+                        // reports `null`, which is the empty selection.
+                        if (id === null) {
+                          setSelectedKeys([]);
+                          return;
                         }
-                        onSelect={(id) => {
-                          // The panel toggles: a second click on the selected row
-                          // reports `null`, which is the empty selection.
-                          if (id === null) {
-                            setSelectedKeys([]);
-                            return;
-                          }
-                          const mark = annotations.find((item) => item.id === id);
-                          if (mark !== undefined) {
-                            setSelectedKeys([markTargetKey('annotation', mark.id, mark.pageIndex)]);
-                          }
-                        }}
-                        onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
-                        onEdit={(id, contents) =>
-                          setAnnotations((marks) =>
-                            marks.map((mark) => (mark.id === id ? { ...mark, contents } : mark)),
-                          )
+                        const mark = annotations.find((item) => item.id === id);
+                        if (mark !== undefined) {
+                          setSelectedKeys([markTargetKey('annotation', mark.id, mark.pageIndex)]);
                         }
-                        // Panel removal is the same intent as selection Delete: one path,
-                        // one journal entry, the same undo.
-                        onRemove={(id) => void removeTargets([markTargetKey('annotation', id, 0)])}
-                        onClear={() =>
-                          void removeTargets(
-                            markTargets
-                              .filter((target) => target.family === 'annotation')
-                              .map((target) => target.key),
-                          )
-                        }
-                        onExportData={(format) => void exportAnnotationData(format)}
-                        onImportData={(file) => void importAnnotationData(file)}
-                        onReply={(target, contents) => answerComment(target, { kind: 'reply', contents })}
-                        onSetState={(target, state) => answerComment(target, { kind: 'state', state })}
-                        onRemoveReply={(target, replyId) => {
-                          if (target.pending) {
-                            setAnnotations((current) =>
-                              current.map((mark) =>
-                                mark.id === target.id
-                                  ? {
-                                      ...mark,
-                                      replies: (mark.replies ?? []).filter((reply) => reply.id !== replyId),
-                                    }
-                                  : mark,
-                              ),
-                            );
-                            return;
-                          }
-                          void removeTargets([markTargetKey('existing', replyId, target.pageIndex)]);
-                        }}
-                        disabled={!canEdit}
-                      />
-                    </Suspense>
+                      }}
+                      onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                      onEdit={(id, contents) =>
+                        setAnnotations((marks) =>
+                          marks.map((mark) => (mark.id === id ? { ...mark, contents } : mark)),
+                        )
+                      }
+                      // Panel removal is the same intent as selection Delete: one path,
+                      // one journal entry, the same undo.
+                      onRemove={(id) => void removeTargets([markTargetKey('annotation', id, 0)])}
+                      onClear={() =>
+                        void removeTargets(
+                          markTargets
+                            .filter((target) => target.family === 'annotation')
+                            .map((target) => target.key),
+                        )
+                      }
+                      onExportData={(format) => void exportAnnotationData(format)}
+                      onImportData={(file) => void importAnnotationData(file)}
+                      onReply={commentReview.onReply}
+                      onSetState={commentReview.onSetState}
+                      onRemoveReply={commentReview.onRemoveReply}
+                      disabled={!canEdit}
+                    />
                   ) : rightTab === 'properties' ? (
                     <PropertiesFacts
                       t={t}
