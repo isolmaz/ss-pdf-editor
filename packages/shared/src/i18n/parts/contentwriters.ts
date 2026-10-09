@@ -7,7 +7,7 @@
  * layer, moves a link's rectangle and renumbers the outline a link points at, and
  * every one of them is a **writer of a file the user already has** — so the notes
  * below are measurements, not reassurance. What was erased
- * is the text the verifier could not find any more; what was inserted is the text
+ * is the text the verifier could no longer find; what was inserted is the text
  * it did find; a substitution names both faces; a clamp says the page index the
  * request asked for was not the page index that was written.
  *
@@ -21,7 +21,7 @@
  * joined names the report shows (`summarise`, `clipList`), already clipped there.
  */
 
-export const phase4Part = {
+export const contentWritersPart = {
   /* ----- progress ----- */
 
   'op.progress.textEdit.write': 'Yeni metin yazılıyor',

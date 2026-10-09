@@ -1,4 +1,4 @@
-export const phase4Part = {
+export const contentWritersPart = {
   'op.progress.textEdit.write': 'Writing new text',
   'op.progress.textEdit.verify': 'Verifying output',
   'op.progress.link.remove': 'Removing links',

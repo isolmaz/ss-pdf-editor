@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Phase 4 fixture builder — throwaway tooling.
+ * Fixture builder for `text-edit-check.mjs`.
  *
- *   node tools/behavior/make-phase4-fixture.mjs [--out <path>] [--replace-image <path>]
+ *   node tools/behavior/make-text-edit-fixture.mjs [--out <path>] [--replace-image <path>]
  *
- * Builds the one document every Phase 4 check runs against, so the evidence is
- * reproducible from the repository alone. It exists because Phase 4's items each
- * need a *different* kind of content, and a fixture that only carries one of them
- * forces a session reset between checks — the exact ordering coupling that broke
- * the Phase 3 driver.
+ * Builds the one document every check in `text-edit-check.mjs` runs against, so the
+ * evidence is reproducible from the repository alone. The checks each need a
+ * *different* kind of content (text, image, link, outline, form field), and a fixture
+ * that carries only one of them would force a session reset between checks and couple
+ * the checks to their order.
  *
  * Page 1  a Turkish paragraph drawn in an **embedded subset font** (Noto Sans), with
  *         the sentinel word `KADIKÖY` in the middle of it — the text-edit target.
@@ -16,7 +16,7 @@
  *         can prove that only the targeted occurrence disappeared.
  * Page 3  a bitmap image at a known rectangle — the image-editing target.
  * Page 4  a `/URI` link annotation and a two-entry outline — link + outline editing.
- * Page 5  a text form field — the fill-path regression that the other phases rely on.
+ * Page 5  a text form field — the fill path the other checks rely on.
  *
  * `--replace-image` writes the small RGB image the image-replace check feeds in and
  * exits, so the same generator produces both sides of that operation.
@@ -105,7 +105,7 @@ function buildFixture(path) {
   const ink = [0.08, 0.08, 0.12];
 
   const page1 = pdf.addPage(595.28, 841.89);
-  page1.text('Phase 4 text fixture', { x: 64, y: 770, size: 18 });
+  page1.text('Text-edit fixture', { x: 64, y: 770, size: 18 });
   const paragraph = [
     'Belge içeriği yalnızca cihazda işlenir; hiçbir veri',
     `sunucuya gönderilmez. ${SENTINEL} şubesi bu kuralı`,
@@ -116,7 +116,7 @@ function buildFixture(path) {
   });
 
   const page2 = pdf.addPage(595.28, 841.89);
-  page2.text('Phase 4 untouched occurrence', { x: 64, y: 770, size: 18 });
+  page2.text('Untouched occurrence', { x: 64, y: 770, size: 18 });
   page2.text(`${SENTINEL} şubesi ikinci sayfada aynen kalmalıdır.`, {
     x: 64,
     y: 720,
@@ -126,7 +126,7 @@ function buildFixture(path) {
   });
 
   const page3 = pdf.addPage(595.28, 841.89);
-  page3.text('Phase 4 image fixture', { x: 64, y: 770, size: 18 });
+  page3.text('Image fixture', { x: 64, y: 770, size: 18 });
   const png = makePng(240, 150, (x, y, width, height) => [
     Math.round((x / width) * 255),
     Math.round((y / height) * 255),
@@ -135,7 +135,7 @@ function buildFixture(path) {
   page3.image(png, IMAGE_RECT);
 
   const page4 = pdf.addPage(595.28, 841.89);
-  page4.text('Phase 4 structure fixture', { x: 64, y: 770, size: 18 });
+  page4.text('Structure fixture', { x: 64, y: 770, size: 18 });
   // Noto Sans, not Helvetica: standard-14 fonts are WinAnsi and cannot encode
   // `ı`/`ş`/`ğ` — the same reason the text engine's insert path embeds a font.
   page4.text('Yapı bağlantısı', { x: LINK_RECT.x, y: LINK_RECT.y, size: 12, font: noto });
@@ -145,7 +145,7 @@ function buildFixture(path) {
   );
 
   const page5 = pdf.addPage(595.28, 841.89);
-  page5.text('Phase 4 form fixture', { x: 64, y: 770, size: 18 });
+  page5.text('Form fixture', { x: 64, y: 770, size: 18 });
   page5.textField('musteri', [64, 700, 284, 724], 'Ada Lovelace');
 
   // `newString` writes UTF-16BE where PDFDocEncoding has no slot: 'İ' would otherwise
@@ -172,7 +172,7 @@ if (replacePath !== null) {
   );
   console.log(`replace image written: ${resolve(replacePath)}`);
 } else {
-  const out = resolve(readArg('--out', join(tmpdir(), 'phase4-fixture.pdf')));
+  const out = resolve(readArg('--out', join(tmpdir(), 'text-edit-fixture.pdf')));
   const built = buildFixture(out);
-  console.log(`phase 4 fixture: ${built}`);
+  console.log(`text-edit fixture: ${built}`);
 }

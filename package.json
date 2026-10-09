@@ -30,7 +30,7 @@
     "assemble:dist": "node tools/assemble-dist.mjs",
     "audit:regressions": "node tools/audit/regressions.cjs",
     "audit:model-types": "node tools/audit/typecheck-model.cjs",
-    "ci:behavior": "node tools/behavior/phase3-check.mjs && node tools/behavior/phase4-check.mjs && tsx tools/behavior/sign-check.mts",
+    "ci:behavior": "node tools/behavior/editor-flow-check.mjs && node tools/behavior/text-edit-check.mjs && tsx tools/behavior/sign-check.mts",
     "ci:verify": "pnpm install --frozen-lockfile && pnpm typecheck && pnpm check && pnpm check:docs && pnpm fetch:engines --sync && pnpm unit && pnpm audit:model-types && pnpm build && pnpm verify:assets && pnpm check:licenses && pnpm assemble:dist",
     "ci:full": "pnpm ci:verify && pnpm ci:behavior",
     "worker:deploy": "pnpm run assemble:dist && npx --yes wrangler@4.135.0 deploy",

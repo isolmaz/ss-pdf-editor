@@ -2,8 +2,8 @@
  * Turkish dictionary — the complete locale.
  *
  * Never hardcode user-facing text: components read keys from here through
- * `t()`. The `en` locale is a scaffold with the same key shape; missing keys
- * fall back to `tr` during development and are reported by the i18n helper.
+ * `t()`. Every other locale supplies the keys it maintains, and a missing key
+ * falls back per key (see `index.ts`).
  */
 
 import { a11yPart } from './parts/a11y';
@@ -13,6 +13,7 @@ import { batchPart } from './parts/batch';
 import { boxesPart } from './parts/boxes';
 import { commonPart } from './parts/common';
 import { comparePart } from './parts/compare';
+import { contentWritersPart } from './parts/contentwriters';
 import { convertPart } from './parts/convert';
 import { dialogsPart } from './parts/dialogs';
 import { docopsPart } from './parts/docops';
@@ -32,7 +33,6 @@ import { pageeditPart } from './parts/pageedit';
 import { pageopsPart } from './parts/pageops';
 import { pagesPart } from './parts/pages';
 import { pdfaPart } from './parts/pdfa';
-import { phase4Part } from './parts/phase4';
 import { propertiesPart } from './parts/properties';
 import { propsPart } from './parts/props';
 import { redactPart } from './parts/redact';
@@ -53,7 +53,7 @@ export const tr = {
   ...annotationsPart,
   ...dialogsPart,
   ...pageeditPart,
-  ...phase4Part,
+  ...contentWritersPart,
   ...batchPart,
   ...a11yPart,
   ...comparePart,

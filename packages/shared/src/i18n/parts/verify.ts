@@ -7,7 +7,7 @@
  * not come back as a preservation claim (a declared size/perf shortcut skipped it, or
  * the operation changed the fact and declared that it may), `verify.unsupported` means
  * this build cannot check that fact at all — and each names the facts it speaks about,
- * because "doğrulandı" without a list is the sentence that let the old verification
+ * because "doğrulandı" without a list is the sentence that lets a verification
  * pass for a check it never ran. A fact the operation is allowed to change is named by
  * `verify.declared`, never left implicit: "no claim" must not read as "preserved".
  *
