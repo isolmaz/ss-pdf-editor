@@ -405,7 +405,15 @@ had to stay green. The moves, and the defects they fixed on the way:
   - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
     paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
-    rule between two cells merges them). Tables without rules come from runs of rows that
+    rule between two cells merges them, unless that would make a region that runs into
+    a cell already placed, which then stays single). A rule group whose outer border is not
+    drawn is completed with an undrawn grid line at that side, but only along an axis that
+    already has two lines of its own, at a side that two rules reach, and when the strip holds
+    a line of text that lies wholly in it and is a quarter as deep as the cell next to it, or
+    is half as deep: a divider crossed by one rule, a heading between two rules, or rules that
+    overshoot by a few points are not a lattice. The Word table carries no table-wide borders
+    (`tblBorders` all `nil`); each cell gets `tcBorders` for the sides a rule covers by 75 % or
+    more, so the undrawn edges stay blank. Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
@@ -737,6 +745,17 @@ had to stay green. The moves, and the defects they fixed on the way:
          1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
          paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
          ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart.
+         The cells of a table never join a paragraph: rows are lines on one baseline (within
+         0.5 × the size), and consecutive rows form a table when at least 3 cells of each (2
+         for label and amount rows) stand under cells of the row above by left edge, right edge
+         or centre, the cells average at most 4 words, the rows are at most 4 × the size apart
+         (2 × for two cells), and there is a column of figures (more digits than letters: a
+         figure under a figure for 3 or more cells, the left-most or the right-most cell of
+         both rows for 2), so side-by-side lists of short lines stay columns. A line alone on its baseline keeps the table open only as the
+         second line of a wrapped cell (it continues a cell above by the paragraph rule); any
+         other line ends it. Every cell line is a paragraph of its own, and a table is one item
+         of the cut below, read row by row inside (`inRows` of its paragraphs), so an invoice's
+         descriptions are not read before its quantities.
          *Reading order* is by recursive cuts (`readingOrder`): the paragraphs are split at the
          widest horizontal gap no box crosses (the part above first) and at the widest vertical
          one (the part to the left first), a vertical cut counting only where the two parts
@@ -2601,7 +2620,8 @@ why. The rules:
 Check coverage and its honest edges: rotation and view box on every page; page text
 identity (size plus the head of the extracted text) positionally on every page up to 64
 pages and on first/middle/last above that; form names and values against the session's
-inventory; outline titles and page labels read from both documents. Two facts are reported
+inventory (fields that share a name, as a merge of two forms leaves them, are paired in
+document order); outline titles and page labels read from both documents. Two facts are reported
 `unsupported` **by construction** and never claimed: `annotations` (the reference's page
 annotations do not include the engine's pending annotation storage, so a count could not
 tell a dropped annotation from one this run is writing) and `signatures` (validity needs
