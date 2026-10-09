@@ -33,9 +33,10 @@
  *
  * What is not carried over is said in the report: exact positions, a paragraph's
  * continuation in the next column, form fields, annotations; text on scanned pages (OCR
- * first). The exact layout does carry a filled form field's value, as text where the field is
- * (its appearance), and names the fields whose value nothing draws. The flowing layout leaves
- * out the text the document itself hides, except the invisible OCR layer of a scanned page.
+ * first). The exact layout does carry a filled form field's value and an annotation's text,
+ * as text where it is (its appearance), and names the fields whose value nothing draws. The
+ * flowing layout leaves out the text the document itself hides and says how much, except the
+ * invisible OCR layer over a scanned page's picture.
  */
 
 import type { PDFDocument } from 'mupdf';
@@ -214,6 +215,8 @@ interface ReadPage {
   readonly streams: readonly LayoutTable[];
   /** Vector drawings, rendered as pictures (Word only). */
   readonly figures: readonly { readonly box: Box; readonly png: Uint8Array }[];
+  /** Characters of the document's own hidden text left out (Word only; `withoutHiddenText`). */
+  readonly hidden: number;
 }
 
 /** The box that holds all of `boxes`. */
@@ -228,37 +231,53 @@ function unionBox(boxes: readonly Box[]): Box {
 
 /**
  * The page as the reader sees it: text the document itself hides (render mode 3, no opacity) is
- * left out, as the exact layout leaves it out. The one hidden text kept is the invisible layer of
- * a scanned page — OCR's words over the picture of the page: no visible text, and pictures
- * covering most of the page (`isScanPage`'s test) — which is exported on purpose, since it is the
- * only text the scan has. Needs the picture blocks, so only a read with `images` can tell.
+ * left out, as the exact layout leaves it out, and counted (`dropped`, characters). The hidden text
+ * kept is a scan's OCR layer, exported on purpose since it is the only text the scan has: on a
+ * page whose pictures cover most of it (`isScanPage`'s test), a hidden character that lies over a
+ * picture. One over blank paper is the document's own, wherever it is, and a page's visible text
+ * (a Bates number, a header) changes nothing about the layer. Needs the picture blocks, so only a
+ * read with `images` can tell.
  */
-function withoutHiddenText(layout: PageLayout): PageLayout {
+function withoutHiddenText(layout: PageLayout): { readonly layout: PageLayout; readonly dropped: number } {
   const lines = layout.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []));
-  if (!lines.some((line) => line.chars.some((char) => char.invisible === true))) return layout;
-  const shown = lines.some((line) =>
-    line.chars.some((char) => char.invisible !== true && char.c.trim() !== ''),
-  );
-  const pictures = layout.blocks.reduce(
-    (sum, block) =>
-      block.kind === 'image'
-        ? sum + Math.max(0, block.box[2] - block.box[0]) * Math.max(0, block.box[3] - block.box[1])
-        : sum,
+  if (!lines.some((line) => line.chars.some((char) => char.invisible === true))) {
+    return { layout, dropped: 0 };
+  }
+  const pictures = layout.blocks.flatMap((block) => (block.kind === 'image' ? [block.box] : []));
+  const area = pictures.reduce(
+    (sum, box) => sum + Math.max(0, box[2] - box[0]) * Math.max(0, box[3] - box[1]),
     0,
   );
-  if (!shown && coversPage(pictures, layout.width, layout.height)) return layout;
+  const scan = coversPage(area, layout.width, layout.height);
+  /** Whether a character lies over a picture of a scanned page (its centre inside the picture). */
+  const overPicture = (char: LayoutChar): boolean =>
+    scan &&
+    pictures.some(
+      (box) =>
+        (char.box[0] + char.box[2]) / 2 >= box[0] &&
+        (char.box[0] + char.box[2]) / 2 <= box[2] &&
+        (char.box[1] + char.box[3]) / 2 >= box[1] &&
+        (char.box[1] + char.box[3]) / 2 <= box[3],
+    );
+  let dropped = 0;
+  const kept = (char: LayoutChar): boolean => {
+    if (char.invisible !== true || overPicture(char)) return true;
+    if (char.c.trim() !== '') dropped += 1;
+    return false;
+  };
   const blocks = layout.blocks.flatMap((block): LayoutBlock[] => {
     if (block.kind !== 'text') return [block];
-    const kept = block.lines.flatMap((line): LayoutLine[] => {
-      const chars = line.chars.filter((char) => char.invisible !== true);
+    const remaining = block.lines.flatMap((line): LayoutLine[] => {
+      const chars = line.chars.filter(kept);
       if (chars.length === 0) return [];
       return [chars.length === line.chars.length ? line : { ...line, chars, box: lineBox(chars) }];
     });
-    if (kept.length === 0) return [];
-    const same = kept.length === block.lines.length && kept.every((line, at) => line === block.lines[at]);
-    return [same ? block : { ...block, lines: kept, box: unionBox(kept.map((line) => line.box)) }];
+    if (remaining.length === 0) return [];
+    const same =
+      remaining.length === block.lines.length && remaining.every((line, at) => line === block.lines[at]);
+    return [same ? block : { ...block, lines: remaining, box: unionBox(remaining.map((line) => line.box)) }];
   });
-  return { ...layout, blocks };
+  return { layout: { ...layout, blocks }, dropped };
 }
 
 async function readPages(
@@ -281,7 +300,7 @@ async function readPages(
     try {
       // Word only: telling a scan's OCR layer from hidden text takes the pictures (see `withoutHiddenText`).
       const read = readPageLayout(mupdf, page, { images });
-      const layout = images ? withoutHiddenText(read) : read;
+      const { layout, dropped: hidden } = images ? withoutHiddenText(read) : { layout: read, dropped: 0 };
       const tables = findTables(layout);
       const ruled = tables.map((table) => table.box);
       // A chart's labels line up like a table's cells, so drawings are found first.
@@ -289,7 +308,7 @@ async function readPages(
       // Only a Word document carries the drawings, as pictures.
       const figures = images ? drawn.map((box) => ({ box, png: renderRegion(mupdf, page, box) })) : [];
       const streams = findTextTables(layout, [...ruled, ...drawn]);
-      out.push({ index, layout, tables, streams, figures });
+      out.push({ index, layout, tables, streams, figures, hidden });
     } finally {
       page.destroy();
     }
@@ -1845,6 +1864,8 @@ export async function exportOffice(
     file = { name: `${stem}.docx`, bytes: written.bytes, mime: MIME.docx };
     notes.push(note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: pages.length }));
     notes.push(note('lost', 'op.note.exportOffice.docxApproximate'));
+    const hidden = pages.reduce((sum, page) => sum + page.hidden, 0);
+    if (hidden > 0) notes.push(note('lost', 'op.note.exportOffice.hiddenText', { count: hidden }));
     if (written.tables > 0)
       notes.push(note('preserved', 'op.note.exportOffice.tables', { count: written.tables }));
     if (written.streams > 0) {

@@ -42,8 +42,10 @@ export const officePart = {
     'The text was exported as flowing paragraphs: exact positions on the page, multi-column flow, drawings, form fields and annotations are not. Fonts are named; where one is not installed, Word uses a similar one.',
   'op.note.exportOffice.layout':
     'The page layout was rebuilt: {boxes} text boxes, {shapes} shapes and {pictures} pictures at their places; the text can be edited.',
+  'op.note.exportOffice.hiddenText':
+    '{count} characters of hidden text (text the PDF draws without showing it) were left out of the document.',
   'op.note.exportOffice.layoutFieldsLost':
-    '{count} form fields hold a value that the PDF does not draw (they have no appearance), so it is not in the document.',
+    '{count} form fields hold a value that the PDF does not draw, so it is not in the document.',
   'op.note.exportOffice.layoutRasters':
     '{count} regions Word cannot draw (gradients, masks) were placed as pictures.',
   'op.note.exportOffice.fontsEmbedded':

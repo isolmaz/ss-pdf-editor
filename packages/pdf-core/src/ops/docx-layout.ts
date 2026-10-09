@@ -260,8 +260,8 @@ async function writePages(
         else if (item.kind === 'image') pictures += 1;
         else rasters += 1;
       }
-      // The scene reads the page's text without pictures, so its blocks are text.
-      for (const block of scan === null ? scene.text.blocks : []) {
+      // The scene reads the page's text without pictures, so its blocks are text; a field's or an annotation's text counts too.
+      for (const block of [...(scan === null ? scene.text.blocks : []), ...scene.appearances.blocks]) {
         for (const line of block.kind === 'text' ? block.lines : []) {
           for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
         }

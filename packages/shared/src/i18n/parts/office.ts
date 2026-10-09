@@ -46,8 +46,10 @@ export const officePart = {
     'Metin akan paragraflar olarak aktarıldı: sayfadaki birebir konumlar, çok sütunlu akış, çizimler, form alanları ve açıklamalar aktarılmaz. Yazı tipleri adlarıyla aktarılır; bilgisayarda yoksa Word benzerini kullanır.',
   'op.note.exportOffice.layout':
     'Sayfa düzeni yeniden kuruldu: {boxes} metin kutusu, {shapes} şekil ve {pictures} resim yerlerinde duruyor; metin düzenlenebilir.',
+  'op.note.exportOffice.hiddenText':
+    '{count} karakterlik gizli metin (PDF’nin çizip göstermediği yazı) belgeye aktarılmadı.',
   'op.note.exportOffice.layoutFieldsLost':
-    '{count} form alanının değeri var, ancak PDF bunu çizmiyor (görünümü yok); bu yüzden belgede yer almıyor.',
+    '{count} form alanının değeri var, ancak PDF bunu çizmiyor; bu yüzden belgede yer almıyor.',
   'op.note.exportOffice.layoutRasters':
     'Word’ün çizemediği {count} bölge (renk geçişleri, maskeler) resim olarak yerleştirildi.',
   'op.note.exportOffice.fontsEmbedded': '{count} yazı tipi belgeye gömüldü; metin özgün harflerle görünür.',
