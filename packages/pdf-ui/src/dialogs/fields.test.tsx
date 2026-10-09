@@ -125,6 +125,7 @@ describe('fieldErrors', () => {
   it('refuses an unpicked choice, a number outside its range and a number that is not one', () => {
     expect(fieldErrors(t, [choice], { c: '' }, 1, 0)).toEqual({ c: 'dialog.field.choiceEmpty' });
     expect(fieldErrors(t, [choice], { c: 'x' }, 1, 0)).toEqual({});
+    expect(fieldErrors(t, [choice], {}, 1, 0)).toEqual({ c: 'dialog.field.choiceEmpty' });
     for (const value of [0, 6, Number.NaN, '3']) {
       expect(fieldErrors(t, [count], { n: value }, 1, 0), String(value)).toEqual({
         n: 'dialog.field.numberRange',

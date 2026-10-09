@@ -172,11 +172,10 @@ export function isVisible(
 }
 
 /** The typed range inside a `'range:<text>'` value, or the value itself. */
-function scopeText(value: FieldValue | undefined): string {
-  const text = typeof value === 'string' ? value : '';
+function scopeText(value: string): string {
   // A keyword is not a range the reader typed: switching to "custom" from "selection"
   // put the word itself in the box, already failing to parse.
-  return text.startsWith(RANGE_PREFIX) ? text.slice(RANGE_PREFIX.length) : '';
+  return value.startsWith(RANGE_PREFIX) ? value.slice(RANGE_PREFIX.length) : '';
 }
 
 /** Whether a page-scope value is one of the three keywords rather than a range. */
@@ -331,10 +330,12 @@ export function FieldList({
   const set = (id: string, value: FieldValue) => onChange(id, value);
 
   const insertToken = (fieldId: string, token: string) => {
-    const input = textInputs.current.get(fieldId);
+    // A token button renders beside its text input, and the input's ref is set at commit,
+    // before any click can reach the button: the input is always registered here.
+    const input = textInputs.current.get(fieldId) as HTMLInputElement;
     const current = String(values[fieldId] ?? '');
-    const start = input?.selectionStart ?? current.length;
-    const end = input?.selectionEnd ?? current.length;
+    const start = input.selectionStart ?? current.length;
+    const end = input.selectionEnd ?? current.length;
     set(fieldId, `${current.slice(0, start)}${token}${current.slice(end)}`);
     pendingCaret.current = { fieldId, at: start + token.length };
   };
@@ -441,7 +442,7 @@ export function FieldList({
             renderValue={(value) =>
               (choices?.[field.id] ?? []).find((option) => option.value === value)?.label ?? value
             }
-            onValueChange={(next) => set(field.id, next ?? '')}
+            onValueChange={(next) => set(field.id, next as string)}
           >
             {(choices?.[field.id] ?? []).map((option) => (
               <Select.Option key={option.value} value={option.value}>
@@ -466,13 +467,9 @@ export function FieldList({
               const option = field.options.find((candidate) => candidate.value === value);
               return option === undefined ? value : t(option.labelKey);
             }}
-            onValueChange={(next) => {
-              // Kumo reports `null` for a cleared selection, and `FieldValue`
-              // has no "unset" member: a capability's `run` reads this record as
-              // complete, so the field falls back to its declared default in the
-              // same way a cleared number field falls back to its minimum.
-              set(field.id, next ?? field.defaultValue);
-            }}
+            // Base UI types the value `string | null`, but a single select never reports
+            // `null`: an item press always carries the item's value.
+            onValueChange={(next) => set(field.id, next as string)}
           >
             {field.options.map((option) => (
               <Select.Option key={option.value} value={option.value}>
@@ -648,11 +645,9 @@ export function FieldList({
                 )}
               </span>
               <span className="min-w-0 truncate text-kumo-subtle">
-                {picked.length === 0
-                  ? t('dialog.field.noFile')
-                  : picked.length === 1
-                    ? (picked[0]?.name ?? '')
-                    : t('dialog.field.filesChosen', { count: picked.length })}
+                {picked.length > 1
+                  ? t('dialog.field.filesChosen', { count: picked.length })
+                  : (picked[0]?.name ?? t('dialog.field.noFile'))}
               </span>
               <input
                 id={inputId}
@@ -677,8 +672,7 @@ export function FieldList({
                 {picked.map((file, index) => {
                   const move = (to: number) => {
                     const next = [...picked];
-                    const [item] = next.splice(index, 1);
-                    if (item !== undefined) next.splice(to, 0, item);
+                    next.splice(to, 0, ...next.splice(index, 1));
                     set(field.id, next);
                   };
                   return (
@@ -726,7 +720,6 @@ export function FieldList({
                 })}
               </ol>
             ) : null}
-            {error === undefined ? null : <p className="text-[11px] text-kumo-danger">{error}</p>}
             {hint === undefined ? null : <p className="text-[11px] text-kumo-subtle">{hint}</p>}
           </div>
         );
@@ -757,7 +750,6 @@ export function FieldList({
                 </button>
               )}
             </div>
-            {error === undefined ? null : <p className="text-[11px] text-kumo-danger">{error}</p>}
             {hint === undefined ? null : <p className="text-[11px] text-kumo-subtle">{hint}</p>}
           </div>
         );
