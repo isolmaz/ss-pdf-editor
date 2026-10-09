@@ -4,21 +4,11 @@ import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
 // and the engine chunk it pulls in is what the ≤250 KiB budget is there to keep
 // out.
-import { readAnnotations } from 'pdf-core/ops/annotations';
-import { fieldValueText } from 'pdf-core/ops/form-value';
-import type { ProtectionState } from 'pdf-core/ops/security';
-import { type JsonValue, type SessionStore, type SessionTab, sha256Hex, workingPageCount } from 'pdf-model';
-import { checkDocumentLimits, createTranslator, detectDeviceTier, ToolError } from 'pdf-shared';
+
+import { type SessionStore, type SessionTab, workingPageCount } from 'pdf-model';
+import { checkDocumentLimits, createTranslator, detectDeviceTier } from 'pdf-shared';
 import { lazy, Suspense } from 'react';
 
-/**
- * The signature prompt rides the same boundary as the capability dialogs: it is needed
- * once per save of a signed document, and the first paint must not carry it.
- */
-const CloseDocumentDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.CloseDocumentDialog };
-});
 const SettingsDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.SettingsDialog };
@@ -49,7 +39,7 @@ import {
   useLocale,
   useTheme,
 } from 'pdf-ui/ui';
-import { PdfViewerPane, type ViewerApi } from 'pdf-ui/viewer';
+import { PdfViewerPane } from 'pdf-ui/viewer';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   buildCommands,
@@ -73,10 +63,8 @@ import {
   chooseOpacity,
   chooseTextColor,
   chooseThickness,
-  heldEngineValues,
   holdEngineValues,
   orphanSweepInFlight,
-  releaseEngineValues,
   useAnnotationStyle,
 } from './features/annotations/annotations-store';
 import {
@@ -91,50 +79,35 @@ import {
   clearNotice,
   hideLeftDock,
   hideRightDock,
-  isBusy,
   openLeftPanel,
   openRightPanel,
   selectLeftTab,
   selectRightTab,
   selectShape,
   selectTool,
-  setBusy,
   setInterfaceMode,
   showLeftDock,
   showNotice,
-  showNoticeIfEmpty,
   showRightDock,
   toggleLeftDock,
   toggleRightDock,
   useCore,
 } from './features/core/core-store';
-import {
-  dropHandle,
-  handleFor,
-  handleInUse,
-  handleReleased,
-  replaceHandle,
-  useDocumentHandle,
-} from './features/core/handles';
+import { handleReleased, replaceHandle, useDocumentHandle } from './features/core/handles';
 import { useCompactViewport } from './features/core/viewport';
 import { BatchDialogHost, ShortcutsDialogHost, StartDialogHost } from './features/dialogs/DialogSurfaces';
 import { createDialogOpeners, createDialogRuns } from './features/dialogs/dialog-actions';
-import {
-  dialogsStore,
-  dismissOperationDialog,
-  openBatchDialog,
-  useDialogs,
-} from './features/dialogs/dialogs-store';
+import { dismissOperationDialog, openBatchDialog, useDialogs } from './features/dialogs/dialogs-store';
 import { useStaleDialogDismissal } from './features/dialogs/use-dialog-dismissal';
 import { ContextMenuHost, ExportDialogHost } from './features/export/ExportSurfaces';
 import { createCurrentBytes, createExportChoice, showContextMenu } from './features/export/export-actions';
 import { openExportDialog } from './features/export/export-store';
-import { currentFacts, currentFactsError, useCurrentFacts } from './features/facts/facts-store';
+
+import { useCurrentFacts } from './features/facts/facts-store';
 import { PropertiesFacts } from './features/facts/PropertiesFacts';
 import { RedactionAuditView } from './features/facts/RedactionAuditView';
 import { SignatureWarningPrompt } from './features/facts/SignatureWarningPrompt';
-import { confirmSignature, useSignaturePending } from './features/facts/signature-prompt';
-import { trustStore, useStoredTrust } from './features/facts/trust-store';
+import { useStoredTrust } from './features/facts/trust-store';
 import { useDocumentFacts } from './features/facts/use-document-facts';
 import { FieldCandidateHost, FormsPanel, XfaBanner, XfaFormDialogHost } from './features/forms/FormsSurface';
 import {
@@ -145,8 +118,6 @@ import {
   startFormDetect as startFormDetectFor,
 } from './features/forms/form-actions';
 import {
-  existingInventoryRead,
-  existingInventoryUnknown,
   retryInspection,
   useCurrentForms,
   useExistingAnnotations,
@@ -155,13 +126,13 @@ import {
 import { useFormInventory } from './features/forms/use-form-inventory';
 import { useMarkTargets } from './features/marks/mark-targets';
 import { currentMarkTargets } from './features/marks/marks-store';
-import { editableOverlays, useVisibleMarks } from './features/marks/overlays';
+import { useVisibleMarks } from './features/marks/overlays';
 import { RedactionDock, RedactionMarkLayer } from './features/marks/RedactionSurfaces';
 import {
   refuseUnappliedRedactions as refuseUnappliedRedactionsFor,
   useRedactionMarks,
 } from './features/marks/redaction';
-import { erasedWordsOf, redactedWordsForgotten } from './features/marks/redaction-store';
+import { erasedWordsOf } from './features/marks/redaction-store';
 import { useMarkActions, useWriterActions } from './features/marks/use-mark-actions';
 import { MeasureOverlay } from './features/measure/MeasureOverlay';
 import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
@@ -184,7 +155,6 @@ import { useOpenActions } from './features/open/use-open-actions';
 import { usePageActions } from './features/pages/page-actions';
 import { persistDraft, saveDraft } from './features/persistence/draft-persist';
 import { forgetDraft } from './features/persistence/draft-vault';
-import { draftWrites } from './features/persistence/persistence-store';
 import { useDraftRecovery } from './features/persistence/use-draft-recovery';
 import { usePersistenceActions } from './features/persistence/use-persistence-actions';
 import { useDraftAutosave, useVaultChannel } from './features/persistence/use-vault-sync';
@@ -200,6 +170,12 @@ import {
 } from './features/results/ResultsSurfaces';
 import { createResultsActions } from './features/results/results-actions';
 import { openPrintDialog, openScanDialog, setProgress, useResults } from './features/results/results-store';
+import { discardDocument } from './features/save/close-actions';
+import { prepareOutput as prepareDocumentOutput } from './features/save/prepare-output';
+import { CloseDocumentHost } from './features/save/SaveSurfaces';
+import { saveDocument } from './features/save/save-actions';
+import { layoutChanged, setCurrentPage, useSave, viewerRef, zoomChanged } from './features/save/save-store';
+import { useSaveActions } from './features/save/use-save-actions';
 import { clearMarkSelection, selectMarks, useSelection } from './features/selection/selection-store';
 import { TextToolSurface } from './features/selection/TextToolSurface';
 import { clearTextEdit, useTextTool } from './features/selection/text-tool-store';
@@ -212,26 +188,8 @@ import {
   placeStamp as stampPlace,
   resizeStamp as stampResize,
 } from './features/stamps/stamp-actions';
-import { inspectProtection, verifySignatures } from './lazy-ops';
-import { engineValuesNotices, failureNotices, noticeLine, verificationNotices } from './notices';
-import {
-  type DocumentContext,
-  downloadFiles,
-  hasEngineEdits,
-  materializeBase,
-  type PageAction,
-  pendingOverlays,
-  verifyForWrite,
-  type WriteVerification,
-} from './operations';
-import { ensureWriteAccess } from './recent-handles';
-import {
-  appliedVersionBytes,
-  signatureWarning as decideSignatureWarning,
-  planSaveExecution,
-  type SaveExecutionPlan,
-  type SaveStepDescription,
-} from './save-plan';
+import { type DocumentContext, type PageAction, pendingOverlays } from './operations';
+import type { SaveStepDescription } from './save-plan';
 import { useShellShortcuts } from './useShortcuts';
 
 /**
@@ -306,11 +264,11 @@ export function App({ store }: AppProps) {
   useEffect(() => {
     tRef.current = t;
   }, [t]);
-  const saveLock = useRef(false);
-  const viewerApi = useRef<ViewerApi | null>(null);
   const cancelRef = useRef<AbortController | null>(null);
-  const [zoom, setZoomState] = useState(1);
-  const [currentPage, setCurrentPage] = useState(0);
+  /** The viewer's zoom and page, and the layout counter that renders the overlays again (`features/save/`). */
+  const zoom = useSave((state) => state.zoom);
+  const currentPage = useSave((state) => state.currentPage);
+  useSave((state) => state.layoutRevision);
   const notice = useCore((state) => state.notice);
   const busy = useCore((state) => state.busy);
   /**
@@ -319,8 +277,6 @@ export function App({ store }: AppProps) {
    * refused action must not look the same.
    */
   const refuseBusy = useCallback(() => showNotice(t('op.busy')), [t]);
-  const [closeRequest, setCloseRequest] = useState<string | null>(null);
-  const closeTrigger = useRef<HTMLElement | null>(null);
   const reading = useReading((state) => state.reading);
   const magnifierOn = useReading((state) => state.magnifierOn);
   /** Surface state: dialogs, palette, docks, page selection, progress, tools. */
@@ -408,11 +364,10 @@ export function App({ store }: AppProps) {
   const inspectionRevision = useForms((state) => state.inspectionRevision);
 
   /**
-   * The tools slices need a render when the viewer API arrives, and a ref does not
-   * re-render — so the API is mirrored into state while the shortcut layer keeps
-   * reading the ref (same object, two access patterns).
+   * The tools slices need a render when the viewer API arrives: the save store holds it, the
+   * shortcut layer and the handlers read `viewerRef.current`, and this is the render.
    */
-  const [viewer, setViewer] = useState<ViewerApi | null>(null);
+  const viewer = useSave((state) => state.viewer);
   const presentation = usePresentation(viewer);
   // The language the open document declares follows the viewer API, which is replaced with
   // every document; the reading pane reads it from the reading store.
@@ -544,7 +499,6 @@ export function App({ store }: AppProps) {
   const documentFacts = useCurrentFacts(activeTab);
   const canPrepareWrite = activeTab !== null && documentFacts !== null && formFields !== null && !busy;
   useDocumentFacts({ store, t, tab: activeTab, handle: activeHandle, revision: inspectionRevision });
-  const signaturePending = useSignaturePending();
 
   /** What the forms handlers need from the shell. */
   const formsHost = useMemo(
@@ -593,7 +547,7 @@ export function App({ store }: AppProps) {
   const annotationActions = useAnnotationActions({
     session: store,
     t,
-    viewer: viewerApi,
+    viewer: viewerRef,
     cancel: cancelRef,
     contextFor,
     setHandle,
@@ -608,508 +562,33 @@ export function App({ store }: AppProps) {
   useSettleNativeEditors(markMode, annotationActions);
 
   const prepareOutput = useCallback(
-    async (
-      tabId: string,
-      controller: AbortController,
-      executedSteps: SaveStepDescription[] = [],
-    ): Promise<{
-      tab: SessionTab;
-      handle: PdfDocumentHandle;
-      bytes: Uint8Array;
-      outputProtection: ProtectionState;
-      execution: SaveExecutionPlan;
-      outputHash: string;
-      verification: WriteVerification;
-    } | null> => {
-      const tab = store.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) return null;
-
-      if (
-        currentFacts(tab) === null ||
-        currentForms?.tabId !== tab.id ||
-        currentForms.version !== tab.working.id ||
-        formFields === null
-      ) {
-        showNotice(
-          t(
-            currentFactsError(tab) !== null || currentForms?.error
-              ? 'inspection.failed'
-              : 'inspection.loading',
-          ),
-        );
-        return null;
-      }
-
-      /**
-       * Redaction marks are **not** applied by materialization: they are intents the user
-       * has staged, and the destructive step is theirs to run. Refusing here is the whole
-       * point — the alternative is a Save that marks the tab clean while the delivered file
-       * still contains the content the user asked to remove. This is deliberately
-       * not automatic redaction; the user applies or clears the marks.
-       */
-      if (pendingOverlays(tab).redactions.length > 0) {
-        showNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
-        return null;
-      }
-
-      const base = await materializeBase(
-        contextFor(tab, handle),
-        { signal: controller.signal },
-        executedSteps,
-        editableOverlays(tab),
-      );
-      const outputProtection = await inspectProtection(base);
-
-      const execution = planSaveExecution({
-        tab,
-        engineDirty: hasEngineEdits(handle),
-        annotations: editableOverlays(tab).annotations,
-        baseBytes: base,
-        encryptedOutput: outputProtection.encrypted,
-        executedSteps,
-      });
-
-      // The opened file and the produced version are each judged against their own
-      // bytes (`signatureWarning`): an edit that already broke the opened file's
-      // signature is still announced, and a just-signed export is not.
-      const warning = await decideSignatureWarning(
-        base,
-        tab.source.master,
-        tab.working.produced?.bytes ?? null,
-        (bytes) => verifySignatures(bytes, controller.signal, { roots: trustStore.get().rootBytes }),
-        appliedVersionBytes(tab, store.snapshotsFor(tab.id)),
-      );
-      if (warning !== null && !(await confirmSignature(warning.signatures, warning.fate === 'appended', t))) {
-        return null;
-      }
-
-      if (
-        controller.signal.aborted ||
-        store.getSnapshot().tabs.find((item) => item.id === tab.id)?.working.id !== tab.working.id
-      ) {
-        return null;
-      }
-
-      /**
-       * The run's **own** steps identify the operation: the historical steps are
-       * already inside the live handle these bytes are compared against, so declaring
-       * them again would only weaken the promise the check makes. What the run itself
-       * materialised — engine values, annotations, measurements — is exactly the delta
-       * verification has to allow for.
-       */
-      const verification = await verifyForWrite(base, {
-        expectedPageCount: workingPageCount(tab),
-        sourceHandle: handle,
-        steps: executedSteps.map((step) => step.id),
-        expectedFormFields: formFields.map((field) => ({
-          name: field.name,
-          value: fieldValueText(field.value),
-        })),
-        signal: controller.signal,
-      });
-
-      const outputHash = await sha256Hex(base);
-      return {
-        tab,
-        handle,
-        bytes: base,
-        outputProtection,
-        execution,
-        outputHash,
-        verification,
-      };
-    },
-    [contextFor, currentForms, formFields, store, t],
+    (tabId: string, controller: AbortController, executedSteps: SaveStepDescription[] = []) =>
+      prepareDocumentOutput({ session: store, t, contextFor }, tabId, controller, executedSteps),
+    [contextFor, store, t],
   );
 
   const saveActive = useCallback(
-    async (tabId = store.active?.id): Promise<boolean> => {
-      const tab = store.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
-      if (tab === null) return false;
-      if (saveLock.current || isBusy()) {
-        refuseBusy();
-        return false;
-      }
-
-      /**
-       * Ownership is taken **before** anything can await. `showSaveFilePicker` is a
-       * promise the user can leave open for minutes, and a second Save (a shortcut, a
-       * second click) that starts while it is open would run a second preparation and a
-       * second write against the same document — two commits, one of them for bytes the
-       * other already replaced. The `finally` below releases it on every path,
-       * including cancellation.
-       */
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      saveLock.current = true;
-      clearNotice();
-      setBusy(true);
-      try {
-        let target = tab.source.handle;
-        // A handle read back from IndexedDB (a restored draft, a reopened recent entry) has
-        // no write access until the user grants it: asked here, the first await of the click.
-        if (target !== undefined && !(await ensureWriteAccess(target))) {
-          throw new ToolError('permission-denied', { engine: 'model' });
-        }
-        if (target === undefined && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
-          try {
-            const suggestedName = tab.name.toLowerCase().endsWith('.pdf') ? tab.name : `${tab.name}.pdf`;
-            target = await (
-              window as unknown as {
-                showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle>;
-              }
-            ).showSaveFilePicker({
-              suggestedName,
-              types: [{ description: t('open.pdfFilter'), accept: { 'application/pdf': ['.pdf'] } }],
-            });
-          } catch (error) {
-            if ((error as Error).name === 'AbortError') return false;
-            // continue with target = undefined for direct download fallback
-          }
-        }
-
-        /**
-         * The conflict baseline belongs to the file that is about to be written, not to
-         * the document that was opened. A newly picked destination is normally empty, and
-         * another file the user chose explicitly is theirs to overwrite — comparing either
-         * against the *source* hash rejected every Save As that was not a re-save of the
-         * original. The in-place path keeps the original/last-written protection.
-         */
-        const targetIsSource = target !== undefined && target === tab.source.handle;
-        const expected = targetIsSource
-          ? (tab.outputs.at(-1)?.writtenTo?.sha256 ?? tab.source.sha256)
-          : target === undefined
-            ? null
-            : await sha256Hex(new Uint8Array(await (await target.getFile()).arrayBuffer()));
-
-        const executedSteps: SaveStepDescription[] = [];
-        const prepared = await prepareOutput(tab.id, controller, executedSteps);
-        if (prepared === null) return false;
-
-        const { tab: preparedTab, bytes, outputProtection, execution, outputHash, verification } = prepared;
-
-        if (target !== undefined) {
-          if (expected !== null) {
-            const actual = new Uint8Array(await (await target.getFile()).arrayBuffer());
-            if ((await sha256Hex(actual)) !== expected) throw new ToolError('conflict', { engine: 'model' });
-          }
-
-          if (controller.signal.aborted) return false;
-          const writable = await target.createWritable();
-          try {
-            if (controller.signal.aborted) throw new ToolError('aborted', { engine: 'model' });
-            await writable.write(bytes as unknown as FileSystemWriteChunkType);
-            if (controller.signal.aborted) throw new ToolError('aborted', { engine: 'model' });
-            await writable.close();
-          } catch (error) {
-            await writable.abort().catch(() => undefined);
-            throw error;
-          }
-          // Only now is this handle the document's own file: attaching it before the write
-          // succeeded would make the next Save write in place over a file this one never
-          // managed to commit.
-          store.setHandle(preparedTab.id, target);
-        } else {
-          // Direct download fallback when File System Access is not available
-          const fileName = tab.name.toLowerCase().endsWith('.pdf') ? tab.name : `${tab.name}.pdf`;
-          downloadFiles([{ name: fileName, bytes, mime: 'application/pdf' }]);
-        }
-
-        store.addOutput(preparedTab.id, {
-          id: crypto.randomUUID(),
-          // The version the *preparation* produced, not the one captured before the
-          // picker: an edit made while the picker was open must not be recorded as saved.
-          fromWorkingVersion: preparedTab.working.id,
-          fromState: preparedTab.working.stateId,
-          encrypted: outputProtection.encrypted,
-          steps: execution.steps.map((step) => `${step.engine}:${step.id}`),
-          appliedSteps: execution.appliedSteps.map((step) => `${step.engine}:${step.id}`),
-          incremental: execution.plan.incremental,
-          // The fact table itself, not a summary of it: the notice below says
-          // what the save established, and the output keeps the record a later surface
-          // can read back.
-          verification,
-          writtenTo: { fileName: preparedTab.name, savedAt: Date.now(), sha256: outputHash },
-        });
-        showNotice(
-          noticeLine(
-            [{ key: 'save.done', params: { name: preparedTab.name } }, ...verificationNotices(verification)],
-            t,
-          ),
-        );
-        return true;
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-        return false;
-      } finally {
-        if (cancelRef.current === controller) cancelRef.current = null;
-        saveLock.current = false;
-        setBusy(false);
-      }
-    },
+    (tabId = store.active?.id): Promise<boolean> =>
+      saveDocument({ session: store, t, cancelRef, refuseBusy, prepareOutput }, tabId),
     [prepareOutput, refuseBusy, store, t],
   );
 
   const discardTab = useCallback(
-    (id: string) => {
-      if (store.active?.id === id) cancelRef.current?.abort();
-      const abandoned = dropHandle(id);
-      if (abandoned !== undefined) {
-        // Closing a tab is not a place where a failure may be swallowed, and it
-        // is not a place where one may be thrown at the user either: the document is
-        // gone from the session, so the release is reported and the close proceeds.
-        void abandoned.destroy().catch(() => showNotice(tRef.current('notice.engineReleaseFailed')));
-      }
-      store.closeTab(id);
-      releaseEngineValues(id);
-      redactedWordsForgotten(id);
-      draftWrites.current = draftWrites.current
-        .then(async () => {
-          // The reference graph is read fresh and *whole*: the previous version derived it
-          // from `readDrafts()`, which reports an unreadable or unlistable vault as “no
-          // drafts” — the exact input that makes a shared source blob look unreferenced.
-          // An incomplete inventory deletes nothing and says so.
-          const removed = await forgetTabDraft(id);
-          if (removed === null) showNotice(tRef.current('vault.incomplete'));
-        })
-        .catch(() => showNotice(tRef.current('error.write-failed.message')));
-    },
+    (id: string) => discardDocument({ session: store, cancelRef, translator: tRef, forgetTabDraft }, id),
     [store, forgetTabDraft],
   );
 
-  const closeTab = useCallback(
-    (id: string) => {
-      if (isBusy() || cancelRef.current !== null || dialogsStore.get().dialogSpec !== null) {
-        refuseBusy();
-        return;
-      }
-      const tab = store.getSnapshot().tabs.find((item) => item.id === id);
-      if (tab === undefined) return;
-      const handle = handleFor(id);
-      if (tab.dirty || (handle !== undefined && hasEngineEdits(handle))) {
-        closeTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        store.setActive(id);
-        clearNotice();
-        setCloseRequest(id);
-        return;
-      }
-      discardTab(id);
-    },
-    [discardTab, refuseBusy, store],
-  );
-
-  const cancelClose = useCallback(() => {
-    setCloseRequest(null);
-    requestAnimationFrame(() => {
-      const target = closeTrigger.current;
-      if (target?.isConnected) target.focus();
-      else
-        document.querySelector<HTMLElement>('[data-document-tab][aria-current="true"], main button')?.focus();
+  /** Closing, exporting and the viewer's reports (`features/save/`). */
+  const { closeTab, exportActive, checkpointEngineValues, markActiveDirty, handleViewerReady } =
+    useSaveActions({
+      session: store,
+      t,
+      cancelRef,
+      refuseBusy,
+      prepareOutput,
+      discardTab,
+      takeEngineAnnotations,
     });
-  }, []);
-
-  // The viewer hands back its imperative API once per document; keep the callback
-  // identity stable so the viewer is not torn down on every render.
-  /**
-   * Marks the engine's own annotation editor produced are taken over here.
-   *
-   * The engine holds them in its storage, where the next `saveDocument()` would
-   * write them. The app needs them in its own list first — the journal, the comment
-   * panel and the retag step all read that list — so each captured entry becomes a
-   * mark and its storage entry is removed. Leaving it would make the same
-   * annotation arrive twice: once from the storage and once from the writer.
-   */
-  const handleViewerReady = useCallback(
-    (api: ViewerApi | null) => {
-      viewerApi.current = api;
-      setViewer(api);
-      if (api === null) {
-        existingInventoryUnknown();
-        return;
-      }
-      handleInUse(api.document);
-      setZoomState(api.getZoom());
-      takeEngineAnnotations(api);
-      // Every annotation the file already carries, listed once per document so the
-      // comment panel can show the document's own notes beside the new marks.
-      const controller = new AbortController();
-      const tab = store.active;
-      const bytesKey = tab === null ? null : (tab.working.produced?.id ?? 'source');
-      void readAnnotations(api.document, { signal: controller.signal })
-        .then((found) => {
-          // Keyed to the bytes the read describes: a read that lands after a byte
-          // operation replaced that version describes a document nobody is looking at,
-          // and it is dropped rather than shown.
-          if (viewerApi.current !== api || tab === null || bytesKey === null) return;
-          existingInventoryRead({ tabId: tab.id, bytesKey, annotations: found });
-        })
-        .catch((error) => {
-          if (viewerApi.current !== api) return;
-          // A failed read is unknown, not an empty document. Keep saved-mark edits
-          // unavailable rather than normalizing against an invented empty inventory.
-          existingInventoryUnknown();
-          const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'pdfjs' });
-          showNotice(t(failure.messageKey));
-        });
-      // A draft that carried engine-side edits applies them as soon as its document is
-      // the one on screen; the tab stays dirty until a real save writes them.
-      const id = store.active?.id;
-      if (id === undefined) return;
-      const pending = heldEngineValues(id) ?? pendingOverlays(store.active).engineValues;
-      if (pending === undefined) return;
-      void api
-        .applyEngineValues(pending)
-        .then((applied) => {
-          if (viewerApi.current !== api) return;
-          // The staged copy goes only once the engine has taken it: a rejection
-          // must leave the entries where a retry can still reach them, and a restore
-          // that applied **nothing** is reported with its own count instead of the
-          // silence the previous version kept for exactly that case.
-          releaseEngineValues(id);
-          takeEngineAnnotations(api);
-          const restoration = noticeLine(
-            engineValuesNotices({ applied, carried: pending.entries.length, dropped: pending.dropped }),
-            t,
-          );
-          // A successful byte edit restores the carried form state as part of its
-          // redraw. Keep that operation's result; incomplete restoration still wins.
-          if (applied < pending.entries.length || pending.dropped > 0) showNotice(restoration);
-          else showNoticeIfEmpty(restoration);
-        })
-        .catch((error) => {
-          if (viewerApi.current !== api) return;
-          // The delta stays staged: it is the only copy of edits the document cannot see.
-          showNotice(noticeLine(failureNotices(error, 'error.write-failed.message'), t));
-        });
-    },
-    [store, t, takeEngineAnnotations],
-  );
-  const handleScaleChange = useCallback((scale: number) => setZoomState(scale), []);
-  /**
-   * The overlays measure the pages when they render, and they live inside the viewer's
-   * scroll content — so a scroll needs nothing, but a layout change (zoom, fit-width on
-   * a resize, a spread change, a rewritten document) needs one render. The pane reports
-   * those, and this counter is the render.
-   */
-  const [, setLayoutRevision] = useState(0);
-  const handleLayoutChange = useCallback(() => setLayoutRevision((value) => value + 1), []);
-
-  /**
-   * Fold the engine's live storage — the form values that were typed and the native
-   * entries it still holds — into the session's own overlay state.
-   *
-   * This is the checkpoint every gesture that will later be *undone through the
-   * journal* depends on. An overlay step restores the mark state of its own moment,
-   * and the engine's storage is not part of any of it: without this, typing into a
-   * form field and then undoing a mark edit would reopen the bytes from before the
-   * typing and restore the older overlay state — losing a value the user can see.
-   * Capturing first puts the value in the step's own `before`, where undo restores it
-   * and the viewer re-applies it.
-   *
-   * Returns whether anything changed, so a caller that only needs the fresh state can
-   * tell a real checkpoint from a no-op without reading the store again.
-   */
-  const checkpointEngineValues = useCallback(async (): Promise<boolean> => {
-    const api = viewerApi.current;
-    const tab = store.active;
-    if (api === null || tab === null || api.document !== handleFor(tab.id)) return false;
-    const engineValues = await api.captureEngineValues();
-    if (viewerApi.current !== api) return false;
-    const latest = store.getSnapshot().tabs.find((item) => item.id === tab.id);
-    if (
-      latest === undefined ||
-      store.active?.id !== tab.id ||
-      handleFor(tab.id) !== api.document ||
-      latest.working.produced?.id !== tab.working.produced?.id
-    )
-      return false;
-    const overlays = pendingOverlays(latest);
-    const previous = overlays.engineValues ?? { entries: [], dropped: 0 };
-    if (JSON.stringify(previous) === JSON.stringify(engineValues)) return false;
-    // Each keystroke in a form field lands here; a burst of them is one undo step.
-    store.setOverlays(tab.id, { ...overlays, engineValues } as unknown as JsonValue, 'ann.engineEdit', {
-      coalesceWithinMs: 1500,
-    });
-    return true;
-  }, [store]);
-
-  /**
-   * A form value or annotation changed in the engine: the tab is dirty until a write
-   * succeeds. A change that came from the annotation editor is taken over as a mark
-   * at the same moment, because the engine holds it as an editable object and the
-   * app needs the geometry in its own model before the next save.
-   */
-  const markActiveDirty = useCallback(() => {
-    const api = viewerApi.current;
-    const tab = store.active;
-    if (api === null || tab === null || api.document !== handleFor(tab.id)) return;
-    takeEngineAnnotations(api);
-    void checkpointEngineValues().catch((error) => {
-      const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'pdfjs' });
-      showNotice(t(failure.messageKey));
-    });
-  }, [checkpointEngineValues, store, t, takeEngineAnnotations]);
-
-  /**
-   * Export: writes the **current version** as a new file. Without a
-   * File System Access handle this is the only way to keep work — and it must be
-   * *this* file, not the bytes the user opened.
-   */
-  const exportActive = useCallback(
-    async (tabId = store.active?.id) => {
-      // Read the tab at call time like every other entry point: the export must write
-      // the version the user is looking at, not the one the rendering control saw.
-      const tab = store.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
-      if (tab === null) return;
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      try {
-        const prepared = await prepareOutput(tab.id, controller);
-        if (prepared === null) return;
-
-        const { bytes } = prepared;
-        const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = tab.name;
-        anchor.click();
-        // Blob URLs are cleaned up right after the operation.
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
-        // The browser-matrix contract: without an in-place handle the user
-        // must know why this writes a *new* file instead of saving the one they opened.
-        // The verification table travels with it either way: an export is a
-        // write, and what the checks established belongs on the same line as the news
-        // that it happened.
-        showNotice(
-          noticeLine(
-            [
-              {
-                key: tab.source.handle === undefined ? 'export.explained' : 'save.done',
-                params: { name: tab.name },
-              },
-              ...verificationNotices(prepared.verification),
-            ],
-            t,
-          ),
-        );
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        if (cancelRef.current === controller) cancelRef.current = null;
-        setBusy(false);
-      }
-    },
-    [prepareOutput, refuseBusy, store, t],
-  );
 
   const toggleFullscreen = useCallback(async () => {
     if (document.fullscreenElement === null) await document.documentElement.requestFullscreen();
@@ -1344,8 +823,8 @@ export function App({ store }: AppProps) {
         showShortcuts,
         openSettings: () => setSettingsOpen(true),
         pageAction: runPageAction,
-        setZoom: (value) => viewerApi.current?.setZoom(value),
-        setSpread: (mode) => viewerApi.current?.setSpreadMode(mode),
+        setZoom: (value) => viewerRef.current?.setZoom(value),
+        setSpread: (mode) => viewerRef.current?.setSpreadMode(mode),
         toggleFullscreen: () => void toggleFullscreen(),
         toggleReading,
         toggleMagnifier,
@@ -1473,14 +952,14 @@ export function App({ store }: AppProps) {
         // one: the key is not swallowed to mean nothing.
         deleteSelection: deleteMarkSelection,
         print: openPrint,
-        zoomIn: () => viewerApi.current?.setZoom(Math.min(4, zoom + 0.25)),
-        zoomOut: () => viewerApi.current?.setZoom(Math.max(0.25, zoom - 0.25)),
-        zoomReset: () => viewerApi.current?.setZoom(1),
-        fitWidth: () => viewerApi.current?.setZoom('page-width'),
-        nextPage: () => viewerApi.current?.goToPage(currentPage + 1),
-        previousPage: () => viewerApi.current?.goToPage(currentPage - 1),
-        firstPage: () => viewerApi.current?.goToPage(0),
-        lastPage: () => viewerApi.current?.goToPage(Math.max(0, pageCount - 1)),
+        zoomIn: () => viewerRef.current?.setZoom(Math.min(4, zoom + 0.25)),
+        zoomOut: () => viewerRef.current?.setZoom(Math.max(0.25, zoom - 0.25)),
+        zoomReset: () => viewerRef.current?.setZoom(1),
+        fitWidth: () => viewerRef.current?.setZoom('page-width'),
+        nextPage: () => viewerRef.current?.goToPage(currentPage + 1),
+        previousPage: () => viewerRef.current?.goToPage(currentPage - 1),
+        firstPage: () => viewerRef.current?.goToPage(0),
+        lastPage: () => viewerRef.current?.goToPage(Math.max(0, pageCount - 1)),
         undo: () => stepHistoryNow('undo'),
         redo: () => stepHistoryNow('redo'),
         palette: () => {
@@ -1584,7 +1063,7 @@ export function App({ store }: AppProps) {
           canExport={canPrepareWrite}
           onExport={() => void exportActive()}
           onExportOptions={() => openExportDialog()}
-          onSearch={() => viewerApi.current?.openFind()}
+          onSearch={() => viewerRef.current?.openFind()}
           onPalette={() => setPaletteOpen(true)}
           menu={
             <MenuBar t={t} commands={mode === 'simple' ? visibleCommands(commands, 'simple') : commands} />
@@ -1709,10 +1188,10 @@ export function App({ store }: AppProps) {
                   editing={canEdit}
                   version={activeTab.working.stateId}
                   marks={visibleMarks.annotations}
-                  onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                  onGoToPage={(pageIndex) => viewerRef.current?.goToPage(pageIndex)}
                   onNotice={showNotice}
-                  onHighlightQuery={(query) => viewerApi.current?.find(query)}
-                  onLayersChanged={() => void viewerApi.current?.refreshOptionalContent()}
+                  onHighlightQuery={(query) => viewerRef.current?.find(query)}
+                  onLayersChanged={() => void viewerRef.current?.refreshOptionalContent()}
                   onExtract={() => openDialog('extract-pages')}
                   onEditOutline={() => openDialog('outline-edit')}
                   onWriteLayers={(request) => void writeLayers(request)}
@@ -1761,9 +1240,9 @@ export function App({ store }: AppProps) {
                 onReady={handleViewerReady}
                 onDocumentReleased={handleDocumentReleased}
                 onCurrentPageChange={setCurrentPage}
-                onScaleChange={handleScaleChange}
+                onScaleChange={zoomChanged}
                 onModifiedChange={markActiveDirty}
-                onLayoutChange={handleLayoutChange}
+                onLayoutChange={layoutChanged}
                 onReplace={canEdit ? (query) => openDialog('find-replace', { find: query }) : undefined}
                 // The mark layers live inside the viewer's scroll content, so the browser
                 // scrolls them with the pages; outside it they were re-placed only on the
@@ -1963,7 +1442,7 @@ export function App({ store }: AppProps) {
                           selectMarks([markTargetKey('annotation', mark.id, mark.pageIndex)]);
                         }
                       }}
-                      onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                      onGoToPage={(pageIndex) => viewerRef.current?.goToPage(pageIndex)}
                       onEdit={(id, contents) =>
                         setAnnotations((marks) =>
                           marks.map((mark) => (mark.id === id ? { ...mark, contents } : mark)),
@@ -2012,7 +1491,7 @@ export function App({ store }: AppProps) {
                         // The shell's one route from the session to bytes: a mark drawn a
                         // moment ago is part of what is compared.
                         readDocument={() => currentBytes({ signal: new AbortController().signal })}
-                        onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                        onGoToPage={(pageIndex) => viewerRef.current?.goToPage(pageIndex)}
                         onNotice={showNotice}
                         disabled={!canEdit}
                       />
@@ -2025,7 +1504,7 @@ export function App({ store }: AppProps) {
                       language={locale}
                       currentPage={currentPage}
                       canEdit={canEdit}
-                      onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                      onGoToPage={(pageIndex) => viewerRef.current?.goToPage(pageIndex)}
                       onWritten={resultsActions.applyAccessibility}
                     />
                   ) : rightTab === 'pdfa' ? (
@@ -2040,7 +1519,7 @@ export function App({ store }: AppProps) {
                       t={t}
                       tab={activeTab}
                       canEdit={canEdit}
-                      goToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                      goToPage={(pageIndex) => viewerRef.current?.goToPage(pageIndex)}
                       onDetect={() => void startFormDetect()}
                       onApply={applyFormDetect}
                       onFill={(name, value) => void fillField(name, value)}
@@ -2061,7 +1540,7 @@ export function App({ store }: AppProps) {
               t={t}
               locale={locale}
               viewer={viewer}
-              viewerRef={viewerApi}
+              viewerRef={viewerRef}
               pageNumber={currentPage}
             />
             <PrintDialogHost t={t} viewer={viewer} onProduced={resultsActions.printProduced} />
@@ -2102,9 +1581,9 @@ export function App({ store }: AppProps) {
               t={t}
               currentPage={currentPage}
               pageCount={pageCount}
-              onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+              onGoToPage={(pageIndex) => viewerRef.current?.goToPage(pageIndex)}
               zoom={zoom}
-              onZoomChange={(next) => viewerApi.current?.setZoom(next)}
+              onZoomChange={(next) => viewerRef.current?.setZoom(next)}
               {...(canEdit ? { onRotate: () => runPageAction({ kind: 'rotate', direction: 'right' }) } : {})}
               onToggleFullscreen={() => presentation.toggle()}
             />
@@ -2157,37 +1636,14 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       ) : null}
-      {closeRequest !== null && !signaturePending ? (
-        <Suspense fallback={null}>
-          <CloseDocumentDialog
-            t={t}
-            name={session.tabs.find((tab) => tab.id === closeRequest)?.name ?? ''}
-            canSave={session.tabs.find((tab) => tab.id === closeRequest)?.source.handle !== undefined}
-            busy={busy}
-            notice={notice}
-            onCancel={() => {
-              cancelRef.current?.abort();
-              cancelClose();
-            }}
-            onDiscard={() => {
-              if (!isBusy()) {
-                discardTab(closeRequest);
-                cancelClose();
-              }
-            }}
-            onExport={() => void exportActive(closeRequest)}
-            onSave={() =>
-              void saveActive(closeRequest).then((saved) => {
-                const tab = store.getSnapshot().tabs.find((item) => item.id === closeRequest);
-                if (saved && tab !== undefined && !tab.dirty) {
-                  discardTab(closeRequest);
-                  cancelClose();
-                }
-              })
-            }
-          />
-        </Suspense>
-      ) : null}
+      <CloseDocumentHost
+        t={t}
+        session={store}
+        cancelRef={cancelRef}
+        discardTab={discardTab}
+        saveActive={saveActive}
+        exportActive={exportActive}
+      />
       <XfaFormDialogHost t={t} onSave={saveXfaForm} />
       <SignatureDialogHost t={t} canRemember={activeTab?.sensitive !== true} />
       <ImagePickerInput t={t} />
@@ -2195,7 +1651,7 @@ export function App({ store }: AppProps) {
       <ContextMenuHost
         t={t}
         canEdit={canEdit}
-        viewer={viewerApi}
+        viewer={viewerRef}
         setRedactionMarks={setRedactionMarks}
         onPageAction={runPageAction}
       />
