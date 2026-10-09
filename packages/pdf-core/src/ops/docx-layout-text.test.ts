@@ -71,6 +71,38 @@ const handMade = (overrides: Partial<TextBox> = {}): TextBox => ({
   ...overrides,
 });
 
+/** A hand-made 6 pt wide, 12 pt high character on the baseline 99. */
+const handChar = (c: string, x: number, size = 10): LayoutChar => ({
+  c,
+  box: [x, 90, x + 6, 102],
+  baseline: 99,
+  size,
+  font: 'Arial',
+  bold: false,
+  italic: false,
+  mono: false,
+  serif: false,
+  color: 0,
+});
+
+/** A page with one hand-made line of `chars`. */
+const pageOfChars = (chars: readonly LayoutChar[]): PageLayout => {
+  const right = Math.max(...chars.map((char) => char.box[2]));
+  return {
+    width: WIDTH,
+    height: PAGE,
+    blocks: [
+      {
+        kind: 'text',
+        box: [40, 90, right, 102],
+        lines: [{ box: [40, 90, right, 102], dir: [1, 0], chars }],
+      },
+    ],
+    rulings: [],
+    marks: [],
+  };
+};
+
 describe('grouping lines into text boxes', () => {
   it('keeps the columns of a two-column page apart and reads them column by column', async () => {
     const left = ['Birinci sütunun', 'ilk paragraf burada', 'üç satir olur'];
@@ -464,6 +496,72 @@ describe('grouping lines into text boxes', () => {
     expect(textOf(textBoxes(tight, [])[0] as TextBox)).toEqual(['abcd']);
   });
 
+  it('writes one space for a run of space characters between two words', () => {
+    const chars = [handChar('a', 40), handChar(' ', 46), handChar(' ', 52), handChar('b', 58)];
+    const boxes = textBoxes(pageOfChars(chars), []);
+    expect(boxes.map(textOf)).toEqual([['a b']]);
+    expect(wordsInBoxes(boxes)).toBe(2);
+  });
+
+  it('sizes a line by the larger size when two sizes share it equally', () => {
+    const chars = [
+      handChar('a', 40, 10),
+      handChar('b', 46, 10),
+      handChar('c', 52, 12),
+      handChar('d', 58, 12),
+    ];
+    const [box] = textBoxes(pageOfChars(chars), []) as [TextBox];
+    // A line is at least 1.15 × its size high: 13.8 for 12 pt (11.5 for 10 pt, under the 12 pt the glyph boxes span).
+    expect(box.paragraphs[0]?.lineHeight).toBeCloseTo(13.8, 5);
+    // The baseline (99) sits four fifths down that line.
+    expect(box.box[1]).toBeCloseTo(99 - 0.8 * 13.8, 5);
+  });
+
+  it('stacks centred paragraphs of one middle into one box, a following paragraph of several lines at its own pitch', async () => {
+    const title = 'Rapor ozeti';
+    const lines = ['kisa', 'biraz daha uzun satir'];
+    const boxes = textBoxes(
+      await layoutOf(
+        [
+          line('courier', 12, centredAt(200, 12, title.length), 440, title),
+          ...lines.map((text, at) =>
+            line('courier', 10, centredAt(200, 10, text.length), 426 - at * 14, text),
+          ),
+        ].join('\n'),
+      ),
+      [],
+    );
+    expect(boxes).toHaveLength(1);
+    const [box] = boxes as [TextBox];
+    expect(box.paragraphs.map((paragraph) => paragraph.align)).toEqual(['center', 'center']);
+    expect(textOf(box)).toEqual([title, lines.join('\n')]);
+    // The single line before the paragraph shares its 14 pt pitch.
+    for (const paragraph of box.paragraphs) expect(paragraph.lineHeight).toBeCloseTo(14, 1);
+  });
+
+  it('stacks right-aligned paragraphs of one right edge into one box', async () => {
+    const first = ['sag kenara yasli uzun satir', 'kisa'];
+    const second = ['ikinci paragraf satiri', 'son'];
+    const boxes = textBoxes(
+      await layoutOf(
+        [
+          ...first.map((text, at) =>
+            line('courier', 12, endingAt(360, 12, text.length), 440 - at * 14, text),
+          ),
+          ...second.map((text, at) =>
+            line('courier', 10, endingAt(360, 10, text.length), 412 - at * 14, text),
+          ),
+        ].join('\n'),
+      ),
+      [],
+    );
+    expect(boxes).toHaveLength(1);
+    const [box] = boxes as [TextBox];
+    expect(textOf(box)).toEqual([first.join('\n'), second.join('\n')]);
+    expect(box.paragraphs.map((paragraph) => paragraph.align)).toEqual(['right', 'right']);
+    for (const paragraph of box.paragraphs) expect(paragraph.lineHeight).toBeCloseTo(14, 1);
+  });
+
   it('names a family Word does not know by the class its font flags say', () => {
     const char = (c: string, x: number, overrides: Partial<LayoutChar>): LayoutChar => ({
       c,
@@ -722,6 +820,22 @@ describe('text box XML', () => {
     expect(xmlText.match(/<w:br\/>/g)).toHaveLength(2);
   });
 
+  it('writes an italic run as italic after its weight, in the drawing and the fallback, and others without', () => {
+    const box = handMade({
+      paragraphs: [
+        {
+          align: 'left',
+          lineHeight: 12.5,
+          lines: [{ runs: [run('egik', { bold: true, italic: true }), run(' dik')] }],
+        },
+      ],
+    });
+    const xmlText = textBoxXml(box, 1, registry());
+    expect(xmlText).toContain('<w:b/><w:bCs/><w:i/><w:iCs/><w:color w:val="000000"/>');
+    expect(xmlText.match(/<w:i\/><w:iCs\/>/g)).toHaveLength(2);
+    expect(xmlText.match(/<w:b\/>/g)).toHaveLength(2);
+  });
+
   it('writes an underlined run with a single underline after its size, in the text colour, and others without', () => {
     const box = handMade({
       paragraphs: [
@@ -934,6 +1048,16 @@ describe('words written against words read back', () => {
     expect(count(text)).toBe(wordsInBoxes(boxes));
     expect(wordsInBoxes(boxes)).toBe(3 + 8 + 5 + 2 + 3 + 3);
     expect(shared.links.map((link) => link.uri)).toEqual(['https://example.com']);
+  });
+
+  it('counts no word for a paragraph of blanks', () => {
+    const box = handMade({
+      paragraphs: [
+        { align: 'left', lineHeight: 12, lines: [{ runs: [run('  ')] }, { runs: [run(' ')] }] },
+        { align: 'left', lineHeight: 12, lines: [{ runs: [run('iki kelime')] }] },
+      ],
+    });
+    expect(wordsInBoxes([box])).toBe(2);
   });
 
   it('counts a hand-made box of several paragraphs the same way', async () => {

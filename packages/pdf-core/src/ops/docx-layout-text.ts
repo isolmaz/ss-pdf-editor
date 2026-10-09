@@ -140,7 +140,7 @@ function dominantSize(chars: readonly LayoutChar[]): number {
     const key = Math.round(char.size * 2) / 2;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  let best = chars[0]?.size ?? 0;
+  let best = (chars[0] as LayoutChar).size;
   let bestCount = 0;
   for (const [size, count] of counts) {
     if (count > bestCount || (count === bestCount && size > best)) {
@@ -398,9 +398,10 @@ function rowOf(
     y1 = Math.max(y1, char.box[3]);
   }
   const size = dominantSize(solid);
-  const sample = solid.find((char) => Math.round(char.size * 2) / 2 === Math.round(size * 2) / 2) ?? solid[0];
+  // `dominantSize` returns one of the characters' sizes to 0.5 pt, so one of them has it.
+  const sample = solid.find((char) => Math.round(char.size * 2) / 2 === size) as LayoutChar;
   // The origin is the baseline of upright text; a rotated line's is across, set by `rotated`.
-  const baseline = (sample as LayoutChar).baseline;
+  const baseline = sample.baseline;
   const glyphs = solid.reduce((sum, char) => sum + char.box[2] - char.box[0], 0);
   const spaces = text.split(' ').length - 1;
   const natural = direction === 'right' ? (glyphs + spaces * SPACE * size) / (x1 - x0) : 1;
@@ -626,11 +627,11 @@ function stack(group: Para[], next: Para): boolean {
     if (next.fixed) {
       // A paragraph that goes on at its own pitch: the single line before it shares that pitch.
       previousHeight = next.lineHeight;
-      if (!within(previousHeight, previous.rows[0]?.size ?? 0)) return false;
+      if (!within(previousHeight, (previous.rows[0] as Row).size)) return false;
     } else {
       previousHeight = gap;
       nextHeight = gap;
-      if (!within(gap, previous.rows[0]?.size ?? 0) || !within(gap, nextFirst.size)) return false;
+      if (!within(gap, (previous.rows[0] as Row).size) || !within(gap, nextFirst.size)) return false;
     }
   } else if (!next.fixed) {
     nextHeight = (gap - (1 - F) * previousHeight) / F;
@@ -1071,7 +1072,9 @@ function lineRunsXml(
   const fitted = fitLine(all, scale, origin);
   return {
     xml: all
-      .map((run, at) => runXml(run, fitted.spacing[at], fitted.tabs[at] ?? [], scale, registry))
+      .map((run, at) =>
+        runXml(run, fitted.spacing[at], fitted.tabs[at] as readonly (TabStop | undefined)[], scale, registry),
+      )
       .join(''),
     tabs: fitted.tabs.flat().filter((tab): tab is TabStop => tab !== undefined),
   };
