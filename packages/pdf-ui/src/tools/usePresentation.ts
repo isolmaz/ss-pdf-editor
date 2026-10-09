@@ -165,19 +165,25 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
      * Entering full screen resizes the container, and pdf.js re-applies a
      * `page-width` fit only when the value is set again (its own resize observer
      * just updates the container height). Re-apply the fit — unless the reader
-     * zoomed away from it in the meantime, whose scale is theirs to keep.
+     * zoomed away from it in the meantime, whose scale is theirs to keep — and
+     * keep the page on screen aligned either way.
      */
     let fitted = viewerRef.current?.getZoom() ?? null;
     const refit = () => {
       const current = viewerRef.current;
       if (current === null || fitted === null) return;
-      if (Math.abs(current.getZoom() - fitted) > 1e-6) return;
       const dom = findViewerDom(current);
       const shown = dom === null ? 0 : pageIndexAtTop(dom);
-      current.setZoom('page-width');
-      fitted = current.getZoom();
+      if (Math.abs(current.getZoom() - fitted) <= 1e-6) {
+        current.setZoom('page-width');
+        fitted = current.getZoom();
+      }
       // pdf.js keeps the old scroll fraction through a rescale, which leaves the
       // page cut off at the top; "the page fills the screen" needs it aligned.
+      // The page is aligned whoever rescaled: the pane re-applies a width fit on
+      // its own when the container's width changes, and when entering full screen
+      // lands before this observer's first run, that rescale (which only keeps the
+      // old scroll fraction) is what changed the zoom — leaving the page cut off.
       current.goToPage(shown);
     };
     const sizes = new ResizeObserver(refit);
