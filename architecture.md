@@ -405,7 +405,15 @@ had to stay green. The moves, and the defects they fixed on the way:
   - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
     paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
-    rule between two cells merges them). Tables without rules come from runs of rows that
+    rule between two cells merges them, unless that would make a region that runs into
+    a cell already placed, which then stays single). A rule group whose outer border is not
+    drawn is completed with an undrawn grid line at that side, but only along an axis that
+    already has two lines of its own, at a side that two rules reach, and when the strip holds
+    a line of text that lies wholly in it and is a quarter as deep as the cell next to it, or
+    is half as deep: a divider crossed by one rule, a heading between two rules, or rules that
+    overshoot by a few points are not a lattice. The Word table carries no table-wide borders
+    (`tblBorders` all `nil`); each cell gets `tcBorders` for the sides a rule covers by 75 % or
+    more, so the undrawn edges stay blank. Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
