@@ -70,6 +70,10 @@ export const officePart = {
     'These pages hold no readable text (they look scanned); run OCR first for editable text: {pages}.',
   'op.note.exportOffice.ocrPages':
     'These pages are pictures, so they were read with OCR; their text is editable text boxes in Word and the rest sits behind it as pictures: {pages}.',
+  'op.note.exportOffice.ocrMixedPages':
+    'These pages have real text next to a scanned picture; the real text was kept as it is, and the words inside the picture were read with OCR into editable text boxes: {pages}.',
+  'op.note.exportOffice.ocrLayerRejected':
+    'The hidden text layer of these pages was not reliable (unreadable characters or turned lines), so the pages were read again with OCR instead of using the layer: {pages}.',
   'op.note.exportOffice.ocrFont':
     'The scanned text is set in {families}, the typeface the scan appears to use, and the font is embedded in the document.',
   'op.note.exportOffice.ocrLowConfidence':

@@ -30,10 +30,11 @@ import {
   zipped,
 } from './docx-drawing';
 import { type EmbeddedFonts, embedFonts } from './docx-fonts';
+import { isMixedPage, isScanPage, visibleBoxes } from './docx-layout-mixed';
 import {
   type FlaggedWord,
-  isScanPage,
   type OcrOptions,
+  readPictureText,
   readScanPage,
   type ScanPage,
 } from './docx-layout-ocr';
@@ -82,6 +83,10 @@ export interface LayoutDocx {
     readonly pages: readonly number[];
     readonly flagged: readonly FlaggedWord[];
     readonly unavailable: readonly number[];
+    /** Pages with real text over a scan (1-based): the text stays as it is and the scan's words were read with OCR. */
+    readonly mixed: readonly number[];
+    /** Pages whose invisible text layer was not trusted (unreadable characters, turned lines) and were read with OCR instead. */
+    readonly untrusted: readonly number[];
     /** The open font families the scans' text is set in and the package carries (`docx-ocr-font.ts`). */
     readonly families: readonly string[];
   };
@@ -185,65 +190,107 @@ async function writePages(
   const textless: number[] = [];
   const ocrPages: number[] = [];
   const unavailable: number[] = [];
+  const mixedPages: number[] = [];
+  const untrusted: number[] = [];
   const flagged: FlaggedWord[] = [];
   let shapes = 0;
   let pictures = 0;
   let rasters = 0;
   let unreadable = 0;
   let lastSection = '';
-  for (const [done, index] of pages.entries()) {
-    throwIfAborted(context.signal);
-    context.onProgress?.({
-      phase: 'read',
-      labelKey: 'op.progress.exportOffice.read',
-      done,
-      total: pages.length,
-    });
+  /** A page read: its scene, and what OCR made of it if it is a scan (`unavailable`: it is one, and there is no reading of it). */
+  const readPage = async (
+    index: number,
+    signal: AbortSignal,
+  ): Promise<{ scene: PageScene; scan: ScanPage | null; unavailable: boolean }> => {
     const page = doc.loadPage(index);
-    let scene: PageScene;
-    let scan: ScanPage | null = null;
     try {
-      scene = readSceneOf(mupdf, page);
-      if (isScanPage(scene)) {
-        scan = await readScanPage(mupdf, page, scene, ocr, context.signal, openFonts);
-        if (scan === null) unavailable.push(index + 1);
+      const scene = readSceneOf(mupdf, page);
+      // The readers are done with the page when they first wait, so a page read beside this one can use the document.
+      let scan: ScanPage | null = null;
+      if (isScanPage(scene)) scan = await readScanPage(mupdf, page, scene, ocr, signal, openFonts);
+      else if (ocr !== null && isMixedPage(scene)) {
+        // Real text over a scan: the text stays vector text, the scan's words are read with OCR (or `null`: nothing scanned to read).
+        scan = await readScanPage(mupdf, page, scene, ocr, signal, openFonts, visibleBoxes(scene));
+      } else if (ocr !== null) {
+        // A picture on a page of vector text that holds text itself: its words become text boxes over it.
+        scan = await readPictureText(mupdf, page, scene, ocr, signal, openFonts, visibleBoxes(scene));
       }
+      return { scene, scan, unavailable: scan === null && isScanPage(scene) };
     } finally {
       page.destroy();
     }
-    const scale = wordPageScale(scene.width, scene.height);
-    if (scale < 1) scaled.push({ page: index + 1, scale });
-    const section = pageSectionXml(scene.width * scale, scene.height * scale);
-    const boxes = scan?.boxes ?? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face));
-    const items = scan?.items ?? scene.items;
-    if (scan !== null) {
-      ocrPages.push(index + 1);
-      scanBoxes.push(...scan.boxes);
-      for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
-    }
-    if (boxes.length === 0) textless.push(index + 1);
-    allBoxes.push(...boxes);
-    for (const item of items) {
-      if (item.kind === 'shape') shapes += 1;
-      else if (item.kind === 'image') pictures += 1;
-      else rasters += 1;
-    }
-    // The scene reads the page's text without pictures, so its blocks are text.
-    for (const block of scan === null ? scene.text.blocks : []) {
-      for (const line of block.kind === 'text' ? block.lines : []) {
-        for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
+  };
+  // Scanned pages are read `ocr.concurrency` at a time, the ones after the page being written already under way;
+  // the pages are written in their order. The reads stop with the export, however it ends.
+  const ahead = Math.max(1, ocr?.concurrency ?? 1);
+  const reading = new Map<number, ReturnType<typeof readPage>>();
+  const stop = new AbortController();
+  const onAbort = () => stop.abort();
+  context.signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    for (const [done, index] of pages.entries()) {
+      throwIfAborted(context.signal);
+      context.onProgress?.({
+        phase: 'read',
+        labelKey: 'op.progress.exportOffice.read',
+        done,
+        total: pages.length,
+      });
+      for (let next = done; next < Math.min(pages.length, done + ahead); next += 1) {
+        if (reading.has(next)) continue;
+        const started = readPage(pages[next] as number, stop.signal);
+        // A read ahead that fails is the failure of its own page, when the loop gets there; until then it is not unhandled.
+        started.catch(() => undefined);
+        reading.set(next, started);
       }
+      const { scene, scan, unavailable: unread } = await (reading.get(done) as ReturnType<typeof readPage>);
+      reading.delete(done);
+      if (unread) unavailable.push(index + 1);
+      const scale = wordPageScale(scene.width, scene.height);
+      if (scale < 1) scaled.push({ page: index + 1, scale });
+      const section = pageSectionXml(scene.width * scale, scene.height * scale);
+      const vector = scan === null || scan.mixed;
+      const sceneBoxes = vector
+        ? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face))
+        : [];
+      const boxes = [...sceneBoxes, ...(scan?.boxes ?? [])];
+      const items = scan?.items ?? scene.items;
+      if (scan !== null) {
+        if (scan.mixed) mixedPages.push(index + 1);
+        else ocrPages.push(index + 1);
+        if (scan.layerRejected) untrusted.push(index + 1);
+        scanBoxes.push(...scan.boxes);
+        for (const word of scan.flagged) flagged.push({ page: index + 1, ...word });
+      }
+      if (boxes.length === 0) textless.push(index + 1);
+      allBoxes.push(...boxes);
+      for (const item of items) {
+        if (item.kind === 'shape') shapes += 1;
+        else if (item.kind === 'image') pictures += 1;
+        else rasters += 1;
+      }
+      // The scene reads the page's text without pictures, so its blocks are text.
+      for (const block of vector ? scene.text.blocks : []) {
+        for (const line of block.kind === 'text' ? block.lines : []) {
+          for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
+        }
+      }
+      const drawings = items.map((item) => sceneItemXml(item, scale, registry)).join('');
+      const text = boxes.map((box) => textBoxXml(box, scale, registry)).join('');
+      const isLast = done === pages.length - 1;
+      if (isLast) lastSection = section;
+      paragraphs.push(
+        '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>' +
+          `${isLast ? '' : section}</w:pPr><w:r><w:rPr><w:sz w:val="2"/></w:rPr></w:r>${drawings}${text}</w:p>`,
+      );
+      // Give the event loop a turn so the progress bar and Cancel stay live.
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    const drawings = items.map((item) => sceneItemXml(item, scale, registry)).join('');
-    const text = boxes.map((box) => textBoxXml(box, scale, registry)).join('');
-    const isLast = done === pages.length - 1;
-    if (isLast) lastSection = section;
-    paragraphs.push(
-      '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>' +
-        `${isLast ? '' : section}</w:pPr><w:r><w:rPr><w:sz w:val="2"/></w:rPr></w:r>${drawings}${text}</w:p>`,
-    );
-    // Give the event loop a turn so the progress bar and Cancel stay live.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    stop.abort();
+    context.signal.removeEventListener('abort', onAbort);
+    await Promise.allSettled(reading.values());
   }
   throwIfAborted(context.signal);
   const open = [...openFonts.loaded.values()];
@@ -302,6 +349,8 @@ async function writePages(
       pages: ocrPages,
       flagged,
       unavailable,
+      mixed: mixedPages,
+      untrusted,
       families: open
         .filter((family) => openFiles.some((file) => file.family === family.name))
         .map((family) => family.family),

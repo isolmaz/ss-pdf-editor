@@ -1353,6 +1353,41 @@ describe('verifyForWrite: what a change is measured as', () => {
     });
   });
 
+  it('pairs fields that share a name in order, so two documents merged with the same field name still verify', async () => {
+    const source = await threePageDocument();
+    // What a merge of two forms that both name a field `name` produces: two fields, one name.
+    const merged = await withFields(source.bytes, [
+      ['name', 'First value'],
+      ['name', 'Second value'],
+    ]);
+    const expected = [
+      { name: 'name', value: 'First value' },
+      { name: 'name', value: 'Second value' },
+    ];
+    const unchanged = await verify(merged, merged, {
+      expectedPageCount: 3,
+      steps: [],
+      expectedFormFields: expected,
+    });
+    expect(checkFor(unchanged, 'formFieldValues')?.verdict).toBe('verified');
+    // A real change to one of the two is still caught.
+    const retyped = [
+      { name: 'name', value: 'First value' },
+      { name: 'name', value: 'Third value' },
+    ];
+    await expect(
+      verify(merged, merged, { expectedPageCount: 3, steps: [], expectedFormFields: retyped }),
+    ).rejects.toThrow(/^\[verification-failed\] pdfjs: formFieldValues: 1 field value\(s\) changed$/);
+    // So are the two values trading places: pairing is by order, not by "the value exists".
+    const swapped = [
+      { name: 'name', value: 'Second value' },
+      { name: 'name', value: 'First value' },
+    ];
+    await expect(
+      verify(merged, merged, { expectedPageCount: 3, steps: [], expectedFormFields: swapped }),
+    ).rejects.toThrow(/^\[verification-failed\] pdfjs: formFieldValues: 2 field value\(s\) changed$/);
+  });
+
   it('compares outline titles in order: same is verified, a different outline is refused unless declared', async () => {
     const source = await threePageDocument();
     const titled = withOutline(source.bytes, ['Intro', 'Body']);

@@ -544,9 +544,21 @@ describe('exportOffice → DOCX tables', () => {
     const { file, notes } = await exportOffice(bytes, docxOptions, run);
     const blocks = bodyBlocks(await documentXml(file.bytes));
     const table = blocks.find((block) => block.startsWith('<w:tbl>')) ?? '';
+    // The table draws nothing; each cell draws the sides that have a rule along them.
     const sides = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
-      .map((side) => `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`)
+      .map((side) => `<w:${side} w:val="nil"/>`)
       .join('');
+    const edges = (top: boolean, left: boolean, bottom: boolean, right: boolean) =>
+      '<w:tcBorders>' +
+      Object.entries({ top, left, bottom, right })
+        .map(([side, drawn]) =>
+          drawn
+            ? `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`
+            : `<w:${side} w:val="nil"/>`,
+        )
+        .join('') +
+      '</w:tcBorders>';
+    const all = edges(true, true, true, true);
     expect(table.split('<w:tr>')[0]).toBe(
       '<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/>' +
         `<w:tblBorders>${sides}</w:tblBorders><w:tblLayout w:type="fixed"/>` +
@@ -558,28 +570,34 @@ describe('exportOffice → DOCX tables', () => {
     const spaced = '<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="atLeast"/>';
     expect(tableRows(table)).toEqual([
       [
-        { props: '<w:tcW w:w="4000" w:type="dxa"/><w:gridSpan w:val="2"/>', paragraphs: [[plain, 'Toplam']] },
-        { props: '<w:tcW w:w="2000" w:type="dxa"/>', paragraphs: [[plain, 'Fiyat']] },
+        {
+          props: `<w:tcW w:w="4000" w:type="dxa"/><w:gridSpan w:val="2"/>${all}`,
+          paragraphs: [[plain, 'Toplam']],
+        },
+        { props: `<w:tcW w:w="2000" w:type="dxa"/>${all}`, paragraphs: [[plain, 'Fiyat']] },
       ],
       [
         {
-          props: '<w:tcW w:w="2000" w:type="dxa"/><w:vMerge w:val="restart"/>',
+          props: `<w:tcW w:w="2000" w:type="dxa"/><w:vMerge w:val="restart"/>${edges(true, true, false, true)}`,
           paragraphs: [
             [plain, 'Grup'],
             [`${plain}<w:jc w:val="center"/>`, 'x'],
           ],
         },
         // Nothing in it: an empty paragraph, as Word wants one.
-        { props: '<w:tcW w:w="2000" w:type="dxa"/>', paragraphs: [['', '']] },
+        { props: `<w:tcW w:w="2000" w:type="dxa"/>${all}`, paragraphs: [['', '']] },
         {
-          props: '<w:tcW w:w="2000" w:type="dxa"/>',
+          props: `<w:tcW w:w="2000" w:type="dxa"/>${all}`,
           paragraphs: [[`${plain}<w:jc w:val="right"/>`, 'RRRRR']],
         },
       ],
       [
-        { props: '<w:tcW w:w="2000" w:type="dxa"/><w:vMerge/>', paragraphs: [['', '']] },
-        { props: '<w:tcW w:w="2000" w:type="dxa"/>', paragraphs: [[spaced, 'D1 D2']] },
-        { props: '<w:tcW w:w="2000" w:type="dxa"/>', paragraphs: [[spaced, 'p q']] },
+        {
+          props: `<w:tcW w:w="2000" w:type="dxa"/><w:vMerge/>${edges(false, true, true, true)}`,
+          paragraphs: [['', '']],
+        },
+        { props: `<w:tcW w:w="2000" w:type="dxa"/>${all}`, paragraphs: [[spaced, 'D1 D2']] },
+        { props: `<w:tcW w:w="2000" w:type="dxa"/>${all}`, paragraphs: [[spaced, 'p q']] },
       ],
     ]);
     // Above the table a spacer of the 48 pt gap (capped), then the table, then the paragraph.

@@ -88,6 +88,19 @@ async function scan(): Promise<Uint8Array> {
   }
 }
 
+/** The scan of `scan()` as a document of three pages. */
+async function scanThrice(): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument((await scan()).slice());
+  try {
+    doc.graftPage(-1, doc, 0);
+    doc.graftPage(-1, doc, 0);
+    return new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  } finally {
+    doc.destroy();
+  }
+}
+
 describe('export-office dialog with a scanned page', () => {
   it('reads the page in the chosen languages and writes the words it finds into the Word file', async () => {
     const { exportOfficeDialog } = await import('./office');
@@ -167,4 +180,64 @@ describe('export-office dialog with a scanned page', () => {
     ).rejects.toThrow('the report could not be shown');
     expect(state.terminated).toBe(before + 1);
   });
+  it('reads the pages of a scan side by side on as many workers as the machine has cores to spare, and releases them all', async () => {
+    const { exportOfficeDialog } = await import('./office');
+    const before = { created: state.created.length, terminated: state.terminated };
+    vi.stubGlobal('navigator', { hardwareConcurrency: 4 });
+    try {
+      await exportOfficeDialog.run(
+        { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur'] },
+        {
+          signal: new AbortController().signal,
+          onProgress: () => {},
+          // the same scanned page three times
+          bytes: await scanThrice(),
+          pageCount: 3,
+          name: 'tarama.pdf',
+          currentPage: 0,
+          selectedPages: [],
+          t: createTranslator('tr'),
+        },
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // Three pages under way at once: three workers for them (the capitals are not read again with English alone: only Turkish was chosen).
+    expect(state.created.slice(before.created)).toEqual([['tur'], ['tur'], ['tur']]);
+    expect(state.terminated - before.terminated).toBe(3);
+  });
+
+  it.each([
+    { navigator: { hardwareConcurrency: 8 }, pageWorkers: 3 },
+    { navigator: { hardwareConcurrency: 8, deviceMemory: 2 }, pageWorkers: 1 },
+  ])(
+    'never has more live workers than the page readers it allowed and one for the capitals read again with English alone ($pageWorkers)',
+    async ({ navigator, pageWorkers }) => {
+      const { exportOfficeDialog } = await import('./office');
+      const before = { created: state.created.length, terminated: state.terminated };
+      vi.stubGlobal('navigator', navigator);
+      try {
+        await exportOfficeDialog.run(
+          { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur', 'eng'] },
+          {
+            signal: new AbortController().signal,
+            onProgress: () => {},
+            bytes: await scanThrice(),
+            pageCount: 3,
+            name: 'tarama.pdf',
+            currentPage: 0,
+            selectedPages: [],
+            t: createTranslator('tr'),
+          },
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      const created = state.created.slice(before.created);
+      expect(created.filter((languages) => languages.length === 2)).toHaveLength(pageWorkers);
+      // The second look of all the pages shares one English worker.
+      expect(created.filter((languages) => languages.length === 1)).toEqual([['eng']]);
+      expect(state.terminated - before.terminated).toBe(pageWorkers + 1);
+    },
+  );
 });
