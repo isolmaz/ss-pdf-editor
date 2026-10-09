@@ -1234,10 +1234,18 @@ async function checkForms(
       count: produced.length,
     });
   }
-  const byName = new Map(produced.map((field) => [field.name, fieldValueText(field.value)]));
+  // Two fields may share a name (a merge of two forms that both have `name`): each name
+  // keeps its values in document order and the reference's fields take them in turn, so
+  // the second field is compared with the second value rather than with the last one.
+  const byName = new Map<string, string[]>();
+  for (const field of produced) {
+    const values = byName.get(field.name);
+    if (values === undefined) byName.set(field.name, [fieldValueText(field.value)]);
+    else values.push(fieldValueText(field.value));
+  }
   let changedValues = 0;
   for (const field of expected) {
-    const value = byName.get(field.name);
+    const value = byName.get(field.name)?.shift();
     if (value !== undefined && value !== field.value) changedValues += 1;
   }
   if (changedValues === 0) record('formFieldValues', 'verified');
