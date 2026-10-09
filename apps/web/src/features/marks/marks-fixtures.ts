@@ -12,6 +12,7 @@ import { annotationsStore, initialAnnotationsState } from '../annotations/annota
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
 import { formsStore, initialFormsState } from '../forms/forms-store';
+import { initialSelectionState, selectionStore } from '../selection/selection-store';
 import type { MarksHost } from './host';
 import { initialMarksState, marksStore } from './marks-store';
 import { initialRedactionState, redactionStore } from './redaction-store';
@@ -113,6 +114,7 @@ export function marksWorld(overrides: Partial<MarksHost> = {}): MarksWorld {
   formsStore.set(initialFormsState());
   marksStore.set(initialMarksState());
   redactionStore.set(initialRedactionState());
+  selectionStore.set(initialSelectionState());
   const session = new SessionStore();
   session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1, 2, 3]), sha256: 'hash', pageCount: 2 });
   const tab = session.active as SessionTab;
@@ -138,7 +140,6 @@ export function marksWorld(overrides: Partial<MarksHost> = {}): MarksWorld {
     setHandle: vi.fn(),
     refuseBusy: vi.fn(),
     checkpointEngineValues: vi.fn(async () => false),
-    selectAfterWrite: { current: null },
     ...overrides,
   } as MarksWorld['host'];
   return { session, tab, handle, host };

@@ -26,8 +26,6 @@ export interface MarksHost extends WriterHost {
   readonly canEdit: { readonly current: boolean };
   /** Fold the engine's live form values into the journal; whether anything changed. */
   readonly checkpointEngineValues: () => Promise<boolean>;
-  /** The mark to select once the re-read inventory lists the file annotation a write just added. */
-  readonly selectAfterWrite: { current: string | null };
 }
 
 /** The shell's write into a file annotation; `false` means it did not start. */
