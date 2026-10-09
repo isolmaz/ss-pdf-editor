@@ -12,7 +12,7 @@ import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf, scannedPdf } from './tool-fixture';
 import { menuItem, openPdf } from './ui-helpers';
-import { endUtterance, speechLog, stubSpeech } from './ui-panels9-helpers';
+import { endUtterance, speechLog, stubSpeech, untilSpeaking } from './ui-panels9-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -120,8 +120,10 @@ test('changing the rate while speaking restarts at the sentence being spoken, at
   await openReading(page);
   await expect(page.getByText('1.00×')).toBeVisible();
   await read(page).click();
-  await endUtterance(page);
+  // The first sentence ends only once it has started: ending before that would start it instead,
+  // and the restart below would begin there rather than at the second sentence.
   await expect(pause(page)).toBeVisible();
+  await endUtterance(page);
 
   await rate(page).fill('1.5');
   await expect(page.getByText('1.50×')).toBeVisible();
@@ -138,8 +140,11 @@ test('changing the rate while speaking restarts at the sentence being spoken, at
   await rate(page).fill('2');
   await expect(page.getByText('2.00×')).toBeVisible();
 
-  // Paused, a new rate waits for the next Read instead of restarting the speech.
+  // Paused, a new rate waits for the next Read instead of restarting the speech. The restart
+  // cancelled the engine's queue, and the engine pauses only what it is speaking.
+  await untilSpeaking(page);
   await pause(page).click();
+  await expect(read(page)).toBeVisible();
   const before = (await speechLog(page)).utterances.length;
   await rate(page).fill('1');
   await expect(page.getByText('1.00×')).toBeVisible();
