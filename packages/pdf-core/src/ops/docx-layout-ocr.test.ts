@@ -9,13 +9,17 @@
 
 import { DOMParser } from '@xmldom/xmldom';
 import JSZip from 'jszip';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { exportOffice } from './export-office';
 import { line, officeDocument } from './export-office-fixtures';
 import { detectSkew, toGrey } from './ocr-preprocess';
 import type { OperationContext } from './types';
+
+// Each export levels, reads and matches the scan's words against the open faces: about a
+// second a page alone, several under the coverage run on a loaded machine.
+vi.setConfig({ testTimeout: 60_000 });
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const run: OperationContext = { signal: new AbortController().signal };
