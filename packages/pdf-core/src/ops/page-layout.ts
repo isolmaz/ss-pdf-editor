@@ -774,8 +774,9 @@ export function readAppearances(mupdf: Mupdf, page: Page): Appearances {
   glyphs.apply(walked.walked);
   // What shows as text: not hidden, not whitespace, and no control character (a glyph of no known meaning).
   const letters: Box[] = [];
-  for (const block of walked.blocks) {
-    if (block.kind !== 'text') continue;
+  for (const block of walked.blocks.filter(
+    (entry): entry is Extract<typeof entry, { kind: 'text' }> => entry.kind === 'text',
+  )) {
     for (const line of block.lines) {
       for (const char of line.chars) {
         if (char.invisible !== true && char.c.trim() !== '' && (char.c.codePointAt(0) as number) >= 0x20) {

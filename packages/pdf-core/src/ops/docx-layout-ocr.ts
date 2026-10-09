@@ -105,7 +105,9 @@ export function layerWords(scene: PageScene): OcrWord[] {
   let block = 0;
   let line = 0;
   // The scene reads the page's text without pictures, so its blocks are text.
-  for (const textBlock of scene.text.blocks.flatMap((entry) => (entry.kind === 'text' ? [entry] : []))) {
+  for (const textBlock of scene.text.blocks.filter(
+    (entry): entry is Extract<typeof entry, { kind: 'text' }> => entry.kind === 'text',
+  )) {
     block += 1;
     for (const textLine of textBlock.lines) {
       line += 1;

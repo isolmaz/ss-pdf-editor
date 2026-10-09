@@ -232,6 +232,15 @@ describe('layout scene: what Word cannot draw is grouped into islands', () => {
     close((scene.items[0] as SceneRaster).box, [0, 10, 784, 900]);
   });
 
+  it('writes the island of two patches that a third bridges once, not once for each', async () => {
+    const { scene } = await sceneOfRaw({
+      content: [patch(0, 0), patch(30, 0), patch(2, 0, 30)].join('\n'),
+      resources: (doc) => ({ Shading: shadingOf(doc) }),
+    });
+    expect(scene.items.map((item) => item.kind)).toEqual(['raster']);
+    close((scene.items[0] as SceneRaster).box, [0, 496, 34, 500]);
+  });
+
   it('draws nothing for a patch with no width', async () => {
     const { scene } = await sceneOfRaw({
       content: patch(10, 10, 0, 50),
@@ -521,6 +530,21 @@ describe('layout scene: rasters', () => {
     expect(cut.fill?.color).toBe(0x0000ff);
   });
 
+  it.each([
+    ['one drawn down first', '20 20 m 20 120 l 120 120 l 120 20 l h'],
+    ['one closed by a line back to its start', '20 20 m 120 20 l 120 120 l 20 120 l 20 20 l'],
+  ])(
+    'cuts a rectangle to a rectangular clip %s, and rasters what a diamond clip cuts',
+    async (_name, clip) => {
+      const fill = '0 0 1 rg 0 0 70 70 re f Q';
+      const { scene } = await sceneOf(await contentOnly(`q ${clip} W n ${fill}`));
+      expect(scene.items.map((item) => item.kind)).toEqual(['shape']);
+      close((scene.items[0] as SceneShape).box, [20, 430, 70, 480]);
+      const diamond = await sceneOf(await contentOnly(`q 70 20 m 120 70 l 70 120 l 20 70 l h W n ${fill}`));
+      expect(diamond.scene.items.map((item) => item.kind)).toEqual(['raster']);
+    },
+  );
+
   it('rasters a stroke that a rectangular clip cuts, and drops shapes outside it', async () => {
     const { scene } = await sceneOf(
       await contentOnly(
@@ -716,6 +740,34 @@ describe('layout scene: raster content of patterns', () => {
     expect(blue.at(blue.width / 2, blue.height / 2)).toEqual([0, 0, 255, 255]);
     const red = decode(mupdf, second.data);
     expect(red.at(red.width / 2, red.height / 2)).toEqual([255, 0, 0, 255]);
+  });
+});
+
+describe('layout scene: strokes', () => {
+  it('reads the cap and the join of a stroke: projecting and bevel, round and miter', async () => {
+    const { scene } = await sceneOfRaw({
+      content: [
+        '4 w 2 J 2 j 100 100 m 200 100 l 200 200 l S',
+        '4 w 1 J 0 j 100 300 m 200 300 l 200 400 l S',
+      ].join('\n'),
+    });
+    const strokes = scene.items.flatMap((item) =>
+      item.kind === 'shape' && item.stroke !== null ? [item.stroke] : [],
+    );
+    expect(strokes.map((stroke) => [stroke.cap, stroke.join])).toEqual([
+      ['square', 'bevel'],
+      ['round', 'miter'],
+    ]);
+  });
+});
+
+describe('layout scene: colours', () => {
+  it('names a colour of another space once, and gives every shape of it the same value', async () => {
+    const { scene } = await sceneOfRaw({ content: '0 1 0 0 k 10 10 20 20 re f 100 100 20 20 re f' });
+    const shapes = scene.items.filter((item): item is SceneShape => item.kind === 'shape');
+    expect(shapes).toHaveLength(2);
+    expect(shapes[0]?.fill?.color).toBe(shapes[1]?.fill?.color);
+    expect(shapes[0]?.fill?.color).not.toBe(0);
   });
 });
 
