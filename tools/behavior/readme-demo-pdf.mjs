@@ -3,7 +3,7 @@
  * agreement with headings, body text, a form field and a signature line, written with
  * MuPDF like every other fixture here; a revised copy of it (for the comparison clip); and
  * an image-only "scan" of its first two pages (for the OCR clip). Not shipped; they exist so
- * the GIFs show documents that read like real ones.
+ * the clips show documents that read like real ones.
  */
 import * as mupdf from 'mupdf';
 import { createFixture } from './mupdf-fixture.mjs';

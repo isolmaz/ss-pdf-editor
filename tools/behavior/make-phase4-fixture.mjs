@@ -2,7 +2,7 @@
 /**
  * Phase 4 fixture builder — throwaway tooling.
  *
- *   node tools/spikes/make-phase4-fixture.mjs [--out <path>] [--replace-image <path>]
+ *   node tools/behavior/make-phase4-fixture.mjs [--out <path>] [--replace-image <path>]
  *
  * Builds the one document every Phase 4 check runs against, so the evidence is
  * reproducible from the repository alone. It exists because Phase 4's items each

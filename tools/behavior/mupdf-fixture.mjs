@@ -1,11 +1,11 @@
 /**
- * Fixture writer and reader for the spikes and behaviour harnesses, on MuPDF's object
+ * Fixture writer and reader for the behaviour harnesses and the README clip recorder, on MuPDF's object
  * model — throwaway tooling, never shipped.
  *
  * The harnesses used to build their documents with pdf-lib. The product no longer carries
  * pdf-lib, so the fixtures are written with the engine the product writes with. The
  * module takes the MuPDF namespace as an argument instead of importing it, so the same
- * code runs in Node (`import * as mupdf from 'mupdf'`) and in the browser spikes (the
+ * code runs in Node (`import * as mupdf from 'mupdf'`) and in the browser harnesses (the
  * pinned `/engines/mupdf/mupdf.js`).
  *
  * What a fixture page can carry:

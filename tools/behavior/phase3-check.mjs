@@ -2,7 +2,7 @@
 /**
  * Phase 3 acceptance harness — throwaway driver, not the e2e suite.
  *
- *   node tools/spikes/phase3-check.mjs [--port 4198] [--keep]
+ *   node tools/behavior/phase3-check.mjs [--port 4198] [--keep]
  *
  * What the phase promised:
  *

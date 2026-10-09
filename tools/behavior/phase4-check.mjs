@@ -2,7 +2,7 @@
 /**
  * Phase 4 acceptance harness — throwaway driver, not the e2e suite.
  *
- *   node tools/spikes/phase4-check.mjs [--port 4199] [--keep]
+ *   node tools/behavior/phase4-check.mjs [--port 4199] [--keep]
  *
  * What the phase promised:
  *
@@ -65,7 +65,7 @@ const fixtureDir = join(tmpdir(), `pdf-editor-phase4-${process.pid}`);
 function buildFixture() {
   mkdirSync(fixtureDir, { recursive: true });
   const path = join(fixtureDir, 'phase4-fixture.pdf');
-  const script = join(ROOT, 'tools', 'spikes', 'make-phase4-fixture.mjs');
+  const script = join(ROOT, 'tools', 'behavior', 'make-phase4-fixture.mjs');
   const result = spawn(process.execPath, [script, '--out', path], { cwd: ROOT, stdio: 'inherit' });
   return new Promise((resolve, reject) => {
     result.on('exit', (code) => (code === 0 ? resolve(path) : reject(new Error(`fixture exit ${code}`))));

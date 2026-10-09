@@ -1106,7 +1106,7 @@ interface SigningFacts {
  * recompute the `messageDigest` attribute to match — that attribute is *inside* the blob
  * they are editing — while the signature over it stays what it was. Only verifying the
  * signature with the public key closes that hole, and it is the half this verifier was
- * missing (the OpenSSL check in `tools/spikes/sign-check.mts` is what exposed it).
+ * missing (the OpenSSL check in `tools/behavior/sign-check.mts` is what exposed it).
  */
 function ecdsaSignatureBytes(der: Uint8Array, curve: EcCurve): Uint8Array | null {
   const size = CURVE_SIZES[curve];

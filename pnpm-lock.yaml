@@ -320,7 +320,7 @@ importers:
 
   packages/shared: {}
 
-  tools/spikes:
+  tools/behavior:
     dependencies:
       mupdf:
         specifier: 1.28.1
