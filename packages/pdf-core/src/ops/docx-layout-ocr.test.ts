@@ -487,7 +487,13 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(calls).toBe(2);
     const xml = await text(await JSZip.loadAsync(result.file.bytes), 'word/document.xml');
     expect(xml).toContain('<w:u w:val="single"/>');
-    expect(xml).toContain('Hello');
+    const visible = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    // Each box twice: DrawingML text and its VML fallback.
+    expect(visible.replaceAll(' ', '')).toBe('HelloworldtodayHelloworldtoday');
   });
 
   it('reads a page with an underlined word again without the rule, and writes the word underlined', async () => {
