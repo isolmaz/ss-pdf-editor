@@ -961,7 +961,7 @@ function walkField(
  * tree first, then any widget annotation whose `/V` no field claimed (a producer that
  * keeps the widget outside `/Fields` still ships a signature a reader must show).
  */
-export function collectSignatureFields(
+function collectSignatureFields(
   doc: PDFDocument,
   signal: AbortSignal | undefined,
 ): readonly SignatureField[] {
@@ -995,6 +995,14 @@ export function collectSignatureFields(
     }
   }
   return collected;
+}
+
+/**
+ * How many signature fields an opened document carries, counted by the same walk
+ * {@link verifySignatures} uses — so "this file is signed" means one thing everywhere.
+ */
+export function countSignedFields(doc: PDFDocument): number {
+  return collectSignatureFields(doc, undefined).length;
 }
 
 /** How much validation data a `/DSS` may hand over: a hostile file cannot make this unbounded. */

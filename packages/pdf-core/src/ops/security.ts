@@ -58,7 +58,7 @@ import {
   openPdf,
   savePdf,
 } from '../engines/mupdf';
-import { collectSignatureFields } from './signature-status';
+import { countSignedFields } from './signature-status';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 export interface ProtectionPermissions {
@@ -192,7 +192,7 @@ export async function protectDocument(
     pageCount = doc.countPages();
     before = samplePageTexts(doc, pageCount);
     // Encryption rewrites every byte the signature's /ByteRange covers.
-    signed = collectSignatureFields(doc, undefined).length > 0;
+    signed = countSignedFields(doc) > 0;
     context.onProgress?.({ phase: 'encrypt', labelKey: 'op.progress.encrypt', done: 0, total: 1 });
     produced = savePdf(doc, encryptOptions);
   } catch (error) {
@@ -388,7 +388,7 @@ export async function unlockDocument(
     pageCount = doc.countPages();
     before = samplePageTexts(doc, pageCount);
     // Dropping the encryption rewrites every byte a signature's /ByteRange covers.
-    signed = collectSignatureFields(doc, undefined).length > 0;
+    signed = countSignedFields(doc) > 0;
     throwIfAborted(context.signal);
     context.onProgress?.({ phase: 'decrypt', labelKey: 'op.progress.decrypt', done: 0, total: 1 });
     // `encrypt=none` is the documented way to drop the /Encrypt dictionary (the
