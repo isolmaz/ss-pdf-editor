@@ -6,13 +6,14 @@
  * runs on the synthetic frames of `scan.fixtures.ts` (only the canvas read of the video is replaced).
  */
 
+import { setTimeout as sleep } from 'node:timers/promises';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { detectPage } from 'pdf-core/ops/scan-detect';
 import type { RasterImage } from 'pdf-core/ops/scan-geometry';
 import { createTranslator } from 'pdf-shared';
 import { useLayoutEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, type MockInstance, vi } from 'vitest';
 import { CameraView, type CameraViewProps } from './CameraView';
 import { type FakeCamera, FRONT_CAMERA, installCamera, sizeVideo } from './camera.fixtures';
 import { type PageFractions, rasterOf } from './scan.fixtures';
@@ -37,6 +38,7 @@ const NEARBY: PageFractions = { left: 0.22, top: 40 / 300, right: 0.82, bottom: 
 const FAR: PageFractions = { left: 0.45, top: 0.5, right: 0.95, bottom: 0.95 };
 
 let camera: FakeCamera;
+let timers: MockInstance<typeof window.setInterval>;
 let onPhotos: Mock<CameraViewProps['onPhotos']>;
 let onShowPages: Mock<CameraViewProps['onShowPages']>;
 
@@ -81,10 +83,25 @@ function renderView(overrides: Partial<CameraViewProps> = {}) {
 const video = () => screen.getByLabelText('Camera preview') as HTMLVideoElement;
 const shutter = () => screen.getByRole('button', { name: 'Take photo' });
 
+/**
+ * Resolves once the view is live and its outline timer exists. The text only says the view
+ * committed as live; React starts the timer in a passive effect that, outside `act`, can run
+ * in a later task — a tick before then advances the fake clock with nothing registered on it.
+ */
+async function outlineTimerStarted() {
+  await screen.findByText('Looking for the page…');
+  // Polled on the real clock (node's timers are not faked): `waitFor` polls on `setInterval`, which is.
+  for (let polls = 0; polls < 400; polls += 1) {
+    if (timers.mock.calls.some(([, delay]) => delay === 280)) return;
+    await sleep(5);
+  }
+  throw new Error('the outline timer was never started');
+}
+
 /** The view with a live camera and a sized video, timers for the outline faked. */
 async function renderLive(overrides: Partial<CameraViewProps> = {}) {
   const view = renderView(overrides);
-  await screen.findByText('Looking for the page…');
+  await outlineTimerStarted();
   sizeVideo(video(), FRAME_W, FRAME_H);
   return view;
 }
@@ -103,6 +120,7 @@ beforeEach(() => {
   frames.next = frameOf(CLOSE);
   frames.sizes.length = 0;
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  timers = vi.spyOn(window, 'setInterval');
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -115,8 +133,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   camera.remove();
-  vi.useRealTimers();
+  // The spy wraps the fake clock's `setInterval`: put it back before the clock itself.
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(document, 'hidden');
 });
@@ -256,7 +275,7 @@ describe('CameraView live outline', () => {
   it('does nothing for a frame the video has not produced yet', async () => {
     frames.next = frameOf(CLOSE);
     renderView();
-    await screen.findByText('Looking for the page…');
+    await outlineTimerStarted();
     sizeVideo(video(), FRAME_W, FRAME_H, 1);
     tick();
     expect(frames.sizes).toEqual([]);
@@ -312,7 +331,7 @@ describe('CameraView leaving while the outline timer is due', () => {
         <TimerFiresOnLeave />
       </>,
     );
-    await screen.findByText('Looking for the page…');
+    await outlineTimerStarted();
     sizeVideo(video(), FRAME_W, FRAME_H);
     expect(() => view.unmount()).not.toThrow();
     expect(frames.sizes).toEqual([]);
