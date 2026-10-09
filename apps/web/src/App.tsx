@@ -20,21 +20,10 @@ import type { RedactRect } from 'pdf-core/ops/redact';
 import type { ProtectionState } from 'pdf-core/ops/security';
 import type { OperationContext } from 'pdf-core/ops/types';
 import {
-  type Draft,
-  type DraftInventory,
-  type DraftSnapshot,
-  draftFor,
-  encodeEngineValues,
-  isRestorable,
   type JsonValue,
-  keysForDraft,
-  type OpenDocumentKeys,
-  planDocumentCleanup,
-  planVaultCleanup,
   type SessionStore,
   type SessionTab,
   sha256Hex,
-  sortDrafts,
   sourceKeyFor,
   workingPageCount,
 } from 'pdf-model';
@@ -66,7 +55,6 @@ import { CaretLeft, CaretRight, Command, FilePdf, FolderOpen, GearSix } from '@p
 import type { OperationOutcome } from 'pdf-core';
 import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
-import type { ProducedDocument } from 'pdf-model';
 import {
   type CanvasToolId,
   MarkInteractionLayer,
@@ -106,7 +94,6 @@ import { ModernEditorHeader } from './components/ModernEditorHeader';
 import { PageNavigation } from './components/PageNavigation';
 import { ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
-import { createOpfsDraftStorage } from './drafts';
 import { compressionPresets } from './export-presets';
 import { useAnnotationMarks } from './features/annotations/annotation-marks';
 import {
@@ -148,7 +135,6 @@ import {
   showLeftDock,
   showNotice,
   showNoticeIfEmpty,
-  showNoticeOnce,
   showRightDock,
   toggleLeftDock,
   toggleRightDock,
@@ -211,6 +197,12 @@ import { MeasureOverlay } from './features/measure/MeasureOverlay';
 import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
 import { armMeasure, useMeasureMode } from './features/measure/measure-store';
 import { usePageActions } from './features/pages/page-actions';
+import { persistDraft, saveDraft } from './features/persistence/draft-persist';
+import { forgetDraft } from './features/persistence/draft-vault';
+import { draftStorage, draftWrites } from './features/persistence/persistence-store';
+import { useDraftRecovery } from './features/persistence/use-draft-recovery';
+import { usePersistenceActions } from './features/persistence/use-persistence-actions';
+import { useDraftAutosave, useVaultChannel } from './features/persistence/use-vault-sync';
 import { ReadingLayers } from './features/reading/ReadingLayers';
 import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
 import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
@@ -240,12 +232,6 @@ import {
   verificationNotices,
 } from './notices';
 import {
-  incompleteCapabilities,
-  prepareOffline,
-  requestOfflineReadiness,
-  requiredCapabilities,
-} from './offline';
-import {
   type DocumentContext,
   downloadFiles,
   hasEngineEdits,
@@ -255,15 +241,8 @@ import {
   verifyForWrite,
   type WriteVerification,
 } from './operations';
-import { addRecentDocument, loadRecentDocuments } from './recent';
-import {
-  deleteRecentHandle,
-  ensureWriteAccess,
-  getRecentHandle,
-  pruneRecentHandles,
-  putRecentHandle,
-  reopenFromHandle,
-} from './recent-handles';
+import { addRecentDocument } from './recent';
+import { ensureWriteAccess, getRecentHandle, putRecentHandle, reopenFromHandle } from './recent-handles';
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
@@ -272,7 +251,6 @@ import {
   type SaveStepDescription,
 } from './save-plan';
 import { useShellShortcuts } from './useShortcuts';
-import { createVaultChannel, type VaultChannel } from './vault-channel';
 
 /**
  * The editor shell.
@@ -371,22 +349,12 @@ async function openAndFingerprint(
 export function App({ store }: AppProps) {
   const { theme, setTheme } = useTheme();
   const { locale } = useLocale();
-  const draftStorage = useMemo(() => createOpfsDraftStorage(), []);
   const t = useMemo(() => createTranslator(locale), [locale]);
   const tier = useMemo(() => detectDeviceTier(), []);
   const [memoryUsage, setMemoryUsage] = useState<{ usedBytes: number; budgetBytes: number } | undefined>(
     undefined,
   );
   const session = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const persistedSnapshots = useRef(new Map<string, readonly string[]>());
-  const draftWrites = useRef<Promise<unknown>>(Promise.resolve());
-  /**
-   * Cross-window vault coordination (`vault-channel.ts`). The effect owns creation
-   * and disposal together; a render-owned channel stayed closed after StrictMode's
-   * setup → cleanup → setup cycle and crashed the next announcement.
-   */
-  const [channel, setChannel] = useState<VaultChannel | null>(null);
-  const liveChannel = useRef<VaultChannel | null>(null);
   /**
    * The translator, reachable from effect bodies **without** becoming one of their
    * dependencies. Recovery used to take `t` in its dep list, so changing the interface
@@ -654,340 +622,15 @@ export function App({ store }: AppProps) {
     return () => clearInterval(interval);
   }, [tier, store]);
 
-  /** The manifest inventory, or `null` when it could not be read completely. */
-  const readInventory = useCallback(async (): Promise<DraftInventory> => {
-    try {
-      if (draftStorage.readDraftInventory !== undefined) return await draftStorage.readDraftInventory();
-      return { drafts: await draftStorage.readDrafts(), unreadable: [] };
-    } catch {
-      return { drafts: [], unreadable: [], enumerationFailed: true };
-    }
-  }, [draftStorage]);
-
-  /** What every document open in this window holds, in the vault-key vocabulary. */
-  const openVaultKeys = useCallback(
-    (excludedTabId?: string): readonly OpenDocumentKeys[] =>
-      store
-        .getSnapshot()
-        .tabs.filter((tab) => tab.id !== excludedTabId)
-        .map((tab) => ({
-          source: sourceKeyFor(tab.id, tab.source.sha256),
-          snapshots: persistedSnapshots.current.get(tab.id) ?? [],
-        })),
-    [store],
-  );
-
   /**
-   * The snapshot keys a document retains, per device tier. Desktop keeps the journal's
-   * own history; the smaller tiers keep one produced version, because a phone's storage
-   * budget is the constraint that matters there.
+   * The persistence callbacks the audit pins (`tools/audit/regressions.cjs`): the work is in
+   * `features/persistence`, and these bind it to the shell's session and device tier.
    */
-  const retainedSnapshotsFor = useCallback(
-    (tab: SessionTab): readonly ProducedDocument[] =>
-      tier === 'desktop'
-        ? store.snapshotsFor(tab.id)
-        : tab.working.produced === undefined
-          ? []
-          : [tab.working.produced],
-    [store, tier],
-  );
-
-  /**
-   * Removes one document's stored copies: its manifest, then every blob it owns that no
-   * other manifest, open document or window still references.
-   *
-   * `null` means the inventory was incomplete and **nothing was deleted** — an orphan blob
-   * costs space, a deleted live blob costs the user a document. This is deletion from
-   * application storage; it does not overwrite the bytes underneath, and it cannot reach a
-   * download, an external original or a browser backup.
-   */
-  const forgetTabDraft = useCallback(
-    async (tabId: string): Promise<readonly string[] | null> => {
-      if (channel === null) return null;
-      const inventory = await readInventory();
-      if (inventory.enumerationFailed === true || inventory.unreadable.length > 0) return null;
-      const known = inventory.drafts.find((draft) => draft.id === tabId);
-      const owned =
-        known === undefined ? [...(persistedSnapshots.current.get(tabId) ?? [])] : [...keysForDraft(known)];
-      await draftStorage.deleteDraft(tabId);
-      const removable = planDocumentCleanup(
-        { manifestId: tabId, keys: owned },
-        {
-          open: openVaultKeys(tabId),
-          storedSources: [],
-          inventory,
-          peerReferences: channel.peerReferences(),
-        },
-      );
-      if (removable === null) return null;
-      for (const key of removable) await draftStorage.deleteSource(key);
-      persistedSnapshots.current.delete(tabId);
-      return removable;
-    },
-    [channel, draftStorage, openVaultKeys, readInventory],
-  );
-
-  /** What one persistence attempt did, so the caller can word the notice honestly. */
-  type PersistOutcome = 'written' | 'sensitive' | 'skipped' | 'gone';
-
-  /**
-   * The **one** implementation of draft persistence, used by the manual save command and
-   * the debounced automatic save alike.
-   *
-   * The model state is captured synchronously before the first `await`, so the manifest
-   * always describes the version whose bytes were written — reading it again after the
-   * encoding work would let a fast edit publish a manifest for a state no blob matches.
-   */
-  const persistTabDraft = useCallback(
-    async (tabId: string): Promise<PersistOutcome> => {
-      const before = store.getSnapshot().tabs.find((item) => item.id === tabId);
-      if (before === undefined) return 'gone';
-      if (before.sensitive) {
-        // A sensitive document never enters persistence, and whatever an earlier session
-        // stored for it leaves now.
-        await forgetTabDraft(tabId);
-        return 'sensitive';
-      }
-      const handle = handleFor(tabId);
-      if (handle === undefined) return 'skipped';
-      const map = handle.raw.annotationStorage?.serializable?.map;
-      const journal = tier === 'desktop' ? before.journal.entries : [];
-      const journalCursor = tier === 'desktop' ? before.journal.cursor : 0;
-      const engineValues = await encodeEngineValues(map instanceof Map ? map.entries() : []);
-      const sourceKey = sourceKeyFor(before.id, before.source.sha256);
-      await draftStorage.putSource(sourceKey, before.source.master);
-      const snapshots: DraftSnapshot[] = [];
-      for (const snapshot of retainedSnapshotsFor(before)) {
-        const key = `snapshot-${snapshot.id}`;
-        await draftStorage.putSource(key, snapshot.bytes);
-        const { bytes: _bytes, ...description } = snapshot;
-        snapshots.push({ ...description, key });
-      }
-      await draftStorage.writeDraft(
-        draftFor({
-          id: before.id,
-          name: before.name,
-          pageCount: workingPageCount(before),
-          size: before.source.size,
-          sourcePageCount: before.source.pageCount,
-          dirty: before.dirty,
-          sourceKey,
-          journal,
-          journalCursor,
-          stateId: before.working.stateId,
-          savedState: before.savedState,
-          ...(before.working.overlays === undefined ? {} : { overlays: before.working.overlays }),
-          ...(before.working.produced === undefined ? {} : { workingId: before.working.produced.id }),
-          snapshots,
-          engineValues,
-          now: Date.now(),
-        }),
-      );
-      // The tab may have been closed or marked sensitive while the bytes were written; a
-      // manifest for a sensitive document must not survive that race.
-      const after = store.getSnapshot().tabs.find((item) => item.id === tabId);
-      if (after === undefined || after.sensitive) {
-        await forgetTabDraft(tabId);
-        return after === undefined ? 'gone' : 'sensitive';
-      }
-      const keys = snapshots.map((item) => item.key);
-      for (const key of persistedSnapshots.current.get(tabId) ?? []) {
-        if (!keys.includes(key)) await draftStorage.deleteSource(key);
-      }
-      persistedSnapshots.current.set(tabId, keys);
-      return 'written';
-    },
-    [draftStorage, forgetTabDraft, retainedSnapshotsFor, store, tier],
-  );
-
-  /**
-   * The user-requested, **scoped** cleanup: forget this document, here and now.
-   *
-   * It is the same operation the sensitive toggle performs, offered by name so the user
-   * can reach it without changing a session setting, and it reports what actually left the
-   * vault. Deletion is from this origin's application storage: the bytes underneath are not
-   * overwritten, and any copy the user downloaded, the file they opened it from, and any
-   * browser profile backup are outside this application's reach — the notice says so.
-   */
-  const purgeActiveDocument = useCallback(async () => {
-    if (activeTab === null) return;
-    if (channel === null) {
-      showNotice(t('vault.sweepNoChannel'));
-      return;
-    }
-    try {
-      await channel.runExclusive(async () => {
-        const queued = draftWrites.current.then(async () => {
-          await deleteRecentHandle(activeTab.id);
-          return forgetTabDraft(activeTab.id);
-        });
-        draftWrites.current = queued.catch(() => undefined);
-        const removed = await queued;
-        if (removed === null) showNotice(t('vault.incomplete'));
-        else showNotice(t('vault.purged', { count: removed.length }));
-      });
-    } catch (error) {
-      const failure = error instanceof ToolError ? error : new ToolError('write-failed', { engine: 'model' });
-      showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-    }
-  }, [activeTab, channel, forgetTabDraft, t]);
-
-  /**
-   * The orphan sweep: delete the vault blobs no document references any more.
-   *
-   * It refuses in two cases, both of them stated to the user rather than hidden. An
-   * incomplete inventory means the reference graph is unknown. An unreachable peer channel
-   * means another window's live documents are invisible, and sweeping then would delete
-   * the only copy of something this window never heard about.
-   */
-  const sweepVault = useCallback(async () => {
-    try {
-      if (channel === null || !channel.canReachPeers()) {
-        showNotice(t('vault.sweepNoChannel'));
-        return;
-      }
-      await channel.runExclusive(async () => {
-        // A live window that never answered is a window whose documents are unknown: the
-        // reference graph is incomplete, so nothing is deleted.
-        if (!(await channel.probe())) {
-          showNotice(t('vault.peerSilent'));
-          return;
-        }
-        const queued = draftWrites.current.then(async () => {
-          const inventory = await readInventory();
-          const storedSources = (await draftStorage.listSources?.()) ?? [];
-          const plan = planVaultCleanup({
-            open: openVaultKeys(),
-            storedSources,
-            inventory,
-            peerReferences: channel.peerReferences(),
-          });
-          if (!plan.ok) {
-            showNotice(t('vault.incomplete'));
-            return;
-          }
-          for (const key of plan.deleteKeys) await draftStorage.deleteSource(key);
-          showNotice(
-            plan.deleteKeys.length === 0
-              ? t('vault.sweepNothing')
-              : t('vault.swept', { count: plan.deleteKeys.length }),
-          );
-        });
-        draftWrites.current = queued.catch(() => undefined);
-        await queued;
-      });
-    } catch (error) {
-      const failure = error instanceof ToolError ? error : new ToolError('write-failed', { engine: 'model' });
-      showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-    }
-  }, [channel, draftStorage, openVaultKeys, readInventory, t]);
-
-  /**
-   * Offline readiness: what the worker's cache actually
-   * holds for **this build**, said as it is.
-   *
-   * `null` is not "nothing is ready": it is "there is no service worker to ask", and the
-   * two are different problems with different answers — the previous readiness path could
-   * only answer the second one, by looking for a substring in whatever URLs it found.
-   * The names `incompleteCapabilities` returns are capability ids (`mupdf`, `tesseract`),
-   * joined into the sentence as identifiers, like the engine step ids in a report.
-   */
-  const checkOffline = useCallback(async () => {
-    const readiness = await requestOfflineReadiness();
-    if (readiness === null) {
-      showNotice(t('offline.unavailable'));
-      return;
-    }
-    const missing = incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }));
-    showNotice(
-      missing.length === 0
-        ? t('offline.ready')
-        : t('offline.incomplete', { count: missing.length, facts: missing.join(', ') }),
-    );
-  }, [t]);
-
-  /**
-   * Fill the cache for the capabilities core editing needs.
-   *
-   * A preparation that was interrupted is not rounded up to success: `failed` is the
-   * paths that did not arrive, and it is reported with the count that did — the failure
-   * mode this command exists to make visible is the user believing a half-downloaded
-   * package is ready. Readiness is re-read afterwards, so the sentence after the work
-   * describes the cache as it now is rather than as the pass intended it.
-   */
-  const prepareOfflinePackages = useCallback(async () => {
-    const required = requiredCapabilities({ ocr: false });
-    const result = await prepareOffline(required);
-    if (result === null) {
-      showNotice(t('offline.unavailable'));
-      return;
-    }
-    if (result.failed.length > 0) {
-      showNotice(t('offline.prepareFailed', { count: result.prepared, failed: result.failed.length }));
-      return;
-    }
-    const readiness = await requestOfflineReadiness();
-    const missing = readiness === null ? [] : incompleteCapabilities(readiness, required);
-    if (missing.length === 0) {
-      showNotice(t('offline.prepared', { count: result.prepared }));
-      return;
-    }
-    showNotice(
-      noticeLine(
-        [
-          { key: 'offline.prepared', params: { count: result.prepared } },
-          { key: 'offline.incomplete', params: { count: missing.length, facts: missing.join(', ') } },
-        ],
-        t,
-      ),
-    );
-  }, [t]);
-
-  const toggleSensitiveSession = useCallback(() => {
-    if (activeTab === null) return;
-    const next = !activeTab.sensitive;
-    store.setSensitive(activeTab.id, next);
-    if (!next) {
-      showNotice(t('redact.sensitive.off'));
-      return;
-    }
-    // Turning the opt-out **on** is also the moment the stored copies go, and the handle that
-    // would reopen the file: leaving them behind would make the toggle a label rather than a
-    // decision.
-    showNotice(t('redact.sensitive.on'));
-    draftWrites.current = draftWrites.current
-      .then(async () => {
-        await deleteRecentHandle(activeTab.id);
-        return forgetTabDraft(activeTab.id);
-      })
-      .then((removed) => {
-        if (removed === null) showNotice(t('vault.incomplete'));
-      })
-      .catch(() => showNotice(t('error.write-failed.message')));
-  }, [activeTab, forgetTabDraft, store, t]);
-
-  const opfsSave = useCallback(async () => {
-    if (activeTab === null) return;
-    if (activeTab.sensitive) {
-      showNotice(t('redact.sensitive.on'));
-      return;
-    }
-    try {
-      // The same implementation the automatic save uses, and the same write queue: a
-      // manual save that took its own path wrote a manifest against a source key nothing
-      // ever stored, and could race the debounced one.
-      const queued = draftWrites.current.then(() => persistTabDraft(activeTab.id));
-      // The queue's own copy swallows the failure so later writes still run; the promise
-      // below is what carries the error to the user.
-      draftWrites.current = queued.catch(() => undefined);
-      const outcome: PersistOutcome = await queued;
-      if (outcome === 'written') showNotice(t('setting.opfsSaved'));
-      else if (outcome === 'sensitive') showNotice(t('redact.sensitive.on'));
-    } catch (error) {
-      const failure = error instanceof ToolError ? error : new ToolError('write-failed', { engine: 'model' });
-      showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-    }
-  }, [activeTab, persistTabDraft, t]);
+  const forgetTabDraft = useCallback((tabId: string) => forgetDraft(store, tabId), [store]);
+  const persistTabDraft = useCallback((tabId: string) => persistDraft(store, tabId, tier), [store, tier]);
+  const opfsSave = useCallback(() => saveDraft(store, persistTabDraft, t), [store, persistTabDraft, t]);
+  const { toggleSensitiveSession, purgeActiveDocument, sweepVault, checkOffline, prepareOfflinePackages } =
+    usePersistenceActions(store, t);
 
   /** A handle that would not shut down says so on the status line, in the current language. */
   const reportReleaseFailure = useCallback(() => showNotice(tRef.current('notice.engineReleaseFailed')), []);
@@ -1036,172 +679,9 @@ export function App({ store }: AppProps) {
   );
   const startFormDetect = useCallback(() => startFormDetectFor(formsHost), [formsHost]);
 
-  /**
-   * Drafts: the model data of every open tab — never the source
-   * bytes of a document the user opened through a handle. On startup the restorable
-   * drafts come back as tabs so closing the browser is not losing work.
-   */
-  useEffect(() => {
-    let disposed = false;
-    void (async () => {
-      let inventory: {
-        readonly drafts: readonly Draft[];
-        readonly unreadable: readonly string[];
-        readonly enumerationFailed?: boolean;
-      };
-      if (draftStorage.readDraftInventory !== undefined) {
-        inventory = await draftStorage.readDraftInventory();
-      } else {
-        inventory = { drafts: await draftStorage.readDrafts(), unreadable: [] };
-      }
-      if (inventory.enumerationFailed === true) {
-        if (!disposed) showNotice(tRef.current('error.write-failed.message'));
-        return;
-      }
-      if (inventory.unreadable.length > 0 && !disposed) {
-        showNotice(tRef.current('draft.corrupt', { count: inventory.unreadable.length }));
-      }
-      const drafts = sortDrafts(inventory.drafts);
-      let restored = 0;
-      let failure: ToolError | null = null;
-      for (const draft of drafts) {
-        if (!isRestorable(draft)) continue;
-        // A draft whose document is already open stays where it is: reopening it would
-        // replace a live tab's history with the stored one, and two windows doing that at
-        // once would race. The id is the identity, so the check is exact.
-        if (store.getSnapshot().tabs.some((tab) => tab.id === draft.id)) continue;
-        const bytes = await draftStorage.getSource(draft.sourceKey);
-        if (bytes === null) {
-          failure = new ToolError('corrupt-document', { engine: 'model' });
-          continue;
-        }
-        try {
-          const snapshots = [];
-          for (const snapshot of draft.snapshots ?? []) {
-            const data = await draftStorage.getSource(snapshot.key);
-            if (data !== null) snapshots.push({ ...snapshot, bytes: data });
-          }
-          const working = snapshots.find((item) => item.id === draft.workingId);
-          if (draft.workingId !== undefined && working === undefined)
-            throw new ToolError('corrupt-document', { engine: 'model' });
-          const [handle, sha256] = await openAndFingerprint(
-            openWithPdfjs(working?.bytes ?? bytes),
-            sha256Hex(bytes),
-          );
-          // The handle the document was opened from, if one was kept (`recent-handles.ts`):
-          // without it a restored tab could only Export, never Save over its file.
-          const fileHandle = await getRecentHandle(draft.id);
-          // Nothing awaits from here to the tab being in: the check, the document in front
-          // and the opening all see one state. Read before the last await, "in front" was
-          // whatever was open then, and a document the user opened while the handle store
-          // answered lost the front to the restored one — whose export they then took for
-          // their own.
-          if (disposed) {
-            await handle.destroy();
-            return;
-          }
-          // Opened meanwhile (from the recent list, say): the live tab stays, and the other
-          // drafts are still restored.
-          if (store.getSnapshot().tabs.some((item) => item.id === draft.id)) {
-            await handle.destroy();
-            continue;
-          }
-          const activeBeforeRestore = store.getSnapshot().activeId;
-          const tab = store.openDocument({
-            id: draft.id,
-            name: draft.name,
-            bytes,
-            sha256,
-            pageCount: draft.sourcePageCount ?? draft.pageCount,
-            ...(fileHandle === null ? {} : { handle: fileHandle }),
-          });
-          adoptHandle(tab.id, handle);
-          store.restoreHistory(tab.id, draft, snapshots);
-          if (activeBeforeRestore !== null) store.setActive(activeBeforeRestore);
-          persistedSnapshots.current.set(
-            tab.id,
-            (draft.snapshots ?? []).map((item) => item.key),
-          );
-          if (draft.engineValues.entries.length > 0) {
-            holdEngineValues(tab.id, draft.engineValues);
-          }
-          if (draft.dirty) store.setDirty(tab.id, true);
-          addRecentDocument({
-            id: tab.id,
-            name: tab.name,
-            sizeBytes: (working?.bytes ?? bytes).byteLength,
-            openedAt: Date.now(),
-          });
-          restored += 1;
-        } catch (error) {
-          // Report the failed draft while continuing to recover the other documents.
-          failure =
-            error instanceof ToolError ? error : new ToolError('corrupt-document', { engine: 'model' });
-        }
-      }
-      if (!disposed && failure !== null) {
-        showNotice(`${tRef.current(failure.messageKey)} ${tRef.current(failure.hintKey)}`);
-      } else if (!disposed && restored > 0 && inventory.unreadable.length === 0) {
-        showNotice(tRef.current('draft.restored', { count: restored }));
-      }
-      // Handles whose recent entry is gone are forgotten — after the restore, which reads them.
-      if (!disposed) await pruneRecentHandles(new Set(loadRecentDocuments().map((item) => item.id)));
-    })();
-    return () => {
-      disposed = true;
-    };
-    // `t` is deliberately absent: it is read through `tRef`, so switching the
-    // interface language no longer replays startup recovery over live tabs.
-  }, [draftStorage, store]);
-
-  // Immutable byte snapshots are stored once; each draft update writes only model data.
-  useEffect(() => {
-    if (session.tabs.length === 0) return undefined;
-    const timer = setTimeout(() => {
-      draftWrites.current = draftWrites.current
-        .then(async () => {
-          for (const tab of store.getSnapshot().tabs) await persistTabDraft(tab.id);
-        })
-        .catch((error) => {
-          const translate = tRef.current;
-          if (error instanceof ToolError) {
-            showNotice(`${translate(error.messageKey)} ${translate(error.hintKey)}`);
-            return;
-          }
-          // The browser's storage refused the draft: the same sentence an open that could
-          // not store its recovery copy shows, and not again over a notice that already
-          // says it (the failure repeats on every change while the store stays full).
-          const warning = storedCopyWarning(error, translate);
-          showNoticeOnce(warning);
-        });
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [session, store, persistTabDraft]);
-
-  useEffect(() => {
-    const owned = createVaultChannel();
-    liveChannel.current = owned;
-    setChannel(owned);
-    return () => {
-      if (liveChannel.current === owned) liveChannel.current = null;
-      owned.close();
-    };
-  }, []);
-
-  /**
-   * Tell the other windows which vault keys this one is holding, so their sweeps treat
-   * them as live. `session` is the trigger because the set can only change when the
-   * document model does — a new tab, a new snapshot, a closed document — and it is also
-   * read here, so the dependency is real rather than incidental.
-   */
-  useEffect(() => {
-    liveChannel.current?.announce(
-      session.tabs.flatMap((tab) => [
-        sourceKeyFor(tab.id, tab.source.sha256),
-        ...(persistedSnapshots.current.get(tab.id) ?? []),
-      ]),
-    );
-  }, [session]);
+  useDraftRecovery({ store, translator: tRef, openAndFingerprint });
+  useDraftAutosave({ session, store, persist: persistTabDraft, translator: tRef });
+  useVaultChannel(store, session);
 
   const openFile = useCallback(
     async (file: File, fileHandle?: FileSystemFileHandle, password?: string) => {
@@ -1278,7 +758,7 @@ export function App({ store }: AppProps) {
           // that fails (storage full, OPFS unavailable) costs the copy, never the
           // document, and is reported as exactly that — not as an open failure below.
           try {
-            await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+            await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
             // A reference to the file, never its bytes; a sensitive session keeps none.
             if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
           } catch (error) {
@@ -1319,7 +799,7 @@ export function App({ store }: AppProps) {
         setBusy(false);
       }
     },
-    [draftStorage, store, t, tier, setRedactionMarks, refuseBusy],
+    [store, t, tier, setRedactionMarks, refuseBusy],
   );
 
   /**
@@ -1463,14 +943,14 @@ export function App({ store }: AppProps) {
       setShowHomeScreen(false);
       let warning: string | null = null;
       try {
-        await draftStorage.putSource(sourceKeyFor(tab.id, sha256), bytes);
+        await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
       } catch (error) {
         warning = storedCopyWarning(error, t);
       }
       setCurrentPage(0);
       return warning;
     },
-    [draftStorage, store, t, tier],
+    [store, t, tier],
   );
 
   /**
@@ -2897,10 +2377,10 @@ export function App({ store }: AppProps) {
                 if (reopened.kind === 'denied') return;
               }
               try {
-                const drafts = await draftStorage.readDrafts();
+                const drafts = await draftStorage().readDrafts();
                 const matchedDraft = drafts.find((d) => d.id === item.id);
                 if (matchedDraft) {
-                  const bytes = await draftStorage.getSource(matchedDraft.sourceKey);
+                  const bytes = await draftStorage().getSource(matchedDraft.sourceKey);
                   if (bytes) {
                     const [handle, sha256] = await openAndFingerprint(openWithPdfjs(bytes), sha256Hex(bytes));
                     const tab = store.openDocument({

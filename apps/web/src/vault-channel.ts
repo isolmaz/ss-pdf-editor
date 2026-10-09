@@ -2,7 +2,7 @@
  * Cross-window vault coordination.
  *
  * The vault lives in the origin's private file system, which every tab of this origin
- * shares. The in-window write queue in `App.tsx` serialises one tab's writes; it says
+ * shares. The in-window write queue (`features/persistence`) serialises one tab's writes; it says
  * nothing about the second window the user has open on the same document. Two questions
  * therefore need an answer that spans windows:
  *
