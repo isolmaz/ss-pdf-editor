@@ -4,7 +4,8 @@
  * The source project rasterised the touched page at 144 dpi — it lost the text
  * layer, the metadata and the neighbouring content. This
  * implementation erases instead: MuPDF redaction annotations over the marked
- * rectangles, `applyRedactions`, then a full (`garbage`) write.
+ * rectangles, `applyRedactions`, a sweep of the annotations and form fields under the marks
+ * (`applyRedactions` leaves those alone — `redact-annots.ts`), then a full (`garbage`) write.
  *
  * Measured behaviour this file depends on:
  * redaction is **glyph-level** — the glyph run inside the box goes, the
@@ -34,9 +35,21 @@ import {
   readPageRotation,
   rectToPageSpace,
   savePdf,
+  topLeftRectToUserSpace,
 } from '../engines/mupdf';
 import { PRODUCER_LINE } from './metadata';
+import {
+  type AnnotationTally,
+  annotationUnder,
+  finishSweep,
+  formHasXfa,
+  newTally,
+  sweepPage,
+} from './redact-annots';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
+
+/** The XFA writers bring an XML parser with them: they load only for a form that has XFA. */
+const loadXfa = () => import('./xfa');
 
 export interface RedactRect {
   readonly pageIndex: number;
@@ -56,7 +69,7 @@ export interface RedactOptions {
 }
 
 export interface RedactVerification {
-  /** True when no text remains inside any mark. */
+  /** True when no text, annotation or form field remains inside any mark. */
   readonly marksCleared: boolean;
   /** Page indices where a probe still found content (verification failure). */
   readonly remaining: readonly number[];
@@ -109,8 +122,10 @@ export async function redactDocument(
   const annotations: PDFAnnotation[] = [];
   /** Per page: which of that page's marks covered nothing drawable. */
   const emptyMarks: number[] = [];
+  const removed = newTally();
   let cleanedAttachments = 0;
   let cleanedMetadata = false;
+  let xfaDropped = false;
   let pageCount: number;
   let produced: Uint8Array;
   try {
@@ -125,7 +140,7 @@ export async function redactDocument(
           engineMessage: `page index ${pageIndex} outside 0..${pageCount - 1}`,
         });
       }
-      const touched = applyMarks(doc, pageIndex, rects, options, annotations);
+      const touched = applyMarks(doc, pageIndex, rects, options, annotations, removed);
       if (!touched) emptyMarks.push(pageIndex);
       done += rects.length;
       context.onProgress?.({
@@ -134,6 +149,14 @@ export async function redactDocument(
         done,
         total: options.marks.length,
       });
+    }
+    // The widgets leave the form and every removed object is deleted once all pages are swept.
+    finishSweep(doc, removed);
+    // A static XFA form keeps each field's value in its datasets packet too, and an XFA reader
+    // paints the field from there at the marked spot, widget or not: the XFA goes with the
+    // widgets, and the saved file does not carry the packets (nothing references them).
+    if (removed.widgets > 0 && formHasXfa(doc)) {
+      xfaDropped = (await loadXfa()).removeXfaEntries(doc);
     }
     throwIfAborted(context.signal);
 
@@ -161,7 +184,7 @@ export async function redactDocument(
     // engine message for the report and the bug report.
     throw new ToolError('verification-failed', {
       engine: 'mupdf',
-      engineMessage: `redaction left text inside marks on page(s) ${verification.remaining.join(', ')}`,
+      engineMessage: `redaction left text or annotations inside marks on page(s) ${verification.remaining.join(', ')}`,
     });
   }
   context.onProgress?.({ phase: 'redact', labelKey: 'op.progress.redact.save', done: 1, total: 1 });
@@ -175,6 +198,8 @@ export async function redactDocument(
         'open',
         'annotate(Redact)',
         'applyRedactions',
+        ...(removed.widgets + removed.annotations > 0 ? ['clean(annotations+fields)'] : []),
+        ...(xfaDropped ? ['xfa.remove'] : []),
         ...(cleanedMetadata ? ['clean(Info+XMP)'] : []),
         ...(cleanedAttachments > 0 ? ['clean(attachments)'] : []),
         'save(garbage=compact,compress,clean)',
@@ -185,6 +210,13 @@ export async function redactDocument(
           marks: options.marks.length,
           pages: byPage.size,
         }),
+        ...(removed.fields > 0
+          ? [note('lost', 'op.note.redact.fieldsRemoved', { count: removed.fields })]
+          : []),
+        ...(xfaDropped ? [note('lost', 'op.note.redact.xfaDropped')] : []),
+        ...(removed.annotations > 0
+          ? [note('lost', 'op.note.redact.annotationsRemoved', { count: removed.annotations })]
+          : []),
         // An empty mark erases nothing while the count still claims a redaction:
         // state it instead of letting a clean verification speak for it.
         ...(emptyMarks.length > 0
@@ -213,6 +245,8 @@ export async function redactDocument(
 /**
  * Check that the marks are actually empty in the *produced* bytes — the
  * "targeted occurrence removed" contract of redaction, measured rather than assumed.
+ * Empty means no text **and** no annotation or form field under a mark: a field's value
+ * is content too, and it is not in the text layer.
  *
  * The probe is a character walk over `toStructuredText()` (spike-verified shape:
  * `onChar(c, origin, font, size, quad)`, quad in page space) and a quad/rect
@@ -273,7 +307,13 @@ export async function verifyRedaction(
               leftover = rects.some((rect) => quadCoverage(app, rect) >= HALF_COVERED);
             },
           });
-          if (leftover) remaining.push(pageIndex);
+          // An annotation or form field under a mark is content that is still there, whatever
+          // the text says: its rectangle is read in the page box's user space.
+          const annotated = annotationUnder(
+            page.getObject(),
+            rects.map((rect) => topLeftRectToUserSpace(box, rect)),
+          );
+          if (leftover || annotated) remaining.push(pageIndex);
         } finally {
           text.destroy();
         }
@@ -333,13 +373,18 @@ function groupMarksByPage(marks: readonly RedactRect[]): Map<number, Rect[]> {
   return new Map([...byPage].sort(([a], [b]) => a - b));
 }
 
-/** One page's marks: annotate, then apply — MuPDF erases everything annotated so far. */
+/**
+ * One page's marks: annotate, then apply — MuPDF erases everything annotated so far —
+ * then remove the annotations and form fields it leaves under the marks (`removed` keeps
+ * the run's count). Returns whether any mark erased or removed something.
+ */
 function applyMarks(
   doc: PDFDocument,
   pageIndex: number,
   rects: readonly Rect[],
   options: RedactOptions,
   annotations: PDFAnnotation[],
+  removed: AnnotationTally,
 ): boolean {
   let page: PDFPage | null = null;
   try {
@@ -389,7 +434,15 @@ function applyMarks(
     // rectangle; painting would leave a black bar that advertises the redaction and
     // cannot be lifted, and redaction wants the content gone, not covered.
     page.applyRedactions(false, options.imageMethod, LINE_ART_METHOD_REMOVE_IF_TOUCHED, options.textMethod);
-    return touched;
+    // `applyRedactions` leaves widgets and annotations alone: a field's value and a note's
+    // text would survive it, so whatever lies under a mark is removed here. That is
+    // something erased, so the mark is not an empty one.
+    const swept = sweepPage(
+      page.getObject(),
+      rects.map((rect) => topLeftRectToUserSpace(box, rect)),
+      removed,
+    );
+    return touched || swept;
   } finally {
     page?.destroy();
   }

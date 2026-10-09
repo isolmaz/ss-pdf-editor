@@ -183,7 +183,7 @@ The exact Word layout (`packages/pdf-core/src/ops/docx-layout-ocr.ts`, `ocr-scen
 that is only pictures with the engine chosen here: `tesseract.js` through `recognizePage`, the `best` (integer) models, in the
 languages ticked in the Export dialog (default `tur`+`eng`, the pair measured above). Words below 0.90 confidence get a Word comment and
 are listed in the report: the threshold of the table above (about 0.5–1 % of words flagged, about half of them truly wrong). A page that
-already has an invisible text layer is not recognised again. The measurements of the whole path (SSIM and word accuracy of the exported
+already has a reliable invisible text layer (fewer than 10 % replacement characters or turned lines) is not recognised again; an unreliable one is read as a page without a layer. A page with real text over a scan, or a picture of text on a page of real text, is read with the real text painted over (`ops/docx-layout-mixed.ts`); a picture counts as text only with 8 words on 2 lines, 80 % mean confidence and 15 % of its ink under the words, thresholds taken from OCR of pictures of letters, tables, forms, charts, diagrams and logos. The measurements of the whole path (SSIM and word accuracy of the exported
 scans after a round trip through LibreOffice) come from `pnpm fidelity` (`FIDELITY_MODES=layout`), see `CONTRIBUTING.md`.
 
 ## Method

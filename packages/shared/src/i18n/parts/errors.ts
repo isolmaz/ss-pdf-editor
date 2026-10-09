@@ -6,9 +6,9 @@
 
 export const errorsPart = {
   'error.pending-redactions.message':
-    'Uygulanmamış karartma işaretleri var; kaydetme ve dışa aktarma durduruldu.',
+    'Uygulanmamış karartma işaretleri var; kaydetme, dışa aktarma, yazdırma ve dosya üreten ya da sayfaları taşıyan her araç durduruldu.',
   'error.pending-redactions.hint':
-    'Belge kaydedilmedi. Karartmaları uygulayın veya işaretleri temizleyip yeniden deneyin; işaretler uygulanmadan teslim edilen dosya, kaldırılması istenen içeriği hâlâ taşır.',
+    'Hiçbir şey yazılmadı. Karartmaları uygulayın veya işaretleri temizleyip yeniden deneyin; işaretler uygulanmadan teslim edilen dosya, kaldırılması istenen içeriği hâlâ taşır.',
   'error.range-invalid.message': 'Sayfa aralığı okunamadı.',
   'error.range-invalid.hint': '1-3, 5 veya 8-10 gibi bir aralık girin.',
   'error.value-out-of-range.message': 'Bir alanın değeri izin verilen aralığın dışında.',

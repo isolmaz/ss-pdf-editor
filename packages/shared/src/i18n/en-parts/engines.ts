@@ -2,6 +2,10 @@ export const enginesPart = {
   'op.note.security.encryptionApplied': 'AES-256 encryption applied.',
   'op.note.security.opensWithoutPassword':
     'Document opens without password; permissions are restricted by owner password only.',
+  'op.note.security.signatureInvalidated':
+    'The document carries a digital signature. Encrypting rewrites the file, so the signature is no longer valid.',
+  'op.note.security.signatureInvalidatedUnlock':
+    'The document carries a digital signature. Removing the password rewrites the file, so the signature is no longer valid.',
   'op.note.security.verified': 'Output reopened and encryption verified.',
   'op.note.security.protectionRemoved': 'Password removed; output is unprotected.',
   'op.note.security.alreadyUnprotected': 'Document is already unencrypted; file unchanged.',
@@ -14,6 +18,11 @@ export const enginesPart = {
   'op.note.redact.metadataCleared': 'Metadata cleared.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
+  'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
+  'op.note.redact.xfaDropped':
+    'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining AcroForm fields keep their values.',
+  'op.note.redact.annotationsRemoved':
+    '{count} annotation(s) (comments, markup) under the marked areas removed.',
   'op.progress.encrypt': 'Encrypting document',
   'op.progress.decrypt': 'Removing password',
   'op.progress.redact': 'Erasing areas',

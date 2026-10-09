@@ -502,10 +502,11 @@ export async function readProducedPageTexts(
 }
 
 /**
- * The same fixture, **encrypted** with AES-256 and an open password — by the pinned MuPDF
- * the application ships, so the file is one the product itself could have written.
+ * `bytes` **encrypted** with AES-256 and an open password — by the pinned MuPDF the
+ * application ships, so the file is one the product itself could have written.
  */
-export async function encryptedToolFixturePdf(
+export async function encryptedPdf(
+  bytes: Uint8Array,
   password: string,
   openPassword: string = password,
 ): Promise<Uint8Array> {
@@ -522,7 +523,7 @@ export async function encryptedToolFixturePdf(
     };
   }
   const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as MupdfModule;
-  const pdf = mupdf.Document.openDocument(toolFixturePdf(), 'application/pdf').asPDF();
+  const pdf = mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
   const buffer = pdf.saveToBuffer(
     `encrypt=aes-256,user-password=${openPassword},owner-password=${password}-owner`,
   );
@@ -531,6 +532,14 @@ export async function encryptedToolFixturePdf(
   } finally {
     buffer.destroy();
   }
+}
+
+/** The same fixture, encrypted (see {@link encryptedPdf}). */
+export function encryptedToolFixturePdf(
+  password: string,
+  openPassword: string = password,
+): Promise<Uint8Array> {
+  return encryptedPdf(toolFixturePdf(), password, openPassword);
 }
 
 /** The same fixture with an Info `/Author` (and `/Subject`) set by the pinned MuPDF: metadata to remove or show. */

@@ -8,6 +8,7 @@
 
 import { DOMParser as XmlDomParser } from '@xmldom/xmldom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { toAppSpace } from './annotation-data';
 import { parseXfdf, serializeXfdf } from './annotation-xfdf';
 import type { AnnotationMark, ExistingAnnotation } from './annotations';
 
@@ -412,7 +413,7 @@ describe('importing what cannot be used', () => {
     ]);
   });
 
-  it('shapes: a line needs both ends; a square and a circle are their rectangle', async () => {
+  it('shapes: a line needs both ends; a square and a circle are their rectangle less half the 2 pt default stroke', async () => {
     const out = await parseXfdf(
       xfdf(
         [
@@ -424,10 +425,30 @@ describe('importing what cannot be used', () => {
       ),
     );
     expect(out.skipped).toBe(2);
-    expect(out.marks.map((entry) => [entry.shape, entry.rect])).toEqual([
-      ['line', [5, 6, 1, 2]],
-      ['circle', [10, 20, 50, 60]],
+    expect(out.marks.map((entry) => [entry.shape, entry.rect, entry.thickness])).toEqual([
+      ['line', [5, 6, 1, 2], undefined],
+      ['circle', [11, 21, 49, 59], 2],
     ]);
+  });
+
+  it('reads a width-less shape back to the same rectangle, and a negative width as no stroke', async () => {
+    const read = await parseXfdf(
+      xfdf(
+        '<square name="a" page="0" rect="10,20,50,60"/><square name="b" page="0" rect="10,20,50,60" width="-4"/>',
+      ),
+    );
+    const [plain, negative] = read.marks;
+    expect(negative?.rect).toEqual([10, 20, 50, 60]);
+    expect(negative?.thickness).toBe(0);
+    // Written again it is the rectangle it was read from, now with the width it was read with.
+    const again = new TextDecoder().decode(
+      serializeXfdf({
+        marks: plain === undefined ? [] : [toAppSpace(plain, 800)],
+        existing: [],
+        pageTop: () => 800,
+      }).bytes,
+    );
+    expect(again).toMatch(/<square [^>]*rect="10,20,50,60"[^>]*width="2"/);
   });
 
   it('typed text: size and colour from the default appearance, black without one, nothing without words', async () => {

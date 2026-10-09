@@ -291,6 +291,9 @@ describe('buildCommands', () => {
     const viewing = buildCommands(recordingHost({ canEdit: false }).host);
     expect(byId(viewing, 'view.zoom-in').disabled).toBeFalsy();
     expect(byId(viewing, 'tools.ocr').disabled).toBe(true);
+    // Redaction rewrites the file: a protected (read-only) tab refuses it from the palette
+    // exactly as the toolbar does.
+    expect(byId(viewing, 'tools.redact').disabled).toBe(true);
   });
 
   it('follows undo, redo, save and export state, the page selection and the mark selection', () => {
