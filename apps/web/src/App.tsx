@@ -115,28 +115,18 @@ import type { AttachmentRow, FieldValue, MeasureReading } from 'pdf-ui';
 import type { SavedSignature, StampSource } from 'pdf-ui/dialog';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import {
-  type CanvasShapeKind,
   type CanvasToolId,
   FieldCandidateLayer,
-  Magnifier,
   MarkInteractionLayer,
   type MarkTarget,
   markTargetKey,
-  ReadingPane,
-  SnapshotMenu,
   type StampPlacement,
   StampPlacementLayer,
   selectionBoxes,
   ToolProperties,
   usePresentation,
 } from 'pdf-ui/tools';
-import type {
-  AnnotationTool,
-  DocumentPanelTab,
-  OperationDialogSpec,
-  OperationRunContext,
-  OpRunResult,
-} from 'pdf-ui/ui';
+import type { AnnotationTool, OperationDialogSpec, OperationRunContext, OpRunResult } from 'pdf-ui/ui';
 import {
   AnnotationLayer,
   Button,
@@ -179,11 +169,51 @@ import { ActivityOverlay } from './components/ActivityOverlay';
 import { HomeScreen } from './components/HomeScreen';
 import { ModernEditorHeader } from './components/ModernEditorHeader';
 import { PageNavigation } from './components/PageNavigation';
-import { isMarkupTool, type MarkupTool, ToolRail } from './components/ToolRail';
+import { ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
 import { createOpfsDraftStorage, readAppFile, writeAppFile } from './drafts';
 import { compressionPresets } from './export-presets';
-import { readStoredMode, storeMode } from './interface-mode';
+import {
+  armStampTool,
+  clearNotice,
+  coreStore,
+  hideLeftDock,
+  hideRightDock,
+  isBusy,
+  openLeftPanel,
+  openRightPanel,
+  pickTool,
+  selectLeftTab,
+  selectRightTab,
+  selectShape,
+  selectTool,
+  setBusy,
+  setInterfaceMode,
+  showLeftDock,
+  showNotice,
+  showNoticeIfEmpty,
+  showNoticeOnce,
+  showRightDock,
+  toggleLeftDock,
+  toggleRightDock,
+  toggleTool,
+  useCore,
+} from './features/core/core-store';
+import {
+  adoptHandle,
+  dropHandle,
+  handleFor,
+  handleInUse,
+  handleReleased,
+  replaceHandle,
+  useDocumentHandle,
+} from './features/core/handles';
+import { type OverlayChange, writeOverlay } from './features/core/overlays';
+import { useCompactViewport } from './features/core/viewport';
+import { ReadingLayers } from './features/reading/ReadingLayers';
+import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
+import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
+import { useDocumentLanguage } from './features/reading/use-document-language';
 import {
   addAttachments,
   addImageStamp,
@@ -265,7 +295,6 @@ import { createVaultChannel, type VaultChannel } from './vault-channel';
 
 /** The product name the shell falls back to; `index.html`'s `<title>` carries the same string. */
 const PRODUCT_TITLE = 'SsPdfEditor';
-const COMPACT_VIEW_QUERY = '(max-width: 1023px)';
 
 /**
  * The canonical tool → the overlay's creation gesture.
@@ -440,14 +469,6 @@ const PdfAPanel = lazy(async () => {
   return { default: module.PdfAPanel };
 });
 /**
- * The reading-order boxes belong to the accessibility tags view; they draw what that view
- * published to its store (same module instance as the panel, one chunk) and nothing else.
- */
-const ReadingOrderLayer = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.ReadingOrderLayer };
-});
-/**
  * The measure layer and its settings strip arrive with the tool: they carry the
  * annotation writer and the ruler geometry, neither of which belongs in the first paint.
  */
@@ -467,17 +488,6 @@ const TextLayer = lazy(async () => {
   const module = await import('pdf-ui/text-edit');
   return { default: module.TextLayer };
 });
-
-/**
- * The primary language subtag of a catalog `/Lang` ("de-DE" → "de"), or `null` when the
- * value is not a language tag (an empty string, "x-unknown"). The primary subtag is what
- * a voice is matched on: a German document is read by any local German voice, not only by
- * one of the same region.
- */
-function primaryLanguage(declared: string): string | null {
-  const primary = declared.trim().split(/[-_]/)[0]?.toLowerCase() ?? '';
-  return /^[a-z]{2,3}$/.test(primary) ? primary : null;
-}
 
 /**
  * Open a document with the engine and fingerprint its bytes, side by side — the two only
@@ -510,10 +520,6 @@ export function App({ store }: AppProps) {
     undefined,
   );
   const session = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const handles = useRef(new Map<string, PdfDocumentHandle>());
-  const retiredHandles = useRef(new Set<PdfDocumentHandle>());
-  const releasedHandles = useRef(new WeakSet<PdfDocumentHandle>());
-  const [, setHandleVersion] = useState(0);
   /**
    * Engine-side deltas restored from drafts, keyed by tab: they can only be applied
    * once the viewer has loaded that tab's document (`PdfViewerPane` mounts the active
@@ -554,28 +560,21 @@ export function App({ store }: AppProps) {
   const cancelRef = useRef<AbortController | null>(null);
   const [zoom, setZoomState] = useState(1);
   const [currentPage, setCurrentPage] = useState(0);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusyState] = useState(false);
-  const busyRef = useRef(false);
-  const setBusy = useCallback((value: boolean) => {
-    busyRef.current = value;
-    setBusyState(value);
-  }, []);
+  const notice = useCore((state) => state.notice);
+  const busy = useCore((state) => state.busy);
   /**
    * A gesture the synchronous gate refuses says so. The gate itself stays
    * synchronous — this only speaks when it closes, because an inert control and a
    * refused action must not look the same.
    */
-  const refuseBusy = useCallback(() => setNotice(t('op.busy')), [t]);
+  const refuseBusy = useCallback(() => showNotice(t('op.busy')), [t]);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const closeTrigger = useRef<HTMLElement | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const [reading, setReading] = useState(false);
-  const [snapshotOpen, setSnapshotOpen] = useState(false);
-  const [magnifierOn, setMagnifierOn] = useState(false);
-  const [lensZoom, setLensZoom] = useState(4);
+  const reading = useReading((state) => state.reading);
+  const magnifierOn = useReading((state) => state.magnifierOn);
   /** Surface state: dialogs, palette, docks, page selection, progress, tools. */
   const [dialogSpec, setDialogSpec] = useState<OperationDialogSpec | null>(null);
   /**
@@ -642,18 +641,14 @@ export function App({ store }: AppProps) {
    * (underline, strikeout, squiggly, redact, measure, link). The id is the armed
    * state; nothing else is.
    */
-  const [canvasTool, setCanvasTool] = useState<CanvasToolId>('select');
-  /**
-   * The text-markup look the rail's markup button arms: the one used last, from any
-   * route (rail, strip, menu, palette, context menu).
-   */
-  const [markupTool, setMarkupTool] = useState<MarkupTool>('highlight');
+  const canvasTool = useCore((state) => state.canvasTool);
   /**
    * The picture the `stamp` tool places with the next click on a page — a signature,
-   * initials or an image — and whether the signature dialog is open. Remembered
-   * signatures are opt-in and stay in this browser (`signature-store.ts`).
+   * initials or an image (`pendingStamp` in the core store; any other tool drops it) — and
+   * whether the signature dialog is open. Remembered signatures are opt-in and stay in this
+   * browser (`signature-store.ts`).
    */
-  const [pendingStamp, setPendingStamp] = useState<StampSource | null>(null);
+  const pendingStamp = useCore((state) => state.pendingStamp);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [savedSignatures, setSavedSignatures] = useState<readonly SavedSignature[]>(() =>
     loadSavedSignatures(),
@@ -662,21 +657,13 @@ export function App({ store }: AppProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   /** A stamp just written: selected as soon as the re-read inventory lists it. */
   const selectAfterWrite = useRef<string | null>(null);
-  // The picture belongs to the armed tool: any other tool, from any route, drops it.
-  useEffect(() => {
-    if (canvasTool !== 'stamp') setPendingStamp(null);
-  }, [canvasTool]);
-  useEffect(() => {
-    if (isMarkupTool(canvasTool)) setMarkupTool(canvasTool);
-  }, [canvasTool]);
   /**
    * Which measurement is armed while the ruler owns the pointer. A *sub*-choice, not
    * a second active tool: `measureMode` below is `null` unless `canvasTool` is
    * `'measure'`, so the strip and the menu check cannot disagree with the pointer.
    */
   const [measureSubMode, setMeasureSubMode] = useState<MeasureMode>('distance');
-  /** The shape subtype the next shape mark carries. */
-  const [shape, setShape] = useState<CanvasShapeKind>('square');
+  const shape = useCore((state) => state.shape);
   /**
    * The common layer's selection: target keys across all four mark families, in the
    * one identity space `annotation-interaction.ts` builds. Nothing else may hold a
@@ -684,27 +671,13 @@ export function App({ store }: AppProps) {
    * engine storage keys and pdf.js annotation ids in one string.
    */
   const [selectedKeys, setSelectedKeys] = useState<readonly string[]>([]);
-  const canvasToolRef = useRef(canvasTool);
-  canvasToolRef.current = canvasTool;
   const selectedKeysRef = useRef<readonly string[]>(selectedKeys);
   selectedKeysRef.current = selectedKeys;
-  const [compactViewport, setCompactViewport] = useState(() => window.matchMedia(COMPACT_VIEW_QUERY).matches);
-  const [leftDock, setLeftDock] = useState(!compactViewport);
-  const [rightDock, setRightDock] = useState(!compactViewport);
-  useEffect(() => {
-    const media = window.matchMedia(COMPACT_VIEW_QUERY);
-    const onChange = () => {
-      setCompactViewport(media.matches);
-      // Two desktop docks otherwise leave no canvas, hiding the tools beneath them.
-      if (media.matches) {
-        setLeftDock(false);
-        setRightDock(false);
-      }
-    };
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
-  const [rightTab, setRightTab] = useState<string>('history');
+  const compactViewport = useCore((state) => state.compactViewport);
+  const leftDock = useCore((state) => state.leftDock);
+  const rightDock = useCore((state) => state.rightDock);
+  useCompactViewport();
+  const rightTab = useCore((state) => state.rightTab);
   const [selectedPages, setSelectedPages] = useState<readonly number[]>([]);
   const [progress, setProgress] = useState<OperationProgress | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -736,13 +709,11 @@ export function App({ store }: AppProps) {
    * bytes the run will edit.
    */
   const [images, setImages] = useState<readonly PdfImageInfo[] | null>(null);
-  /** The left dock's visible tab, so a menu or palette command can open a view. */
-  const [leftTab, setLeftTab] = useState<DocumentPanelTab>('pages');
-  /** Simple or advanced (`interface-mode.ts`): read once on mount, changed only by `changeMode`. */
-  const [mode, setMode] = useState<InterfaceMode>(readStoredMode);
+  const leftTab = useCore((state) => state.leftTab);
+  /** Simple or advanced (`interface-mode.ts`): read once on load, changed only by `changeMode`. */
+  const mode = useCore((state) => state.mode);
   const changeMode = useCallback((next: InterfaceMode) => {
-    storeMode(next);
-    setMode(next);
+    setInterfaceMode(next);
     // A dialog the simple mode hides must not stay open behind the filter: closing it
     // returns the user to a surface the mode actually offers, rather than leaving them
     // on a screen the menus can no longer reach.
@@ -769,14 +740,8 @@ export function App({ store }: AppProps) {
    */
   const redactionMarks = pendingOverlays(store.active).redactions;
   const setRedactionMarks = useCallback(
-    (change: readonly MarkedRect[] | ((current: readonly MarkedRect[]) => readonly MarkedRect[])) => {
-      const tab = store.active;
-      if (tab === null) return;
-      const overlays = pendingOverlays(tab);
-      const next = typeof change === 'function' ? change(overlays.redactions) : change;
-      if (next === overlays.redactions || (next.length === 0 && overlays.redactions.length === 0)) return;
-      store.setOverlays(tab.id, { ...overlays, redactions: next } as unknown as JsonValue, 'panel.redaction');
-    },
+    (change: OverlayChange<readonly MarkedRect[]>) =>
+      writeOverlay(store, 'redactions', change, 'panel.redaction'),
     [store],
   );
   /**
@@ -792,20 +757,8 @@ export function App({ store }: AppProps) {
    */
   const annotations = pendingOverlays(store.active).annotations;
   const setAnnotations = useCallback(
-    (
-      change: readonly AnnotationMark[] | ((current: readonly AnnotationMark[]) => readonly AnnotationMark[]),
-    ) => {
-      const tab = store.active;
-      if (tab === null) return;
-      const overlays = pendingOverlays(tab);
-      const next = typeof change === 'function' ? change(overlays.annotations) : change;
-      if (next === overlays.annotations || (next.length === 0 && overlays.annotations.length === 0)) return;
-      store.setOverlays(
-        tab.id,
-        { ...overlays, annotations: next } as unknown as JsonValue,
-        annotationStepLabel(overlays.annotations, next),
-      );
-    },
+    (change: OverlayChange<readonly AnnotationMark[]>) =>
+      writeOverlay(store, 'annotations', change, annotationStepLabel),
     [store],
   );
   const annotationsRef = useRef<readonly AnnotationMark[]>(annotations);
@@ -827,14 +780,8 @@ export function App({ store }: AppProps) {
   const [measureScale, setMeasureScale] = useState<MeasureScale>(() => scaleForRatio(100));
   const measureMarks = pendingOverlays(store.active).measures;
   const setMeasureMarks = useCallback(
-    (change: readonly MeasureMark[] | ((current: readonly MeasureMark[]) => readonly MeasureMark[])) => {
-      const tab = store.active;
-      if (tab === null) return;
-      const overlays = pendingOverlays(tab);
-      const next = typeof change === 'function' ? change(overlays.measures) : change;
-      if (next === overlays.measures || (next.length === 0 && overlays.measures.length === 0)) return;
-      store.setOverlays(tab.id, { ...overlays, measures: next } as unknown as JsonValue, 'tools.measure');
-    },
+    (change: OverlayChange<readonly MeasureMark[]>) =>
+      writeOverlay(store, 'measures', change, 'tools.measure'),
     [store],
   );
   const [measureGrid, setMeasureGrid] = useState(false);
@@ -898,28 +845,9 @@ export function App({ store }: AppProps) {
    */
   const [viewer, setViewer] = useState<ViewerApi | null>(null);
   const presentation = usePresentation(viewer);
-  /**
-   * The language the open document declares (catalog `/Lang`, which pdf.js reports as
-   * `info.Language`), as a primary subtag; `null` while unread or when it declares none.
-   * The viewer API is replaced with every document, so this follows the document on screen.
-   */
-  const [documentLanguage, setDocumentLanguage] = useState<string | null>(null);
-  useEffect(() => {
-    setDocumentLanguage(null);
-    if (viewer === null) return undefined;
-    let current = true;
-    void viewer.document.raw.getMetadata().then(
-      ({ info }) => {
-        if (!current) return;
-        const declared = (info as { readonly Language?: unknown } | null)?.Language;
-        setDocumentLanguage(typeof declared === 'string' ? primaryLanguage(declared) : null);
-      },
-      () => undefined,
-    );
-    return () => {
-      current = false;
-    };
-  }, [viewer]);
+  // The language the open document declares follows the viewer API, which is replaced with
+  // every document; the reading pane reads it from the reading store.
+  useDocumentLanguage(viewer);
 
   const activeTab = session.tabs.find((tab) => tab.id === session.activeId) ?? null;
 
@@ -931,16 +859,16 @@ export function App({ store }: AppProps) {
    */
   const refuseUnappliedRedactions = useCallback((): boolean => {
     if (pendingOverlays(store.active).redactions.length === 0) return false;
-    setNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
+    showNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
     return true;
   }, [store, t]);
   const openPrint = useCallback(() => {
     if (!refuseUnappliedRedactions()) setPrintOpen(true);
   }, [refuseUnappliedRedactions]);
   const openSnapshotMenu = useCallback(() => {
-    if (!refuseUnappliedRedactions()) setSnapshotOpen(true);
+    if (!refuseUnappliedRedactions()) openSnapshot();
   }, [refuseUnappliedRedactions]);
-  const activeHandle = activeTab === null ? null : (handles.current.get(activeTab.id) ?? null);
+  const activeHandle = useDocumentHandle(activeTab?.id ?? null);
   const pageCount = activeTab === null ? 0 : workingPageCount(activeTab);
   const currentForms =
     activeTab !== null &&
@@ -1180,7 +1108,7 @@ export function App({ store }: AppProps) {
         await forgetTabDraft(tabId);
         return 'sensitive';
       }
-      const handle = handles.current.get(tabId);
+      const handle = handleFor(tabId);
       if (handle === undefined) return 'skipped';
       const map = handle.raw.annotationStorage?.serializable?.map;
       const journal = tier === 'desktop' ? before.journal.entries : [];
@@ -1244,7 +1172,7 @@ export function App({ store }: AppProps) {
   const purgeActiveDocument = useCallback(async () => {
     if (activeTab === null) return;
     if (channel === null) {
-      setNotice(t('vault.sweepNoChannel'));
+      showNotice(t('vault.sweepNoChannel'));
       return;
     }
     try {
@@ -1255,12 +1183,12 @@ export function App({ store }: AppProps) {
         });
         draftWrites.current = queued.catch(() => undefined);
         const removed = await queued;
-        if (removed === null) setNotice(t('vault.incomplete'));
-        else setNotice(t('vault.purged', { count: removed.length }));
+        if (removed === null) showNotice(t('vault.incomplete'));
+        else showNotice(t('vault.purged', { count: removed.length }));
       });
     } catch (error) {
       const failure = error instanceof ToolError ? error : new ToolError('write-failed', { engine: 'model' });
-      setNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
+      showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
     }
   }, [activeTab, channel, forgetTabDraft, t]);
 
@@ -1275,14 +1203,14 @@ export function App({ store }: AppProps) {
   const sweepVault = useCallback(async () => {
     try {
       if (channel === null || !channel.canReachPeers()) {
-        setNotice(t('vault.sweepNoChannel'));
+        showNotice(t('vault.sweepNoChannel'));
         return;
       }
       await channel.runExclusive(async () => {
         // A live window that never answered is a window whose documents are unknown: the
         // reference graph is incomplete, so nothing is deleted.
         if (!(await channel.probe())) {
-          setNotice(t('vault.peerSilent'));
+          showNotice(t('vault.peerSilent'));
           return;
         }
         const queued = draftWrites.current.then(async () => {
@@ -1295,11 +1223,11 @@ export function App({ store }: AppProps) {
             peerReferences: channel.peerReferences(),
           });
           if (!plan.ok) {
-            setNotice(t('vault.incomplete'));
+            showNotice(t('vault.incomplete'));
             return;
           }
           for (const key of plan.deleteKeys) await draftStorage.deleteSource(key);
-          setNotice(
+          showNotice(
             plan.deleteKeys.length === 0
               ? t('vault.sweepNothing')
               : t('vault.swept', { count: plan.deleteKeys.length }),
@@ -1310,7 +1238,7 @@ export function App({ store }: AppProps) {
       });
     } catch (error) {
       const failure = error instanceof ToolError ? error : new ToolError('write-failed', { engine: 'model' });
-      setNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
+      showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
     }
   }, [channel, draftStorage, openVaultKeys, readInventory, t]);
 
@@ -1327,11 +1255,11 @@ export function App({ store }: AppProps) {
   const checkOffline = useCallback(async () => {
     const readiness = await requestOfflineReadiness();
     if (readiness === null) {
-      setNotice(t('offline.unavailable'));
+      showNotice(t('offline.unavailable'));
       return;
     }
     const missing = incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }));
-    setNotice(
+    showNotice(
       missing.length === 0
         ? t('offline.ready')
         : t('offline.incomplete', { count: missing.length, facts: missing.join(', ') }),
@@ -1351,20 +1279,20 @@ export function App({ store }: AppProps) {
     const required = requiredCapabilities({ ocr: false });
     const result = await prepareOffline(required);
     if (result === null) {
-      setNotice(t('offline.unavailable'));
+      showNotice(t('offline.unavailable'));
       return;
     }
     if (result.failed.length > 0) {
-      setNotice(t('offline.prepareFailed', { count: result.prepared, failed: result.failed.length }));
+      showNotice(t('offline.prepareFailed', { count: result.prepared, failed: result.failed.length }));
       return;
     }
     const readiness = await requestOfflineReadiness();
     const missing = readiness === null ? [] : incompleteCapabilities(readiness, required);
     if (missing.length === 0) {
-      setNotice(t('offline.prepared', { count: result.prepared }));
+      showNotice(t('offline.prepared', { count: result.prepared }));
       return;
     }
-    setNotice(
+    showNotice(
       noticeLine(
         [
           { key: 'offline.prepared', params: { count: result.prepared } },
@@ -1380,28 +1308,28 @@ export function App({ store }: AppProps) {
     const next = !activeTab.sensitive;
     store.setSensitive(activeTab.id, next);
     if (!next) {
-      setNotice(t('redact.sensitive.off'));
+      showNotice(t('redact.sensitive.off'));
       return;
     }
     // Turning the opt-out **on** is also the moment the stored copies go, and the handle that
     // would reopen the file: leaving them behind would make the toggle a label rather than a
     // decision.
-    setNotice(t('redact.sensitive.on'));
+    showNotice(t('redact.sensitive.on'));
     draftWrites.current = draftWrites.current
       .then(async () => {
         await deleteRecentHandle(activeTab.id);
         return forgetTabDraft(activeTab.id);
       })
       .then((removed) => {
-        if (removed === null) setNotice(t('vault.incomplete'));
+        if (removed === null) showNotice(t('vault.incomplete'));
       })
-      .catch(() => setNotice(t('error.write-failed.message')));
+      .catch(() => showNotice(t('error.write-failed.message')));
   }, [activeTab, forgetTabDraft, store, t]);
 
   const opfsSave = useCallback(async () => {
     if (activeTab === null) return;
     if (activeTab.sensitive) {
-      setNotice(t('redact.sensitive.on'));
+      showNotice(t('redact.sensitive.on'));
       return;
     }
     try {
@@ -1413,33 +1341,23 @@ export function App({ store }: AppProps) {
       // below is what carries the error to the user.
       draftWrites.current = queued.catch(() => undefined);
       const outcome: PersistOutcome = await queued;
-      if (outcome === 'written') setNotice(t('setting.opfsSaved'));
-      else if (outcome === 'sensitive') setNotice(t('redact.sensitive.on'));
+      if (outcome === 'written') showNotice(t('setting.opfsSaved'));
+      else if (outcome === 'sensitive') showNotice(t('redact.sensitive.on'));
     } catch (error) {
       const failure = error instanceof ToolError ? error : new ToolError('write-failed', { engine: 'model' });
-      setNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
+      showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
     }
   }, [activeTab, persistTabDraft, t]);
 
-  const handleDocumentReleased = useCallback((handle: PdfDocumentHandle) => {
-    releasedHandles.current.add(handle);
-    if (!retiredHandles.current.delete(handle)) return;
-    void handle.destroy().catch(() => setNotice(tRef.current('notice.engineReleaseFailed')));
-  }, []);
-
+  /** A handle that would not shut down says so on the status line, in the current language. */
+  const reportReleaseFailure = useCallback(() => showNotice(tRef.current('notice.engineReleaseFailed')), []);
+  const handleDocumentReleased = useCallback(
+    (handle: PdfDocumentHandle) => handleReleased(handle, reportReleaseFailure),
+    [reportReleaseFailure],
+  );
   const setHandle = useCallback(
-    (tabId: string, handle: PdfDocumentHandle) => {
-      const previous = handles.current.get(tabId);
-      handles.current.set(tabId, handle);
-      setHandleVersion((version) => version + 1);
-      if (previous !== undefined && previous !== handle) {
-        // The pane releases its painted predecessor only when replacement pixels
-        // are ready. A fixed timeout could destroy it in the middle of a slow delete.
-        retiredHandles.current.add(previous);
-        if (releasedHandles.current.has(previous)) handleDocumentReleased(previous);
-      }
-    },
-    [handleDocumentReleased],
+    (tabId: string, handle: PdfDocumentHandle) => replaceHandle(tabId, handle, reportReleaseFailure),
+    [reportReleaseFailure],
   );
 
   const contextFor = useCallback(
@@ -1646,7 +1564,7 @@ export function App({ store }: AppProps) {
    */
   const runRedactionAudit = useCallback(async () => {
     const tab = store.active;
-    const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
     if (tab === null || handle === null) return;
     setAuditLoading(true);
     try {
@@ -1665,7 +1583,7 @@ export function App({ store }: AppProps) {
       const needles = [...new Set([...(redactedTerms.current.get(tab.id) ?? []), ...pending])];
       const audit = await auditRedactedDocument(bytes, needles);
       setAuditReport(audit);
-      setNotice(
+      showNotice(
         noticeLine(
           [
             auditNotice({
@@ -1678,7 +1596,7 @@ export function App({ store }: AppProps) {
       );
     } catch (error) {
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-      setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
       setAuditLoading(false);
     }
@@ -1688,9 +1606,9 @@ export function App({ store }: AppProps) {
   const addAttachmentsToDocument = useCallback(
     async (files: readonly File[]) => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null || files.length === 0) return;
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -1714,23 +1632,23 @@ export function App({ store }: AppProps) {
           outcome.report.steps,
         );
         setHandle(tab.id, next);
-        setNotice(t('props.attach.added', { count: outcome.added.length }));
+        showNotice(t('props.attach.added', { count: outcome.added.length }));
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setBusy(false);
       }
     },
-    [contextFor, setHandle, setBusy, store, t, refuseBusy],
+    [contextFor, setHandle, store, t, refuseBusy],
   );
 
   const removeAttachmentFromDocument = useCallback(
     async (name: string) => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) return;
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -1747,19 +1665,19 @@ export function App({ store }: AppProps) {
           outcome.report.steps,
         );
         setHandle(tab.id, next);
-        setNotice(
+        showNotice(
           outcome.missing.length > 0
             ? t('props.attach.missing', { count: outcome.missing.length })
             : t('props.attach.removed', { count: outcome.removed.length }),
         );
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setBusy(false);
       }
     },
-    [contextFor, setHandle, setBusy, store, t, refuseBusy],
+    [contextFor, setHandle, store, t, refuseBusy],
   );
 
   /** Write one embedded file out — the only operation that never touches the document. */
@@ -1773,10 +1691,10 @@ export function App({ store }: AppProps) {
         if (attachment === undefined) return;
         const bytes = await readPdfAttachment(handle, attachment);
         downloadFiles([{ name: attachment.filename, bytes, mime: 'application/octet-stream' }]);
-        setNotice(t('props.attach.readNamed', { name: attachment.filename }));
+        showNotice(t('props.attach.readNamed', { name: attachment.filename }));
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       }
     },
     [activeHandle, t],
@@ -1791,13 +1709,13 @@ export function App({ store }: AppProps) {
   );
   const openXfaForm = useCallback(() => {
     const tab = store.active;
-    const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
     if (tab === null || handle === null) return;
-    if (busyRef.current || cancelRef.current !== null) {
+    if (isBusy() || cancelRef.current !== null) {
       refuseBusy();
       return;
     }
-    setNotice(null);
+    clearNotice();
     setBusy(true);
     void (async () => {
       try {
@@ -1810,18 +1728,18 @@ export function App({ store }: AppProps) {
         }
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setBusy(false);
       }
     })();
-  }, [contextFor, refuseBusy, setBusy, store, t]);
+  }, [contextFor, refuseBusy, store, t]);
 
   /** The XFA dialog's verified bytes become the tab's next working version. */
   const saveXfaForm = useCallback(
     async (outcome: OperationOutcome & { readonly changed: number }) => {
       const form = xfaForm;
-      const handle = form === null ? null : (handles.current.get(form.tab.id) ?? null);
+      const handle = form === null ? null : (handleFor(form.tab.id) ?? null);
       if (form === null || handle === null) return;
       const next = await applyProducedBytes(
         contextFor(form.tab, handle),
@@ -1833,7 +1751,7 @@ export function App({ store }: AppProps) {
       );
       setHandle(form.tab.id, next);
       setXfaForm(null);
-      setNotice(t('xfa.fill.saved', { count: outcome.changed }));
+      showNotice(t('xfa.fill.saved', { count: outcome.changed }));
     },
     [contextFor, setHandle, t, xfaForm],
   );
@@ -1854,11 +1772,11 @@ export function App({ store }: AppProps) {
   const fillField = useCallback(
     async (name: string, value: string | boolean) => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) return;
       const current = formFields?.find((field) => field.name === name);
       if (current !== undefined && fieldValueText(current.value) === String(value)) return;
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -1877,15 +1795,15 @@ export function App({ store }: AppProps) {
           outcome.report.steps,
         );
         setHandle(tab.id, next);
-        setNotice(t('op.result.applied', { label: t('panel.forms') }));
+        showNotice(t('op.result.applied', { label: t('panel.forms') }));
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setBusy(false);
       }
     },
-    [contextFor, formFields, setBusy, setHandle, store, t, refuseBusy],
+    [contextFor, formFields, setHandle, store, t, refuseBusy],
   );
 
   /**
@@ -1895,15 +1813,14 @@ export function App({ store }: AppProps) {
    */
   const startFormDetect = useCallback(async () => {
     const tab = store.active;
-    const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
     if (tab === null || handle === null) return;
-    if (busyRef.current) {
+    if (isBusy()) {
       refuseBusy();
       return;
     }
     const version = tab.working.id;
-    setRightDock(true);
-    setRightTab('forms');
+    openRightPanel('forms');
     setFormDetect({
       tabId: tab.id,
       version,
@@ -1921,11 +1838,11 @@ export function App({ store }: AppProps) {
           ? { ...current, phase: 'review', detection }
           : current,
       );
-      if (detection.candidates.length === 0) setNotice(t('formDetect.panel.none'));
+      if (detection.candidates.length === 0) showNotice(t('formDetect.panel.none'));
     } catch (error) {
       setFormDetect(null);
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-      setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     }
   }, [contextFor, refuseBusy, store, t]);
 
@@ -1948,11 +1865,11 @@ export function App({ store }: AppProps) {
         inventory = { drafts: await draftStorage.readDrafts(), unreadable: [] };
       }
       if (inventory.enumerationFailed === true) {
-        if (!disposed) setNotice(tRef.current('error.write-failed.message'));
+        if (!disposed) showNotice(tRef.current('error.write-failed.message'));
         return;
       }
       if (inventory.unreadable.length > 0 && !disposed) {
-        setNotice(tRef.current('draft.corrupt', { count: inventory.unreadable.length }));
+        showNotice(tRef.current('draft.corrupt', { count: inventory.unreadable.length }));
       }
       const drafts = sortDrafts(inventory.drafts);
       let restored = 0;
@@ -2008,7 +1925,7 @@ export function App({ store }: AppProps) {
             pageCount: draft.sourcePageCount ?? draft.pageCount,
             ...(fileHandle === null ? {} : { handle: fileHandle }),
           });
-          handles.current.set(tab.id, handle);
+          adoptHandle(tab.id, handle);
           store.restoreHistory(tab.id, draft, snapshots);
           if (activeBeforeRestore !== null) store.setActive(activeBeforeRestore);
           persistedSnapshots.current.set(
@@ -2033,9 +1950,9 @@ export function App({ store }: AppProps) {
         }
       }
       if (!disposed && failure !== null) {
-        setNotice(`${tRef.current(failure.messageKey)} ${tRef.current(failure.hintKey)}`);
+        showNotice(`${tRef.current(failure.messageKey)} ${tRef.current(failure.hintKey)}`);
       } else if (!disposed && restored > 0 && inventory.unreadable.length === 0) {
-        setNotice(tRef.current('draft.restored', { count: restored }));
+        showNotice(tRef.current('draft.restored', { count: restored }));
       }
       // Handles whose recent entry is gone are forgotten — after the restore, which reads them.
       if (!disposed) await pruneRecentHandles(new Set(loadRecentDocuments().map((item) => item.id)));
@@ -2058,14 +1975,14 @@ export function App({ store }: AppProps) {
         .catch((error) => {
           const translate = tRef.current;
           if (error instanceof ToolError) {
-            setNotice(`${translate(error.messageKey)} ${translate(error.hintKey)}`);
+            showNotice(`${translate(error.messageKey)} ${translate(error.hintKey)}`);
             return;
           }
           // The browser's storage refused the draft: the same sentence an open that could
           // not store its recovery copy shows, and not again over a notice that already
           // says it (the failure repeats on every change while the store stays full).
           const warning = storedCopyWarning(error, translate);
-          setNotice((current) => (current?.includes(warning) === true ? current : warning));
+          showNoticeOnce(warning);
         });
     }, 600);
     return () => clearTimeout(timer);
@@ -2098,8 +2015,8 @@ export function App({ store }: AppProps) {
 
   const openFile = useCallback(
     async (file: File, fileHandle?: FileSystemFileHandle, password?: string) => {
-      setNotice(null);
-      if (busyRef.current) {
+      clearNotice();
+      if (isBusy()) {
         // A tool picked on the home screen waits for this document; an open refused never
         // brings it, so the tool must not run on whatever is opened next.
         pendingHomeCommand.current = null;
@@ -2152,10 +2069,10 @@ export function App({ store }: AppProps) {
           pageCount: handle.pageCount,
           ...(fileHandle === undefined ? {} : { handle: fileHandle }),
         });
-        handles.current.set(tab.id, handle);
+        adoptHandle(tab.id, handle);
         if (password !== undefined) {
           setLockedTabs((current) => new Map(current).set(tab.id, password));
-          setNotice(t('locked.banner'));
+          showNotice(t('locked.banner'));
         }
         addRecentDocument({
           id: tab.id,
@@ -2190,8 +2107,8 @@ export function App({ store }: AppProps) {
               ? t(fileVerdict.reason === 'pages' ? 'limit.viewingOnly.pages' : 'limit.viewingOnly.bytes')
               : null;
         // One notice line: the limit and the storage warning say different things and both stay.
-        if (limitNotice !== null) setNotice(appendWarning(limitNotice, storageWarning));
-        else if (storageWarning !== null) setNotice(storageWarning);
+        if (limitNotice !== null) showNotice(appendWarning(limitNotice, storageWarning));
+        else if (storageWarning !== null) showNotice(storageWarning);
       } catch (error) {
         const toolError =
           error instanceof ToolError ? error : new ToolError('corrupt-document', { engine: 'model' });
@@ -2206,13 +2123,13 @@ export function App({ store }: AppProps) {
           return;
         }
         pendingHomeCommand.current = null;
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setOpening(false);
         setBusy(false);
       }
     },
-    [draftStorage, setBusy, store, t, tier, setRedactionMarks, refuseBusy],
+    [draftStorage, store, t, tier, setRedactionMarks, refuseBusy],
   );
 
   /**
@@ -2238,14 +2155,14 @@ export function App({ store }: AppProps) {
           if (kind !== null) {
             // No document comes of this file, so a tool picked for it is dropped.
             pendingHomeCommand.current = null;
-            setNotice(t('convert.unsupported', { kind }));
+            showNotice(t('convert.unsupported', { kind }));
             return;
           }
         }
         await openFile(file, handle);
       } catch (error) {
         pendingHomeCommand.current = null;
-        setNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
+        showNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
       }
     },
     [openFile, t],
@@ -2303,7 +2220,7 @@ export function App({ store }: AppProps) {
         return;
       }
       pendingHomeCommand.current = null;
-      setNotice(t('open.pickerFailed'));
+      showNotice(t('open.pickerFailed'));
       return;
     }
     if (picked === undefined) return;
@@ -2346,7 +2263,7 @@ export function App({ store }: AppProps) {
         });
       }
       const tab = store.openDocument({ name, bytes, sha256, pageCount: handle.pageCount });
-      handles.current.set(tab.id, handle);
+      adoptHandle(tab.id, handle);
       addRecentDocument({
         id: tab.id,
         name,
@@ -2377,8 +2294,8 @@ export function App({ store }: AppProps) {
     async (file: File): Promise<void> => {
       const format = convertFormatOf(file.name);
       if (format === null && !isImageName(file.name)) return;
-      setNotice(null);
-      if (busyRef.current || cancelRef.current !== null) {
+      clearNotice();
+      if (isBusy() || cancelRef.current !== null) {
         pendingHomeCommand.current = null;
         refuseBusy();
         return;
@@ -2404,7 +2321,7 @@ export function App({ store }: AppProps) {
             { signal: controller.signal },
           );
           const warning = await openProducedTab(pdfNameFor(file.name), pictures.bytes, controller.signal);
-          setNotice(appendWarning(t('convert.imageOpened'), warning));
+          showNotice(appendWarning(t('convert.imageOpened'), warning));
           return;
         }
         const outcome = await convertToPdf(
@@ -2421,7 +2338,7 @@ export function App({ store }: AppProps) {
         const caveats = outcome.report.notes
           .filter((item) => item.key !== 'op.note.convert.done')
           .map((item) => t(item.key, item.params));
-        setNotice(
+        showNotice(
           appendWarning(
             [t('convert.opened', { format: formatLabel(format) }), ...caveats].join(' '),
             warning,
@@ -2430,7 +2347,7 @@ export function App({ store }: AppProps) {
       } catch (error) {
         pendingHomeCommand.current = null;
         if (controller.signal.aborted) return;
-        setNotice(noticeLine(failureNotices(error, 'error.unsupported-format.message'), t));
+        showNotice(noticeLine(failureNotices(error, 'error.unsupported-format.message'), t));
       } finally {
         setOpening(false);
         if (cancelRef.current === controller) {
@@ -2439,7 +2356,7 @@ export function App({ store }: AppProps) {
         }
       }
     },
-    [openProducedTab, refuseBusy, setBusy, t],
+    [openProducedTab, refuseBusy, t],
   );
   const convertAndOpenRef = useRef(convertAndOpen);
   convertAndOpenRef.current = convertAndOpen;
@@ -2472,7 +2389,7 @@ export function App({ store }: AppProps) {
           fileName: tab.name,
         });
         if (exported.count === 0) {
-          setNotice(t('ann.data.empty'));
+          showNotice(t('ann.data.empty'));
           return;
         }
         bytes = exported.bytes;
@@ -2483,7 +2400,7 @@ export function App({ store }: AppProps) {
             : `${t('ann.data.xfdfExported', { count: exported.count, name })} ${t('ann.data.xfdfSkipped', { count: exported.skipped })}`;
       } else {
         if (marks.length === 0) {
-          setNotice(t('ann.data.empty'));
+          showNotice(t('ann.data.empty'));
           return;
         }
         const pageCount = workingPageCount(tab);
@@ -2513,7 +2430,7 @@ export function App({ store }: AppProps) {
       anchor.click();
       // Blob URLs are cleaned up right after the operation.
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      setNotice(message);
+      showNotice(message);
     },
     [store, t],
   );
@@ -2577,7 +2494,7 @@ export function App({ store }: AppProps) {
           (sum, mark) => sum + (mark.replies?.length ?? 0) + (mark.review === undefined ? 0 : 1),
           0,
         );
-        setNotice(
+        showNotice(
           [
             t('ann.data.imported', { count: result.marks.length }),
             ...(answers === 0 ? [] : [t('ann.data.repliesImported', { count: answers })]),
@@ -2587,7 +2504,7 @@ export function App({ store }: AppProps) {
       } catch (error) {
         const toolError =
           error instanceof ToolError ? error : new ToolError('unsupported-format', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       }
     },
     [store, t, setAnnotations],
@@ -2619,7 +2536,7 @@ export function App({ store }: AppProps) {
   };
   const takeEngineAnnotations = useCallback(
     (api: ViewerApi | null = viewerApi.current): readonly AnnotationMark[] => {
-      if (api === null || api.document !== handles.current.get(store.active?.id ?? '')) return [];
+      if (api === null || api.document !== handleFor(store.active?.id ?? '')) return [];
       const entries = api.captureAnnotationEntries();
       if (entries.length === 0) return [];
       const boxes: { x: number; y: number; width: number; height: number }[] = [];
@@ -2648,7 +2565,7 @@ export function App({ store }: AppProps) {
       // stroke after undo/redo by confusing it with a restored owned annotation.
       const added = marks.map((mark) => ({ ...mark, id: crypto.randomUUID() }));
       setAnnotations([...current, ...added]);
-      setNotice(t('ann.captured', { count: marks.length }));
+      showNotice(t('ann.captured', { count: marks.length }));
       // Returned as well as stored: a writer that runs in the same tick reads the
       // fresh marks from here, because the state update above has not rendered yet
       // (`workingBytes` — the export path lost exactly these marks).
@@ -2690,9 +2607,9 @@ export function App({ store }: AppProps) {
    * pending lists are then cleared, exactly as a save clears them.
    */
   const materializeOrphanAnnotations = useCallback(async (): Promise<void> => {
-    if (busyRef.current || cancelRef.current !== null) return;
+    if (isBusy() || cancelRef.current !== null) return;
     const tab = store.getSnapshot().tabs.find((item) => item.id === store.active?.id) ?? null;
-    const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
     if (tab === null || handle === null) return;
     const controller = new AbortController();
     cancelRef.current = controller;
@@ -2719,14 +2636,14 @@ export function App({ store }: AppProps) {
     } catch (error) {
       if (controller.signal.aborted) return;
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-      setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
       if (cancelRef.current === controller) {
         cancelRef.current = null;
         setBusy(false);
       }
     }
-  }, [contextFor, setBusy, setHandle, store, t]);
+  }, [contextFor, setHandle, store, t]);
 
   /**
    * The orphan sweep in flight, if any.
@@ -2775,7 +2692,7 @@ export function App({ store }: AppProps) {
       for (const root of imported) next = addTrustRoot(next, root);
       setTrustRoots(next.roots);
       void writeAppFile('trust-roots.json', next);
-      setNotice(t('props.sig.roots.added', { count: imported.length }));
+      showNotice(t('props.sig.roots.added', { count: imported.length }));
     },
     [t, trustRoots],
   );
@@ -2787,7 +2704,7 @@ export function App({ store }: AppProps) {
       for (const list of imported) next = addRevocationList(next, list);
       setRevocationLists(next.lists);
       void writeAppFile('revocation-lists.json', next);
-      setNotice(t('props.sig.crls.added', { count: imported.length }));
+      showNotice(t('props.sig.crls.added', { count: imported.length }));
     },
     [t, revocationLists],
   );
@@ -2807,7 +2724,7 @@ export function App({ store }: AppProps) {
       verification: WriteVerification;
     } | null> => {
       const tab = store.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) return null;
 
       if (
@@ -2817,7 +2734,7 @@ export function App({ store }: AppProps) {
         currentForms.version !== tab.working.id ||
         formFields === null
       ) {
-        setNotice(
+        showNotice(
           t(currentFactsError !== null || currentForms?.error ? 'inspection.failed' : 'inspection.loading'),
         );
         return null;
@@ -2831,7 +2748,7 @@ export function App({ store }: AppProps) {
        * not automatic redaction; the user applies or clears the marks.
        */
       if (pendingOverlays(tab).redactions.length > 0) {
-        setNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
+        showNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
         return null;
       }
 
@@ -2920,7 +2837,7 @@ export function App({ store }: AppProps) {
     async (tabId = store.active?.id): Promise<boolean> => {
       const tab = store.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
       if (tab === null) return false;
-      if (saveLock.current || busyRef.current) {
+      if (saveLock.current || isBusy()) {
         refuseBusy();
         return false;
       }
@@ -2936,7 +2853,7 @@ export function App({ store }: AppProps) {
       const controller = new AbortController();
       cancelRef.current = controller;
       saveLock.current = true;
-      setNotice(null);
+      clearNotice();
       setBusy(true);
       try {
         let target = tab.source.handle;
@@ -3025,7 +2942,7 @@ export function App({ store }: AppProps) {
           verification,
           writtenTo: { fileName: preparedTab.name, savedAt: Date.now(), sha256: outputHash },
         });
-        setNotice(
+        showNotice(
           noticeLine(
             [{ key: 'save.done', params: { name: preparedTab.name } }, ...verificationNotices(verification)],
             t,
@@ -3034,7 +2951,7 @@ export function App({ store }: AppProps) {
         return true;
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
         return false;
       } finally {
         if (cancelRef.current === controller) cancelRef.current = null;
@@ -3042,19 +2959,18 @@ export function App({ store }: AppProps) {
         setBusy(false);
       }
     },
-    [prepareOutput, refuseBusy, setBusy, store, t],
+    [prepareOutput, refuseBusy, store, t],
   );
 
   const discardTab = useCallback(
     (id: string) => {
       if (store.active?.id === id) cancelRef.current?.abort();
-      const abandoned = handles.current.get(id);
-      handles.current.delete(id);
+      const abandoned = dropHandle(id);
       if (abandoned !== undefined) {
         // Closing a tab is not a place where a failure may be swallowed, and it
         // is not a place where one may be thrown at the user either: the document is
         // gone from the session, so the release is reported and the close proceeds.
-        void abandoned.destroy().catch(() => setNotice(tRef.current('notice.engineReleaseFailed')));
+        void abandoned.destroy().catch(() => showNotice(tRef.current('notice.engineReleaseFailed')));
       }
       store.closeTab(id);
       pendingEngineValues.current.delete(id);
@@ -3066,26 +2982,26 @@ export function App({ store }: AppProps) {
           // drafts” — the exact input that makes a shared source blob look unreferenced.
           // An incomplete inventory deletes nothing and says so.
           const removed = await forgetTabDraft(id);
-          if (removed === null) setNotice(tRef.current('vault.incomplete'));
+          if (removed === null) showNotice(tRef.current('vault.incomplete'));
         })
-        .catch(() => setNotice(tRef.current('error.write-failed.message')));
+        .catch(() => showNotice(tRef.current('error.write-failed.message')));
     },
     [store, forgetTabDraft],
   );
 
   const closeTab = useCallback(
     (id: string) => {
-      if (busyRef.current || cancelRef.current !== null || dialogSpec !== null) {
+      if (isBusy() || cancelRef.current !== null || dialogSpec !== null) {
         refuseBusy();
         return;
       }
       const tab = store.getSnapshot().tabs.find((item) => item.id === id);
       if (tab === undefined) return;
-      const handle = handles.current.get(id);
+      const handle = handleFor(id);
       if (tab.dirty || (handle !== undefined && hasEngineEdits(handle))) {
         closeTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         store.setActive(id);
-        setNotice(null);
+        clearNotice();
         setCloseRequest(id);
         return;
       }
@@ -3123,7 +3039,7 @@ export function App({ store }: AppProps) {
         setExistingInventory(null);
         return;
       }
-      releasedHandles.current.delete(api.document);
+      handleInUse(api.document);
       setZoomState(api.getZoom());
       takeEngineAnnotationsRef.current(api);
       // Every annotation the file already carries, listed once per document so the
@@ -3145,7 +3061,7 @@ export function App({ store }: AppProps) {
           // unavailable rather than normalizing against an invented empty inventory.
           setExistingInventory(null);
           const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'pdfjs' });
-          setNotice(t(failure.messageKey));
+          showNotice(t(failure.messageKey));
         });
       // A draft that carried engine-side edits applies them as soon as its document is
       // the one on screen; the tab stays dirty until a real save writes them.
@@ -3169,14 +3085,13 @@ export function App({ store }: AppProps) {
           );
           // A successful byte edit restores the carried form state as part of its
           // redraw. Keep that operation's result; incomplete restoration still wins.
-          setNotice((previous) =>
-            applied < pending.entries.length || pending.dropped > 0 ? restoration : (previous ?? restoration),
-          );
+          if (applied < pending.entries.length || pending.dropped > 0) showNotice(restoration);
+          else showNoticeIfEmpty(restoration);
         })
         .catch((error) => {
           if (viewerApi.current !== api) return;
           // The delta stays staged: it is the only copy of edits the document cannot see.
-          setNotice(noticeLine(failureNotices(error, 'error.write-failed.message'), t));
+          showNotice(noticeLine(failureNotices(error, 'error.write-failed.message'), t));
         });
     },
     [store, t],
@@ -3209,14 +3124,14 @@ export function App({ store }: AppProps) {
   const checkpointEngineValues = useCallback(async (): Promise<boolean> => {
     const api = viewerApi.current;
     const tab = store.active;
-    if (api === null || tab === null || api.document !== handles.current.get(tab.id)) return false;
+    if (api === null || tab === null || api.document !== handleFor(tab.id)) return false;
     const engineValues = await api.captureEngineValues();
     if (viewerApi.current !== api) return false;
     const latest = store.getSnapshot().tabs.find((item) => item.id === tab.id);
     if (
       latest === undefined ||
       store.active?.id !== tab.id ||
-      handles.current.get(tab.id) !== api.document ||
+      handleFor(tab.id) !== api.document ||
       latest.working.produced?.id !== tab.working.produced?.id
     )
       return false;
@@ -3239,11 +3154,11 @@ export function App({ store }: AppProps) {
   const markActiveDirty = useCallback(() => {
     const api = viewerApi.current;
     const tab = store.active;
-    if (api === null || tab === null || api.document !== handles.current.get(tab.id)) return;
+    if (api === null || tab === null || api.document !== handleFor(tab.id)) return;
     takeEngineAnnotations(api);
     void checkpointEngineValues().catch((error) => {
       const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'pdfjs' });
-      setNotice(t(failure.messageKey));
+      showNotice(t(failure.messageKey));
     });
   }, [checkpointEngineValues, store, t, takeEngineAnnotations]);
 
@@ -3258,7 +3173,7 @@ export function App({ store }: AppProps) {
       // the version the user is looking at, not the one the rendering control saw.
       const tab = store.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
       if (tab === null) return;
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -3283,7 +3198,7 @@ export function App({ store }: AppProps) {
         // The verification table travels with it either way: an export is a
         // write, and what the checks established belongs on the same line as the news
         // that it happened.
-        setNotice(
+        showNotice(
           noticeLine(
             [
               {
@@ -3297,13 +3212,13 @@ export function App({ store }: AppProps) {
         );
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         if (cancelRef.current === controller) cancelRef.current = null;
         setBusy(false);
       }
     },
-    [prepareOutput, refuseBusy, setBusy, store, t],
+    [prepareOutput, refuseBusy, store, t],
   );
 
   const toggleFullscreen = useCallback(async () => {
@@ -3323,11 +3238,11 @@ export function App({ store }: AppProps) {
    */
   const openStart = useCallback(
     (id: string) => {
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
-      setNotice(null);
+      clearNotice();
       void dialogById(id).then((spec) => {
         if (spec !== undefined) setStartSpec(spec);
       });
@@ -3339,7 +3254,7 @@ export function App({ store }: AppProps) {
     (id: string, presets?: Readonly<Record<string, FieldValue>>) => {
       // The camera scanner is a modal of its own, not an operation dialog.
       if (id === 'scan-camera') {
-        setNotice(null);
+        clearNotice();
         setScanOpen(true);
         return;
       }
@@ -3351,10 +3266,10 @@ export function App({ store }: AppProps) {
       // The tab and its handle are read at call time, like every other entry
       // point: a control one render old must not freeze the previous handle.
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) return;
-      setNotice(null);
-      if (busyRef.current || cancelRef.current !== null) {
+      clearNotice();
+      if (isBusy() || cancelRef.current !== null) {
         refuseBusy();
         return;
       }
@@ -3407,13 +3322,12 @@ export function App({ store }: AppProps) {
           // as a modal otherwise — the same capability in two places, with two sets of
           // buttons. Modals are kept for the decisions that block (password, close,
           // signature warning, export choice, print).
-          setRightDock(true);
-          setRightTab('tools');
+          openRightPanel('tools');
         } catch (error) {
           if (controller.signal.aborted) return;
           const toolError =
             error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
         } finally {
           if (cancelRef.current === controller) {
             cancelRef.current = null;
@@ -3424,7 +3338,7 @@ export function App({ store }: AppProps) {
     },
     // `existingAnnotations` and the takeover are part of the call: the dialog host
     // freezes the same working bytes a save writes, marks included.
-    [contextFor, openStart, setBusy, store, t, refuseBusy],
+    [contextFor, openStart, store, t, refuseBusy],
   );
 
   /**
@@ -3445,7 +3359,7 @@ export function App({ store }: AppProps) {
      */
     const opener = document.activeElement;
     shortcutsTrigger.current = opener instanceof HTMLElement && opener !== document.body ? opener : null;
-    setCanvasTool('select');
+    selectTool('select');
     setShortcutsOpen(true);
   }, []);
 
@@ -3464,40 +3378,11 @@ export function App({ store }: AppProps) {
     });
   }, []);
 
-  /**
-   * The left rail's selection. It writes **only** the canonical tool: the rail's ids
-   * *are* canonical ids, so "which button is pressed" and "which tool owns the pointer"
-   * cannot disagree — the divergence this replaces came from the rail writing a second
-   * state of its own that no other route updated.
-   *
-   * The note is the one entry with a second half: its marks are comments, so arming it
-   * opens the comment dock the user will edit them in.
-   */
-  const handleSelectLeftTool = useCallback((tool: CanvasToolId) => {
-    setCanvasTool(tool);
-    if (tool === 'note') {
-      setRightDock(true);
-      setRightTab('comments');
-    }
-  }, []);
-
-  /**
-   * The header's tools toggle: the tools panel is either what the right dock shows or
-   * it is not, so a second press closes the dock rather than re-selecting the tab.
-   */
-  const toggleToolsPanel = useCallback(() => {
-    if (rightDock && rightTab === 'tools') setRightDock(false);
-    else {
-      setRightDock(true);
-      setRightTab('tools');
-    }
-  }, [rightDock, rightTab]);
-
   /** Build an unlocked copy of a protected tab, in a new tab; the original stays protected. */
   const unlockActiveCopy = useCallback(async () => {
     const tab = store.active;
     const password = tab === null ? undefined : lockedTabs.get(tab.id);
-    if (tab === null || password === undefined || busyRef.current) return;
+    if (tab === null || password === undefined || isBusy()) return;
     setBusy(true);
     const controller = new AbortController();
     // The progress overlay's Cancel aborts `cancelRef`: registering the run is what makes
@@ -3519,16 +3404,16 @@ export function App({ store }: AppProps) {
         .filter((entry) => entry.kind === 'lost')
         .map((entry) => t(entry.key, entry.params ?? {}))
         .join(' ');
-      setNotice(appendWarning(appendWarning(t('locked.done'), lost === '' ? null : lost), warning));
+      showNotice(appendWarning(appendWarning(t('locked.done'), lost === '' ? null : lost), warning));
     } catch (error) {
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'mupdf' });
-      setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
       if (cancelRef.current === controller) cancelRef.current = null;
       setProgress(null);
       setBusy(false);
     }
-  }, [lockedTabs, openProducedTab, setBusy, store, t]);
+  }, [lockedTabs, openProducedTab, store, t]);
 
   const handleExportWithOptions = useCallback(
     (options: {
@@ -3634,8 +3519,8 @@ export function App({ store }: AppProps) {
         if (cancelled) return;
         setTextToolBytes(null);
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-        setCanvasTool('select');
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        selectTool('select');
       }
     })();
     return () => {
@@ -3656,7 +3541,7 @@ export function App({ store }: AppProps) {
   const currentBytes = useCallback(
     async (operation: OperationContext) => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) throw new ToolError('selection-empty', { engine: 'model' });
       return materializeBase(contextFor(tab, handle), operation, undefined, editableOverlays(tab));
     },
@@ -3675,7 +3560,7 @@ export function App({ store }: AppProps) {
       readonly steps: readonly string[];
     }) => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) return;
       const next = await applyProducedBytes(
         contextFor(tab, handle),
@@ -3686,7 +3571,7 @@ export function App({ store }: AppProps) {
         outcome.steps,
       );
       setHandle(tab.id, next);
-      setNotice(t('a11y.applied', { count: outcome.notes.length }));
+      showNotice(t('a11y.applied', { count: outcome.notes.length }));
     },
     [contextFor, setHandle, store, t],
   );
@@ -3702,7 +3587,7 @@ export function App({ store }: AppProps) {
        * refuse the result rather than write one document's bytes onto another.
        */
       const tab = store.getSnapshot().tabs.find((item) => item.id === input.tabId) ?? null;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (
         tab === null ||
         handle === null ||
@@ -3714,7 +3599,7 @@ export function App({ store }: AppProps) {
         setDialogSpec(null);
         return;
       }
-      if (busyRef.current || cancelRef.current !== null) {
+      if (isBusy() || cancelRef.current !== null) {
         refuseBusy();
         return;
       }
@@ -3739,7 +3624,7 @@ export function App({ store }: AppProps) {
         const kind = result.deliver ?? dialogSpec.resultKind;
         if (kind === 'download') {
           downloadFiles(result.files);
-          setNotice(
+          showNotice(
             result.noticeKey === undefined
               ? t('op.result.downloaded', { name: first?.name ?? '' })
               : t(result.noticeKey, result.noticeParams ?? {}),
@@ -3750,7 +3635,7 @@ export function App({ store }: AppProps) {
         if (first === undefined) return;
         if (kind === 'new-tab') {
           const warning = await openProducedTab(first.name, first.bytes, controller.signal);
-          setNotice(
+          showNotice(
             appendWarning(
               result.noticeKey === undefined
                 ? t('op.result.opened', { name: first.name })
@@ -3789,7 +3674,7 @@ export function App({ store }: AppProps) {
             })
             .catch(() => undefined);
         }
-        setNotice(
+        showNotice(
           result.noticeKey === undefined
             ? t('op.result.applied', { label: t(dialogSpec.titleKey) })
             : t(result.noticeKey, result.noticeParams ?? {}),
@@ -3799,7 +3684,7 @@ export function App({ store }: AppProps) {
       } catch (error) {
         if (controller.signal.aborted) return;
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         if (cancelRef.current === controller) {
           cancelRef.current = null;
@@ -3807,18 +3692,7 @@ export function App({ store }: AppProps) {
         }
       }
     },
-    [
-      contextFor,
-      dialogContext,
-      dialogInput,
-      dialogSpec,
-      openProducedTab,
-      setBusy,
-      setHandle,
-      store,
-      t,
-      refuseBusy,
-    ],
+    [contextFor, dialogContext, dialogInput, dialogSpec, openProducedTab, setHandle, store, t, refuseBusy],
   );
 
   /**
@@ -3832,12 +3706,12 @@ export function App({ store }: AppProps) {
       const first = result.files[0];
       if ((result.deliver ?? spec.resultKind) === 'download') {
         downloadFiles(result.files);
-        setNotice(t('op.result.downloaded', { name: first?.name ?? '' }));
+        showNotice(t('op.result.downloaded', { name: first?.name ?? '' }));
         setStartSpec(null);
         return;
       }
       if (first === undefined) return;
-      if (busyRef.current || cancelRef.current !== null) {
+      if (isBusy() || cancelRef.current !== null) {
         refuseBusy();
         return;
       }
@@ -3847,10 +3721,10 @@ export function App({ store }: AppProps) {
       try {
         const warning = await openProducedTab(first.name, first.bytes, controller.signal);
         setStartSpec(null);
-        setNotice(appendWarning(t('op.result.opened', { name: first.name }), warning));
+        showNotice(appendWarning(t('op.result.opened', { name: first.name }), warning));
       } catch (error) {
         if (controller.signal.aborted) return;
-        setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
+        showNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
       } finally {
         if (cancelRef.current === controller) {
           cancelRef.current = null;
@@ -3858,7 +3732,7 @@ export function App({ store }: AppProps) {
         }
       }
     },
-    [openProducedTab, refuseBusy, setBusy, startSpec, t],
+    [openProducedTab, refuseBusy, startSpec, t],
   );
 
   /**
@@ -3870,7 +3744,7 @@ export function App({ store }: AppProps) {
     async (result: ScannedDocument): Promise<string | undefined> => {
       // The scanner is a modal: a notice set here would sit behind it, so a refusal or a
       // failure is returned to the dialog, which shows it where the user is looking.
-      if (busyRef.current || cancelRef.current !== null) return t('op.busy');
+      if (isBusy() || cancelRef.current !== null) return t('op.busy');
       const controller = new AbortController();
       cancelRef.current = controller;
       setBusy(true);
@@ -3879,7 +3753,7 @@ export function App({ store }: AppProps) {
         const warning = await openProducedTab(result.name, result.bytes, controller.signal);
         opened = true;
         setScanOpen(false);
-        setNotice(appendWarning(t('scan.opened', { count: result.pageCount, name: result.name }), warning));
+        showNotice(appendWarning(t('scan.opened', { count: result.pageCount, name: result.name }), warning));
       } catch (error) {
         if (controller.signal.aborted) return undefined;
         return noticeLine(failureNotices(error, 'error.internal.message'), t);
@@ -3893,7 +3767,7 @@ export function App({ store }: AppProps) {
       if (opened && result.offerOcr) window.setTimeout(() => openDialog('ocr'), 0);
       return undefined;
     },
-    [openDialog, openProducedTab, setBusy, t],
+    [openDialog, openProducedTab, t],
   );
 
   /**
@@ -3902,7 +3776,7 @@ export function App({ store }: AppProps) {
    */
   const handlePrintProduced = useCallback(
     async (file: { readonly name: string; readonly bytes: Uint8Array }) => {
-      if (busyRef.current || cancelRef.current !== null) {
+      if (isBusy() || cancelRef.current !== null) {
         refuseBusy();
         return;
       }
@@ -3914,10 +3788,10 @@ export function App({ store }: AppProps) {
         const warning = await openProducedTab(file.name, file.bytes, controller.signal);
         setPrintOpen(false);
         // The print dialog has no success line of its own: the warning is the only notice.
-        if (warning !== null) setNotice(warning);
+        if (warning !== null) showNotice(warning);
       } catch (error) {
         if (controller.signal.aborted) return;
-        setNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
+        showNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
       } finally {
         if (cancelRef.current === controller) {
           cancelRef.current = null;
@@ -3925,7 +3799,7 @@ export function App({ store }: AppProps) {
         }
       }
     },
-    [openProducedTab, refuseBusy, refuseUnappliedRedactions, setBusy, t],
+    [openProducedTab, refuseBusy, refuseUnappliedRedactions, t],
   );
 
   /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
@@ -3954,7 +3828,7 @@ export function App({ store }: AppProps) {
     ): Promise<void> => {
       if (outcome.report.incremental) {
         const unchanged = outcome.report.notes.find((entry) => entry.kind !== 'preserved');
-        setNotice(unchanged === undefined ? t(labelKey) : t(unchanged.key, unchanged.params ?? {}));
+        showNotice(unchanged === undefined ? t(labelKey) : t(unchanged.key, unchanged.params ?? {}));
         return;
       }
       const next = await applyProducedBytes(
@@ -3969,7 +3843,7 @@ export function App({ store }: AppProps) {
       const spoken = outcome.report.notes
         .filter((entry) => entry.kind !== 'preserved')
         .map((entry) => t(entry.key, entry.params ?? {}));
-      setNotice(spoken.length === 0 ? t(labelKey) : spoken.join(' '));
+      showNotice(spoken.length === 0 ? t(labelKey) : spoken.join(' '));
     },
     [contextFor, setHandle, t],
   );
@@ -3990,7 +3864,7 @@ export function App({ store }: AppProps) {
       if (tab === null || handle === null) return;
       // Read at call time, like every other control that replaces the handle: a panel
       // rendered one commit earlier holds that commit's closure.
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -4003,12 +3877,12 @@ export function App({ store }: AppProps) {
         await applyWriterOutcome(tab, handle, outcome, 'panel.layers');
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setBusy(false);
       }
     },
-    [activeTab, activeHandle, applyWriterOutcome, contextFor, setBusy, t, refuseBusy],
+    [activeTab, activeHandle, applyWriterOutcome, contextFor, t, refuseBusy],
   );
 
   /**
@@ -4021,7 +3895,7 @@ export function App({ store }: AppProps) {
       const tab = activeTab;
       const handle = activeHandle;
       if (tab === null || handle === null) return;
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -4052,12 +3926,12 @@ export function App({ store }: AppProps) {
         await applyWriterOutcome(tab, handle, outcome, 'panel.attachments');
       } catch (error) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
         setBusy(false);
       }
     },
-    [activeTab, activeHandle, applyWriterOutcome, contextFor, setBusy, t, refuseBusy],
+    [activeTab, activeHandle, applyWriterOutcome, contextFor, t, refuseBusy],
   );
 
   /**
@@ -4101,7 +3975,7 @@ export function App({ store }: AppProps) {
       );
       if (isEmptyRemoval(request)) return false;
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null || !canEditRef.current) return false;
       const count = removalCount(request);
 
@@ -4117,7 +3991,7 @@ export function App({ store }: AppProps) {
           pruneOverlays(editableOverlays(tab), request) as unknown as JsonValue,
           'ann.remove',
         );
-        setNotice(t('ann.removed', { count }));
+        showNotice(t('ann.removed', { count }));
         return true;
       }
 
@@ -4128,7 +4002,7 @@ export function App({ store }: AppProps) {
        * housekeeping.
        */
       const inFlight = orphanSweep.current;
-      if (inFlight === null && (busyRef.current || cancelRef.current !== null)) {
+      if (inFlight === null && (isBusy() || cancelRef.current !== null)) {
         refuseBusy();
         return false;
       }
@@ -4136,7 +4010,7 @@ export function App({ store }: AppProps) {
         const controller = new AbortController();
         try {
           if (inFlight !== null) await inFlight;
-          if (busyRef.current || cancelRef.current !== null) {
+          if (isBusy() || cancelRef.current !== null) {
             refuseBusy();
             return;
           }
@@ -4161,7 +4035,7 @@ export function App({ store }: AppProps) {
               pruneOverlays(editableOverlays(fresh), request) as unknown as JsonValue,
               'ann.remove',
             );
-            setNotice(t('ann.removed', { count }));
+            showNotice(t('ann.removed', { count }));
             return;
           }
           const outcome = await removeMarkTargets(
@@ -4188,12 +4062,12 @@ export function App({ store }: AppProps) {
             outcome.overlays,
           );
           setHandle(fresh.id, next);
-          setNotice(t('ann.removed', { count }));
+          showNotice(t('ann.removed', { count }));
         } catch (error) {
           if (controller.signal.aborted) return;
           const toolError =
             error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
         } finally {
           if (cancelRef.current === controller) {
             cancelRef.current = null;
@@ -4203,7 +4077,7 @@ export function App({ store }: AppProps) {
       })();
       return true;
     },
-    [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setBusy, setHandle, store, t],
+    [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setHandle, store, t],
   );
   const removeTargetsRef = useRef(removeTargets);
   removeTargetsRef.current = removeTargets;
@@ -4212,9 +4086,9 @@ export function App({ store }: AppProps) {
   const transformTargets = useCallback(
     (keys: readonly string[], transform: MarkTransform): boolean => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null || existingAnnotations === null) return false;
-      if (busyRef.current || cancelRef.current !== null || !canEditRef.current) return false;
+      if (isBusy() || cancelRef.current !== null || !canEditRef.current) return false;
       if (transform.dx === 0 && transform.dy === 0 && transform.rotation === 0) return false;
       const targets = markTargetsRef.current;
       const wanted = new Set(keys);
@@ -4233,7 +4107,7 @@ export function App({ store }: AppProps) {
           } as unknown as JsonValue,
           'ann.transform',
         );
-        setNotice(t('ann.transformed', { count }));
+        showNotice(t('ann.transformed', { count }));
         return true;
       }
       const controller = new AbortController();
@@ -4286,11 +4160,11 @@ export function App({ store }: AppProps) {
             );
             setHandle(fresh.id, next);
           }
-          setNotice(t('ann.transformed', { count }));
+          showNotice(t('ann.transformed', { count }));
         } catch (error) {
           if (controller.signal.aborted) return;
           const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          setNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
+          showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
         } finally {
           if (cancelRef.current === controller) {
             cancelRef.current = null;
@@ -4300,7 +4174,7 @@ export function App({ store }: AppProps) {
       })();
       return true;
     },
-    [checkpointEngineValues, contextFor, editableOverlays, existingAnnotations, setBusy, setHandle, store, t],
+    [checkpointEngineValues, contextFor, editableOverlays, existingAnnotations, setHandle, store, t],
   );
 
   /**
@@ -4321,9 +4195,9 @@ export function App({ store }: AppProps) {
       selectOnPage?: number,
     ): boolean => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) return false;
-      if (busyRef.current || cancelRef.current !== null || !canEditRef.current) {
+      if (isBusy() || cancelRef.current !== null || !canEditRef.current) {
         refuseBusy();
         return false;
       }
@@ -4363,11 +4237,11 @@ export function App({ store }: AppProps) {
           if (outcome.annotationId !== undefined && selectOnPage !== undefined) {
             selectAfterWrite.current = markTargetKey('existing', outcome.annotationId, selectOnPage);
           }
-          setNotice(done);
+          showNotice(done);
         } catch (error) {
           if (controller.signal.aborted) return;
           const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          setNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
+          showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
         } finally {
           if (cancelRef.current === controller) {
             cancelRef.current = null;
@@ -4377,7 +4251,7 @@ export function App({ store }: AppProps) {
       })();
       return true;
     },
-    [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setBusy, setHandle, store, t],
+    [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setHandle, store, t],
   );
 
   /**
@@ -4413,7 +4287,7 @@ export function App({ store }: AppProps) {
         );
         const id = store.active?.id;
         if (id !== undefined) store.setDirty(id, true);
-        setNotice(
+        showNotice(
           answer.kind === 'reply'
             ? t('ann.reply.pendingDone')
             : author.trim() === ''
@@ -4466,7 +4340,7 @@ export function App({ store }: AppProps) {
     if (review?.detection == null || review.phase !== 'review') return;
     const kept = review.detection.candidates.filter((candidate) => !review.removed.has(candidate.id));
     if (kept.length === 0) return;
-    setRightTab('forms');
+    selectRightTab('forms');
     writeFileAnnotation(
       { key: 'formDetect.note.created', params: { count: kept.length } },
       async (base, signal) => {
@@ -4517,7 +4391,7 @@ export function App({ store }: AppProps) {
         t('sig.placed', { kind }),
         placement.pageIndex,
       );
-      if (started) setCanvasTool('select');
+      if (started) selectTool('select');
     },
     [annotationAuthor, pendingStamp, stampKind, t, writeFileAnnotation],
   );
@@ -4527,7 +4401,7 @@ export function App({ store }: AppProps) {
     (key: string, rect: readonly [number, number, number, number]) => {
       const target = markTargetsRef.current.find((candidate) => candidate.key === key);
       if (target === undefined || target.family !== 'existing' || target.resizable !== true) {
-        setNotice(t('stamp.notResizable'));
+        showNotice(t('stamp.notResizable'));
         return;
       }
       writeFileAnnotation(
@@ -4543,16 +4417,15 @@ export function App({ store }: AppProps) {
   /** Arm the `stamp` tool with a picture; the next click on a page places it. */
   const armStamp = useCallback(
     (source: StampSource) => {
-      setPendingStamp(source);
-      setCanvasTool('stamp');
-      setNotice(t('sig.placing'));
+      armStampTool(source);
+      showNotice(t('sig.placing'));
     },
     [t],
   );
 
   const openSignature = useCallback(() => {
     if (store.active === null) return;
-    if (busyRef.current || !canEditRef.current) {
+    if (isBusy() || !canEditRef.current) {
       refuseBusy();
       return;
     }
@@ -4561,7 +4434,7 @@ export function App({ store }: AppProps) {
 
   const pickImage = useCallback(() => {
     if (store.active === null) return;
-    if (busyRef.current || !canEditRef.current) {
+    if (isBusy() || !canEditRef.current) {
       refuseBusy();
       return;
     }
@@ -4573,7 +4446,7 @@ export function App({ store }: AppProps) {
       const { imageFromFile } = await import('pdf-ui/dialog');
       const source = await imageFromFile(file);
       if (source === null) {
-        setNotice(t('img.add.failed', { name: file.name }));
+        showNotice(t('img.add.failed', { name: file.name }));
         return;
       }
       armStamp(source);
@@ -4600,7 +4473,7 @@ export function App({ store }: AppProps) {
   const deleteMarkSelection = useCallback((): boolean => {
     const keys = selectedKeysRef.current;
     if (keys.length === 0) return false;
-    if (orphanSweep.current === null && (busyRef.current || cancelRef.current !== null)) {
+    if (orphanSweep.current === null && (isBusy() || cancelRef.current !== null)) {
       refuseBusy();
       return false;
     }
@@ -4615,7 +4488,7 @@ export function App({ store }: AppProps) {
    * shell declines it instead of stealing it.
    */
   const selectAllMarks = useCallback((): boolean => {
-    if (canvasToolRef.current !== 'select') return false;
+    if (coreStore.get().canvasTool !== 'select') return false;
     if (store.active === null || existingAnnotations === null) return false;
     const keys = markTargetsRef.current.map((target) => target.key);
     if (keys.length === 0) return false;
@@ -4658,10 +4531,9 @@ export function App({ store }: AppProps) {
 
   /** Opens the note the common layer just created: selected, visible, contents editable. */
   const openNote = useCallback((mark: AnnotationMark) => {
-    setCanvasTool('select');
+    selectTool('select');
     setSelectedKeys([markTargetKey('annotation', mark.id, mark.pageIndex)]);
-    setRightDock(true);
-    setRightTab('comments');
+    openRightPanel('comments');
   }, []);
 
   /** Page-structure actions: journaled, cancellable. */
@@ -4676,9 +4548,9 @@ export function App({ store }: AppProps) {
        * while the first action looked perfectly healthy.
        */
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null || !canEditRef.current || cancelRef.current !== null) return;
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -4708,19 +4580,19 @@ export function App({ store }: AppProps) {
             // The notice names what actually happened: a delete and a move are
             // different journal steps and the History panel shows both.
             const label = pageActionLabel(action, selection.length);
-            setNotice(t('op.result.applied', { label: t(label.key, label.params) }));
+            showNotice(t('op.result.applied', { label: t(label.key, label.params) }));
           } else {
             /**
              * A page action that did nothing says so. The silent version was found by a
              * driver that clicked a disabled button and saw only a stale notice — an
              * inert control and a refused action must not look the same.
              */
-            setNotice(t('op.result.noChangePages'));
+            showNotice(t('op.result.noChangePages'));
           }
         } catch (error) {
           const toolError =
             error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
         } finally {
           if (cancelRef.current === controller) {
             cancelRef.current = null;
@@ -4730,14 +4602,13 @@ export function App({ store }: AppProps) {
         }
       })();
     },
-    [contextFor, setBusy, setHandle, store, t, refuseBusy],
+    [contextFor, setHandle, store, t, refuseBusy],
   );
 
   const cancelOperation = useCallback(() => {
     cancelRef.current?.abort();
-    setNotice(t('op.cancelRequested'));
+    showNotice(t('op.cancelRequested'));
   }, [t]);
-  const dismissNotice = useCallback(() => setNotice(null), []);
 
   /**
    * Undo/redo. The model moves its own state and reports which bytes the
@@ -4747,9 +4618,9 @@ export function App({ store }: AppProps) {
   const stepHistory = useCallback(
     async (direction: 'undo' | 'redo'): Promise<void> => {
       const tab = store.active;
-      const handle = tab === null ? undefined : handles.current.get(tab.id);
+      const handle = tab === null ? undefined : handleFor(tab.id);
       if (tab === null || handle === undefined || cancelRef.current !== null) return;
-      if (busyRef.current) {
+      if (isBusy()) {
         refuseBusy();
         return;
       }
@@ -4762,7 +4633,7 @@ export function App({ store }: AppProps) {
             signal: controller.signal,
           });
           if (result === null) {
-            if (store.active?.id === tab.id) setNotice(t('op.undo.unavailable'));
+            if (store.active?.id === tab.id) showNotice(t('op.undo.unavailable'));
             return;
           }
           if (result.handle !== handle) {
@@ -4776,12 +4647,12 @@ export function App({ store }: AppProps) {
             result.entry.labelKey as Parameters<typeof t>[0],
             (result.entry.labelParams ?? {}) as Readonly<Record<string, string | number>>,
           );
-          setNotice(t(direction === 'undo' ? 'op.undo.done' : 'op.redo.done', { label }));
+          showNotice(t(direction === 'undo' ? 'op.undo.done' : 'op.redo.done', { label }));
         } catch (error) {
           if (store.active?.id !== tab.id || controller.signal.aborted) return;
           const toolError =
             error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
         } finally {
           if (cancelRef.current === controller) {
             cancelRef.current = null;
@@ -4790,7 +4661,7 @@ export function App({ store }: AppProps) {
         }
       })();
     },
-    [contextFor, setBusy, setHandle, store, t, refuseBusy],
+    [contextFor, setHandle, store, t, refuseBusy],
   );
 
   /**
@@ -4819,11 +4690,11 @@ export function App({ store }: AppProps) {
   const stepHistoryNow = useCallback(
     (direction: 'undo' | 'redo'): boolean => {
       const tab = store.active;
-      const handle = tab === null ? null : (handles.current.get(tab.id) ?? null);
+      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
       if (tab === null || handle === null) return false;
       const inFlight = orphanSweep.current;
       const queued = historyPending.current > 0;
-      if (!queued && inFlight === null && (busyRef.current || cancelRef.current !== null)) {
+      if (!queued && inFlight === null && (isBusy() || cancelRef.current !== null)) {
         refuseBusy();
         return false;
       }
@@ -4831,14 +4702,14 @@ export function App({ store }: AppProps) {
       const run = async (): Promise<void> => {
         // A step queued behind another starts from the version that one produced, so the
         // handle is read when this step begins, not when the key was pressed.
-        const start = handles.current.get(tab.id);
+        const start = handleFor(tab.id);
         if (store.active?.id !== tab.id || start === undefined) return;
         // The sweep replaces the working version, so it must be over before the
         // checkpoint reads the engine and before the model moves.
         const sweep = orphanSweep.current;
         if (sweep !== null) await sweep;
-        if (store.active?.id !== tab.id || handles.current.get(tab.id) !== start) return;
-        if (busyRef.current || cancelRef.current !== null) {
+        if (store.active?.id !== tab.id || handleFor(tab.id) !== start) return;
+        if (isBusy() || cancelRef.current !== null) {
           refuseBusy();
           return;
         }
@@ -4850,8 +4721,7 @@ export function App({ store }: AppProps) {
          * can still see on the page.
          */
         await checkpointEngineValues();
-        if (store.active?.id === tab.id && handles.current.get(tab.id) === start)
-          await stepHistory(direction);
+        if (store.active?.id === tab.id && handleFor(tab.id) === start) await stepHistory(direction);
       };
       historyPending.current += 1;
       historyTail.current = historyTail.current
@@ -4859,7 +4729,7 @@ export function App({ store }: AppProps) {
         .catch((error) => {
           if (store.active?.id !== tab.id) return;
           const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          setNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
+          showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
         })
         .finally(() => {
           historyPending.current -= 1;
@@ -4896,13 +4766,12 @@ export function App({ store }: AppProps) {
           // The ruler's own sub-mode: the same one canonical value the rail and the palette
           // write, so arming it from the menu cannot leave two answers behind.
           setMeasureSubMode(mode);
-          setCanvasTool('measure');
+          selectTool('measure');
         },
         measureMode,
         detectFormFields: () => void startFormDetect(),
         showRightTab: (tab) => {
-          setRightDock(true);
-          setRightTab(tab);
+          openRightPanel(tab);
         },
         undo: () => stepHistoryNow('undo'),
         redo: () => stepHistoryNow('redo'),
@@ -4918,31 +4787,29 @@ export function App({ store }: AppProps) {
         setZoom: (value) => viewerApi.current?.setZoom(value),
         setSpread: (mode) => viewerApi.current?.setSpreadMode(mode),
         toggleFullscreen: () => void toggleFullscreen(),
-        toggleReading: () => setReading((value) => !value),
-        toggleMagnifier: () => setMagnifierOn((value) => !value),
+        toggleReading,
+        toggleMagnifier,
         openSnapshot: openSnapshotMenu,
-        toggleLeftDock: () => setLeftDock((value) => !value),
-        toggleRightDock: () => setRightDock((value) => !value),
+        toggleLeftDock,
+        toggleRightDock,
         selectAllPages: () => setSelectedPages(Array.from({ length: pageCount }, (_v, index) => index)),
         clearSelection: () => setSelectedPages([]),
         palette: () => {
           // A modal surface takes the pointer: the measure overlay covers the viewer, so a
           // tool left armed would swallow the palette's own clicks (measured in the harness).
-          setCanvasTool('select');
+          selectTool('select');
           setPaletteOpen(true);
         },
         openLeftTab: (tab) => {
-          setLeftDock(true);
-          setLeftTab(tab);
+          openLeftPanel(tab);
         },
         activeTool: canvasTool,
-        armTool: (tool) => setCanvasTool(tool),
+        armTool: (tool) => selectTool(tool),
         selectedMarkCount: selectedKeys.length,
         deleteMarkSelection: () => void deleteMarkSelection(),
         selectAllMarks: () => void selectAllMarks(),
         showRedactionAudit: () => {
-          setRightDock(true);
-          setRightTab('redaction-audit');
+          openRightPanel('redaction-audit');
         },
         theme,
         setTheme,
@@ -5071,12 +4938,12 @@ export function App({ store }: AppProps) {
         palette: () => {
           // The second host (the keyboard shortcut layer) takes the same rule: a modal
           // surface takes the pointer, so no tool stays armed under it.
-          setCanvasTool('select');
+          selectTool('select');
           setPaletteOpen(true);
         },
-        toggleLeftDock: () => setLeftDock((value) => !value),
-        toggleRightDock: () => setRightDock((value) => !value),
-        reading: () => setReading((value) => !value),
+        toggleLeftDock,
+        toggleRightDock,
+        reading: toggleReading,
         documentProperties: () => openDialog('properties'),
         findReplace: () => {
           if (!canEditRef.current) return false;
@@ -5192,15 +5059,9 @@ export function App({ store }: AppProps) {
             const next = name.trim();
             if (next === '' || next === activeTab.name) return;
             store.renameTab(activeTab.id, next);
-            setNotice(t('shell.rename.done', { name: next }));
+            showNotice(t('shell.rename.done', { name: next }));
           }}
           isDirty={activeTab.dirty}
-          toolsOpen={rightDock && rightTab === 'tools'}
-          onTools={toggleToolsPanel}
-          reading={reading}
-          onRead={() => setReading((open) => !open)}
-          editingText={canvasTool === 'text'}
-          onEditText={() => setCanvasTool(canvasTool === 'text' ? 'select' : 'text')}
           canEdit={canEdit}
           onConvert={() => setExportModalOpen(true)}
           onSign={() => openDialog('sign')}
@@ -5256,11 +5117,11 @@ export function App({ store }: AppProps) {
                   // The strip's own toggle reports `null` when the armed mode is
                   // clicked again, which is the same stop as its Stop button.
                   if (mode === null) {
-                    setCanvasTool('select');
+                    selectTool('select');
                     return;
                   }
                   setMeasureSubMode(mode);
-                  setCanvasTool('measure');
+                  selectTool('measure');
                 }}
                 scale={measureScale}
                 onScale={setMeasureScale}
@@ -5284,7 +5145,7 @@ export function App({ store }: AppProps) {
                 author={annotationAuthor}
                 onAuthor={setAnnotationAuthor}
                 reading={measureReading}
-                onStop={() => setCanvasTool('select')}
+                onStop={() => selectTool('select')}
               />
             </Suspense>
           ) : (
@@ -5302,14 +5163,14 @@ export function App({ store }: AppProps) {
               onFontSize={setFontSize}
               redactionCount={redactionMarks.length}
               onApplyRedaction={() => openDialog('redact')}
-              onTool={setCanvasTool}
+              onTool={selectTool}
               selectedCount={selectedKeys.length}
               disabled={!canEdit || (canvasTool === 'select' && existingAnnotations === null)}
               onColor={setAnnotationColor}
               onOpacity={setAnnotationOpacity}
               onThickness={setAnnotationThickness}
               onAuthor={setAnnotationAuthor}
-              onShape={setShape}
+              onShape={selectShape}
               // Selection actions share one intent across every mark family.
               onDeleteSelection={() => void removeTargets(selectedKeys)}
               onRotateSelection={() => void transformTargets(selectedKeys, { dx: 0, dy: 0, rotation: 90 })}
@@ -5407,7 +5268,7 @@ export function App({ store }: AppProps) {
                   await openFromSurface(reopened.file, reopened.handle);
                   return;
                 }
-                setNotice(
+                showNotice(
                   t(reopened.kind === 'denied' ? 'home.reopen.denied' : 'home.reopen.missing', {
                     name: item.name,
                   }),
@@ -5429,7 +5290,7 @@ export function App({ store }: AppProps) {
                       sha256,
                       pageCount: matchedDraft.pageCount,
                     });
-                    handles.current.set(tab.id, handle);
+                    adoptHandle(tab.id, handle);
                     store.setActive(tab.id);
                     setShowHomeScreen(false);
                     return;
@@ -5438,7 +5299,7 @@ export function App({ store }: AppProps) {
               } catch (error) {
                 // The draft could not be read back: say so, then offer the picker so the
                 // user can open the file itself.
-                setNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
+                showNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
               }
               void openViaPicker();
             }}
@@ -5450,7 +5311,7 @@ export function App({ store }: AppProps) {
             {leftDock ? (
               <div className={compactViewport ? 'absolute inset-y-0 start-0 z-40 max-w-full' : 'contents'}>
                 <DocumentPanel
-                  onToggle={() => setLeftDock(false)}
+                  onToggle={() => hideLeftDock()}
                   document={activeHandle}
                   t={t}
                   currentPage={currentPage}
@@ -5461,7 +5322,7 @@ export function App({ store }: AppProps) {
                   version={activeTab.working.stateId}
                   marks={visibleMarks.annotations}
                   onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
-                  onNotice={setNotice}
+                  onNotice={showNotice}
                   onHighlightQuery={(query) => viewerApi.current?.find(query)}
                   onLayersChanged={() => void viewerApi.current?.refreshOptionalContent()}
                   onExtract={() => openDialog('extract-pages')}
@@ -5471,17 +5332,11 @@ export function App({ store }: AppProps) {
                   onRemoveAttachments={(names) => void writeAttachments({ remove: names })}
                   visibleTabs={mode === 'simple' ? SIMPLE_MODE_DOCK_TABS : undefined}
                   tab={leftTab}
-                  onTabChange={setLeftTab}
+                  onTabChange={selectLeftTab}
                 />
               </div>
             ) : null}
-            <ToolRail
-              t={t}
-              activeTool={canvasTool}
-              markupTool={markupTool}
-              onSelectTool={handleSelectLeftTool}
-              canEdit={canEdit}
-            />
+            <ToolRail t={t} canEdit={canEdit} />
             {/* biome-ignore lint/a11y/noStaticElementInteractions: context menu listener on the document canvas container */}
             <div className="relative min-w-0 flex-1 overflow-hidden" onContextMenu={handleContextMenu}>
               {/* Persistent edge handle to reopen Left Dock */}
@@ -5490,7 +5345,7 @@ export function App({ store }: AppProps) {
                   type="button"
                   title={t('nav.togglePages')}
                   aria-label={t('nav.togglePages')}
-                  onClick={() => setLeftDock(true)}
+                  onClick={() => showLeftDock()}
                   className="absolute start-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-e-md border border-s-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
                 >
                   <CaretRight size={12} weight="bold" className="rtl:-scale-x-100" />
@@ -5503,7 +5358,7 @@ export function App({ store }: AppProps) {
                   type="button"
                   title={t('tools.all')}
                   aria-label={t('tools.all')}
-                  onClick={() => setRightDock(true)}
+                  onClick={() => showRightDock()}
                   className="absolute end-0 top-3 z-30 flex h-9 w-4 items-center justify-center rounded-s-md border border-e-0 border-kumo-line bg-kumo-base/95 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-strong pdf-floating-shadow transition-all"
                 >
                   <CaretLeft size={12} weight="bold" className="rtl:-scale-x-100" />
@@ -5536,7 +5391,7 @@ export function App({ store }: AppProps) {
                           onMark={(mark) =>
                             setRedactionMarks((marks) => [...marks, { id: crypto.randomUUID(), mark }])
                           }
-                          onDone={() => setCanvasTool('select')}
+                          onDone={() => selectTool('select')}
                         />
                       ) : null}
                       {/*
@@ -5560,7 +5415,7 @@ export function App({ store }: AppProps) {
                             snapGrid={measureSnapGrid}
                             snapPoints={measureSnapPoints}
                             onReading={setMeasureReading}
-                            onStop={() => setCanvasTool('select')}
+                            onStop={() => selectTool('select')}
                             onCreate={(mark) => {
                               setMeasureMarks((marks) => [...marks, mark]);
                               if (activeTab !== null) store.setDirty(activeTab.id, true);
@@ -5592,7 +5447,7 @@ export function App({ store }: AppProps) {
                             // selected, so the sentence the user is about to write has a home.
                             if (mark.kind === 'note') openNote(mark);
                           }}
-                          onDone={() => setCanvasTool('select')}
+                          onDone={() => selectTool('select')}
                           onRegion={(region) => {
                             // The rectangle is already in the writer's own space; the dialog
                             // only asks where it should point.
@@ -5630,7 +5485,7 @@ export function App({ store }: AppProps) {
                           source={pendingStamp}
                           hint={t('sig.placing')}
                           onPlace={placeStamp}
-                          onCancel={() => setCanvasTool('select')}
+                          onCancel={() => selectTool('select')}
                         />
                       ) : null}
                       {viewer !== null &&
@@ -5680,10 +5535,10 @@ export function App({ store }: AppProps) {
                                 model: selection.model,
                                 fonts: selection.fonts,
                               });
-                              setCanvasTool('select');
+                              selectTool('select');
                               openDialog('text-edit');
                             }}
-                            onClose={() => setCanvasTool('select')}
+                            onClose={() => selectTool('select')}
                           />
                         </Suspense>
                       ) : null}
@@ -5716,8 +5571,8 @@ export function App({ store }: AppProps) {
                     { id: 'pdfa', label: 'panel.pdfa' },
                   ]}
                   activeId={rightTab}
-                  onSelect={setRightTab}
-                  onToggle={() => setRightDock(false)}
+                  onSelect={selectRightTab}
+                  onToggle={() => hideRightDock()}
                   wide={rightTab === 'accessibility'}
                 >
                   {rightTab === 'tools' ? (
@@ -5729,7 +5584,7 @@ export function App({ store }: AppProps) {
                         // Same refusal as the arming half below: the form is not offered on a
                         // tab nothing can be written to, and a protected one says why.
                         if (id === 'redact' && !canEdit) {
-                          if (locked) setNotice(t('locked.banner'));
+                          if (locked) showNotice(t('locked.banner'));
                           else if (busy) refuseBusy();
                           return;
                         }
@@ -5752,9 +5607,9 @@ export function App({ store }: AppProps) {
                         // highlighter before it; anything else is not a canvas tool and
                         // must not silently arm one.
                         if (tool === 'redact') {
-                          if (canEdit) setCanvasTool('redact');
-                          else if (locked) setNotice(t('locked.banner'));
-                        } else if (tool === 'highlight') setCanvasTool('highlight');
+                          if (canEdit) selectTool('redact');
+                          else if (locked) showNotice(t('locked.banner'));
+                        } else if (tool === 'highlight') selectTool('highlight');
                       }}
                       onOpenPalette={() => setPaletteOpen(true)}
                       onExportModal={() => setExportModalOpen(true)}
@@ -5918,7 +5773,7 @@ export function App({ store }: AppProps) {
                         // moment ago is part of what is compared.
                         readDocument={() => currentBytes({ signal: new AbortController().signal })}
                         onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
-                        onNotice={setNotice}
+                        onNotice={showNotice}
                         disabled={!canEdit}
                       />
                     </Suspense>
@@ -5943,7 +5798,7 @@ export function App({ store }: AppProps) {
                         onWritten={(outcome) => void applyAccessibility(outcome)}
                         onTagged={(outcome) => void applyAccessibility(outcome)}
                         onAltWritten={(outcome) => void applyAccessibility(outcome)}
-                        onNotice={setNotice}
+                        onNotice={showNotice}
                       />
                     </Suspense>
                   ) : rightTab === 'pdfa' ? (
@@ -5959,7 +5814,7 @@ export function App({ store }: AppProps) {
                         t={t}
                         read={currentBytes}
                         onConvert={() => openDialog('pdfa')}
-                        onNotice={setNotice}
+                        onNotice={showNotice}
                       />
                     </Suspense>
                   ) : rightTab === 'forms' ? (
@@ -6052,7 +5907,7 @@ export function App({ store }: AppProps) {
                         shape="base"
                         aria-pressed={redactionActive}
                         disabled={!canEdit}
-                        onClick={() => setCanvasTool(redactionActive ? 'select' : 'redact')}
+                        onClick={() => toggleTool('redact')}
                       >
                         {redactionActive ? t('redact.tool.stop') : t('redact.tool.start')}
                       </Button>
@@ -6070,29 +5925,12 @@ export function App({ store }: AppProps) {
                 </Dock>
               </div>
             ) : null}
-            <ReadingPane
+            <ReadingLayers
               t={t}
-              lang={documentLanguage ?? locale}
-              open={reading}
-              onClose={() => setReading(false)}
-              viewer={viewerApi.current}
+              locale={locale}
+              viewer={viewer}
+              viewerRef={viewerApi}
               pageNumber={currentPage}
-              onPageChange={(page) => viewerApi.current?.goToPage(page)}
-              onNotice={setNotice}
-            />
-            <SnapshotMenu
-              t={t}
-              viewer={viewer}
-              open={snapshotOpen}
-              onClose={() => setSnapshotOpen(false)}
-              onNotice={setNotice}
-            />
-            <Magnifier
-              t={t}
-              viewer={viewer}
-              active={magnifierOn}
-              zoom={lensZoom}
-              onZoomChange={setLensZoom}
             />
             {printOpen ? (
               <Suspense fallback={null}>
@@ -6101,7 +5939,7 @@ export function App({ store }: AppProps) {
                   viewer={viewerApi.current}
                   open={printOpen}
                   onClose={() => setPrintOpen(false)}
-                  onNotice={setNotice}
+                  onNotice={showNotice}
                   onProduced={(file) => void handlePrintProduced(file)}
                 />
               </Suspense>
@@ -6143,14 +5981,14 @@ export function App({ store }: AppProps) {
               open={batchOpen}
               onClose={() => setBatchOpen(false)}
               onDownload={downloadFiles}
-              onNotice={setNotice}
+              onNotice={showNotice}
             />
           </Suspense>
         ) : null}
         <ActivityOverlay
           t={t}
           notice={notice}
-          onDismiss={dismissNotice}
+          onDismiss={clearNotice}
           progress={progress}
           onCancel={cancelOperation}
           activity={opening ? t('open.progress') : null}
@@ -6176,10 +6014,6 @@ export function App({ store }: AppProps) {
               zoom={zoom}
               onZoomChange={(next) => viewerApi.current?.setZoom(next)}
               {...(canEdit ? { onRotate: () => runPageAction({ kind: 'rotate', direction: 'right' }) } : {})}
-              onToggleThumbnails={() => setLeftDock((open) => !open)}
-              thumbnailsOpen={leftDock}
-              onToggleReading={() => setReading((open) => !open)}
-              readingActive={reading}
               onToggleFullscreen={() => presentation.toggle()}
             />
           )
@@ -6267,7 +6101,7 @@ export function App({ store }: AppProps) {
               cancelClose();
             }}
             onDiscard={() => {
-              if (!busyRef.current) {
+              if (!isBusy()) {
                 discardTab(closeRequest);
                 cancelClose();
               }
@@ -6366,9 +6200,9 @@ export function App({ store }: AppProps) {
           hasSelection={contextMenu.hasSelection}
           selectedText={contextMenu.selectedText}
           canEdit={canEdit}
-          onHighlight={() => setCanvasTool('highlight')}
-          onUnderline={() => setCanvasTool('underline')}
-          onStrikeout={() => setCanvasTool('strikeout')}
+          onHighlight={() => selectTool('highlight')}
+          onUnderline={() => selectTool('underline')}
+          onStrikeout={() => selectTool('strikeout')}
           onCopy={() => {
             if (contextMenu.selectedText) void navigator.clipboard.writeText(contextMenu.selectedText);
           }}
@@ -6386,15 +6220,15 @@ export function App({ store }: AppProps) {
                 window.getSelection()?.removeAllRanges();
               }
             }
-            setCanvasTool('redact');
+            selectTool('redact');
           }}
-          onAddNote={() => handleSelectLeftTool('note')}
+          onAddNote={() => pickTool('note')}
           onRotateRight={() => runPageAction({ kind: 'rotate', direction: 'right' })}
           onRotateLeft={() => runPageAction({ kind: 'rotate', direction: 'left' })}
           onDeletePage={() => runPageAction({ kind: 'delete' })}
-          onAddText={() => handleSelectLeftTool('freetext')}
-          onEditText={() => handleSelectLeftTool('text')}
-          onDrawInk={() => handleSelectLeftTool('ink')}
+          onAddText={() => pickTool('freetext')}
+          onEditText={() => pickTool('text')}
+          onDrawInk={() => pickTool('ink')}
           onFitWidth={() => viewerApi.current?.setZoom('page-width')}
           onClose={() => setContextMenu(null)}
         />

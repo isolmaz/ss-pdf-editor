@@ -16,6 +16,8 @@ import type { MessageKey, Translator } from 'pdf-shared';
 import type { CanvasToolId } from 'pdf-ui/tools';
 import { Tooltip } from 'pdf-ui/ui';
 import { Fragment } from 'react';
+import { pickTool, useCore } from '../features/core/core-store';
+import { isMarkupTool } from '../features/core/tools';
 
 /**
  * The tool rail: **every** canvas tool, in one column beside the document.
@@ -33,14 +35,6 @@ import { Fragment } from 'react';
  * release) with four looks, so the strip under the header picks the look and the button
  * is pressed for any of them. Pressing it arms the look used last.
  */
-
-/** The four looks the markup button stands for. */
-export const MARKUP_TOOLS = ['highlight', 'underline', 'strikeout', 'squiggly'] as const;
-export type MarkupTool = (typeof MARKUP_TOOLS)[number];
-
-export function isMarkupTool(tool: CanvasToolId): tool is MarkupTool {
-  return (MARKUP_TOOLS as readonly string[]).includes(tool);
-}
 
 /** One rail button: the tool it arms (or the markup group), its icon and its name. */
 interface RailSpec {
@@ -68,13 +62,13 @@ const RAIL: readonly RailSpec[] = [
   { id: 'redact', icon: EyeSlash, labelKey: 'toolbar.redact', mutating: true },
 ];
 
+/**
+ * The armed tool and the markup look are read from the core store (`canvasTool`,
+ * `markupTool`) and a press writes it back: the rail re-renders for a change of tool, and
+ * the shell does not have to carry the tool down to it.
+ */
 export interface ToolRailProps {
   readonly t: Translator;
-  /** The armed tool — the shell's one `CanvasToolId`. */
-  readonly activeTool: CanvasToolId;
-  /** The markup look the markup button arms: the one used last. */
-  readonly markupTool: MarkupTool;
-  readonly onSelectTool: (tool: CanvasToolId) => void;
   /** Mutating tools are disabled without an editable document; select and hand never are. */
   readonly canEdit: boolean;
 }
@@ -89,7 +83,9 @@ const BUTTON_CLASS =
 const ARMED_CLASS = 'bg-pdf-accent text-pdf-on-accent ring-1 ring-inset ring-pdf-on-accent/30';
 const IDLE_CLASS = 'text-kumo-default hover:bg-kumo-recessed hover:text-kumo-strong';
 
-export function ToolRail({ t, activeTool, markupTool, onSelectTool, canEdit }: ToolRailProps) {
+export function ToolRail({ t, canEdit }: ToolRailProps) {
+  const activeTool = useCore((state) => state.canvasTool);
+  const markupTool = useCore((state) => state.markupTool);
   return (
     <nav
       aria-label={t('tools.all')}
@@ -114,7 +110,7 @@ export function ToolRail({ t, activeTool, markupTool, onSelectTool, canEdit }: T
                   // A second press on the armed tool puts the pointer back in select,
                   // the same toggle the menus and the palette offer.
                   const target = spec.id === 'markup' ? markupTool : spec.id;
-                  onSelectTool(armed && spec.id !== 'select' ? 'select' : target);
+                  pickTool(armed && spec.id !== 'select' ? 'select' : target);
                 }}
                 className={`${BUTTON_CLASS} ${armed ? ARMED_CLASS : IDLE_CLASS}`}
               >

@@ -18,6 +18,8 @@ import {
 import type { MessageKey, Translator } from 'pdf-shared';
 import { Button } from 'pdf-ui/ui';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { toggleRightPanel, toggleTool, useCore } from '../features/core/core-store';
+import { toggleReading, useReading } from '../features/reading/reading-store';
 
 /**
  * The editor's header: identity, menus, the four task shortcuts, the document switcher
@@ -27,7 +29,8 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
  * highlighted "Edit" while the select tool is armed, or "Read" after the reading pane
  * is closed, would say something untrue. They are **toggles that show the real state**
  * (the tools panel, the reading pane, the text-edit tool) and one-shot actions that
- * show none (convert, sign).
+ * show none (convert, sign). The toggles read their state from the stores they flip (the right
+ * dock, the reading store, the armed tool), so the shell carries none of it down to the header.
  */
 export interface ModernEditorHeaderProps {
   readonly t: Translator;
@@ -37,15 +40,6 @@ export interface ModernEditorHeaderProps {
   readonly onRename?: (name: string) => void;
   readonly onRenameCancel?: () => void;
   readonly isDirty: boolean;
-  /** The tools panel is open in the right dock. */
-  readonly toolsOpen: boolean;
-  readonly onTools: () => void;
-  /** The reading pane is open. */
-  readonly reading: boolean;
-  readonly onRead: () => void;
-  /** The text-edit tool is armed. */
-  readonly editingText: boolean;
-  readonly onEditText: () => void;
   readonly canEdit: boolean;
   readonly onConvert: () => void;
   readonly onSign: () => void;
@@ -116,12 +110,6 @@ export function ModernEditorHeader({
   onRename,
   onRenameCancel,
   isDirty,
-  toolsOpen,
-  onTools,
-  reading,
-  onRead,
-  editingText,
-  onEditText,
   canEdit,
   onConvert,
   onSign,
@@ -143,6 +131,9 @@ export function ModernEditorHeader({
   onSettings,
 }: ModernEditorHeaderProps) {
   const [showTabMenu, setShowTabMenu] = useState(false);
+  const toolsOpen = useCore((state) => state.rightDock && state.rightTab === 'tools');
+  const editingText = useCore((state) => state.canvasTool === 'text');
+  const reading = useReading((state) => state.reading);
   /** Set by Escape so the blur that follows it cancels instead of committing. */
   const cancelled = useRef(false);
   const switcherRef = useRef<HTMLDivElement | null>(null);
@@ -193,14 +184,19 @@ export function ModernEditorHeader({
         aria-label={t('shell.tasks')}
         className="hidden shrink-0 items-center gap-0.5 border-s border-kumo-line ps-2 lg:flex"
       >
-        <TaskButton label={task('mode.tools')} icon={SquaresFour} pressed={toolsOpen} onClick={onTools} />
-        <TaskButton label={task('mode.read')} icon={BookOpen} pressed={reading} onClick={onRead} />
+        <TaskButton
+          label={task('mode.tools')}
+          icon={SquaresFour}
+          pressed={toolsOpen}
+          onClick={() => toggleRightPanel('tools')}
+        />
+        <TaskButton label={task('mode.read')} icon={BookOpen} pressed={reading} onClick={toggleReading} />
         <TaskButton
           label={task('mode.edit')}
           icon={TextT}
           pressed={editingText}
           disabled={!canEdit}
-          onClick={onEditText}
+          onClick={() => toggleTool('text')}
         />
         <TaskButton
           label={task('mode.convert')}

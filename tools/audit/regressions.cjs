@@ -194,13 +194,14 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   const bindings = {
     store,
     saveLock,
-    busyRef,
+    isBusy: () => busyRef.current,
     ToolError,
     AbortController,
     window: picker ? { showSaveFilePicker: picker } : {},
     cancelRef: { current: null },
     refuseBusy: () => notices.push('busy'),
-    setNotice: (value) => notices.push(value),
+    showNotice: (value) => notices.push(value),
+    clearNotice: () => notices.push(null),
     setBusy: (value) => {
       busyRef.current = value;
     },
@@ -376,7 +377,7 @@ async function main() {
           deleteRecentHandle: async (id) => {
             forgotten.push(id);
           },
-          setNotice: () => {},
+          showNotice: () => {},
           t: (key) => key,
           ToolError,
         };
@@ -676,7 +677,7 @@ async function main() {
     const persistBindings = {
       store,
       tier: 'desktop',
-      handles: { current: new Map([[tab.id, { raw: {} }]]) },
+      handleFor: (id) => new Map([[tab.id, { raw: {} }]]).get(id),
       draftStorage: storage,
       persistedSnapshots: { current: new Map() },
       forgetTabDraft: async (id) => {
@@ -698,7 +699,7 @@ async function main() {
       draftWrites: { current: queue },
       persistTabDraft,
       ToolError,
-      setNotice: (notice) => notices.push(notice),
+      showNotice: (notice) => notices.push(notice),
       t: (key) => key,
     };
     return {
@@ -1090,13 +1091,13 @@ async function main() {
     const verifyCalls = [];
     const bindings = {
       store,
-      handles: { current: new Map([[tab.id, handle]]) },
+      handleFor: (id) => new Map([[tab.id, handle]]).get(id),
       ToolError,
       documentFacts: facts === 'current' ? { tabId: tab.id, version: store.active.working.id } : null,
       currentForms: { tabId: tab.id, version: store.active.working.id },
       formFields: forms,
       currentFactsError: null,
-      setNotice: (notice) => notices.push(notice),
+      showNotice: (notice) => notices.push(notice),
       t: (key) => key,
       pendingOverlays: (tab) => tab.working.overlays,
       editableOverlays: (tab) => tab.working.overlays,
@@ -1256,7 +1257,7 @@ async function main() {
     const bindings = {
       store,
       cancelRef: { current: null },
-      handles: { current: new Map() },
+      dropHandle: () => undefined,
       pendingEngineValues: { current: new Map([[tab.id, { entries: [], dropped: 0 }]]) },
       // The redaction needles a document accumulated: closing it releases them, so
       // the binding has to exist for the extracted callback to run at all.
@@ -1265,7 +1266,7 @@ async function main() {
       forgetTabDraft,
       ToolError,
       tRef: { current: (key) => key },
-      setNotice: (notice) => notices.push(notice),
+      showNotice: (notice) => notices.push(notice),
     };
     return { run: callback('discardTab', bindings), tab, bindings, deleted, sourceKey, notices };
   }

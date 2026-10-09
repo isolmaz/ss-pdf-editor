@@ -149,7 +149,7 @@ export function storedCopyWarning(error: unknown, t: Translator): string {
 
 /**
  * A success line followed by the warning the same action raised, if any. The shell has one
- * notice line, so a later `setNotice(success)` would silently replace a warning set before
+ * notice line, so a later `showNotice(success)` would silently replace a warning set before
  * it; the callers of an open that can warn put both in the one line they set.
  */
 export function appendWarning(line: string, warning: string | null): string {

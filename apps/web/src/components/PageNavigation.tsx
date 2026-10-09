@@ -12,6 +12,8 @@ import {
 import type { MessageKey, Translator } from 'pdf-shared';
 import { Tooltip } from 'pdf-ui/ui';
 import { useState } from 'react';
+import { toggleLeftDock, useCore } from '../features/core/core-store';
+import { toggleReading, useReading } from '../features/reading/reading-store';
 
 /**
  * Page and view controls, **in the status bar**.
@@ -22,6 +24,9 @@ import { useState } from 'react';
  *
  * "Rotate" turns the **current page** unless pages are selected in the page panel, in
  * which case it turns those — the same rule every page action follows (`runPageAction`).
+ *
+ * The two view toggles (the page dock, reading mode) read and write their stores directly: the
+ * bar shows them pressed from the state, and the shell carries neither down to it.
  */
 export interface PageNavigationProps {
   readonly t: Translator;
@@ -32,10 +37,6 @@ export interface PageNavigationProps {
   readonly onZoomChange: (zoom: number | 'page-width') => void;
   /** Absent while the document cannot be edited. */
   readonly onRotate?: () => void;
-  readonly onToggleThumbnails: () => void;
-  readonly thumbnailsOpen: boolean;
-  readonly onToggleReading: () => void;
-  readonly readingActive: boolean;
   readonly onToggleFullscreen: () => void;
 }
 
@@ -88,13 +89,11 @@ export function PageNavigation({
   zoom,
   onZoomChange,
   onRotate,
-  onToggleThumbnails,
-  thumbnailsOpen,
-  onToggleReading,
-  readingActive,
   onToggleFullscreen,
 }: PageNavigationProps) {
   const [pageInput, setPageInput] = useState<string | null>(null);
+  const thumbnailsOpen = useCore((state) => state.leftDock);
+  const readingActive = useReading((state) => state.reading);
   const label = (key: MessageKey) => t(key);
 
   return (
@@ -172,13 +171,13 @@ export function PageNavigation({
         label={label('nav.togglePages')}
         icon={Sidebar}
         pressed={thumbnailsOpen}
-        onClick={onToggleThumbnails}
+        onClick={toggleLeftDock}
       />
       <IconButton
         label={label('nav.readingMode')}
         icon={BookOpen}
         pressed={readingActive}
-        onClick={onToggleReading}
+        onClick={toggleReading}
       />
       <IconButton label={label('nav.fullscreen')} icon={CornersOut} onClick={onToggleFullscreen} />
     </fieldset>
