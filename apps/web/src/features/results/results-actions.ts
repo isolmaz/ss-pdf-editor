@@ -52,7 +52,14 @@ export interface PrintedFile {
   readonly bytes: Uint8Array;
 }
 
-export function createResultsActions(deps: ResultsDeps) {
+/** What the results hosts hand to the dock and dialogs that produce a result. */
+export interface ResultsActions {
+  readonly applyAccessibility: (outcome: AccessibilityOutcome) => Promise<void>;
+  readonly scanDocument: (result: ScannedDocument) => Promise<string | undefined>;
+  readonly printProduced: (file: PrintedFile) => Promise<void>;
+}
+
+export function createResultsActions(deps: ResultsDeps): ResultsActions {
   const { t } = deps;
 
   /**

@@ -1,5 +1,5 @@
 /**
- * The object-level audit of a produced redaction (first safety contract). It runs on the
+ * The object-level audit of a produced redaction. It runs on the
  * **working bytes**, and the needles it searches for are the words the user asked to erase — the
  * audit answers "did the file keep a trace of what was removed", which the redaction report alone
  * cannot.

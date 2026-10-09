@@ -1,16 +1,15 @@
 /**
  * The one store helper every `features/<name>/` module builds its state on.
  *
- * `App.tsx` used to hold the whole shell's state in `useState`, so any change re-rendered the
- * whole shell. A feature's state lives in a module store instead, and a component subscribes to
- * the slice it reads: a change re-renders the components whose selected value changed, and
- * nothing else. The pattern is the repository's own (`reading-order-store.ts` in `pdf-ui`,
+ * A feature's state lives in a module store, not in one component's `useState`, so a change does
+ * not re-render the whole shell: a component subscribes to the slice it reads, and a change
+ * re-renders the components whose selected value changed, and nothing else. The pattern is the repository's own (`reading-order-store.ts` in `pdf-ui`,
  * `SessionStore` in `pdf-model`): plain observable TypeScript plus `useSyncExternalStore`, no
  * library.
  *
  * A store is a plain object. Handlers outside React read it with `get()` **at call time** —
- * which is what replaces the `fooRef.current = foo` mirrors a stale closure used to need — and
- * write it with `set()`. A component reads it with `useStore(store, selector)`.
+ * so no `fooRef.current = foo` mirror is needed to dodge a stale closure — and write it with
+ * `set()`. A component reads it with `useStore(store, selector)`.
  */
 
 import { useRef, useSyncExternalStore } from 'react';

@@ -5,27 +5,16 @@
  * handlers over what the shell hands in.
  */
 
-import type { OperationOutcome } from 'pdf-core';
 import type { ReviewRecordRequest } from 'pdf-core/ops/annotation-review';
 import type { AnnotationMark, ReviewState } from 'pdf-core/ops/annotations';
 import type { SessionStore } from 'pdf-model';
-import type { MessageKey, Translator } from 'pdf-shared';
+import type { Translator } from 'pdf-shared';
 import type { ReviewTarget } from 'pdf-ui/panels';
 import { markTargetKey } from 'pdf-ui/tools';
 import { useMemo } from 'react';
 import { showNotice } from '../core/core-store';
 import type { OverlayChange } from '../core/overlays';
-
-/** The shell's one writer into a file annotation (journalled, cancellable). */
-export type WriteFileAnnotation = (
-  label: { readonly key: MessageKey; readonly params?: Record<string, string | number> },
-  write: (
-    base: Uint8Array,
-    signal: AbortSignal,
-  ) => Promise<OperationOutcome & { readonly annotationId?: string }>,
-  done: string,
-  selectOnPage?: number,
-) => boolean;
+import type { WriteFileAnnotation } from '../marks/host';
 
 /** What the handlers need from the shell. */
 export interface ReviewHost {
@@ -128,8 +117,15 @@ export function removeReply(host: ReviewHost, target: ReviewTarget, replyId: str
   host.removeTargets([markTargetKey('existing', replyId, target.pageIndex)]);
 }
 
+/** The three callbacks the comments panel takes for answering. */
+export interface CommentReview {
+  readonly onReply: (target: ReviewTarget, contents: string) => void;
+  readonly onSetState: (target: ReviewTarget, state: ReviewState) => void;
+  readonly onRemoveReply: (target: ReviewTarget, replyId: string) => void;
+}
+
 /** The three callbacks the comments panel takes for answering, bound to the shell's host. */
-export function useCommentReview(host: ReviewHost) {
+export function useCommentReview(host: ReviewHost): CommentReview {
   const { session, t, author, setAnnotations, writeFileAnnotation, removeTargets } = host;
   return useMemo(() => {
     const bound: ReviewHost = { session, t, author, setAnnotations, writeFileAnnotation, removeTargets };

@@ -39,8 +39,6 @@ export interface CommandHost {
   readonly t: Translator;
   /** The surface the user chose; the palette filters on it and offers the way up. */
   readonly mode: InterfaceMode;
-  /** Leave the simple mode, from the palette's "hidden by the simple mode" hint. */
-  readonly useAdvancedMode: () => void;
   /** A document is open. */
   readonly hasDocument: boolean;
   /** Editing is allowed: a document is open, the tier is not viewing-only and no operation is running. */

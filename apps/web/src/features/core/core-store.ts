@@ -6,8 +6,7 @@
  *
  * **Components** read it with `useCore(selector)`. **Handlers** read it with
  * `coreStore.get()` or `isBusy()` at the moment they run — never from a value captured at
- * render, which is what the `busyRef` / `canvasToolRef` mirrors this replaces were for — and
- * write it through the actions below, which are named for what the user did, not for the field
+ * render, so no `busyRef` / `canvasToolRef` mirror is needed — and write it through the actions below, which are named for what the user did, not for the field
  * they happen to touch. A write that is one intent but several fields (opening a dock *on* a
  * tab, arming the stamp tool *with* its picture) is one action and one notification.
  */

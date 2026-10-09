@@ -41,8 +41,8 @@ export function discardDocument(host: CloseHost, id: string): void {
   redactedWordsForgotten(id);
   draftWrites.current = draftWrites.current
     .then(async () => {
-      // The reference graph is read fresh and *whole*: the previous version derived it
-      // from `readDrafts()`, which reports an unreadable or unlistable vault as “no
+      // The reference graph is read fresh and *whole*, not derived from
+      // `readDrafts()`, which reports an unreadable or unlistable vault as “no
       // drafts” — the exact input that makes a shared source blob look unreferenced.
       // An incomplete inventory deletes nothing and says so.
       const removed = await forgetTabDraft(id);

@@ -6,24 +6,13 @@
  * them.
  */
 
-import type { OperationOutcome } from 'pdf-core';
-import type { MessageKey, Translator } from 'pdf-shared';
+import type { Translator } from 'pdf-shared';
 import type { StampSource } from 'pdf-ui/dialog';
 import type { MarkTarget, StampPlacement } from 'pdf-ui/tools';
 import { addImageStamp, resizeImageStamp } from '../../lazy-ops';
 import { armStampTool, coreStore, isBusy, selectTool, showNotice } from '../core/core-store';
+import type { WriteFileAnnotation } from '../marks/host';
 import { openSignatureDialog, signatureChosen } from './stamps-store';
-
-/** The shell's write into a file annotation; `false` means it did not start. */
-export type WriteFileAnnotation = (
-  label: { readonly key: MessageKey; readonly params?: Record<string, string | number> },
-  write: (
-    base: Uint8Array,
-    signal: AbortSignal,
-  ) => Promise<OperationOutcome & { readonly annotationId?: string }>,
-  done: string,
-  selectOnPage?: number,
-) => boolean;
 
 /** The image picker the "add an image" command opens (`ImagePickerInput` is its element). */
 export const imageInputRef: { current: HTMLInputElement | null } = { current: null };

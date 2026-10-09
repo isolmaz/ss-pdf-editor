@@ -33,7 +33,6 @@ function recordingHost(overrides: Partial<CommandHost> = {}) {
   const host: CommandHost = {
     t,
     mode: 'advanced',
-    useAdvancedMode: rec('useAdvancedMode'),
     hasDocument: true,
     canEdit: true,
     canUndo: true,

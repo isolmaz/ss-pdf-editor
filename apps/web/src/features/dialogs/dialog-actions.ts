@@ -153,10 +153,9 @@ export function createDialogOpeners(deps: DialogOpenerDeps) {
           spec,
         );
         // **Every operation opens in the tools panel**, beside the document it will
-        // change. It used to open there only when that tab happened to be showing and
-        // as a modal otherwise — the same capability in two places, with two sets of
-        // buttons. Modals are kept for the decisions that block (password, close,
-        // signature warning, export choice, print).
+        // change, whichever right-dock tab is showing: one capability in one place, with
+        // one set of buttons. Modals are kept for the decisions that block (password,
+        // close, signature warning, export choice, print).
         openRightPanel('tools');
       } catch (error) {
         if (controller.signal.aborted) return;

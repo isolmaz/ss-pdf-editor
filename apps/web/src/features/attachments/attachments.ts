@@ -115,7 +115,19 @@ function payloadsOf(files: readonly File[], mimeOf: (file: File) => string) {
 }
 
 /** The handlers behind the properties panel (add, remove, read out) and the attachments panel (write). */
-export function createAttachmentActions(deps: AttachmentDeps) {
+/** What the dock panels ask of the attachments. */
+export interface AttachmentActions {
+  /** Embed the picked files in the document. */
+  readonly addToDocument: (files: readonly File[]) => Promise<void>;
+  /** Drop one embedded file by name. */
+  readonly removeFromDocument: (name: string) => Promise<void>;
+  /** Save one embedded file out to disk. */
+  readonly readOut: (name: string) => Promise<void>;
+  /** Embed and drop in one journal step. */
+  readonly write: (request: AttachmentWrite) => Promise<void>;
+}
+
+export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions {
   const { t } = deps;
 
   /** Embed the picked files in the document. */

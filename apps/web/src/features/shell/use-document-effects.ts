@@ -1,0 +1,78 @@
+/**
+ * What follows the document on screen without drawing anything: the window title, the facts and
+ * form inventory read from its bytes, the language it declares, the text tool's frozen page model
+ * and the mark targets the common layer hit-tests. Mounted once, by the shell.
+ */
+
+import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
+import type { SessionStore, SessionTab } from 'pdf-model';
+import type { Translator } from 'pdf-shared';
+import { useEffect } from 'react';
+import { type DocumentContext, pendingOverlays } from '../../operations';
+import { useAnnotationMarks } from '../annotations/annotation-marks';
+import { usePublishExistingAnnotations } from '../annotations/use-annotation-actions';
+import { useCore } from '../core/core-store';
+import { useStoredTrust } from '../facts/trust-store';
+import { useDocumentFacts } from '../facts/use-document-facts';
+import { useExistingAnnotations, useForms } from '../forms/forms-store';
+import { useFormInventory } from '../forms/use-form-inventory';
+import { useMarkTargets } from '../marks/mark-targets';
+import { useRedactionMarks } from '../marks/redaction';
+import { useDocumentLanguage } from '../reading/use-document-language';
+import { useSave } from '../save/save-store';
+import { useSelectionEffects } from '../selection/use-selection';
+import { useTextToolBytes } from '../selection/use-text-tool-bytes';
+
+/** The product name the window carries when no document is open; `index.html`'s `<title>` is the same string. */
+export const PRODUCT_TITLE = 'SsPdfEditor';
+
+/**
+ * The document names the browser's own surfaces: the printed file, a "Save as…" suggestion and the
+ * window itself. The print dialog and the export both take their suggested file name from
+ * `document.title`, so it follows the active document (and says so when there are unsaved
+ * changes) instead of staying the product name while a contract sits open.
+ */
+export function documentTitle(tab: SessionTab | null, t: Translator): string {
+  return tab === null ? PRODUCT_TITLE : `${tab.name}${tab.dirty ? ` — ${t('tab.dirty')}` : ''}`;
+}
+
+export interface DocumentEffectsHost {
+  readonly session: SessionStore;
+  readonly t: Translator;
+  readonly tab: SessionTab | null;
+  readonly handle: PdfDocumentHandle | null;
+  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
+}
+
+export function useDocumentEffects({ session, t, tab, handle, contextFor }: DocumentEffectsHost): void {
+  const viewer = useSave((state) => state.viewer);
+  const inspectionRevision = useForms((state) => state.inspectionRevision);
+  const canvasTool = useCore((state) => state.canvasTool);
+  const { annotations } = useAnnotationMarks(session);
+  const { redactionMarks } = useRedactionMarks(session);
+  const existing = useExistingAnnotations(tab);
+
+  useEffect(() => {
+    document.title = documentTitle(tab, t);
+  }, [tab, t]);
+  useDocumentLanguage(viewer);
+  useFormInventory({ store: session, t, tab, handle });
+  useStoredTrust();
+  useDocumentFacts({ store: session, t, tab, handle, revision: inspectionRevision });
+  useTextToolBytes(tab, handle, contextFor, t);
+  usePublishExistingAnnotations(existing);
+  const targets = useMarkTargets({
+    annotations,
+    measures: pendingOverlays(session.active).measures,
+    redactions: redactionMarks,
+    existing,
+    viewer,
+    t,
+  });
+  useSelectionEffects({
+    markMode: canvasTool === 'select' ? 'select' : null,
+    tabId: tab?.id,
+    existing,
+    targets,
+  });
+}

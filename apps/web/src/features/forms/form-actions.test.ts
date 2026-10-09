@@ -12,6 +12,7 @@ import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState, setBusy } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
+import type { WriteFileAnnotation } from '../marks/host';
 import {
   applyFormDetect,
   type FormsHost,
@@ -19,7 +20,6 @@ import {
   openXfaForm,
   saveXfaForm,
   startFormDetect,
-  type WriteFileAnnotation,
 } from './form-actions';
 import {
   candidateRemoved,

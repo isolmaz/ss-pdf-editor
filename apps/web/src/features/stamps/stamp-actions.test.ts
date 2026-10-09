@@ -10,6 +10,7 @@ import type { StampSource } from 'pdf-ui/dialog';
 import type { MarkTarget, StampPlacement } from 'pdf-ui/tools';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState, setBusy } from '../core/core-store';
+import type { WriteFileAnnotation } from '../marks/host';
 import {
   type AddGate,
   armStamp,
@@ -21,7 +22,6 @@ import {
   placeStamp,
   resizeStamp,
   stampKind,
-  type WriteFileAnnotation,
 } from './stamp-actions';
 import { initialStampsState, stampsStore } from './stamps-store';
 

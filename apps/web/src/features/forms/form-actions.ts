@@ -9,11 +9,12 @@ import type { OperationOutcome } from 'pdf-core';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { fieldValueText } from 'pdf-core/ops/form-value';
 import { type SessionStore, type SessionTab, workingPageCount } from 'pdf-model';
-import { type MessageKey, ToolError, type Translator } from 'pdf-shared';
+import { ToolError, type Translator } from 'pdf-shared';
 import { fillFormFields, inspectXfa } from '../../lazy-ops';
 import { applyProducedBytes, type DocumentContext, materializeBase } from '../../operations';
 import { clearNotice, isBusy, openRightPanel, selectRightTab, setBusy, showNotice } from '../core/core-store';
 import { handleFor } from '../core/handles';
+import type { WriteFileAnnotation } from '../marks/host';
 import {
   currentDetect,
   currentForms,
@@ -24,17 +25,6 @@ import {
   xfaFormClosed,
   xfaFormOpened,
 } from './forms-store';
-
-/** The shell's write into a file annotation; `false` means it did not start. */
-export type WriteFileAnnotation = (
-  label: { readonly key: MessageKey; readonly params?: Record<string, string | number> },
-  write: (
-    base: Uint8Array,
-    signal: AbortSignal,
-  ) => Promise<OperationOutcome & { readonly annotationId?: string }>,
-  done: string,
-  selectOnPage?: number,
-) => boolean;
 
 /** What the handlers need from the shell. */
 export interface FormsHost {
