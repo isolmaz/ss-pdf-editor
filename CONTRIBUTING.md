@@ -61,6 +61,9 @@ and on manual dispatch:
   with a LibreOffice installed from the official `.deb` tarball pinned by version and sha256. It
   gates `deploy` like the jobs above (a `null` threshold is measured, not gated); the report goes
   to the job summary and the `fidelity` artifact.
+- **`coverage`** (after `verify`) runs `pnpm coverage --min=100`: the unit suite and the whole
+  Playwright suite against the unminified build, added together, must cover every line,
+  statement, branch and function; the report is the `coverage-report` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed: `wrangler deploy`
   with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
   `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
@@ -70,7 +73,7 @@ and on manual dispatch:
   newer build.
 
 `.github/workflows/nightly.yml` runs daily and on manual dispatch. It runs `pnpm coverage
---min-lines=98`, which fails when total line coverage is under 98 % and uploads the report, and
+--min=100`, which fails when any total is under 100 % and uploads the report, and
 the Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, so
 a flaky test fails the night.
 
@@ -112,8 +115,9 @@ suite against an unminified build of the editor, mapped back to the sources thro
 build's source maps and added to the unit figures statement by statement
 (`tools/coverage/report.mjs`). It prints a table per package and writes the report to
 `coverage/report/` (`html/index.html`); it rebuilds the production `dist/` before it exits.
-`pnpm coverage --skip-e2e` reports the unit suite alone, and `pnpm coverage --min-lines=98` exits
-with an error when the total line coverage is under 98 % (the nightly run does this). On a machine
+`pnpm coverage --skip-e2e` reports the unit suite alone, and `pnpm coverage --min=100` exits
+with an error, naming the files that miss, when the total lines, statements, branches or
+functions are under 100 % (the CI `coverage` job and the nightly run do this). On a machine
 you are working on, `E2E_WORKERS=4` caps the browsers Playwright runs at once and
 `VITEST_MAX_WORKERS=8` the unit workers; both apply to `pnpm e2e`, `pnpm unit` and
 `pnpm coverage`. Playwright serves `dist/` on port 4178 and, outside CI, reuses a server already

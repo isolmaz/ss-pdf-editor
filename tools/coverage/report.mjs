@@ -27,10 +27,10 @@
  *
  * `--skip-e2e` reports the unit suite alone (no build, no browser).
  *
- * `--min-lines=<percent>` is a floor on the total line coverage: once the report and the
- * table are printed, the run exits 1 with `coverage: total lines X% is below the floor Y%`
- * when the total is lower (the nightly workflow passes `--min-lines=98`). The value is
- * checked before anything runs, so a typo costs no build.
+ * `--min=<percent>` is a floor on each of the four totals (lines, statements, branches,
+ * functions): once the report and the table are printed, the run exits 1 naming every total
+ * that is lower and the files that miss it (the CI and nightly workflows pass `--min=100`).
+ * The value is checked before anything runs, so a typo costs no build.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -64,13 +64,14 @@ function fail(message) {
   process.exit(1);
 }
 
-const minLinesArg = process.argv.find((arg) => arg.startsWith('--min-lines'));
-let minLines = null;
-if (minLinesArg !== undefined) {
-  const value = minLinesArg.startsWith('--min-lines=') ? minLinesArg.slice('--min-lines='.length) : '';
-  minLines = value.trim() === '' ? Number.NaN : Number(value);
-  if (!Number.isFinite(minLines) || minLines < 0 || minLines > 100) {
-    fail(`--min-lines expects a percentage from 0 to 100, as --min-lines=<percent> (got "${minLinesArg}")`);
+const METRICS = ['lines', 'statements', 'branches', 'functions'];
+const minArg = process.argv.find((arg) => arg.startsWith('--min'));
+let floor = null;
+if (minArg !== undefined) {
+  const value = minArg.startsWith('--min=') ? minArg.slice('--min='.length) : '';
+  floor = value.trim() === '' ? Number.NaN : Number(value);
+  if (!Number.isFinite(floor) || floor < 0 || floor > 100) {
+    fail(`--min expects a percentage from 0 to 100, as --min=<percent> (got "${minArg}")`);
   }
 }
 
@@ -281,6 +282,21 @@ console.log(
 console.log(`\nReport: ${relative(root, join(reportDir, 'html', 'index.html'))}`);
 writeFileSync(join(reportDir, 'packages.json'), `${JSON.stringify(Object.fromEntries(rows), null, 2)}\n`);
 
-if (minLines !== null && total.lines.pct < minLines) {
-  fail(`total lines ${total.lines.pct.toFixed(2)}% is below the floor ${minLines}%`);
+if (floor !== null) {
+  // Compared on the counts, so 99.999 % never rounds up to a 100 % floor.
+  const below = (metric) => 100 * metric.covered < floor * metric.total;
+  const short = METRICS.filter((metric) => below(total[metric]));
+  if (short.length > 0) {
+    for (const [path, file] of Object.entries(summary)) {
+      if (path === 'total') continue;
+      const missed = METRICS.filter((metric) => below(file[metric])).map(
+        (metric) => `${metric} ${file[metric].covered}/${file[metric].total}`,
+      );
+      if (missed.length > 0) console.error(`  ${relative(root, path)}: ${missed.join(', ')}`);
+    }
+    fail(
+      short.map((metric) => `total ${metric} ${total[metric].pct.toFixed(2)}%`).join(', ') +
+        ` below the floor ${floor}%`,
+    );
+  }
 }

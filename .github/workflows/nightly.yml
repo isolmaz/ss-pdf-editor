@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Unit + browser coverage of the project's own sources, with a floor on the total lines.
+  # Unit + browser coverage of the project's own sources: every total must be 100 %.
   # `pnpm coverage` builds the unminified editor itself, runs the whole Playwright suite against it
   # and restores the production build; it exits 1 under the floor, after the report is written.
   coverage:
@@ -53,7 +53,7 @@ jobs:
 
       # Fonts and engines are not committed; the unit tests and the build need them.
       - run: pnpm fetch:engines --sync
-      - run: pnpm coverage --min-lines=98
+      - run: pnpm coverage --min=100
 
       - name: Upload the coverage report
         if: always()

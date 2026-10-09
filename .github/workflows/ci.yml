@@ -306,6 +306,58 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Unit + browser coverage of the project's own sources: every total must be 100 %.
+  # `pnpm coverage` builds the unminified editor itself, runs the whole Playwright suite against it
+  # and restores the production build; it exits 1 under the floor, after the report is written.
+  coverage:
+    name: coverage
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      E2E_WORKERS: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pnpm version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The browser download is cached on the installed Playwright version; the system libraries
+      # it needs are apt packages and are not part of that cache, so a hit still installs them.
+      - id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      # Fonts and engines are not committed; the unit tests and the build need them.
+      - run: pnpm fetch:engines --sync
+      - run: pnpm coverage --min=100
+
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-report
+          path: coverage/report/
+          if-no-files-found: ignore
+          retention-days: 14
+
   # Only a push to `main` deploys, and only once every check above passed. Deploys run one at a time
   # and are never cancelled half way; a run whose commit is no longer main's head deploys nothing, so
   # an older push whose checks finished late cannot replace a newer build. The job needs nothing beyond the read-only token of the
@@ -313,7 +365,7 @@ jobs:
   deploy:
     name: deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [verify, e2e, e2e-service-worker, behavior, fidelity]
+    needs: [verify, e2e, e2e-service-worker, behavior, fidelity, coverage]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment:
