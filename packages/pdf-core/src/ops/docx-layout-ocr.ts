@@ -157,7 +157,8 @@ function renderScan(
   mupdf: Mupdf,
   page: Page,
   dpi: number,
-  withPng = true,
+  /** Asked with the pixels, before the pixmap is let go: whether the page is also wanted as a PNG (an upright copy is read instead of it, a mixed page sends its masked render). */
+  wantsPng: (image: RgbaImage) => boolean = () => false,
 ): { image: RgbaImage; png: Uint8Array } {
   const [x0, y0, x1, y1] = page.getBounds();
   // Within the pixel budget of the page images, however large the page: a poster at 300 dpi
@@ -182,15 +183,13 @@ function renderScan(
       }
     }
     // Pixels per point: from the page's size, as the writer maps the words back.
-    return {
-      image: {
-        width,
-        height,
-        data,
-        scale: (width / Math.max(1e-6, x1 - x0) + height / Math.max(1e-6, y1 - y0)) / 2,
-      },
-      png: withPng ? pixmap.asPNG().slice() : new Uint8Array(),
+    const image: RgbaImage = {
+      width,
+      height,
+      data,
+      scale: (width / Math.max(1e-6, x1 - x0) + height / Math.max(1e-6, y1 - y0)) / 2,
     };
+    return { image, png: wantsPng(image) ? pixmap.asPNG().slice() : new Uint8Array() };
   } finally {
     pixmap.destroy();
   }
@@ -410,7 +409,7 @@ export async function readPictureText(
       return pictureLooksLikeText(own);
     });
   if (candidates.length === 0) return null;
-  const scan = renderScan(mupdf, page, scanDpi(scene), false);
+  const scan = renderScan(mupdf, page, scanDpi(scene));
   const masked = maskBoxes(scan.image, visible);
   throwIfAborted(signal);
   const read = await readWords(mupdf, masked, pngOf(mupdf, masked), ocr, signal);
@@ -494,8 +493,13 @@ export async function readScanPage(
   // A layer of replacement characters or turned lines says less than the picture: OCR reads it again when it can.
   const trusted = ocr === null || layerTrusted(scene);
   const useLayer = layer.length > 0 && trusted;
-  // The PNG goes to the recogniser only for a whole scan read by OCR; a mixed page sends its masked render.
-  const scan = renderScan(mupdf, page, scanDpi(scene), !mixed && !useLayer && ocr !== null);
+  // A crooked scan is read on an upright copy (below); only a level whole scan read by OCR sends its own PNG.
+  const held: { upright: ReturnType<typeof uprightScan> } = { upright: null };
+  const scan = renderScan(mupdf, page, scanDpi(scene), (rendered) => {
+    if (mixed || useLayer || ocr === null) return false;
+    held.upright = uprightScan(rendered);
+    return held.upright === null;
+  });
   const masked = maskBoxes(scan.image, visible);
   // Read now: the page is not used after the first wait (a page read beside this one uses the document).
   const shapes = shapesOnPage(mupdf, page, scene);
@@ -510,7 +514,7 @@ export async function readScanPage(
   // keeps its pixels and gives the background, and the text boxes are put on it turned by the
   // skew angle at the end. A level scan, a page with a text layer and a page with real text over
   // the scan (its masks and boxes are in the page's own frame) are read as they are.
-  const upright = !useLayer && !mixed && ocr !== null ? uprightScan(masked) : null;
+  const { upright } = held;
   let picture = masked;
   image = upright?.image ?? masked;
   // Words read twice are dropped from the text, but their ink is erased all the same.
