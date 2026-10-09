@@ -922,6 +922,24 @@ export function App({ store }: AppProps) {
   }, [viewer]);
 
   const activeTab = session.tabs.find((tab) => tab.id === session.activeId) ?? null;
+
+  /**
+   * Print and Snapshot render the engine document, which carries none of the session's staged
+   * redaction marks: the browser's "Save as PDF" or a saved image would deliver the content the
+   * marks were meant to remove, and the print dialog's imposed file opens as a new tab. They are
+   * refused with the same notice as Save while a mark is unapplied.
+   */
+  const refuseUnappliedRedactions = useCallback((): boolean => {
+    if (activeTab === null || pendingOverlays(activeTab).redactions.length === 0) return false;
+    setNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
+    return true;
+  }, [activeTab, t]);
+  const openPrint = useCallback(() => {
+    if (!refuseUnappliedRedactions()) setPrintOpen(true);
+  }, [refuseUnappliedRedactions]);
+  const openSnapshotMenu = useCallback(() => {
+    if (!refuseUnappliedRedactions()) setSnapshotOpen(true);
+  }, [refuseUnappliedRedactions]);
   const activeHandle = activeTab === null ? null : (handles.current.get(activeTab.id) ?? null);
   const pageCount = activeTab === null ? 0 : workingPageCount(activeTab);
   const currentForms =
@@ -3882,6 +3900,7 @@ export function App({ store }: AppProps) {
         refuseBusy();
         return;
       }
+      if (refuseUnappliedRedactions()) return;
       const controller = new AbortController();
       cancelRef.current = controller;
       setBusy(true);
@@ -3900,7 +3919,7 @@ export function App({ store }: AppProps) {
         }
       }
     },
-    [openProducedTab, refuseBusy, setBusy, t],
+    [openProducedTab, refuseBusy, refuseUnappliedRedactions, setBusy, t],
   );
 
   /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
@@ -4863,7 +4882,7 @@ export function App({ store }: AppProps) {
         openFile: () => void openViaPicker(),
         save: () => void saveActive(),
         exportDocument: () => void exportActive(),
-        print: () => setPrintOpen(true),
+        print: openPrint,
         openBatch: () => setBatchOpen(true),
         openSignature,
         addImage: pickImage,
@@ -4895,7 +4914,7 @@ export function App({ store }: AppProps) {
         toggleFullscreen: () => void toggleFullscreen(),
         toggleReading: () => setReading((value) => !value),
         toggleMagnifier: () => setMagnifierOn((value) => !value),
-        openSnapshot: () => setSnapshotOpen(true),
+        openSnapshot: openSnapshotMenu,
         toggleLeftDock: () => setLeftDock((value) => !value),
         toggleRightDock: () => setRightDock((value) => !value),
         selectAllPages: () => setSelectedPages(Array.from({ length: pageCount }, (_v, index) => index)),
@@ -4943,6 +4962,8 @@ export function App({ store }: AppProps) {
       leftDock,
       magnifierOn,
       openDialog,
+      openPrint,
+      openSnapshotMenu,
       openXfaForm,
       openViaPicker,
       pageCount,
@@ -5030,7 +5051,7 @@ export function App({ store }: AppProps) {
         // The whole common selection, across every mark family, and only when there is
         // one: the key is not swallowed to mean nothing.
         deleteSelection: deleteMarkSelection,
-        print: () => setPrintOpen(true),
+        print: openPrint,
         zoomIn: () => viewerApi.current?.setZoom(Math.min(4, zoom + 0.25)),
         zoomOut: () => viewerApi.current?.setZoom(Math.max(0.25, zoom - 0.25)),
         zoomReset: () => viewerApi.current?.setZoom(1),
@@ -5062,6 +5083,7 @@ export function App({ store }: AppProps) {
         currentPage,
         deleteMarkSelection,
         openDialog,
+        openPrint,
         openViaPicker,
         pageCount,
         saveActive,

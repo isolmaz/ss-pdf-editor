@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
+import type { Page } from 'playwright/test';
 import {
   CANVAS,
   dragOnPage,
   installPickers,
+  menu,
   notice,
   openApp,
   openStaged,
@@ -22,6 +24,9 @@ import { labelledPdf, readProducedEntry } from './tool-fixture';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
+
+const PENDING =
+  'Unapplied redaction marks; saving, exporting, printing and every tool that produces a file or moves pages are held.';
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
@@ -125,14 +130,14 @@ test('Save is held back while a redaction mark is unapplied, and the file on dis
   // press is repeated until the refusal that names them shows.
   await expect(async () => {
     await page.keyboard.press('Control+s');
-    await expect(notice(page, 'Unapplied redaction marks; save and export are held.')).toBeVisible({
+    await expect(notice(page, PENDING)).toBeVisible({
       timeout: 2_000,
     });
   }).toPass({ timeout: 60_000 });
   expect(sha(await readFile(page, 'marked.pdf'))).toBe(sha(original));
 });
 
-test('Word and text export are held back while a redaction mark is unapplied, as Export is', async ({
+test('Word and text export, Print and Snapshot are held back while a redaction mark is unapplied, as Export is', async ({
   page,
 }) => {
   await openApp(page, 'marked.pdf', labelledPdf('Marked', 1));
@@ -142,10 +147,32 @@ test('Word and text export are held back while a redaction mark is unapplied, as
 
   for (const tool of ['Export to Word, Excel or CSV', 'Export Text']) {
     await palette(page, tool);
-    await expect(notice(page, 'Unapplied redaction marks; save and export are held.')).toBeVisible({
+    await expect(notice(page, PENDING)).toBeVisible({
       timeout: 30_000,
     });
     // The form that would write the marked words into a file never opens.
     await expect(page.getByRole('region', { name: tool })).toHaveCount(0);
+    await dismissNotice(page);
+  }
+
+  // Print and Snapshot render the engine document, which carries no staged marks: every way
+  // in is refused with the same notice, and neither dialog opens.
+  const entries: ReadonlyArray<readonly [string, () => Promise<void>]> = [
+    ['Ctrl+P', () => page.keyboard.press('Control+p')],
+    ['File > Print', () => menu(page, 'File', /^Print/)],
+    ['palette Print', () => palette(page, 'Print')],
+    ['View > Snapshot', () => menu(page, 'View', /^Snapshot/)],
+    ['palette Snapshot', () => palette(page, 'Snapshot')],
+  ];
+  for (const [entry, open] of entries) {
+    await open();
+    await expect(notice(page, PENDING), entry).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('dialog', { name: /^(Print|Snapshot)$/ }), entry).toHaveCount(0);
+    await dismissNotice(page);
   }
 });
+
+async function dismissNotice(page: Page): Promise<void> {
+  await notice(page, PENDING).getByRole('button', { name: 'Close' }).click();
+  await expect(notice(page, PENDING)).toHaveCount(0);
+}

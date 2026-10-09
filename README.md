@@ -411,7 +411,8 @@ nothing leaving the browser.
     structure.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
     is refused, and so is every tool whose result leaves the tab (Word, text, split,
-    PDF/A, a protected copy): each would carry the content the marks were meant to remove.
+    PDF/A, a protected copy), every tool that moves pages, and printing and Snapshot: each
+    would carry the content the marks were meant to remove.
 - **Sanitize.** One dialog removes what the pages do not show.
   - Categories: scripts and code-running actions, attached files, metadata, private
     application data, thumbnails and hidden layers (on by default); external links, comments
