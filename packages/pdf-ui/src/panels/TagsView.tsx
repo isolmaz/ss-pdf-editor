@@ -291,7 +291,7 @@ function TaggedEditor({
       }),
     [draft, selectedKeys],
   );
-  const single = selectedNodes.length === 1 ? (selectedNodes[0] ?? null) : null;
+  const single = selectedNodes.length === 1 ? (selectedNodes[0] as (typeof selectedNodes)[number]) : null;
 
   const layouts = usePageLayouts(
     bytes,
@@ -399,20 +399,19 @@ function TaggedEditor({
   const indent = (target: { node: StructNode; parent: StructNode | null }) => {
     const siblings = elementKidsOf(draft, target.parent);
     const index = siblings.findIndex((entry) => entry.key === target.node.key);
-    const previous = siblings[index - 1];
-    if (previous === undefined) return;
+    // The button is enabled only when the element is not the first of its siblings.
+    const previous = siblings[index - 1] as StructNode;
     attempt([
       { op: 'move', key: target.node.key, parentKey: previous.key, index: elementKids(previous).length },
     ]);
   };
 
-  const outdent = (target: { node: StructNode; parent: StructNode | null }) => {
-    const parent = target.parent;
-    if (parent === null) return;
-    const holder = findNode(draft, parent.key);
-    if (holder === null) return;
+  // The button is enabled only for an element whose parent is itself inside an element, and the
+  // selection and the parent both come from the draft, so the parent is found in it.
+  const outdent = (target: { node: StructNode; parent: StructNode }) => {
+    const holder = findNode(draft, target.parent.key) as { node: StructNode; parent: StructNode | null };
     const aunts = elementKidsOf(draft, holder.parent);
-    const at = aunts.findIndex((entry) => entry.key === parent.key);
+    const at = aunts.findIndex((entry) => entry.key === target.parent.key);
     attempt([{ op: 'move', key: target.node.key, parentKey: parentKeyOf(holder.parent), index: at + 1 }]);
   };
 
@@ -455,13 +454,12 @@ function TaggedEditor({
     return value;
   };
 
+  // Both are offered only while something is selected.
   const groupSelected = (role: string) => {
-    if (selectedNodes.length === 0) return;
     attempt([{ op: 'group', keys: selectedNodes.map((entry) => entry.node.key), role, newKey: newKey() }]);
   };
 
   const makeList = () => {
-    if (selectedNodes.length === 0) return;
     const next: StructEdit[] = [];
     const items: string[] = [];
     for (const entry of selectedNodes) {
@@ -475,8 +473,8 @@ function TaggedEditor({
     attempt(next);
   };
 
+  // The button is disabled while there is no edit.
   const apply = async () => {
-    if (edits.length === 0) return;
     const controller = new AbortController();
     setBusy(true);
     setFailure(null);
@@ -582,7 +580,7 @@ function TaggedEditor({
               single.parent === null ||
               findNode(draft, single.parent.key)?.parent == null
             }
-            onClick={() => single !== null && outdent(single)}
+            onClick={() => single?.parent != null && outdent({ node: single.node, parent: single.parent })}
             icon={<TextOutdent size={14} aria-hidden="true" />}
             testId="tags-outdent"
           />
@@ -1099,16 +1097,16 @@ function UntaggedEditor({
   useEffect(() => {
     const pages: OverlayPage[] = [];
     for (const entry of candidates.pages) {
-      const pagePlan = plan[entry.pageIndex];
-      if (pagePlan === undefined) continue;
+      // The plan starts with every candidate page, and its order and roles with every candidate of it.
+      const pagePlan = plan[entry.pageIndex] as PagePlanState;
       const items: OverlayItem[] = [];
       let number = 0;
       for (const id of pagePlan.order) {
-        const candidate = entry.candidates.find((value) => value.id === id);
-        const role = pagePlan.roles[id] ?? candidate?.role ?? 'P';
+        const candidate = entry.candidates.find((value) => value.id === id) as TagCandidate;
+        const role = pagePlan.roles[id] as string;
         if (role === 'Artifact') continue;
         number += 1;
-        if (candidate?.rect != null) items.push({ key: id, number, role, rect: candidate.rect });
+        if (candidate.rect !== null) items.push({ key: id, number, role, rect: candidate.rect });
       }
       pages.push({
         pageIndex: entry.pageIndex,
@@ -1121,30 +1119,26 @@ function UntaggedEditor({
     readingOrderStore.setPages(pages);
   }, [candidates, plan]);
 
+  // Only the page on screen is edited, and it is listed (so planned) only when it has candidates.
   const update = (pageIndex: number, change: (value: PagePlanState) => PagePlanState) =>
-    setPlan((current) => {
-      const existing = current[pageIndex];
-      if (existing === undefined) return current;
-      return { ...current, [pageIndex]: change(existing) };
-    });
+    setPlan((current) => ({ ...current, [pageIndex]: change(current[pageIndex] as PagePlanState) }));
 
+  // A button is disabled at the end it would move past, so the target place exists.
   const move = (id: string, delta: -1 | 1) =>
     update(currentPage, (value) => {
       const index = value.order.indexOf(id);
-      const to = index + delta;
-      if (index < 0 || to < 0 || to >= value.order.length) return value;
       const order = [...value.order];
       order.splice(index, 1);
-      order.splice(to, 0, id);
+      order.splice(index + delta, 0, id);
       return { ...value, order };
     });
 
+  // What is dropped may be anything (text, a file); only a block of this page moves.
   const dropBefore = (moving: string, target: string) =>
     update(currentPage, (value) => {
-      if (moving === target) return value;
+      if (moving === target || !value.order.includes(moving)) return value;
       const order = value.order.filter((id) => id !== moving);
-      const at = order.indexOf(target);
-      order.splice(at < 0 ? order.length : at, 0, moving);
+      order.splice(order.indexOf(target), 0, moving);
       return { ...value, order };
     });
 
@@ -1189,8 +1183,8 @@ function UntaggedEditor({
 
   let number = 0;
   const rows = (state?.order ?? []).map((id) => {
-    const candidate = lookup.get(id);
-    const role = state?.roles[id] ?? candidate?.role ?? 'P';
+    const candidate = lookup.get(id) as TagCandidate;
+    const role = (state as PagePlanState).roles[id] as string;
     if (role !== 'Artifact') number += 1;
     return { id, candidate, role, number: role === 'Artifact' ? null : number };
   });
@@ -1246,9 +1240,7 @@ function UntaggedEditor({
                       aria-pressed={isSelected}
                       className="min-w-0 flex-1 truncate rounded-sm text-start text-xs text-kumo-default"
                     >
-                      {row.candidate?.kind === 'figure'
-                        ? t(key('tags.untagged.figure'))
-                        : (row.candidate?.text ?? row.id)}
+                      {row.candidate.kind === 'figure' ? t(key('tags.untagged.figure')) : row.candidate.text}
                     </button>
                     <select
                       value={row.role}
@@ -1285,7 +1277,7 @@ function UntaggedEditor({
                       testId="plan-down"
                     />
                   </div>
-                  {row.candidate?.kind === 'figure' && row.role === 'Figure' ? (
+                  {row.candidate.kind === 'figure' && row.role === 'Figure' ? (
                     <label className="flex items-center gap-1 ps-5">
                       <span className="sr-only">{t(key('tags.alt.label'))}</span>
                       <input

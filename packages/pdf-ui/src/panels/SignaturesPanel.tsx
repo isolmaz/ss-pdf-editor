@@ -67,26 +67,27 @@ export function SignaturesPanel({ document, t, onGoToPage, onNotice }: Signature
 
   return (
     <ul className="min-h-0 flex-1 overflow-y-auto p-1" aria-label={t('panel.signatures')}>
-      {state.fields.map((field) => (
-        <li key={`${field.id}-${field.name}`}>
-          <button
-            type="button"
-            // A field the engine gave no page for stays listable, it just cannot be
-            // walked to — the same rule the outline's unresolvable entries follow.
-            disabled={field.pageIndex === null}
-            title={field.pageIndex === null ? field.name : t('panel.goToPage', { page: field.pageIndex + 1 })}
-            onClick={() => {
-              if (field.pageIndex !== null) onGoToPage(field.pageIndex);
-            }}
-            className="w-full rounded-sm px-1.5 py-1 text-start hover:bg-kumo-tint disabled:hover:bg-transparent"
-          >
-            <span className="block truncate text-xs text-kumo-default">{field.name}</span>
-            <span className="block text-[11px] text-kumo-subtle">
-              {t(field.signed ? 'panel.signatures.signed' : 'panel.signatures.unsigned')}
-            </span>
-          </button>
-        </li>
-      ))}
+      {state.fields.map((field) => {
+        const { pageIndex } = field;
+        return (
+          <li key={`${field.id}-${field.name}`}>
+            <button
+              type="button"
+              // A field the engine gave no page for stays listable, it just cannot be
+              // walked to — the same rule the outline's unresolvable entries follow.
+              disabled={pageIndex === null}
+              title={pageIndex === null ? field.name : t('panel.goToPage', { page: pageIndex + 1 })}
+              onClick={pageIndex === null ? undefined : () => onGoToPage(pageIndex)}
+              className="w-full rounded-sm px-1.5 py-1 text-start hover:bg-kumo-tint disabled:hover:bg-transparent"
+            >
+              <span className="block truncate text-xs text-kumo-default">{field.name}</span>
+              <span className="block text-[11px] text-kumo-subtle">
+                {t(field.signed ? 'panel.signatures.signed' : 'panel.signatures.unsigned')}
+              </span>
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

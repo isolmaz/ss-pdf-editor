@@ -61,8 +61,11 @@ interface ToolItem {
   readonly badge?: string;
 }
 
+/** The groups the rail offers, in order; the expanded state has an entry for each. */
+type ToolGroupId = 'pages' | 'export' | 'sign' | 'security' | 'stamp';
+
 interface ToolGroup {
-  readonly id: string;
+  readonly id: ToolGroupId;
   readonly title: string;
   readonly items: readonly ToolItem[];
 }
@@ -129,7 +132,7 @@ export function ToolsRailPanel({
   onExportModal,
   visibleGroups,
 }: ToolsRailPanelProps) {
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+  const [expandedGroups, setExpandedGroups] = useState<Record<ToolGroupId, boolean>>({
     pages: true,
     export: true,
     sign: true,
@@ -137,7 +140,7 @@ export function ToolsRailPanel({
     stamp: false,
   });
 
-  const toggleGroup = (id: string) => {
+  const toggleGroup = (id: ToolGroupId) => {
     setExpandedGroups((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
@@ -355,7 +358,7 @@ export function ToolsRailPanel({
       {/* Content */}
       <div className="flex flex-col gap-2">
         {groups.map((group) => {
-          const isExpanded = expandedGroups[group.id] ?? false;
+          const isExpanded = expandedGroups[group.id];
           return (
             <div
               key={group.id}

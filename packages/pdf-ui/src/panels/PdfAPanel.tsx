@@ -102,8 +102,6 @@ export function PdfAPanel({ t, read, onConvert, onNotice }: PdfAPanelProps) {
   }, [read, target]);
 
   const report = state.report;
-  const rows = (wanted: PdfARuleResult['state']) =>
-    report?.rules.filter((rule) => rule.state === wanted) ?? [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -185,7 +183,7 @@ export function PdfAPanel({ t, read, onConvert, onNotice }: PdfAPanelProps) {
                 ['na', 'pdfa.group.na', 'text-kumo-subtle'],
               ] as const
             ).map(([state, label, tone]) => {
-              const group = rows(state);
+              const group = report.rules.filter((rule) => rule.state === state);
               if (group.length === 0) return null;
               return (
                 <section key={state} className="pb-1">
