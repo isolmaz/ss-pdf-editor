@@ -18,6 +18,7 @@ import {
   planReplace,
   replacePages,
 } from './page-insert';
+import { readPageLabels } from './page-labels';
 
 const run = { signal: new AbortController().signal };
 
@@ -35,6 +36,37 @@ async function pages(widths: readonly number[], turned: readonly number[] = [], 
   const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
   doc.destroy();
   return bytes;
+}
+
+/** One /PageLabels rule: first page, the PDF style letter (`D`, `r`, `A`…), prefix and start value. */
+type LabelRule = readonly [page: number, style: string, prefix?: string, start?: number];
+
+/** `pages()` that also carries a /PageLabels plan. */
+async function labelled(widths: readonly number[], rules: readonly LabelRule[]): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument((await pages(widths)).slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    for (const [page, style, prefix, start] of rules) doc.setPageLabels(page, style, prefix, start);
+    return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** A document labelled `i, ii, 1, 2` on pages of width 200…230. */
+const frontMatter = () =>
+  labelled(
+    [200, 210, 220, 230],
+    [
+      [0, 'r'],
+      [2, 'D'],
+    ],
+  );
+
+/** The label a reader shows on every page. */
+async function labelsOf(bytes: Uint8Array): Promise<readonly string[]> {
+  return readPageLabels(bytes, (await read(bytes)).sizes.length);
 }
 
 /** Each page's displayed size, plus the Info title, creation date and producer. */
@@ -610,5 +642,135 @@ describe('replacePages beyond one replacement', () => {
         { signal: before.signal },
       ),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('insertPages and replacePages keep every page’s label', () => {
+  // The rule under test: a page keeps the label its own document gave it — that document's
+  // /PageLabels, or its decimal page number in that document when it has none.
+  const blankPage = { kind: 'blank', size: 'a4', count: 1 } as const;
+
+  it('keeps the base labels when a blank page goes in front, and numbers the blank page itself', async () => {
+    const out = await insertPages(
+      { source: blankPage, at: 0, bytes: await frontMatter(), pageCount: 4 },
+      run,
+    );
+    expect((await read(out.bytes)).sizes.map((size) => size[0])).toEqual([595, 200, 210, 220, 230]);
+    expect(await labelsOf(out.bytes)).toEqual(['1', 'i', 'ii', '1', '2']);
+  });
+
+  it('keeps the base labels when a blank page goes after page 2 and at the end', async () => {
+    const middle = await insertPages(
+      { source: blankPage, at: 2, bytes: await frontMatter(), pageCount: 4 },
+      run,
+    );
+    expect(await labelsOf(middle.bytes)).toEqual(['i', 'ii', '1', '1', '2']);
+    const end = await insertPages(
+      { source: blankPage, at: 4, bytes: await frontMatter(), pageCount: 4 },
+      run,
+    );
+    expect(await labelsOf(end.bytes)).toEqual(['i', 'ii', '1', '2', '1']);
+  });
+
+  it('gives pages of another document the labels that document gave them', async () => {
+    const donor = await labelled(
+      [500, 510, 520],
+      [
+        [0, 'A', 'Ek-', 1],
+        [2, 'D', 'Not-', 7],
+      ],
+    );
+    const out = await insertPages(
+      {
+        source: { kind: 'document', bytes: donor, pages: [2, 0, 1] },
+        at: 1,
+        bytes: await frontMatter(),
+        pageCount: 4,
+      },
+      run,
+    );
+    expect((await read(out.bytes)).sizes.map((size) => size[0])).toEqual([200, 520, 500, 510, 210, 220, 230]);
+    expect(await labelsOf(out.bytes)).toEqual(['i', 'Not-7', 'Ek-A', 'Ek-B', 'ii', '1', '2']);
+  });
+
+  it('numbers pages of a document without labels by their page number in that document', async () => {
+    const out = await insertPages(
+      {
+        source: { kind: 'document', bytes: await pages([500, 510, 520]), pages: [1, 2] },
+        at: 0,
+        bytes: await frontMatter(),
+        pageCount: 4,
+      },
+      run,
+    );
+    expect(await labelsOf(out.bytes)).toEqual(['2', '3', 'i', 'ii', '1', '2']);
+  });
+
+  it('numbers the pages of a base without labels and keeps the labels of the inserted document', async () => {
+    const out = await insertPages(
+      {
+        source: { kind: 'document', bytes: await labelled([500, 510], [[0, 'R']]), pages: [0, 1] },
+        at: 1,
+        bytes: await pages([200, 210]),
+        pageCount: 2,
+      },
+      run,
+    );
+    expect(await labelsOf(out.bytes)).toEqual(['1', 'I', 'II', '2']);
+  });
+
+  it('writes no labels when neither document has any', async () => {
+    const out = await insertPages(
+      { source: blankPage, at: 1, bytes: await pages([200, 210]), pageCount: 2 },
+      run,
+    );
+    expect(await labelsOf(out.bytes)).toEqual([]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('insert.note.labels');
+  });
+
+  it('says how the pages were labelled when a plan was written', async () => {
+    const out = await insertPages(
+      { source: blankPage, at: 0, bytes: await frontMatter(), pageCount: 4 },
+      run,
+    );
+    expect(out.report.notes.find((entry) => entry.key === 'insert.note.labels')).toMatchObject({
+      kind: 'changed',
+    });
+  });
+
+  it('keeps the labels of the pages that stay when one is replaced', async () => {
+    const out = await replacePages(
+      {
+        bytes: await frontMatter(),
+        pageCount: 4,
+        pages: [1, 2],
+        replacements: [
+          { name: 'ek.pdf', bytes: await labelled([500, 510], [[0, 'a', 'x-']]), index: 1 },
+          { name: 'ek2.pdf', bytes: await pages([600]), index: 0 },
+        ],
+      },
+      run,
+    );
+    expect((await read(out.bytes)).sizes.map((size) => size[0])).toEqual([200, 510, 600, 230]);
+    expect(await labelsOf(out.bytes)).toEqual(['i', 'x-b', '1', '2']);
+    expect(out.report.notes.map((entry) => entry.key)).toContain('insert.note.labels');
+  });
+
+  it('writes the labels of the new pages when every page is replaced', async () => {
+    const out = await replacePages(
+      {
+        bytes: await frontMatter(),
+        pageCount: 4,
+        pages: [0, 1, 2, 3],
+        replacements: [
+          { name: 'ek.pdf', bytes: await labelled([500, 510], [[0, 'a', 'x-']]), index: 1 },
+          { name: 'ek.pdf', bytes: await labelled([500, 510], [[0, 'a', 'x-']]), index: 0 },
+          { name: 'ek2.pdf', bytes: await pages([600, 610, 620]), index: 2 },
+          { name: 'ek2.pdf', bytes: await pages([600, 610, 620]), index: 0 },
+        ],
+      },
+      run,
+    );
+    expect(await labelsOf(out.bytes)).toEqual(['x-b', 'x-a', '3', '1']);
   });
 });
