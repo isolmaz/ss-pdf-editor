@@ -437,18 +437,13 @@ nothing leaving the browser.
     re-checked glyph by glyph and for any annotation or field still under a mark.
   - An object-level audit reports any remaining terms, earlier revisions and leftover
     structure.
-<<<<<<< HEAD
-  - The verification covers the marked areas. Bookmark titles and custom document
-    properties are not checked; the metadata option clears the title, author, subject,
-    keywords and creator fields and the XMP packet, and the notices say exactly that.
-  - A staged mark stays an intent until you apply it. Saving while marks are still staged
-    is refused.
-=======
+  - The verification covers the marked areas only. Document properties and bookmark titles
+    are not checked; the metadata option clears the title, author, subject, keywords and
+    creator fields and the XMP packet, and the notices say exactly that.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
     is refused, and so is every tool whose result leaves the tab (Word, text, split,
     PDF/A, a protected copy), every tool that moves pages, and printing and Snapshot: each
     would carry the content the marks were meant to remove.
->>>>>>> origin/main
 - **Sanitize.** One dialog removes what the pages do not show.
   - Categories: scripts and code-running actions, attached files, metadata, private
     application data, thumbnails and hidden layers (on by default); external links, comments
