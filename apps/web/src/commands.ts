@@ -696,7 +696,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'redact.title',
       group: 'tools',
       danger: true,
-      disabled: noDocument,
+      disabled: noEdit,
       run: dialog('redact'),
     },
     {

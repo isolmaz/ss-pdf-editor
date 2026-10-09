@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
+import { generateKey, issueCertificate } from '../signature-trust.fixtures';
 import { build, TWO_LINES } from './redact.fixtures';
 import {
   ALL_PERMISSIONS,
@@ -18,6 +19,8 @@ import {
   protectDocument,
   unlockDocument,
 } from './security';
+import { signPdf } from './sign';
+import { verifySignatures } from './signature-status';
 
 const run = { signal: new AbortController().signal };
 
@@ -66,6 +69,24 @@ async function textOf(bytes: Uint8Array, index: number, password = ''): Promise<
   page.destroy();
   doc.destroy();
   return text;
+}
+
+/** A one-page document carrying a PAdES signature. */
+async function signed(): Promise<Uint8Array> {
+  const keyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
+  const certificate = await issueCertificate({
+    subject: 'İmza Deneme',
+    keyPair,
+    notBefore: new Date(Date.UTC(2026, 0, 1)),
+    notAfter: new Date(Date.UTC(2027, 0, 1)),
+    keyUsage: ['digitalSignature'],
+  });
+  const out = await signPdf(
+    await build([TWO_LINES]),
+    { identity: { certificate: certificate.der, privateKey: keyPair.privateKey } },
+    run,
+  );
+  return out.bytes;
 }
 
 describe('protectDocument', () => {
@@ -144,6 +165,66 @@ describe('protectDocument', () => {
       'op.note.security.verified',
     ]);
     expect(await textOf(outcome.bytes, 0)).toBe('Public line Secret 4711');
+  });
+
+  describe('a signed document', () => {
+    const SIGNATURE_NOTE = {
+      kind: 'lost',
+      key: 'op.note.security.signatureInvalidated',
+    };
+
+    it('warns that the signature no longer validates, and still encrypts', async () => {
+      const source = await signed();
+      expect(await verifySignatures(source, run.signal)).toHaveLength(1);
+      const outcome = await protectDocument(source, OPTIONS, run);
+      expect(outcome.report.notes).toEqual([
+        {
+          kind: 'changed',
+          key: 'op.note.security.encryptionApplied',
+          params: { cipher: 'aes-256', restricted: 0 },
+        },
+        SIGNATURE_NOTE,
+        { kind: 'preserved', key: 'op.note.security.verified' },
+      ]);
+      expect((await inspectProtection(outcome.bytes)).encrypted).toBe(true);
+    });
+
+    it('warns for a password-locked signed input once its old password has opened it', async () => {
+      const locked = await lock(await signed(), 'encrypt=aes-256,user-password=eski,owner-password=eski');
+      const outcome = await protectDocument(locked, { ...OPTIONS, oldPassword: 'eski' }, run);
+      expect(outcome.report.notes).toContainEqual(SIGNATURE_NOTE);
+    });
+
+    it('warns for a signature only a page /Annots reaches, as verifySignatures counts it', async () => {
+      const mupdf = await loadMupdf();
+      const doc = mupdf.PDFDocument.openDocument(await signed(), 'application/pdf').asPDF();
+      if (doc === null) throw new Error('not a PDF');
+      doc.getTrailer().get('Root').get('AcroForm').put('Fields', []);
+      const annotsOnly = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+      doc.destroy();
+      expect(await verifySignatures(annotsOnly, run.signal)).toHaveLength(1);
+      const outcome = await protectDocument(annotsOnly, OPTIONS, run);
+      expect(outcome.report.notes).toContainEqual(SIGNATURE_NOTE);
+    });
+
+    it('does not warn for an unsigned document or a signature field nobody signed', async () => {
+      const plain = await protectDocument(await build([TWO_LINES]), OPTIONS, run);
+      expect(plain.report.notes.map((entry) => entry.key)).not.toContain(SIGNATURE_NOTE.key);
+
+      const mupdf = await loadMupdf();
+      const doc = new mupdf.PDFDocument();
+      const page = doc.addPage([0, 0, 300, 400], 0, {}, '');
+      doc.insertPage(0, page);
+      const field = doc.addObject({ Type: 'Annot', Subtype: 'Widget', FT: 'Sig', T: doc.newString('Bos') });
+      doc
+        .getTrailer()
+        .get('Root')
+        .put('AcroForm', { Fields: [field], SigFlags: 3 });
+      const empty = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+      doc.destroy();
+      const outcome = await protectDocument(empty, OPTIONS, run);
+      expect(outcome.report.notes.map((entry) => entry.key)).not.toContain(SIGNATURE_NOTE.key);
+    });
   });
 
   it('refuses an empty owner password and a password the option list would mangle', async () => {
@@ -302,6 +383,28 @@ describe('unlockDocument', () => {
       { kind: 'changed', key: 'op.note.security.protectionRemoved' },
       { kind: 'preserved', key: 'op.note.security.verified' },
     ]);
+  });
+
+  it('warns that the signature no longer validates when it removes the password from a signed file', async () => {
+    const locked = await lock(await signed(), 'encrypt=aes-256,user-password=gizli,owner-password=sahip');
+    const outcome = await unlockDocument(locked, 'gizli', run);
+    expect(outcome.report.notes).toEqual([
+      { kind: 'changed', key: 'op.note.security.protectionRemoved' },
+      { kind: 'lost', key: 'op.note.security.signatureInvalidatedUnlock' },
+      { kind: 'preserved', key: 'op.note.security.verified' },
+    ]);
+    expect((await inspectProtection(outcome.bytes)).encrypted).toBe(false);
+  });
+
+  it('does not warn when it unlocks an unsigned file', async () => {
+    const locked = await lock(
+      await build([TWO_LINES]),
+      'encrypt=aes-256,user-password=gizli,owner-password=sahip',
+    );
+    const outcome = await unlockDocument(locked, 'gizli', run);
+    expect(outcome.report.notes.map((entry) => entry.key)).not.toContain(
+      'op.note.security.signatureInvalidatedUnlock',
+    );
   });
 
   it('opens an owner-only file without a password', async () => {

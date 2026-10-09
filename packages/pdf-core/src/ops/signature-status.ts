@@ -997,6 +997,14 @@ function collectSignatureFields(
   return collected;
 }
 
+/**
+ * How many signature fields an opened document carries, counted by the same walk
+ * {@link verifySignatures} uses — so "this file is signed" means one thing everywhere.
+ */
+export function countSignedFields(doc: PDFDocument): number {
+  return collectSignatureFields(doc, undefined).length;
+}
+
 /** How much validation data a `/DSS` may hand over: a hostile file cannot make this unbounded. */
 const MAX_DSS_ITEMS = 256;
 const MAX_DSS_BYTES = 16 * 1024 * 1024;

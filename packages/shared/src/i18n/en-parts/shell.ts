@@ -119,7 +119,7 @@ export const shellPart = {
   'settings.sweep.action': 'Clean up',
   'settings.offline': 'Offline packages',
   'settings.offline.hint':
-    'Downloads the PDF engines and fonts to this device; the tools you have used here then work without internet.',
+    "Downloads the editor's tools, the PDF engines and the fonts to this device; they then work without internet.",
   'settings.offline.check': 'Check status',
   'settings.offline.prepare': 'Prepare',
   'settings.shortcuts.open': 'Show',

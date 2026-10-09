@@ -9,6 +9,10 @@
  *    dropped. A line MuPDF reports as running vertically (its direction, which holds for a
  *    single character too) is rotated text and is a box of its own (rotation 90 or 270),
  *    written as a vertical text box (`vert="vert"` / `"vert270"`: LibreOffice ignores `rot`).
+ *    A line at any other angle than across, down or up (1.5° slack; `slanted`) is a box of its
+ *    own too, the frame turned by the line's angle about its centre (`a:xfrm rot`, which Word
+ *    honours and LibreOffice does not: it draws that text across, in the right place), its glyphs
+ *    measured along the line from their origins (`LayoutChar.pen`).
  * 2. Consecutive lines (across MuPDF's blocks, see `textBoxes`) are one paragraph while their font size agrees
  *    (±1 pt), their baseline pitch is regular (0.5…1.6 × size, ±15 % of the paragraph's pitch)
  *    and the alignment stays consistent: left edges, centres or right edges all agree (2 pt)
@@ -24,7 +28,7 @@ import { EMU, TWIPS, xml, xmlSafe } from './docx-drawing';
 import { type EmbeddedFace, standardAdvance } from './docx-fonts';
 import { wordFontName } from './export-office';
 import type { DocxRegistry, SceneLink, TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
-import type { LayoutChar, LayoutLine, PageLayout } from './page-layout';
+import { type LayoutChar, type LayoutLine, type PageLayout, slanted } from './page-layout';
 
 /* ------------------------------------------------------------------ *
  * calibration
@@ -89,9 +93,18 @@ function justifiedFactor(rows: readonly Row[]): number {
  * lines
  * ------------------------------------------------------------------ */
 
-type Direction = 'right' | 'down' | 'up';
+type Direction = 'right' | 'down' | 'up' | 'angled';
+
+/** A line set at a slant: its angle (degrees clockwise), where its first glyph starts and how far along the line it reaches. */
+interface Slant {
+  readonly angle: number;
+  readonly origin: readonly [number, number];
+  readonly extent: number;
+}
 
 interface Row {
+  /** Set for an `angled` line. */
+  readonly slant?: Slant;
   readonly runs: readonly TextRun[];
   readonly text: string;
   readonly x0: number;
@@ -141,16 +154,22 @@ function dominantSize(chars: readonly LayoutChar[]): number {
 /**
  * Whether the line runs down or up the page rather than across it, by MuPDF's direction of
  * the line (which is right for a single character too, where no two positions compare).
- * Text turned less than about 25° from the vertical counts as running down or up.
+ * Text turned less than about 25° from the vertical counts as running down or up (a vertical
+ * text box, which Word and LibreOffice both draw). Any other line that is not across (within
+ * 1.5°, `slanted`) is `angled`: a text box turned by the line's angle.
  */
 function directionOf(line: LayoutLine): Direction {
   const [, y] = line.dir;
-  if (Math.abs(y) < 0.9) return 'right';
-  return y > 0 ? 'down' : 'up';
+  if (Math.abs(y) >= 0.9) return y > 0 ? 'down' : 'up';
+  return slanted(line.dir) ? 'angled' : 'right';
 }
 
+/** Where a character starts and ends along its (slanted) line, from the line's first glyph origin. */
+type Along = (char: LayoutChar) => readonly [number, number];
+
 /** The gap between two consecutive characters along the line's direction. */
-function gapBetween(previous: LayoutChar, char: LayoutChar, direction: Direction): number {
+function gapBetween(previous: LayoutChar, char: LayoutChar, direction: Direction, along?: Along): number {
+  if (along !== undefined) return along(char)[0] - along(previous)[1];
   if (direction === 'down') return char.box[1] - previous.box[3];
   if (direction === 'up') return previous.box[1] - char.box[3];
   return char.box[0] - previous.box[2];
@@ -207,6 +226,7 @@ function runsOf(
   direction: Direction,
   serifs: ReadonlySet<string>,
   embedded: FaceLookup | undefined,
+  along?: Along,
 ): TextRun[] {
   // Characters with a space between words where the PDF has none but a gap.
   const items: { c: string; source: LayoutChar; link: string | null; space: boolean }[] = [];
@@ -222,7 +242,7 @@ function runsOf(
     }
     if (previous !== undefined && !previous.space) {
       const before = chars[index - 1];
-      if (before !== undefined && gapBetween(before, char, direction) > 0.25 * before.size) {
+      if (before !== undefined && gapBetween(before, char, direction, along) > 0.25 * before.size) {
         items.push({ c: ' ', source: previous.source, link: previous.link, space: true });
       }
     }
@@ -239,7 +259,8 @@ function runsOf(
   const runs: TextRun[] = [];
   /** Per run: the geometry of its characters and the sums `horizontalScale` compares. */
   const fits: { advances: number[]; starts: number[]; ends: number[]; drawn: number; natural: number }[] = [];
-  const shear = shearOf(chars);
+  // A slanted line's glyph boxes are wider than their pitch by the slant of the line, not of the glyphs.
+  const shear = direction === 'angled' ? 0 : shearOf(chars);
   for (const item of items) {
     // A font the document embeds is named by its embedded family and set in the embedded face's own weight and slant.
     const face = item.source.face === undefined ? undefined : embedded?.(item.source.face);
@@ -261,6 +282,7 @@ function runsOf(
       last.bold === bold &&
       last.italic === italic &&
       last.color === item.source.color &&
+      last.alpha === item.source.alpha &&
       last.link === item.link
     ) {
       runs[at] = { ...last, text: last.text + item.c };
@@ -272,6 +294,7 @@ function runsOf(
         bold,
         italic,
         color: item.source.color,
+        ...(item.source.alpha === undefined ? {} : { alpha: item.source.alpha }),
         link: item.link,
       });
       fits.push({ advances: [], starts: [], ends: [], drawn: 0, natural: 0 });
@@ -280,7 +303,8 @@ function runsOf(
     const fit = fits[at] as (typeof fits)[number];
     const source = item.source;
     const codes = [...item.c];
-    const width = source.box[2] - source.box[0];
+    const [left, right] = along === undefined ? [source.box[0], source.box[2]] : along(source);
+    const width = right - left;
     for (const [k, code] of codes.entries()) {
       const unicode = code.codePointAt(0) as number;
       const program =
@@ -292,11 +316,11 @@ function runsOf(
         fit.natural += program * source.size;
       }
       fit.advances.push(em);
-      fit.starts.push(item.space ? Number.NaN : source.box[0] + (width * k) / codes.length);
-      fit.ends.push(item.space ? Number.NaN : source.box[0] + (width * (k + 1)) / codes.length);
+      fit.starts.push(item.space ? Number.NaN : left + (width * k) / codes.length);
+      fit.ends.push(item.space ? Number.NaN : left + (width * (k + 1)) / codes.length);
     }
   }
-  if (direction !== 'right') return runs;
+  if (direction === 'down' || direction === 'up') return runs;
   return runs.map((run, at) => {
     const fit = fits[at] as (typeof fits)[number];
     const hscale = horizontalScale(fit.drawn, fit.natural);
@@ -342,7 +366,26 @@ function rowOf(
   const last = shown.lastIndexOf(solid[solid.length - 1] as LayoutChar);
   const chars = shown.slice(first, last + 1);
   const direction = directionOf(line);
-  const runs = runsOf(chars, links, direction, serifs, embedded);
+  // A slanted line (every character of it has its `pen`) is measured along its own direction
+  // from its first glyph's origin.
+  let along: Along | undefined;
+  let slant: Slant | undefined;
+  if (direction === 'angled') {
+    const pen = (char: LayoutChar) => char.pen as NonNullable<LayoutChar['pen']>;
+    const start = pen(solid[0] as LayoutChar);
+    const measure: Along = (char) => {
+      const at = pen(char);
+      const from = (at.x - start.x) * line.dir[0] + (at.y - start.y) * line.dir[1];
+      return [from, from + at.advance];
+    };
+    along = measure;
+    slant = {
+      angle: (Math.atan2(line.dir[1], line.dir[0]) * 180) / Math.PI + (line.dir[1] < 0 ? 360 : 0),
+      origin: [start.x, start.y],
+      extent: Math.max(...solid.map((char) => measure(char)[1])),
+    };
+  }
+  const runs = runsOf(chars, links, direction, serifs, embedded, along);
   const text = runs.map((run) => run.text).join('');
   let x0 = Number.POSITIVE_INFINITY;
   let y0 = Number.POSITIVE_INFINITY;
@@ -361,7 +404,20 @@ function rowOf(
   const glyphs = solid.reduce((sum, char) => sum + char.box[2] - char.box[0], 0);
   const spaces = text.split(' ').length - 1;
   const natural = direction === 'right' ? (glyphs + spaces * SPACE * size) / (x1 - x0) : 1;
-  return { runs, text, x0, x1, y0, y1, size, baseline, bullet: BULLET.test(text), direction, natural };
+  return {
+    runs,
+    text,
+    x0,
+    x1,
+    y0,
+    y1,
+    size,
+    baseline,
+    bullet: BULLET.test(text),
+    direction,
+    natural,
+    ...(slant === undefined ? {} : { slant }),
+  };
 }
 
 /**
@@ -668,6 +724,43 @@ function rotated(row: Row): TextBox {
   };
 }
 
+/** A line set at a slant is a box this much × its size high: room for accents above the baseline, which is `BASELINE_IN_LINE` down. */
+const SLANT_LINE = 1.3;
+
+/**
+ * A line at a slant: the box *before* it is turned (`TextBox.rotation` is the line's angle,
+ * clockwise, and `box` the frame as Word stores it, turned about its centre), so that the
+ * first glyph's origin and every following one land where the PDF has them. The box's own
+ * axes are the line's direction `d` and its normal `n`; the origin sits `TEXT_LEFT` in and
+ * `BASELINE_IN_LINE` of the box's height down, which fixes the centre. The runs' `fit`
+ * positions are on the box's own axis (`left + TEXT_LEFT` is the origin), as `fitLine` expects
+ * them of upright text.
+ */
+function slantedBox(row: Row, slant: Slant): TextBox {
+  const lineHeight = SLANT_LINE * row.size;
+  const width = slant.extent * WIDTH_FACTOR + WIDTH_PAD;
+  const radians = (slant.angle * Math.PI) / 180;
+  const dx = Math.cos(radians);
+  const dy = Math.sin(radians);
+  const along = width / 2 - TEXT_LEFT;
+  const across = (0.5 - BASELINE_IN_LINE) * lineHeight;
+  const cx = slant.origin[0] + along * dx - across * dy;
+  const cy = slant.origin[1] + along * dy + across * dx;
+  const left = cx - width / 2;
+  const top = cy - lineHeight / 2;
+  const shift = (positions: readonly number[]) => positions.map((position) => position + left + TEXT_LEFT);
+  // Every run of a slanted line has its fit (`runsOf`).
+  const runs = row.runs.map((run) => {
+    const fit = run.fit as NonNullable<TextRun['fit']>;
+    return { ...run, fit: { ...fit, starts: shift(fit.starts), ends: shift(fit.ends) } };
+  });
+  return {
+    box: [left, top, left + width, top + lineHeight],
+    rotation: slant.angle,
+    paragraphs: [{ align: 'left', lineHeight, lines: [{ runs }] }],
+  };
+}
+
 /**
  * The text of a page as boxes, in the order MuPDF reads it. MuPDF's blocks are only a hint
  * here: it cuts centred and right-aligned paragraphs into blocks wherever the line starts
@@ -705,7 +798,7 @@ export function textBoxes(layout: PageLayout, links: readonly SceneLink[], embed
       if (row === null) continue;
       if (row.direction !== 'right') {
         end();
-        parts.push(rotated(row));
+        parts.push(row.slant === undefined ? rotated(row) : slantedBox(row, row.slant));
       } else if (pending !== null && continues(pending, row)) {
         pending.rows.push(row);
       } else {
@@ -925,16 +1018,29 @@ function runXml(
   const font = xml(run.font);
   const hscale =
     run.fit === undefined || run.fit.hscale === 1 ? '' : `<w:w w:val="${Math.round(run.fit.hscale * 100)}"/>`;
+  const hex = (run.color & 0xffffff).toString(16).toUpperCase().padStart(6, '0');
+  // A translucent run keeps its solid `w:color` for readers without Word 2010's text fill.
+  // `w14:alpha`'s value is the *transparency* (1 − opacity), unlike DrawingML's `a:alpha` (opacity;
+  // [MS-DOCX] CT_SchemeColor, https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/133bd2fe-ad4c-4422-a120-9c3a1a3a4e30).
+  // Evidence: LibreOffice's test document semi-transparent-text.docx, authored by Word 14.0, carries
+  // `w14:alpha 74000` and is asserted as 74 % text transparency, LibreOffice's DOCX export writes the
+  // text's transparency into it, and LibreOffice 26 drew 10000 nearly solid and 88000 nearly clear. As
+  // in Word's files and the Open XML SDK's order, `w14:textFill` follows the standard rPr children.
+  const fill =
+    run.alpha === undefined
+      ? ''
+      : `<w14:textFill><w14:solidFill><w14:srgbClr w14:val="${hex}"><w14:alpha w14:val="${Math.round((1 - run.alpha) * 100000)}"/></w14:srgbClr></w14:solidFill></w14:textFill>`;
   const body = spacedPieces(run.text, spacing, tabs)
     .map(([text, twips]) => {
       const properties =
         `<w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/>` +
         (run.bold ? '<w:b/><w:bCs/>' : '') +
         (run.italic ? '<w:i/><w:iCs/>' : '') +
-        `<w:color w:val="${(run.color & 0xffffff).toString(16).toUpperCase().padStart(6, '0')}"/>` +
+        `<w:color w:val="${hex}"/>` +
         (twips === 0 || twips === null ? '' : `<w:spacing w:val="${twips}"/>`) +
         `${hscale}<w:sz w:val="${half}"/><w:szCs w:val="${half}"/>` +
-        (run.underline === true ? '<w:u w:val="single"/>' : '');
+        (run.underline === true ? '<w:u w:val="single"/>' : '') +
+        fill;
       const content = twips === null ? '<w:tab/>' : `<w:t xml:space="preserve">${xml(text)}</w:t>`;
       return `<w:r><w:rPr>${properties}</w:rPr>${content}</w:r>`;
     })
@@ -1034,6 +1140,24 @@ export function textBoxXml(box: TextBox, scale: number, registry: DocxRegistry):
   const id = registry.nextDrawingId();
   const cx = Math.max(1, Math.round(width * EMU));
   const cy = Math.max(1, Math.round(height * EMU));
+  // The text turns with the frame in Word: `a:xfrm rot` is the shape's clockwise rotation about its centre
+  // (https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/9ce071a0-4053-4714-9025-1951253cab2a),
+  // `bodyPr` text rotation is applied on top of it, and only `upright="1"` (default false) keeps text level
+  // (ECMA-376 `bodyPr`, https://c-rex.net/samples/ooxml/e1/part4/OOXML_P4_DOCX_bodyPr_topic_ID0EMGMKB.html).
+  // A box turned by any other angle is a frame turned about its centre (`a:xfrm rot`, 60000ths of a degree,
+  // `effectExtent` the room the turned frame takes beyond it); 90° and 270° are the vertical boxes below.
+  const turned = box.rotation !== 0 && box.rotation !== 90 && box.rotation !== 270;
+  const turn = turned ? ` rot="${Math.round(box.rotation * 60000)}"` : '';
+  const vmlTurn = turned ? `rotation:${Number(box.rotation.toFixed(3))};` : '';
+  const cos = Math.abs(Math.cos((box.rotation * Math.PI) / 180));
+  const sin = Math.abs(Math.sin((box.rotation * Math.PI) / 180));
+  // The turned frame's bounding box is (w·cos + h·sin) × (w·sin + h·cos); half of what it has beyond the frame is each side's.
+  const spill = turned
+    ? {
+        x: Math.max(0, Math.round((((cos - 1) * width + sin * height) * EMU) / 2)),
+        y: Math.max(0, Math.round(((sin * width + (cos - 1) * height) * EMU) / 2)),
+      }
+    : { x: 0, y: 0 };
   const vert = box.rotation === 90 ? 'vert' : box.rotation === 270 ? 'vert270' : 'horz';
   const flow =
     box.rotation === 90
@@ -1048,19 +1172,19 @@ export function textBoxXml(box: TextBox, scale: number, registry: DocxRegistry):
     `<wp:positionH relativeFrom="page"><wp:posOffset>${Math.round(left * EMU)}</wp:posOffset></wp:positionH>` +
     `<wp:positionV relativeFrom="page"><wp:posOffset>${Math.round(top * EMU)}</wp:posOffset></wp:positionV>` +
     `<wp:extent cx="${cx}" cy="${cy}"/>` +
-    '<wp:effectExtent l="0" t="0" r="0" b="0"/>' +
+    `<wp:effectExtent l="${spill.x}" t="${spill.y}" r="${spill.x}" b="${spill.y}"/>` +
     '<wp:wrapNone/>' +
     `<wp:docPr id="${id}" name="Text ${id}"/>` +
     '<wp:cNvGraphicFramePr/>' +
     '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
     '<wps:wsp><wps:cNvSpPr txBox="1"/>' +
-    `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    `<wps:spPr><a:xfrm${turn}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>' +
     `<wps:txbx>${content}</wps:txbx>` +
     `<wps:bodyPr rot="0" vert="${vert}" wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"><a:noAutofit/></wps:bodyPr>` +
     '</wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>' +
     '<mc:Fallback><w:pict>' +
-    `<v:shape style="position:absolute;margin-left:${pt(left)}pt;margin-top:${pt(top)}pt;width:${pt(width)}pt;height:${pt(height)}pt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page;z-index:${z}" stroked="f" filled="f">` +
+    `<v:shape style="position:absolute;margin-left:${pt(left)}pt;margin-top:${pt(top)}pt;width:${pt(width)}pt;height:${pt(height)}pt;${vmlTurn}mso-position-horizontal-relative:page;mso-position-vertical-relative:page;z-index:${z}" stroked="f" filled="f">` +
     `<v:textbox${flow} inset="0,0,0,0">${content}</v:textbox></v:shape></w:pict></mc:Fallback>` +
     '</mc:AlternateContent></w:r>'
   );

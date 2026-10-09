@@ -112,6 +112,8 @@ export async function officeDocument(
       ...(font.name === RESOURCE.courierMapped.name ? { ToUnicode: doc.addStream(TO_UNICODE, {}) } : {}),
     });
   }
+  // `/GS1 gs` in a page's content draws what follows at 40 % opacity.
+  const translucent = doc.addObject({ Type: 'ExtGState', ca: 0.4, CA: 0.4 });
   pages.forEach((page, index) => {
     const xobjects: Record<string, PDFObject> = {};
     for (const [name, spec] of Object.entries(page.images ?? {})) {
@@ -128,7 +130,12 @@ export async function officeDocument(
     const [width, height] = page.size ?? [400, 500];
     doc.insertPage(
       index,
-      doc.addPage([0, 0, width, height], 0, { Font: fonts, XObject: xobjects }, page.content),
+      doc.addPage(
+        [0, 0, width, height],
+        0,
+        { Font: fonts, XObject: xobjects, ExtGState: { GS1: translucent } },
+        page.content,
+      ),
     );
   });
   if (meta.title !== undefined) doc.setMetaData('info:Title', meta.title);

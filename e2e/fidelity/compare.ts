@@ -397,3 +397,35 @@ export function recoveredWords(
   }
   return found;
 }
+
+/**
+ * `actual` pages with the words of the pictures' text set aside: an export that reads the
+ * pictures (OCR) turns their text into live text, which the page's own text does not contain,
+ * so it is not "extra" but what was asked for (`recoveredWords` counts how much of it came
+ * back). `own` is each page's real text: its words are the live text's first, and only what
+ * is left of a picture word's count after them is set aside. Each picture word is set aside
+ * once over all the pages.
+ */
+export function setAsidePictureWords(
+  actual: readonly (readonly string[])[],
+  picture: readonly string[],
+  own: readonly (readonly string[])[],
+): string[][] {
+  const budget = new Map<string, number>();
+  for (const word of picture) budget.set(word, (budget.get(word) ?? 0) + 1);
+  return actual.map((page, index) => {
+    const live = new Map<string, number>();
+    for (const word of own[index] ?? []) live.set(word, (live.get(word) ?? 0) + 1);
+    return page.filter((word) => {
+      const liveLeft = live.get(word) ?? 0;
+      if (liveLeft > 0) {
+        live.set(word, liveLeft - 1);
+        return true;
+      }
+      const left = budget.get(word) ?? 0;
+      if (left === 0) return true;
+      budget.set(word, left - 1);
+      return false;
+    });
+  });
+}
