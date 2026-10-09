@@ -431,7 +431,8 @@ nothing leaving the browser.
   - A dynamic XFA form keeps its content only in the XFA, so a run that would remove the XFA
     (scripts, or form fields) is refused; flatten the XFA form to a normal PDF first.
 - **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
-  encrypted copy is downloaded, not applied to the open document.
+  encrypted copy is downloaded, not applied to the open document. Encrypting or removing a
+  password rewrites the file, so a digital signature does not survive; the report says so.
 - **Simple signatures and images.** Draw a signature, type your name in one of two
   handwriting faces, or take it from a photo of a signature on paper (the paper is made
   transparent). Choose signature or initials and black, blue or navy ink, then click where
