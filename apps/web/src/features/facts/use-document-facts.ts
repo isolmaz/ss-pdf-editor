@@ -1,34 +1,12 @@
-import { listPdfAttachments, readPdfAttachment } from 'pdf-core/attachments';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { SessionStore, SessionTab } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
-import type { AttachmentRow } from 'pdf-ui';
 import { useEffect } from 'react';
 import { inspectProtection, listPdfFonts, verifySignatures } from '../../lazy-ops';
 import { materializeBase } from '../../operations';
+import { measuredAttachments } from '../attachments/attachments';
 import { factsFailed, factsRead, factsReading } from './facts-store';
 import { useTrust } from './trust-store';
-
-/**
- * The embedded files the properties panel lists, each with its measured size. The engine's
- * attachment list carries names and descriptions but not payloads, so a size is the byte
- * length of the payload read one file at a time; an unreadable payload is `null`.
- */
-async function measuredAttachments(
-  handle: PdfDocumentHandle,
-  signal: AbortSignal,
-): Promise<readonly AttachmentRow[]> {
-  const measured: AttachmentRow[] = [];
-  for (const attachment of await listPdfAttachments(handle)) {
-    if (signal.aborted) break;
-    const size = await readPdfAttachment(handle, attachment).then(
-      (bytes) => bytes.byteLength,
-      () => null,
-    );
-    measured.push({ name: attachment.filename, description: attachment.description, size });
-  }
-  return measured;
-}
 
 export interface DocumentFactsInput {
   readonly store: SessionStore;
