@@ -20,7 +20,6 @@ import {
 } from 'pdf-core/ops/convert-formats';
 import type { FormDetection } from 'pdf-core/ops/form-detect';
 import { fieldValueText } from 'pdf-core/ops/form-value';
-import { type MeasureMark, type MeasureMode, type MeasureScale, scaleForRatio } from 'pdf-core/ops/measure';
 import type { RedactRect } from 'pdf-core/ops/redact';
 import type { ProtectionState } from 'pdf-core/ops/security';
 import type { OperationContext, OperationNote, OperationProgress } from 'pdf-core/ops/types';
@@ -86,7 +85,7 @@ import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
-import type { FieldValue, MeasureReading } from 'pdf-ui';
+import type { FieldValue } from 'pdf-ui';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import {
   type CanvasToolId,
@@ -192,6 +191,9 @@ import { SignatureWarningPrompt } from './features/facts/SignatureWarningPrompt'
 import { confirmSignature, useSignaturePending } from './features/facts/signature-prompt';
 import { trustStore, useStoredTrust } from './features/facts/trust-store';
 import { useDocumentFacts } from './features/facts/use-document-facts';
+import { MeasureOverlay } from './features/measure/MeasureOverlay';
+import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
+import { armMeasure, useMeasureMode } from './features/measure/measure-store';
 import { ReadingLayers } from './features/reading/ReadingLayers';
 import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
 import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
@@ -407,18 +409,6 @@ const PdfAPanel = lazy(async () => {
   return { default: module.PdfAPanel };
 });
 /**
- * The measure layer and its settings strip arrive with the tool: they carry the
- * annotation writer and the ruler geometry, neither of which belongs in the first paint.
- */
-const MeasureLayer = lazy(async () => {
-  const module = await import('pdf-ui');
-  return { default: module.MeasureLayer };
-});
-const MeasureSettings = lazy(async () => {
-  const module = await import('pdf-ui');
-  return { default: module.MeasureSettings };
-});
-/**
  * The text tool's overlay — it reads the page's structured text and parses the font
  * metric tables, so it arrives with the tool.
  */
@@ -582,12 +572,6 @@ export function App({ store }: AppProps) {
   const canvasTool = useCore((state) => state.canvasTool);
   /** A stamp just written: selected as soon as the re-read inventory lists it. */
   const selectAfterWrite = useRef<string | null>(null);
-  /**
-   * Which measurement is armed while the ruler owns the pointer. A *sub*-choice, not
-   * a second active tool: `measureMode` below is `null` unless `canvasTool` is
-   * `'measure'`, so the strip and the menu check cannot disagree with the pointer.
-   */
-  const [measureSubMode, setMeasureSubMode] = useState<MeasureMode>('distance');
   const shape = useCore((state) => state.shape);
   /**
    * The common layer's selection: target keys across all four mark families, in the
@@ -695,25 +679,8 @@ export function App({ store }: AppProps) {
   const [annotationOpacity, setAnnotationOpacity] = useState(0.4);
   const [annotationThickness, setAnnotationThickness] = useState(2);
   const [annotationAuthor, setAnnotationAuthor] = useState('');
-  /**
-   * The measure tool's own state: the scale the document is
-   * drawn at, the marks the session holds, the grid settings and the live reading.
-   * Colour, opacity, thickness and author are the annotation style — a ruler and a
-   * highlighter are the same kind of mark, and two colour pickers would be two answers
-   * to one question. The armed ruler itself is `canvasTool === 'measure'`.
-   */
-  const [measureScale, setMeasureScale] = useState<MeasureScale>(() => scaleForRatio(100));
+  /** The measurements the session holds (the measure tool's own state is `features/measure`). */
   const measureMarks = pendingOverlays(store.active).measures;
-  const setMeasureMarks = useCallback(
-    (change: OverlayChange<readonly MeasureMark[]>) =>
-      writeOverlay(store, 'measures', change, 'tools.measure'),
-    [store],
-  );
-  const [measureGrid, setMeasureGrid] = useState(false);
-  const [measureSpacing, setMeasureSpacing] = useState(36);
-  const [measureSnapGrid, setMeasureSnapGrid] = useState(false);
-  const [measureSnapPoints, setMeasureSnapPoints] = useState(false);
-  const [measureReading, setMeasureReading] = useState<MeasureReading | null>(null);
   /**
    * The file's own annotations, **keyed to the bytes they were read from**.
    *
@@ -842,7 +809,7 @@ export function App({ store }: AppProps) {
   );
 
   /** Which measurement is armed; `null` whenever the ruler does not own the pointer. */
-  const measureMode: MeasureMode | null = canvasTool === 'measure' ? measureSubMode : null;
+  const measureMode = useMeasureMode();
   const redactionActive = canvasTool === 'redact';
   const textTool = canvasTool === 'text';
   /** Only creation gestures reach the annotation overlay. */
@@ -4173,12 +4140,7 @@ export function App({ store }: AppProps) {
         openBatch: () => setBatchOpen(true),
         openSignature,
         addImage: pickImage,
-        measure: (mode) => {
-          // The ruler's own sub-mode: the same one canonical value the rail and the palette
-          // write, so arming it from the menu cannot leave two answers behind.
-          setMeasureSubMode(mode);
-          selectTool('measure');
-        },
+        measure: armMeasure,
         measureMode,
         detectFormFields: () => void startFormDetect(),
         showRightTab: (tab) => {
@@ -4520,45 +4482,20 @@ export function App({ store }: AppProps) {
               </Button>
             </div>
           ) : measureMode !== null && viewer !== null ? (
-            <Suspense fallback={null}>
-              <MeasureSettings
-                t={t}
-                mode={measureMode}
-                onMode={(mode) => {
-                  // The strip's own toggle reports `null` when the armed mode is
-                  // clicked again, which is the same stop as its Stop button.
-                  if (mode === null) {
-                    selectTool('select');
-                    return;
-                  }
-                  setMeasureSubMode(mode);
-                  selectTool('measure');
-                }}
-                scale={measureScale}
-                onScale={setMeasureScale}
-                grid={measureGrid}
-                onGrid={setMeasureGrid}
-                gridSpacing={measureSpacing}
-                onGridSpacing={setMeasureSpacing}
-                snapGrid={measureSnapGrid}
-                onSnapGrid={setMeasureSnapGrid}
-                snapPoints={measureSnapPoints}
-                onSnapPoints={setMeasureSnapPoints}
-                // Colour, opacity, thickness and author are the annotation style: a
-                // ruler and a highlighter are the same kind of mark, so the ruler's
-                // settings edit the same state the marker tools do.
-                color={annotationColor}
-                onColor={setAnnotationColor}
-                opacity={annotationOpacity}
-                onOpacity={setAnnotationOpacity}
-                thickness={annotationThickness}
-                onThickness={setAnnotationThickness}
-                author={annotationAuthor}
-                onAuthor={setAnnotationAuthor}
-                reading={measureReading}
-                onStop={() => selectTool('select')}
-              />
-            </Suspense>
+            <MeasureSettingsStrip
+              t={t}
+              // Colour, opacity, thickness and author are the annotation style: a
+              // ruler and a highlighter are the same kind of mark, so the ruler's
+              // settings edit the same state the marker tools do.
+              color={annotationColor}
+              onColor={setAnnotationColor}
+              opacity={annotationOpacity}
+              onOpacity={setAnnotationOpacity}
+              thickness={annotationThickness}
+              onThickness={setAnnotationThickness}
+              author={annotationAuthor}
+              onAuthor={setAnnotationAuthor}
+            />
           ) : (
             <ToolProperties
               t={t}
@@ -4809,30 +4746,18 @@ export function App({ store }: AppProps) {
                 Measurements remain visible after switching to selection. Only creation
                 and the settings strip follow the armed tool, not the marks themselves.
               */}
-                      {viewer !== null && (measureMode !== null || visibleMarks.measures.length > 0) ? (
-                        <Suspense fallback={null}>
-                          <MeasureLayer
-                            t={t}
-                            viewer={viewer}
-                            mode={canEdit ? measureMode : null}
-                            scale={measureScale}
-                            marks={visibleMarks.measures}
-                            color={annotationColor}
-                            opacity={annotationOpacity}
-                            thickness={annotationThickness}
-                            author={annotationAuthor}
-                            grid={measureMode !== null && measureGrid}
-                            gridSpacing={measureSpacing}
-                            snapGrid={measureSnapGrid}
-                            snapPoints={measureSnapPoints}
-                            onReading={setMeasureReading}
-                            onStop={() => selectTool('select')}
-                            onCreate={(mark) => {
-                              setMeasureMarks((marks) => [...marks, mark]);
-                              if (activeTab !== null) store.setDirty(activeTab.id, true);
-                            }}
-                          />
-                        </Suspense>
+                      {viewer !== null ? (
+                        <MeasureOverlay
+                          t={t}
+                          session={store}
+                          viewer={viewer}
+                          marks={visibleMarks.measures}
+                          canEdit={canEdit}
+                          color={annotationColor}
+                          opacity={annotationOpacity}
+                          thickness={annotationThickness}
+                          author={annotationAuthor}
+                        />
                       ) : null}
                       {/*
                 The visual layer survives transient edit locks. Only its creator is
