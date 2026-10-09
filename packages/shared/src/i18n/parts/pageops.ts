@@ -35,6 +35,8 @@ export const pageopsPart = {
 
   // mergeDocuments
   'op.note.merge.metadata': 'Eklenen belgelerin üst verisi taşınmadı; Info ve XMP taban belgeden alındı.',
+  'op.note.merge.encryptionDropped':
+    'Birleştirilen belgelerin parola koruması taşınmadı; birleştirilmiş dosya korumasızdır.',
   'op.note.merge.structure':
     'Motorun birleştirdiği yapı ölçüldü: {outline} yer imi, {labels} sayfa etiketi kaydı, {fields} form alanı.',
   'op.note.merge.labels':

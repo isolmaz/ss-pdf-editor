@@ -923,7 +923,9 @@ had to stay green. The moves, and the defects they fixed on the way:
   bound, is never removed, and only then does the report say the outline may still be
   repeated (`op.note.compose.outlineCopies`); a document's own top-level bookmarks with the
   same title and target, one a reduced copy of the other, collapse to one when a page is
-  repeated. A composition that repeats no page and turns none is still never rewritten;
+  repeated. A composition that repeats no page and turns none is still never rewritten; the merge also checks the base and every added document for
+  `/Encrypt` (`inspectProtection`) and reports `op.note.merge.encryptionDropped` when one had it, because
+  the merged file is written without any protection;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written, plus the planned page labels) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
