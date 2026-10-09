@@ -1,11 +1,4 @@
-import type {
-  AnnotationMark,
-  ExistingAnnotation,
-  FormFieldInfo,
-  PdfFontInfo,
-  RedactionAudit,
-  SignatureVerification,
-} from 'pdf-core';
+import type { AnnotationMark, ExistingAnnotation, FormFieldInfo } from 'pdf-core';
 import { listPdfAttachments, readPdfAttachment } from 'pdf-core/attachments';
 import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
@@ -35,8 +28,6 @@ import type { ProtectionState } from 'pdf-core/ops/security';
 import type { OperationContext, OperationNote, OperationProgress } from 'pdf-core/ops/types';
 import type { XfaInfo } from 'pdf-core/ops/xfa';
 import {
-  addRevocationList,
-  addTrustRoot,
   copyForEngine,
   type Draft,
   type DraftInventory,
@@ -48,23 +39,13 @@ import {
   type JsonValue,
   keysForDraft,
   type OpenDocumentKeys,
-  parseRevocationLists,
-  parseTrustRoots,
   planDocumentCleanup,
   planVaultCleanup,
-  type RevocationList,
-  type RevocationListsFile,
-  removeRevocationList,
-  removeTrustRoot,
-  revocationListDer,
   type SessionStore,
   type SessionTab,
   sha256Hex,
   sortDrafts,
   sourceKeyFor,
-  type TrustRoot,
-  type TrustRootsFile,
-  toDer,
   workingPageCount,
 } from 'pdf-model';
 import { checkDocumentLimits, createTranslator, detectDeviceTier, ToolError } from 'pdf-shared';
@@ -77,10 +58,6 @@ import { lazy, Suspense } from 'react';
 const CloseDocumentDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.CloseDocumentDialog };
-});
-const SignatureWarningDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.SignatureWarningDialog };
 });
 const ExportDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
@@ -111,7 +88,7 @@ import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
-import type { AttachmentRow, FieldValue, MeasureReading } from 'pdf-ui';
+import type { FieldValue, MeasureReading } from 'pdf-ui';
 import type { SavedSignature, StampSource } from 'pdf-ui/dialog';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import {
@@ -171,7 +148,7 @@ import { ModernEditorHeader } from './components/ModernEditorHeader';
 import { PageNavigation } from './components/PageNavigation';
 import { ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
-import { createOpfsDraftStorage, readAppFile, writeAppFile } from './drafts';
+import { createOpfsDraftStorage } from './drafts';
 import { compressionPresets } from './export-presets';
 import {
   armStampTool,
@@ -210,6 +187,13 @@ import {
 } from './features/core/handles';
 import { type OverlayChange, writeOverlay } from './features/core/overlays';
 import { useCompactViewport } from './features/core/viewport';
+import { currentFacts, currentFactsError, useCurrentFacts } from './features/facts/facts-store';
+import { PropertiesFacts } from './features/facts/PropertiesFacts';
+import { RedactionAuditView } from './features/facts/RedactionAuditView';
+import { SignatureWarningPrompt } from './features/facts/SignatureWarningPrompt';
+import { confirmSignature, useSignaturePending } from './features/facts/signature-prompt';
+import { trustStore, useStoredTrust } from './features/facts/trust-store';
+import { useDocumentFacts } from './features/facts/use-document-facts';
 import { ReadingLayers } from './features/reading/ReadingLayers';
 import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
 import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
@@ -218,13 +202,11 @@ import {
   addAttachments,
   addImageStamp,
   applyLayerWrite,
-  auditRedactedDocument,
   convertToPdf,
   fillFormFields,
   imagesToPdf,
   inspectProtection,
   inspectXfa,
-  listPdfFonts,
   listPdfImages,
   readFormFields,
   removeAttachments,
@@ -233,7 +215,6 @@ import {
 } from './lazy-ops';
 import {
   appendWarning,
-  auditNotice,
   engineValuesNotices,
   failureNotices,
   noticeLine,
@@ -327,27 +308,6 @@ function selectionRedactAreas(viewer: ViewerApi): readonly RedactRect[] {
   );
 }
 
-/**
- * The embedded files the properties panel lists, each with its measured size. The engine's
- * attachment list carries names and descriptions but not payloads, so a size is the byte
- * length of the payload read one file at a time; an unreadable payload is `null`.
- */
-async function measuredAttachments(
-  handle: PdfDocumentHandle,
-  signal: AbortSignal,
-): Promise<readonly AttachmentRow[]> {
-  const measured: AttachmentRow[] = [];
-  for (const attachment of await listPdfAttachments(handle)) {
-    if (signal.aborted) break;
-    const size = await readPdfAttachment(handle, attachment).then(
-      (bytes) => bytes.byteLength,
-      () => null,
-    );
-    measured.push({ name: attachment.filename, description: attachment.description, size });
-  }
-  return measured;
-}
-
 export interface AppProps {
   readonly store: SessionStore;
 }
@@ -374,16 +334,7 @@ interface DialogInput {
 
 /**
  * Dock panels that own a capability's *writer* are loaded when the tab is opened.
- *
- * The properties panel is the only consumer of the font reader, the signature
- * verifier and the embedded-file writer; loading them with the shell would put a
- * capability nobody has asked for into the first paint. The budget is a locked
- * decision, so the split is where it belongs: in the module graph.
  */
-const PropertiesPanel = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.PropertiesPanel };
-});
 const CommentsPanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
   return { default: module.CommentsPanel };
@@ -395,10 +346,6 @@ const FormPanel = lazy(async () => {
 const FormDetectPanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
   return { default: module.FormDetectPanel };
-});
-const RedactionAuditPanel = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.RedactionAuditPanel };
 });
 /**
  * Printing and the command palette are the two surfaces that held the entry chunk
@@ -1404,203 +1351,11 @@ export function App({ store }: AppProps) {
     // which is exactly when the inventory can have changed.
   }, [activeTab, activeHandle, contextFor, inspectionRevision]);
 
-  /**
-   * Document facts for the properties panel: fonts,
-   * embedded files, security and the four-state signature verdict. Read per working
-   * version — a font list from a previous version is not a fact about this one.
-   */
-  const [auditReport, setAuditReport] = useState<RedactionAudit | null>(null);
-  const [auditLoading, setAuditLoading] = useState(false);
-  /**
-   * The signature a pending save would touch, and whether that save rewrites the file.
-   * The prompt is state rather than a `window.confirm` so the answer is a real
-   * button in the app's own surface. The decision resumes exactly the frozen
-   * output operation that asked; it never authorizes a later call or another tab.
-   */
-  const [signatureWarning, setSignatureWarning] = useState<{
-    readonly breaks: boolean;
-    readonly signer: string | null;
-    readonly fieldName: string;
-  } | null>(null);
-  const signatureDecision = useRef<((accepted: boolean) => void) | null>(null);
-  const confirmSignature = useCallback(
-    (signatures: readonly SignatureVerification[], incremental: boolean) => {
-      const signature = signatures[0];
-      if (signature === undefined) return Promise.resolve(true);
-      return new Promise<boolean>((resolve) => {
-        signatureDecision.current = resolve;
-        setSignatureWarning({
-          breaks: !incremental,
-          signer: signature.signer,
-          fieldName: signature.fieldName === '' ? t('props.sig.unnamed') : signature.fieldName,
-        });
-      });
-    },
-    [t],
-  );
-  /**
-   * The certificates the user imported as trust roots. They live in the app's own
-   * OPFS directory — a device setting, never a document fact — and the verdicts re-run
-   * when the list changes, because a trust decision is exactly what a re-check is for.
-   */
-  const [trustRoots, setTrustRoots] = useState<readonly TrustRoot[]>([]);
-  useEffect(() => {
-    let live = true;
-    void readAppFile('trust-roots.json').then((raw) => {
-      if (live) setTrustRoots(parseTrustRoots(raw).roots);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  /** The roots as bytes, for the verifier; recomputed when the list changes. */
-  const trustRootBytes = useMemo(() => trustRoots.map((root) => toDer(root)), [trustRoots]);
-  /**
-   * The CRLs the user imported: the same OPFS settings directory and the same re-check when
-   * the list changes (an imported CRL is exactly what turns "indeterminate" into an answer).
-   */
-  const [revocationLists, setRevocationLists] = useState<readonly RevocationList[]>([]);
-  useEffect(() => {
-    let live = true;
-    void readAppFile('revocation-lists.json').then((raw) => {
-      if (live) setRevocationLists(parseRevocationLists(raw).lists);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  const revocationListBytes = useMemo(
-    () => revocationLists.map((list) => revocationListDer(list)),
-    [revocationLists],
-  );
-  const [factsInventory, setDocumentFacts] = useState<{
-    readonly tabId: string;
-    readonly version: string;
-    readonly fonts: readonly PdfFontInfo[];
-    readonly attachments: readonly {
-      readonly name: string;
-      readonly description: string;
-      readonly size: number | null;
-    }[];
-    readonly signatures: readonly SignatureVerification[];
-    readonly security: { readonly encrypted: boolean; readonly permissions: readonly string[] } | null;
-  } | null>(null);
-
-  const [factsError, setFactsError] = useState<{ tabId: string; version: string; error: ToolError } | null>(
-    null,
-  );
-  const documentFacts =
-    factsInventory?.tabId === activeTab?.id && factsInventory?.version === activeTab?.working.id
-      ? factsInventory
-      : null;
-  const currentFactsError =
-    factsError !== null && factsError.tabId === activeTab?.id && factsError.version === activeTab?.working.id
-      ? factsError.error
-      : null;
+  useStoredTrust();
+  const documentFacts = useCurrentFacts(activeTab);
   const canPrepareWrite = activeTab !== null && documentFacts !== null && formFields !== null && !busy;
-
-  useEffect(() => {
-    void inspectionRevision;
-    const tab = activeTab;
-    const handle = activeHandle;
-    setFactsError(null);
-    if (tab === null || handle === null) {
-      setDocumentFacts(null);
-      return undefined;
-    }
-    const controller = new AbortController();
-    setDocumentFacts(null);
-    void (async () => {
-      try {
-        const bytes = await materializeBase(contextFor(tab, handle), { signal: controller.signal });
-        const [fonts, signatures, attachments, protection] = await Promise.all([
-          listPdfFonts(bytes, controller.signal),
-          verifySignatures(bytes, controller.signal, { roots: trustRootBytes, crls: revocationListBytes }),
-          measuredAttachments(handle, controller.signal),
-          inspectProtection(bytes),
-        ]);
-        if (controller.signal.aborted) return;
-        setDocumentFacts({
-          tabId: tab.id,
-          version: tab.working.id,
-          fonts,
-          signatures,
-          attachments,
-          // The protection state comes from the engine's own reader, not from a
-          // guess: an unencrypted document reports `encrypted: false` and no
-          // permissions, which is a fact and not an empty table.
-          security:
-            protection === null
-              ? null
-              : {
-                  encrypted: protection.encrypted,
-                  // Only the permissions the document actually **grants** are listed:
-                  // a table of every bit with a yes/no column would bury the one line
-                  // the user is looking for.
-                  permissions: Object.entries(protection.permissions)
-                    .filter(([, granted]) => granted)
-                    .map(([name]) => name),
-                },
-        });
-      } catch (error) {
-        if (!controller.signal.aborted)
-          setFactsError({
-            tabId: tab.id,
-            version: tab.working.id,
-            error: error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' }),
-          });
-      }
-    })();
-    return () => controller.abort();
-    // Same rule as the form inventory: the effect re-runs with the working version —
-    // and with the trust roots and imported CRLs, since importing one is exactly what changes a verdict.
-  }, [activeTab, activeHandle, contextFor, trustRootBytes, revocationListBytes, inspectionRevision]);
-
-  /**
-   * The object-level audit of a produced redaction (first safety
-   * contract). It runs on the **working bytes**, and the needles it searches for are
-   * the words the user asked to erase — the audit answers "did the file keep a trace
-   * of what was removed", which the redaction report alone cannot.
-   */
-  const runRedactionAudit = useCallback(async () => {
-    const tab = store.active;
-    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-    if (tab === null || handle === null) return;
-    setAuditLoading(true);
-    try {
-      const bytes = await materializeBase(contextFor(tab, handle));
-      /**
-       * The needles are the words the user erased: what the applied redactions removed
-       * (read from the pre-redaction bytes, `redactedTerms`) plus whatever the marks
-       * still pending cover. An empty list is not silently treated as "nothing to find"
-       * — the notice below reports how many terms the scan actually had.
-       */
-      const pending = await redactionNeedles(
-        bytes,
-        pendingOverlays(tab).redactions.map((item) => item.mark),
-        { signal: new AbortController().signal },
-      );
-      const needles = [...new Set([...(redactedTerms.current.get(tab.id) ?? []), ...pending])];
-      const audit = await auditRedactedDocument(bytes, needles);
-      setAuditReport(audit);
-      showNotice(
-        noticeLine(
-          [
-            auditNotice({
-              terms: needles.length,
-              contentFindings: audit.findings.filter((finding) => finding.severity === 'content').length,
-            }),
-          ],
-          t,
-        ),
-      );
-    } catch (error) {
-      const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-    } finally {
-      setAuditLoading(false);
-    }
-  }, [contextFor, store, t]);
+  useDocumentFacts({ store, t, tab: activeTab, handle: activeHandle, revision: inspectionRevision });
+  const signaturePending = useSignaturePending();
 
   /** Embedded files: the three writes the properties panel offers. */
   const addAttachmentsToDocument = useCallback(
@@ -2682,33 +2437,6 @@ export function App({ store }: AppProps) {
     void sweepOrphanAnnotations();
   }, [markMode, settleNativeEditors, sweepOrphanAnnotations]);
 
-  /**
-   * Store the roots the panel parsed. The parsing lives in the panel's chunk — it
-   * needs pkijs, and the shell must not carry it (see `pdf-ui/panels/trust-roots.ts`).
-   */
-  const storeTrustRoots = useCallback(
-    (imported: readonly TrustRoot[]) => {
-      let next: TrustRootsFile = { version: 1, roots: trustRoots };
-      for (const root of imported) next = addTrustRoot(next, root);
-      setTrustRoots(next.roots);
-      void writeAppFile('trust-roots.json', next);
-      showNotice(t('props.sig.roots.added', { count: imported.length }));
-    },
-    [t, trustRoots],
-  );
-
-  /** The CRLs the panel parsed; they are stored as imported and judged when a signature is checked. */
-  const storeRevocationLists = useCallback(
-    (imported: readonly RevocationList[]) => {
-      let next: RevocationListsFile = { version: 1, lists: revocationLists };
-      for (const list of imported) next = addRevocationList(next, list);
-      setRevocationLists(next.lists);
-      void writeAppFile('revocation-lists.json', next);
-      showNotice(t('props.sig.crls.added', { count: imported.length }));
-    },
-    [t, revocationLists],
-  );
-
   const prepareOutput = useCallback(
     async (
       tabId: string,
@@ -2728,14 +2456,17 @@ export function App({ store }: AppProps) {
       if (tab === null || handle === null) return null;
 
       if (
-        documentFacts?.tabId !== tab.id ||
-        documentFacts.version !== tab.working.id ||
+        currentFacts(tab) === null ||
         currentForms?.tabId !== tab.id ||
         currentForms.version !== tab.working.id ||
         formFields === null
       ) {
         showNotice(
-          t(currentFactsError !== null || currentForms?.error ? 'inspection.failed' : 'inspection.loading'),
+          t(
+            currentFactsError(tab) !== null || currentForms?.error
+              ? 'inspection.failed'
+              : 'inspection.loading',
+          ),
         );
         return null;
       }
@@ -2776,10 +2507,10 @@ export function App({ store }: AppProps) {
         base,
         tab.source.master,
         tab.working.produced?.bytes ?? null,
-        (bytes) => verifySignatures(bytes, controller.signal, { roots: trustRootBytes }),
+        (bytes) => verifySignatures(bytes, controller.signal, { roots: trustStore.get().rootBytes }),
         appliedVersionBytes(tab, store.snapshotsFor(tab.id)),
       );
-      if (warning !== null && !(await confirmSignature(warning.signatures, warning.fate === 'appended'))) {
+      if (warning !== null && !(await confirmSignature(warning.signatures, warning.fate === 'appended', t))) {
         return null;
       }
 
@@ -2819,18 +2550,7 @@ export function App({ store }: AppProps) {
         verification,
       };
     },
-    [
-      confirmSignature,
-      contextFor,
-      currentFactsError,
-      currentForms,
-      documentFacts,
-      editableOverlays,
-      formFields,
-      store,
-      t,
-      trustRootBytes,
-    ],
+    [contextFor, currentForms, editableOverlays, formFields, store, t],
   );
 
   const saveActive = useCallback(
@@ -5695,69 +5415,21 @@ export function App({ store }: AppProps) {
                       />
                     </Suspense>
                   ) : rightTab === 'properties' ? (
-                    <Suspense
-                      fallback={
-                        <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
-                          {t('props.title')}
-                        </p>
-                      }
-                    >
-                      {currentFactsError !== null ? (
-                        <div role="alert" className="flex flex-col gap-2 p-2 text-xs text-kumo-danger">
-                          <p>
-                            {t(currentFactsError.messageKey)} {t(currentFactsError.hintKey)}
-                          </p>
-                          <Button
-                            variant="outline"
-                            onClick={() => setInspectionRevision((value) => value + 1)}
-                          >
-                            {t('inspection.retry')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <PropertiesPanel
-                          t={t}
-                          fonts={documentFacts?.fonts ?? null}
-                          attachments={documentFacts?.attachments ?? []}
-                          signatures={documentFacts?.signatures ?? []}
-                          trustRoots={trustRoots}
-                          onRemoveTrustRoot={(id) => {
-                            const next = removeTrustRoot({ version: 1, roots: trustRoots }, id);
-                            setTrustRoots(next.roots);
-                            void writeAppFile('trust-roots.json', next);
-                          }}
-                          onImportTrustRoots={storeTrustRoots}
-                          revocationLists={revocationLists}
-                          onRemoveRevocationList={(id) => {
-                            const next = removeRevocationList({ version: 1, lists: revocationLists }, id);
-                            setRevocationLists(next.lists);
-                            void writeAppFile('revocation-lists.json', next);
-                          }}
-                          onImportRevocationLists={storeRevocationLists}
-                          security={documentFacts?.security ?? null}
-                          loading={documentFacts === null}
-                          disabled={!canEdit}
-                          onAddAttachments={(files) => void addAttachmentsToDocument(files)}
-                          onRemoveAttachment={(name) => void removeAttachmentFromDocument(name)}
-                          onReadAttachment={(name) => void readAttachmentOut(name)}
-                        />
-                      )}
-                    </Suspense>
+                    <PropertiesFacts
+                      t={t}
+                      tab={activeTab}
+                      disabled={!canEdit}
+                      onRetry={() => setInspectionRevision((value) => value + 1)}
+                      onAddAttachments={(files) => void addAttachmentsToDocument(files)}
+                      onRemoveAttachment={(name) => void removeAttachmentFromDocument(name)}
+                      onReadAttachment={(name) => void readAttachmentOut(name)}
+                    />
                   ) : rightTab === 'redaction-audit' ? (
-                    <Suspense
-                      fallback={
-                        <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
-                          {t('audit.title')}
-                        </p>
-                      }
-                    >
-                      <RedactionAuditPanel
-                        t={t}
-                        audit={auditReport}
-                        loading={auditLoading}
-                        onRerun={() => void runRedactionAudit()}
-                      />
-                    </Suspense>
+                    <RedactionAuditView
+                      store={store}
+                      t={t}
+                      erasedTerms={(tabId) => redactedTerms.current.get(tabId) ?? []}
+                    />
                   ) : rightTab === 'compare' ? (
                     <Suspense
                       fallback={
@@ -6088,7 +5760,7 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       ) : null}
-      {closeRequest !== null && signatureWarning === null ? (
+      {closeRequest !== null && !signaturePending ? (
         <Suspense fallback={null}>
           <CloseDocumentDialog
             t={t}
@@ -6172,26 +5844,7 @@ export function App({ store }: AppProps) {
           if (file !== undefined) void onImagePicked(file);
         }}
       />
-      {signatureWarning === null ? null : (
-        <Suspense fallback={null}>
-          <SignatureWarningDialog
-            t={t}
-            breaks={signatureWarning.breaks}
-            signer={signatureWarning.signer}
-            fieldName={signatureWarning.fieldName}
-            onCancel={() => {
-              signatureDecision.current?.(false);
-              signatureDecision.current = null;
-              setSignatureWarning(null);
-            }}
-            onContinue={() => {
-              signatureDecision.current?.(true);
-              signatureDecision.current = null;
-              setSignatureWarning(null);
-            }}
-          />
-        </Suspense>
-      )}
+      <SignatureWarningPrompt t={t} />
       {contextMenu !== null ? (
         <ContextMenu
           x={contextMenu.x}
