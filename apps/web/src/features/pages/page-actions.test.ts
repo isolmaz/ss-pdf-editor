@@ -8,7 +8,7 @@
 
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import type { JsonValue } from 'pdf-model';
+import type { EngineValuesDraft, JsonValue } from 'pdf-model';
 import { SessionStore } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -117,12 +117,16 @@ function pressHost(
   const sweepOrphanAnnotations = vi.fn(async () => undefined);
   const settleNativeEditors = vi.fn(() => options.settle ?? false);
   const checkpointEngineValues = vi.fn(options.checkpoint ?? (async () => true));
+  const held = new Map<string, EngineValuesDraft>();
   const host: PressHost = {
     session: target,
     t,
     cancel: options.cancel ?? { current: null },
-    engineValues: new Map(),
-    orphanSweep: { current: options.sweep ?? null },
+    holdEngineValues: (tabId, values) => {
+      if (values === undefined) held.delete(tabId);
+      else held.set(tabId, values);
+    },
+    orphanSweepInFlight: () => options.sweep ?? null,
     contextFor: (tab, live) => ({ store: target, t, tab, handle: live }),
     setHandle,
     refuseBusy,
@@ -131,7 +135,10 @@ function pressHost(
     sweepOrphanAnnotations,
     checkpointEngineValues,
   };
-  return Object.assign(host, { mocks: { refuseBusy, setHandle, setCurrentPage, sweepOrphanAnnotations } });
+  return Object.assign(host, {
+    held,
+    mocks: { refuseBusy, setHandle, setCurrentPage, sweepOrphanAnnotations },
+  });
 }
 
 beforeEach(() => {
@@ -346,7 +353,7 @@ describe('stepHistory', () => {
 
     await stepHistory(host, 'redo');
 
-    expect(host.engineValues.get(tabId)).toEqual(values);
+    expect(host.held.get(tabId)).toEqual(values);
     expect(host.mocks.setHandle).toHaveBeenCalledWith(tabId, restored);
     const update = host.mocks.setCurrentPage.mock.calls[0]?.[0] as (page: number) => number;
     expect([update(0), update(1), update(5)]).toEqual([0, 1, 1]);
@@ -356,11 +363,11 @@ describe('stepHistory', () => {
   it('forgets the carried values when the restored step has none', async () => {
     historyStep.mockResolvedValue({ handle: fakeHandle(), entry } as never);
     const host = pressHost(session);
-    host.engineValues.set(tabId, { stale: true } as never);
+    host.held.set(tabId, { stale: true } as never);
 
     await stepHistory(host, 'undo');
 
-    expect(host.engineValues.has(tabId)).toBe(false);
+    expect(host.held.has(tabId)).toBe(false);
   });
 
   it('says there is nothing to step to', async () => {
