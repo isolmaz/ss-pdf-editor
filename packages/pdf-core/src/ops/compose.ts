@@ -616,17 +616,20 @@ function copyLinks(doc: PDFDocument, original: PDFObject, copy: PDFObject): void
  * merges the outline once per entry (`#buildOutline`), and which items a later entry repeats
  * depends on how the bookmark names its page: an explicit page array is valid only in the entry
  * that holds the page, but a named destination, a URL or an action is valid in every entry. So
- * the appended block is found by what it says, not by where it points: a subtree goes when
- * every page it reaches is a copy (what is left of a heading whose own destination the entry
- * could not use), or when it reads like an earlier subtree — same titles, same targets, a
- * copy read as the page it repeats. Returns whether a bookmark could not be read; that one
- * stays, and the report says the outline may still be repeated.
+ * the appended block is found by what it says, not by where it points: a top-level subtree goes
+ * when it is what a copy entry leaves of an earlier one (`isRepeatOf`) — the same titles and
+ * targets, a copy read as the page it repeats, with whatever the entry could not use missing:
+ * a heading's own page array (the heading then survives only for a named child) or the
+ * children whose page arrays point elsewhere (the heading survives alone). Returns whether a
+ * bookmark could not be read; that one stays, and the report says the outline may still be
+ * repeated.
  */
 function pruneCopiedBookmarks(doc: PDFDocument, originals: readonly number[]): boolean {
   const tree = doc.loadOutline();
   if (tree === null) return false;
   const iterator = doc.outlineIterator();
-  const kept = new Set<string>();
+  // The subtrees kept so far, by title: a repeat has the title of what it repeats.
+  const kept = new Map<string, BookmarkRead[]>();
   let unresolved = false;
   for (const node of tree) {
     const read = readBookmark(node, originals);
@@ -635,13 +638,13 @@ function pruneCopiedBookmarks(doc: PDFDocument, originals: readonly number[]): b
       iterator.next();
       continue;
     }
-    const onlyCopies =
-      read.pages.length > 0 && read.pages.every((page) => (originals[page] ?? page) !== page);
-    if (onlyCopies || kept.has(read.key)) {
+    const earlier = kept.get(read.title);
+    if (earlier?.some((whole) => isRepeatOf(read, whole)) === true) {
       iterator.delete();
       continue;
     }
-    kept.add(read.key);
+    if (earlier === undefined) kept.set(read.title, [read]);
+    else earlier.push(read);
     iterator.next();
   }
   return unresolved;
@@ -657,34 +660,47 @@ interface OutlineNode {
 
 /** A bookmark subtree as `pruneCopiedBookmarks` compares it. */
 interface BookmarkRead {
-  /** Titles, targets and nesting as one string; a copy's target reads as the page it repeats. */
-  readonly key: string;
-  /** The output pages the subtree's internal destinations reach. */
-  readonly pages: readonly number[];
+  readonly title: string;
+  /**
+   * What the bookmark points at: `p<page>` for a page of this document (a copy read as the
+   * page it repeats), `u<uri>` for a URL or a link into another file, `-` for nothing MuPDF
+   * can name — the engine's mark for a heading whose own destination it dropped.
+   */
+  readonly target: string;
+  readonly children: readonly BookmarkRead[];
   /** A destination named a page MuPDF could not resolve, or the tree is nested past the bound. */
   readonly unresolved: boolean;
 }
 
 function readBookmark(node: OutlineNode, originals: readonly number[], depth = 0): BookmarkRead {
-  if (depth > MAX_STRUCTURE_DEPTH) return { key: '', pages: [], unresolved: true };
+  if (depth > MAX_STRUCTURE_DEPTH) return { title: '', target: '-', children: [], unresolved: true };
   const children = (node.down ?? []).map((child) => readBookmark(child, originals, depth + 1));
-  const pages = children.flatMap((child) => child.pages);
   // MuPDF answers a page for a link into another file too (`file:x.pdf#page=2`): only a `#` URI
   // names a page of this document, and its name differs between the engine's copies of it.
   const internal = node.uri?.startsWith('#') === true;
   let target = node.uri === undefined ? '-' : `u${node.uri}`;
-  if (internal && node.page !== undefined) {
-    pages.push(node.page);
-    target = `p${originals[node.page] ?? node.page}`;
-  }
-  const title = node.title ?? '';
-  const nested = children.map((child) => child.key).join('');
+  if (internal && node.page !== undefined) target = `p${originals[node.page] ?? node.page}`;
   return {
-    // Length-prefixed, so no title or URL can pass for the separator between the parts.
-    key: `${title.length}:${title}${target.length}:${target}${nested.length}:${nested}`,
-    pages,
+    title: node.title ?? '',
+    target,
+    children,
     unresolved: (internal && node.page === undefined) || children.some((child) => child.unresolved),
   };
+}
+
+/**
+ * Whether `sub` is `whole` as a copy entry leaves it: the same title, the same target — or none,
+ * for a heading the entry kept only for its children (a bookmark with neither a destination nor
+ * a child is never left over, it is a genuine action the engine kept whole) — and every child a
+ * repeat of a child of `whole`. A subtree equal to `whole` is the plain repeat.
+ */
+function isRepeatOf(sub: BookmarkRead, whole: BookmarkRead): boolean {
+  const target = sub.target === whole.target || (sub.target === '-' && sub.children.length > 0);
+  return (
+    sub.title === whole.title &&
+    target &&
+    sub.children.every((child) => whole.children.some((candidate) => isRepeatOf(child, candidate)))
+  );
 }
 
 /**

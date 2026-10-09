@@ -491,15 +491,22 @@ describe('mergeDocuments refuses and measures', () => {
  * through a `/A` GoTo action), one URI link and a text note; every page has one bookmark.
  * `urlBookmark` adds a bookmark that points at no page; `nested` hangs a child under the bookmark of page 2
  * that targets page 3; `named` makes every bookmark and link reach its page through a named destination
- * (`/Names /Dests` and a string `/Dest`, the way hyperref, Word and InDesign write them).
+ * (`/Names /Dests` and a string `/Dest`, the way hyperref, Word and InDesign write them); `mixed` (with
+ * `nested`) names the page of only the headings or only the child that way, the other one by page array.
  */
 async function linkedPages(
-  options: { urlBookmark?: boolean; remoteBookmark?: boolean; nested?: boolean; named?: boolean } = {},
+  options: {
+    urlBookmark?: boolean;
+    remoteBookmark?: boolean;
+    nested?: boolean;
+    named?: boolean;
+    mixed?: 'named-heading' | 'named-child';
+  } = {},
 ): Promise<Uint8Array> {
   const mupdf = await import('mupdf');
   const doc = mupdf.PDFDocument.openDocument((await pages(4)).slice(), 'application/pdf').asPDF();
   if (doc === null) throw new Error('not a PDF');
-  if (options.named === true) {
+  if (options.named === true || options.mixed !== undefined) {
     const names = doc.newArray();
     for (let index = 0; index < 4; index += 1) {
       names.push(doc.newString(`chap${index + 1}`));
@@ -512,8 +519,11 @@ async function linkedPages(
       .get('Root')
       .put('Names', doc.addObject({ Dests: { Names: names } }));
   }
-  const target = (index: number) =>
-    options.named === true ? doc.newString(`chap${index + 1}`) : [doc.findPage(index), doc.newName('Fit')];
+  const byName = (index: number) => doc.newString(`chap${index + 1}`);
+  const byPage = (index: number) => [doc.findPage(index), doc.newName('Fit')];
+  const target = options.named === true ? byName : byPage;
+  const headingTarget = options.named === true || options.mixed === 'named-heading' ? byName : byPage;
+  const childTarget = options.named === true || options.mixed === 'named-child' ? byName : byPage;
   const annots = doc.newArray();
   for (const [row, index] of [1, 2].entries()) {
     annots.push(
@@ -547,8 +557,9 @@ async function linkedPages(
   doc.findPage(0).put('Annots', doc.addObject(annots));
   const specs: BookmarkSpec[] = [0, 1, 2, 3].map((index) => ({
     title: `BM-Pg${index + 1}`,
-    entry: { Dest: target(index) },
-    children: index === 1 && options.nested === true ? [{ title: 'Sub', entry: { Dest: target(2) } }] : [],
+    entry: { Dest: headingTarget(index) },
+    children:
+      index === 1 && options.nested === true ? [{ title: 'Sub', entry: { Dest: childTarget(2) } }] : [],
   }));
   if (options.urlBookmark === true) {
     specs.push({
@@ -764,6 +775,33 @@ describe('composeDocument duplicates a page that holds links', () => {
     expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
   });
 
+  // A heading and its child that name their pages by different mechanisms: a page array is valid
+  // only in the copy entry that holds the page, a named destination in every entry. Copying a page
+  // elsewhere then leaves, in the copy entry, either the heading without its destination (array
+  // heading, named child) or the heading without its child (named heading, array child).
+  describe.each(['named-child', 'named-heading'] as const)(
+    'a heading and a child that name pages differently (%s)',
+    (mixed) => {
+      it.each([
+        ['an unrelated page', [0, 0, 1, 2, 3]],
+        ["the child's page", [0, 1, 2, 2, 3]],
+        ["the heading's page", [0, 1, 1, 2, 3]],
+      ])('leaves no stub of the outline when %s is duplicated', async (_name, plan) => {
+        const out = await withHandle(await linkedPages({ nested: true, mixed }), (handle) =>
+          composeDocument({ sources: [{ pages: plan }], pageCount: 5 }, handle.raw, run),
+        );
+        const at = (page: number) => plan.indexOf(page);
+        expect((await linkStructure(out.bytes)).outline).toEqual([
+          { title: 'BM-Pg1', page: at(0) },
+          { title: 'BM-Pg2', page: at(1), children: [{ title: 'Sub', page: at(2) }] },
+          { title: 'BM-Pg3', page: at(2) },
+          { title: 'BM-Pg4', page: at(3) },
+        ]);
+        expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+      });
+    },
+  );
+
   it('keeps the outline of a named-destination document once for every further copy', async () => {
     const out = await withHandle(await linkedPages({ named: true }), (handle) =>
       composeDocument({ sources: [{ pages: [0, 0, 0, 1, 2, 3] }], pageCount: 6 }, handle.raw, run),
@@ -828,6 +866,25 @@ describe('composeDocument duplicates a page that holds links', () => {
     expect(out.report.notes.find((entry) => entry.key === 'op.note.compose.outlineCopies')?.params).toEqual({
       copies: 2,
     });
+  });
+
+  it('keeps a bookmark that only shares a title with an earlier one', async () => {
+    const stub = await stubWithOutline((doc) => {
+      const here = { Dest: [doc.findPage(0), doc.newName('Fit')] };
+      return [
+        { title: 'Same', entry: here, children: [{ title: 'Kid', entry: here }] },
+        // A genuine action the engine kept whole: no page and no child, so no copy entry left it over.
+        { title: 'Same', entry: { A: { S: doc.newName('Named'), N: doc.newName('NextPage') } } },
+        { title: 'Same', entry: here, children: [{ title: 'Other', entry: here }] },
+      ];
+    });
+    const out = await composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, stub, run);
+    expect((await linkStructure(out.bytes)).outline).toEqual([
+      { title: 'Same', page: 0, children: [{ title: 'Kid', page: 0 }] },
+      { title: 'Same', page: undefined },
+      { title: 'Same', page: 0, children: [{ title: 'Other', page: 0 }] },
+    ]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
   });
 
   it('says so when a bookmark is nested deeper than the bound it reads to', async () => {

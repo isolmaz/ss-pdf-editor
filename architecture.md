@@ -798,15 +798,21 @@ had to stay green. The moves, and the defects they fixed on the way:
   on how the bookmark names its page: an explicit page array is valid only in the entry that
   holds the page, but a named destination (`/Names /Dests` and a string `/Dest`, what hyperref,
   Word and InDesign write), a URL or an action is valid in every entry, so pruning by "points
-  only at copies" left those repeated. The appended block is therefore found by what it
-  says: each top-level subtree is read as its titles, its targets (a copy's page read as the
-  page it repeats; a link into another file by its URI, since MuPDF also answers a page for
-  it) and its nesting, and a subtree goes when it points only at copies or reads like an
-  earlier one. A bookmark whose internal destination MuPDF cannot resolve, or one nested past
-  the structure bound, is never removed, and only then does the report say the outline may
-  still be repeated (`op.note.compose.outlineCopies`); a document's own top-level bookmarks
-  that are identical to each other collapse to one when a page is repeated. A composition that
-  repeats no page and turns none is still never rewritten;
+  only at copies" left those repeated. A heading and its child that name their pages by
+  different mechanisms are left half-repeated: the entry keeps the heading without its array
+  destination for a named child, or the named heading without the child whose array points
+  elsewhere. The appended block is therefore found by what it says: each top-level subtree is
+  read as its titles, its targets (a copy's page read as the page it repeats; a link into
+  another file by its URI, since MuPDF also answers a page for it) and its nesting, and a
+  subtree goes when it is what a copy entry leaves of an earlier one — the same title, the
+  same target (or none, for a heading kept only for its children), and every child a repeat of
+  a child of the earlier subtree, so a bare or destination-less remainder goes with the equal
+  repeats. A bookmark with neither a destination nor a child is a genuine action and stays. A
+  bookmark whose internal destination MuPDF cannot resolve, or one nested past the structure
+  bound, is never removed, and only then does the report say the outline may still be
+  repeated (`op.note.compose.outlineCopies`); a document's own top-level bookmarks with the
+  same title and target, one a reduced copy of the other, collapse to one when a page is
+  repeated. A composition that repeats no page and turns none is still never rewritten;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
