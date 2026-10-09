@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 /**
- * Proves that each fix commit in tools/review/revert-proof.json is guarded by its own test:
- * the test fails (on an assertion) on the fix commit's parent and passes on the fix commit.
+ * Proves that each fix commit listed in tools/review/revert-proof.json is guarded by its own
+ * test: the test fails (on an assertion) on the fix commit's parent and passes on the fix commit.
+ *
+ * The manifest is a JSON array with one entry per fix commit: `commit` (full SHA), `title`,
+ * `kind` (`unit` or `e2e`), `tests` (the files to bring in from the fix), `run` (the test files to
+ * run, default: the `.test.ts`/`.spec.ts` among `tests`), `filter` (a test-name pattern for -t/-g),
+ * and optionally `testCommit` and `failure`. It is empty by default: a pull request that wants
+ * the proof lists its fix commits there. With an empty manifest the script exits 0 without
+ * touching the work tree.
  *
  *   node tools/review/revert-proof.mjs [--shard i/n] [--only <sha-prefix>]
  *
@@ -133,6 +140,14 @@ async function main() {
   }
   const root = top.output.trim();
 
+  // Read the manifest before anything else: the checkouts below replace the work tree, and an
+  // empty manifest needs neither a clean tree nor a checkout.
+  const manifest = JSON.parse(readFileSync(join(root, MANIFEST_FILE), 'utf8'));
+  if (manifest.length === 0) {
+    console.log('revert-proof: the manifest lists no fix commits');
+    return 0;
+  }
+
   const dirty = run('git status --porcelain', root)
     .output.split('\n')
     .filter((line) => line.trim() !== '' && !line.trimEnd().endsWith(REPORT_FILE));
@@ -141,9 +156,6 @@ async function main() {
     for (const line of dirty) console.error(`  ${line}`);
     return 1;
   }
-
-  // Read the manifest now: the checkouts below replace the work tree.
-  const manifest = JSON.parse(readFileSync(join(root, MANIFEST_FILE), 'utf8'));
   const selected = manifest
     .map((entry, index) => ({ entry, index }))
     .filter(({ index }) => options.shard === null || index % options.shard.count === options.shard.index - 1)
