@@ -37,8 +37,8 @@ test('palette: Enter on an empty result list runs nothing, and switching modes k
   await paletteInput(page).fill('zzzqqq');
   await expect(page.getByText('No matching commands.')).toBeVisible();
   await page.keyboard.press('Enter');
-  // Nothing ran: the palette is still on screen and no dialog opened (it used to run
-  // "Create a blank document", the last command it had highlighted).
+  // Nothing ran: the palette is still on screen and no dialog opened (Enter must not run
+  // "Create a blank document", the last command the list had highlighted).
   await expect(page.getByText('No matching commands.')).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Create a blank document' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Create a blank document' })).toHaveCount(0);

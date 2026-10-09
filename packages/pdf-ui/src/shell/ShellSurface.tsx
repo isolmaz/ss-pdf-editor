@@ -15,7 +15,7 @@
  * reached through that boundary, not through this file:
  *
  *  - `CommandPalette` is loaded by the shell's own dynamic import (its Kumo
- *    command palette is the single largest block this barrel used to carry).
+ *    command palette is the single largest block, kept out of the first-paint chunk).
  *  - `PagesPanel` is imported by `DocumentPanel`, the only component that mounts
  *    it; it never needed to travel through the shell to get there.
  */

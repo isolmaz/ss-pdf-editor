@@ -12,7 +12,7 @@
  * `Page.search` (`mupdf.d.ts:457`) is the same engine primitive but rebuilds the
  * page's structured text on every call (`mupdf.js:1771` → `runSearch`), so a search
  * per pattern per page is a text extraction per pattern per page. Measured on the
- * installed `mupdf@1.28.1` under Node against a pdf-lib fixture: the two entry points
+ * installed `mupdf@1.28.1` under Node against a test fixture: the two entry points
  * return byte-identical `Quad[][]` (JSON-equal for two needles with two hits and one
  * hit respectively), which is why this module searches the text it already built.
  *

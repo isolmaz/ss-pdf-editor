@@ -248,7 +248,7 @@ const QUOTES: ReadonlyArray<readonly [RegExp, string]> = [
  */
 export function normalizeWords(text: string): string[] {
   // Quotes and dashes first: NFKC would turn U+00B4 into a space + combining accent and
-  // U+2033 into two U+2032, which the mapping could then no longer recognise.
+  // U+2033 into two U+2032, which the mapping could not then recognise.
   let t = text;
   for (const [pattern, replacement] of QUOTES) t = t.replace(pattern, replacement);
   t = t.normalize('NFKC').replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/g, '');

@@ -11,10 +11,9 @@ import type { ReactElement, ReactNode } from 'react';
  *    back inside the viewport (`collisionPadding` keeps 8px of daylight).
  * 2. **It is a chip, not a title.** `bg-kumo-contrast` / `text-kumo-inverse` are
  *    the pair Kumo declares for the highest-contrast surface — near-black on
- *    light, near-white on dark, inverted text on both. The chips this replaces
- *    named a "strong" background that Kumo's theme never declares, so every tip
- *    compiled to a transparent chip with white text: invisible over paper in
- *    light mode.
+ *    light, near-white on dark, inverted text on both. A "strong" background that Kumo's theme
+ *    never declares would compile every tip to a transparent chip with white text:
+ *    invisible over paper in light mode.
  * 3. **It never takes the pointer.** `pointer-events-none` means the tip cannot
  *    interrupt the hover that opened it, so moving along a tool rail cannot
  *    flicker a tip on and off.

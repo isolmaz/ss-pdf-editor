@@ -7,7 +7,7 @@
  * redacted document anywhere, so it is built to be read — a check that found nothing
  * reports that it found nothing, in the same shape as a check that found something.
  *
- * **The recipe, measured in an early engine spike.** The bytes are read as
+ * **The recipe.** The bytes are read as
  * a latin1 string (`hexStringToLatin1`, `engines/mupdf.ts`) and then scanned with plain
  * `indexOf`/regex passes. That is the point of latin1: one byte is one character, so a
  * needle is found inside dictionary text, inside hex strings and inside undecoded
@@ -15,9 +15,9 @@
  * such an occurrence is made of and hides it). Counts are counts, never booleans:
  * "`/EmbeddedFile` once" and "`/EmbeddedFile` four times" are different facts.
  *
- * **What this scan cannot see, measured.** A pdf-lib export (default options) and the
- * file MuPDF writes with `garbage=compact,compress,clean` both carry their content and
- * their dictionaries **deflated**. Measured on a three-page fixture: the needle
+ * **What this scan cannot see, measured.** The file MuPDF writes with
+ * `garbage=compact,compress,clean` (like most producers' default export) carries its
+ * content and its dictionaries **deflated**. Measured on a three-page fixture: the needle
  * `GIZLI-TOKEN-4711` is in the document and is *not* a plain byte sequence in it, and
  * the redacted export reports exactly what the unredacted original reports. The scan
  * cannot decide that on its own, so it says so instead of implying a clean file: a
@@ -25,7 +25,7 @@
  * streams are the same problem one level up — no orphan verdict at all while they are
  * present (that is not caution for its own sake: reading references out of a compressed
  * object stream is impossible here, and the naive check invented three orphans on a
- * perfectly ordinary four-object fixture). The spike's object-level pass
+ * perfectly ordinary four-object fixture). An object-level pass
  * (`newIndirect(n).readStream()` per object)
  * is the layer that sees inside; it needs the engine in the loop, which this scan
  * deliberately does not.

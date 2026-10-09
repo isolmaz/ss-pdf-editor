@@ -1,11 +1,10 @@
 /**
- * Images in and out (defects 16 and 7).
+ * Images in and out.
  *
- * A17 closes three source defects: EXIF orientation is honoured (parsed from the
- * JPEG APP1 segment by hand — no dependency), the fit mode is selectable
- * instead of the fixed 1 pt/px, and the conversion is cancellable with progress.
- * A7 closes the "16 MP limit" experience defect: the failure names the limit,
- * the offending page and a workable DPI.
+ * EXIF orientation is honoured (parsed from the JPEG APP1 segment by hand — no
+ * dependency), the fit mode is selectable instead of a fixed 1 pt/px, and the
+ * conversion is cancellable with progress. A page too large to export fails with a
+ * message that names the limit, the offending page and a workable DPI.
  *
  * What the hand-written EXIF reader covers, and what it does not — the limits are
  * part of the contract, because a silently ignored orientation is exactly the
@@ -302,8 +301,9 @@ const MIME_BY_FORMAT: Record<ImageExportFormat, string> = {
  *   3 row 0 bottom, column 0 right  7 row 0 right, column 0 bottom
  *   4 row 0 bottom, column 0 left   8 row 0 left, column 0 bottom    (turn 90° anticlockwise)
  *
- * The earlier writer described 6 and 8 as pdf-lib rotations of +90 and +270, which is the
- * anticlockwise direction in PDF space: an orientation 6 photo came out upside down.
+ * Tag 6 is a clockwise quarter-turn and tag 8 an anticlockwise one; reading them as
+ * rotations of +90° and +270° (anticlockwise-positive in PDF space) would turn an
+ * orientation 6 photo upside down.
  */
 type OrientationMatrix = readonly [number, number, number, number, number, number];
 

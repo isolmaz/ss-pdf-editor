@@ -3,8 +3,8 @@
  *
  * Two of the four cases below are geometry, and both are the kind of thing nothing
  * else in the suite can see. A mark that carries `rotation` is *painted* turned about
- * its own bounding box, so a target built from the stored quads sits where the mark
- * used to be: selectable in one place and dead in another, with the marquee and the
+ * its own bounding box, so a target built from the stored quads sits where the unturned
+ * mark would be: selectable in one place and dead in another, with the marquee and the
  * rendered mark disagreeing about the same object. And the four families do not move
  * the same way — an annotation accumulates `rotation` while a measurement's chain and a
  * redaction's rectangle bake the turn into their own stored points — so one edit over a

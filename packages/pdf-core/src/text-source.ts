@@ -7,7 +7,7 @@
  *
  *   - **MuPDF** (`engines/mupdf.ts`) walks the page and reports every glyph's box,
  *     baseline origin, size and face — the same walk the redaction and text-edit
- *     spikes measured;
+ *     writers rely on;
  *   - **pdf.js** (`engines/pdfjs-handle.ts`) answers one optional fact — the page's
  *     text fill colour — through its operator list. That part is best-effort: a page
  *     read must not fail because a second engine could not be brought up, so the
@@ -221,9 +221,8 @@ function isAbort(error: unknown): error is Error {
  * page-box and redaction writers measure against, so one geometry convention serves the
  * codebase.
  *
- * An earlier version read these through pdf-lib, after MuPDF's binding failed with
- * `Cannot read properties of null (reading '_fromPDFObjectKeep')`: that is what
- * `getInheritable` does when it is called on the shared `PDFObject.Null`, which has no
+ * `getInheritable` fails with `Cannot read properties of null (reading
+ * '_fromPDFObjectKeep')` when it is called on the shared `PDFObject.Null`, which has no
  * document. `pageGeometry` only calls it on the page dictionary itself and reads every
  * entry through `resolved()` (`engines/mupdf-write.ts`), so a page without a
  * `/CropBox` falls back to its `/MediaBox` instead.

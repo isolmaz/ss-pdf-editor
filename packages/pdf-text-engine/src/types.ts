@@ -9,11 +9,10 @@
  * `[x0, y0, x1, y1]` with `x0 < x1`, `y0 < y1` and `y0` measured downwards. This is
  * the same space as `PageRect` in `packages/pdf-core/src/ops/types.ts:44-52`.
  *
- * The engine never emits *rotated page space*: the spike measured that MuPDF
+ * The engine never emits *rotated page space*: MuPDF
  * **annotation** geometry lives in rotated page space while content streams live in
- * unrotated user space, and that mixing the two fails silently (text survives,
- * nothing is removed — an early engine spike, "The exact APIs
- * called"). The conversion lives in exactly one place: pdf-core's writer
+ * unrotated user space, and mixing the two fails silently (text survives,
+ * nothing is removed). The conversion lives in exactly one place: pdf-core's writer
  * (`applyTextEdit`). Everything here is unrotated and top-left.
  *
  * ## Purity
@@ -32,8 +31,8 @@ export interface GlyphBox {
   readonly rect: Rect;
   /** Measured advance along the line direction, in points: this glyph's origin to
    *  the next one; for the last glyph of a line, the along-direction extent of its
-   *  own box (an early engine spike measured the same
-   *  quantity for a whole line: first char's left edge → last char's right edge). */
+   *  own box (the same quantity for a whole line is first char's left edge → last
+   *  char's right edge). */
   readonly advance: number;
   /** Baseline start point of the glyph, when the extractor reported one. */
   readonly origin?: readonly [number, number];
@@ -155,7 +154,7 @@ export interface PageTextInput {
 
 /** `editable`: re-renderable in the same face. `substituted`: editable, but the
  *  replacement is re-rendered in a substitute font.
- *  `not-editable`: never silently damaged — the UI marks it (`4b`). */
+ *  `not-editable`: never silently damaged — the UI marks it. */
 export type EditabilityVerdict = 'editable' | 'substituted' | 'not-editable';
 
 /** The single fact behind a verdict. Priority order is documented on
@@ -186,7 +185,7 @@ export interface EditabilityReport {
   readonly pageIndex: number;
   readonly blocks: readonly BlockEditability[];
   /** Blocks that can be edited: `editable` **and** `substituted` (a substituted block
-   *  is editable, with the `4e` caveat). The strict counts are derivable from `blocks`. */
+   *  is editable, with the substitution caveat). The strict counts are derivable from `blocks`. */
   readonly editableCount: number;
   readonly nonEditableCount: number;
   /** Page-level reason: `'ok'` when the page has at least one glyph-bearing block,
@@ -265,8 +264,8 @@ export interface FontMatch {
 export interface FontNameInfo {
   /** The name without the `ABCDEF+` subset prefix. */
   readonly base: string;
-  /** The name carried the six-uppercase-letter subset prefix — the spike's
-   *  `SPMIZR+Arial` (`NOTES.md`, case a), i.e. an embedded **subset**. */
+  /** The name carried the six-uppercase-letter subset prefix
+   *  (`SPMIZR+Arial`), i.e. an embedded **subset**. */
   readonly subset: boolean;
   readonly family: 'sans' | 'serif' | 'mono' | 'unknown';
   readonly bold: boolean;
@@ -362,7 +361,7 @@ export interface TextEditIntent {
   readonly replacement: string;
   readonly options?: ReflowOptions;
   /** The face chosen for the replacement (`matchFont`). Absent → the built-in Noto
-   *  Sans fallback, which is what `4e` expects for a substituted block. `metrics`
+   *  Sans fallback, which is what a substituted block uses. `metrics`
    *  must be that same face's table, otherwise the line width is a guess. */
   readonly font?: FontCandidate;
 }

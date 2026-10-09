@@ -1,9 +1,8 @@
 /**
  * Redaction.
  *
- * The source project rasterised the touched page at 144 dpi — it lost the text
- * layer, the metadata and the neighbouring content. This
- * implementation erases instead: MuPDF redaction annotations over the marked
+ * Redaction erases rather than rasterising the touched page (which would lose the text
+ * layer, the metadata and the neighbouring content): MuPDF redaction annotations over the marked
  * rectangles, `applyRedactions`, a sweep of the annotations and form fields under the marks
  * (`applyRedactions` leaves those alone — `redact-annots.ts`), then a full (`garbage`) write.
  *
@@ -18,9 +17,8 @@
  * the canvas maps by dividing by the render scale and subtracting the page
  * offset — no y-flip anywhere. It is also the space `page.search()` and
  * `toStructuredText()` report in, which is what makes the verification below a
- * direct comparison; the page's own `/Rotate` is part of it (measured in
- * an early engine spike: an annotation rect stored in PDF user
- * space is accepted silently and removes **nothing**).
+ * direct comparison; the page's own `/Rotate` is part of it (measured: an
+ * annotation rect stored in PDF user space is accepted silently and removes **nothing**).
  */
 
 import type { PDFAnnotation, PDFDocument, PDFPage, Quad, Rect } from 'mupdf';
@@ -116,9 +114,8 @@ export async function redactDocument(
 
   const doc = openPdf(mupdf, bytes);
   // `applyRedactions` consumes each annotation inside the document, but the JS
-  // wrapper still holds a wasm pointer; the spike released them after the save, and
-  // the same order is kept here so a failed save cannot leave the annotations
-  // dangling.
+  // wrapper still holds a wasm pointer; they are released after the save so a failed
+  // save cannot leave the annotations dangling.
   const annotations: PDFAnnotation[] = [];
   /** Per page: which of that page's marks covered nothing drawable. */
   const emptyMarks: number[] = [];
@@ -235,7 +232,7 @@ export async function redactDocument(
       outputBytes: produced.byteLength,
       // Measured: `canBeSavedIncrementally()` is false once redactions are applied,
       // and an incremental write would keep the pre-redaction revision reachable
-      // through `/Prev` (spike #4 §5) — the erased bytes must not travel at all.
+      // through `/Prev` — the erased bytes must not travel at all.
       incremental: false,
       pageCount,
     },
@@ -248,12 +245,12 @@ export async function redactDocument(
  * Empty means no text **and** no annotation or form field under a mark: a field's value
  * is content too, and it is not in the text layer.
  *
- * The probe is a character walk over `toStructuredText()` (spike-verified shape:
+ * The probe is a character walk over `toStructuredText()` (the callback shape is
  * `onChar(c, origin, font, size, quad)`, quad in page space) and a quad/rect
  * overlap test. `page.search()` cannot be used here: verification knows *where* the
  * content was, not *what* it said. A character counts as remaining when half or
  * more of its quad lies inside the mark; a partially overlapping neighbour is
- * tolerated by design — measured on the spike fixture, the space that ends
+ * tolerated by design — measured on a test fixture, the space that ends
  * `"Kimlik: "` keeps its own quad (x 75.33–78.66) against a mark starting at 78.66,
  * i.e. zero overlap, while the erased run that followed it is gone entirely.
  */

@@ -17,11 +17,11 @@ import { type ProtectionPermissions, partFileName, protectDocument, unlockDocume
 import type { OperationDialogSpec } from '../dialogs/types';
 
 /**
- * A12 — encrypt with an open password, an owner password and a permission set.
+ * Encrypt with an open password, an owner password and a permission set.
  *
  * The eight permissions `ProtectionPermissions` carries are all granted by
  * default (`ALL_PERMISSIONS`): a user unchecks what to forbid, and the dialog
- * never has to explain a permission that is missing from the UI (`allowModify` was hard-coded `false` in the source project).
+ * never has to explain a permission that is missing from the UI.
  */
 export const protectDialog: OperationDialogSpec = {
   id: 'protect',
@@ -117,7 +117,7 @@ export const protectDialog: OperationDialogSpec = {
 };
 
 /**
- * A13 — remove the password.
+ * Remove the password.
  *
  * The password field is the whole dialog: everything else is a promise the user
  * needs before typing a secret into it, and that promise is the intro — the

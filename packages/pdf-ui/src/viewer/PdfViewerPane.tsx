@@ -205,9 +205,9 @@ const FIND_NOT_FOUND = 1;
  * per-page editor layer, repaints the base canvas when a mode is armed, and raises
  * pdf.js's own toolbar. With `DISABLE` there is no editor layer and no toolbar at
  * all, and the marks the tools draw are the shell's own (`ops/AnnotationLayer.tsx`)
- * — including the freehand ink, which the engine's own editor used to create and
- * whose sampled path the hand-off then read as one stroke per point (a continuous
- * pen stroke arriving as a trail of dots). `annotationMode` below still displays the
+ * — including the freehand ink, whose sampled path an engine-editor hand-off would read
+ * as one stroke per point (a continuous pen stroke arriving as a trail of dots).
+ * `annotationMode` below still displays the
  * file's own annotations and form widgets.
  */
 const ANNOTATION_EDITOR_DISABLE = -1;

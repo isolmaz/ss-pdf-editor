@@ -242,8 +242,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(async () => {
           const cached = await caches.match(request);
-          // The previous version referenced a `response` that is not in scope here; the
-          // offline answer is what the branch was always meant to return.
+          // Offline: the cached answer, else the offline page.
           return cached ? withIsolationHeaders(cached, isNavigate) : offlineMissing();
         }),
     );

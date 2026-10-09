@@ -3,7 +3,7 @@
  *
  * Three layouts over one operation: N-up, saddle-stitch booklet and poster
  * tiling. The sheet geometry — including paper, orientation, gutter, margins and
- * content rotation, which the source project never had — is computed by
+ * content rotation — is computed by
  * `imposeDocument`; this dialog only decides which of the operation's parameters a
  * layout reads, and hides the rest (`visibleWhen`) so no control can look live
  * while the operation ignores it.
@@ -35,7 +35,7 @@ import { resolveScope } from './scope';
  */
 const MAX_SHEETS = 1000;
 
-/** A16 — N-up, booklet and poster over one operation. */
+/** N-up, booklet and poster over one operation. */
 export const imposeDialog: OperationDialogSpec = {
   id: 'impose',
   titleKey: 'impose.title',

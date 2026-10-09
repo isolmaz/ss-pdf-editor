@@ -875,7 +875,7 @@ describe('exact layout: watermarks and pictures drawn twice', () => {
       run,
     );
     const first = seen[0] ?? { png: new Uint8Array(), scale: 1 };
-    // the dark panel (x 40–240, y 200–300 from the top, red 153) away from the diagonal's line stays; the old one-box mask painted it over
+    // the dark panel (x 40–240, y 200–300 from the top, red 153) away from the diagonal's line stays; a one-box mask would paint it over
     expect(await redAt(first.png, first.scale, 80, 290)).toBeLessThan(170);
     expect(await redAt(first.png, first.scale, 80, 290)).toBeGreaterThan(130);
   });

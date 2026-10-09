@@ -4,10 +4,10 @@
  * Both ways of opening register the tab first and only then write the recovery copy (the
  * source blob in the browser's storage). When that write rejects — storage full, OPFS
  * unavailable — the document must stay open and usable, there must be exactly one tab, and
- * the user is told what is true: the recovery copy could not be stored. It used to be
+ * the user is told what is true: the recovery copy could not be stored. It must not be
  * reported as an open failure ("The document looks damaged." for a file, "Something
- * unexpected went wrong." for a converted picture) while the tab was in fact open, so a retry
- * opened a second one.
+ * unexpected went wrong." for a converted picture) while the tab is in fact open: a retry
+ * would open a second one.
  *
  * The failure is injected where the application writes: `createWritable` of an OPFS file
  * handle rejects with the `QuotaExceededError` a full origin raises. It is armed by the test

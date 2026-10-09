@@ -1,9 +1,9 @@
 /**
  * OCR.
  *
- * Two source defects are closed here by construction:
- *  - the DPI the UI offers is the DPI the engine gets (the UI
- *    offered 120–400 while the core silently rejected >300);
+ * Two properties hold by construction:
+ *  - the DPI the UI offers is the DPI the engine gets (the field's range is the
+ *    range the core accepts);
  *  - rotation is applied **once**: the render uses the page's own rotation and
  *    the text layer is written in unrotated page space, so a rotated scan does
  *    not end up with a rotated text layer.
@@ -29,7 +29,7 @@
  *     layer is drawn rotated by the same angle and the viewer's own `/Rotate`
  *     application puts it back on top of the words.
  *
- * Measured on the pinned toolchain (spike #3 and the MuPDF probe): `search()` and
+ * Measured on the pinned toolchain: `search()` and
  * `toStructuredText()` report MuPDF page space, the viewer's canvas is that space
  * times the render scale, and `convertToPdfPoint` inverts it without a y-flip
  * appearing anywhere in this file.

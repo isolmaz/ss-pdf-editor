@@ -53,17 +53,14 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
   const listRef = useRef<HTMLUListElement | null>(null);
   const changedFields = useRef(new Set<string>());
 
-  // A draft that matched the document's value used to be dropped here, on every
-  // `fields` change. Every draft *starts* matching — the seed below takes the
-  // document's own value — so the only thing this effect ever did was remove the
-  // draft of a field nobody was editing, i.e. close the inline control as soon as
-  // any reload landed. That is why the panel was editable on a quiet document and
-  // not after a fill, and why stopping the redundant writes made no field editable
-  // at all: the editor's life depended on nothing
-  // reloading. Keeping a draft that equals its field is harmless — it renders the
-  // document's own value — and an edit in progress is kept by the seed effect below
-  // because it differs from the field. A value that changes under an open draft is
-  // handled the way it always was: the difference is treated as the user's edit.
+  // A draft that matches the document's value is kept across `fields` changes. Every
+  // draft *starts* matching — the seed below takes the document's own value — so
+  // dropping matching drafts would remove the draft of a field nobody is editing yet,
+  // i.e. close the inline control as soon as any reload landed, and the editor's life
+  // would depend on nothing reloading. Keeping a draft that equals its field is
+  // harmless — it renders the document's own value — and an edit in progress is kept by
+  // the seed effect below because it differs from the field. A value that changes under
+  // an open draft is treated as the user's edit.
 
   // Selecting a text-ish field starts its draft from the document's own value: the
   // inline control renders only while a draft exists, and nothing else ever created

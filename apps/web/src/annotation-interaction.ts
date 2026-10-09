@@ -17,8 +17,8 @@
  *
  * **A mark can also be turned.** `AnnotationMark.rotation` is a quarter-turn about
  * the mark's *own* bounding-box centre, applied when the mark is painted rather than
- * stored, so a target built from the stored geometry alone would sit where the mark
- * used to be. The conversion follows the same turn, through core's own
+ * stored, so a target built from the stored geometry alone would sit where the unturned
+ * mark would be. The conversion follows the same turn, through core's own
  * `transformPoint`, for exactly the same reason the flip is not re-implemented here.
  *
  * **The identity is not the same identity.** A mark the session holds and the file's
@@ -66,8 +66,8 @@ function withoutComment(mark: AnnotationMark): string {
 
 /**
  * The History label of one change to the session's marks: the kind that was drawn, a
- * delete, a comment edit or a move/turn/restyle. Every step used to read "Comments",
- * so a list of ten steps could not say which one to go back to.
+ * delete, a comment edit or a move/turn/restyle. Each step names its own kind, so a list
+ * of ten steps says which one to go back to.
  */
 export function annotationStepLabel(
   before: readonly AnnotationMark[],

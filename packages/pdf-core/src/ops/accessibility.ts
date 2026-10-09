@@ -2063,7 +2063,7 @@ async function tagOpened(
       );
     }
     const spliced = spliceMarkedContent(plan.scan, claims.claims);
-    // The rewrite compresses the new stream (`compress`), as the old writer's flate did.
+    // The rewrite compresses the new stream (`compress`).
     resolved(plan.pageRef)?.put('Contents', doc.addStream(spliced.bytes, {}));
     for (const claim of claims.claims) {
       if (claim.role === 'Figure' && claim.alt === null) figuresWithoutAlt += 1;

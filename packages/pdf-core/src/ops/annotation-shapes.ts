@@ -19,8 +19,7 @@
  * Written through MuPDF's object model (`engines/mupdf-write.ts`): `addObject` and
  * `addStream` create the dictionary and its appearance, the page object is the `/P`
  * back-pointer, and the annotation is appended to the page's `/Annots` — nothing else
- * on the page is touched (pdf-lib's `addAnnot`, the previous path, also rewrote the
- * page's content array to wrap it in `q`/`Q`).
+ * on the page is touched (in particular the page's content array is not rewritten).
  *
  * The combined write of *all* mark kinds lives at the bottom
  * (`writeAnnotationsToFile`), because the three steps have a dependency order and
@@ -122,7 +121,7 @@ export interface ShapesOutcome extends OperationOutcome {
  * The geometry is the mark's stored one: a mark's own `rotation` is applied by
  * `writeAnnotationsToFile` after this step, through `transformPdfAnnotations`,
  * which turns the fields *and* the appearance. Turning the box alone would leave
- * a diagonal `/L` pointing the old way inside a rotated rectangle.
+ * a diagonal `/L` pointing the unturned way inside a rotated rectangle.
  */
 export async function writeShapeAnnotations(
   bytes: Uint8Array,
@@ -220,9 +219,9 @@ const NOTE_MIN_OPACITY = 0.6;
 /**
  * Append one sticky note (`/Text`) per note mark, with an icon the reader paints.
  *
- * A note used to go through the engine as an **empty** `/FreeText`, whose appearance
- * types `()`: the comment survived in `/Contents`, but nothing was drawn, so the note was
- * invisible in every other reader and in the app itself once the file was reopened. A
+ * A note is not an **empty** `/FreeText`, whose appearance types `()`: the comment would
+ * survive in `/Contents`, but nothing would be drawn, so the note would be invisible in
+ * every other reader and in the app itself once the file was reopened. A
  * `/Text` annotation is what a PDF calls a note — readers list it with the comments and
  * open its `/Contents` on click — and the icon is drawn here as an appearance stream,
  * because a reader that finds no `/AP` draws its own icon or nothing at all.
@@ -496,7 +495,7 @@ export interface HighlightsOutcome extends OperationOutcome {
  *  - `/Subtype /Highlight` — the mark keeps its kind, so it reads back as the
  *    highlight it is rather than as ink;
  *  - the path is stroked with round caps and joins at the mark's width, which is
- *    continuous by construction: the painted result no longer depends on how
+ *    continuous by construction: the painted result does not depend on how
  *    densely the outliner sampled the pointer;
  *  - `/BM /Multiply` (an `/ExtGState` the appearance selects with `gs`) is what
  *    lets dark text stay readable under the band, and what keeps a crossing
@@ -727,7 +726,7 @@ function markerAppearance(
  *
  * That indirection is not optional. There is no universal annotation rotation key:
  * a reader paints its `/AP`, and turning only the fields leaves a text note's glyphs
- * upright, an underline's bar flat and a `/Line`'s diagonal pointing the old way,
+ * upright, an underline's bar flat and a `/Line`'s diagonal pointing the unturned way,
  * because those boxes map onto themselves at 90°. Turning the annotation and its
  * appearance together is what makes the export match the screen for a note, a
  * highlight, an ink stroke, a marker, a line or a shape.

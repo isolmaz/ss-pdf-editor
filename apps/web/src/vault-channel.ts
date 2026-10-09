@@ -35,7 +35,7 @@
  * answers after the timer would have its open document's blob swept. So while a window is
  * open it holds a `navigator.locks` lock named after its id; a probe asks the lock manager
  * which windows are alive (`locks.query()`) and completes only when each of them has
- * answered *that* probe, however long it takes — the outcome no longer depends on timing.
+ * answered *that* probe, however long it takes — the outcome does not depend on timing.
  * A window that closes while the probe waits never answers, but the lock manager drops
  * its lock: the probe asks again every `RECHECK_MS` and stops waiting for a window whose
  * lock is gone (a tab closed a moment ago can still be listed by the first query).

@@ -437,8 +437,8 @@ async function openAnother(page: Page, name: string, bytes: Uint8Array): Promise
 test('thumbnails follow the page: a turn of an already-turned page, an insert, and a second file of the same length', async ({
   page,
 }) => {
-  // Pages the file itself turns are the case that kept the old picture: the turn wrote a
-  // new state before the new document handle arrived, and the painted flag outlived it.
+  // Pages the file itself turns are the case that can keep a stale picture: the turn writes a
+  // new state before the new document handle arrives, and the painted flag must not outlive it.
   await open(page, 'turned.pdf', labelledPdf('Turned', 4, { rotations: [0, 90, 180, 270] }));
   for (const index of [1, 2]) {
     await thumbs(page).nth(index).click();

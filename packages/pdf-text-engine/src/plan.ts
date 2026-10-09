@@ -2,26 +2,24 @@
  * Plan an edit for the writer: turn a model + an
  * edit intent into the **serializable request** pdf-core's `applyTextEdit` consumes.
  *
- * The two halves of the plan are the two halves the spike measured:
+ * The plan has two halves:
  *
  *   - **erase** — one rect per line of the block, widened by `ERASE_PAD_PT`, merged
- *     where they actually overlap. The spike erased a single padded box around the
- *     whole block (`pad(box, 1.5)`), and its case c quantified the risk of a wide region: a
- *     region edge that reaches a rule's edge pixels changes 14 px of 1,440 in the
- *     band while the rule itself survives (`NOTES.md`, case c). Per-line rects are
- *     tighter than a block box, so 1 pt is enough — and a rect is additionally capped
- *     at half the distance to any neighbouring block, so an erase can never reach
- *     another block's ink.
+ *     where they actually overlap. A single padded box around the whole block would
+ *     risk a wide region: a region edge that reaches a rule's edge pixels changes a
+ *     few pixels of the band while the rule itself survives. Per-line rects are
+ *     tighter than a block box, so a small pad is enough — and a rect is additionally
+ *     capped at half the distance to any neighbouring block, so an erase can never
+ *     reach another block's ink.
  *   - **insert** — the reflowed lines as `{ text, x, y, fontSize, color, fontId, words }`
  *     with `y` the **baseline** start. The writer draws each line horizontally at that
  *     point and does the rotation maths itself; everything here stays unrotated,
- *     top-left (the spike's single most expensive discovery was that MuPDF annotation
- *     geometry is *rotated* page space while content streams are unrotated user space,
- *     and that mixing them up fails silently — `NOTES.md`, "The exact APIs called").
+ *     top-left (MuPDF annotation geometry is *rotated* page space while content
+ *     streams are unrotated user space, and mixing them up fails silently).
  *     `words` is the per-word x of every line of a **justified** block (stretched where
  *     justification stretched it), which is how justification survives a writer with no
  *     word-spacing primitive.
-/**
+ *
  * The text-edit request types are defined in `./types` so this package remains
  * free of cycles and has no dependency on `pdf-core`.
  */
@@ -43,13 +41,10 @@ import type {
 const ENGINE = 'pdf-text-engine';
 
 /**
- * Erase padding, in points, on each side of a line's ink box. The spike's harness
- * used 1.5 pt on a *block* box; a line's
- * own ink box already excludes the inter-line gaps that made the block box generous,
- * so 1 pt is the smallest pad that still covers the antialiasing fringe of the
- * outermost glyph edge (2 px at the spike's 2x render scale) — and staying minimal is
- * the lesson of its case c, where a region that merely *touched* a table rule changed
- * 14 px of that rule's band.
+ * Erase padding, in points, on each side of a line's ink box. A line's own ink box
+ * already excludes the inter-line gaps a block box would carry, so the pad only has to
+ * cover the antialiasing fringe of the outermost glyph edge — and it stays small because
+ * a region that merely *touches* a table rule changes pixels of that rule's band.
  */
 const ERASE_PAD_PT = 3;
 
@@ -146,7 +141,7 @@ const MAX_WIDEN_RATIO = 1.25;
  * still fits on one line in the face it is redrawn with.
  *
  * The block's width is its ink in the **original** face. The replacement is drawn in the
- * matched face, usually Noto Sans, which is wider; a box of the old width broke every
+ * matched face, usually Noto Sans, which is wider; a box of the original width would break every
  * full line the reader never touched, and a six-line list came back as eleven lines over
  * the content below it. The box grows by what the widest hard line needs, away from the
  * side its alignment anchors (right for left and justified text, left for right-aligned,

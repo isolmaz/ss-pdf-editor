@@ -38,7 +38,7 @@
  *   | 180      | `x2 − X`     | `H − Y`      |
  *   | 270      | `Y`          | `x2 − X`     |
  *
- * and an early engine spike checked every row against that transform
+ * and every row is checked against that transform
  * for an **offset** box (`/MediaBox [20 30 420 630]`), which is the case where a
  * flip about `page.getSize().height` — instead of about the box's own top — is
  * silently off by the box origin.
@@ -862,7 +862,7 @@ export async function writeMeasureAnnotations(
           // Text strings through `text()` (`newString`): a plain JS string would become a
           // *name*, and Turkish letters must survive (`Çatı alanı`, `measure.test.ts`).
           T: text(doc, mark.author),
-          // A PDF date, as `/M` requires; the pdf-lib writer stored the ISO string.
+          // A PDF date, as `/M` requires (not the ISO string).
           M: text(doc, pdfDate(new Date(mark.createdAt))),
           NM: text(doc, markerFor(mark.id)),
           Contents: text(doc, contentsFor(mark, measurement)),

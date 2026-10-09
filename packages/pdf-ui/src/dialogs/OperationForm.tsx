@@ -2,11 +2,9 @@
  * One operation's settings, run and result — the whole of what a capability shows,
  * **whichever surface hosts it**.
  *
- * There used to be two copies: the modal dialog and the tools panel's inline runner.
- * They drifted the way copies do — the panel had no destructive confirmation, no
- * cancelled state and no diagnostic, and its "Close" applied the result while the
- * dialog's "Close" discarded it. Both hosts now render this component, so a capability
- * behaves the same way in both, down to the button labels.
+ * Both hosts — the modal dialog and the tools panel's inline runner — render this
+ * component, so a capability behaves the same way in both (destructive confirmation,
+ * cancelled state, diagnostic), down to the button labels.
  *
  * Decisions worth naming:
  *

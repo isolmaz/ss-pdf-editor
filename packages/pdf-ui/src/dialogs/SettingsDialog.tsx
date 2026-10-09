@@ -8,10 +8,9 @@ import { ThemeSelector } from '../components/ThemeSelector';
 /**
  * Settings, in one place.
  *
- * Language, theme and the interface mode used to be three separate controls in the
- * header beside the file actions, the privacy switches lived only in the command palette,
- * and offline preparation only in the help menu. This dialog gathers them, each with the
- * sentence that says what it changes; the header keeps one button.
+ * Language, theme and the interface mode, the privacy switches and offline preparation
+ * are gathered here, each with the sentence that says what it changes; the header keeps
+ * one button.
  *
  * The interface mode is a **choice between two named options**, not a toggle labelled
  * with the current state — "Simple mode" on a button read as "switch to simple mode", and

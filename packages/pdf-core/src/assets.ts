@@ -12,9 +12,9 @@ export const ENGINE_BASE_URL = '/engines';
 
 export const PDFJS_ASSETS = {
   worker: `${ENGINE_BASE_URL}/pdfjs/pdf.worker.mjs`,
-  /** Adobe CMaps — without these, CJK documents render incorrectly (source defect 6). */
+  /** Adobe CMaps — without these, CJK documents render incorrectly. */
   cmaps: `${ENGINE_BASE_URL}/pdfjs/cmaps/`,
-  /** Standard-14 font data — same defect: missing data means substituted glyphs. */
+  /** Standard-14 font data — without it, glyphs are substituted. */
   standardFonts: `${ENGINE_BASE_URL}/pdfjs/standard_fonts/`,
   /** openjpeg/qcms WASM used for JPEG2000 and ICC colour handling. */
   wasm: `${ENGINE_BASE_URL}/pdfjs/wasm/`,

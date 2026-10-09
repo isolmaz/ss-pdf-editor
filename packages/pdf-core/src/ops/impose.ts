@@ -1,15 +1,14 @@
 /**
  * Imposition: N-up, booklet and poster.
  *
- * The source project lost page cropping, never rotated content, and had no paper
- * options. Here the sheet geometry is computed explicitly, source content is
+ * The sheet geometry is computed explicitly, source content is
  * rotated into its cell (that is what makes a 2-up of landscape pages readable),
  * and margins/gutter/crop marks are part of the layout rather than decorations.
  *
  * How a page reaches a sheet (the MuPDF writer vocabulary, `engines/mupdf-write.ts`):
  *  - `pageAsForm` turns a page into a Form XObject from its **content streams and
  *    resources** (grafted once per document), bounded by its CropBox — which
- *    preserves cropping (source defect A16). The page's `/Rotate` is **not** applied:
+ *    preserves cropping. The page's `/Rotate` is **not** applied:
  *    its own rotation is added to the placement rotation, or a rotated source lands
  *    sideways. `/Rotate` turns **clockwise** and a `cm` angle counter-clockwise, so the
  *    form is drawn at `formTurn(rotation)`; adding the two directly turned every 90°
@@ -443,7 +442,7 @@ function sourceEmbedder(
     // Callers pass indexes `requiredPages` checked against the page count.
     const page = pages[pageIndex] as PDFObject;
     const geometry = pageGeometry(page);
-    // The CropBox, so a sheet shows what a reader shows (source defect A16); the form
+    // The CropBox, so a sheet shows what a reader shows; the form
     // moves that box to the origin, and `/Rotate` is applied by hand.
     const entry = { form: pageAsForm(out, graft, page, geometry.box), geometry };
     embedded.set(pageIndex, entry);
@@ -623,8 +622,8 @@ function imposeOpened(
     const pitchY = size.height - overlap;
     // The enlarged page fits the whole tile grid: one uniform scale keeps the aspect
     // ratio, nothing of the page is cut, and the last tiles may carry blank edge area
-    // instead of a stretched page. (The pdf-lib writer took the larger of the two
-    // scales, which cut the page's right or bottom edge.)
+    // instead of a stretched page (the larger of the two scales would cut the page's
+    // right or bottom edge).
     const covered = {
       width: size.width + pitchX * (columns - 1),
       height: size.height + pitchY * (rows - 1),
@@ -649,8 +648,7 @@ function imposeOpened(
           // Rows count from the top, so the first sheet carries the top-left corner: a
           // tile shows the band of the enlarged page whose top edge is `row` pitches
           // below the page's top, so the page's lower-left corner sits that far below
-          // the sheet's own. (The pdf-lib writer had the sign reversed: every row but
-          // the last came out blank.)
+          // the sheet's own (a reversed sign would leave every row but the last blank).
           const lowerLeft = { x: -column * pitchX, y: size.height + row * pitchY - visible.height };
           const anchor = anchorForLowerLeft(
             lowerLeft,

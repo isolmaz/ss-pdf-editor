@@ -16,9 +16,9 @@ import { useState } from 'react';
 /**
  * Page and view controls, **in the status bar**.
  *
- * They used to float in the viewer's bottom-right corner, over the page itself: at
- * every width they covered text, and below 1024 px a third of a line. In the bar that
- * already reports page and zoom they cover nothing, and the bar keeps one row.
+ * They sit in the bar rather than floating in the viewer's bottom-right corner: over the
+ * page itself they would cover text at every width, and below 1024 px a third of a line.
+ * In the bar that already reports page and zoom they cover nothing, and the bar keeps one row.
  *
  * "Rotate" turns the **current page** unless pages are selected in the page panel, in
  * which case it turns those — the same rule every page action follows (`runPageAction`).

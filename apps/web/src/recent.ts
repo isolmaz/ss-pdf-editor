@@ -50,7 +50,7 @@ export function addRecentDocument(
   /**
    * The entry this opening replaces — the same tab, or an earlier opening of a file with this
    * name. Its star belongs to the document the user starred, so it carries over: a reopened
-   * file used to come back unstarred.
+   * file comes back starred.
    */
   const replaced = current.filter((item) => item.id === doc.id || item.name === doc.name);
   const filtered = current.filter((item) => item.id !== doc.id && item.name !== doc.name);

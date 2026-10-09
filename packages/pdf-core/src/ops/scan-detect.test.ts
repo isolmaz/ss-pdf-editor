@@ -28,7 +28,7 @@ function inside(polygon: readonly Point[], x: number, y: number): boolean {
  * `paper` inside the quad, `desk` outside, edges antialiased (4 x 4 coverage) as a camera's
  * are, plus a deterministic grain so it is not a flat fill. A hard-edged staircase is not
  * what a photograph looks like: its edge pixels split between two Hough distance bins and a
- * tilted side used to fall below the detector's vote floor; `grid = 1` draws one on purpose.
+ * tilted side can fall below the detector's vote floor; `grid = 1` draws one on purpose.
  */
 function drawPage(width: number, height: number, quad: Quad, paper = 225, desk = 35, grid = 4): RasterImage {
   const data = new Uint8ClampedArray(width * height * 4);

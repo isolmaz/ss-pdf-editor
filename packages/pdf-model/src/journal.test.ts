@@ -164,7 +164,7 @@ describe('OperationJournal', () => {
   });
 
   it('refuses a cursor that points outside the entries it restored', () => {
-    // Clamping used to move the document to a state the user never left: the cursor is
+    // Clamping would move the document to a state the user never left: the cursor is
     // the *identity* of the restored version, so a cursor that does not fit its entries is
     // corruption to report, not a number to round.
     const entry = {

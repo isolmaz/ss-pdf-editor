@@ -1,5 +1,5 @@
 /**
- * Optimisation (defects 3 and 16).
+ * Optimisation.
  *
  * Two modes, one operation. The dialog's whole job is to make the difference
  * between them unmissable before the button is pressed: `structure` re-serialises
@@ -106,9 +106,8 @@ export const compressDialog: OperationDialogSpec = {
       onProgress: context.onProgress,
     });
 
-    // The source project reported "no gain" while writing a
-    // *larger* file. The size delta the user opened this dialog for is stated in
-    // the notice, and the report carries the same two numbers.
+    // A larger output is never reported as "no gain". The size delta the user opened
+    // this dialog for is stated in the notice, and the report carries the same two numbers.
     const { inputBytes, outputBytes } = outcome.report;
     const noticeKey =
       outputBytes > inputBytes

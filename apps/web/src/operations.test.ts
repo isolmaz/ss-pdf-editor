@@ -2,11 +2,11 @@
  * Operation-aware output verification.
  *
  * Every case here builds a real PDF with MuPDF and reads it back through the same
- * pdf.js adapter the application uses, because the defect this suite guards against was
- * invisible to any test that stubbed the reader: the previous implementation decided
- * which checks to skip by matching the operation's step ids against
- * `/delete|clear|blank|flatten/i` — a pattern no id this app produces matches — and
- * reported "verified" for the checks it happened to run, without recording the ones it
+ * pdf.js adapter the application uses, because the defect this suite guards against is
+ * invisible to any test that stubs the reader: deciding which checks to skip by
+ * matching the operation's step ids against a pattern like
+ * `/delete|clear|blank|flatten/i` — which no id this app produces matches — would
+ * report "verified" for the checks it happened to run, without recording the ones it
  * never ran. So the assertions are about the *returned table*: which facts are verified,
  * which are degraded with which reason, which this build cannot check, and which change
  * throws.

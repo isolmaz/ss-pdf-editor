@@ -3,22 +3,20 @@
  * (left/centre/right/justify), hyphenation, leading, paragraph spacing and
  * indentation, laid out **inside the block's own box**, with the box growing or
  * shrinking and an auto-shrink path for content that does not fit (`fit/auto-shrink`).
- * Page flow and overflow stay out of scope (`4d-2`, a research line).
+ * Page flow and overflow stay out of scope.
  *
  * Geometry is the package's one coordinate space: unrotated PDF user space, top-left
  * origin, y downwards, points. Lines are laid out **horizontally**, which is exactly
  * what the writer's request can express (a line carries a baseline start point and a
- * size; there is no rotation field), so a rotated block belongs to `4b`'s
- * not-editable set rather than to this module.
+ * size; there is no rotation field), so a rotated block belongs to the
+ * not-editable set (`measureEditability`) rather than to this module.
  *
- * The measurement is the spike's: greedy breaking over the font's own advances
- * (it wrapped on
- * `font.advanceGlyph(gid, 0) * size`), with the placement derived from the lines being
- * replaced (`replace.ts:74-95`: leading from the baselines, the block's widest line as
- * the wrap width). The spike's own `advanceScale` calibration came out at 0.9993
- * (`NOTES.md`, case a: measured 317.724 pt / advance sum 28.903), i.e. the advance is
- * already em-relative — `unitsPerEm` is therefore the only conversion, and no fudge
- * factor belongs anywhere in this file.
+ * The measurement is greedy breaking over the font's own advances
+ * (`font.advanceGlyph(gid, 0) * size`), with the placement derived from the lines being
+ * replaced (leading from the baselines, the block's widest line as the wrap width).
+ * The advance is already em-relative (a measured 317.724 pt line against an advance
+ * sum of 28.903 em gives a scale of 0.9993) — `unitsPerEm` is therefore the only
+ * conversion, and no fudge factor belongs anywhere in this file.
  */
 import { ToolError } from 'pdf-shared';
 import type {
@@ -37,10 +35,8 @@ const ENGINE = 'pdf-text-engine';
 /**
  * Leading used when neither the options nor the block supplies a usable one, as a
  * fraction of the font size. 1.2 em is the classic single-spaced default
- * (ascender + descender + lineGap) and the only size-independent choice; the spike
- * passed its fixture's own leading in instead (`replace.ts:83-91`'s `fallbackLeading`,
- * 18 pt at the 11 pt body size, an early engine spike) because
- * the harness knew the fixture — a model of an arbitrary document does not.
+ * (ascender + descender + lineGap) and the only size-independent choice: a model of an
+ * arbitrary document has no leading of its own to offer.
  */
 export const DEFAULT_LEADING_RATIO = 1.2;
 
@@ -56,13 +52,13 @@ const DEFAULT_ASCENT_RATIO = 0.8;
  * Auto-shrink step, in points. Half a point is the smallest size difference the UI can
  * present as a distinct choice, and it bounds the search to
  * `2 x (fontSize - minFontSize)` layouts — a deterministic walk rather than a
- * numerical fit, which is what `4d-1`'s "fit / auto-shrink" needs to be reproducible.
+ * numerical fit, which keeps "fit / auto-shrink" reproducible.
  */
 const SHRINK_STEP_PT = 0.5;
 
 /**
- * Slack when deciding "does it fit", in points. The spike's advance calibration was
- * 0.9993 (0.07 %, `NOTES.md` case a), which is 0.21 pt on its widest measured line
+ * Slack when deciding "does it fit", in points. The advance calibration is
+ * 0.9993 (0.07 %), which is 0.21 pt on the widest measured line
  * (317.724 pt) — so a quarter point absorbs the only error the measurement is known
  * to carry, while staying far below a space (2.75 pt at 11 pt) and below the 1 pt
  * alignment tolerance. Without it, a line that fits exactly would be reported as
@@ -87,7 +83,7 @@ interface BoxGeometry {
   readonly y: number;
   readonly width: number;
   /** `Number.POSITIVE_INFINITY` when the box was derived from the block: the box's
-   *  width is the block's, its height is free (`4d-1`: the box grows). */
+   *  width is the block's, its height is free (the box grows). */
   readonly height: number;
 }
 
@@ -124,8 +120,8 @@ interface PassResult {
 }
 
 /**
- * Natural advance width of `text` at `fontSize`, in points — the quantity the spike
- * broke lines on (`replace.ts:203-212`). Needed by the breaker and by anything that
+ * Natural advance width of `text` at `fontSize`, in points — the quantity lines are
+ * broken on. Needed by the breaker and by anything that
  * has to predict what the writer will actually draw.
  */
 export function measureLineWidth(text: string, fontSize: number, metrics: FontMetrics): number {
@@ -259,7 +255,7 @@ function layoutPass(pass: PassOptions, text: string, fontSize: number): PassResu
  *
  * A word that does not fit alone is only broken when `hyphenate` is on, and then at a
  * **code-point boundary** with a hyphen — no language dictionary is consulted, so this
- * is the deterministic half of `4d-1`'s hyphenation: it never invents a bad syllable
+ * is the deterministic half of hyphenation: it never invents a bad syllable
  * break, it just does not know the good ones. A word that still cannot fit (a box
  * narrower than `MIN_HYPHEN_PART` characters plus a hyphen) is placed whole and shows
  * up as an overflow, which is the honest answer rather than an endless loop.

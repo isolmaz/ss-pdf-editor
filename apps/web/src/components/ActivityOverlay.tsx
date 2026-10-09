@@ -6,11 +6,11 @@ import { useEffect, useState } from 'react';
 /**
  * The shell's notice and progress, **over** the document instead of above it.
  *
- * Both used to be rows in the page's flow between the header and the viewer. Every
- * operation raised the progress row and then a notice row, so the document jumped down
- * by one row, up again, and down again for a notice that never went away (measured on
- * a page rotation: the viewer moved 29.5 px and stayed there). Floating them keeps the
- * viewer's box — and so the reader's place — exactly where it was.
+ * Both float instead of being rows in the page's flow between the header and the viewer.
+ * Every operation raises the progress and then a notice; as rows they would make the
+ * document jump down by one row, up again, and down again for a notice that never goes
+ * away (measured on a page rotation: the viewer moved 29.5 px and stayed there).
+ * Floating them keeps the viewer's box — and so the reader's place — exactly where it was.
  *
  * A notice closes itself after {@link NOTICE_MS} unless the pointer rests on it, and can
  * be closed at once; the text stays in a polite live region for assistive technology.
@@ -33,8 +33,8 @@ export interface ActivityOverlayProps {
   readonly onCancel: () => void;
   /**
    * Work in flight that reports no steps and cannot be cancelled — opening a file is
-   * the case: until the engine has parsed it there is no tab to show, and the home
-   * screen used to sit still with nothing saying anything was happening.
+   * the case: until the engine has parsed it there is no tab to show, and without this
+   * the home screen would sit still with nothing saying anything was happening.
    */
   readonly activity?: string | null;
 }
