@@ -42,9 +42,9 @@ export interface ReadAloudOptions {
   readonly lang: string;
 }
 
-/** `null` outside a browser or without Web Speech: the caller then has nothing to offer. */
+/** `null` without Web Speech: the caller then has nothing to offer. The hook only ever runs in a browser window. */
 function speechSynthesisOrNull(): SpeechSynthesis | null {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+  if (!('speechSynthesis' in window)) return null;
   return window.speechSynthesis;
 }
 
@@ -81,15 +81,15 @@ export function useReadAloud(text: string, options: ReadAloudOptions): ReadAloud
 
   const speak = useCallback(
     (from: number, parts: readonly string[], speed: number) => {
-      const synthesis = speechSynthesisOrNull();
-      if (synthesis === null || voice === null) return;
+      // A voice exists only when the engine listed one, so the engine is there too.
+      if (voice === null) return;
+      const synthesis = window.speechSynthesis;
       // The queue belongs to this reading: a new play replaces whatever the previous
       // page had left in it.
       synthesis.cancel();
       for (let index = from; index < parts.length; index += 1) {
-        const part = parts[index];
-        if (part === undefined) continue;
-        const utterance = new SpeechSynthesisUtterance(part);
+        // `index` is inside `parts`, so the lookup always finds a sentence.
+        const utterance = new SpeechSynthesisUtterance(parts[index] as string);
         utterance.voice = voice;
         utterance.lang = voice.lang;
         utterance.rate = speed;
@@ -152,7 +152,8 @@ export function useReadAloud(text: string, options: ReadAloudOptions): ReadAloud
       // Web Speech fixes the rate when an utterance starts, so a page already being
       // read would keep the old speed until its next sentence: restart at the
       // sentence the engine reported through `onstart`.
-      if (speaking && !paused && chunks.current.length > 0) speak(current.current, chunks.current, clamped);
+      // `speaking` is only ever true after a play, which needs sentences, and a new page resets it with them.
+      if (speaking && !paused) speak(current.current, chunks.current, clamped);
     },
     [paused, speak, speaking],
   );
