@@ -92,3 +92,43 @@ export function renderScan(
     pixmap.destroy();
   }
 }
+
+/** One word `text` in `font` at `size` pt and `dpi`, black on paper of 245, with the box OCR would give it (ascender to descender). */
+export function renderWord(
+  mupdf: Mupdf,
+  font: import('mupdf').Font,
+  text: string,
+  options: { dpi: number; size: number },
+): { image: RgbaImage; box: MatchWord['box'] } {
+  const scale = options.dpi / 72;
+  const px = options.size * scale;
+  const width = Math.ceil(160 * scale);
+  const height = Math.ceil(40 * scale);
+  const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, width, height], false);
+  const device = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap);
+  const shown = new mupdf.Text();
+  try {
+    pixmap.clear(245);
+    shown.showString(font, [px, 0, 0, -px, 10 * scale, 25 * scale], text);
+    device.fillText(shown, mupdf.Matrix.identity, mupdf.ColorSpace.DeviceGray, [0], 1);
+    device.close();
+    const gray = pixmap.getPixels();
+    const data = new Uint8Array(width * height * 4);
+    for (let at = 0; at < width * height; at++) {
+      const value = gray[at] as number;
+      data.set([value, value, value, 255], at * 4);
+    }
+    const advance = [...text].reduce(
+      (sum, char) => sum + font.advanceGlyph(font.encodeCharacter(char.codePointAt(0) as number), 0) * px,
+      0,
+    );
+    return {
+      image: { width, height, data, scale },
+      box: [10, 25 - 0.76 * options.size, 10 + advance / scale, 25 + 0.24 * options.size],
+    };
+  } finally {
+    shown.destroy();
+    device.destroy();
+    pixmap.destroy();
+  }
+}

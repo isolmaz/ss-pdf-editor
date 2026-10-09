@@ -324,7 +324,7 @@ the same certificate twice is one entry.
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
-| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
+| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
 | `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
@@ -405,7 +405,15 @@ had to stay green. The moves, and the defects they fixed on the way:
   - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
     paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
-    rule between two cells merges them). Tables without rules come from runs of rows that
+    rule between two cells merges them, unless that would make a region that runs into
+    a cell already placed, which then stays single). A rule group whose outer border is not
+    drawn is completed with an undrawn grid line at that side, but only along an axis that
+    already has two lines of its own, at a side that two rules reach, and when the strip holds
+    a line of text that lies wholly in it and is a quarter as deep as the cell next to it, or
+    is half as deep: a divider crossed by one rule, a heading between two rules, or rules that
+    overshoot by a few points are not a lattice. The Word table carries no table-wide borders
+    (`tblBorders` all `nil`); each cell gets `tcBorders` for the sides a rule covers by 75 % or
+    more, so the undrawn edges stay blank. Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
@@ -499,7 +507,20 @@ had to stay green. The moves, and the defects they fixed on the way:
     fallback back, so the `verify` step still compares the words written with the words found.
     Text that runs up or down the page (MuPDF's line direction, which holds for one character too) is a
     vertical text box (`bodyPr vert="vert270"` / `"vert"` on the visual box): LibreOffice ignores
-    `a:xfrm rot` on a text box. A line's baseline is its characters' origin (`LayoutChar.baseline`);
+    `a:xfrm rot` on a text box (measured with LibreOffice 26 for every other form of a text box
+    too: DrawingML with and without `txBox`, a rotated group, VML `rotation`: the frame turns, its text
+    does not). Text at any other angle (not across, up or down within 1.5°, upside down included) is
+    a box of its own whose frame is turned by the line's angle about its centre (`a:xfrm rot`,
+    `effectExtent` for the room the turn takes, VML `rotation`): LibreOffice draws the frame turned
+    but its text level (across, in the same place and at the PDF's advances), Word turns both:
+    `a:xfrm rot` rotates the shape about its centre ([MS-OE376 xfrm](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/9ce071a0-4053-4714-9025-1951253cab2a)) and the
+    text rotates with it unless `bodyPr upright="1"` ([ECMA-376 `bodyPr`](https://c-rex.net/samples/ooxml/e1/part4/OOXML_P4_DOCX_bodyPr_topic_ID0EMGMKB.html)); Word itself was not run
+    here. `w14:alpha` is the transparency, unlike DrawingML's `a:alpha`: LibreOffice's test document semi-transparent-text.docx, authored by Word 14.0, has `w14:alpha 74000` asserted as 74 % transparency (see `runXml`). The frame is placed so that the first
+    glyph's origin (`LayoutChar.pen`: origin and quad advance, read for slanted lines only) is
+    `TEXT_LEFT` in and 0.8 line heights down in the frame's own axes, and the line is fitted along
+    them. Text drawn with a fill opacity below 1 (`LayoutChar.alpha`, from the page device's
+    `fillText`) is written `w14:textFill` with the colour and `w14:alpha` (the value is the transparency, 100 % − opacity) beside the solid `w:color`
+    (`w14` is declared ignorable), which LibreOffice honours. A line's baseline is its characters' origin (`LayoutChar.baseline`);
     the box top is that minus 0.8 × the exact line height, and the box starts `TEXT_LEFT` (0.1 pt)
     left of the first glyph origin, where LibreOffice puts it. The 22-inch rule above applies too: a
     larger page is scaled down (`wordPageScale`) and everything on it with it. XML shared with the
@@ -586,11 +607,21 @@ had to stay green. The moves, and the defects they fixed on the way:
        `layout`, `layoutRasters`, `fontsEmbedded`, `pageScaled`, `noText` and `unreadable`.
     5. **Scans (OCR).** After the scene is read, `isScanPage` decides: no visible character
        on the page and pictures (not shapes) covering at least half of its area, so a scan with
-       or without an invisible text layer. For such a page `readScanPage`
+       or without an invisible text layer. A page with visible text and pictures over half of
+       its area (`isMixedPage`) goes through `readScanPage` too, with `visibleBoxes` (one box
+       per upright run, one per character of turned text) painted over in the render with the
+       colour around them (`maskBoxes`), `dropMasked` on the words, `inkBoxes` and
+       `wordsInPicture` as the gate, and the vector text kept; a page of text with a picture of
+       2 % or more goes through `readPictureText`, which judges the picture on its own pixels
+       first (`pictureLooksLikeText`). OCR always reads the render with annotations. For
+       such a page `readScanPage`
        (`ops/docx-layout-ocr.ts`) replaces the scene's items and the text boxes:
-       - *Words.* The invisible layer's, when the page has one (`layerWords`: words cut at
+       - *Words.* The invisible layer's, when the page has one it can trust (`layerWords`: words cut at
          blanks from the layer's characters, boxes from the baseline and size, confidence 100,
-         no recognition run); else `OfficeExportOptions.ocr.recognize` (the UI passes
+         no recognition run; `layerTrusted` in `ops/docx-layout-mixed.ts`: fewer than 10 % of the
+         characters U+FFFD or on a line turned more than 0.05 rad from the dominant direction,
+         and `dropCovered` removes words whose box shows no ink in the render, so a word under an
+         opaque annotation is not text; a layer that fails is read with OCR when it can run); else `OfficeExportOptions.ocr.recognize` (the UI passes
          `recognizePage`, Tesseract, quality `best`, the languages ticked in the form's
          `ocrLanguages` field, default `tur`+`eng`, in automatic page segmentation (mode 3:
          columns, blocks and lines are found, which the text boxes are built from; the 90 %
@@ -601,6 +632,38 @@ had to stay green. The moves, and the defects they fixed on the way:
          and without a layer `readScanPage` returns `null`, the page keeps its pictures, and
          `ocrUnavailable` lists it; a recogniser that throws (a language pack missing, offline,
          a crashed worker) does the same, and only the reader's own cancel stops the export.
+       - *Crooked scans* (`ops/ocr-preprocess.ts`). Before the recogniser runs, `uprightScan`
+         measures the skew of the render (projection profile of the ink on a copy of at most
+         1100 px: ink pixels without pictures, the outer 3 % and every piece of ink — 8-connected —
+         longer than a tenth of the page's long side, which is a rule, a frame or a card's edge and
+         would out-vote the lines of text by being one straight stroke, or at most 2 px high and
+         at least 4 wide, a dash of a dashed rule or a hairline fragment; at most 60 000 points,
+         projected across the lines for angles of ±6° in 0.5° and then 0.05° steps, the sharpest
+         histogram wins). The page is turned only when there are at least 2000 points (a page
+         number measures noise), |angle| is 0.3°–5.9° and the best score is at least 2.5 × the
+         mean of the coarse scores (level text pages measure 4–22 and the rough sample 4, a sheet of
+         text running up the page 1.4–2.0, a lone page number 1.7–2.1); otherwise `null`, and the
+         page is read exactly as before. The limit that remains is a dashed or dotted rule at
+         another angle than the text that is thicker than a sliver: measured on level 12 pt text
+         beside a 5-inch rule crooked by 3° or 1°, 1 pt dashes still turn pages of 5 lines or
+         fewer and of eight lines of 12 characters, and 2–3 pt dashes pages of up to eight lines
+         of 25 characters; eight lines of 43 characters held against every dash tried. A turned page is read on an *upright copy* (the render turned about
+         the page centre on the same canvas, bilinear, the corners that come in repeating the
+         nearest edge pixel): the recogniser, the underline search, the second look, the words'
+         lines and paragraphs and the table reader's rows (which group by baseline) are all in
+         the copy's frame. The scan itself keeps its pixels: `ocrBackground(image, words, turn)`
+         finds the page colour and the regions on the copy but paints each word's fill on the
+         scan where it lands (a scan pixel takes the colour when its centre, turned back, is
+         inside the fill's box: the quad, so the lines beside a skewed word are not touched; the
+         ring colour and the ripple growth are the copy's), cuts the pictures from that erased
+         scan and places them by `placed`, the box of the scan that holds the region;
+         `eraseRulesTurned` does the same for an underline. At the end `turnBoxes` puts each text
+         box on the scan: its centre goes where the page centre's rotation by the skew puts it,
+         `rotation` is the skew angle (0–360, clockwise, as a slanted line's), and the letters'
+         positions move with the frame; `textBoxXml` writes it as a frame turned by `a:xfrm rot`
+         like a slanted PDF line, so the text sits on the scan's own lines, which Word draws
+         turned and LibreOffice draws level at the same centre. A page read from its own text
+         layer is never turned.
        - *Underlines.* Rules under words make Tesseract misread them (a link's underline cuts
          the descenders). `findUnderlines` looks, for every word of at least two letters or
          digits and at least 1.2 × its height wide, at the rows from 0.35 × its height above its
@@ -646,6 +709,24 @@ had to stay green. The moves, and the defects they fixed on the way:
             the first reading's when both are the same length. Each read sets its own mode for
             that call only (8 for a word, 3 for an export page) and the shared worker is left in
             the engine's default single-block mode (6), which "Make searchable" reads in.
+         4. *Other readings.* What lost in 2 and 3 stays with the word as `OcrWord.alternatives`, each
+            with the confidence it was read at: the first read when a reread or the capitals
+            replaced it, and a reread that was not taken (another shape, or less sure). Once the page's face is known (the open family's regular
+            or the stand-in's base-14 face), `settleReadings` (`docx-ocr-font.ts`, `chooseReadings`
+            in `ocr-font-match.ts`) draws every reading of such a word at its box and size and
+            lays it over the ink of the scan like the family match does (shape, with the proportions
+            of the ink box, so a reading of another length cannot be stretched into place; unlike
+            the family match, which takes a median over many words, one word decides here, so the
+            drawing is also tried on boxes a pixel wider, narrower, taller and shorter than the
+            ink's and the best stands: a pixel more or less in a trimmed box is not a reading); a
+            reading other than the settled one replaces it only when it scores 0.15 higher
+            (`READING_MARGIN`: "9020" for "%20" where the scan has a 9, not "i" for "l") and at
+            least 0.3 (`READING_FLOOR`: two drawings that do not lie on the ink are no evidence
+            however far apart), and only for words of 16 px to the em or more (`READING_MIN_EM`: at
+            a smaller size a pixel of tolerance is a tenth of the glyphs and the proportions stop
+            keeping another length out; those words keep their text), and the page is then set
+            again with that reading and the confidence it was read at, so the low-confidence flag
+            follows the text written. Only words the second look read have alternatives.
        - *Rules for what Tesseract returned.* `dropDuplicates` keeps, of two words overlapping by
          more than 30 % of the smaller box (one word read at two segmentations), the one whose
          box is larger (the surer when equal); the dropped ones are still erased from the
@@ -692,6 +773,17 @@ had to stay green. The moves, and the defects they fixed on the way:
          1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
          paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
          ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart.
+         The cells of a table never join a paragraph: rows are lines on one baseline (within
+         0.5 × the size), and consecutive rows form a table when at least 3 cells of each (2
+         for label and amount rows) stand under cells of the row above by left edge, right edge
+         or centre, the cells average at most 4 words, the rows are at most 4 × the size apart
+         (2 × for two cells), and there is a column of figures (more digits than letters: a
+         figure under a figure for 3 or more cells, the left-most or the right-most cell of
+         both rows for 2), so side-by-side lists of short lines stay columns. A line alone on its baseline keeps the table open only as the
+         second line of a wrapped cell (it continues a cell above by the paragraph rule); any
+         other line ends it. Every cell line is a paragraph of its own, and a table is one item
+         of the cut below, read row by row inside (`inRows` of its paragraphs), so an invoice's
+         descriptions are not read before its quantities.
          *Reading order* is by recursive cuts (`readingOrder`): the paragraphs are split at the
          widest horizontal gap no box crosses (the part above first) and at the widest vertical
          one (the part to the left first), a vertical cut counting only where the two parts
@@ -713,6 +805,10 @@ had to stay green. The moves, and the defects they fixed on the way:
          a speck (more than 1.3 × the size the word widths give) is set at 1.1 × the width-based
          size; a line within 0.88–1.1 × of its paragraph's upper-quartile size is set at that
          size, and sizes are rounded to half-points.
+         A paragraph's box starts where the middle of its lines' baselines says (each line's
+         baseline less its index × the line height the paragraph is set at, the median of them;
+         that is the scan's pitch unless the first line's size is larger, as Word sets it at the
+         size), so one line whose baseline Tesseract misjudged does not carry the box.
          The colour is the median of the word's ink pixels (those at least 60 % as far from the
          local background as its strongest pixel).
          *Bold* is per word. The stroke of a word is the mean of the shortest 60 % of its
@@ -779,7 +875,7 @@ had to stay green. The moves, and the defects they fixed on the way:
   was an unknown step;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
-  written) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
+  written, plus the planned page labels) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
   pages of another document inserted its *first* pages instead (the plan's slot index was
   handed to the engine as the page number), so "insert pages 3-4 of this file" put in 1-2;
 - imposition and the print layout (`ops/impose.ts`), where each source page is a form XObject
@@ -1097,9 +1193,10 @@ sequenceDiagram
     M->>M: createAnnotation('Redact') + setRect(rectToPageSpace(box, rotation))
     M->>M: structured-text coverage probe (empty marks are reported)
     M->>M: applyRedactions(black_boxes=false, lineArt=remove-if-touched, image/text method)
+    M->>M: sweep annotations + form fields under the marks (ops/redact-annots.ts)
     M->>M: save garbage=compact,compress,clean (single revision, no /Prev)
     M->>V: produced bytes
-    V-->>UI: re-opened, per-glyph check; a glyph >=50% covered fails verification
+    V-->>UI: re-opened, per-glyph check, annotation check; a glyph >=50% covered, or any annotation under a mark, fails verification
     UI->>A: needles read from the pre-redaction text inside the marks
     A-->>UI: residual terms, earlier revisions, orphan objects, structural markers
 ```
@@ -1115,11 +1212,41 @@ Details that matter:
 - Line art touched by a mark is removed, because a rule that runs through the box would
   reveal where the covered text started and ended. (Text replacement uses the opposite
   setting — a different operation with a different contract.)
+- `applyRedactions` erases page content and deletes the links it touches — nothing else. Measured
+  in the built app: a text field under a mark kept its `/V` and appearance, a sticky note kept its
+  `/Contents`, both stayed on the page and in `/AcroForm /Fields`, and the report still said the
+  content was gone. `ops/redact-annots.ts` therefore sweeps each marked page after the erase, in
+  PDF user space (the mark is flipped into the page box once; an annotation's `/Rect` is already
+  there whatever `/Rotate` says). Every annotation except `/Redact` whose `/Rect` shares area
+  with a mark — touching along an edge is not sharing — is removed whole: widgets, comments,
+  markup, stamps. A removed annotation takes its popup (`/Parent`) and its replies (`/IRT`, and
+  their replies) with it; the way back holds too, because a popup window shows its owner's
+  `/Contents`: a window under a mark takes the comment it belongs to (the annotation whose
+  `/Popup` names it) along, with that comment's replies, and only an owner the page does not list
+  survives, with its `/Popup` cleared. A removed widget leaves `/AcroForm /Fields` or its
+  parent's `/Kids` (the walk starts at `/Fields`, so a wrong `/Parent` does not matter) and
+  `/CO`; a field left without a kid is dropped, one that still has a widget outside the marks
+  keeps its value. The removed objects are **deleted**, not just unlinked, because a structure
+  tree's `/OBJR` or a surviving dictionary that still pointed at them would keep the secret in
+  the written file (those references read as null). A static XFA form keeps every value a second
+  time in its datasets packet and an XFA reader draws the field from there, widget or not, so
+  when a widget went and `/AcroForm /XFA` exists the writer drops the XFA entries
+  (`removeXfaEntries`, as the flatten does; the unreferenced packets leave with the garbage pass),
+  reports the `xfa.remove` step and `op.note.redact.xfaDropped`. The report lists the counts
+  (`op.note.redact.fieldsRemoved` counts fields, each once however many widgets it had and only
+  when its last widget went; `op.note.redact.annotationsRemoved`; a mark that only removed a
+  field is not reported as empty) and `OPERATION_TABLE` declares every step id the writer reports
+  (`annotate(Redact)`, `clean(annotations+fields)`, `clean(Info+XMP)`, `clean(attachments)` and
+  its `save(garbage=…)`) with `formFieldCount`/`formFieldValues` for `applyRedactions`, so the
+  save-time check measures a removed field as a declared change instead of calling the run
+  unverified.
 - The write uses `garbage=compact,compress,clean`, measured to leave a single revision
   with the erased stream's object dropped and the survivors renumbered.
 - `verifyRedaction()` re-opens the **produced** bytes, inverts the page's actual transform
   and walks the structured text per character; a page where any non-whitespace glyph is
-  ≥ 50 % covered throws `verification-failed`.
+  ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
+  annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
+  page the same way, so a form field's value cannot hide behind a clean text check.
 - `auditRedactedDocument()` is a raw-byte scan and **documents its own blind spot**: it
   cannot see inside deflated streams or object streams. It emits a `/FlateDecode` row and
   suppresses the orphan-object verdict entirely when `/ObjStm` is present, instead of
@@ -1243,6 +1370,12 @@ result, with the writer's real step ids.
 and both `protectDocument()` and `unlockDocument()` **re-open their own output and
 verify** (cipher and permissions for protect; page count plus a text sample for unlock),
 because a mis-authenticated MuPDF save writes undecryptable garbage instead of failing.
+Encrypting or unlocking rewrites the file, so a signed input (counted by
+`collectSignatureFields`, the collector `verifySignatures` uses: the `/AcroForm /Fields` tree plus
+signature widgets only a page's `/Annots` reach, once the password has opened the file) gets a
+`lost` note in the report: `op.note.security.signatureInvalidated` for protect,
+`op.note.security.signatureInvalidatedUnlock` for unlock. The download path never reaches the
+save plan's signature warning.
 The Security dialog's `resultKind` is `download`: the encrypted copy is handed over, never
 applied to the open document (a protected file is read-only in the editor, so applying it
 ended in a password prompt). A run may also overrule its dialog's `resultKind` for one result
@@ -2278,7 +2411,19 @@ the user just typed.
 
 Structural page actions (rotate, delete, duplicate, move, insert, replace) go through
 `composeDocument`, i.e. pdf.js `extractPages` on the live document, so annotations, form
-values, outlines and page labels travel with the pages. `planPageAction()` computes the new
+values and outlines travel with the pages. Page labels travel with them too, but only where the
+engine writes them: `extractPages` builds `/PageLabels` for a composition with a single source
+document (`#collectPageLabels` returns when `!isSingleFile`), so rotate, delete, duplicate and
+move keep them and a composition with a second source — insert and replace through
+`ops/page-insert.ts`, and `mergeDocuments` — would drop the tree. Those write it back themselves in
+their MuPDF pass (`composedLabelRanges` / `replaceLabelRanges`, `ops/page-labels.ts`): every output
+page is mapped to its source page and keeps the label that source gave it, so the pages of the
+current document keep exactly the label they had, and an inserted or added page keeps its own
+document's label — its `/PageLabels`, or its decimal page number in that document when it has none
+(a blank page reads `1`). Ranges are emitted only where style, prefix or consecutive numbering
+breaks, and nothing is written when no contributing document has labels; the merge report
+measures the ranges in the file it produced and says `lost` if they are fewer than planned.
+`planPageAction()` computes the new
 page list purely, so the effect of an action on the page order is reviewable without
 rendering anything. Applying a result re-checks that the tab and working version it started
 from are still current; if not, the operation throws `aborted` and the model is untouched.
@@ -2561,7 +2706,8 @@ why. The rules:
 Check coverage and its honest edges: rotation and view box on every page; page text
 identity (size plus the head of the extracted text) positionally on every page up to 64
 pages and on first/middle/last above that; form names and values against the session's
-inventory; outline titles and page labels read from both documents. Two facts are reported
+inventory (fields that share a name, as a merge of two forms leaves them, are paired in
+document order); outline titles and page labels read from both documents. Two facts are reported
 `unsupported` **by construction** and never claimed: `annotations` (the reference's page
 annotations do not include the engine's pending annotation storage, so a count could not
 tell a dropped annotation from one this run is writing) and `signatures` (validity needs
@@ -2610,6 +2756,11 @@ shows.
   not edit per-element `/Lang`, and the annotation fix leaves a parent tree that is not a
   flat `Nums` array alone.
 - **The redaction audit** cannot see inside deflated or object streams and says so.
+- **Redaction and forms.** An annotation or field goes whole when its `/Rect` meets a mark
+  (a full-page overlay annotation that crosses a mark goes with it); the sweep reads `/Rect`,
+  not `/QuadPoints` or the drawn appearance. A hybrid form's XFA is dropped whole (not edited)
+  when a widget goes, because its datasets hold the removed value and an XFA reader redraws the
+  field from them; a dynamic XFA form has no widgets to remove and is left as it is.
 - **Text editing** handles horizontal text in a shipped face only; everything else is
   marked not editable or substituted, in the UI, before the user types.
 - **Find and replace** skips matches in text that is not editable and table cells with no

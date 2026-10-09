@@ -13,6 +13,10 @@ export const enginesPart = {
   'op.note.security.encryptionApplied': 'AES-256 şifreleme uygulandı.',
   'op.note.security.opensWithoutPassword':
     'Belge parolasız açılıyor; izinler yalnızca sahip parolasıyla sınırlanır.',
+  'op.note.security.signatureInvalidated':
+    'Belgede dijital imza var. Şifreleme dosyayı yeniden yazdığı için imza artık geçerli olmayacak.',
+  'op.note.security.signatureInvalidatedUnlock':
+    'Belgede dijital imza var. Parolayı kaldırmak dosyayı yeniden yazdığı için imza artık geçerli olmayacak.',
   'op.note.security.verified': 'Çıktı yeniden açılıp şifreleme doğrulandı.',
   'op.note.security.protectionRemoved': 'Parola kaldırıldı; çıktı korumasız.',
   'op.note.security.alreadyUnprotected': 'Belge zaten şifresiz; dosya değiştirilmedi.',
@@ -26,6 +30,11 @@ export const enginesPart = {
   'op.note.redact.metadataCleared': 'Üst veri temizlendi.',
   'op.note.redact.producerKept': 'Üretici satırı korundu.',
   'op.note.redact.attachmentsRemoved': '{count} ek kaldırıldı.',
+  'op.note.redact.fieldsRemoved': 'İşaretli alanların altındaki {count} form alanı kaldırıldı.',
+  'op.note.redact.xfaDropped':
+    'XFA form tanımı ve verisi atıldı: kaldırılan alanların değerlerini hâlâ taşıyorlardı. Kalan AcroForm alanları değerlerini korur.',
+  'op.note.redact.annotationsRemoved':
+    'İşaretli alanların altındaki {count} açıklama (yorum, işaretleme) kaldırıldı.',
 
   'op.progress.encrypt': 'Belge şifreleniyor',
   'op.progress.decrypt': 'Parola kaldırılıyor',

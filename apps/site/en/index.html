@@ -427,7 +427,7 @@
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Permanent Vector Redaction & Sanitizing</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· NOT a superficial black-box overlay</li>
-              <li>· Removes text operators and glyphs from the PDF stream; the output is re-checked glyph by glyph</li>
+              <li>· Removes text operators and glyphs from the PDF stream, and the form fields, comments and links under a mark with them; the output is re-checked glyph by glyph</li>
               <li>· An object-level audit report: remaining terms, earlier revisions and leftover structure</li>
               <li>· Sanitize: scripts, attachments, metadata, private application data, thumbnails and hidden layers; the result is re-read and verified</li>
             </ul>
@@ -459,7 +459,7 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Encryption & Passwords</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· AES-256 password encryption with permission settings; the output is re-opened and verified</li>
+              <li>· AES-256 password encryption with permission settings; the output is re-opened and verified; a digital signature does not survive encryption</li>
               <li>· A password-protected file asks for its password and opens read-only; the password is kept in memory only</li>
               <li>· Remove the protection of a document whose password you know; “Create unlocked copy” opens an editable copy in a new tab</li>
               <li>· Password-protected documents leave no draft, source copy or file reference on the device (sensitive session)</li>
@@ -950,7 +950,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Yes. Marked text is not covered with a black box; it is removed from the PDF content, the file is rewritten and the output is re-checked glyph by glyph. The audit report lists any remaining terms, earlier revisions and leftover structure. Sanitize removes what the pages do not show (scripts, attachments, metadata, hidden layers) and verifies the result by reading it back; a digital signature does not survive it. A limit: the audit scans raw bytes, so it cannot see inside compressed streams, and the report says so.
+              Yes. Marked text is not covered with a black box; it is removed from the PDF content, together with any form field, comment or link under the marked area, the file is rewritten and the output is re-checked glyph by glyph. The audit report lists any remaining terms, earlier revisions and leftover structure. Sanitize removes what the pages do not show (scripts, attachments, metadata, hidden layers) and verifies the result by reading it back; a digital signature does not survive it. A limit: the audit scans raw bytes, so it cannot see inside compressed streams, and the report says so.
             </div>
           </details>
 
