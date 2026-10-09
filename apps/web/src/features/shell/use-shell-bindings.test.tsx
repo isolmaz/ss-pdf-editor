@@ -4,7 +4,7 @@
 import { renderHook } from '@testing-library/react';
 import { SessionStore } from 'pdf-model';
 import type { ViewerApi } from 'pdf-ui/viewer';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ShellShortcuts } from '../../useShortcuts';
 import { coreStore, initialCoreState, selectTool } from '../core/core-store';
 import { exportStore, initialExportState } from '../export/export-store';
@@ -54,6 +54,8 @@ beforeEach(() => {
   };
 });
 
+afterEach(() => document.body.replaceChildren());
+
 describe('shell bindings', () => {
   it('hands the file, history and mark actions to the matching key', () => {
     const shortcuts = mount();
@@ -102,6 +104,29 @@ describe('shell bindings', () => {
     shortcuts.previousPage();
     shortcuts.firstPage();
     expect(viewer.goToPage.mock.calls).toEqual([[4], [2], [0]]);
+  });
+
+  it('declines the page keys for as long as a presentation is on, and answers them again after', () => {
+    viewerChanged(viewer as unknown as ViewerApi);
+    const container = document.createElement('div');
+    const strip = document.createElement('div');
+    strip.className = 'pdfViewer';
+    strip.setAttribute('data-active-viewer', '');
+    container.append(strip);
+    document.body.append(container);
+    container.classList.add('pdfPresentationMode');
+    session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'a', pageCount: 5 });
+    const shortcuts = mount();
+    expect([
+      shortcuts.nextPage(),
+      shortcuts.previousPage(),
+      shortcuts.firstPage(),
+      shortcuts.lastPage(),
+    ]).toEqual([false, false, false, false]);
+    expect(viewer.goToPage).not.toHaveBeenCalled();
+    container.classList.remove('pdfPresentationMode');
+    expect(shortcuts.lastPage()).toBeUndefined();
+    expect(viewer.goToPage.mock.calls).toEqual([[4]]);
   });
 
   it('goes to the last page of the active document, or the first with none', () => {

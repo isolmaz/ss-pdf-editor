@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
-import { findViewerDom, pageIndexAtTop } from './viewer-dom';
+import { findViewerContainer, findViewerDom, pageIndexAtTop } from './viewer-dom';
 import './tools.css';
 
 /**
@@ -39,7 +39,10 @@ const PRESENTATION_CLASS = 'pdfPresentationMode';
 
 type MoveKind = 'next' | 'previous' | 'first' | 'last';
 
-/** Page keys, resolved before the shell's own bindings get a chance (`apps/web/src/useShortcuts.ts`). */
+/**
+ * Page keys, which a presentation owns while it is on: the shell's own page bindings
+ * (`apps/web/src/useShortcuts.ts`) decline them, asking `isPresenting`.
+ */
 const PAGE_KEYS: Readonly<Record<string, MoveKind>> = {
   ArrowRight: 'next',
   ' ': 'next',
@@ -91,6 +94,16 @@ function isWidthFit(
   if (canvas === undefined || canvas === null) return false;
   const width = canvas.getBoundingClientRect().width;
   return width > 0 && Math.abs(width - container.clientWidth) <= 2;
+}
+
+/**
+ * Whether the live viewer is presenting. Read from the layout class `enter` puts on the
+ * viewer's container and `release` takes off, so it cannot disagree with what the reader
+ * sees — and it needs no state the caller would have to subscribe to. For the layers that
+ * must leave the page keys to a presentation (the shell's key bindings).
+ */
+export function isPresenting(viewer: ViewerApi | null): boolean {
+  return findViewerContainer(viewer)?.classList.contains(PRESENTATION_CLASS) ?? false;
 }
 
 export function usePresentation(viewer: ViewerApi | null, options: PresentationOptions = {}): Presentation {
@@ -206,8 +219,10 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
       const kind = PAGE_KEYS[event.key];
       if (kind === undefined || isEditing(event.target)) return;
       event.preventDefault();
-      // Capture phase, before the bubble-phase handlers the shell registers on
-      // `window`: one key press must move exactly one page.
+      // Keeps pdf.js's own bubble-phase handlers off the key. It does not keep the shell's
+      // `window` capture listener off it — that is a listener on the same target, and
+      // whichever registered first runs first — so one key press moves exactly one page
+      // because the shell's page bindings stand down while `isPresenting`.
       event.stopPropagation();
       move(kind);
     };

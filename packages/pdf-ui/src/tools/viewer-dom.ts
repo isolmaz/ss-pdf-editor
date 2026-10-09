@@ -52,11 +52,25 @@ export interface PageImage {
   readonly rect: DOMRect;
 }
 
-/** The live viewer, or `null` when there is no document / no viewer on screen. */
-export function findViewerDom(viewer: ViewerApi | null): ViewerDom | null {
+/** The `.pdfViewer` element of the live viewer, or `null` when there is no document / no viewer on screen. */
+function liveViewerElement(viewer: ViewerApi | null): HTMLElement | null {
   if (viewer === null) return null;
   const element = document.querySelector('.pdfViewer[data-active-viewer]');
-  if (!(element instanceof HTMLElement)) return null;
+  return element instanceof HTMLElement ? element : null;
+}
+
+/**
+ * The live viewer's scroll container alone — `findViewerDom` without the page list, for the
+ * caller that only needs the container (a per-key-press check must not walk every page).
+ */
+export function findViewerContainer(viewer: ViewerApi | null): HTMLElement | null {
+  return liveViewerElement(viewer)?.parentElement ?? null;
+}
+
+/** The live viewer, or `null` when there is no document / no viewer on screen. */
+export function findViewerDom(viewer: ViewerApi | null): ViewerDom | null {
+  const element = liveViewerElement(viewer);
+  if (element === null) return null;
   const container = element.parentElement;
   if (container === null) return null;
   const pages: ViewerPage[] = [];

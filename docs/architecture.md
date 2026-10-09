@@ -2257,7 +2257,11 @@ the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.
 dispatches keyboard actions, keeping the displayed bindings and their behavior together. The page keys (`PageUp`, `PageDown`,
 `Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
 tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
-list), which owns them.
+list), which owns them. They stand aside for a full-screen presentation too: its own key
+handler and the shell's are capture-phase listeners on the same `window`, so `stopPropagation`
+does not order them, and with both answering one key press turned two pages. The shell's page
+actions (`use-shell-bindings.ts`) therefore decline while `isPresenting` (the layout class
+`usePresentation` puts on the viewer's container) is true, and the key is the presentation's alone.
 
 `useOperationRun()` owns the run state machine
 (`idle → running → done | error | cancelled`), the `AbortController`, and the mapping from

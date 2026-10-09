@@ -33,4 +33,4 @@ export {
   ToolProperties,
   type ToolPropertiesProps,
 } from './ToolProperties';
-export { usePresentation } from './usePresentation';
+export { isPresenting, usePresentation } from './usePresentation';

@@ -5,6 +5,7 @@
  */
 
 import { type SessionStore, workingPageCount } from 'pdf-model';
+import { isPresenting } from 'pdf-ui/tools';
 import { useMemo } from 'react';
 import { useShellShortcuts } from '../../useShortcuts';
 import { toggleLeftDock, toggleRightDock } from '../core/core-store';
@@ -14,6 +15,22 @@ import { toggleReading } from '../reading/reading-store';
 import { currentViewer, saveStore } from '../save/save-store';
 import type { ShellActions } from './shell-actions';
 import { summonPalette } from './shell-store';
+
+/**
+ * A page key's action: the viewer goes to the page `target` names, read when the key is pressed.
+ *
+ * A presentation turns the page keys itself, and both listeners sit on `window`'s capture phase,
+ * where the first to register runs first whatever `stopPropagation` says — so the shell would turn
+ * a page and the presentation, finding the viewer on the new page, one more. The shell therefore
+ * declines while one is on (`false`: the key is neither cancelled nor stopped), and a key press
+ * turns exactly one page whichever listener is reached first.
+ */
+function turnPage(target: () => number): false | undefined {
+  const viewer = currentViewer();
+  if (isPresenting(viewer)) return false;
+  viewer?.goToPage(target());
+  return undefined;
+}
 
 export interface ShellBindingHost {
   readonly session: SessionStore;
@@ -44,13 +61,14 @@ export function useShellBindings({ session, actions }: ShellBindingHost): void {
         zoomOut: () => currentViewer()?.setZoom(Math.max(0.25, saveStore.get().zoom - 0.25)),
         zoomReset: () => currentViewer()?.setZoom(1),
         fitWidth: () => currentViewer()?.setZoom('page-width'),
-        nextPage: () => currentViewer()?.goToPage(saveStore.get().currentPage + 1),
-        previousPage: () => currentViewer()?.goToPage(saveStore.get().currentPage - 1),
-        firstPage: () => currentViewer()?.goToPage(0),
-        lastPage: () => {
-          const tab = session.active;
-          currentViewer()?.goToPage(Math.max(0, (tab === null ? 0 : workingPageCount(tab)) - 1));
-        },
+        nextPage: () => turnPage(() => saveStore.get().currentPage + 1),
+        previousPage: () => turnPage(() => saveStore.get().currentPage - 1),
+        firstPage: () => turnPage(() => 0),
+        lastPage: () =>
+          turnPage(() => {
+            const tab = session.active;
+            return Math.max(0, (tab === null ? 0 : workingPageCount(tab)) - 1);
+          }),
         undo: () => stepHistoryNow('undo'),
         redo: () => stepHistoryNow('redo'),
         palette: summonPalette,
