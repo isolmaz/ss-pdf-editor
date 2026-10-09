@@ -2377,7 +2377,12 @@ Ordering rules encoded here, each of which was a defect once:
   rejected. The in-place path keeps the original/last-written protection.
 - **Pending redaction marks refuse the save.** They are intents the user staged; the
   alternative is a Save that marks the tab clean while the delivered file still contains
-  the content the user asked to remove.
+  the content the user asked to remove. The same marks refuse every dialog whose result
+  leaves the tab — a download (Word, text, split, protect) or a new tab (PDF/A, extract) —
+  and every dialog that moves pages under them (`heldByPendingRedactions`,
+  `apps/web/src/save-plan.ts`). Print and Snapshot are refused too: they render the engine
+  document, which carries no session marks, and the print dialog's imposed file opens as a
+  new tab.
 - **A handle is attached only after the write succeeded**, so the next Save cannot write in
   place over a file this one never managed to commit.
 - **`addOutput` records the version the preparation produced**, not the one captured before
