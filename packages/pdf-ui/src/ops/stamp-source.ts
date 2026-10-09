@@ -85,23 +85,30 @@ export function loadHandwritingFonts(): Promise<void> {
   return fontsLoading;
 }
 
+/** One byte of a buffer the caller keeps inside: indexed access on a typed array reads `number | undefined`. */
+function sample(bytes: ArrayLike<number>, index: number): number {
+  return bytes[index] as number;
+}
+
 /** The box around every pixel whose alpha is above `threshold`, or `null` for an empty canvas. */
 function inkBounds(
   data: ImageData,
   threshold = 8,
 ): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null {
-  let minX = data.width;
+  const { data: pixels, width } = data;
+  let minX = width;
   let minY = data.height;
   let maxX = -1;
   let maxY = -1;
-  for (let y = 0; y < data.height; y += 1) {
-    for (let x = 0; x < data.width; x += 1) {
-      if ((data.data[(y * data.width + x) * 4 + 3] ?? 0) > threshold) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
+  for (let index = 3; index < pixels.length; index += 4) {
+    if (sample(pixels, index) > threshold) {
+      const pixel = (index - 3) / 4;
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     }
   }
   return maxX < 0 ? null : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
@@ -176,12 +183,12 @@ export async function inkFromPhoto(
     const data = pixels.data;
     for (let index = 0; index < data.length; index += 4) {
       const luminance =
-        0.2126 * (data[index] ?? 0) + 0.7152 * (data[index + 1] ?? 0) + 0.0722 * (data[index + 2] ?? 0);
+        0.2126 * sample(data, index) + 0.7152 * sample(data, index + 1) + 0.0722 * sample(data, index + 2);
       const alpha = luminance >= cut ? 0 : Math.round(255 * Math.min(1, ((cut - luminance) / cut) ** 0.6));
       data[index] = red;
       data[index + 1] = green;
       data[index + 2] = blue;
-      data[index + 3] = Math.round((alpha * (data[index + 3] ?? 255)) / 255);
+      data[index + 3] = Math.round((alpha * sample(data, index + 3)) / 255);
     }
     context.putImageData(pixels, 0, 0);
     return await trimmedPng(canvas, role);
@@ -193,7 +200,7 @@ export async function inkFromPhoto(
 /** Whether a decoded picture has any pixel that is not fully opaque. */
 function hasTransparency(context: CanvasRenderingContext2D, width: number, height: number): boolean {
   const data = context.getImageData(0, 0, width, height).data;
-  for (let index = 3; index < data.length; index += 4) if ((data[index] ?? 255) < 255) return true;
+  for (let index = 3; index < data.length; index += 4) if (sample(data, index) < 255) return true;
   return false;
 }
 
@@ -259,7 +266,7 @@ export async function jpegIsTurned(file: Blob): Promise<boolean> {
   let offset = 2;
   while (offset + 4 <= bytes.length) {
     if (bytes[offset] !== 0xff) return false;
-    const marker = bytes[offset + 1] ?? 0;
+    const marker = sample(bytes, offset + 1);
     const length = view.getUint16(offset + 2);
     if (marker === 0xe1 && offset + 8 <= bytes.length && view.getUint32(offset + 4) === 0x45786966) {
       try {

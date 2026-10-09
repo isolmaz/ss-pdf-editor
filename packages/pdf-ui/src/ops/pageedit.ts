@@ -51,6 +51,11 @@ function pickedFiles(value: FieldValue | undefined): readonly File[] {
   return Array.isArray(value) ? (value as readonly File[]) : [];
 }
 
+/** The first of a list that is known not to be empty: `readInsertSource` refuses an empty pick. */
+function firstOf<T>(items: readonly T[]): T {
+  return items[0] as T;
+}
+
 /** The picked images as the byte-shaped records `imagesToPdf` consumes. */
 async function pickedImages(
   value: FieldValue | undefined,
@@ -178,10 +183,10 @@ async function buildReplacements(
   });
   const name =
     source.kind === 'document'
-      ? (pickedFiles(params.document)[0]?.name ?? 'source document')
+      ? firstOf(pickedFiles(params.document)).name
       : source.kind === 'blank'
         ? 'blank replacement pages'
-        : (source.files[0]?.name ?? 'replacement images');
+        : firstOf(source.files).name;
   const indices =
     source.kind === 'document'
       ? source.pages

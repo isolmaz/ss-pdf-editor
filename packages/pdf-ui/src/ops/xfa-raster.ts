@@ -89,8 +89,8 @@ function frozenClone(layer: HTMLElement): HTMLElement {
   const live = layer.querySelectorAll<HTMLElement>('input, textarea, select');
   const copy = clone.querySelectorAll<HTMLElement>('input, textarea, select');
   live.forEach((element, index) => {
-    const target = copy[index];
-    if (target === undefined) return;
+    // The clone is a structural copy, so it has a control at every index of the original.
+    const target = copy[index] as HTMLElement;
     if (element instanceof HTMLInputElement) {
       if (element.type === 'checkbox' || element.type === 'radio') {
         target.toggleAttribute('checked', element.checked);
@@ -99,9 +99,12 @@ function frozenClone(layer: HTMLElement): HTMLElement {
       }
     } else if (element instanceof HTMLTextAreaElement) {
       target.textContent = element.value;
-    } else if (element instanceof HTMLSelectElement) {
-      Array.from(element.options).forEach((option, at) => {
-        (target as HTMLSelectElement).options[at]?.toggleAttribute('selected', option.selected);
+    } else {
+      // The query names inputs, text areas and selects only.
+      const select = element as HTMLSelectElement;
+      const copied = (target as HTMLSelectElement).options;
+      Array.from(select.options).forEach((option, at) => {
+        (copied[at] as HTMLOptionElement).toggleAttribute('selected', option.selected);
       });
     }
     // The outline `:required` draws on a field is interaction chrome, not form content.
@@ -138,10 +141,10 @@ function measureWords(layer: HTMLElement, host: HTMLElement): XfaRasterWord[] {
   const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
   const range = document.createRange();
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    const text = node.nodeValue ?? '';
+    const text = (node as Text).data;
     for (const match of text.matchAll(/\S+/g)) {
-      range.setStart(node, match.index ?? 0);
-      range.setEnd(node, (match.index ?? 0) + match[0].length);
+      range.setStart(node, match.index);
+      range.setEnd(node, match.index + match[0].length);
       for (const rect of Array.from(range.getClientRects())) push(match[0], rect);
     }
   }

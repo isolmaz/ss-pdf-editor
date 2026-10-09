@@ -317,9 +317,11 @@ export function MeasureLayer({
 
   /** The preview chain: the clicked points plus the pointer, so the value moves with it. */
   const preview = useMemo(() => {
-    if (chain === null || mode === null) return null;
-    const points = cursor === null ? chain.points : [...chain.points, cursor];
-    if (points.length < MIN_CHAIN_POINTS) return null;
+    // A chain and the pointer are always set together (a press sets both, Escape, Enter and a
+    // disarmed tool clear both, Backspace keeps the pointer), so with a chain the points are
+    // never fewer than two: the clicked one and the pointer.
+    if (chain === null || mode === null || cursor === null) return null;
+    const points = [...chain.points, cursor];
     const frame = frameOf(chain.pageIndex);
     if (frame === null) return null;
     try {
@@ -404,7 +406,8 @@ export function MeasureLayer({
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || mode === null) return;
+      // Mounted only while a tool is armed, so there is always a mode here.
+      if (event.button !== 0) return;
       const point = viewer.pointToPage(event.clientX, event.clientY);
       if (point === null) return;
       const frame = frameOf(point.pageIndex);
@@ -420,19 +423,18 @@ export function MeasureLayer({
       );
       setCursor(snapped);
     },
-    [chain, frameOf, mode, resolve, viewer],
+    [chain, frameOf, resolve, viewer],
   );
 
   const onPointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (mode === null) return;
       const point = viewer.pointToPage(event.clientX, event.clientY);
       if (point === null) return;
       const frame = frameOf(point.pageIndex);
       if (frame === null) return;
       setCursor(resolve(frame, { x: point.x, y: point.y }));
     },
-    [frameOf, mode, resolve, viewer],
+    [frameOf, resolve, viewer],
   );
 
   const armed = mode !== null;
@@ -486,6 +488,8 @@ function MarkShape({
 }) {
   if (frame === null) return null;
   const screen = mark.points.map((point) => toScreen(frame, point));
+  // `measureMarkQuiet` throws for fewer than two points, so a mark that is drawn has a last one.
+  const end = screen[screen.length - 1] as { readonly x: number; readonly y: number };
   const value = formatMeasurement(
     // The readout on the page is the mark's own; the geometry is recomputed from
     // the same points the writer will use, so a page made dirty by another edit
@@ -529,7 +533,7 @@ function MarkShape({
       </svg>
       <span
         className="pdf-floating-shadow pointer-events-none absolute whitespace-nowrap rounded-sm bg-kumo-base px-1 text-[10px] text-kumo-default"
-        style={{ left: screen.at(-1)?.x ?? 0, top: (screen.at(-1)?.y ?? 0) - 14 }}
+        style={{ left: end.x, top: end.y - 14 }}
       >
         {value}
       </span>
@@ -537,7 +541,10 @@ function MarkShape({
   );
 }
 
-/** `measureMark` that returns `null` instead of throwing: a display path never throws. */
+/**
+ * `measureMark`, falling back to the chain's length when the mode refuses the points (a distance
+ * is exactly two): a display path draws what it holds instead of failing the render.
+ */
 function measureMarkQuiet(geometry: MeasurePageGeometry, mark: MeasureMark) {
   try {
     return measureMark(geometry, mark.points, mark.mode);
@@ -573,8 +580,9 @@ function ChainShape({
         strokeDasharray="4 3"
         strokeLinecap="round"
       />
-      {screen.map((point) => (
-        <circle key={`${point.x}-${point.y}`} cx={point.x} cy={point.y} r={2.5} fill={mark.color} />
+      {screen.map((point, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a chain point is identified by its place in the chain; two points can share coordinates (the last click and the pointer)
+        <circle key={index} cx={point.x} cy={point.y} r={2.5} fill={mark.color} />
       ))}
     </svg>
   );

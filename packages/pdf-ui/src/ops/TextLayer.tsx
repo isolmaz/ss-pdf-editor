@@ -23,9 +23,9 @@ import type { OperationContext } from 'pdf-core';
 import { readPageText } from 'pdf-core/text-source';
 import type { Translator } from 'pdf-shared';
 import { toToolError } from 'pdf-shared';
-import type { FontCatalog, FontMetrics, TextBlock, TextPage } from 'pdf-text-engine';
+import type { BlockEditability, FontCatalog, FontMetrics, TextBlock, TextPage } from 'pdf-text-engine';
 import { buildTextPage, measureEditability } from 'pdf-text-engine';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
 
 /** The fonts the edit path embeds; loaded once per layer mount. */
@@ -98,15 +98,13 @@ function reasonKeyFor(reason: string): string {
 }
 
 export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: TextLayerProps) {
-  const layerRef = useRef<HTMLDivElement | null>(null);
   const [painted, setPainted] = useState<readonly PaintedBlock[]>([]);
   /** The model's page size, the space `PaintedBlock.rect` is measured in. */
   const [modelSize, setModelSize] = useState<{ readonly width: number; readonly height: number } | null>(
     null,
   );
   const [loading, setLoading] = useState(true);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [failureDetail, setFailureDetail] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ readonly code: string; readonly detail: string } | null>(null);
 
   /**
    * Reading the page is async and the viewer keeps painting underneath it, so the
@@ -126,13 +124,13 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
         if (cancelled) return;
         const model = buildTextPage(source);
         const report = measureEditability(model);
-        const rows: PaintedBlock[] = [];
-        for (const block of model.blocks) {
-          const info = report.blocks.find((entry) => entry.blockId === block.id);
-          const editable = (info?.verdict ?? 'not-editable') !== 'not-editable';
-          const substitutionRequired = info?.substitutionRequired ?? true;
-          const reasonKey = reasonKeyFor(info?.reason ?? 'no-glyphs');
-          rows.push({
+        // One verdict per block, in the block order (`measureEditability` maps the blocks).
+        const rows = model.blocks.map((block, index): PaintedBlock => {
+          const info = report.blocks[index] as BlockEditability;
+          const editable = info.verdict !== 'not-editable';
+          const substitutionRequired = info.substitutionRequired;
+          const reasonKey = reasonKeyFor(info.reason);
+          return {
             id: block.id,
             rect: [block.rect[0], block.rect[1], block.rect[2], block.rect[3]],
             text: block.text,
@@ -148,8 +146,8 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
               substitutionRequired,
               reasonKey,
             },
-          });
-        }
+          };
+        });
         setPainted(rows);
         setModelSize({ width: model.width, height: model.height });
         setFailure(null);
@@ -163,8 +161,7 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
         // engine's own message goes to the diagnostic attribute, never to the UI
         // (raw engine text is diagnostics, the dictionary is the text).
         const toolError = toToolError(error);
-        setFailure(toolError.code);
-        setFailureDetail(toolError.details.engineMessage ?? String(error));
+        setFailure({ code: toolError.code, detail: toolError.message });
       }
     })();
     return () => {
@@ -216,12 +213,7 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
   };
 
   return (
-    <div
-      ref={layerRef}
-      data-text-layer="true"
-      className="pointer-events-none absolute inset-0 z-10"
-      aria-busy={loading}
-    >
+    <div data-text-layer="true" className="pointer-events-none absolute inset-0 z-10" aria-busy={loading}>
       {painted.map((entry) => {
         const box = place(entry.rect);
         if (box === null) return null;
@@ -257,9 +249,9 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
       })}
       {failure === null ? null : (
         <p
-          data-text-layer-error={failure}
-          data-text-layer-reason={failureDetail ?? ''}
-          title={failureDetail ?? undefined}
+          data-text-layer-error={failure.code}
+          data-text-layer-reason={failure.detail}
+          title={failure.detail}
           className="pointer-events-auto absolute bottom-2 start-2 max-w-[60ch] rounded-sm border border-kumo-line bg-kumo-base px-2 py-1 text-xs text-kumo-default"
         >
           {t('textedit.readFailed')}

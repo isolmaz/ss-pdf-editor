@@ -451,7 +451,7 @@ function rectsIntersect(a: MarkRect, b: MarkRect): boolean {
 function pathPoints(path: readonly number[]): readonly MarkPoint[] {
   const points: MarkPoint[] = [];
   for (let index = 0; index + 1 < path.length; index += 2) {
-    points.push({ x: path[index] ?? 0, y: path[index + 1] ?? 0 });
+    points.push({ x: path[index] as number, y: path[index + 1] as number });
   }
   return points;
 }

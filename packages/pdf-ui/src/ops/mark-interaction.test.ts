@@ -1,5 +1,6 @@
 import type { MeasureRotation } from 'pdf-core/ops/measure';
 import { describe, expect, it, vi } from 'vitest';
+import type { ViewerApi } from '../viewer/PdfViewerPane';
 import {
   clickSuppression,
   hitTargets,
@@ -7,6 +8,7 @@ import {
   type MarkRect,
   type MarkTarget,
   markPageFrame,
+  markPageFrameOf,
   markTargetKey,
   marqueeTargets,
   targetBounds,
@@ -352,5 +354,44 @@ describe('clickSuppression', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('markPageFrameOf', () => {
+  const viewerWith = (parts: {
+    readonly geometry: ReturnType<ViewerApi['pageGeometry']>;
+    readonly page: ReturnType<ViewerApi['pageRect']>;
+  }): ViewerApi =>
+    ({
+      pageGeometry: () => parts.geometry,
+      pageRect: () => parts.page,
+      containerRect: () => ({ x: 40, y: 80, width: 1200, height: 900 }),
+    }) as unknown as ViewerApi;
+
+  const cropped = { x: 20, y: 30, width: 600, height: 800, rotation: 0 } as const;
+  const element = { x: 100, y: 50, width: 300, height: 400 };
+
+  it('places a cropped page from the viewer’s geometry, its top edge being y + height', () => {
+    const frame = markPageFrameOf(viewerWith({ geometry: cropped, page: element }), 0);
+    expect(frame?.toScreenBox([20, 0, 170, 200])).toEqual({ left: 60, top: -30, width: 75, height: 100 });
+  });
+
+  it('has no frame for a page the viewer has no geometry for', () => {
+    expect(markPageFrameOf(viewerWith({ geometry: null, page: element }), 0)).toBeNull();
+  });
+
+  it('has no frame for a page the viewer has not put on screen', () => {
+    expect(markPageFrameOf(viewerWith({ geometry: cropped, page: null }), 0)).toBeNull();
+  });
+});
+
+describe('a stroke collinear with a marquee edge', () => {
+  it('reaches the marquee only by its own half stroke across the gap', () => {
+    // The stroke lies on y = 0, the marquee's bottom edge, but ends 10 pt before it starts.
+    const marquee = [20, 0, 50, 50] as const;
+    const ink = (strokeWidth: number) => target({ boxes: [], paths: [[0, 0, 10, 0]], strokeWidth });
+    expect(targetMarqueeHit(ink(0), marquee)).toBe(false);
+    expect(targetMarqueeHit(ink(19), marquee)).toBe(false);
+    expect(targetMarqueeHit(ink(20), marquee)).toBe(true);
   });
 });

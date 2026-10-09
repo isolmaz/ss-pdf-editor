@@ -43,7 +43,6 @@ interface DragState {
 }
 
 export function RedactionLayer({ t, viewer, onMark, onDone }: RedactionLayerProps) {
-  const layerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [preview, setPreview] = useState<{
     readonly left: number;
@@ -52,47 +51,38 @@ export function RedactionLayer({ t, viewer, onMark, onDone }: RedactionLayerProp
     readonly height: number;
   } | null>(null);
 
-  const boundsOf = useCallback((): DOMRect | null => layerRef.current?.getBoundingClientRect() ?? null, []);
+  const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      currentX: event.clientX,
+      currentY: event.clientY,
+    };
+    setPreview({
+      left: event.clientX - bounds.left,
+      top: event.clientY - bounds.top,
+      width: 0,
+      height: 0,
+    });
+  }, []);
 
-  const onPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
-      const bounds = boundsOf();
-      if (bounds === null) return;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        currentX: event.clientX,
-        currentY: event.clientY,
-      };
-      setPreview({
-        left: event.clientX - bounds.left,
-        top: event.clientY - bounds.top,
-        width: 0,
-        height: 0,
-      });
-    },
-    [boundsOf],
-  );
-
-  const onPointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const drag = dragRef.current;
-      const bounds = boundsOf();
-      if (drag === null || bounds === null) return;
-      drag.currentX = event.clientX;
-      drag.currentY = event.clientY;
-      setPreview({
-        left: Math.min(drag.startX, drag.currentX) - bounds.left,
-        top: Math.min(drag.startY, drag.currentY) - bounds.top,
-        width: Math.abs(drag.currentX - drag.startX),
-        height: Math.abs(drag.currentY - drag.startY),
-      });
-    },
-    [boundsOf],
-  );
+  const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (drag === null) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    drag.currentX = event.clientX;
+    drag.currentY = event.clientY;
+    setPreview({
+      left: Math.min(drag.startX, drag.currentX) - bounds.left,
+      top: Math.min(drag.startY, drag.currentY) - bounds.top,
+      width: Math.abs(drag.currentX - drag.startX),
+      height: Math.abs(drag.currentY - drag.startY),
+    });
+  }, []);
 
   const finish = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -132,7 +122,6 @@ export function RedactionLayer({ t, viewer, onMark, onDone }: RedactionLayerProp
 
   return (
     <div
-      ref={layerRef}
       // The layer covers the laid-out pages but only intercepts the pointer while the
       // tool is armed — the parent renders it conditionally, so reaching here always
       // means "drawing". The viewer's overlay host is inert (`pointer-events: none` is
