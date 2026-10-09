@@ -16,7 +16,7 @@ export interface SignaturesPanelProps {
   readonly t: Translator;
   /** 0-based page navigation, shared with the panel's other views. */
   readonly onGoToPage: (pageIndex: number) => void;
-  /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
+  /** The shell's notice line (`features/core/core-store.ts`) — receives already-translated text. */
   readonly onNotice?: (message: string) => void;
 }
 

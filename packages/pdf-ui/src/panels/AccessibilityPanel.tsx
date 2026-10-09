@@ -64,7 +64,7 @@ import { PdfUaView, type WrittenOutcome } from './PdfUaView';
 import { type AccessibilityView, readingOrderStore, useReadingOrder } from './reading-order-store';
 import { TagsView } from './TagsView';
 
-/** See the header: the seam that stands in for `parts/a11y.ts` until it is merged. */
+/** See the header: turns a key string into a `MessageKey`. */
 const key = (value: string): MessageKey => value as MessageKey;
 
 export interface AccessibilityPanelProps {

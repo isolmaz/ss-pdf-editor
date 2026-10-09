@@ -37,8 +37,7 @@ const FDF_HEADER = '%FDF-1.2';
  * whole as UTF-16BE behind the `\376\377` BOM, every byte an octal escape: a PDF string
  * has one encoding from its first byte to its last, and the BOM is what names it.
  * (Writing only the non-ASCII characters as UTF-16 units inside an otherwise
- * single-byte string, as this writer used to, read `gö` back as `g\0ö` — in every
- * reader, this one included.)
+ * single-byte string reads `gö` back as `g\0ö` — in every reader, this one included.)
  */
 function escapeFdfString(value: string): string {
   if (/[^\x20-\x7e\t\n\r]/.test(value)) {

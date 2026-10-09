@@ -1566,8 +1566,8 @@ export async function verifySignatures(
     /**
      * `signature-trust` carries pkijs and asn1js, and this module is on the **first paint**
      * (the shell asks for the document's verdicts as soon as a document opens). Loading it
-     * here keeps ~900 kB of ASN.1 machinery out of the entry chunk — measured: a static
-     * import put the entry at 302.66 KiB gzip against a locked ≤ 250 KiB budget.
+     * here keeps ~900 kB of ASN.1 machinery out of the entry chunk: a static import would
+     * put the first paint over its locked ≤ 250 KiB gzip budget.
      */
     const trust =
       contents === null

@@ -27,7 +27,7 @@ export interface SearchResultsPanelProps {
    * highlights every match the viewer has rendered.
    */
   readonly onHighlightQuery?: (query: string) => void;
-  /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
+  /** The shell's notice line (`features/core/core-store.ts`) — receives already-translated text. */
   readonly onNotice?: (message: string) => void;
 }
 

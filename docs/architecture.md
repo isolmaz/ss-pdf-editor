@@ -121,14 +121,14 @@ concrete consequences are recorded in the code:
 
 - `packages/pdf-ui/src/shell/ShellSurface.tsx` is the `./ui` entry and is **only a re-export
   barrel** — it is the deliberate first-paint import surface, not a component. There is
-  no `ShellSurface` component; the shell is `apps/web/src/App.tsx`.
+  no `ShellSurface` component; the shell is `apps/web/src/App.tsx`, the composition root, and
+  the layout components in `apps/web/src/features/shell/`.
 - `packages/pdf-core/src/ops/index.ts` re-exports only some of the operation modules; the
   others (sanitize, PDF/A, structure, XFA, scan, conversion and more) are imported by
   subpath, as `pdf-core/ops/<name>`, which `pdf-core`'s `./ops/*` export allows. The one
-  omission its code explains is `./sign`: routing signing through the barrel pulled `pkijs`
-  + `asn1js` into the entry chunk (measured: 302.66 KiB gzip against a locked ≤ 250 KiB
-  budget); the sign dialog imports `pdf-core/ops/sign` directly so the ASN.1 stack keeps
-  its own chunk.
+  omission its code explains is `./sign`: routing signing through the barrel would pull `pkijs`
+  + `asn1js` into the first paint, over its locked ≤ 250 KiB gzip budget; the sign dialog
+  imports `pdf-core/ops/sign` directly so the ASN.1 stack keeps its own chunk.
 
 Everything heavy is a dynamic `import()`: the pdf.js core, the viewer stack, the dialogs,
 the dock panels, the editor layout, the print surface and the palette are all loaded on demand, and
@@ -144,7 +144,9 @@ image list, form read and fill, composition and the session-annotation writer. O
 module that nothing else in the entry graph imports by value can be listed there; one that is
 also imported statically stays in the entry chunk. The comment data formats
 (`annotation-data`, `annotation-xfdf`), form-field detection, `unlockDocument` and the review
-writer are dynamic `import()`s at their call sites in `App.tsx`. `fieldValueText`, which the
+writer are dynamic `import()`s at their call sites in the feature modules
+(`features/annotations/annotation-data.ts`, `features/forms/form-actions.ts`,
+`features/dialogs/dialog-actions.ts`, `features/comments/review.ts`). `fieldValueText`, which the
 form panel needs on every render, lives in `ops/form-value.ts` so the form writer behind
 `lazy-ops.ts` stays out of the entry.
 
@@ -155,12 +157,13 @@ which nothing draws (the editor uses `regular`, `bold`, `fill` and `duotone`; Ku
 `bold` and `fill`). **Catalogues**: each interface language is a chunk of its own
 (`LocaleInfo.load`), because only one is ever shown, and `main.tsx` awaits the interface
 language's catalogue before the first render. `main.tsx` imports from `pdf-ui/ui`, not the
-`pdf-ui` barrel, which `App.tsx` loads lazily.
+`pdf-ui` barrel, which the editor's measure layer (`features/measure/MeasureOverlay.tsx`) loads
+lazily.
 
 **The editor is its own chunk.** The home screen is all the first paint needs, so what only an
 open document shows leaves the entry graph: `features/shell/editor.ts` re-exports `EditorSurface`
 (the document dock, the tool rail, the canvas with its mark layers, the right dock, the reading
-layers and the print host, moved out of `ShellBody`) and `ToolStrip`, and everything those import
+layers and the print host) and `ToolStrip`, and everything those import
 (the viewer, the panels, the operation forms, the Phosphor icons only they draw) goes with them.
 `features/shell/editor-store.ts` reaches the module through one dynamic `import()` and publishes
 it to a store. The shell never renders it through `React.lazy`, because a lazy boundary commits
@@ -2257,8 +2260,8 @@ picked, in the product's words rather than the browser's "Choose File".
 **One host.** `OperationForm` (`dialogs/OperationForm.tsx`) is the whole of an operation's
 surface — title, the two numbered steps (`DialogSteps`: settings, then review/result), the
 fields, progress with a working cancel, the destructive second confirmation, the error with
-its diagnostic, the report — and `App.tsx` shows it in the right dock's tools panel for
-**every** operation, so there is one runner with one destructive confirmation and one meaning
+its diagnostic, the report — and the right dock (`features/shell/RightDock.tsx`) shows it in
+its tools panel for **every** operation, so there is one runner with one destructive confirmation and one meaning
 of "Close". The first-step button reads *Preview* (`op.apply`) because it
 runs the operation and shows the report; only the result's own action
 (`RESULT_ACTIONS[resultKind]`: apply to the document / open in a new tab / download) changes
@@ -2271,8 +2274,8 @@ so a panel that did so right after handing over its result would abort every res
 it reached the document (`e2e/editor-stability.spec.ts` guards this).
 
 `packages/pdf-ui/src/ops/index.ts` registers **37** dialog ids against lazy `import()` loaders, so a
-capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
-opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
+capability's field tables and page-scope logic stay out of the first paint.
+`features/dialogs/dialog-actions.ts` opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
 
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
@@ -2495,7 +2498,7 @@ on the page on screen when nothing is selected.
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant A as App.tsx
+    participant A as features/save
     participant O as operations.ts
     participant C as pdf-core
     participant V as verifyForWrite
@@ -2956,14 +2959,14 @@ Versioning is the interesting half:
   styles `index.html` names, and the interface catalogues: each language is a run-time
   chunk the HTML never names, so `tools/assemble-dist.mjs` finds them by their source maps
   and lists them as `shell` in `offline-manifest.json` (the build fails if a registered
-  language has no chunk). Without them an offline reload painted raw message keys.
+  language has no chunk). Without them an offline reload would paint raw message keys.
 - Readiness is a **set-containment** test over the exact paths in
   `apps/web/src/offline-packages.json` — the single list, read by the app *and* by the
   build. A capability is ready only when every path it needs is cached, with the missing
   ones named; a substring check would report a half-downloaded language pack as ready.
   The shell asks only about the capabilities the preparation fetches
   (`incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }))`): `tesseract`
-  is cached on first use, and counting it made every finished preparation read as
+  is cached on first use, so counting it would make every finished preparation read as
   incomplete.
 - The editor's own code is a capability too, `app`: every file of the editor build (all of
   `dist/editor/` but the source maps and the start page, which `core` lists). Its names are

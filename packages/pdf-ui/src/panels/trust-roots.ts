@@ -3,9 +3,9 @@
  *
  * It lives beside the panel that offers the action, not in the shell: reading a certificate
  * needs `pkijs` (through `pdf-core/signature-pkcs12`), and the shell is the one place the
- * ASN.1 stack must not be (measured — the entry chunk went from 210.22 to 302.66 KiB gzip
- * against a locked ≤ 250 KiB budget). Everything here is therefore inside the dock-panels
- * chunk, which loads when the properties panel opens.
+ * ASN.1 stack must not be (it would put the first paint over its locked ≤ 250 KiB gzip
+ * budget). Everything here is therefore inside the dock-panels chunk, which loads when the
+ * properties panel opens.
  *
  * A `.pem`/`.crt` is base64 with headers; a `.der`/`.cer` is the DER itself. A file that
  * carries no certificate is refused by name — never added as an empty entry.

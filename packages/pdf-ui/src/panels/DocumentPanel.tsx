@@ -49,7 +49,7 @@ export interface DocumentPanelProps {
   /** Opens the extract-pages dialog; absent leaves that button disabled. */
   readonly onExtract?: () => void;
   /**
-   * The shell's notice line (`App.tsx` state) — receives already-translated text.
+   * The shell's notice line (`features/core/core-store.ts`) — receives already-translated text.
    * Optional: without it a failing view still carries its own message.
    */
   readonly onNotice?: (message: string) => void;

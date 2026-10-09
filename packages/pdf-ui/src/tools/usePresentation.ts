@@ -6,9 +6,9 @@ import './tools.css';
 /**
  * Presentation mode: the document alone, page by page.
  *
- * Full screen is the **browser's** state, not React state — `apps/web/src/App.tsx`
- * owns its full-screen toggle through `document.fullscreenElement` and has no
- * state field for it — so the hook requests full screen on the viewer's own scroll
+ * Full screen is the **browser's** state, not React state —
+ * `apps/web/src/features/shell/use-shell-commands.ts` (`toggleFullscreen`) owns its
+ * full-screen toggle through `document.fullscreenElement` and has no state field for it — so the hook requests full screen on the viewer's own scroll
  * container. That is what makes "no chrome" true without touching the shell: the
  * toolbar, tab strip, dock and status bar are outside that element. Leaving full
  * screen by any route (Escape, F11, another window taking over) is treated as

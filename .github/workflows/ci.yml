@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   # Everything that needs no browser: the steps of `pnpm ci:verify` (see package.json), split so a
-  # failure is easy to locate, plus the docs-sync check and a dry run of the deployment.
+  # failure is easy to locate, plus a dry run of the deployment.
   verify:
     name: verify
     runs-on: ubuntu-24.04

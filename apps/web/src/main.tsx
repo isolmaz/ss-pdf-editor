@@ -37,7 +37,7 @@ loadLocale(getStoredLocale()).then(render, render);
 //
 // The two surfaces the shell reaches through a dynamic boundary (`pdf-ui/printing`,
 // `pdf-ui/palette`) are warmed the same way and for the same reason: they are lazy so
-// the entry chunk stays inside the ≤250 KiB budget, and prefetching them
+// the first-paint JavaScript stays inside the ≤250 KiB budget, and prefetching them
 // on idle keeps the first `Ctrl+P` or `Ctrl+K` from being a visible wait.
 //
 // Not while offline: a chunk the cache does not hold fails then, and Chromium keeps a

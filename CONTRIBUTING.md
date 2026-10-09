@@ -30,7 +30,12 @@ pnpm check                   # Biome lint and format (also run by the pre-commit
 pnpm check:docs              # the file paths, pnpm scripts and commands the docs name must exist
 pnpm fetch:engines --sync     # once per fresh clone: the unit tests read the fetched fonts
 pnpm unit                    # Vitest, the non-vacuity guard and the source-level regressions
-pnpm build && pnpm assemble:dist
+pnpm audit:model-types       # strict typecheck of the model, shared and storage subset
+pnpm build
+pnpm check:budgets           # the first-paint JavaScript stays inside its gzip budget (after build)
+pnpm verify:assets
+pnpm check:licenses
+pnpm assemble:dist
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
 pnpm ci:behavior             # the behaviour checks in tools/behavior/ (needs openssl)
 ```

@@ -3,8 +3,9 @@
  * One page key, one page: the real key table, the real shell bindings and the real presentation
  * hook, all listening on the same `window`. Each is a capture-phase listener there, and
  * `stopPropagation` does not keep a listener on the same target from running — the first to
- * register runs first — so which of them turned the page used to depend on the order they
- * registered in, and with both answering, a key turned two pages.
+ * register runs first — so with both answering, which of them turns the page depends on the
+ * order they register in and a key turns two pages; only the presentation answers while it is
+ * open.
  */
 
 import { act, cleanup, renderHook } from '@testing-library/react';

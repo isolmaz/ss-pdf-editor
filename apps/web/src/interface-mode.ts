@@ -8,7 +8,8 @@
  * a preference into a bug report.
  *
  * The preference is global and persists in `localStorage` like the theme and the
- * language. The shell (`App.tsx`) owns it and hands it down as a prop.
+ * language. The shell keeps it in the core store (`features/core/core-store.ts`,
+ * `setInterfaceMode`).
  */
 
 import type { InterfaceMode } from './commands';

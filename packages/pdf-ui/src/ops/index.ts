@@ -8,8 +8,9 @@
  * so keeping them out of the entry graph is what holds the first-paint budget
  * (≤ 250 KiB gzip) while still shipping fifteen capabilities.
  *
- * The map is the single source of truth for "which dialogs exist": `App.tsx` asks
- * for one by id, and an unknown id is a no-op rather than an empty dialog.
+ * The map is the single source of truth for "which dialogs exist": the shell's dialog
+ * actions (`apps/web/src/features/dialogs/dialog-actions.ts`) ask for one by id, and an
+ * unknown id is a no-op rather than an empty dialog.
  */
 
 import type { OperationDialogSpec } from '../dialogs/types';

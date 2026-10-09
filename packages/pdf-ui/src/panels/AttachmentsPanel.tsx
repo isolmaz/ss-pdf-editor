@@ -24,7 +24,7 @@ import { PanelLoading, PanelMessage } from './PanelParts';
 export interface AttachmentsPanelProps {
   readonly document: PdfDocumentHandle;
   readonly t: Translator;
-  /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
+  /** The shell's notice line (`features/core/core-store.ts`) — receives already-translated text. */
   readonly onNotice?: (message: string) => void;
   /** Files to embed (`ops/attachments-write.ts`). The shell does the write; the panel has no bytes. */
   readonly onAdd: (files: readonly File[]) => void;

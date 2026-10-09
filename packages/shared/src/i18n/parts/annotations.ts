@@ -85,7 +85,7 @@ export const annotationsPart = {
   'ann.tool.shape.circle': 'Daire',
   'ann.tool.shape.line': 'Çizgi',
 
-  // The shared selection and removal notices (`useShortcuts.ts`, `App.tsx`).
+  // The shared selection and removal notices (`useShortcuts.ts`, `features/marks/remove-targets.ts`).
   'ann.selectAll': 'Tüm işaretleri seç',
   'ann.removed': '{count} işaret silindi.',
   // The transform's own report, and the journal's name for the edit: the shell

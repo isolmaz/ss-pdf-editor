@@ -33,7 +33,7 @@ export interface SnapshotMenuProps {
   readonly onClose: () => void;
   /** The interface language's translator: the panel's words follow the shell's locale. */
   readonly t: Translator;
-  /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
+  /** The shell's notice line (`features/core/core-store.ts`) — receives already-translated text. */
   readonly onNotice: (message: string) => void;
 }
 
