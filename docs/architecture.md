@@ -2331,6 +2331,7 @@ testable logic lives:
 | `features/core/` | The state every feature shares: notice line, busy gate, the armed canvas tool, docks and tabs, interface mode (`core-store.ts`), engine handles (`handles.ts`), the pending-overlay writer (`overlays.ts`), the markup tool set (`tools.ts`) and the compact-viewport watcher (`viewport.ts`) |
 | `features/reading/` | Reading mode, snapshot, magnifier and lens zoom, the document language, and the reading-order layer |
 | `features/facts/` | The facts read for the active document (protection, signatures, fonts, attachments) and its failure, the imported trust roots and revocation lists, the signature-warning prompt before a write, the redaction audit, and the properties panel host |
+| `features/attachments/` | The embedded files: the measured list the properties panel shows, and adding, removing, reading out and writing them (`createAttachmentActions`) |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
