@@ -54,7 +54,9 @@ and on manual dispatch:
   the traces of a failed shard are uploaded and kept for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker
   --no-deps`.
-- **`behavior`** (after `verify`) runs `pnpm ci:behavior`.
+- **`behavior`** (after `verify`) runs `pnpm ci:behavior`: the browser behaviour checks
+  (`tools/behavior/editor-flow-check.mjs`, `tools/behavior/text-edit-check.mjs`) and the
+  OpenSSL signing round trip (`tools/behavior/sign-check.mts`).
 - **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test (below),
   with a LibreOffice installed from the official `.deb` tarball pinned by version and sha256. It
   gates `deploy` like the jobs above (a `null` threshold is measured, not gated); the report goes
@@ -63,7 +65,7 @@ and on manual dispatch:
   with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
   `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
   runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.
-  Deploys run one at a time and a running one is never cancelled; a commit that is no longer
+  Deploys run one at a time and a running one is never cancelled; a commit that is not
   `main`'s head when its deploy starts deploys nothing, so a late older run cannot replace a
   newer build.
 
@@ -74,14 +76,20 @@ a flaky test fails the night.
 
 `.github/workflows/revert-proof.yml` runs on manual dispatch and on a pull request labelled
 `revert-proof`. For every fix on the list that `tools/review/revert-proof.mjs` reads, the fix's
-own test must fail on the fix commit's parent and pass on the fix commit.
+own test must fail on the fix commit's parent and pass on the fix commit. The manifest
+`tools/review/revert-proof.json` is an empty list until a pull request wants the proof: that
+pull request adds one entry per fix commit (`commit` as a full SHA, `title`, `kind` `unit` or
+`e2e`, `tests` the files brought in from the fix, `run` the test files to run, `filter` the
+test-name pattern, and optionally `testCommit` and `failure`). With an empty manifest
+`node tools/review/revert-proof.mjs` says so and exits 0.
 
 ### How a change lands
 
 1. Work happens on a branch, with one pull request per change.
 2. CI runs on the pull request. Branch `main` is protected: a pull request is required,
    `verify`, `e2e` (all four shards), `e2e-service-worker`, `behavior` and `fidelity` must pass,
-   and force-pushes and deletion are blocked.
+   the branch must be up to date with `main`, review conversations must be resolved, and
+   force-pushes and deletion are blocked.
 3. A reviewer who did not write the change reads it and records PASS or FAIL on the pull
    request. Documentation (README, CONTRIBUTING, `docs/`, the site's Turkish and English pages)
    is part of the review: a behaviour change that is not reflected there is a FAIL.
@@ -162,10 +170,7 @@ functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). 
 - **Thresholds.** `e2e/fidelity/thresholds.json` maps mode → `default` and per-sample overrides to
   `{ ssim, words }`. SSIM gates the worst page, word accuracy the whole document. `null` means
   measured, not gated: a run reports such a number without failing. `page-images` gates SSIM 0.95
-  for every sample; `layout` gates SSIM 0.95 and words 0.99 for each committed sample that reaches
-  them (every generated page but `overlay`, whose SSIM is 0.93, gates its own SSIM at 0.91), a floor
-  just under the measured value for the two that do not yet (`irs-fw4-2022`, `usgs-fs2020-3042`),
-  and measured floors for the scans read by OCR (`cv-scan`, `cards-scan`, `shapes-scan`,
+  for every sample; `layout` gates SSIM 0.95 and words 0.99 for most samples; a sample that does not reach them has its own floor in the file, just under what it measures (the generated `overlay`, `text-in-image` and `mixed-page`, the public `irs-fw4-2022` and `usgs-fs2020-3042`), and so do the scans read by OCR (`cv-scan`, `cards-scan`, `shapes-scan`,
   `invoice-scan`, `invoice-scan-rough`, `nasa-tm-vacuum-1965`); `flow` gates words only, for the
   graphics samples 0.05 under the measured value (none for their scans, which flow does not read).
   The text inside pictures (below) is measured, never gated. A sample's own key, even `null`, wins over the

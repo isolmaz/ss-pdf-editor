@@ -15,7 +15,7 @@ recorded here.
 ## Result
 
 **Keep Tesseract (`tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 simd-lstm, `tur`+`eng` best_int traineddata) as the
-only engine. No candidate beat it on Turkish text, on the owner's CV, or on speed. Do not add a second engine now.**
+only engine. No candidate beat it on Turkish text, on the owner's CV, or on speed. Do not add a second engine.**
 
 | config | CER synthetic | CER CV | Turkish-letter recall | WER (all) | cold ms (CV page, incl. load) | warm ms/page (CV page) | download MB (gzip) | licence (code + weights) |
 |---|---|---|---|---|---|---|---|---|
@@ -40,7 +40,7 @@ PP-OCRv6 medium is 10× slower than Tesseract and still behind it on the CV (0.4
 
 ### Layout models (measured)
 
-The earlier "0 regions" result was a harness bug, not the models: `run.mjs` printed `lines.length` (always 0 for a layout adapter) and the JSON in fact held 23 (plus-L) / 262 (V3) regions. The old 800×800, RGB, /255, `scale_factor = [h, w]` preprocessing already matched the official config; the real defects were that V3's output has 7 columns (the 7th is the reading order, so stride 6 mis-decoded every row after the first), V3's label list was missing, and nothing was ever drawn. `page/bench.mjs` now follows each model's own config:
+`page/bench.mjs` follows each model's own config: 800×800 RGB input scaled by 1/255 with `scale_factor = [h, w]` as the official config states; PP-DocLayoutV3's output has 7 columns (the 7th is the reading order), so its rows are decoded with stride 7, and its label list comes from the model's yml.
 
 | model | input | output decoding | threshold |
 |---|---|---|---|
@@ -103,7 +103,7 @@ Findings behind the numbers:
 - **PP-OCRv5 server rec** dictionary has **no `İ` and no `Ğ`** (checked in the shipped `inference.yml`), so it cannot be
   used for Turkish regardless of its other accuracy.
 - **OnnxTR parseq multilingual v1** vocabulary (195 chars) has **no `ğ ı İ ş Ğ Ş`** (checked in `config.json`) — hence 35 % letter
-  recall. It also produced duplicated fragments (`WeWeb`, `alalan`) with my straight-box DBNet post-processor; that
+  recall. It also produced duplicated fragments (`WeWeb`, `alalan`) with the benchmark's straight-box DBNet post-processor; that
   part may be a post-processing artefact and was not investigated, because the vocabulary alone disqualifies it. It is also the slowest (≈ 54 s per CV page).
 - **Tesseract** remaining CV errors are all the same family: `SQL`→`SOL`, `HTML5`→`HTMLS5`, `Şub`→`Sub`, a leading `İ` read as `i`
   in one word, and the vertical card dividers read as `—`/`(7`. Nothing Turkish-specific.
@@ -136,14 +136,14 @@ Use < 0.85 for a stricter, mostly-correct flag set. PP-OCR confidences are satur
 
 ## Recommendation
 
-1. **Primary (and only) engine: Tesseract via tesseract.js, unchanged.** Pins that already exist in `tools/asset-pins.json`:
+1. **Primary (and only) engine: Tesseract via tesseract.js.** Pins in `tools/asset-pins.json`:
    `tesseract.js` **6.0.1**, `tesseract.js-core` **6.1.2** (`tesseract-core-simd-lstm.wasm(.js)`), `@tesseract.js-data/tur`
    **1.0.0** and `@tesseract.js-data/eng` **1.0.0** (`best` = best_int quantised, gzip, 4.7 MB for tur alone; whole stack for
    tur+eng 7.7 MB gzip). Run `tur+eng` together when the document may contain English technical terms (CER 0.27 % vs 0.43 %,
    WER 0.6 % vs 1.0 % on the CV); `fast` data brings no accuracy gain and is 2–3× larger on the wire.
-2. **No second engine for now.** The best ONNX alternative (PP-OCRv5 mobile det + latin rec: 15.6 MB gzip, ≈ 9 s/CV page,
+2. **No second engine.** The best ONNX alternative (PP-OCRv5 mobile det + latin rec: 15.6 MB gzip, ≈ 9 s/CV page,
    CER CV 0.75 %, WER 1.7 %) is worse on accuracy and not faster. PP-OCRv6 small/medium are worse on Turkish `ı/İ`
-   and caps; OnnxTR and PP-OCRv5 server lack Turkish letters in their vocabularies. If a second engine is later wanted
+   and caps; OnnxTR and PP-OCRv5 server lack Turkish letters in their vocabularies. If a second engine is wanted
    for photographed or very noisy documents (not covered by this test set) the only candidate that qualifies is the
    pair below — pin it only after a dedicated photo/noise evaluation.
 
@@ -156,7 +156,7 @@ Use < 0.85 for a stricter, mostly-correct flag set. PP-OCR confidences are satur
    Full pinned list for every model that was evaluated (URLs at fixed revisions, bytes, sha256, licence) is in
    `tools/measure/ocr/models.json`; the character dictionaries come from each model's `inference.yml` (`PostProcess.character_dict`).
 3. **Bundle cost of what is recommended:** 0 MB additional (already shipped). Adding the optional pair would cost ≈ 16 MB gzip on demand (onnxruntime-web 3.7 + models ≈ 12 + dictionary), matching the 15.6 MB measured.
-4. **Layout models: do not ship any.** Measured above: they isolate the photo (IoU 0.93–0.98) but so does the classical step (erase OCR word boxes, connected components: one component, IoU 0.92, 0 MB); none of them finds the card containers; their extra value is semantic labels and table boxes, which the OCR-word-box + connected-component pipeline does not produce [INFERENCE: not needed for the planned export]. Cost: PP-DocLayout 118 MB gzip and 1.6–2.6 s/page, DocLayout-YOLO 67 MB / 3 s and **AGPL-3.0** (excluded), YOLOv8n general6 11 MB (+3.7 MB runtime) / 0.13 s but with unstable table scores (0.37 on one page) and unclear weight licensing. Revisit only if a photo/figure test set shows the classical step failing (light-background photos, thin-line charts, photos that touch text), and in that case start from YOLOv8n general6 (smallest, fastest) rather than PP-DocLayout.
+4. **Layout models: do not ship any.** Measured above: they isolate the photo (IoU 0.93–0.98) but so does the classical step (erase OCR word boxes, connected components: one component, IoU 0.92, 0 MB); none of them finds the card containers; their extra value is semantic labels and table boxes, which the OCR-word-box + connected-component pipeline does not produce [INFERENCE: not needed for the Word export]. Cost: PP-DocLayout 118 MB gzip and 1.6–2.6 s/page, DocLayout-YOLO 67 MB / 3 s and **AGPL-3.0** (excluded), YOLOv8n general6 11 MB (+3.7 MB runtime) / 0.13 s but with unstable table scores (0.37 on one page) and unclear weight licensing. Revisit only if a photo/figure test set shows the classical step failing (light-background photos, thin-line charts, photos that touch text), and in that case start from YOLOv8n general6 (smallest, fastest) rather than PP-DocLayout.
 
 ## Output mapping
 
@@ -195,7 +195,7 @@ scans after a round trip through LibreOffice) come from `pnpm fidelity` (`FIDELI
   CER/WER = Levenshtein / GT length, micro-averaged. Turkish-letter recall from the character alignment.
 - Cold/warm timings from `run.mjs` in a fresh Chromium context per config; WASM EP, `numThreads = 4`, `crossOriginIsolated` page served by
   a local HTTP server with COOP/COEP.
-- Limitations: one real document; synthetic text is clean-rendered; straight-box (no rotated text) DB post-processing of my own
+- Limitations: one real document; synthetic text is clean-rendered; straight-box (no rotated text) DB post-processing of the benchmark's own
   implementation was used for the ONNX engines; WebGPU was not part of the table.
 
 ## Sources

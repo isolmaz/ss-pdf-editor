@@ -24,8 +24,7 @@ What the scripts need that is not in the repository:
   the owner's PDF and `.gt.txt` in e2e/fixtures/local (named in `lib.mjs`). That folder is git-ignored: the CV is private owner data, never
   committed, never uploaded, and the CV rows of `docs/ocr-evaluation.md` cannot be reproduced without it. Without the files
   `build-testset.mjs` says so and skips the `cv` image; every other number (the 24 synthetic pages) is reproducible by anyone.
-- **Layout pages.** The two synthetic layout pages (`lay1.png`, `lay2.png` in `WORK/testset/images/`) were drawn by a one-off
-  generator that is not part of the repository; the layout configs (`layout-*`) run `cv`, `lay1` and `lay2` and skip any that is missing.
+- **Layout pages.** The two synthetic layout pages (`lay1.png`, `lay2.png` in `WORK/testset/images/`) are drawn by a generator that is not part of the repository; the layout configs (`layout-*`) run `cv`, `lay1` and `lay2` and skip any that is missing.
   The layout-model table in `docs/ocr-evaluation.md` is a record of that run.
 - **Priority.** On Windows run long jobs at below-normal priority (`start /belownormal`, or the Task Manager); children inherit it.
 
