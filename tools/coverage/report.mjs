@@ -6,17 +6,19 @@
  *
  * 1. The unit suite runs under V8 coverage (`vitest.config.ts`), every source file counted,
  *    including the ones no unit test imports.
- * 2. The editor is built unminified (`COVERAGE_BUILD=1`, see `apps/web/vite.config.ts`) and
- *    assembled, and the whole Playwright suite runs against it with `E2E_COVERAGE` set: each
- *    test's page records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`).
+ * 2. The editor is built unminified and without the React Compiler (`COVERAGE_BUILD=1`, see
+ *    `apps/web/vite.config.ts`) and assembled, and the whole Playwright suite runs against it
+ *    with `E2E_COVERAGE` set: each test's page records V8 coverage of `/editor/assets/*.js`
+ *    (`e2e/test.ts`).
  * 3. The production build is restored, whatever the browser run's outcome, so `dist/` never
  *    keeps the unminified build.
  * 4. The browser coverage is mapped back to the sources through the build's source maps with
  *    `ast-v8-to-istanbul` — the converter the unit suite's provider uses — and its counts are
  *    added to the unit result's statements, functions and branches, met by where each starts
- *    or, failing that, by the lines each covers (`meet`, `addBrowserCounts`). An unminified
- *    bundle keeps the statements and branches the sources have, so both sides count the same
- *    things.
+ *    or, failing that, by the lines each covers (`meet`, `addBrowserCounts`). An unminified,
+ *    compiler-free bundle keeps the statements and branches the sources have (the compiler's
+ *    memo-cache branches would map onto component lines the unit side does not count), so
+ *    both sides count the same things.
  *
  * Output: `coverage/report/` (HTML in `html/`, `coverage-summary.json`, `coverage-final.json`)
  * and a per-package table on the console. Web workers (Ghostscript) and the service worker

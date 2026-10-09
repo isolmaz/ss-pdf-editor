@@ -619,7 +619,10 @@ export function AnnotationLayer({
    * Read through refs: this runs on arming only, not on every style change.
    */
   const armingRef = useRef({ viewer, finishMark });
-  armingRef.current = { viewer, finishMark };
+  // Declared first: effects run in order, so the arming effect reads this render's values.
+  useEffect(() => {
+    armingRef.current = { viewer, finishMark };
+  });
   useEffect(() => {
     if (!isTextTool(tool)) return;
     const { viewer: current, finishMark: finish } = armingRef.current;

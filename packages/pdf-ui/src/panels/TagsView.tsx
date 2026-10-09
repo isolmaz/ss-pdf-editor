@@ -98,7 +98,9 @@ export function TagsView(props: TagsViewProps) {
   const { t, read, onNotice } = props;
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' });
   const handlers = useRef({ onNotice, t });
-  handlers.current = { onNotice, t };
+  useEffect(() => {
+    handlers.current = { onNotice, t };
+  });
 
   useEffect(() => {
     let cancelled = false;

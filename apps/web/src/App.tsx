@@ -115,7 +115,9 @@ export function App({ store }: AppProps) {
   const { activeTab, canEdit } = useEditState(store, tier);
   const currentPage = useSave((state) => state.currentPage);
   const currentPageRef = useRef(currentPage);
-  currentPageRef.current = currentPage;
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
   const canvasTool = useCore((state) => state.canvasTool);
   const markMode = canvasTool === 'select' ? 'select' : null;
   const lockedTabs = useOpen((state) => state.lockedTabs);
@@ -201,7 +203,8 @@ export function App({ store }: AppProps) {
     [store, t],
   );
   const saveActive = useCallback(
-    (tabId = store.active?.id): Promise<boolean> => saveDocument({ session: store, t, prepareOutput }, tabId),
+    (tabId?: string): Promise<boolean> =>
+      saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id),
     [prepareOutput, store, t],
   );
   const discardTab = useCallback(

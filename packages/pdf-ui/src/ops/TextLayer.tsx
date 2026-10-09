@@ -19,7 +19,7 @@
  */
 
 import type { OperationContext } from 'pdf-core';
-import { readPageText } from 'pdf-core/text-source';
+import { loadTextFonts, readPageText } from 'pdf-core/text-source';
 import type { Translator } from 'pdf-shared';
 import { toToolError } from 'pdf-shared';
 import type { FontCatalog, FontMetrics, TextBlock, TextPage } from 'pdf-text-engine';
@@ -118,10 +118,7 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
     setLoading(true);
     void (async () => {
       try {
-        const [source, fonts] = await Promise.all([
-          readPageText(bytes, pageIndex, context),
-          import('pdf-core/text-source').then((module) => module.loadTextFonts()),
-        ]);
+        const [source, fonts] = await Promise.all([readPageText(bytes, pageIndex, context), loadTextFonts()]);
         if (cancelled) return;
         const model = buildTextPage(source);
         const report = measureEditability(model);
