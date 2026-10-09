@@ -8,6 +8,7 @@
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
+import { formPdf, widgetBody } from './forms.fixtures';
 import { fixturePage, gridOperators, reportPage, TABLE_XS, TABLE_YS } from './layout-fixtures';
 import {
   BOLD_NAME,
@@ -17,6 +18,7 @@ import {
   fontFamily,
   lineSegments,
   type PageLayout,
+  readAppearances,
   readPageLayout,
   renderRegion,
   rgb,
@@ -1060,5 +1062,38 @@ describe('rules that do not make a lattice', () => {
       [STROKE, '50 370 m 250 370 l S', '50 340 m 250 340 l S', '50 400 m 250 400 l S'].join('\n'),
     );
     expect(findTables((await layoutOf(bytes)).layout)).toEqual([]);
+  });
+});
+
+describe('readAppearances', () => {
+  const appearance = (content: string): string =>
+    `<</Type/XObject/Subtype/Form/BBox[0 0 14 14]/Resources<</Font<</Z 31 0 R>>/ExtGState<</G<</ca 0.5>>>>>>/Length ${content.length}>>\nstream\n${content}\nendstream`;
+
+  it('reads a symbol drawn half transparent as the symbol, with its opacity', async () => {
+    const mupdf = await loadMupdf();
+    const bytes = formPdf({
+      fields: '[10 0 R]',
+      annots: '[10 0 R]',
+      extra: {
+        31: '<</Type/Font/Subtype/Type1/BaseFont/ZapfDingbats>>',
+        20: appearance('/G gs BT /Z 12 Tf 2 4 Td (4) Tj ET'),
+        10: widgetBody('50 500 64 514', '/AP<</N 20 0 R>>/FT/Btn/T(a)/V/Yes/AS/Yes'),
+      },
+    });
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+    const { layout } = readAppearances(mupdf, doc.loadPage(0));
+    const chars = layout.blocks.flatMap((block) =>
+      block.kind === 'text' ? block.lines.flatMap((line) => line.chars) : [],
+    );
+    expect(chars.map((char) => char.c)).toEqual(['\u2714']);
+    expect(chars[0]?.alpha).toBe(0.5);
+  });
+
+  it('reads nothing from a page of a document that has no fields or annotations', async () => {
+    const mupdf = await loadMupdf();
+    const doc = mupdf.Document.openDocument(new TextEncoder().encode('Plain words'), 'text/plain');
+    const appearances = readAppearances(mupdf, doc.loadPage(0));
+    expect(appearances.layout.blocks).toEqual([]);
+    expect(appearances.unseen).toBe(0);
   });
 });

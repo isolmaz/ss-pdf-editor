@@ -135,6 +135,14 @@ describe('the open family of a scan', () => {
       const right = unsettled(scan, 'Quick');
       expect(settleReadings(mupdf, scan.image, right, name, null).size).toBe(0);
     }
+    // a family with no stand-in of its own is drawn in Helvetica
+    const sans = await scanIn('Helvetica');
+    const [odder] = unsettled(sans.scan, 'Qu1ck');
+    expect(
+      settleReadings(sans.mupdf, sans.scan.image, [odder as NonNullable<typeof odder>], 'Calibri', null).get(
+        (odder as NonNullable<typeof odder>).word,
+      ),
+    ).toEqual({ text: 'Quick', confidence: 88 });
     // nothing to settle: nothing is drawn
     const { mupdf, scan, measured } = await scanIn('Inter');
     expect(settleReadings(mupdf, scan.image, [], 'Arial', null).size).toBe(0);
@@ -330,6 +338,19 @@ describe('the font files of a scan', () => {
       ['Inter', 'Bold Italic'],
     ]);
     for (const file of files) expect([...file.bytes.subarray(0, 4)]).toEqual([0, 1, 0, 0]);
+  });
+
+  it('leave out a character the face has no glyph for', async () => {
+    const open = await interFont();
+    const [file] = openFontFiles([open], [boxOf(textRun('a\u{1F600}', 'Inter'))]);
+    const mupdf = await loadMupdf();
+    const built = new mupdf.Font('Built', (file as NonNullable<typeof file>).bytes);
+    try {
+      expect(built.encodeCharacter(0x61)).toBeGreaterThan(0);
+      expect(built.encodeCharacter(0x1f600)).toBe(0);
+    } finally {
+      built.destroy();
+    }
   });
 
   it('are none when no run is set in the family, and only the weights used when some are', async () => {

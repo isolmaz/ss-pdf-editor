@@ -270,35 +270,36 @@ function OutlineLevel({
 }) {
   return (
     <ul className={depth === 0 ? '' : 'ms-3 border-s border-kumo-line ps-2'}>
-      {entries.map((entry) => (
-        <li key={`${entry.title}-${entry.pageIndex ?? -1}`} className="my-0.5">
-          <button
-            type="button"
-            disabled={entry.pageIndex === null}
-            onClick={() => {
-              if (entry.pageIndex !== null) onGoToPage(entry.pageIndex);
-            }}
-            aria-current={entry.pageIndex === currentPage ? 'page' : undefined}
-            className={`w-full truncate rounded-sm px-1.5 py-1 text-start text-xs ${
-              entry.pageIndex === currentPage
-                ? 'bg-kumo-tint text-kumo-strong'
-                : 'text-kumo-default hover:bg-kumo-tint'
-            } disabled:text-kumo-subtle`}
-            title={entry.title}
-          >
-            {entry.title}
-          </button>
-          {entry.children.length > 0 ? (
-            <OutlineLevel
-              t={t}
-              entries={entry.children}
-              depth={depth + 1}
-              currentPage={currentPage}
-              onGoToPage={onGoToPage}
-            />
-          ) : null}
-        </li>
-      ))}
+      {entries.map((entry) => {
+        const { pageIndex } = entry;
+        return (
+          <li key={`${entry.title}-${pageIndex ?? -1}`} className="my-0.5">
+            <button
+              type="button"
+              disabled={pageIndex === null}
+              onClick={pageIndex === null ? undefined : () => onGoToPage(pageIndex)}
+              aria-current={pageIndex === currentPage ? 'page' : undefined}
+              className={`w-full truncate rounded-sm px-1.5 py-1 text-start text-xs ${
+                pageIndex === currentPage
+                  ? 'bg-kumo-tint text-kumo-strong'
+                  : 'text-kumo-default hover:bg-kumo-tint'
+              } disabled:text-kumo-subtle`}
+              title={entry.title}
+            >
+              {entry.title}
+            </button>
+            {entry.children.length > 0 ? (
+              <OutlineLevel
+                t={t}
+                entries={entry.children}
+                depth={depth + 1}
+                currentPage={currentPage}
+                onGoToPage={onGoToPage}
+              />
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }

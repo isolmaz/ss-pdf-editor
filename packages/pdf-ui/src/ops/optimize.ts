@@ -123,7 +123,7 @@ export const compressDialog: OperationDialogSpec = {
       noticeParams: {
         before: formatBytes(inputBytes),
         after: formatBytes(outputBytes),
-        percent: inputBytes === 0 ? 0 : Math.round((1 - outputBytes / inputBytes) * 100),
+        percent: Math.round((1 - outputBytes / inputBytes) * 100),
       },
     };
   },

@@ -35,6 +35,17 @@ const SAMPLE = officeDocument([
   },
 ]);
 
+/** The link of the sample line, with a rule just under it. */
+const UNDERLINED = officeDocument([
+  {
+    content: [
+      '1 1 1 rg 0 0 400 500 re f',
+      line('helvetica', 14, 60, 400, 'Hello world today'),
+      '0 0 0 rg 60 396 105 0.8 re f',
+    ].join('\n'),
+  },
+]);
+
 /** The sample as a scan: its page rendered into one picture, plus `layer` as invisible text when given. */
 async function scanOf(layer?: string, sample: Promise<Uint8Array> = SAMPLE): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
@@ -456,20 +467,39 @@ describe('exact layout: a scanned page read by OCR', () => {
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrLowConfidence')).toBe(false);
   });
 
-  it('reads a page with an underlined word again without the rule, and writes the word underlined', async () => {
-    // the link of the sample line, with a rule just under it
-    const underlined = officeDocument([
+  it('keeps the first read, and the rule it found, when the read without the rule cannot run', async () => {
+    let calls = 0;
+    const result = await exportOffice(
+      await scanOf(undefined, UNDERLINED),
       {
-        content: [
-          '1 1 1 rg 0 0 400 500 re f',
-          line('helvetica', 14, 60, 400, 'Hello world today'),
-          '0 0 0 rg 60 396 105 0.8 re f',
-        ].join('\n'),
+        ...options,
+        ocr: {
+          lowConfidence: 0.9,
+          recognize: async () => {
+            calls += 1;
+            if (calls > 1) throw new Error('the recogniser worker crashed');
+            return words([96, 95, 97]);
+          },
+        },
       },
-    ]);
+      run,
+    );
+    expect(calls).toBe(2);
+    const xml = await text(await JSZip.loadAsync(result.file.bytes), 'word/document.xml');
+    expect(xml).toContain('<w:u w:val="single"/>');
+    const visible = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    // Each box twice: DrawingML text and its VML fallback.
+    expect(visible.replaceAll(' ', '')).toBe('HelloworldtodayHelloworldtoday');
+  });
+
+  it('reads a page with an underlined word again without the rule, and writes the word underlined', async () => {
     const seen: number[] = [];
     const result = await exportOffice(
-      await scanOf(undefined, underlined),
+      await scanOf(undefined, UNDERLINED),
       {
         ...options,
         ocr: {
@@ -517,6 +547,19 @@ describe('exact layout: a scanned page read by OCR', () => {
     // The layer's words are in the boxes once (DrawingML text plus the VML fallback), not twice as picture text.
     expect(visible.replaceAll(' ', '')).toBe('HelloworldtodayHelloworldtoday');
     expect(zip.file('word/comments.xml')).toBeNull();
+    expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrPages')).toBe(true);
+  });
+
+  it('reads the words of a layer set with a leading and a doubled space', async () => {
+    const result = await exportOffice(await scanOf(' Hello  world today'), options, run);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const xml = await text(zip, 'word/document.xml');
+    const visible = Array.from(
+      new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagNameNS(W, 't'),
+    )
+      .map((t) => t.textContent)
+      .join('');
+    expect(visible.replaceAll(' ', '')).toBe('HelloworldtodayHelloworldtoday');
     expect(result.notes.some((note) => note.key === 'op.note.exportOffice.ocrPages')).toBe(true);
   });
 

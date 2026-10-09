@@ -94,7 +94,8 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
 
   const onListKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLUListElement>) => {
-      if (fields.length === 0 || !(event.target instanceof HTMLButtonElement)) return;
+      // The list is rendered only for a non-empty `fields`, so a key event always has a row.
+      if (!(event.target instanceof HTMLButtonElement)) return;
       const move = (next: number) => {
         const clamped = Math.min(Math.max(next, 0), fields.length - 1);
         setFocusIndex(clamped);
@@ -133,13 +134,7 @@ export function FormPanel({ t, fields, loading, selectedName, onSelect, onFill, 
         {fields.map((field, index) => {
           const isSelected = selectedName === field.name;
           const draft = drafts[field.name];
-          const editable =
-            disabled !== true &&
-            !field.readOnly &&
-            (field.kind === 'text' ||
-              field.kind === 'dropdown' ||
-              field.kind === 'optionlist' ||
-              field.kind === 'radio');
+          const editable = disabled !== true && !field.readOnly && isEditableKind(field.kind);
           return (
             <li key={field.name} data-field-row className="mb-0.5">
               <div

@@ -69,17 +69,17 @@ export function Dock({ t, side, tabs, activeId, onSelect, onToggle, wide = false
   const id = useId();
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  if (tabs.length === 0) return null;
+  const [first] = tabs;
+  if (first === undefined) return null;
 
-  const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
-  if (active === undefined) return null;
+  const active = tabs.find((tab) => tab.id === activeId) ?? first;
 
   const panelId = `${id}-panel`;
   const tabDomId = (tabId: string) => `${id}-tab-${tabId}`;
 
   const focusTabAt = (index: number) => {
-    const next = tabs[(index + tabs.length) % tabs.length];
-    if (next === undefined) return;
+    // The index is wrapped into `0..tabs.length`, so the tab is always there.
+    const next = tabs[(index + tabs.length) % tabs.length] as DockTab;
     tabRefs.current.get(next.id)?.focus();
     onSelect(next.id);
   };

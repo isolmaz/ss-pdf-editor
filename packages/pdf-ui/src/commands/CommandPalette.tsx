@@ -189,9 +189,8 @@ export function CommandPalette({
   return (
     <KumoCommandPalette.Root
       open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
+      // The palette is opened by `open` alone (no trigger), so the primitive only ever reports a dismissal.
+      onOpenChange={() => onClose()}
       items={results}
       value={query}
       onValueChange={setQuery}
@@ -225,9 +224,8 @@ export function CommandPalette({
               // 12 px: the palette is shell chrome, and Kumo's item default is the
               // 16 px body step this product does not use in the app.
               className="text-xs"
-              onClick={() => {
-                if (command.disabled !== true) runCommand(command);
-              }}
+              // A disabled item receives no click: the primitive withholds it.
+              onClick={() => runCommand(command)}
             >
               {command.icon === undefined ? null : (
                 <span aria-hidden="true" className="shrink-0 text-kumo-subtle">

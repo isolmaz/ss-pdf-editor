@@ -425,11 +425,10 @@ export function AnnotationLayer({
           return;
         }
         const frame = markPageFrameOf(viewer, point.pageIndex);
-        const screen = frame?.toScreen({ x: point.x, y: point.y });
         const room =
-          frame === null || screen === undefined
+          frame === null
             ? TEXT_BOX_WIDTH
-            : (frame.left + frame.width - screen.x) / frame.scale;
+            : (frame.left + frame.width - frame.toScreen({ x: point.x, y: point.y }).x) / frame.scale;
         setDraft({
           pageIndex: point.pageIndex,
           x: point.x,
@@ -539,8 +538,8 @@ export function AnnotationLayer({
         let maxX = Number.NEGATIVE_INFINITY;
         let maxY = Number.NEGATIVE_INFINITY;
         for (let index = 0; index + 1 < points.length; index += 2) {
-          const x = points[index] ?? 0;
-          const y = points[index + 1] ?? 0;
+          const x = points[index] as number;
+          const y = points[index + 1] as number;
           minX = Math.min(minX, x);
           maxX = Math.max(maxX, x);
           minY = Math.min(minY, y);
@@ -577,12 +576,13 @@ export function AnnotationLayer({
       // (`annotation-shapes.ts` `lineEndpoints`), so the mark carries that same
       // diagonal as a stroke — the hit test then tests the visible line instead of
       // the whole rectangle around it. The writer ignores `strokes` for shapes.
-      finishMark(
-        tool,
-        drag.pageIndex,
-        [rect],
-        tool === 'shapes' ? { shape, ...(shape === 'line' ? { strokes: [[...rect]] } : {}) } : {},
-      );
+      // Only the shapes and link tools press into a rectangle drag (the text tools
+      // return, ink and the marker sample a stroke, text and notes finish on the
+      // press), and the link tool returned above.
+      finishMark('shapes', drag.pageIndex, [rect], {
+        shape,
+        ...(shape === 'line' ? { strokes: [[...rect]] } : {}),
+      });
       if (drag.onLink) click.suppress();
     };
 
@@ -646,10 +646,8 @@ export function AnnotationLayer({
    * measured, which is also what the writer's own layout arrives at.
    */
   const commitDraft = useCallback(
-    (field: HTMLTextAreaElement | null) => {
-      const current = draft;
+    (current: TextDraft, field: HTMLTextAreaElement) => {
       setDraft(null);
-      if (current === null || field === null) return;
       const text = field.value.replace(/\s+$/u, '');
       if (text.trim() === '') return;
       const frame = markPageFrameOf(viewer, current.pageIndex);
@@ -685,7 +683,7 @@ export function AnnotationLayer({
         ...(turn === 0 ? {} : { rotation: turn }),
       });
     },
-    [draft, finishMark, fontSize, textColor, viewer],
+    [finishMark, fontSize, textColor, viewer],
   );
 
   // One reading of the pages per layout: three marks on a page are measured once, and a
@@ -800,7 +798,7 @@ export function AnnotationLayer({
                     field.style.height = 'auto';
                     field.style.height = `${field.scrollHeight}px`;
                   }}
-                  onBlur={(event) => commitDraft(event.currentTarget)}
+                  onBlur={(event) => commitDraft(draft, event.currentTarget)}
                   onKeyDown={(event) => {
                     if (event.key === 'Escape') {
                       event.preventDefault();
@@ -1166,7 +1164,7 @@ function textVisual(mark: AnnotationMark, frame: MarkPageFrame): React.ReactNode
 function strokePath(points: readonly number[], frame: MarkPageFrame, turn: Turn | null): string {
   const path: string[] = [];
   for (let index = 0; index + 1 < points.length; index += 2) {
-    const point = { x: points[index] ?? 0, y: points[index + 1] ?? 0 };
+    const point = { x: points[index] as number, y: points[index + 1] as number };
     const placed = frame.toScreen(turn === null ? point : transformPoint(point, turn.bounds, turn.transform));
     path.push(`${placed.x},${placed.y}`);
   }

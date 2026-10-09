@@ -475,6 +475,32 @@ describe('pptx shapes, text and tables', () => {
     });
   });
 
+  it('keeps every picture of a slide, in the order they are drawn, and reports nothing skipped', async () => {
+    const pic = (embed: string, cx: number, cy: number) =>
+      `<p:pic><p:blipFill><a:blip r:embed="${embed}"/></p:blipFill><p:spPr><a:xfrm><a:ext cx="${cx}" cy="${cy}"/></a:xfrm></p:spPr></p:pic>`;
+    const bytes = await deck(
+      {
+        s1: slideXml(pic('rId1', 127000, 254000) + pic('rId2', 381000, 127000) + pic('rId1', 254000, 254000)),
+      },
+      {
+        files: {
+          'ppt/slides/_rels/s1.xml.rels': relsXml([
+            rel('rId1', '../media/a.png'),
+            rel('rId2', '../media/b.png'),
+          ]),
+          'ppt/media/a.png': Buffer.from(PNG_BASE64, 'base64'),
+          'ppt/media/b.png': Buffer.from(PNG_BASE64, 'base64'),
+        },
+      },
+    );
+    const result = await pptxToHtml(bytes, 'p.pptx');
+    const uri = `data:image/png;base64,${PNG_BASE64}`;
+    expect(result.parts[0]?.html).toBe(
+      `<div class="slide"><p><img src="${uri}" style="width:10.0pt;height:20.0pt"></p><p><img src="${uri}" style="width:30.0pt;height:10.0pt"></p><p><img src="${uri}" style="width:20.0pt;height:20.0pt"></p></div>`,
+    );
+    expect(result.notes.map((item) => item.key)).toEqual(['op.note.convert.pptxApproximate']);
+  });
+
   it('uses the slide size the file declares, else 10 x 7.5 inches; skips hidden slides and slides it cannot find', async () => {
     const slides = {
       s1: slideXml(shape(`<a:p>${text('shown')}</a:p>`)),

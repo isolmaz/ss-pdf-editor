@@ -69,7 +69,9 @@ export const isVisible = (char: { readonly c: string; readonly invisible?: true 
 
 /** The text lines of the scene (it reads the page's text without pictures, so its blocks are text). */
 const linesOf = (scene: PageScene) =>
-  scene.text.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []));
+  scene.text.blocks
+    .filter((block): block is Extract<typeof block, { kind: 'text' }> => block.kind === 'text')
+    .flatMap((block) => block.lines);
 
 const hasVisibleText = (scene: PageScene): boolean =>
   linesOf(scene).some((line) => line.chars.some(isVisible));

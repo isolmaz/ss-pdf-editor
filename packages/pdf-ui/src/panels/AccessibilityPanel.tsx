@@ -371,8 +371,8 @@ export function AccessibilityPanel(props: AccessibilityPanelProps) {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
     if (step === 0) return;
     event.preventDefault();
-    const next = VIEWS[(index + step + VIEWS.length) % VIEWS.length];
-    if (next === undefined) return;
+    // In range: the index is taken modulo the length, and the strip is never empty.
+    const next = VIEWS[(index + step + VIEWS.length) % VIEWS.length] as (typeof VIEWS)[number];
     readingOrderStore.setView(next.id);
     tabs.current[next.id]?.focus();
   };

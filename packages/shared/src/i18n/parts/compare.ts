@@ -56,5 +56,4 @@ export const comparePart = {
   'compare.reason.rasterCap': 'piksel sınırı',
   'compare.reason.pageTooLarge': 'sayfa piksel sınırının üzerinde',
   'compare.reason.pageSizeMismatch': 'sayfa boyutları farklı',
-  'compare.reason.unknown': 'bilinmeyen sınır',
 } as const;

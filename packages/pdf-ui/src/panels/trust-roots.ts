@@ -28,7 +28,8 @@ export async function importTrustRoots(
     const bytes = new Uint8Array(await file.arrayBuffer());
     const text = new TextDecoder().decode(bytes);
     const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(text);
-    const der = pem === null ? bytes : fromBase64(pem[1] ?? '');
+    // The pattern has one group, which always takes part in a match.
+    const der = pem === null ? bytes : fromBase64(pem[1] as string);
     if (der.length === 0 || der[0] !== 0x30) {
       refused += 1;
       continue;

@@ -221,12 +221,8 @@ function hasNativeCaret(x: number, y: number): boolean {
     caret === null && typeof document.caretRangeFromPoint === 'function'
       ? document.caretRangeFromPoint(x, y)
       : null;
-  const container = caret?.offsetNode ?? range?.startContainer ?? null;
-  if (
-    container !== null &&
-    container.nodeType === Node.TEXT_NODE &&
-    (container.textContent ?? '').trim() !== ''
-  ) {
+  const container = caret?.offsetNode ?? range?.startContainer;
+  if (container instanceof Text && container.data.trim() !== '') {
     // Caret APIs also return the nearest text node for blank space between lines.
     // Reserve only the run's actual painted box; otherwise a marquee cannot start there.
     const run = container.parentElement?.closest(TEXT_RUN);
@@ -238,8 +234,7 @@ function hasNativeCaret(x: number, y: number): boolean {
   // The caret's *element* (the leading of a run, or the layer's own box between
   // runs) and, on old engines, no caret at all: only a run's own box is text.
   const element = document.elementFromPoint(x, y);
-  const run = element === null ? null : element.closest(TEXT_RUN);
-  return run !== null && (run.textContent ?? '').trim() !== '';
+  return Boolean(element?.closest(TEXT_RUN)?.textContent?.trim());
 }
 
 interface MarqueeGesture {
@@ -375,10 +370,11 @@ export function MarkInteractionLayer({
   useEffect(() => {
     if (mode === null || disabled) return;
     const layer = layerRef.current;
-    const marqueeNode = marqueeRef.current;
-    const previewNode = previewRef.current;
+    // Both nodes are rendered unconditionally, so they are mounted by the time any effect runs.
+    const marqueeNode = marqueeRef.current as HTMLSpanElement;
+    const previewNode = previewRef.current as HTMLDivElement;
 
-    if (marqueeNode !== null) marqueeNode.style.display = 'none';
+    marqueeNode.style.display = 'none';
 
     /** A click's slop in page points, so the same 4 px of forgiveness works at every zoom. */
     const clickSlop = (pageIndex: number): number => {
@@ -400,7 +396,6 @@ export function MarkInteractionLayer({
     };
 
     const paintMarquee = (gesture: MarqueeGesture): void => {
-      if (marqueeNode === null) return;
       const box = marqueeBox(gesture);
       marqueeNode.style.display = 'block';
       marqueeNode.style.left = `${box.minX}px`;
@@ -419,25 +414,24 @@ export function MarkInteractionLayer({
      * drag.
      */
     const paintMovePreview = (gesture: MoveGesture): void => {
-      if (previewNode === null) return;
-      const placed = gesture.moving.map((mark) =>
-        mark.frame.toScreenBox([
+      // A press empties the node and this is the only writer while the move lasts, so it never
+      // holds more boxes than `moving` has marks (at least one: the mark that was pressed).
+      gesture.moving.forEach((mark, index) => {
+        const box = mark.frame.toScreenBox([
           mark.bounds[0] + gesture.dx,
           mark.bounds[1] + gesture.dy,
           mark.bounds[2] + gesture.dx,
           mark.bounds[3] + gesture.dy,
-        ]),
-      );
-      while (previewNode.childElementCount > placed.length) previewNode.lastElementChild?.remove();
-      while (previewNode.childElementCount < placed.length) {
-        const box = previewNode.appendChild(document.createElement('span'));
-        box.className = PREVIEW_BOX_CLASS;
-        box.setAttribute('aria-hidden', 'true');
-        box.dataset.markMovePreview = '';
-      }
-      placed.forEach((box, index) => {
-        const node = previewNode.children[index];
-        if (!(node instanceof HTMLElement)) return;
+        ]);
+        const existing = previewNode.children[index];
+        let node: HTMLElement;
+        if (existing instanceof HTMLElement) node = existing;
+        else {
+          node = previewNode.appendChild(document.createElement('span'));
+          node.className = PREVIEW_BOX_CLASS;
+          node.setAttribute('aria-hidden', 'true');
+          node.dataset.markMovePreview = '';
+        }
         // A hairline mark still gets a box the user can see, straddling its geometry.
         node.style.left = `${box.left - 1}px`;
         node.style.top = `${box.top - 1}px`;
@@ -503,8 +497,8 @@ export function MarkInteractionLayer({
     const abandonGesture = (): void => {
       if (gestureRef.current === null) return;
       gestureRef.current = null;
-      if (marqueeNode !== null) marqueeNode.style.display = 'none';
-      previewNode?.replaceChildren();
+      marqueeNode.style.display = 'none';
+      previewNode.replaceChildren();
     };
 
     const onPointerDown = (event: PointerEvent): void => {
@@ -523,7 +517,7 @@ export function MarkInteractionLayer({
       click.reset();
       // A preview left standing by the previous drag is stale the moment a new one
       // starts; a commit that lands clears it on its own render.
-      previewNode?.replaceChildren();
+      previewNode.replaceChildren();
       const additive = event.shiftKey || event.ctrlKey || event.metaKey;
 
       const hits = hitTargets(currentTargets, point, clickSlop(point.pageIndex));
@@ -638,12 +632,12 @@ export function MarkInteractionLayer({
         if (gesture.started && (gesture.dx !== 0 || gesture.dy !== 0)) {
           latest.current.onMove?.(gesture.keys, gesture.dx, gesture.dy);
         } else {
-          previewNode?.replaceChildren();
+          previewNode.replaceChildren();
         }
         return;
       }
 
-      if (marqueeNode !== null) marqueeNode.style.display = 'none';
+      marqueeNode.style.display = 'none';
       const box = marqueeBox(gesture);
       const moved = Math.max(box.maxX - box.minX, box.maxY - box.minY) >= DRAG_SLOP_PX;
       if (!moved) {
@@ -713,18 +707,18 @@ export function MarkInteractionLayer({
 
   /** The dashed outline of the box a resize would commit. */
   const paintResize = (frame: MarkPageFrame, rect: MarkRect): void => {
-    const node = previewRef.current;
-    if (node === null) return;
+    // Rendered unconditionally, and a resize can only be dragged from a handle that is mounted with it.
+    const node = previewRef.current as HTMLDivElement;
     const box = frame.toScreenBox(rect);
-    let outline = node.firstElementChild;
-    if (!(outline instanceof HTMLElement) || node.childElementCount !== 1) {
+    const existing = node.firstElementChild;
+    let outline: HTMLElement;
+    if (existing instanceof HTMLElement && node.childElementCount === 1) outline = existing;
+    else {
       node.replaceChildren();
-      const created = document.createElement('span');
-      created.className = PREVIEW_BOX_CLASS;
-      created.setAttribute('aria-hidden', 'true');
-      outline = node.appendChild(created);
+      outline = node.appendChild(document.createElement('span'));
+      outline.className = PREVIEW_BOX_CLASS;
+      outline.setAttribute('aria-hidden', 'true');
     }
-    if (!(outline instanceof HTMLElement)) return;
     outline.style.left = `${box.left - 1}px`;
     outline.style.top = `${box.top - 1}px`;
     outline.style.width = `${Math.max(box.width, 2)}px`;

@@ -6,12 +6,15 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { Quad, RasterImage } from './scan-geometry';
+import { type Point, type Quad, quadSize, type RasterImage } from './scan-geometry';
 import {
   applyBlackAndWhite,
   applyEnhanced,
+  applyFilter,
   applyGrayscale,
+  boxDownscale,
   createRaster,
+  pageSize,
   renderScanPage,
   warpPage,
 } from './scan-image';
@@ -133,10 +136,93 @@ describe('warpPage', () => {
     ];
     expect(warpPage(source, flat, 0, 2600)).toBeNull();
     expect(renderScanPage(source, flat, 0, 'bw', 2600)).toBeNull();
+    // An outline under two pixels a side holds no page either.
+    const speck: Quad = [
+      { x: 100, y: 100 },
+      { x: 101, y: 100 },
+      { x: 101, y: 101 },
+      { x: 100, y: 101 },
+    ];
+    expect(warpPage(source, speck, 0, 2600)).toBeNull();
+  });
+});
+
+describe('boxDownscale and pageSize', () => {
+  it('leaves a picture alone when it is under twice the size wanted, and averages whole pixels above', () => {
+    const image = createRaster(4, 2);
+    fill(image, 0, 0, 2, 2, [100, 0, 0]);
+    fill(image, 2, 0, 4, 2, [0, 200, 0]);
+    expect(boxDownscale(image, 1.9)).toBe(image);
+    const half = boxDownscale(image, 2);
+    expect([half.width, half.height]).toEqual([2, 1]);
+    expect(pixel(half, 0, 0)).toEqual([100, 0, 0]);
+    expect(pixel(half, 1, 0)).toEqual([0, 200, 0]);
+  });
+
+  /** An A4 sheet seen from `yaw`/`pitch` degrees off square, 600 mm from a 1200 px lens, on a 1600 x 1200 picture. */
+  function photographed(yaw: number, pitch: number): Quad {
+    const ry = (yaw * Math.PI) / 180;
+    const rx = (pitch * Math.PI) / 180;
+    const project = (x: number, y: number): Point => {
+      const x1 = x * Math.cos(ry);
+      const z1 = -x * Math.sin(ry);
+      const y2 = y * Math.cos(rx) - z1 * Math.sin(rx);
+      const z2 = y * Math.sin(rx) + z1 * Math.cos(rx) + 600;
+      return { x: 800 + (1200 * x1) / z2, y: 600 + (1200 * y2) / z2 };
+    };
+    return [project(-105, -148.5), project(105, -148.5), project(105, 148.5), project(-105, 148.5)];
+  }
+
+  it('sizes a page seen at an angle by the true ratio of the sheet, not by its nearer, longer edge', () => {
+    const a4 = 210 / 297;
+    for (const [yaw, pitch] of [
+      [28, 22],
+      [-20, 30],
+      [35, -15],
+      [5, 40],
+    ] as const) {
+      const quad = photographed(yaw, pitch);
+      const edges = quadSize(quad);
+      const size = pageSize(quad, 1600, 1200);
+      expect(Math.abs(size.width / size.height / a4 - 1), `${yaw}/${pitch}`).toBeLessThan(1e-6);
+      // Never less resolution than the edges have along either direction.
+      expect(size.width).toBeGreaterThanOrEqual(edges.width - 1e-6);
+      expect(size.height).toBeGreaterThanOrEqual(edges.height - 1e-6);
+    }
+  });
+
+  it('trusts the edges when the estimate is far from them, as for an outline that is not a page', () => {
+    // A quad whose perspective model implies a ratio 5.7 times its edges'.
+    const odd: Quad = [
+      { x: -25.6, y: 152.5 },
+      { x: -21.7, y: 3.9 },
+      { x: 99.5, y: 105.3 },
+      { x: 1.5, y: 147.5 },
+    ];
+    expect(pageSize(odd, 200, 150)).toEqual(quadSize(odd));
   });
 });
 
 describe('scan filters', () => {
+  it('applies the filter a page is rendered with, and none for the original', () => {
+    const { source, quad } = photograph();
+    const original = renderScanPage(source, quad, 0, 'original', 2600) as RasterImage;
+    near(pixel(original, 40, 40), [255, 0, 0], 2);
+    const gray = renderScanPage(source, quad, 0, 'grayscale', 2600) as RasterImage;
+    expect(pixel(gray, 40, 40)).toEqual([76, 76, 76]);
+    const bw = renderScanPage(source, quad, 0, 'bw', 2600) as RasterImage;
+    expect(pixel(bw, 200, 300)).toEqual([255, 255, 255]);
+    const enhanced = renderScanPage(source, quad, 0, 'enhanced', 2600) as RasterImage;
+    expect(pixel(enhanced, 200, 300)[0]).toBeGreaterThanOrEqual(240);
+
+    const sample = createRaster(1, 1);
+    fill(sample, 0, 0, 1, 1, [255, 0, 0]);
+    applyFilter(sample, 'original');
+    expect(pixel(sample, 0, 0)).toEqual([255, 0, 0]);
+    applyFilter(sample, 'grayscale');
+    expect(pixel(sample, 0, 0)).toEqual([76, 76, 76]);
+  });
+
   it('grayscale is the Rec. 601 luma in all three channels', () => {
     const image = createRaster(3, 1);
     fill(image, 0, 0, 1, 1, [255, 0, 0]);

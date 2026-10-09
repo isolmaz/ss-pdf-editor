@@ -257,14 +257,14 @@ function growOverRipples(
 
 /** Count one more sample in a histogram bin. */
 function bump(histogram: Int32Array, bin: number): void {
-  histogram[bin] = (histogram[bin] ?? 0) + 1;
+  histogram[bin] = (histogram[bin] as number) + 1;
 }
 
 /** Count the pixel at byte offset `at` in the three per-channel histograms of `histogram`. */
 function countColour(histogram: Int32Array, data: Uint8Array, at: number): void {
-  bump(histogram, data[at] ?? 0);
-  bump(histogram, 256 + (data[at + 1] ?? 0));
-  bump(histogram, 512 + (data[at + 2] ?? 0));
+  bump(histogram, data[at] as number);
+  bump(histogram, 256 + (data[at + 1] as number));
+  bump(histogram, 512 + (data[at + 2] as number));
 }
 
 /** The median of a 256-bin histogram holding `total` samples. */
@@ -1503,9 +1503,9 @@ export function ocrTextBoxes(
       for (const word of line.words) {
         const ink = measureWord(image, word);
         inks.set(word, ink);
-        for (const [index, value] of ink.sharpness.entries()) sharp[index] = (sharp[index] ?? 0) + value;
+        for (const [index, value] of ink.sharpness.entries()) sharp[index] = (sharp[index] as number) + value;
         for (let length = 1; length <= MAX_RUN; length += 1)
-          runs[length] = (runs[length] ?? 0) + (ink.runs[length] ?? 0);
+          runs[length] = (runs[length] as number) + (ink.runs[length] as number);
       }
       lineStroke.set(line, strokeRun(runs) / (rounded * image.scale));
       slants.set(line, leans(sharp));
@@ -1628,10 +1628,10 @@ function commonColor(data: Uint8Array): Rgb {
     const g = data[at + 1] as number;
     const b = data[at + 2] as number;
     const bin = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-    counts[bin] = (counts[bin] ?? 0) + 1;
-    sums[bin * 3] = (sums[bin * 3] ?? 0) + r;
-    sums[bin * 3 + 1] = (sums[bin * 3 + 1] ?? 0) + g;
-    sums[bin * 3 + 2] = (sums[bin * 3 + 2] ?? 0) + b;
+    counts[bin] = (counts[bin] as number) + 1;
+    sums[bin * 3] = (sums[bin * 3] as number) + r;
+    sums[bin * 3 + 1] = (sums[bin * 3 + 1] as number) + g;
+    sums[bin * 3 + 2] = (sums[bin * 3 + 2] as number) + b;
   }
   let best = 0;
   for (let bin = 1; bin < 4096; bin += 1) if ((counts[bin] as number) > (counts[best] as number)) best = bin;

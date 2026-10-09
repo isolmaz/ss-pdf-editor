@@ -329,7 +329,7 @@ function endsToken(byte: number): boolean {
 /** The end of the regular token (a number, a keyword or the text of a name) that starts at `at`. */
 function tokenEnd(bytes: Uint8Array, at: number): number {
   let cursor = at;
-  while (cursor < bytes.length && !endsToken(bytes[cursor] ?? 0)) cursor += 1;
+  while (cursor < bytes.length && !endsToken(bytes[cursor] as number)) cursor += 1;
   return cursor;
 }
 
@@ -367,7 +367,7 @@ function dictionaryPrev(bytes: Uint8Array, at: number): number | null {
   let expectKey = true;
   let cursor = at;
   while (cursor < bytes.length && cursor - at < DICT_WINDOW) {
-    const byte = bytes[cursor] ?? 0x20;
+    const byte = bytes[cursor] as number;
     // At the top level, a token that completes a value makes the next name a key again.
     const topLevel = depth === 1 && arrays === 0;
     if (PDF_WHITESPACE.has(byte)) {

@@ -369,9 +369,8 @@ function RevocationLine({
     line = t('props.sig.rev.good', {
       role,
       subject: check.subject,
-      source: t(
-        REVOCATION_SOURCE_LABEL[`${check.source}.${check.origin}`] ?? 'props.sig.rev.src.ocsp.imported',
-      ),
+      // A cleared certificate always names the list or response that cleared it (`decidedCheck`).
+      source: t(REVOCATION_SOURCE_LABEL[`${check.source}.${check.origin}`] as MessageKey),
       date: check.thisUpdate === null ? '—' : formatInstant(check.thisUpdate),
     });
     if (check.coversValidationTime === false) notes.push(t('props.sig.rev.noteBefore'));
@@ -644,7 +643,8 @@ export function PropertiesPanel({
             aria-hidden="true"
             className="hidden"
             onChange={(event) => {
-              const files = Array.from(event.target.files ?? []);
+              // `files` is only `null` on inputs that are not file inputs.
+              const files = Array.from(event.target.files as FileList);
               event.target.value = '';
               if (files.length > 0) onAddAttachments?.(files);
             }}
@@ -787,7 +787,7 @@ export function PropertiesPanel({
             multiple
             className="sr-only"
             onChange={(event) => {
-              const files = [...(event.target.files ?? [])];
+              const files = [...(event.target.files as FileList)];
               event.target.value = '';
               if (files.length > 0) void importTrustRoots(files, t, onImportTrustRoots, setRootError);
             }}
@@ -843,7 +843,7 @@ export function PropertiesPanel({
             aria-label={t('props.sig.crls.import')}
             className="sr-only"
             onChange={(event) => {
-              const files = [...(event.target.files ?? [])];
+              const files = [...(event.target.files as FileList)];
               event.target.value = '';
               if (files.length > 0)
                 void importRevocationLists(files, t, onImportRevocationLists, setCrlError);

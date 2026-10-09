@@ -37,9 +37,13 @@ export interface SnapshotMenuProps {
   readonly onNotice: (message: string) => void;
 }
 
-type SnapshotState =
-  | { readonly kind: 'preparing' }
-  | { readonly kind: 'ready'; readonly blob: Blob; readonly name: string };
+interface ReadySnapshot {
+  readonly kind: 'ready';
+  readonly blob: Blob;
+  readonly name: string;
+}
+
+type SnapshotState = { readonly kind: 'preparing' } | ReadySnapshot;
 
 /**
  * The clipboard action exists only where the async clipboard can take a PNG;
@@ -156,13 +160,14 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
 
   useEffect(() => {
     if (!visible || viewer === null) return undefined;
-    const target = previewRef.current;
-    if (target === null) return undefined;
+    // `visible` is what renders the preview canvas, and effects run after the commit.
+    const target = previewRef.current as HTMLCanvasElement;
 
     const controller = new AbortController();
     setSnapshot({ kind: 'preparing' });
+    // Only called while the capture is current: synchronously below, or from the encoder's
+    // callback right after its own `aborted` check.
     const fail = (error: unknown) => {
-      if (controller.signal.aborted) return;
       notice(handlers.current.t(toToolError(error, 'ui').messageKey));
     };
 
@@ -214,8 +219,8 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
   }, [visible]);
 
   const copyToClipboard = useCallback(async () => {
-    if (snapshot.kind !== 'ready') return;
-    const blob = snapshot.blob;
+    // Only offered while `ready`: the button is disabled until then.
+    const { blob } = snapshot as ReadySnapshot;
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
       notice(handlers.current.t('tools.snapshotCopied'));
@@ -225,12 +230,13 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
   }, [snapshot, notice]);
 
   const download = useCallback(() => {
-    if (snapshot.kind !== 'ready') return;
-    const url = URL.createObjectURL(snapshot.blob);
+    // Only offered while `ready`: the button is disabled until then.
+    const { blob, name } = snapshot as ReadySnapshot;
+    const url = URL.createObjectURL(blob);
     urlsRef.current.add(url);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = snapshot.name;
+    anchor.download = name;
     anchor.click();
     // Revoked once the download has started; the timer is tracked, so closing or
     // unmounting the panel cannot leave a blob URL behind.
@@ -240,7 +246,7 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
       timersRef.current.delete(timer);
     }, REVOKE_DELAY_MS);
     timersRef.current.add(timer);
-    notice(handlers.current.t('tools.snapshotSaved', { name: snapshot.name }));
+    notice(handlers.current.t('tools.snapshotSaved', { name }));
   }, [snapshot, notice]);
 
   if (!visible) return null;

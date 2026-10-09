@@ -139,7 +139,8 @@ function cffCidToGid(cff: Uint8Array): Map<number, number> | null {
   let ros = false;
   let charset = 0;
   let strings = 0;
-  const operands: number[] = [];
+  // An operator with no operand of its own reads 0, the first entry.
+  const operands: number[] = [0];
   for (let at = 0; at < top.length; ) {
     const b0 = top[at] as number;
     if (b0 <= 21) {
@@ -150,9 +151,9 @@ function cffCidToGid(cff: Uint8Array): Map<number, number> | null {
         at += 1;
       }
       if (op === 1230) ros = true;
-      if (op === 15) charset = operands[operands.length - 1] ?? 0;
-      if (op === 17) strings = operands[operands.length - 1] ?? 0;
-      operands.length = 0;
+      if (op === 15) charset = operands[operands.length - 1] as number;
+      if (op === 17) strings = operands[operands.length - 1] as number;
+      operands.length = 1;
     } else if (b0 === 28) {
       operands.push(((((top[at + 1] as number) << 8) | (top[at + 2] as number)) << 16) >> 16);
       at += 3;
@@ -243,7 +244,10 @@ function pageSources(page: PDFPage): Map<string, Source> {
   const visit = (resources: PDFObject | null, depth: number): void => {
     if (resources === null || !resources.isDictionary()) return;
     resolved(resources.get('Font'))?.forEach((entry) => {
-      const read = sourceOf(resolved(entry) ?? entry);
+      // A null entry or a reference to nothing names no font; the others of the page still do.
+      const font = resolved(entry);
+      if (font === null) return;
+      const read = sourceOf(font);
       if (read === null) return;
       for (const name of read.names) if (!found.has(name)) found.set(name, read.source);
     });

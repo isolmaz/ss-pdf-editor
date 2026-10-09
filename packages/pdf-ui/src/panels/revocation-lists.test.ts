@@ -7,7 +7,9 @@
  * stored as an empty entry), and that nothing happens without a receiver.
  */
 
+import { Utf8String } from 'asn1js';
 import type { Translator } from 'pdf-shared';
+import { AttributeTypeAndValue, RelativeDistinguishedNames } from 'pkijs';
 import { describe, expect, it } from 'vitest';
 import { issueCrl } from '../../../pdf-core/src/signature-revocation.fixtures';
 import { generateKey, issueCertificate } from '../../../pdf-core/src/signature-trust.fixtures';
@@ -63,6 +65,30 @@ describe('importRevocationLists', () => {
       delta: false,
       derBase64: Buffer.from(der).toString('base64'),
     });
+  });
+
+  it('labels a CRL whose issuer has no common name by its file name', async () => {
+    const ca = await issueCertificate({
+      subject: 'Nameless CA',
+      keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+      notBefore: new Date(Date.UTC(2026, 0, 1)),
+      notAfter: new Date(Date.UTC(2027, 0, 1)),
+      basicConstraints: { cA: true },
+      keyUsage: ['keyCertSign', 'cRLSign'],
+    });
+    const der = await issueCrl({
+      issuer: ca,
+      thisUpdate,
+      nextUpdate,
+      issuerName: new RelativeDistinguishedNames({
+        typesAndValues: [
+          new AttributeTypeAndValue({ type: '2.5.4.10', value: new Utf8String({ value: 'Org only' }) }),
+        ],
+      }),
+    });
+    const { imported, messages } = await run([new File([der as BlobPart], 'org-only.crl')]);
+    expect(messages).toEqual([null]);
+    expect(imported[0]?.map((list) => list.label)).toEqual(['org-only.crl']);
   });
 
   it('imports every block of a PEM file', async () => {

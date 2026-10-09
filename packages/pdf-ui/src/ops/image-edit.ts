@@ -27,32 +27,32 @@ import { applyImageOpacity } from 'pdf-core/ops/image-opacity';
 import { ToolError } from 'pdf-shared';
 import type { OperationDialogSpec, OperationRunContext, OpRunContext } from '../dialogs/types';
 
+/** What `readImageData` hands out when it has pixels to give. */
+type ImageSamples = Exclude<Awaited<ReturnType<typeof readImageData>>, { readonly kind: 'unsupported' }>;
+
 /**
  * The bitmap a `readImageData` result describes.
  *
- * `jpeg` is handed to the browser as a JPEG blob — a `/DCTDecode` stream is one — and
  * `raw` is wrapped in an `ImageData`, which is the only way a canvas takes pixels with no
- * file format around them.
+ * file format around them; `jpeg` is handed to the browser as a JPEG blob — a `/DCTDecode`
+ * stream is one.
  */
-async function bitmapFor(read: Awaited<ReturnType<typeof readImageData>>): Promise<ImageBitmap | ImageData> {
-  if (read.kind === 'jpeg') {
-    const blob = new Blob([read.bytes as unknown as BlobPart], { type: 'image/jpeg' });
-    try {
-      return await createImageBitmap(blob);
-    } catch (cause) {
-      throw new ToolError(
-        'unsupported-format',
-        { engine: 'ui', engineMessage: 'the browser could not decode this image’s JPEG stream' },
-        { cause },
-      );
-    }
-  }
+async function bitmapFor(read: ImageSamples): Promise<ImageBitmap | ImageData> {
   if (read.kind === 'raw') {
     // `ImageData` wants a `Uint8ClampedArray` of its own; the op hands over a plain one
     // because it is DOM-free, so the copy happens exactly once, here.
     return new ImageData(Uint8ClampedArray.from(read.rgba), read.width, read.height);
   }
-  throw new ToolError('unsupported', { engine: 'ui', engineMessage: `image samples: ${read.reasonKey}` });
+  const blob = new Blob([read.bytes as unknown as BlobPart], { type: 'image/jpeg' });
+  try {
+    return await createImageBitmap(blob);
+  } catch (cause) {
+    throw new ToolError(
+      'unsupported-format',
+      { engine: 'ui', engineMessage: 'the browser could not decode this image’s JPEG stream' },
+      { cause },
+    );
+  }
 }
 
 /** `page:name` — one option per (page, resource) pair, because a name repeats across pages. */

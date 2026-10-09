@@ -350,8 +350,6 @@ export function PdfUaView({
           </div>
         );
       }
-      default:
-        return null;
     }
   };
 

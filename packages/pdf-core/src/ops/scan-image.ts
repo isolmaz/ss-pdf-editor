@@ -331,9 +331,11 @@ export function applyEnhanced(image: RasterImage): void {
     counted += 1;
   }
   // Per-channel gain that makes the paper neutral at unchanged luminance.
-  const whiteR = counted === 0 ? 1 : weightR / counted;
-  const whiteG = counted === 0 ? 1 : weightG / counted;
-  const whiteB = counted === 0 ? 1 : weightB / counted;
+  // `counted` is at least 1 for any picture with a pixel: the cell holding the reference value
+  // passes the test above. (A picture without pixels never reads `white`.)
+  const whiteR = weightR / counted;
+  const whiteG = weightG / counted;
+  const whiteB = weightB / counted;
   const white = [whiteR, whiteG, whiteB] as const;
 
   // Maximum filter (the ink of a heading is many cells wide), then a box blur.

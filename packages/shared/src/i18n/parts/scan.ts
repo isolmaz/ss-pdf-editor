@@ -63,7 +63,6 @@ export const scanPart = {
   'scan.page.rotateLeft': 'Sola döndür',
   'scan.page.rotateRight': 'Sağa döndür',
   'scan.page.add': 'Sayfa ekle',
-  'scan.page.empty': 'Henüz sayfa yok. Bir sayfa çekin ya da fotoğraf seçin.',
   'scan.page.limit': 'En fazla {max} sayfa taranabilir.',
   'scan.page.decodeFailed': 'Bu fotoğraf açılamadı: {name}',
   'scan.page.list': 'Taranan sayfalar',

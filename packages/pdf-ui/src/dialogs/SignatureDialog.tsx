@@ -59,16 +59,21 @@ interface StrokePoint {
   readonly time: number;
 }
 
+/** A stroke starts with the press that began it, so it is never empty. */
+type Stroke = [StrokePoint, ...StrokePoint[]];
+
+/** The family each typed-signature face registers under, by the id the style select holds. */
+const FACE_FAMILY: Record<(typeof HANDWRITING_FACES)[number]['id'], string> = {
+  dancing: HANDWRITING_FACES[0].family,
+  vibes: HANDWRITING_FACES[1].family,
+};
+
 /**
  * Smooth strokes whose width follows the pen's speed: quadratic segments through the
  * midpoints of the sampled points (so a stroke has no corners where the samples are), each
  * a little thinner when the hand moved fast — the way ink behaves.
  */
-function paintStrokes(
-  context: CanvasRenderingContext2D,
-  strokes: readonly StrokePoint[][],
-  color: string,
-): void {
+function paintStrokes(context: CanvasRenderingContext2D, strokes: readonly Stroke[], color: string): void {
   context.clearRect(0, 0, PAD_WIDTH, PAD_HEIGHT);
   context.strokeStyle = color;
   context.fillStyle = color;
@@ -78,7 +83,6 @@ function paintStrokes(
   const MIN = 2.5;
   for (const stroke of strokes) {
     const first = stroke[0];
-    if (first === undefined) continue;
     if (stroke.length === 1) {
       context.beginPath();
       context.arc(first.x, first.y, MAX / 2, 0, Math.PI * 2);
@@ -148,7 +152,7 @@ export function SignatureDialog({
   const [fontsReady, setFontsReady] = useState(false);
   const padRef = useRef<HTMLCanvasElement | null>(null);
   const typedRef = useRef<HTMLCanvasElement | null>(null);
-  const strokes = useRef<StrokePoint[][]>([]);
+  const strokes = useRef<Stroke[]>([]);
   const drawing = useRef(false);
   const fileId = useId();
   const color = INK_COLORS[ink];
@@ -171,9 +175,7 @@ export function SignatureDialog({
     const context = typedRef.current?.getContext('2d');
     // A canvas does not repaint when a face finishes loading, so the generic face stands
     // in until the handwriting faces are ready and this effect runs again.
-    const family = fontsReady
-      ? (HANDWRITING_FACES.find((item) => item.id === face)?.family ?? 'cursive')
-      : 'cursive';
+    const family = fontsReady ? FACE_FAMILY[face] : 'cursive';
     if (context) paintTyped(context, name, family, color);
   }, [color, face, fontsReady, name, tab]);
 
@@ -211,13 +213,12 @@ export function SignatureDialog({
   const ready = tab === 'draw' ? strokeCount > 0 : tab === 'type' ? name.trim() !== '' : photoSource !== null;
 
   const place = async () => {
-    if (busy) return;
     setBusy(true);
     try {
       let source: StampSource | null = null;
       if (tab === 'draw' && padRef.current) source = await trimmedPng(padRef.current, role);
       if (tab === 'type' && typedRef.current) source = await trimmedPng(typedRef.current, role);
-      if (tab === 'upload') source = photoSource === null ? null : { ...photoSource, role };
+      if (tab === 'upload' && photoSource !== null) source = { ...photoSource, role };
       if (source !== null) onPlace(source, canRemember && remember);
     } finally {
       setBusy(false);

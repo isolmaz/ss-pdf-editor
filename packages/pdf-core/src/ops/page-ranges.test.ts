@@ -64,6 +64,13 @@ describe('parsePageRanges', () => {
     expect(refusal('-')).toBe('empty segment');
   });
 
+  it('ignores a separator left at either end of the list, and refuses a list of nothing else', () => {
+    expect(parsePageRanges(',2;', 5).pages).toEqual([1]);
+    expect(parsePageRanges('\n1-2,', 5).pages).toEqual([0, 1]);
+    expect(refusal(',')).toBe('no pages selected');
+    expect(refusal(' ; , ')).toBe('no pages selected');
+  });
+
   it('accepts an open range to the end of the document', () => {
     expect(parsePageRanges('1-', 5).pages).toEqual([0, 1, 2, 3, 4]);
   });

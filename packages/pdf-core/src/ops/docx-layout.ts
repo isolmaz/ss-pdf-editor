@@ -280,8 +280,11 @@ async function writePages(
         else rasters += 1;
       }
       // The scene reads the page's text without pictures, so its blocks are text; a field's or an annotation's text counts too.
-      for (const block of [...(vector ? scene.text.blocks : []), ...scene.appearances.blocks]) {
-        for (const line of block.kind === 'text' ? block.lines : []) {
+      const read = [...(vector ? scene.text.blocks : []), ...scene.appearances.blocks];
+      for (const block of read.filter(
+        (entry): entry is Extract<typeof entry, { kind: 'text' }> => entry.kind === 'text',
+      )) {
+        for (const line of block.lines) {
           for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
         }
       }

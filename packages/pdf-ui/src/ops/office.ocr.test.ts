@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
   created: [] as string[][],
   recognized: [] as Blob[],
   terminated: 0,
+  /** How sure the page read is of its first word. */
+  confidence: 95,
 }));
 
 vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
@@ -44,7 +46,11 @@ vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
                     lines: [
                       {
                         words: [
-                          { text: 'Merhaba', bbox: { x0: 100, y0: 100, x1: 300, y1: 140 }, confidence: 95 },
+                          {
+                            text: 'Merhaba',
+                            bbox: { x0: 100, y0: 100, x1: 300, y1: 140 },
+                            confidence: state.confidence,
+                          },
                           { text: 'SOL', bbox: { x0: 320, y0: 100, x1: 400, y1: 140 }, confidence: 99 },
                         ],
                       },
@@ -155,6 +161,32 @@ describe('export-office dialog with a scanned page', () => {
     expect(state.terminated).toBe(3);
     expect(state.created.slice(-1)).toEqual([['tur']]);
     expect(result.files).toHaveLength(1);
+  });
+
+  it('reads a word it is unsure of again with every chosen language, not English alone', async () => {
+    const { exportOfficeDialog } = await import('./office');
+    const before = { created: state.created.length, recognized: state.recognized.length };
+    state.confidence = 40;
+    try {
+      await exportOfficeDialog.run(
+        { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur'] },
+        {
+          signal: new AbortController().signal,
+          onProgress: () => {},
+          bytes: await scan(),
+          pageCount: 1,
+          name: 'tarama.pdf',
+          currentPage: 0,
+          selectedPages: [],
+          t: createTranslator('tr'),
+        },
+      );
+    } finally {
+      state.confidence = 95;
+    }
+    // The page, then a crop of the unsure word: both with Turkish.
+    expect(state.recognized.length - before.recognized).toBeGreaterThanOrEqual(2);
+    expect(state.created.slice(before.created).every((languages) => languages.join() === 'tur')).toBe(true);
   });
 
   it('releases the workers when the export fails after the page was read', async () => {

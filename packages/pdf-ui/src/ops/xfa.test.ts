@@ -1,6 +1,6 @@
 import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { runDialog, xfaFormPdf } from '../pdf-fixtures';
+import { runContext, runDialog, xfaFormPdf } from '../pdf-fixtures';
 import { xfaDataDialog, xfaFlattenDialog, xfaRemoveDialog } from './xfa';
 
 const decode = (bytes: Uint8Array | undefined) => new TextDecoder().decode(bytes ?? new Uint8Array());
@@ -52,6 +52,11 @@ describe('xfaDataDialog', () => {
       code: 'input-missing',
       details: { engineMessage: 'no XFA data file chosen' },
     });
+  });
+
+  it('asks for a data file when the host sends no file field at all', async () => {
+    const run = xfaDataDialog.run({ mode: 'import' }, await runContext(await xfaFormPdf('static')));
+    await expect(run).rejects.toMatchObject({ code: 'input-missing' });
   });
 
   it('says there is no XFA in a form without one', async () => {

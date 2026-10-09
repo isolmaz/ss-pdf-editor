@@ -107,3 +107,21 @@ describe('unlockDialog', () => {
     await expect(none).rejects.toMatchObject({ code: 'wrong-password' });
   });
 });
+
+describe('protectDialog without passwords', () => {
+  it('writes an empty user password when none is sent, so the file is encrypted but opens without one', async () => {
+    const result = await protectDialog.run(
+      { ownerPassword: 'boss' },
+      await runContext(await textPdf([['x']])),
+    );
+    expect(await inspectProtection(bytesOf(result))).toMatchObject({ encrypted: true, needsPassword: false });
+  });
+
+  it('refuses a missing owner password with the password policy, as it does an empty one', async () => {
+    const run = protectDialog.run({ userPassword: 'open' }, await runContext(await textPdf([['x']])));
+    await expect(run).rejects.toMatchObject({
+      code: 'password-policy',
+      details: { engineMessage: expect.stringContaining('owner password is required') },
+    });
+  });
+});

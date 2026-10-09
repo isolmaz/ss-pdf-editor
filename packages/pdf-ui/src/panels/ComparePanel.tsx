@@ -27,7 +27,13 @@
  */
 
 import { MagnifyingGlass, X } from '@phosphor-icons/react';
-import type { ComparePageStatus, TextComparison, VisualComparison } from 'pdf-core/ops/compare';
+import type {
+  ComparePageStatus,
+  CompareTruncationReason,
+  TextComparison,
+  VisualComparison,
+  VisualPageComparison,
+} from 'pdf-core/ops/compare';
 import { compareText, compareVisual } from 'pdf-core/ops/compare';
 import type { OperationProgress } from 'pdf-core/ops/types';
 import { type MessageKey, type Translator, toToolError } from 'pdf-shared';
@@ -77,8 +83,11 @@ const STATUS_KEYS: Record<ComparePageStatus, MessageKey> = {
   unavailable: 'compare.status.unavailable' as MessageKey,
 };
 
+/** Why a page was not compared, or not compared pixel for pixel (`reason` on a visual page). */
+type PageReason = NonNullable<VisualPageComparison['reason']>;
+
 /** Why a comparison was bounded or a page could not be compared, in the user's language. */
-const REASON_KEYS: Record<string, MessageKey> = {
+const REASON_KEYS: Record<CompareTruncationReason | PageReason, MessageKey> = {
   'line-matrix': 'compare.reason.lineMatrix' as MessageKey,
   'word-matrix': 'compare.reason.wordMatrix' as MessageKey,
   'line-list': 'compare.reason.lineList' as MessageKey,
@@ -103,6 +112,8 @@ const CELL_CLASS = 'px-1.5 py-1 text-[11px] tabular-nums';
 interface CompareRow {
   readonly key: string;
   readonly method: CompareMethod;
+  /** The method statement of the row, already translated. */
+  readonly methodLabel: string;
   readonly pageIndex: number;
   readonly status: ComparePageStatus;
   readonly truncated: boolean;
@@ -114,6 +125,7 @@ function textRows(result: TextComparison, t: Translator): CompareRow[] {
   return result.pages.map((page) => ({
     key: `text-${String(page.pageIndex)}`,
     method: 'text' as const,
+    methodLabel: t('compare.method.text' as MessageKey),
     pageIndex: page.pageIndex,
     status: page.status,
     truncated: page.truncated,
@@ -138,13 +150,15 @@ function pixelRows(result: VisualComparison, t: Translator): CompareRow[] {
       page.status === 'added' || page.status === 'removed'
         ? t('compare.detail.pageOnly' as MessageKey)
         : page.status === 'unavailable'
-          ? t(REASON_KEYS[page.reason ?? ''] ?? ('compare.reason.unknown' as MessageKey))
+          ? // `compare.ts` gives every unavailable page the reason it could not be rendered.
+            t(REASON_KEYS[page.reason as PageReason])
           : `${page.differencePercent.toFixed(2)}% · ${String(page.differingTiles)}/${String(page.tileCount)}${
-              page.reason === undefined ? '' : ` · ${t(REASON_KEYS[page.reason] as MessageKey)}`
+              page.reason === undefined ? '' : ` · ${t(REASON_KEYS[page.reason])}`
             }`;
     return {
       key: `pixels-${String(page.pageIndex)}`,
       method: 'pixels' as const,
+      methodLabel: t('compare.method.pixels' as MessageKey, { dpi: result.dpi }),
       pageIndex: page.pageIndex,
       status: page.status,
       truncated: page.status === 'unavailable',
@@ -213,11 +227,8 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
           }
           setRun({ status: 'done', progress: null, failure: null });
         } catch (error) {
+          // Cancelling, restarting and unmounting each replace the controller before they abort it.
           if (controllerRef.current !== controller) return;
-          if (controller.signal.aborted) {
-            setRun({ status: 'cancelled', progress: null, failure: null });
-            return;
-          }
           const failure = toToolError(error);
           const { t: translate, onNotice: notify } = handlers.current;
           const message = translate(failure.messageKey);
@@ -241,6 +252,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
   }, []);
 
   const running = run.status === 'running';
+  const runWith = other === null ? undefined : (method: CompareMethod) => () => start(method, other);
   const rows: CompareRow[] = [
     ...(text === null ? [] : textRows(text, t)),
     ...(pixels === null ? [] : pixelRows(pixels, t)),
@@ -302,14 +314,14 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
           <Button
             size="sm"
             disabled={disabled === true || running || other === null}
-            onClick={() => other !== null && start('text', other)}
+            onClick={runWith?.('text')}
           >
             {t('compare.runText' as MessageKey)}
           </Button>
           <Button
             size="sm"
             disabled={disabled === true || running || other === null}
-            onClick={() => other !== null && start('pixels', other)}
+            onClick={runWith?.('pixels')}
           >
             {t('compare.runPixels' as MessageKey)}
           </Button>
@@ -362,9 +374,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
           {truncationReasons.length === 0 ? null : (
             <p className="px-2 pb-1 text-[11px] text-kumo-warning">
               {t('compare.truncated' as MessageKey, {
-                reasons: truncationReasons
-                  .map((reason) => t(REASON_KEYS[reason] ?? ('compare.reason.unknown' as MessageKey)))
-                  .join(', '),
+                reasons: truncationReasons.map((reason) => t(REASON_KEYS[reason])).join(', '),
               })}
             </p>
           )}
@@ -399,11 +409,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
                   <th scope="row" className={`${CELL_CLASS} text-start text-kumo-default`}>
                     {row.pageIndex + 1}
                   </th>
-                  <td className={`${CELL_CLASS} text-kumo-subtle`}>
-                    {row.method === 'text'
-                      ? t('compare.method.text' as MessageKey)
-                      : t('compare.method.pixels' as MessageKey, { dpi: pixels?.dpi ?? 0 })}
-                  </td>
+                  <td className={`${CELL_CLASS} text-kumo-subtle`}>{row.methodLabel}</td>
                   <td className={`${CELL_CLASS} ${STATUS_TONE[row.status]}`}>{t(STATUS_KEYS[row.status])}</td>
                   <td className={`${CELL_CLASS} text-kumo-default`}>
                     {row.detail}

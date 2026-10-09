@@ -61,7 +61,6 @@ export const scanPart = {
   'scan.page.rotateLeft': 'Rotate left',
   'scan.page.rotateRight': 'Rotate right',
   'scan.page.add': 'Add page',
-  'scan.page.empty': 'No pages yet. Take a photo or choose some.',
   'scan.page.limit': 'At most {max} pages can be scanned.',
   'scan.page.decodeFailed': 'This photo could not be opened: {name}',
   'scan.page.list': 'Scanned pages',
