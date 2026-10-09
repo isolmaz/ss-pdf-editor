@@ -752,6 +752,14 @@ export function PdfViewerPane({
           requestAnimationFrame(applyPageOffset);
         }
         viewer.update();
+        // The pages of a new stack have their geometry from here. A stack can lay out at the
+        // size the last measure already saw (a half turn is the upright page again, and the
+        // slot it replaced was measured at that size), so the size signature alone cannot see
+        // it; the overlays that read the pages are told once, a frame on, whatever the size.
+        requestAnimationFrame(() => {
+          if (stackDisposed || frozenStack) return;
+          callbacksRef.current.onLayoutChange?.();
+        });
       };
       const onPageChanging = (payload: { pageNumber: number }) => {
         // A frozen stack keeps running (its scroll listener still fires), but it no
