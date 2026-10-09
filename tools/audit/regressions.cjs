@@ -289,7 +289,10 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
         return new Response(
           JSON.stringify({
             version: 'v1',
-            capabilities: { core: ['/engines/core.js'] },
+            capabilities: {
+              core: ['/engines/core.js'],
+              app: ['/editor/assets/index-1.js', '/editor/assets/pdf-1.js'],
+            },
             shell: ['/editor/assets/en-1.js', 'https://remote.test/x.js', '/elsewhere/tr.js'],
           }),
           {
@@ -562,25 +565,61 @@ async function main() {
     assert.equal(h.deleted.includes('another-app-v1'), false);
     assert.equal(h.deleted.includes('pdf-editor-static-old'), true);
   });
-  await check('offline package preparation rejects cross-origin and malformed URLs', async () => {
-    const h = swHarness();
+  /** One request/response with the worker, as the page makes it: the reply arrives on the port. */
+  async function askWorker(h, data) {
     const messages = [];
     const event = h.dispatch('message', {
-      data: {
-        type: 'PREPARE_PACKAGE',
-        urls: ['https://remote.test/x.js', '/engines/core.js', { bad: true }],
-        package: 'test',
-      },
+      data,
       ports: [{ postMessage: (message) => messages.push(message) }],
     });
     await Promise.all(event.lifetimes);
     await tick();
-    // The worker reads the build's manifest first and then keeps only its own paths: a
-    // page-supplied cross-origin URL must never reach the fetch loop.
-    const fetched = h.requests.filter((url) => !String(url).includes('/offline-manifest.json'));
-    assert.deepEqual(fetched, ['/engines/core.js']);
-    assert.equal(messages[0].count, 1);
+    return messages[0];
+  }
+  const fetchedBeyondManifest = (h) =>
+    h.requests.filter((url) => !String(url).includes('/offline-manifest.json'));
+  await check('offline preparation takes capability names, never a page-supplied URL', async () => {
+    const h = swHarness();
+    const reply = await askWorker(h, {
+      type: 'PREPARE_PACKAGE',
+      capabilities: ['app', 'unknown', { bad: true }],
+      urls: ['https://remote.test/x.js', '/engines/core.js'],
+    });
+    // The worker reads the build's manifest first and resolves the names against it: a
+    // page-supplied URL, cross-origin or not, must never reach the fetch loop, and a name the
+    // manifest does not have asks for nothing.
+    assert.deepEqual(fetchedBeyondManifest(h), ['/editor/assets/index-1.js', '/editor/assets/pdf-1.js']);
+    assert.equal(reply.count, 2);
   });
+  await check('offline preparation without names fills every capability of the manifest', async () => {
+    const h = swHarness();
+    const reply = await askWorker(h, { type: 'PREPARE_PACKAGE' });
+    assert.deepEqual(fetchedBeyondManifest(h), [
+      '/engines/core.js',
+      '/editor/assets/index-1.js',
+      '/editor/assets/pdf-1.js',
+    ]);
+    assert.equal(reply.count, 3);
+  });
+  await check(
+    'readiness requires every chunk of the editor build until preparation has cached it',
+    async () => {
+      const h = swHarness();
+      const before = await askWorker(h, { type: 'CHECK_READINESS' });
+      // A first visit holds the shell and the engines it was handed, not the tool chunks it never
+      // opened: saying "ready" there is the failure this capability exists to prevent.
+      // The reply was built inside the worker's own realm: compare it as data.
+      const plain = (value) => JSON.parse(JSON.stringify(value));
+      assert.deepEqual(plain(before.capabilities.app), {
+        ready: false,
+        missing: ['/editor/assets/index-1.js', '/editor/assets/pdf-1.js'],
+      });
+      await askWorker(h, { type: 'PREPARE_PACKAGE', capabilities: ['app'] });
+      const after = await askWorker(h, { type: 'CHECK_READINESS' });
+      assert.deepEqual(plain(after.capabilities.app), { ready: true, missing: [] });
+      assert.equal(after.capabilities.core.ready, false);
+    },
+  );
   await check('service-worker install caches the shell and its catalogues, only from the build', async () => {
     const h = swHarness();
     const event = h.dispatch('install');
