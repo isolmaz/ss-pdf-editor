@@ -273,6 +273,22 @@ describe('exact layout: what the reader sees of a field or an annotation', () =>
     expect(lost(exact.notes)?.params).toEqual({ count: 1 });
   });
 
+  it('reads a mark drawn in the font under its base-14 alias Dingbats', async () => {
+    const bytes = formPdf({
+      fields: '[10 0 R]',
+      annots: '[10 0 R]',
+      extra: {
+        ...FONTS,
+        31: '<</Type/Font/Subtype/Type1/BaseFont/Dingbats>>',
+        20: appearance('BT /Z 12 Tf 2 4 Td (4) Tj ET', 14, 14),
+        10: widget('50 500 64 514', 20, '/FT/Btn/T(a)/V/Yes/AS/Yes'),
+      },
+    });
+    const exact = await documentXml(bytes, 'layout');
+    expect(exact.text).toContain('\u2714');
+    expect(hasRaw(exact.text, '4')).toBe(false);
+  });
+
   it('draws the check mark of a box that has no appearance stream', async () => {
     const bytes = formPdf({
       fields: '[10 0 R]',

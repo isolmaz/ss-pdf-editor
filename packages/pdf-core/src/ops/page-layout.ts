@@ -567,7 +567,7 @@ function glyphNotes(symbols: boolean): GlyphNotes {
     text.walk({
       showGlyph(font, trm, gid, unicode) {
         // A glyph already read as a symbol of the Dingbats block (an embedded font's own map) stays.
-        if ((unicode >= 0x2700 && unicode <= 0x27bf) || !/^zapfdingbats$/i.test(font.getName())) return;
+        if ((unicode >= 0x2700 && unicode <= 0x27bf) || !/^(zapf)?dingbats$/i.test(font.getName())) return;
         const [x, y] = apply(ctm, trm[4], trm[5]);
         dingbats.set(keyOf(x, y), ZAPF_SYMBOLS[String.fromCharCode(gid + ZAPF_GLYPH_BASE)] ?? '');
       },
