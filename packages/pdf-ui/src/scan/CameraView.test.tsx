@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { detectPage } from 'pdf-core/ops/scan-detect';
 import type { RasterImage } from 'pdf-core/ops/scan-geometry';
 import { createTranslator } from 'pdf-shared';
+import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { CameraView, type CameraViewProps } from './CameraView';
 import { type FakeCamera, FRONT_CAMERA, installCamera, sizeVideo } from './camera.fixtures';
@@ -285,6 +286,37 @@ describe('CameraView live outline', () => {
       vi.advanceTimersByTime(1000);
     });
     expect(frames.sizes).toEqual([]);
+  });
+});
+
+/**
+ * Renders after the view in the same tree; when the tree is removed, its layout cleanup runs
+ * once React has detached the video's ref but before the view's own effect cleanup has
+ * cleared the timer — the moment the outline timer can fire with no video.
+ */
+function TimerFiresOnLeave() {
+  useLayoutEffect(
+    () => () => {
+      vi.advanceTimersByTime(280);
+    },
+    [],
+  );
+  return null;
+}
+
+describe('CameraView leaving while the outline timer is due', () => {
+  it('lets a tick that lands after the video is detached pass, without reading a frame', async () => {
+    const view = render(
+      <>
+        <CameraView t={t} onPhotos={onPhotos} pageCount={0} onShowPages={onShowPages} disabled={false} />
+        <TimerFiresOnLeave />
+      </>,
+    );
+    await screen.findByText('Looking for the page…');
+    sizeVideo(video(), FRAME_W, FRAME_H);
+    expect(() => view.unmount()).not.toThrow();
+    expect(frames.sizes).toEqual([]);
+    expect(camera.track.stop).toHaveBeenCalledTimes(1);
   });
 });
 

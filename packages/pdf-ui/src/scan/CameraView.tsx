@@ -75,9 +75,9 @@ export function CameraView({ t, onPhotos, pageCount, onShowPages, disabled }: Ca
   useEffect(() => {
     if (camera.status !== 'live') return;
     const timer = window.setInterval(() => {
-      // The video is always mounted while the camera is live, and the timer dies with the view.
-      const video = videoRef.current as HTMLVideoElement;
-      if (video.readyState < 2 || document.hidden) return;
+      // React detaches the ref when the view is removed, before the effect cleanup clears this timer.
+      const video = videoRef.current;
+      if (video === null || video.readyState < 2 || document.hidden) return;
       const frame = frameToRaster(video, 400);
       if (frame === null) return;
       const found = detectPage(frame);
