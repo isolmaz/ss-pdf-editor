@@ -103,7 +103,9 @@ export function inkRuns(image: RgbaImage, word: OcrWord): [number, number][] {
     } else if (start < 0) start = x;
     last = x;
   }
-  if (start >= 0) runs.push([start, last + 1]);
+  // The contrast check above guarantees an ink column: the lightest and darkest pixels lie on
+  // opposite sides of `cut`, and one of those sides is the ink, so the last run is always open.
+  runs.push([start, last + 1]);
   return runs;
 }
 

@@ -278,6 +278,16 @@ describe('refineWords', () => {
     );
   });
 
+  it('leaves out the English read of a word when its first read used the last crop of the page', async () => {
+    const fillers = Array.from({ length: 149 }, () => word('abc', 30));
+    const { read, calls } = reader(() => null);
+    const out = await refineWords([...fillers, word('SOL', 90)], page([[10, 150]]), encode, read, signal);
+    expect(calls).toHaveLength(150);
+    expect(calls.at(-1)?.models).toBe('all');
+    expect(calls.filter((call) => call.models === 'english')).toEqual([]);
+    expect(out.at(-1)).toEqual(word('SOL', 90));
+  });
+
   it('reads words with a gap in their ink before the unsure ones, whatever their confidence', async () => {
     const { read, calls } = reader((width) => (width === 32 ? { text: 'ab', confidence: 95 } : null));
     const ink = page([
