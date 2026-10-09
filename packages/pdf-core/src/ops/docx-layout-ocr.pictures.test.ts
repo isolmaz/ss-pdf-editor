@@ -16,20 +16,42 @@ import { line, officeDocument } from './export-office-fixtures';
 import type * as Reader from './layout-scene-read';
 import type { OperationContext } from './types';
 
-const state = vi.hoisted(() => ({ grey: 'off' as 'off' | 'grey' | 'greyAlpha' }));
+const state = vi.hoisted(() => ({
+  grey: 'off' as 'off' | 'grey' | 'greyAlpha',
+  /** What stopped the scene from being read grey: the export reads the page as one picture then, which is no grey scene. */
+  failure: undefined as unknown,
+}));
 
 /** Pictures of the scene are turned grey (or grey with an alpha channel) when `state.grey` says so, as a grey scale scene would hold. */
 vi.mock('./layout-scene-read', async (importOriginal) => {
   const original = await importOriginal<typeof Reader>();
-  const greyed = (mupdf: Mupdf, data: Uint8Array, keepAlpha: boolean): Uint8Array => {
+  const greyed = (mupdf: Mupdf, data: Uint8Array, withAlpha: boolean): Uint8Array => {
     const image = new mupdf.Image(data);
-    const pixmap = image.toPixmap();
-    const grey = pixmap.convertToColorSpace(mupdf.ColorSpace.DeviceGray, keepAlpha);
+    const colour = image.toPixmap();
+    const width = colour.getWidth();
+    const height = colour.getHeight();
+    const grey = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, width, height], withAlpha);
     try {
+      const from = colour.getPixels();
+      const to = grey.getPixels();
+      const fromStep = colour.getNumberOfComponents();
+      const toStep = withAlpha ? 2 : 1;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const source = y * colour.getStride() + x * fromStep;
+          const target = y * grey.getStride() + x * toStep;
+          to[target] = Math.round(
+            0.299 * (from[source] as number) +
+              0.587 * (from[source + 1] as number) +
+              0.114 * (from[source + 2] as number),
+          );
+          if (withAlpha) to[target + 1] = 255;
+        }
+      }
       return grey.asPNG().slice();
     } finally {
       grey.destroy();
-      pixmap.destroy();
+      colour.destroy();
       image.destroy();
     }
   };
@@ -38,14 +60,19 @@ vi.mock('./layout-scene-read', async (importOriginal) => {
     readPageScene: (mupdf: Mupdf, page: Page, contentsOnly?: boolean) => {
       const scene = original.readPageScene(mupdf, page, contentsOnly);
       if (state.grey === 'off') return scene;
-      return {
-        ...scene,
-        items: scene.items.map((item) =>
-          item.kind === 'image'
-            ? { ...item, data: greyed(mupdf, item.data, state.grey === 'greyAlpha') }
-            : item,
-        ),
-      };
+      try {
+        return {
+          ...scene,
+          items: scene.items.map((item) =>
+            item.kind === 'image'
+              ? { ...item, data: greyed(mupdf, item.data, state.grey === 'greyAlpha') }
+              : item,
+          ),
+        };
+      } catch (error) {
+        state.failure = error;
+        throw error;
+      }
     },
   };
 });
@@ -183,6 +210,7 @@ describe('exact layout: text inside a picture on a page of vector text', () => {
       state.grey = grey;
       try {
         const read = await exported(await pageWith(HEADER, PLACEMENT));
+        expect(state.failure).toBeUndefined();
         expect(occurrences(read.body, 'aaaabbbbccccdddd')).toBe(6);
         expect(read.ink).toBeLessThan(seeThrough.ink / 10);
       } finally {
