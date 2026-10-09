@@ -9,6 +9,7 @@ import {
   normalizeWords,
   recoveredWords,
   resizeBilinear,
+  setAsidePictureWords,
   ssim,
 } from './compare';
 
@@ -362,5 +363,26 @@ describe('recoveredWords', () => {
 
   it('is zero for no match', () => {
     expect(recoveredWords(['a'], [])).toBe(0);
+  });
+});
+
+describe('setAsidePictureWords', () => {
+  it('takes the words a picture contributed out of the page, after the own words of the page', () => {
+    // the page says "price list" itself; the picture has "price 120 tl" and the export read it
+    const actual = [['price', 'list', 'price', '120', 'tl']];
+    expect(setAsidePictureWords(actual, ['price', '120', 'tl'], [['price', 'list']])).toEqual([
+      ['price', 'list'],
+    ]);
+  });
+
+  it('sets each picture word aside once over all the pages, and leaves what the pictures do not have', () => {
+    const actual = [
+      ['a', 'x'],
+      ['x', 'y', 'x'],
+    ];
+    expect(setAsidePictureWords(actual, ['x'], [['a'], ['y']])).toEqual([['a'], ['x', 'y', 'x']]);
+    expect(setAsidePictureWords(actual, [], [['a'], ['y']])).toEqual(actual);
+    // a page without an entry for its own text keeps its words but the picture's
+    expect(setAsidePictureWords([['x']], ['x'], [])).toEqual([[]]);
   });
 });

@@ -117,8 +117,9 @@ export const redactDialog: OperationDialogSpec = {
       { signal: context.signal, onProgress: context.onProgress },
     );
 
-    // `redactDocument` throws `verification-failed` when a mark still holds text, so a result
-    // that got here is a verified one: there is no failed or partial verification to report.
+    // `redactDocument` throws `verification-failed` when a mark still holds text, an annotation or a
+    // form field, so a result that got here is a verified one: there is no failed or partial
+    // verification to report.
     return {
       files: [{ name: context.name, bytes: outcome.bytes, mime: 'application/pdf' }],
       report: {

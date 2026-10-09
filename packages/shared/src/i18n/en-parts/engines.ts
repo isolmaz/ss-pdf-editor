@@ -2,6 +2,10 @@ export const enginesPart = {
   'op.note.security.encryptionApplied': 'AES-256 encryption applied.',
   'op.note.security.opensWithoutPassword':
     'Document opens without password; permissions are restricted by owner password only.',
+  'op.note.security.signatureInvalidated':
+    'The document carries a digital signature. Encrypting rewrites the file, so the signature is no longer valid.',
+  'op.note.security.signatureInvalidatedUnlock':
+    'The document carries a digital signature. Removing the password rewrites the file, so the signature is no longer valid.',
   'op.note.security.verified': 'Output reopened and encryption verified.',
   'op.note.security.protectionRemoved': 'Password removed; output is unprotected.',
   'op.note.security.alreadyUnprotected': 'Document is already unencrypted; file unchanged.',
@@ -15,6 +19,11 @@ export const enginesPart = {
     'Metadata cleared: title, author, subject, keywords, creator and the XMP packet. Custom properties are kept.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
+  'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
+  'op.note.redact.xfaDropped':
+    'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining AcroForm fields keep their values.',
+  'op.note.redact.annotationsRemoved':
+    '{count} annotation(s) (comments, markup) under the marked areas removed.',
   'op.progress.encrypt': 'Encrypting document',
   'op.progress.decrypt': 'Removing password',
   'op.progress.redact': 'Erasing areas',
@@ -23,7 +32,8 @@ export const enginesPart = {
   'op.progress.ocr.save': 'Writing text layer',
   'op.note.ocr.layerAdded': 'Invisible text layer of {words} word(s) added to {pages} page(s) ({dpi} DPI).',
   'op.note.ocr.skippedPages': '{count} page(s) with text skipped.',
-  'op.note.ocr.overwriteIsAdditive': 'Overwrite mode does not delete existing text; new layer is added.',
+  'op.note.ocr.overwriteIsAdditive':
+    '"Read again" does not delete existing text; the recognised words are added as a new layer.',
   'op.note.ocr.lowConfidence': 'Page {page}: low recognition confidence ({confidence}%).',
   'op.note.ocr.hiddenLayer': 'Text layer rendered invisibly; text is selectable and searchable.',
   'op.note.ocr.bestModel':
