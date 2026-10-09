@@ -655,7 +655,7 @@ describe('usePageActions', () => {
 
   it('runs a page action over the shell’s refs', async () => {
     pageAction.mockResolvedValue(fakeHandle());
-    const { host, actions, rendered } = bound();
+    const { actions, rendered } = bound();
 
     act(() => rendered.result.current.runPageAction({ kind: 'delete' }));
     await vi.waitFor(() => expect(isBusy()).toBe(false));

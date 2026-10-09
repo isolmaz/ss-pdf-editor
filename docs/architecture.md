@@ -2314,8 +2314,12 @@ them once rather than twice.
 
 ## 8. `apps/web` — the shell
 
-`apps/web/src/App.tsx` is the composition root: every path in and out of the document and
-the wiring between `pdf-model`, `pdf-core` and `pdf-ui`. UI state that several surfaces share
+`apps/web/src/App.tsx` is the composition root: the wiring between the feature modules,
+`pdf-model`, `pdf-core` and `pdf-ui`, the link-region and image-list state its hosts share,
+the six audit-pinned callbacks
+(`saveActive`, `persistTabDraft`, `opfsSave`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
+thin wrappers over the feature functions that `tools/audit/regressions.cjs` exercises), the
+drop target, and the feature hosts. UI state that several surfaces share
 lives in feature stores under `apps/web/src/features/`, each made with `createStore` from
 `features/store.ts` (module state read through `useSyncExternalStore`, the same convention as
 `SessionStore` and `reading-order-store.ts`). A component subscribes with a selector and
@@ -2346,6 +2350,8 @@ testable logic lives:
 | `features/selection/` | Mark selection and the text tool: the selected marks and the mark to select after a write (`selection-store.ts`), deleting and selecting all marks and opening a note (`selection-actions.ts`), the selection effects (`use-selection.ts`), the text tool's picked block and frozen bytes (`text-tool-store.ts`, `use-text-tool-bytes.ts`) and the text layer host (`TextToolSurface.tsx`) |
 | `features/open/` | Opening and producing documents: the home screen, opening state, password prompt, locked tabs, page selection and pending home command (`open-store.ts`), opening a file, a produced tab, a conversion, a recent entry or the picker (`open-actions.ts`, `use-open-actions.ts`), and the home header, password prompt and file input hosts (`OpenSurfaces.tsx`) |
 | `features/save/` | Saving, closing and the viewer handle: the save lock, viewer, zoom, current page, layout revision and close request (`save-store.ts`), preparing the output (`prepare-output.ts`), saving and exporting (`save-actions.ts`), closing and discarding a tab (`close-actions.ts`), the viewer-ready handler and engine-value checkpoints (`viewer-actions.ts`), and the close-document host (`SaveSurfaces.tsx`) |
+| `features/shell/` | The shell: the palette, settings and rename state (`shell-store.ts`, `shell-actions.ts`), the command list (`use-shell-commands.ts`), the shortcut wiring (`use-shell-bindings.ts`), the document effects in their fixed order (`use-document-effects.ts`), the edit state (`use-edit-state.ts`), and the layout: header, tool strip, document and right docks, viewer area, body, status bar and the palette and settings overlays, each reading the stores it shows |
+| `features/diagnostics/` | The memory sampler (`memory-store.ts`): a sample every 2.5 s, kept only when it changed, read by the status bar alone |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
