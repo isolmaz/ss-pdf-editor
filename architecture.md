@@ -607,11 +607,21 @@ had to stay green. The moves, and the defects they fixed on the way:
        `layout`, `layoutRasters`, `fontsEmbedded`, `pageScaled`, `noText` and `unreadable`.
     5. **Scans (OCR).** After the scene is read, `isScanPage` decides: no visible character
        on the page and pictures (not shapes) covering at least half of its area, so a scan with
-       or without an invisible text layer. For such a page `readScanPage`
+       or without an invisible text layer. A page with visible text and pictures over half of
+       its area (`isMixedPage`) goes through `readScanPage` too, with `visibleBoxes` (one box
+       per upright run, one per character of turned text) painted over in the render with the
+       colour around them (`maskBoxes`), `dropMasked` on the words, `inkBoxes` and
+       `wordsInPicture` as the gate, and the vector text kept; a page of text with a picture of
+       2 % or more goes through `readPictureText`, which judges the picture on its own pixels
+       first (`pictureLooksLikeText`). OCR always reads the render with annotations. For
+       such a page `readScanPage`
        (`ops/docx-layout-ocr.ts`) replaces the scene's items and the text boxes:
-       - *Words.* The invisible layer's, when the page has one (`layerWords`: words cut at
+       - *Words.* The invisible layer's, when the page has one it can trust (`layerWords`: words cut at
          blanks from the layer's characters, boxes from the baseline and size, confidence 100,
-         no recognition run); else `OfficeExportOptions.ocr.recognize` (the UI passes
+         no recognition run; `layerTrusted` in `ops/docx-layout-mixed.ts`: fewer than 10 % of the
+         characters U+FFFD or on a line turned more than 0.05 rad from the dominant direction,
+         and `dropCovered` removes words whose box shows no ink in the render, so a word under an
+         opaque annotation is not text; a layer that fails is read with OCR when it can run); else `OfficeExportOptions.ocr.recognize` (the UI passes
          `recognizePage`, Tesseract, quality `best`, the languages ticked in the form's
          `ocrLanguages` field, default `tur`+`eng`, in automatic page segmentation (mode 3:
          columns, blocks and lines are found, which the text boxes are built from; the 90 %

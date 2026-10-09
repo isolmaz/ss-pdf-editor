@@ -317,7 +317,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
         than 1500 drawings as one picture. The report counts the text boxes, shapes,
         pictures and those regions.
       - **Scanned pages (OCR).** A page that shows pictures covering at least half of it and
-        no visible text is read with Tesseract, in the browser, with the best model, in the
+        no visible text (see below for a page with some) is read with Tesseract, in the browser, with the best model, in the
         languages ticked in the form (default Turkish and English; the 27 OCR languages are
         offered). The page is rendered at the scan's own resolution (150–300 dpi). The words
         become editable text boxes with the size and colour measured from the scan, bold per
@@ -341,8 +341,27 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
         split at the gap and each piece read alone. At most 150 such reads are made per page
         (words with a gap first, then the least sure); if one cannot run, the first reading
         stands.
+      - **Text next to a scan, text inside a picture.** A page with real text (a typed header,
+        a stamp, page numbers) over pictures that cover at least half of it keeps that text as
+        Word text; the text is painted over in the picture OCR reads, with the colour around it
+        (not white), the words OCR still finds on it are dropped, and the rest of the picture
+        becomes text boxes, with the background built from the page without those words. A
+        diagonal watermark is painted over character by character, so the scan under it stays.
+        On a page of real text, a picture of at least 2 % of the page is judged from its own
+        pixels first (ink in at least three bands of rows: not a logo, a photograph or a blank);
+        only then the page is read, and the words of a picture become text boxes over it, with
+        the words erased from the picture, when the picture holds at least 8 words on 2 lines,
+        read with 80 % confidence on average, over 15 % of its ink. A chart's labels, a diagram
+        or a logo with its name stay a picture. A word is written once even where pictures
+        overlap, a picture with see-through pixels keeps its glyphs (its text is added above
+        them), and a JPEG stays a JPEG. OCR reads the page as a viewer shows it, annotations
+        included, so text under an opaque box is not exported.
       - **Scan details.** When the PDF already has an invisible OCR text layer (this app's OCR
-        leaves one), its words are used and OCR is not run. A word read with less than 90 %
+        leaves one) and the layer is reliable, its words are used and OCR is not run: fewer
+        than 10 % of its characters are the replacement character or on a line turned away from
+        the layer's main direction, and a word whose box shows no ink in the page (a patch lies
+        over it) is dropped. Otherwise the page is read with OCR as if it had no layer (the
+        layer is kept when OCR cannot run). A word read with less than 90 %
         confidence is marked with a Word comment, and the report lists those words by page.
         With no language ticked, or when the engine cannot start, a scan stays a picture and
         the report says so. How the engine and the 90 % threshold were chosen:

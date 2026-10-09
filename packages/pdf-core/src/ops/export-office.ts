@@ -1693,6 +1693,14 @@ async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExpo
   if (layout.ocr.pages.length > 0) {
     notes.push(note('changed', 'op.note.exportOffice.ocrPages', { pages: layout.ocr.pages.join(', ') }));
   }
+  if (layout.ocr.mixed.length > 0) {
+    notes.push(note('changed', 'op.note.exportOffice.ocrMixedPages', { pages: layout.ocr.mixed.join(', ') }));
+  }
+  if (layout.ocr.untrusted.length > 0) {
+    notes.push(
+      note('changed', 'op.note.exportOffice.ocrLayerRejected', { pages: layout.ocr.untrusted.join(', ') }),
+    );
+  }
   if (layout.ocr.families.length > 0) {
     notes.push(
       note('preserved', 'op.note.exportOffice.ocrFont', { families: layout.ocr.families.join(', ') }),
