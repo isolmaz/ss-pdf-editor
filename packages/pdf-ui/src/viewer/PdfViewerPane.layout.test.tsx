@@ -67,7 +67,12 @@ vi.mock('pdfjs-dist/web/pdf_viewer.css', () => ({}));
 
 const t = createTranslator('en');
 const handleOf = (id: string) =>
-  ({ id, raw: {}, fingerprint: 'fingerprint', pageCount: 1 }) as unknown as PdfDocumentHandle;
+  ({
+    id,
+    raw: { annotationStorage: { onSetModified: null, onAnnotationEditor: null } },
+    fingerprint: 'fingerprint',
+    pageCount: 1,
+  }) as unknown as PdfDocumentHandle;
 
 const frames = new Map<number, FrameRequestCallback>();
 let frameId = 0;
