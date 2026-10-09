@@ -85,14 +85,16 @@ describe('layout scene: a pattern used as a stroke', () => {
     );
     expect(kinds(scene)).toEqual(['shape', 'raster', 'shape']);
     const raster = scene.items[1] as SceneRaster;
-    // The line's 8 points of width, 200 long, with the y axis turned down.
-    close(raster.box, [100, 396, 300, 404]);
+    // The line (100…300 along, 8 wide) grown by half its width on every side, the y axis turned down.
+    close(raster.box, [96, 396, 304, 404]);
     const png = decode(mupdf, raster.data);
-    expect([png.width, png.height]).toEqual([400, 16]);
-    // Inside a red cell and the stroke; between two cells; and the stroke's lower half, a gap of the tile.
-    expect(png.at(4, 4)).toEqual([255, 0, 0, 255]);
-    expect(png.at(14, 4)[3]).toBe(0);
-    expect(png.at(4, 12)[3]).toBe(0);
+    expect([png.width, png.height]).toEqual([416, 16]);
+    // Two pixels to the point. Inside a red cell and the stroke; between two cells; the stroke's
+    // lower half, a gap of the tile; and past the stroke's butt end, where the tile has a red cell.
+    expect(png.at(12, 4)).toEqual([255, 0, 0, 255]);
+    expect(png.at(22, 4)[3]).toBe(0);
+    expect(png.at(12, 12)[3]).toBe(0);
+    expect(png.at(412, 4)[3]).toBe(0);
   });
 
   it('reads the pattern strokes of a pattern another island leaves out, and the ones it draws itself', async () => {

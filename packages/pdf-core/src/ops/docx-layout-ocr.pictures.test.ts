@@ -141,10 +141,8 @@ async function exported(bytes: Uint8Array) {
     .replaceAll(' ', '');
   const mupdf = await loadMupdf();
   let ink = 0;
-  for (const name of Object.keys(zip.files).filter((entry) => entry.startsWith('word/media/'))) {
-    const pixmap = new mupdf.Image(
-      await (zip.file(name) as JSZip.JSZipObject).async('uint8array'),
-    ).toPixmap();
+  for (const entry of zip.file(/^word\/media\//)) {
+    const pixmap = new mupdf.Image(await entry.async('uint8array')).toPixmap();
     const pixels = pixmap.getPixels();
     const step = pixmap.getNumberOfComponents();
     for (let y = 0; y < pixmap.getHeight(); y += 1) {
