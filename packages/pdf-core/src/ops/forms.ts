@@ -791,6 +791,14 @@ export async function readFormFields(
   });
 }
 
+/**
+ * The fully qualified name of every field of an opened document, the names `readFormFields`
+ * reports — for a caller that already holds the document and must not parse it again.
+ */
+export function fieldNamesOf(doc: PDFDocument): readonly string[] {
+  return collectFields(doc).map((field) => field.name);
+}
+
 /** One field's widgets as they sit on the pages: where a reader draws them. */
 export interface FormWidgetInfo {
   readonly name: string;

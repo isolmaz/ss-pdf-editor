@@ -52,8 +52,15 @@ import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { annotsOf, openForWrite, pageObjects, readName, resolved, saveRewrite } from '../engines/mupdf-write';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
-import { composedLabelRanges, type LabelPlacement, readLabelRanges, replaceLabelRanges } from './page-labels';
-import { inspectProtection } from './security';
+import { fieldNamesOf } from './forms';
+import {
+  composeLabelRanges,
+  type LabelPlacement,
+  type PageLabelRange,
+  readLabelRanges,
+  replaceLabelRanges,
+} from './page-labels';
+import { isEncrypted } from './security';
 import {
   note,
   type OperationContext,
@@ -245,7 +252,7 @@ export async function composeDocument(
  * Merge several documents into one, preserving outline/attachments where
  * `extractPages` does (each source contributes `includePages`) and writing the page
  * labels the engine drops for a multi-document composition: every page keeps the label
- * its own document gave it (`composedLabelRanges`).
+ * its own document gave it (`composeLabelRanges`).
  *
  * This one is **byte-based**, and that is the difference from `composeDocument`:
  * the caller hands over a produced buffer whose engine edits are already baked
@@ -306,17 +313,16 @@ export async function mergeDocuments(
       });
     }
 
-    // Planned once the engine has accepted every source: it needs only the sources' bytes and
+    // Read once the engine has accepted every source: it needs only the sources' bytes and
     // the layout the engine was asked for, and a document pdf.js refuses keeps its own error.
-    const labels = await composedLabelRanges(
-      [base.bytes, ...others.map((other) => other.bytes)],
+    const inputs = await readMergeInputs([base.bytes, ...others.map((other) => other.bytes)], context);
+    const labels = composeLabelRanges(
+      inputs.labelRanges,
       planMergePlacements(
         base.pageCount,
         others.map((other) => other.pageCount),
         insertAfter,
       ),
-      context,
-      'mergeDocuments',
     );
     const baseMetadata = await readBaseMetadata(handle);
     const { mupdf, doc: document } = await openForWrite(produced);
@@ -342,9 +348,7 @@ export async function mergeDocuments(
       document.destroy();
     }
     const notes: OperationNote[] = [note('lost', 'op.note.merge.metadata')];
-    if (await anyEncrypted([base.bytes, ...others.map((other) => other.bytes)])) {
-      notes.push(note('lost', 'op.note.merge.encryptionDropped'));
-    }
+    if (inputs.encrypted) notes.push(note('lost', 'op.note.merge.encryptionDropped'));
     notes.push(
       note('preserved', 'op.note.merge.structure', {
         outline: structure.outline,
@@ -369,6 +373,9 @@ export async function mergeDocuments(
         }),
       );
     }
+    if (inputs.sharedFieldNames > 0) {
+      notes.push(note('changed', 'op.note.merge.sharedFields', { count: inputs.sharedFieldNames }));
+    }
     notes.push(note('preserved', 'op.note.merge.verified', { pages: pageCount }));
 
     return {
@@ -388,19 +395,56 @@ export async function mergeDocuments(
   }
 }
 
-/**
- * Whether any merge input carries an `/Encrypt` dictionary. An owner-password document opens
- * without a password, the engine merges it, and the output has no encryption at all.
- */
-async function anyEncrypted(inputs: readonly Uint8Array[]): Promise<boolean> {
-  for (const bytes of inputs) {
-    if ((await inspectProtection(bytes)).encrypted) return true;
-  }
-  return false;
+/** What a merge reads from its input documents, in one parse of each. */
+interface MergeInputs {
+  /** The label ranges of every input, in the order the inputs were given. */
+  readonly labelRanges: readonly (readonly PageLabelRange[])[];
+  /**
+   * Whether any input carries an `/Encrypt` dictionary. An owner-password document opens
+   * without a password, the engine merges it, and the output has no encryption at all.
+   */
+  readonly encrypted: boolean;
+  /**
+   * How many fully qualified field names occur in more than one input. The merge keeps every
+   * field, and fields with one name share one value, so typing in one changes the other.
+   */
+  readonly sharedFieldNames: number;
 }
 
 /**
- * Where every page of a merge lands, in the terms `composedLabelRanges` maps labels
+ * Open each input once, read-only, and take its label ranges, its encryption and its field
+ * names from that one document. The signal is checked between documents.
+ */
+async function readMergeInputs(
+  inputs: readonly Uint8Array[],
+  context: OperationContext,
+): Promise<MergeInputs> {
+  const mupdf = await loadMupdf();
+  const labelRanges: (readonly PageLabelRange[])[] = [];
+  const documentsOf = new Map<string, number>();
+  let encrypted = false;
+  for (const bytes of inputs) {
+    throwIfAborted(context.signal);
+    const doc = openPdf(mupdf, bytes);
+    try {
+      labelRanges.push(readLabelRanges(doc));
+      encrypted = isEncrypted(mupdf, doc) || encrypted;
+      for (const name of new Set(fieldNamesOf(doc))) documentsOf.set(name, (documentsOf.get(name) ?? 0) + 1);
+    } catch (error) {
+      throw mapMupdfError(error, 'mergeDocuments');
+    } finally {
+      doc.destroy();
+    }
+  }
+  return {
+    labelRanges,
+    encrypted,
+    sharedFieldNames: [...documentsOf.values()].filter((count) => count > 1).length,
+  };
+}
+
+/**
+ * Where every page of a merge lands, in the terms `composeLabelRanges` maps labels
  * through. This mirrors what the engine does with `insertAfter`
  * (`pdf.worker.mjs:62340-62347`): the added documents go in as one block, in the order
  * given, after base page `insertAfter` — at the end when that is past the last page — and

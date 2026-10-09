@@ -17,6 +17,10 @@ interface Plan {
   afterLabels?: (document: PDFDocument) => void;
   /** A method of the document that throws when called. */
   trap?: { readonly method: string; readonly error: unknown };
+  /** Runs each time an opened document is asked for its metadata — the merge does that once per input. */
+  onMetaData?: () => void;
+  /** Runs each time MuPDF opens a document. */
+  onOpen?: () => void;
   /** What `countPages` answers instead of the real count. */
   pageCount?: number;
   /** What the n-th `loadMupdf` call (1-based) rejects with. */
@@ -43,6 +47,12 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
                 throw state.trap?.error;
               };
             }
+            if (property === 'getMetaData' && state.onMetaData !== undefined) {
+              return (...args: Parameters<PDFDocument['getMetaData']>) => {
+                state.onMetaData?.();
+                return target.getMetaData(...args);
+              };
+            }
             if (property === 'setPageLabels') {
               return (...args: Parameters<PDFDocument['setPageLabels']>) => {
                 target.setPageLabels(...args);
@@ -64,8 +74,10 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
       const documents = new Proxy(real.PDFDocument, {
         get(target, property) {
           if (property === 'openDocument') {
-            return (...args: Parameters<typeof real.PDFDocument.openDocument>) =>
-              wrapDocument(real.PDFDocument.openDocument(...args) as PDFDocument);
+            return (...args: Parameters<typeof real.PDFDocument.openDocument>) => {
+              state.onOpen?.();
+              return wrapDocument(real.PDFDocument.openDocument(...args) as PDFDocument);
+            };
           }
           return Reflect.get(target, property, target);
         },
@@ -85,6 +97,8 @@ const { openWithPdfjs } = await import('../engines/pdfjs-handle');
 afterEach(() => {
   state.tamper = undefined;
   state.afterLabels = undefined;
+  state.onMetaData = undefined;
+  state.onOpen = undefined;
   state.trap = undefined;
   state.pageCount = undefined;
   state.failLoad = new Map();
@@ -227,6 +241,41 @@ describe('an engine failure while composing or merging', () => {
     state.trap = { method: 'countPages', error: new Error('page tree is damaged') };
     const error = await refusal(merged());
     expect(error.details.engineMessage).toBe('mergeDocuments: page tree is damaged');
+  });
+
+  it('maps an engine failure while the inputs are read, naming the step', async () => {
+    state.trap = { method: 'getMetaData', error: new Error('info is damaged') };
+    const error = await refusal(merged());
+    expect(error.details.engineMessage).toBe('mergeDocuments: info is damaged');
+  });
+
+  it('opens each input once and stops between inputs when the signal aborts', async () => {
+    const controller = new AbortController();
+    let reads = 0;
+    state.onMetaData = () => {
+      reads += 1;
+      controller.abort();
+    };
+    await expect(
+      mergeDocuments(
+        { bytes: pages(1), pageCount: 1 },
+        [{ name: 'ek.pdf', bytes: pages(1), pageCount: 1 }],
+        0,
+        { signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    // The base was read (its encryption asked for once); the added document never was.
+    expect(reads).toBe(1);
+  });
+
+  it('opens each input of an uninterrupted merge exactly once', async () => {
+    let opens = 0;
+    state.onOpen = () => {
+      opens += 1;
+    };
+    await merged();
+    // The two inputs, one parse each, and the merged file the result is written into.
+    expect(opens).toBe(3);
   });
 
   it('maps an engine failure while the composed page count is read back', async () => {

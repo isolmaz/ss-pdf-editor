@@ -318,6 +318,11 @@ function verifyProtection(mupdf: Mupdf, produced: Uint8Array, options: ProtectOp
   }
 }
 
+/** Whether an opened document carries an `/Encrypt` dictionary, for a caller that already holds it. */
+export function isEncrypted(mupdf: Mupdf, doc: PDFDocument): boolean {
+  return cipherFromEngine(doc.getMetaData(mupdf.Document.META_ENCRYPTION)) !== 'none';
+}
+
 /** Read the protection state without changing the document or writing anything. */
 export async function inspectProtection(bytes: Uint8Array): Promise<ProtectionState> {
   const mupdf = await loadMupdf();

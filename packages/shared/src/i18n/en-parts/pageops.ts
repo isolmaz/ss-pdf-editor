@@ -23,6 +23,8 @@ export const pageopsPart = {
   'op.note.merge.labelsLost':
     'Page labels were planned as {expected} range(s), but the result retained {actual}.',
   'op.note.merge.outlineLost': 'Base document had {expected} bookmark(s), result retained {actual}.',
+  'op.note.merge.sharedFields':
+    '{count} form field name(s) appear in more than one merged document; fields with the same name now share one value.',
   'op.note.merge.verified': 'Merge verified: {pages} page(s).',
   'op.note.images.unsupported': 'Unsupported image skipped: {name}',
   'op.note.images.failed': 'Image could not be added (may be corrupt) and was skipped: {name}',

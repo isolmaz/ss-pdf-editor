@@ -923,9 +923,13 @@ had to stay green. The moves, and the defects they fixed on the way:
   bound, is never removed, and only then does the report say the outline may still be
   repeated (`op.note.compose.outlineCopies`); a document's own top-level bookmarks with the
   same title and target, one a reduced copy of the other, collapse to one when a page is
-  repeated. A composition that repeats no page and turns none is still never rewritten; the merge also checks the base and every added document for
-  `/Encrypt` (`inspectProtection`) and reports `op.note.merge.encryptionDropped` when one had it, because
-  the merged file is written without any protection;
+  repeated. A composition that repeats no page and turns none is still never rewritten; the merge opens the base and every added document with MuPDF once
+  (`readMergeInputs`) and takes the label ranges, the encryption and the form field names from
+  that one parse, checking the abort signal between documents. It reports
+  `op.note.merge.encryptionDropped` when a document had `/Encrypt`, because the merged file is
+  written without any protection, and counts the fully qualified field names used by more than
+  one document (`fieldNamesOf`; a field's widget kids without a `/T` of their own belong to
+  it) as `op.note.merge.sharedFields`, because fields with one name share one value;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written, plus the planned page labels) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
@@ -2470,7 +2474,8 @@ engine writes them: `extractPages` builds `/PageLabels` for a composition with a
 document (`#collectPageLabels` returns when `!isSingleFile`), so rotate, delete, duplicate and
 move keep them and a composition with a second source — insert and replace through
 `ops/page-insert.ts`, and `mergeDocuments` — would drop the tree. Those write it back themselves in
-their MuPDF pass (`composedLabelRanges` / `replaceLabelRanges`, `ops/page-labels.ts`): every output
+their MuPDF pass (`composedLabelRanges` — `mergeDocuments` calls `composeLabelRanges` on the ranges
+it reads in its single pass over each input — and `replaceLabelRanges`, `ops/page-labels.ts`): every output
 page is mapped to its source page and keeps the label that source gave it, so the pages of the
 current document keep exactly the label they had, and an inserted or added page keeps its own
 document's label — its `/PageLabels`, or its decimal page number in that document when it has none

@@ -44,6 +44,8 @@ export const pageopsPart = {
   'op.note.merge.labelsLost':
     'Sayfa etiketleri {expected} aralık olarak planlandı, ancak sonuçta {actual} aralık kaldı.',
   'op.note.merge.outlineLost': 'Taban belgede {expected} yer imi vardı, sonuçta {actual} kaldı.',
+  'op.note.merge.sharedFields':
+    '{count} form alanı adı birden fazla birleştirilen belgede geçiyor; aynı adı taşıyan alanlar artık tek bir değeri paylaşır.',
   'op.note.merge.verified': 'Birleştirme doğrulandı: {pages} sayfa.',
 
   // imagesToPdf
