@@ -19,7 +19,8 @@
 
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+// `URL` is Node's own: a DOM environment (happy-dom) replaces the global one with a page-relative class.
+import { fileURLToPath, pathToFileURL, URL } from 'node:url';
 import { vi } from 'vitest';
 
 const coreRequire = createRequire(new URL('./packages/pdf-core/package.json', import.meta.url));
