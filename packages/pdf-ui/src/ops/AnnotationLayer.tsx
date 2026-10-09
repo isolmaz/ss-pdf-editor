@@ -100,6 +100,7 @@ import {
   clickSuppression,
   type MarkPageFrame,
   markPageFrameOf,
+  pageFramesAt,
   pageGestureAt,
   releaseFocusHolder,
 } from './mark-interaction';
@@ -130,6 +131,12 @@ export interface AnnotationLayerProps {
   /** The armed tool; `null` renders only the marks the session already holds. */
   readonly tool: AnnotationTool | null;
   readonly viewer: ViewerApi;
+  /**
+   * The shell's layout revision: it moves each time the pages are laid out again. The marks
+   * are placed while the layer renders, and the viewer answers where a page is through one
+   * long-lived object, so nothing else in the props says they have to be placed again.
+   */
+  readonly layout: number;
   /** Marks not yet written to the file — the overlay half. */
   readonly marks: readonly AnnotationMark[];
   readonly onCreate: (mark: AnnotationMark) => void;
@@ -290,6 +297,7 @@ export function AnnotationLayer({
   t,
   tool,
   viewer,
+  layout,
   marks,
   onCreate,
   onDone,
@@ -680,18 +688,12 @@ export function AnnotationLayer({
     [draft, finishMark, fontSize, textColor, viewer],
   );
 
-  // One frame lookup per page per render: three marks on a page are measured once.
-  const frames = new Map<number, MarkPageFrame | null>();
-  const frameFor = (pageIndex: number): MarkPageFrame | null => {
-    const cached = frames.get(pageIndex);
-    if (cached !== undefined) return cached;
-    const frame = markPageFrameOf(viewer, pageIndex);
-    frames.set(pageIndex, frame);
-    return frame;
-  };
+  // One reading of the pages per layout: three marks on a page are measured once, and a
+  // new layout revision measures them again.
+  const frames = pageFramesAt(viewer, layout);
 
   const renderMark = (mark: AnnotationMark): React.ReactNode => {
-    const frame = frameFor(mark.pageIndex);
+    const frame = frames.of(mark.pageIndex);
     return frame === null ? null : markVisual(mark, frame);
   };
 
@@ -706,7 +708,7 @@ export function AnnotationLayer({
     live === null
       ? null
       : (() => {
-          const frame = frameFor(live.pageIndex);
+          const frame = frames.of(live.pageIndex);
           if (frame === null) return null;
           return (
             <svg
@@ -773,7 +775,7 @@ export function AnnotationLayer({
         {draft === null
           ? null
           : (() => {
-              const frame = frameFor(draft.pageIndex);
+              const frame = frames.of(draft.pageIndex);
               if (frame === null) return null;
               // The field is upright on screen whatever the page's own turn: it is
               // placed at the clicked point in screen space, never rotated.
@@ -829,7 +831,7 @@ export function AnnotationLayer({
         {tool === 'highlight' ? null : liveStroke}
         {preview !== null
           ? (() => {
-              const frame = frameFor(preview.pageIndex);
+              const frame = frames.of(preview.pageIndex);
               if (frame === null) return null;
               const placed = frame.toScreenBox(preview.rect);
               if (placed.width <= 4 && placed.height <= 4) return null;

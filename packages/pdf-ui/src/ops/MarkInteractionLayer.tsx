@@ -77,6 +77,7 @@ import {
   type MarkTarget,
   markPageFrameOf,
   marqueeTargets,
+  pageFramesAt,
   pageGestureAt,
   releaseFocusHolder,
   targetBounds,
@@ -87,6 +88,12 @@ export type MarkInteractionMode = 'select';
 
 export interface MarkInteractionLayerProps {
   readonly viewer: ViewerApi;
+  /**
+   * The shell's layout revision: it moves each time the pages are laid out again. The selection
+   * chrome is placed while the layer renders, and the viewer answers where a page is through
+   * one long-lived object, so nothing else in the props says it has to be placed again.
+   */
+  readonly layout: number;
   /** The armed interaction; `null` renders the marks' selection only, and takes no pointer. */
   readonly mode: MarkInteractionMode | null;
   /** Every family's marks, in paint order. */
@@ -302,6 +309,7 @@ function pagePoints(value: number): number {
 
 export function MarkInteractionLayer({
   viewer,
+  layout,
   mode,
   targets,
   selectedKeys,
@@ -688,16 +696,9 @@ export function MarkInteractionLayer({
     };
   }, [click, disabled, mode]);
 
-  // One frame lookup per page per render: a page with three marks on it is
-  // measured once, not three times.
-  const frames = new Map<number, MarkPageFrame | null>();
-  const frameFor = (pageIndex: number): MarkPageFrame | null => {
-    const cached = frames.get(pageIndex);
-    if (cached !== undefined) return cached;
-    const frame = markPageFrameOf(viewer, pageIndex);
-    frames.set(pageIndex, frame);
-    return frame;
-  };
+  // One reading of the pages per layout: a page with three marks on it is measured once, not
+  // three times, and a new layout revision measures it again.
+  const frames = pageFramesAt(viewer, layout);
   const selection = new Set(selectedKeys);
 
   /** The one picture the handles hold: a single selected `resizable` mark, while selecting. */
@@ -705,7 +706,7 @@ export function MarkInteractionLayer({
     mode === 'select' && !disabled && onResize !== undefined && selectedKeys.length === 1
       ? (targets.find((target) => target.key === selectedKeys[0] && target.resizable === true) ?? null)
       : null;
-  const resizeFrame = resizing === null ? null : frameFor(resizing.pageIndex);
+  const resizeFrame = resizing === null ? null : frames.of(resizing.pageIndex);
   const resizeBounds = resizing === null ? null : targetBounds(resizing);
   const resizePlaced =
     resizeFrame === null || resizeBounds === null ? null : resizeFrame.toScreenBox(resizeBounds);
@@ -740,7 +741,7 @@ export function MarkInteractionLayer({
       {targets
         .filter((target) => target.family === 'redaction')
         .flatMap((target) => {
-          const frame = frameFor(target.pageIndex);
+          const frame = frames.of(target.pageIndex);
           if (frame === null) return [];
           return target.boxes.map((box) => {
             const placed = frame.toScreenBox(box);
@@ -764,7 +765,7 @@ export function MarkInteractionLayer({
           document is. */}
       {targets.map((target) => {
         if (!selection.has(target.key)) return null;
-        const frame = frameFor(target.pageIndex);
+        const frame = frames.of(target.pageIndex);
         const bounds = targetBounds(target);
         if (frame === null || bounds === null) return null;
         const placed = frame.toScreenBox(bounds);

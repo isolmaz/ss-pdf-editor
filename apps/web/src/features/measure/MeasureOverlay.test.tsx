@@ -48,6 +48,7 @@ function overlay(props: Partial<MeasureOverlayProps> = {}) {
       t={t}
       session={session}
       viewer={viewer}
+      layout={0}
       marks={[]}
       canEdit
       color="#ff0000"
@@ -142,6 +143,25 @@ describe('MeasureOverlay', () => {
     render(overlay({ marks: [mark] }));
     await screen.findByRole('button', { name: 'Distance' });
     expect(screen.queryByRole('application', { name: 'Measure' })).toBeNull();
+  });
+
+  it('places the measurements again at a new layout, on the same mounted layer, where the viewer now puts the page', async () => {
+    let page = { x: 0, y: 0, width: 600, height: 800 };
+    const moving = {
+      ...viewer,
+      pageRect: () => page,
+    } as unknown as ViewerApi;
+    const view = render(overlay({ marks: [mark], viewer: moving, layout: 0 }));
+    const line = async () => {
+      const shown = await screen.findByRole('button', { name: 'Distance' });
+      return shown.querySelector('polyline')?.getAttribute('points');
+    };
+    expect(await line()).toBe('0,0 100,0');
+
+    // The page is laid out at twice the size, beside the scrolled content's origin.
+    page = { x: 50, y: 0, width: 1200, height: 1600 };
+    view.rerender(overlay({ marks: [mark], viewer: moving, layout: 1 }));
+    expect(await line()).toBe('50,0 250,0');
   });
 
   it('draws the measurements but never lets the ruler take the pointer while the document cannot be edited', async () => {

@@ -79,6 +79,7 @@ vi.mock('pdf-ui/tools', async (original) => {
   return {
     ...(await original<typeof import('pdf-ui/tools')>()),
     MarkInteractionLayer: (props: {
+      layout: number;
       mode: string | null;
       targets: readonly unknown[];
       selectedKeys: readonly string[];
@@ -92,6 +93,7 @@ vi.mock('pdf-ui/tools', async (original) => {
         'section',
         {
           'aria-label': 'mark interaction',
+          'data-layout': String(props.layout),
           'data-mode': String(props.mode),
           'data-targets': String(props.targets.length),
           'data-selected': props.selectedKeys.join(','),
@@ -117,6 +119,7 @@ vi.mock('pdf-ui/ui', async (original) => {
   return {
     ...(await original<typeof import('pdf-ui/ui')>()),
     AnnotationLayer: (props: {
+      layout: number;
       tool: string | null;
       marks: readonly unknown[];
       color: string;
@@ -134,6 +137,7 @@ vi.mock('pdf-ui/ui', async (original) => {
         'section',
         {
           'aria-label': 'annotation layer',
+          'data-layout': String(props.layout),
           'data-tool': String(props.tool),
           'data-marks': String(props.marks.length),
           'data-color': props.color,
@@ -177,6 +181,7 @@ vi.mock('../measure/MeasureOverlay', async () => {
   const { createElement } = await import('react');
   return {
     MeasureOverlay: (props: {
+      layout: number;
       marks: readonly unknown[];
       canEdit: boolean;
       color: string;
@@ -186,6 +191,7 @@ vi.mock('../measure/MeasureOverlay', async () => {
     }) =>
       createElement('section', {
         'aria-label': 'measure overlay',
+        'data-layout': String(props.layout),
         'data-marks': String(props.marks.length),
         'data-can-edit': String(props.canEdit),
         'data-color': props.color,
@@ -209,9 +215,10 @@ vi.mock('../stamps/StampSurface', async () => {
 vi.mock('../forms/FormsSurface', async () => {
   const { createElement } = await import('react');
   return {
-    FieldCandidateHost: (props: { tab: { id: string }; canEdit: boolean }) =>
+    FieldCandidateHost: (props: { tab: { id: string }; layout: number; canEdit: boolean }) =>
       createElement('section', {
         'aria-label': 'field candidates',
+        'data-layout': String(props.layout),
         'data-tab': props.tab.id,
         'data-can-edit': String(props.canEdit),
       }),
@@ -220,10 +227,14 @@ vi.mock('../forms/FormsSurface', async () => {
 vi.mock('../selection/TextToolSurface', async () => {
   const { createElement } = await import('react');
   return {
-    TextToolSurface: (props: { currentPage: number; onEdit: () => void }) =>
+    TextToolSurface: (props: { layout: number; currentPage: number; onEdit: () => void }) =>
       createElement(
         'section',
-        { 'aria-label': 'text tool', 'data-page': String(props.currentPage) },
+        {
+          'aria-label': 'text tool',
+          'data-page': String(props.currentPage),
+          'data-layout': String(props.layout),
+        },
         createElement('button', { type: 'button', onClick: props.onEdit }, 'edit text'),
       ),
   };
@@ -618,5 +629,24 @@ describe('ViewerArea', () => {
     expect(layer.getAttribute('data-layout')).toBe(String(shown + 1));
     await user.click(screen.getByRole('button', { name: 'layout' }));
     expect(layer.getAttribute('data-layout')).toBe(String(shown + 2));
+  });
+
+  it('hands every layer that places marks as it renders the same layout revision', async () => {
+    const user = userEvent.setup();
+    openTab();
+    viewerChanged(viewer);
+    mount();
+    const labels = [
+      'annotation layer',
+      'mark interaction',
+      'measure overlay',
+      'field candidates',
+      'text tool',
+    ] as const;
+    const revisions = () => labels.map((label) => screen.getByLabelText(label).getAttribute('data-layout'));
+    const shown = revisions()[0];
+    expect(revisions()).toEqual(labels.map(() => shown));
+    await user.click(screen.getByRole('button', { name: 'layout' }));
+    expect(revisions()).toEqual(labels.map(() => String(Number(shown) + 1)));
   });
 });

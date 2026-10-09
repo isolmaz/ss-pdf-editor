@@ -64,6 +64,7 @@ import {
 import type { MessageKey, Translator } from 'pdf-shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
+import { type PageFrames, readPagesAt } from './mark-interaction';
 
 // ---------------------------------------------------------------------------
 // the dictionary
@@ -129,6 +130,12 @@ export interface MeasureReading {
 export interface MeasureLayerProps {
   readonly t: Translator;
   readonly viewer: ViewerApi;
+  /**
+   * The shell's layout revision: it moves each time the pages are laid out again. The marks are
+   * placed while the layer renders, and the viewer answers where a page is through one
+   * long-lived object, so nothing else in the props says they have to be placed again.
+   */
+  readonly layout: number;
   /** The armed mode; `null` renders only the marks the session already holds. */
   readonly mode: MeasureMode | null;
   readonly scale: MeasureScale;
@@ -261,6 +268,7 @@ function snapToGrid(frame: PageFrame, point: MeasurePoint, spacing: number): Mea
 export function MeasureLayer({
   t,
   viewer,
+  layout,
   mode,
   scale,
   marks,
@@ -291,10 +299,13 @@ export function MeasureLayer({
     setCursor(null);
   }, [mode]);
 
+  // What a gesture reads, at the time of the gesture.
   const frameOf = useCallback(
     (pageIndex: number): PageFrame | null => pageFrame(viewer, pageIndex),
     [viewer],
   );
+  // What the layer draws on: the pages as laid out at this layout, read again at the next.
+  const frames = readPagesAt(layout, frameOf);
 
   /**
    * The pointer, snapped: first to the chain's own vertices (a chain that closes
@@ -320,7 +331,7 @@ export function MeasureLayer({
     if (chain === null || mode === null) return null;
     const points = cursor === null ? chain.points : [...chain.points, cursor];
     if (points.length < MIN_CHAIN_POINTS) return null;
-    const frame = frameOf(chain.pageIndex);
+    const frame = frames.of(chain.pageIndex);
     if (frame === null) return null;
     try {
       // The same call the writer makes with the same points: what the user reads
@@ -331,7 +342,7 @@ export function MeasureLayer({
       // refuses (a single point, a non-finite coordinate) simply has no value yet.
       return null;
     }
-  }, [chain, cursor, frameOf, mode]);
+  }, [chain, cursor, frames, mode]);
 
   useEffect(() => {
     const text = preview === null ? null : formatMeasurement(preview.measurement, scale);
@@ -442,16 +453,16 @@ export function MeasureLayer({
       {/* The review half: measurements the session holds, in the space the writer
           converts from, so what is on screen is what the file will contain. */}
       {marks.map((mark) => (
-        <MarkShape key={mark.id} t={t} mark={mark} frame={frameOf(mark.pageIndex)} />
+        <MarkShape key={mark.id} t={t} mark={mark} frame={frames.of(mark.pageIndex)} />
       ))}
 
       {/* The grid, when armed with it on: a guide over the pages already laid out. */}
-      {armed && grid ? <GridOverlay viewer={viewer} spacing={gridSpacing} frameOf={frameOf} /> : null}
+      {armed && grid ? <GridOverlay viewer={viewer} spacing={gridSpacing} frames={frames} /> : null}
 
       {/* The chain being clicked, with the live value at the pointer. */}
       {preview !== null && chain !== null ? (
         <ChainShape
-          frame={frameOf(chain.pageIndex)}
+          frame={frames.of(chain.pageIndex)}
           chain={preview.points}
           mark={{ color, opacity, thickness }}
         />
@@ -584,16 +595,16 @@ function ChainShape({
 function GridOverlay({
   viewer,
   spacing,
-  frameOf,
+  frames,
 }: {
   readonly viewer: ViewerApi;
   readonly spacing: number;
-  readonly frameOf: (pageIndex: number) => PageFrame | null;
+  readonly frames: PageFrames<PageFrame>;
 }) {
   const pages: PageFrame[] = [];
   const total = viewer.document.pageCount;
   for (let index = 0; index < total && pages.length < MAX_GRID_PAGES; index += 1) {
-    const frame = frameOf(index);
+    const frame = frames.of(index);
     if (frame !== null) pages.push(frame);
   }
   const step = Math.max(spacing, 1);

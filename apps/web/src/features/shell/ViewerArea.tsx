@@ -72,9 +72,9 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
   const currentPage = useSave((state) => state.currentPage);
   // The overlays follow the pages' layout, which they can only be placed on once the viewer is there:
   // a layout the viewer reports before it has handed back its API has nothing to redraw.
-  // The revision is a value the overlay depends on, handed to the layer that reads the pages'
-  // geometry as it renders: the compiler keeps the overlay's elements while their props are the
-  // same, and the viewer object they hold is the same across layouts.
+  // The revision is a value the overlays depend on, handed to every layer that reads the pages'
+  // geometry as it renders: the compiler keeps an overlay's element while its props are the
+  // same, and the viewer object it holds is the same across layouts.
   const layout = useSave((state) => (state.viewer === null ? 0 : state.layoutRevision));
   const selectedKeys = useSelection((state) => state.selectedKeys);
   const markTargets = useMarks((state) => state.targets);
@@ -139,6 +139,7 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
                 t={t}
                 session={session}
                 viewer={viewer}
+                layout={layout}
                 marks={visibleMarks.measures}
                 canEdit={canEdit}
                 color={color}
@@ -151,6 +152,7 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
               <AnnotationLayer
                 t={t}
                 viewer={viewer}
+                layout={layout}
                 tool={canEdit ? annotationLayerTool : null}
                 marks={visibleMarks.annotations}
                 color={color}
@@ -183,6 +185,7 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
                   chrome with it. */}
               <MarkInteractionLayer
                 viewer={viewer}
+                layout={layout}
                 mode={markMode}
                 targets={markTargets}
                 selectedKeys={selectedKeys}
@@ -195,9 +198,10 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
                 resizeLabel={t('stamp.resize')}
               />
               <StampPlacementHost viewer={viewer} canEdit={canEdit} t={t} onPlace={actions.onPlaceStamp} />
-              <FieldCandidateHost t={t} tab={activeTab} viewer={viewer} canEdit={canEdit} />
+              <FieldCandidateHost t={t} tab={activeTab} viewer={viewer} layout={layout} canEdit={canEdit} />
               <TextToolSurface
                 viewer={viewer}
+                layout={layout}
                 currentPage={currentPage}
                 t={t}
                 onEdit={() => actions.openDialog('text-edit')}

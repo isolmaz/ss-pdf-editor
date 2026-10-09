@@ -6,19 +6,25 @@
  * place, dashed for one the detector inferred. The user removes the ones they do not want
  * with the ✕ at a frame's corner (or Delete on a focused frame); what is left is created.
  *
- * Frames are placed at render from the page's own geometry (`markPageFrameOf`, the same
- * frame every mark layer uses), so zoom, a turned page and the spread layout are the
+ * Frames are placed at render from the page's own geometry (`pageFramesAt`, the same
+ * frame every mark layer uses, read again at each layout), so zoom, a turned page and the spread layout are the
  * viewer's problem and not arithmetic here. The layer never touches the document.
  */
 
 import type { FieldCandidate } from 'pdf-core/ops/form-detect';
 import type { MessageKey, Translator } from 'pdf-shared';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
-import { markPageFrameOf } from './mark-interaction';
+import { pageFramesAt } from './mark-interaction';
 
 export interface FieldCandidateLayerProps {
   readonly t: Translator;
   readonly viewer: ViewerApi;
+  /**
+   * The shell's layout revision: it moves each time the pages are laid out again. The frames are placed while the layer renders,
+   * and the viewer answers where a page is through one long-lived object, so nothing else in
+   * the props says it has to be placed again.
+   */
+  readonly layout: number;
   /** The candidates still in the review. */
   readonly candidates: readonly FieldCandidate[];
   readonly selectedId: string | null;
@@ -36,15 +42,17 @@ const KIND_KEYS: Record<FieldCandidate['kind'], MessageKey> = {
 export function FieldCandidateLayer({
   t,
   viewer,
+  layout,
   candidates,
   selectedId,
   onSelect,
   onRemove,
 }: FieldCandidateLayerProps) {
+  const frames = pageFramesAt(viewer, layout);
   return (
     <div className="pointer-events-none absolute inset-0 z-20" data-field-candidates="">
       {candidates.map((candidate) => {
-        const frame = markPageFrameOf(viewer, candidate.pageIndex);
+        const frame = frames.of(candidate.pageIndex);
         if (frame === null) return null;
         const box = frame.toScreenBox(candidate.rect);
         if (box.width <= 0 || box.height <= 0) return null;

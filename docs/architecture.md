@@ -99,6 +99,18 @@ search, highlight, command palette, ten idle seconds) this scope renders 4,604 c
 against 9,606 uncompiled and 3,530 with the whole first paint compiled; the whole-first-paint
 build is 262.8 KiB gzip, 12.8 KiB over the budget.
 
+One rule follows from compiling: a component keeps its output while its inputs are the same,
+so it must not read mutable imperative state while rendering unless a React input says when
+that state changed. The viewer (`viewer.pageRect()`, `containerRect()`, `pageGeometry()`) is
+one long-lived object whose answers move at every zoom, resize, spread change and turned
+page; the shell counts those moves in `layoutRevision` and hands it as `layout` to every
+layer that places marks as it renders (`AnnotationLayer`, `MarkInteractionLayer`,
+`MeasureLayer`, `FieldCandidateLayer`, `TextLayer`, `ReadingOrderLayer`). Each layer reads
+the pages through a call that takes the revision as an argument (`pageFramesAt` /
+`readPagesAt` in `ops/mark-interaction.ts`, `measure` in `ReadingOrderLayer`, `surfaceOf` in
+`TextLayer`), so a new revision is a new reading. Handlers and effects read the viewer at
+the time of the event and need nothing.
+
 ### Entry points are chosen for bundle shape, not tidiness
 
 `pdf-ui` declares subpath exports (`./ui`, `./viewer`, `./panels`, `./dialog`, `./tools`,
