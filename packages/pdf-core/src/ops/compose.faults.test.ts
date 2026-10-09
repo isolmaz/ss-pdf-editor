@@ -19,6 +19,8 @@ interface Plan {
   trap?: { readonly method: string; readonly error: unknown };
   /** Runs each time an opened document is asked for its metadata — the merge does that once per input. */
   onMetaData?: () => void;
+  /** Runs each time MuPDF opens a document. */
+  onOpen?: () => void;
   /** What `countPages` answers instead of the real count. */
   pageCount?: number;
   /** What the n-th `loadMupdf` call (1-based) rejects with. */
@@ -72,8 +74,10 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
       const documents = new Proxy(real.PDFDocument, {
         get(target, property) {
           if (property === 'openDocument') {
-            return (...args: Parameters<typeof real.PDFDocument.openDocument>) =>
-              wrapDocument(real.PDFDocument.openDocument(...args) as PDFDocument);
+            return (...args: Parameters<typeof real.PDFDocument.openDocument>) => {
+              state.onOpen?.();
+              return wrapDocument(real.PDFDocument.openDocument(...args) as PDFDocument);
+            };
           }
           return Reflect.get(target, property, target);
         },
@@ -94,6 +98,7 @@ afterEach(() => {
   state.tamper = undefined;
   state.afterLabels = undefined;
   state.onMetaData = undefined;
+  state.onOpen = undefined;
   state.trap = undefined;
   state.pageCount = undefined;
   state.failLoad = new Map();
@@ -264,12 +269,13 @@ describe('an engine failure while composing or merging', () => {
   });
 
   it('opens each input of an uninterrupted merge exactly once', async () => {
-    let reads = 0;
-    state.onMetaData = () => {
-      reads += 1;
+    let opens = 0;
+    state.onOpen = () => {
+      opens += 1;
     };
     await merged();
-    expect(reads).toBe(2);
+    // The two inputs, one parse each, and the merged file the result is written into.
+    expect(opens).toBe(3);
   });
 
   it('maps an engine failure while the composed page count is read back', async () => {
