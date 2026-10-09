@@ -44,6 +44,7 @@ function show(candidates: readonly FieldCandidate[], selectedId: string | null =
     <FieldCandidateLayer
       t={createTranslator('en')}
       viewer={viewer}
+      layout={0}
       candidates={candidates}
       selectedId={selectedId}
       onSelect={onSelect}

@@ -71,6 +71,7 @@ function show(overrides: Partial<AnnotationLayerProps> = {}) {
     t,
     tool: null,
     viewer: fakeViewer(),
+    layout: 0,
     marks: [],
     onCreate,
     onDone,

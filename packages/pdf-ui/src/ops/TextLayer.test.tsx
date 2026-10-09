@@ -73,6 +73,7 @@ function show(bytes: Uint8Array, overrides: Partial<TextLayerProps> = {}) {
   const props: TextLayerProps = {
     t: createTranslator('en'),
     viewer: viewerFor(0),
+    layout: 0,
     bytes,
     pageIndex: 0,
     onSelect,

@@ -55,6 +55,7 @@ function show(overrides: Partial<MeasureLayerProps> = {}) {
   const props: MeasureLayerProps = {
     t,
     viewer: viewerOf(),
+    layout: 0,
     mode: 'distance',
     scale: INCH,
     marks: [],

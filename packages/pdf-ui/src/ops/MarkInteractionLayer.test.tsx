@@ -66,6 +66,7 @@ function show(overrides: Partial<MarkInteractionLayerProps> = {}) {
   };
   const props: MarkInteractionLayerProps = {
     viewer: fakeViewer(),
+    layout: 0,
     mode: 'select',
     targets: [a, b, picture, redaction],
     selectedKeys: [],
