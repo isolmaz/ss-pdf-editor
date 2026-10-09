@@ -3494,7 +3494,13 @@ export function App({ store }: AppProps) {
         tab.name.replace(/\.pdf$/i, `-${t('security.unlock.suffix')}.pdf`),
         outcome.bytes,
       );
-      setNotice(appendWarning(t('locked.done'), warning));
+      // What unlocking cost the file (a signature that no longer validates) must reach the
+      // user: the report's `lost` notes are the only place that is said.
+      const lost = outcome.report.notes
+        .filter((entry) => entry.kind === 'lost')
+        .map((entry) => t(entry.key, entry.params ?? {}))
+        .join(' ');
+      setNotice(appendWarning(appendWarning(t('locked.done'), lost === '' ? null : lost), warning));
     } catch (error) {
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'mupdf' });
       setNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);

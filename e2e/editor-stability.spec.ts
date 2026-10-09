@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
+import { notice } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
-import { encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { encryptedPdf, encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { cmsBy, fromNow, signedDocument, signingPki } from './ui-panels9-helpers';
 
 /**
  * The document stays where the reader put it (2026-09-28 audit).
@@ -198,6 +200,33 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   await page.waitForTimeout(2_000);
   await expect(redactForm).toHaveCount(0);
   await expect(redactLayer).toHaveCount(0);
+});
+
+test('unlocking a signed protected PDF says its signature no longer validates', async ({ page }) => {
+  const { root, leaf } = await signingPki();
+  const signed = await signedDocument(cmsBy(leaf, [root], fromNow(-100)));
+  await page.goto('/editor/');
+  await page
+    .locator('input[type="file"][accept*="application/pdf"]')
+    .first()
+    .setInputFiles({
+      name: 'signed-locked.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from(await encryptedPdf(signed, 'parola')),
+    });
+  const prompt = page.getByRole('dialog', { name: /signed-locked\.pdf/ });
+  await expect(prompt).toBeVisible({ timeout: 30_000 });
+  await prompt.getByLabel('Document open password').fill('parola');
+  await prompt.getByRole('button', { name: 'Open', exact: true }).click();
+  await page.getByRole('button', { name: 'Create unlocked copy' }).click();
+
+  // The copy opens, and the same notice says what unlocking cost the file.
+  await expect(
+    notice(
+      page,
+      /The unlocked copy opened in a new tab; the original file stays protected\. The document carries a digital signature\. Removing the password rewrites the file, so the signature is no longer valid\./,
+    ),
+  ).toBeVisible({ timeout: 60_000 });
 });
 
 test('an operation applied from the tools panel reaches the document', async ({ page }) => {

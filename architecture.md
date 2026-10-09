@@ -1329,6 +1329,12 @@ result, with the writer's real step ids.
 and both `protectDocument()` and `unlockDocument()` **re-open their own output and
 verify** (cipher and permissions for protect; page count plus a text sample for unlock),
 because a mis-authenticated MuPDF save writes undecryptable garbage instead of failing.
+Encrypting or unlocking rewrites the file, so a signed input (counted by
+`collectSignatureFields`, the collector `verifySignatures` uses: the `/AcroForm /Fields` tree plus
+signature widgets only a page's `/Annots` reach, once the password has opened the file) gets a
+`lost` note in the report: `op.note.security.signatureInvalidated` for protect,
+`op.note.security.signatureInvalidatedUnlock` for unlock. The download path never reaches the
+save plan's signature warning.
 The Security dialog's `resultKind` is `download`: the encrypted copy is handed over, never
 applied to the open document (a protected file is read-only in the editor, so applying it
 ended in a password prompt). A run may also overrule its dialog's `resultKind` for one result
