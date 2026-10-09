@@ -3,7 +3,7 @@
  *
  * Ghostscript's PDF/A mode is a rewrite, and it is selective about what it carries into the
  * new file. Each step here exists because a fixture lost something, or kept something it
- * should not have, without it (`architecture.md` §5.9):
+ * should not have, without it (`docs/architecture.md` §5.9):
  *
  *  - **Form fields.** `pdfwrite` drops every widget, field value and all, so a filled form
  *    came back blank. The fields are flattened first (`flattenForm`), which paints each

@@ -27,14 +27,14 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 
 | | |
 | :---: | :---: |
-| **Open, navigate, zoom** — thumbnails, outline, tabs<br>![Opening a PDF and moving through its pages](docs/media/open-and-navigate.gif) | **Search** — every match, across pages<br>![Searching the document](docs/media/search.gif) |
-| **Mark up** — highlight, shapes, ink, typed text<br>![Highlighting, drawing and adding text](docs/media/annotate.gif) | **Edit text** — retype a paragraph in place<br>![Editing a paragraph in place](docs/media/edit-text.gif) |
-| **Organise pages** — rotate, reorder, undo<br>![Rotating and reordering pages](docs/media/pages.gif) | **Watermark** — stamp every page<br>![Adding a watermark](docs/media/watermark.gif) |
-| **Fill and sign** — forms and PAdES signatures<br>![Filling a field and signing the document](docs/media/fill-and-sign.gif) | **Protect** — AES-256 password and permissions<br>![Encrypting the document](docs/media/protect.gif) |
-| **Redact for real** — content removed, then verified gone<br>![Redacting a line of text](docs/media/redact.gif) | **OCR** — make a scan searchable<br>![Recognising a scanned document](docs/media/ocr.gif) |
-| **Measure** — distance, perimeter, area<br>![Measuring on the page](docs/media/measure.gif) | **Compare** — what changed between two versions<br>![Comparing two documents](docs/media/compare.gif) |
-| **Reading mode** — the page as clean text, read aloud<br>![Reading mode](docs/media/reading-mode.gif) | **Dark theme, Turkish and English**<br>![Switching to the dark theme and Turkish](docs/media/theme-and-language.gif) |
-| **Command palette and export** — `Ctrl+K` finds any tool<br>![The command palette and the export dialog](docs/media/palette-and-export.gif) | **And more** — see the full list below ⬇️ |
+| **Open, navigate, zoom** — thumbnails, outline, tabs<br>![Opening a PDF and moving through its pages](docs/media/open-and-navigate.webp) | **Search** — every match, across pages<br>![Searching the document](docs/media/search.webp) |
+| **Mark up** — highlight, shapes, ink, typed text<br>![Highlighting, drawing and adding text](docs/media/annotate.webp) | **Edit text** — retype a paragraph in place<br>![Editing a paragraph in place](docs/media/edit-text.webp) |
+| **Organise pages** — rotate, reorder, undo<br>![Rotating and reordering pages](docs/media/pages.webp) | **Watermark** — stamp every page<br>![Adding a watermark](docs/media/watermark.webp) |
+| **Fill and sign** — forms and PAdES signatures<br>![Filling a field and signing the document](docs/media/fill-and-sign.webp) | **Protect** — AES-256 password and permissions<br>![Encrypting the document](docs/media/protect.webp) |
+| **Redact for real** — content removed, then verified gone<br>![Redacting a line of text](docs/media/redact.webp) | **OCR** — make a scan searchable<br>![Recognising a scanned document](docs/media/ocr.webp) |
+| **Measure** — distance, perimeter, area<br>![Measuring on the page](docs/media/measure.webp) | **Compare** — what changed between two versions<br>![Comparing two documents](docs/media/compare.webp) |
+| **Reading mode** — the page as clean text, read aloud<br>![Reading mode](docs/media/reading-mode.webp) | **Dark theme, Turkish and English**<br>![Switching to the dark theme and Turkish](docs/media/theme-and-language.webp) |
+| **Command palette and export** — `Ctrl+K` finds any tool<br>![The command palette and the export dialog](docs/media/palette-and-export.webp) | **And more** — see the full list below ⬇️ |
 
 ### Everything it can do
 
@@ -667,7 +667,7 @@ The limits are defined once, in
   assembles.
   - ≤ 250 KiB gzip for the first-paint JavaScript. Not met yet: measured 2026-10-06 the
     entry chunk is 219 KiB, but with the UI chunks it preloads the first paint is 313 KiB,
-    because the editor shell still loads with the home screen (`architecture.md` §2).
+    because the editor shell still loads with the home screen (`docs/architecture.md` §2).
   - ≤ 60 KiB for the landing page.
   - ≤ 25 MiB per asset.
 
@@ -806,7 +806,7 @@ The limits are defined once, in
   - The XFA renderer is pdf.js's: a form that relies on features it does not implement
     (scripts, some layouts, barcodes) draws incompletely.
   - Only two hand-built XFA 3.3 files were tested, no real-world form; see
-    `architecture.md` §5.10.
+    `docs/architecture.md` §5.10.
 - **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
   malformed journal makes the whole draft unreadable on purpose. A draft whose stored file
   is gone is reported as damaged and not restored; the other drafts still are.
@@ -838,7 +838,7 @@ The limits are defined once, in
 | `pnpm check:licenses` | Dependency licence audit |
 | `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist |
 | `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
-| `pnpm ci:behavior` | The behaviour harnesses in `tools/spikes/`: the phase 3 and phase 4 browser drivers against the assembled `dist/`, then the signing check (needs `openssl`) |
+| `pnpm ci:behavior` | The behaviour harnesses in `tools/behavior/`: the phase 3 and phase 4 browser drivers against the assembled `dist/`, then the signing check (needs `openssl`) |
 | `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
 | `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
 
@@ -861,11 +861,10 @@ public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English
                     manifest, robots/sitemap
 tools/              dist assembly, engine pins, licence audit, regression and docs checks,
                     coverage report, deploy smoke check, revert-proof, git hooks,
-                    behaviour checks (spikes/), README clip recorder
+                    behaviour checks and README clip recorder (behavior/)
 e2e/                Playwright specs for the editor flows and the site, and the engine
                     fault injection (engine-faults.ts)
-docs/               integration-plan.md; media/ holds the README clips
-REVIEW.md           the review guide of PR #28: its commits by risk, each fix with its test
+docs/               architecture.md and ocr-evaluation.md; media/ holds the README clips
 .github/            workflows (CI, nightly, revert-proof), issue and pull request templates
 ```
 
@@ -902,8 +901,7 @@ fix's own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
 `e2e-service-worker`, `behavior` and `fidelity` must pass, and force-pushes are blocked. Pull requests
-are merged with a merge commit. [`REVIEW.md`](REVIEW.md), the review guide of pull request #28, lists
-its commits by risk, each fix with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
+are merged with a merge commit. [`CONTRIBUTING.md`](CONTRIBUTING.md#how-a-change-lands) describes
 how changes land.
 
 - **`pnpm ci:verify`** runs the checks of the `verify` job on your machine, in order (the job
@@ -921,12 +919,12 @@ how changes land.
   10. `check:licenses`
   11. `assemble:dist`
 - **`pnpm ci:full`** adds `ci:behavior`:
-  - `tools/spikes/phase3-check.mjs` runs the acceptance sentence end to end in a real
+  - `tools/behavior/phase3-check.mjs` runs the acceptance sentence end to end in a real
     browser. That sentence is: open, search, highlight, comment, fill a form, delete two
     pages and add one, add a header and footer, save, reopen.
-  - `tools/spikes/phase4-check.mjs` runs a text-edit round trip and reads the produced
+  - `tools/behavior/phase4-check.mjs` runs a text-edit round trip and reads the produced
     bytes back.
-  - `tools/spikes/sign-check.mts` signs with an OpenSSL identity, including a one-byte
+  - `tools/behavior/sign-check.mts` signs with an OpenSSL identity, including a one-byte
     tamper case that must break the verdict.
 - **`pnpm unit`** is a gate, not a report:
   - [`require-tests.mjs`](tools/audit/require-tests.mjs) fails the run if no tests were
@@ -1016,7 +1014,7 @@ pnpm worker:deploy:dry      # same, with --dry-run
 Issues and pull requests are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as described
 in [`SECURITY.md`](SECURITY.md). For the internal design, see
-[`architecture.md`](architecture.md).
+[`docs/architecture.md`](docs/architecture.md).
 
 ---
 

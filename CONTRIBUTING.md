@@ -5,7 +5,7 @@ Thanks for your interest in SsPdfEditor. Issues and pull requests are welcome.
 ## Before you start
 
 - Read [`README.md`](README.md) for what the editor does and how to run it, and
-  [`architecture.md`](architecture.md) for the module boundaries and the write pipeline.
+  [`docs/architecture.md`](docs/architecture.md) for the module boundaries and the write pipeline.
 - For anything larger than a small fix, open an issue first so the approach can be agreed.
 - Security problems go to [`SECURITY.md`](SECURITY.md), not to a public issue.
 - Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -32,7 +32,7 @@ pnpm fetch:engines --sync     # once per fresh clone: the unit tests read the fe
 pnpm unit                    # Vitest, the non-vacuity guard and the source-level regressions
 pnpm build && pnpm assemble:dist
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
-pnpm ci:behavior             # the behaviour checks in tools/spikes/ (needs openssl)
+pnpm ci:behavior             # the behaviour checks in tools/behavior/ (needs openssl)
 ```
 
 `pnpm check:docs` (`tools/audit/docs-sync.mjs`) reads the documentation and fails when a file
@@ -76,14 +76,25 @@ a flaky test fails the night.
 `revert-proof`. For every fix on the list that `tools/review/revert-proof.mjs` reads, the fix's
 own test must fail on the fix commit's parent and pass on the fix commit.
 
-Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker`, `behavior` and `fidelity` must pass, and force-pushes are blocked. Pull requests are
-merged with a merge commit, never squashed or rebased, so each commit keeps naming one fix and
-its test. A reviewer who did not write the change records PASS or FAIL on the pull request, and
-documentation that does not describe a behaviour change is a FAIL. [`REVIEW.md`](REVIEW.md), the
-review guide of pull request #28, lists its commits by risk, each fix with the test that
-proves it, and is the model for a large pull request's guide; how changes land is in
-[`docs/integration-plan.md`](docs/integration-plan.md).
+### How a change lands
+
+1. Work happens on a branch, with one pull request per change.
+2. CI runs on the pull request. Branch `main` is protected: a pull request is required,
+   `verify`, `e2e` (all four shards), `e2e-service-worker`, `behavior` and `fidelity` must pass,
+   and force-pushes and deletion are blocked.
+3. A reviewer who did not write the change reads it and records PASS or FAIL on the pull
+   request. Documentation (README, CONTRIBUTING, `docs/`, the site's Turkish and English pages)
+   is part of the review: a behaviour change that is not reflected there is a FAIL.
+4. The pull request is merged with a merge commit, never squashed or rebased, so each commit
+   keeps naming one fix and its test.
+5. A push to `main` runs the `deploy` job above. If the smoke check of the live site fails,
+   `wrangler rollback` returns the Worker to the previous version; to undo the code, revert
+   the merge commit.
+6. The nightly run above keeps watching coverage and flaky tests.
+
+A large pull request lists its commits by risk, each fix next to the test that proves it, and
+carries the `revert-proof` label so the workflow above shows each of those tests failing on the
+fix's parent.
 
 ### Tests and coverage
 

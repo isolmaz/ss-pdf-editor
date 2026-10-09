@@ -1,6 +1,6 @@
 # Architecture
 
-Internal design of SsPdfEditor. [`README.md`](README.md) describes what the product does
+Internal design of SsPdfEditor. [`README.md`](../README.md) describes what the product does
 and how to run it; this document describes how it is built, which invariants hold it
 together, and which parts are honest approximations.
 
@@ -51,7 +51,7 @@ Five rules explain most of the decisions in this codebase:
 
 ## 2. Workspace and dependency graph
 
-pnpm workspace (`pnpm-workspace.yaml`): `apps/*`, `packages/*`, `tools/spikes`.
+pnpm workspace (`pnpm-workspace.yaml`): `apps/*`, `packages/*`, `tools/behavior`.
 
 ```mermaid
 graph TD
@@ -969,7 +969,7 @@ had to stay green. The moves, and the defects they fixed on the way:
 - the batch runner's page count (`ops/batch.ts`), measured through `openForWrite`, so a
   password-locked item fails on its own with `encrypted-unsupported`;
 - signing and signature verification (`ops/sign.ts`, `ops/signature-status.ts`); the Node
-  gate `tools/spikes/sign-check.mts` loads the engine through `node-mupdf-hook.mjs`, which
+  gate `tools/behavior/sign-check.mts` loads the engine through `node-mupdf-hook.mjs`, which
   resolves the served engine URL to the installed package;
 - accessibility (`ops/accessibility.ts`): the check, the tagger (marked content spliced into
   the page's own decoded bytes, the structure tree written with MuPDF) and the alt-text
@@ -983,7 +983,7 @@ did; one encrypted with an owner password only now opens and keeps its encryptio
 pdf-lib is gone from the product: `engines/pdflib.ts` is deleted, no workspace the build
 bundles declares it, and its licence texts left `dist/licenses/`. The unit tests write their
 fixtures with MuPDF's object model, and so do the behaviour checks and the README recorder, through
-`tools/spikes/mupdf-fixture.mjs` (text, images, links, outline, fields, metadata, XMP,
+`tools/behavior/mupdf-fixture.mjs` (text, images, links, outline, fields, metadata, XMP,
 attachments; plus a reader for what an exported file carries) — no workspace declares
 pdf-lib any more, and the lockfile has none. `@pdf-lib/fontkit`, the font parser the text
 model measured with, is gone too (2026-10-04): glyph lookups and advances come from MuPDF's
@@ -3050,7 +3050,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
-`tools/spikes/` keeps only what still runs: the three `ci:behavior` checks
+`tools/behavior/` holds the three `ci:behavior` checks
 (`phase3-check.mjs`, `phase4-check.mjs`, `sign-check.mts`), the fixture builders they use
 (`mupdf-fixture.mjs`, `make-phase4-fixture.mjs`, `node-mupdf-hook.mjs`) and the README clip
 recorder (`readme-media.mjs`, `readme-demo-pdf.mjs`). Nothing there ships. The early

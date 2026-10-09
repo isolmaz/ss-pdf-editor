@@ -179,7 +179,7 @@ word confidence = mean probability of its symbols.
 
 ### How the Word export uses it
 
-The exact Word layout (`packages/pdf-core/src/ops/docx-layout-ocr.ts`, `ocr-scene.ts`; described in `architecture.md`) reads a page
+The exact Word layout (`packages/pdf-core/src/ops/docx-layout-ocr.ts`, `ocr-scene.ts`; described in `docs/architecture.md`) reads a page
 that is only pictures with the engine chosen here: `tesseract.js` through `recognizePage`, the `best` (integer) models, in the
 languages ticked in the Export dialog (default `tur`+`eng`, the pair measured above). Words below 0.90 confidence get a Word comment and
 are listed in the report: the threshold of the table above (about 0.5–1 % of words flagged, about half of them truly wrong). A page that
