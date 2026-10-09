@@ -622,6 +622,38 @@ had to stay green. The moves, and the defects they fixed on the way:
          and without a layer `readScanPage` returns `null`, the page keeps its pictures, and
          `ocrUnavailable` lists it; a recogniser that throws (a language pack missing, offline,
          a crashed worker) does the same, and only the reader's own cancel stops the export.
+       - *Crooked scans* (`ops/ocr-preprocess.ts`). Before the recogniser runs, `uprightScan`
+         measures the skew of the render (projection profile of the ink on a copy of at most
+         1100 px: ink pixels without pictures, the outer 3 % and every piece of ink — 8-connected —
+         longer than a tenth of the page's long side, which is a rule, a frame or a card's edge and
+         would out-vote the lines of text by being one straight stroke, or at most 2 px high and
+         at least 4 wide, a dash of a dashed rule or a hairline fragment; at most 60 000 points,
+         projected across the lines for angles of ±6° in 0.5° and then 0.05° steps, the sharpest
+         histogram wins). The page is turned only when there are at least 2000 points (a page
+         number measures noise), |angle| is 0.3°–5.9° and the best score is at least 2.5 × the
+         mean of the coarse scores (level text pages measure 4–22 and the rough sample 4, a sheet of
+         text running up the page 1.4–2.0, a lone page number 1.7–2.1); otherwise `null`, and the
+         page is read exactly as before. The limit that remains is a dashed or dotted rule at
+         another angle than the text that is thicker than a sliver: measured on level 12 pt text
+         beside a 5-inch rule crooked by 3° or 1°, 1 pt dashes still turn pages of 5 lines or
+         fewer and of eight lines of 12 characters, and 2–3 pt dashes pages of up to eight lines
+         of 25 characters; eight lines of 43 characters held against every dash tried. A turned page is read on an *upright copy* (the render turned about
+         the page centre on the same canvas, bilinear, the corners that come in repeating the
+         nearest edge pixel): the recogniser, the underline search, the second look, the words'
+         lines and paragraphs and the table reader's rows (which group by baseline) are all in
+         the copy's frame. The scan itself keeps its pixels: `ocrBackground(image, words, turn)`
+         finds the page colour and the regions on the copy but paints each word's fill on the
+         scan where it lands (a scan pixel takes the colour when its centre, turned back, is
+         inside the fill's box: the quad, so the lines beside a skewed word are not touched; the
+         ring colour and the ripple growth are the copy's), cuts the pictures from that erased
+         scan and places them by `placed`, the box of the scan that holds the region;
+         `eraseRulesTurned` does the same for an underline. At the end `turnBoxes` puts each text
+         box on the scan: its centre goes where the page centre's rotation by the skew puts it,
+         `rotation` is the skew angle (0–360, clockwise, as a slanted line's), and the letters'
+         positions move with the frame; `textBoxXml` writes it as a frame turned by `a:xfrm rot`
+         like a slanted PDF line, so the text sits on the scan's own lines, which Word draws
+         turned and LibreOffice draws level at the same centre. A page read from its own text
+         layer is never turned.
        - *Underlines.* Rules under words make Tesseract misread them (a link's underline cuts
          the descenders). `findUnderlines` looks, for every word of at least two letters or
          digits and at least 1.2 × its height wide, at the rows from 0.35 × its height above its
