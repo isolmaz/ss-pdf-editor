@@ -24,7 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -103,9 +103,40 @@ function catalogueChunks(dir) {
   return ids.map((id) => found.get(id));
 }
 const shell = catalogueChunks(join(root, 'apps/web/dist/assets'));
+
+/**
+ * The editor's own code — the `app` capability: every file of the editor build the browser
+ * can be asked for, so a prepared device needs the network for none of it. The page loads
+ * its entry before the worker controls it, imports each tool's chunk only when the tool is
+ * opened, and the install crawl names neither — so without this list a first-visit user
+ * is told "ready" and then cannot open a PDF offline. The names are hashed, which is why
+ * this list cannot live in `offline-packages.json`: it is read from the build itself, the
+ * way the catalogues above are. Source maps are development aids the page never requests,
+ * and the start page is already `core`.
+ */
+function editorFiles(dir) {
+  const found = [];
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (!entry.name.endsWith('.map'))
+        found.push(`/editor/${relative(dir, path).split(sep).join('/')}`);
+    }
+  };
+  walk(dir);
+  return found.filter((path) => path !== '/editor/index.html').sort();
+}
+const app = editorFiles(join(root, 'apps/web/dist'));
+if (packages.capabilities.app.length > 0 || app.length === 0) {
+  console.error(
+    'assemble-dist: the `app` capability is the editor build itself — empty in offline-packages.json, never empty in the build',
+  );
+  process.exit(1);
+}
 writeFileSync(
   join(out, 'offline-manifest.json'),
-  `${JSON.stringify({ version, capabilities: packages.capabilities, shell }, null, 2)}\n`,
+  `${JSON.stringify({ version, capabilities: { ...packages.capabilities, app }, shell }, null, 2)}\n`,
 );
 
 /**
@@ -343,7 +374,9 @@ if (!worker.includes('__CACHE_VERSION__')) {
   process.exit(1);
 }
 writeFileSync(workerPath, worker.replaceAll('__CACHE_VERSION__', version));
-console.log(`assemble-dist: offline manifest ${version} (${pinned.length} pinned asset(s))`);
+console.log(
+  `assemble-dist: offline manifest ${version} (${pinned.length} pinned asset(s), ${app.length} editor file(s))`,
+);
 
 const rows = [
   ['/            (landing)', join(out, 'index.html')],

@@ -14,7 +14,8 @@ export const redactPart = {
   'redact.removeMark': 'İşareti kaldır',
   'redact.clearMarks': 'İşaretleri temizle',
   'redact.cleanMetadata': 'Üst veri ve ekleri de temizle',
-  'redact.verify.done': 'Doğrulama: hedeflenen içerik artık belgede yok.',
+  'redact.verify.done':
+    'Doğrulama: işaretli alanlarda metin kalmadı. Yalnızca işaretli alanlar denetlenir; belge özellikleri ve yer imleri denetlenmez.',
   'redact.warning.localTrace':
     'Karartma, dışa aktarılan dosyadan içeriği siler; cihazdaki önceki kopyalar (özgün dosya, taslak, küçük resim) ayrıca ele alınmalıdır.',
   'redact.sensitive.on': 'Hassas oturum: kalıcı taslak kapalı.',

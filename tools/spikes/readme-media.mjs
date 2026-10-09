@@ -285,7 +285,7 @@ const SCENES = {
     await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
     await pause(page, 900);
     await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
-    await notice(page, 'targeted content no longer exists').waitFor({ timeout: 60_000 });
+    await notice(page, 'no text remains in the marked areas').waitFor({ timeout: 60_000 });
     await pause(page, 2200);
   },
 

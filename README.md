@@ -273,7 +273,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     are recognised from the spacing of the text and become borderless tables. Pictures keep
     their transparency; charts and drawings made of vector graphics are carried as pictures, their labels staying text over them.
     A picture that cannot be read, or one inside a table cell, is left out, and the report
-    says how many.
+    says how many. Text the PDF itself hides (invisible text) is not exported and the report
+    says how many characters were left out, except the invisible OCR text layer over the picture
+    of a scanned page, which is the only text that page has. Form fields and annotations are
+    not carried, and the report says so.
   - **Word layout.** Word has three layouts, chosen in the Export dialog and in the form: *Text
     and pictures, exact layout* (the default; "Metin + resim, tam düzen" in Turkish), *Flowing
     text* (described above, the one to edit at length) and *One picture per page*. Word's pages
@@ -317,7 +320,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
         than 1500 drawings as one picture. The report counts the text boxes, shapes,
         pictures and those regions.
       - **Scanned pages (OCR).** A page that shows pictures covering at least half of it and
-        no visible text is read with Tesseract, in the browser, with the best model, in the
+        no visible text (see below for a page with some) is read with Tesseract, in the browser, with the best model, in the
         languages ticked in the form (default Turkish and English; the 27 OCR languages are
         offered). The page is rendered at the scan's own resolution (150–300 dpi). The words
         become editable text boxes with the size and colour measured from the scan, bold per
@@ -341,12 +344,37 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
         split at the gap and each piece read alone. At most 150 such reads are made per page
         (words with a gap first, then the least sure); if one cannot run, the first reading
         stands.
+      - **Text next to a scan, text inside a picture.** A page with real text (a typed header,
+        a stamp, page numbers) over pictures that cover at least half of it keeps that text as
+        Word text; the text is painted over in the picture OCR reads, with the colour around it
+        (not white), the words OCR still finds on it are dropped, and the rest of the picture
+        becomes text boxes, with the background built from the page without those words. A
+        diagonal watermark is painted over character by character, so the scan under it stays.
+        On a page of real text, a picture of at least 2 % of the page is judged from its own
+        pixels first (ink in at least three bands of rows: not a logo, a photograph or a blank);
+        only then the page is read, and the words of a picture become text boxes over it, with
+        the words erased from the picture, when the picture holds at least 8 words on 2 lines,
+        read with 80 % confidence on average, over 15 % of its ink. A chart's labels, a diagram
+        or a logo with its name stay a picture. A word is written once even where pictures
+        overlap, a picture with see-through pixels keeps its glyphs (its text is added above
+        them), and a JPEG stays a JPEG. OCR reads the page as a viewer shows it, annotations
+        included, so text under an opaque box is not exported.
       - **Scan details.** When the PDF already has an invisible OCR text layer (this app's OCR
-        leaves one), its words are used and OCR is not run. A word read with less than 90 %
+        leaves one) and the layer is reliable, its words are used and OCR is not run: fewer
+        than 10 % of its characters are the replacement character or on a line turned away from
+        the layer's main direction, and a word whose box shows no ink in the page (a patch lies
+        over it) is dropped. Otherwise the page is read with OCR as if it had no layer (the
+        layer is kept when OCR cannot run). A word read with less than 90 %
         confidence is marked with a Word comment, and the report lists those words by page.
         With no language ticked, or when the engine cannot start, a scan stays a picture and
         the report says so. How the engine and the 90 % threshold were chosen:
         [docs/ocr-evaluation.md](docs/ocr-evaluation.md).
+      - **Form fields and annotations.** A filled form field is carried as text where the field
+        is, as the page shows it, and so is the text of an annotation (a FreeText note, a
+        stamp); a checked box or radio button is drawn as the shape or mark the PDF draws
+        (a ZapfDingbats check mark becomes ✔). Text an appearance draws without showing it is
+        left out. A field whose value the PDF does not draw is not in the document, and the
+        report lists how many under Losses.
     - **Flowing text** is described above.
     - **One picture per page** draws every page exactly as a viewer shows it (annotations and
       form fields included, on white paper) and puts it in its own section as one picture
@@ -406,12 +434,25 @@ nothing leaving the browser.
 
 - **True redaction.**
   - Marks become MuPDF redaction annotations, and `applyRedactions` removes the glyphs.
+  - MuPDF leaves form fields and annotations alone, so the writer removes every one whose
+    rectangle meets a mark: a field's widget (and the field itself, with its value), a note
+    or other markup with its popup and replies (a mark over a popup window removes its note),
+    a link. Their objects are deleted, so neither a value nor a note's text stays in the file.
+    A hybrid XFA form also keeps each value in its XFA data, so its XFA is dropped when a
+    field goes and the form falls back to its AcroForm fields. The report counts the fields
+    (each once, however many widgets it has) and annotations that went, and says when the
+    XFA was dropped.
   - The file is then rewritten with `garbage=compact,compress,clean`, and the output is
-    re-checked glyph by glyph.
+    re-checked glyph by glyph and for any annotation or field still under a mark.
   - An object-level audit reports any remaining terms, earlier revisions and leftover
     structure.
-  - A staged mark stays an intent until you apply it. Saving while marks are still staged
-    is refused.
+  - The verification covers the marked areas only. Document properties and bookmark titles
+    are not checked; the metadata option clears the title, author, subject, keywords and
+    creator fields and the XMP packet, and the notices say exactly that.
+  - A staged mark stays an intent until you apply it. While marks are still staged, saving
+    is refused, and so is every tool whose result leaves the tab (Word, text, split,
+    PDF/A, a protected copy), every tool that moves pages, and printing and Snapshot: each
+    would carry the content the marks were meant to remove.
 - **Sanitize.** One dialog removes what the pages do not show.
   - Categories: scripts and code-running actions, attached files, metadata, private
     application data, thumbnails and hidden layers (on by default); external links, comments
@@ -693,6 +734,12 @@ The limits are defined once, in
   - The audit scans raw bytes, so it cannot see inside compressed streams or object
     streams.
   - It says so, and when object streams are present it skips the orphan-object verdict.
+- **Redaction and forms.**
+  - A comment or field is removed whole when its rectangle meets a mark; there is no partial
+    erase of a note.
+  - The XFA of a hybrid form is dropped whole, not edited, when a field under a mark goes; the
+    remaining AcroForm fields keep their values. A dynamic XFA form has no widgets to remove,
+    and its XFA data is not touched.
 - **PDF/A.**
   - The checker is a subset of veraPDF. A clean result is not a certificate: font programs,
     ICC profile bodies, exact file syntax, XMP value formats and the accessibility rules of
@@ -907,7 +954,7 @@ how changes land.
 
 The same step also does the following:
 
-- writes `dist/offline-manifest.json`;
+- writes `dist/offline-manifest.json` (the pinned engine assets and every file of the editor build);
 - stamps the service-worker version;
 - copies `LICENSE` and every bundled licence text into `dist/licenses/`, indexed by
   `INDEX.json`.
@@ -943,17 +990,24 @@ pnpm worker:deploy:dry      # same, with --dry-run
   without a network still shows a working home screen in its own typefaces.
 - **On request only.** The rest is precached only when you ask for it, in
   Settings → Offline use.
-  It covers the shell, pdf.js, MuPDF and the fonts. It does not fetch OCR, although the
-  manifest lists a `tesseract` capability (the OCR engine and the Turkish and English
-  packs), and it does not fetch the PDF/A converter (15.5 MB of WebAssembly) either. The
-  service worker stores any file under `/engines/` the first time it is fetched, so the OCR
-  engine, a language pack and the converter are cached when you first use them online and
-  work offline after that.
+  It covers the shell, every script and style of the editor (each tool opens offline, even on
+  a device that never opened that tool online), pdf.js, MuPDF and the fonts. It does not
+  fetch OCR, although the manifest lists a `tesseract` capability (the OCR engine and the
+  Turkish and English packs), and it does not fetch the PDF/A converter (15.5 MB of
+  WebAssembly) either. The service worker stores any file under `/engines/` the first time
+  it is fetched, so the OCR engine, a language pack and the converter are cached when you
+  first use them online and work offline after that.
 - **Readiness.** It is checked path by path, for the same capabilities the preparation
-  fetches; OCR, cached on first use, is not counted against it. A half-downloaded pack is
-  reported as `missing`, with the missing paths named.
+  fetches; OCR, cached on first use, is not counted against it. The editor's own scripts
+  count (capability `app`): engines without a tool's code are not "ready". A half-downloaded
+  pack is reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
   reads an older cache.
+- **After an app update.** The cache name follows the pinned assets, not the app, so an app
+  deploy keeps the same cache while its hashed scripts change. The new build's readiness then
+  reports the new scripts as `missing` and asks you to Prepare again; Prepare fetches them and
+  deletes the editor scripts and styles the new build no longer ships, so superseded ones do
+  not accumulate.
 
 ---
 

@@ -38,11 +38,10 @@ export const ocrPart = {
   'ocr.dpiHint': '150–300 supported.',
   'ocr.textPresent.mode': 'Existing text',
   'ocr.textPresentModeHint':
-    'What to do on pages that already have text layers; if "skip" is chosen, these pages are listed in report.',
+    'What to do on pages that already have text. "Skip" leaves them alone and lists them in the report; "Read again" keeps their text and adds the recognised words as a second layer.',
   'ocr.textPresent.skip': 'Skip pages with text',
-  'ocr.textPresent.overwrite': 'Overwrite',
+  'ocr.textPresent.overwrite': 'Read again (adds a layer)',
   'ocr.skipped': '{count} page(s) already contained text; untouched.',
   'ocr.running': 'Recognizing page {done}/{total}',
   'ocr.done': 'Text layer added to {count} page(s).',
-  'ocr.empty': 'No text found on any page.',
 } as const;

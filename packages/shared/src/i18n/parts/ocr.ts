@@ -42,11 +42,10 @@ export const ocrPart = {
   'ocr.dpiHint': '150–300 arası desteklenir.',
   'ocr.textPresent.mode': 'Mevcut metin',
   'ocr.textPresentModeHint':
-    'Metin katmanı olan sayfalarda ne yapılacağı; "atla" seçilirse bu sayfalar raporda listelenir.',
+    'Zaten metni olan sayfalarda ne yapılacağı. "Atla" bu sayfalara dokunmaz ve raporda listeler; "Yeniden oku" mevcut metni korur, tanınan sözcükleri ikinci bir katman olarak ekler.',
   'ocr.textPresent.skip': 'Metinli sayfaları atla',
-  'ocr.textPresent.overwrite': 'Üzerine yaz',
+  'ocr.textPresent.overwrite': 'Yeniden oku (katman ekler)',
   'ocr.skipped': '{count} sayfa zaten metin içeriyordu; değiştirilmedi.',
   'ocr.running': 'Sayfa {done}/{total} tanınıyor',
   'ocr.done': '{count} sayfaya metin katmanı eklendi.',
-  'ocr.empty': 'Hiçbir sayfada metin bulunamadı.',
 } as const;

@@ -10,7 +10,8 @@ export const redactPart = {
   'redact.removeMark': 'Remove mark',
   'redact.clearMarks': 'Clear marks',
   'redact.cleanMetadata': 'Clean metadata and attachments as well',
-  'redact.verify.done': 'Verification: targeted content no longer exists in document.',
+  'redact.verify.done':
+    'Verification: no text remains in the marked areas. Only the marked areas are checked; document properties and bookmarks are not.',
   'redact.warning.localTrace':
     'Redaction removes content from the exported file; previous copies on your device (original file, draft, thumbnail) should be managed separately.',
   'redact.sensitive.on': 'Sensitive session: persistent draft disabled.',

@@ -219,8 +219,10 @@
               <span class="font-semibold text-sm">ÇEVRİMDIŞI ÇALIŞMA</span>
             </div>
             <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
-              Düzenleyiciyi bir kez açtığınızda uygulama bu cihaza kaydedilir; araçlar ve motorlar da ilk
-              kullanımda saklanır. Bu cihazda kullandığınız araçlarla uçakta veya seyahatte internetsiz çalışın.
+              Düzenleyiciyi bir kez açtığınızda başlangıç sayfası, arayüz metinleri ve yazı tipleri bu cihaza
+              kaydedilir. Ayarlar → Çevrimdışı kullanım içindeki Hazırla’ya bastığınızda her aracın kodu ve PDF
+              motorları da saklanır; böylece uçakta veya seyahatte bir PDF’i açıp düzenleyebilir ve dışa
+              aktarabilirsiniz. OCR ve PDF/A dönüştürücü internetle bir kez kullanıldıktan sonra çevrimdışı çalışır.
             </p>
           </div>
         </div>
@@ -430,7 +432,7 @@
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Kalıcı Vektörel Redaksiyon & Temizleme</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· Yüzeysel siyah kutu boyaması DEĞİLDİR</li>
-              <li>· Metin operatörlerini ve glifleri PDF akışından siler; çıktı glif glif yeniden denetlenir</li>
+              <li>· Metin operatörlerini ve glifleri PDF akışından siler, işaretli alanın altındaki form alanlarını, yorumları ve bağlantıları da kaldırır; çıktı glif glif yeniden denetlenir</li>
               <li>· Nesne düzeyinde denetim raporu: kalan terimler, önceki revizyonlar ve artık yapı</li>
               <li>· Temizleme (sanitize): betikler, ekler, meta veri, özel uygulama verisi, küçük resimler ve gizli katmanlar; sonuç yeniden okunup doğrulanır</li>
             </ul>
@@ -815,12 +817,12 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Düzenleyiciyi ilk açtığınızda uygulamanın kendisi tarayıcı önbelleğinize kaydedilir; PDF motorları, yazı
-              tipleri ve her aracın kodu ise ilk kullanıldıklarında saklanır. PDF motorlarını ve yazı tiplerini
-              <strong class="font-medium text-kumo-strong">Ayarlar → Çevrimdışı kullanım → Hazırla</strong> ile önceden
-              indirebilirsiniz. Bu cihazda daha önce kullandığınız araçlar uçak modunda da çalışır; OCR motoru ve dil
-              paketleri ile PDF/A dönüştürücü de internetle bir kez kullanıldıktan sonra. Hiç açılmamış bir araç ilk kez
-              internet ister.
+              Düzenleyiciyi ilk açtığınızda başlangıç sayfası, arayüz metinleri ve yazı tipleri tarayıcı önbelleğinize
+              kaydedilir. <strong class="font-medium text-kumo-strong">Ayarlar → Çevrimdışı kullanım → Hazırla</strong>
+              gerisini önceden indirir: her aracın kodunu, PDF motorlarını ve yazı tiplerini. Hazır dediğinde, bir PDF’i
+              hiç çevrimiçi açmamış bir cihazda bile uçak modunda açabilir, düzenleyebilir ve dışa aktarabilirsiniz.
+              OCR motoru ve dil paketleri ile PDF/A dönüştürücü internetle bir kez kullanıldıktan sonra çevrimdışı
+              çalışır. Hazırla kullanılmadıysa, bu cihazda daha önce kullanmadığınız bir araç ilk kez internet ister.
             </div>
           </details>
 
@@ -957,7 +959,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Evet. İşaretlenen metin siyah bir kutuyla örtülmez; PDF içeriğinden silinir, dosya yeniden yazılır ve çıktı glif glif yeniden denetlenir. Denetim raporu kalan terimleri, önceki revizyonları ve artık yapıyı listeler. Temizleme (sanitize) ise sayfada görünmeyenleri (betikler, ekler, meta veri, gizli katmanlar) kaldırır ve sonucu yeniden okuyarak doğrular; dijital imza bu işlemden sonra geçerli kalmaz. Sınır: denetim ham baytları tarar, sıkıştırılmış akışların içini göremez ve bunu raporda söyler.
+              Evet. İşaretlenen metin siyah bir kutuyla örtülmez; PDF içeriğinden, işaretli alanın altındaki form alanı, yorum ve bağlantıyla birlikte silinir, dosya yeniden yazılır ve çıktı glif glif yeniden denetlenir. Denetim raporu kalan terimleri, önceki revizyonları ve artık yapıyı listeler. Temizleme (sanitize) ise sayfada görünmeyenleri (betikler, ekler, meta veri, gizli katmanlar) kaldırır ve sonucu yeniden okuyarak doğrular; dijital imza bu işlemden sonra geçerli kalmaz. Sınır: denetim ham baytları tarar, sıkıştırılmış akışların içini göremez ve bunu raporda söyler.
             </div>
           </details>
 

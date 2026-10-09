@@ -471,7 +471,16 @@ had to stay green. The moves, and the defects they fixed on the way:
     catalog's `/Lang`. The package is written by hand and read back with mammoth, whose
     word count must equal the words written. A picture MuPDF could not draw, and one inside a
     ruled table (whose cells carry text only), is left out of the file and counted in a `lost`
-    note (`op.note.exportOffice.picturesLost`).
+    note (`op.note.exportOffice.picturesLost`). Text the document itself hides (render mode 3, or
+    drawn at opacity 0: `LayoutChar.invisible`) is not written, as the exact layout does not write it
+    (`withoutHiddenText`), and the characters left out are counted in a `lost` note
+    (`op.note.exportOffice.hiddenText`). The hidden text kept is a scanned page's invisible OCR layer,
+    decided per character: on a page whose pictures cover at least half of it (`coversPage`, as
+    `isScanPage` tells a scan), a hidden character whose centre lies over a picture; the same on blank
+    paper is the document's own. Visible text on the page (a Bates number, a header) does not change that,
+    since the layer is the only text such a page has. This needs the picture blocks, so it applies to the
+    Word read only; the Excel and CSV reads do not drop hidden text. Form fields and
+    annotations are not carried; the `lost` note `op.note.exportOffice.docxApproximate` says so.
   - **Word layout** (`OfficeExportOptions.docxLayout`: `flow`, `page-images` or `layout`; the UI's
     `layout` field and the Export dialog's second select default to `layout`, the exact layout, and
     the dialog lists it first). Two of the three skip the flowing reader. `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
@@ -540,7 +549,26 @@ had to stay green. The moves, and the defects they fixed on the way:
        144 dpi by MuPDF **without its text** (and without what Word draws itself over or under
        it), so the text above stays editable. A page of more than 1500 shapes and islands
        becomes one raster. Links (external URIs only) and the text (`readPageLayout`) are read
-       in the same pass. Three limits keep one odd drawing from costing the export: a filled
+       in the same pass. The page's own text read skips annotations and form fields (MuPDF's
+       `toStructuredText` of a page leaves out their appearance streams), so a filled field's value
+       would be lost: `readAppearances` runs the page's annotations (FreeText, stamps, redaction
+       overlays: whatever they draw) and widgets into a display list of their own and reads that
+       one's text (`PageScene.appearances`), set in text boxes of their own after the page's (also on a
+       scanned page, whose `isScanPage` test looks at the page's text only, so a field does not make
+       a scan a non-scan). Text such an appearance draws without showing it (render mode 3, opacity 0)
+       is left out by the same glyph pass as the page's own (`glyphNotes`, shared with
+       `readPageLayout`, which marks it `invisible`). A ZapfDingbats mark (MuPDF's built-in font,
+       whose glyph numbers are the code minus 0x1F) is written as the symbol it draws — ✓ ✔ ✕ ✖ ✗ ✘ ★ ● ❍ ■ ▲ ▼ ◆ —
+       because the walker returns its code as a letter, a digit or a control character; a glyph with no
+       known symbol is `invisible` and does not count as shown. A text or choice field with a value, or
+       a button that its own appearance state (`/AS`, not the group's `/V`, which every radio kid
+       shares) shows checked, whose appearance draws nothing at its place (no text there, or for a
+       button no text, path, picture or shading) is counted (`PageScene.unseenFields`) and reported as
+       a `lost` note (`op.note.exportOffice.layoutFieldsLost`). A hidden or no-view field, and one with
+       an optional-content entry (`/OC`, which may hide it), is not counted; a field MuPDF cannot read
+       (a parent chain that loops) is skipped, and the page's widget wrappers are never destroyed,
+       since the raster fallback reads the page again. MuPDF draws a default appearance for a field that
+       has none, so that value is carried. Three limits keep one odd drawing from costing the export: a filled
        rectangle reaching further than five page sides off the page is cut to the page and any
        other shape that far out is an island (Word's offsets are 32-bit); an even-odd fill of
        more than 1500 subpaths is an island (finding its holes is quadratic); and a colour of
@@ -607,11 +635,21 @@ had to stay green. The moves, and the defects they fixed on the way:
        `layout`, `layoutRasters`, `fontsEmbedded`, `pageScaled`, `noText` and `unreadable`.
     5. **Scans (OCR).** After the scene is read, `isScanPage` decides: no visible character
        on the page and pictures (not shapes) covering at least half of its area, so a scan with
-       or without an invisible text layer. For such a page `readScanPage`
+       or without an invisible text layer. A page with visible text and pictures over half of
+       its area (`isMixedPage`) goes through `readScanPage` too, with `visibleBoxes` (one box
+       per upright run, one per character of turned text) painted over in the render with the
+       colour around them (`maskBoxes`), `dropMasked` on the words, `inkBoxes` and
+       `wordsInPicture` as the gate, and the vector text kept; a page of text with a picture of
+       2 % or more goes through `readPictureText`, which judges the picture on its own pixels
+       first (`pictureLooksLikeText`). OCR always reads the render with annotations. For
+       such a page `readScanPage`
        (`ops/docx-layout-ocr.ts`) replaces the scene's items and the text boxes:
-       - *Words.* The invisible layer's, when the page has one (`layerWords`: words cut at
+       - *Words.* The invisible layer's, when the page has one it can trust (`layerWords`: words cut at
          blanks from the layer's characters, boxes from the baseline and size, confidence 100,
-         no recognition run); else `OfficeExportOptions.ocr.recognize` (the UI passes
+         no recognition run; `layerTrusted` in `ops/docx-layout-mixed.ts`: fewer than 10 % of the
+         characters U+FFFD or on a line turned more than 0.05 rad from the dominant direction,
+         and `dropCovered` removes words whose box shows no ink in the render, so a word under an
+         opaque annotation is not text; a layer that fails is read with OCR when it can run); else `OfficeExportOptions.ocr.recognize` (the UI passes
          `recognizePage`, Tesseract, quality `best`, the languages ticked in the form's
          `ocrLanguages` field, default `tur`+`eng`, in automatic page segmentation (mode 3:
          columns, blocks and lines are found, which the text boxes are built from; the 90 %
@@ -1206,9 +1244,10 @@ sequenceDiagram
     M->>M: createAnnotation('Redact') + setRect(rectToPageSpace(box, rotation))
     M->>M: structured-text coverage probe (empty marks are reported)
     M->>M: applyRedactions(black_boxes=false, lineArt=remove-if-touched, image/text method)
+    M->>M: sweep annotations + form fields under the marks (ops/redact-annots.ts)
     M->>M: save garbage=compact,compress,clean (single revision, no /Prev)
     M->>V: produced bytes
-    V-->>UI: re-opened, per-glyph check; a glyph >=50% covered fails verification
+    V-->>UI: re-opened, per-glyph check, annotation check; a glyph >=50% covered, or any annotation under a mark, fails verification
     UI->>A: needles read from the pre-redaction text inside the marks
     A-->>UI: residual terms, earlier revisions, orphan objects, structural markers
 ```
@@ -1224,11 +1263,41 @@ Details that matter:
 - Line art touched by a mark is removed, because a rule that runs through the box would
   reveal where the covered text started and ended. (Text replacement uses the opposite
   setting — a different operation with a different contract.)
+- `applyRedactions` erases page content and deletes the links it touches — nothing else. Measured
+  in the built app: a text field under a mark kept its `/V` and appearance, a sticky note kept its
+  `/Contents`, both stayed on the page and in `/AcroForm /Fields`, and the report still said the
+  content was gone. `ops/redact-annots.ts` therefore sweeps each marked page after the erase, in
+  PDF user space (the mark is flipped into the page box once; an annotation's `/Rect` is already
+  there whatever `/Rotate` says). Every annotation except `/Redact` whose `/Rect` shares area
+  with a mark — touching along an edge is not sharing — is removed whole: widgets, comments,
+  markup, stamps. A removed annotation takes its popup (`/Parent`) and its replies (`/IRT`, and
+  their replies) with it; the way back holds too, because a popup window shows its owner's
+  `/Contents`: a window under a mark takes the comment it belongs to (the annotation whose
+  `/Popup` names it) along, with that comment's replies, and only an owner the page does not list
+  survives, with its `/Popup` cleared. A removed widget leaves `/AcroForm /Fields` or its
+  parent's `/Kids` (the walk starts at `/Fields`, so a wrong `/Parent` does not matter) and
+  `/CO`; a field left without a kid is dropped, one that still has a widget outside the marks
+  keeps its value. The removed objects are **deleted**, not just unlinked, because a structure
+  tree's `/OBJR` or a surviving dictionary that still pointed at them would keep the secret in
+  the written file (those references read as null). A static XFA form keeps every value a second
+  time in its datasets packet and an XFA reader draws the field from there, widget or not, so
+  when a widget went and `/AcroForm /XFA` exists the writer drops the XFA entries
+  (`removeXfaEntries`, as the flatten does; the unreferenced packets leave with the garbage pass),
+  reports the `xfa.remove` step and `op.note.redact.xfaDropped`. The report lists the counts
+  (`op.note.redact.fieldsRemoved` counts fields, each once however many widgets it had and only
+  when its last widget went; `op.note.redact.annotationsRemoved`; a mark that only removed a
+  field is not reported as empty) and `OPERATION_TABLE` declares every step id the writer reports
+  (`annotate(Redact)`, `clean(annotations+fields)`, `clean(Info+XMP)`, `clean(attachments)` and
+  its `save(garbage=…)`) with `formFieldCount`/`formFieldValues` for `applyRedactions`, so the
+  save-time check measures a removed field as a declared change instead of calling the run
+  unverified.
 - The write uses `garbage=compact,compress,clean`, measured to leave a single revision
   with the erased stream's object dropped and the survivors renumbered.
 - `verifyRedaction()` re-opens the **produced** bytes, inverts the page's actual transform
   and walks the structured text per character; a page where any non-whitespace glyph is
-  ≥ 50 % covered throws `verification-failed`.
+  ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
+  annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
+  page the same way, so a form field's value cannot hide behind a clean text check.
 - `auditRedactedDocument()` is a raw-byte scan and **documents its own blind spot**: it
   cannot see inside deflated streams or object streams. It emits a `/FlateDecode` row and
   suppresses the orphan-object verdict entirely when `/ObjStm` is present, instead of
@@ -1257,7 +1326,8 @@ the 25 MiB asset limit. A `fast` run that includes one of them runs at `best`
 (`effectiveOcrQuality`, one worker reads every language from one directory), and the report
 says so. `existingText: 'skip' | 'overwrite'`
 decides what happens to pages that already have text, and overwriting is reported as a
-warning because it is additive. A worker that fails to start (a missing core, language pack or worker script) is mapped to
+warning because it is additive; the dialog therefore calls it "Read again (adds a layer)",
+not "Overwrite", since the existing text stays. A worker that fails to start (a missing core, language pack or worker script) is mapped to
 `ocr-language-missing` or `asset-missing` rather than surfacing as a raw error, and a failed
 start is not cached. Cancellation is a real `worker.terminate()`, and the
 `finally` awaits worker termination, so "memory is back" is true when the function
@@ -2359,7 +2429,12 @@ Ordering rules encoded here, each of which was a defect once:
   rejected. The in-place path keeps the original/last-written protection.
 - **Pending redaction marks refuse the save.** They are intents the user staged; the
   alternative is a Save that marks the tab clean while the delivered file still contains
-  the content the user asked to remove.
+  the content the user asked to remove. The same marks refuse every dialog whose result
+  leaves the tab — a download (Word, text, split, protect) or a new tab (PDF/A, extract) —
+  and every dialog that moves pages under them (`heldByPendingRedactions`,
+  `apps/web/src/save-plan.ts`). Print and Snapshot are refused too: they render the engine
+  document, which carries no session marks, and the print dialog's imposed file opens as a
+  new tab.
 - **A handle is attached only after the write succeeded**, so the next Save cannot write in
   place over a file this one never managed to commit.
 - **`addOutput` records the version the preparation produced**, not the one captured before
@@ -2735,6 +2810,11 @@ shows.
   not edit per-element `/Lang`, and the annotation fix leaves a parent tree that is not a
   flat `Nums` array alone.
 - **The redaction audit** cannot see inside deflated or object streams and says so.
+- **Redaction and forms.** An annotation or field goes whole when its `/Rect` meets a mark
+  (a full-page overlay annotation that crosses a mark goes with it); the sweep reads `/Rect`,
+  not `/QuadPoints` or the drawn appearance. A hybrid form's XFA is dropped whole (not edited)
+  when a widget goes, because its datasets hold the removed value and an XFA reader redraws the
+  field from them; a dynamic XFA form has no widgets to remove and is left as it is.
 - **Text editing** handles horizontal text in a shipped face only; everything else is
   marked not editable or substituted, in the UI, before the user types.
 - **Find and replace** skips matches in text that is not editable and table cells with no
@@ -2790,11 +2870,22 @@ Versioning is the interesting half:
   (`incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }))`): `tesseract`
   is cached on first use, and counting it made every finished preparation read as
   incomplete.
+- The editor's own code is a capability too, `app`: every file of the editor build (all of
+  `dist/editor/` but the source maps and the start page, which `core` lists). Its names are
+  hashed, so `offline-packages.json` keeps `app` empty — the assemble step refuses a
+  non-empty list — and `tools/assemble-dist.mjs` writes the real one into
+  `offline-manifest.json` from the build. The page loads its entry before the worker controls
+  it and imports each tool's chunk only when the tool opens, so nothing else caches them: a
+  first-visit user used to be told "ready" and then met a 503 on `pdf-<hash>.js` when opening
+  a PDF offline. Prepare fetches `app` and readiness requires it (`requiredCapabilities`);
+  install still holds only the shell above, so a first visit stays light.
 - A cache written under a different identity is not evidence for this build:
   `matchesBuild` is false and nothing may be called ready.
-- The worker only ever caches paths from the build's own manifest. A page cannot hand it an
-  arbitrary URL, and work started inside a message handler is registered with `waitUntil`,
-  so an interrupted preparation is reported rather than silently truncated.
+- The worker only ever caches paths from the build's own manifest. `PREPARE_PACKAGE` carries
+  capability *names*, never URLs, and the worker resolves them against the manifest, so a
+  page cannot hand it an arbitrary URL (a name the manifest lacks asks for nothing). Work
+  started inside a message handler is registered with `waitUntil`, so an interrupted
+  preparation is reported rather than silently truncated.
 
 Cross-origin isolation is what makes the measurement and OCR paths possible at all, which
 is why `/editor/*` carries COOP/COEP from the header file rather than from a browser flag:
@@ -2836,7 +2927,8 @@ the cache name, the manifest and the worker stamp together.
 ### 13.2 Assembling the distribution
 
 `tools/assemble-dist.mjs` composes `dist/` from exactly three inputs (`apps/site/dist` →
-root, `apps/web/dist` → `editor/`, `public/` → root), writes `offline-manifest.json`, stamps
+root, `apps/web/dist` → `editor/`, `public/` → root), writes `offline-manifest.json` (the pinned
+engine assets, every file of the editor build as `app`, and the catalogues as `shell`), stamps
 `sw.js`, copies `LICENSE`, and copies every bundled licence text out of the installed
 packages into `dist/licenses/`. Each of those steps is a **hard failure** when its input is missing:
 a missing `LICENSE`, a missing licence text, a missing `__CACHE_VERSION__` placeholder, or a

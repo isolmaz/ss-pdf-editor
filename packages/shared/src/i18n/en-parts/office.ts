@@ -42,6 +42,10 @@ export const officePart = {
     'The text was exported as flowing paragraphs: exact positions on the page, multi-column flow, drawings, form fields and annotations are not. Fonts are named; where one is not installed, Word uses a similar one.',
   'op.note.exportOffice.layout':
     'The page layout was rebuilt: {boxes} text boxes, {shapes} shapes and {pictures} pictures at their places; the text can be edited.',
+  'op.note.exportOffice.hiddenText':
+    '{count} characters of hidden text (text the PDF draws without showing it) were left out of the document.',
+  'op.note.exportOffice.layoutFieldsLost':
+    '{count} form fields hold a value that the PDF does not draw, so it is not in the document.',
   'op.note.exportOffice.layoutRasters':
     '{count} regions Word cannot draw (gradients, masks) were placed as pictures.',
   'op.note.exportOffice.fontsEmbedded':
@@ -70,6 +74,10 @@ export const officePart = {
     'These pages hold no readable text (they look scanned); run OCR first for editable text: {pages}.',
   'op.note.exportOffice.ocrPages':
     'These pages are pictures, so they were read with OCR; their text is editable text boxes in Word and the rest sits behind it as pictures: {pages}.',
+  'op.note.exportOffice.ocrMixedPages':
+    'These pages have real text next to a scanned picture; the real text was kept as it is, and the words inside the picture were read with OCR into editable text boxes: {pages}.',
+  'op.note.exportOffice.ocrLayerRejected':
+    'The hidden text layer of these pages was not reliable (unreadable characters or turned lines), so the pages were read again with OCR instead of using the layer: {pages}.',
   'op.note.exportOffice.ocrFont':
     'The scanned text is set in {families}, the typeface the scan appears to use, and the font is embedded in the document.',
   'op.note.exportOffice.ocrLowConfidence':

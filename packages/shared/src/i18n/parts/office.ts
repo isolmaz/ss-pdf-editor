@@ -46,6 +46,10 @@ export const officePart = {
     'Metin akan paragraflar olarak aktarıldı: sayfadaki birebir konumlar, çok sütunlu akış, çizimler, form alanları ve açıklamalar aktarılmaz. Yazı tipleri adlarıyla aktarılır; bilgisayarda yoksa Word benzerini kullanır.',
   'op.note.exportOffice.layout':
     'Sayfa düzeni yeniden kuruldu: {boxes} metin kutusu, {shapes} şekil ve {pictures} resim yerlerinde duruyor; metin düzenlenebilir.',
+  'op.note.exportOffice.hiddenText':
+    '{count} karakterlik gizli metin (PDF’nin çizip göstermediği yazı) belgeye aktarılmadı.',
+  'op.note.exportOffice.layoutFieldsLost':
+    '{count} form alanının değeri var, ancak PDF bunu çizmiyor; bu yüzden belgede yer almıyor.',
   'op.note.exportOffice.layoutRasters':
     'Word’ün çizemediği {count} bölge (renk geçişleri, maskeler) resim olarak yerleştirildi.',
   'op.note.exportOffice.fontsEmbedded': '{count} yazı tipi belgeye gömüldü; metin özgün harflerle görünür.',
@@ -73,6 +77,10 @@ export const officePart = {
     'Şu sayfalarda okunabilir metin yok (taranmış görünüyor); düzenlenebilir metin için önce OCR uygulayın: {pages}.',
   'op.note.exportOffice.ocrPages':
     'Şu sayfalar resim olduğu için OCR ile okundu; metinleri Word’de düzenlenebilir metin kutuları, geri kalanı sayfanın arkasında resim olarak yerleşti: {pages}.',
+  'op.note.exportOffice.ocrMixedPages':
+    'Şu sayfalarda gerçek metnin yanında taranmış bir resim var; gerçek metin olduğu gibi kaldı, resmin içindeki yazı OCR ile okunup düzenlenebilir metin kutusu yapıldı: {pages}.',
+  'op.note.exportOffice.ocrLayerRejected':
+    'Şu sayfalardaki gizli metin katmanı güvenilir değildi (okunamayan karakterler veya eğik satırlar); sayfalar katman yerine OCR ile yeniden okundu: {pages}.',
   'op.note.exportOffice.ocrFont':
     'Taranmış metin, taramanın kullandığı görünen yazı tipiyle ({families}) dizildi ve yazı tipi belgeye gömüldü.',
   'op.note.exportOffice.ocrLowConfidence':

@@ -86,6 +86,10 @@ export interface PageScene {
   readonly links: readonly SceneLink[];
   /** The characters, lines and blocks (`readPageLayout`). */
   readonly text: PageLayout;
+  /** The text the annotations' and form fields' appearances draw, apart from `text` (`readAppearances`). */
+  readonly appearances: PageLayout;
+  /** Form fields with a value that no appearance shows (`readAppearances`). */
+  readonly unseenFields: number;
 }
 
 /* ------------------------------------------------------------------ *
