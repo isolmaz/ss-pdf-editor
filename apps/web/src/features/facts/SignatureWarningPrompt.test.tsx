@@ -19,10 +19,10 @@ function signature(signer: string | null, fieldName: string): SignatureVerificat
   return { signer, fieldName } as SignatureVerification;
 }
 
-// The dialog is a dynamic chunk: load it once up front so no test waits on the first import.
+// The dialog is a dynamic chunk: load it once up front so no test races the first import.
 beforeAll(async () => {
   await import('pdf-ui/dialog');
-}, 60_000);
+}, 120_000);
 afterEach(() => {
   cleanup();
   answerSignature(false);

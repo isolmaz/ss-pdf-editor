@@ -9,7 +9,7 @@ import { createTranslator } from 'pdf-shared';
 import { readingOrderStore } from 'pdf-ui/panels';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { Suspense } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ReadingOrderLayer } from './ReadingOrderLayer';
 
 const viewer = {
@@ -17,6 +17,10 @@ const viewer = {
   pageRect: (pageIndex: number) => (pageIndex === 0 ? { x: 0, y: 0, width: 600, height: 800 } : null),
 } as unknown as ViewerApi;
 
+// The layer is a dynamic chunk: load it once up front so no test races the first import.
+beforeAll(async () => {
+  await import('pdf-ui/panels');
+}, 120_000);
 afterEach(() => {
   cleanup();
   readingOrderStore.clear();
@@ -40,10 +44,8 @@ describe('ReadingOrderLayer', () => {
     );
     expect(screen.getByText('loading')).toBeTruthy();
 
-    await waitFor(() => expect(container.querySelector('[data-order-box="o1"]')).not.toBeNull(), {
-      timeout: 30_000,
-    });
+    await waitFor(() => expect(container.querySelector('[data-order-box="o1"]')).not.toBeNull());
     expect(screen.queryByText('loading')).toBeNull();
     expect(container.querySelector('[data-order-box="o1"]')?.getAttribute('data-order-number')).toBe('1');
-  }, 40_000);
+  });
 });

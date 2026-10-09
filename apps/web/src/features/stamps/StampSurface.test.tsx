@@ -32,10 +32,10 @@ const kept = {
   height: 40,
 };
 
-// The dialog is a dynamic chunk: load it once up front so no test waits on the first import.
+// The dialog is a dynamic chunk: load it once up front so no test races the first import.
 beforeAll(async () => {
   await import('pdf-ui/dialog');
-}, 60_000);
+}, 120_000);
 beforeEach(() => {
   localStorage.clear();
   coreStore.set(initialCoreState());
@@ -90,19 +90,19 @@ describe('SignatureDialogHost', () => {
     const user = userEvent.setup();
     render(<SignatureDialogHost t={t} canRemember />);
     act(() => openSignatureDialog());
-    await screen.findByText(t('sig.dialog.title'), undefined, { timeout: 30_000 });
+    await screen.findByText(t('sig.dialog.title'));
     expect(screen.getByText(t('sig.remember'))).toBeTruthy();
     await user.click(screen.getByRole('button', { name: t('sig.cancel') }));
     expect(stampsStore.get().signatureOpen).toBe(false);
     await waitFor(() => expect(screen.queryByText(t('sig.dialog.title'))).toBeNull());
-  }, 40_000);
+  });
 
   it('offers no "remember" box in a sensitive session', async () => {
     render(<SignatureDialogHost t={t} canRemember={false} />);
     act(() => openSignatureDialog());
-    await screen.findByText(t('sig.dialog.title'), undefined, { timeout: 30_000 });
+    await screen.findByText(t('sig.dialog.title'));
     expect(screen.queryByText(t('sig.remember'))).toBeNull();
-  }, 40_000);
+  });
 
   it('uses a kept signature: the dialog closes and the stamp tool holds it', async () => {
     const user = userEvent.setup();
@@ -110,16 +110,12 @@ describe('SignatureDialogHost', () => {
     render(<SignatureDialogHost t={t} canRemember />);
     act(() => openSignatureDialog());
     await user.click(
-      await screen.findByRole(
-        'button',
-        { name: t('sig.saved.use', { label: t('sig.role.signature') }) },
-        { timeout: 30_000 },
-      ),
+      await screen.findByRole('button', { name: t('sig.saved.use', { label: t('sig.role.signature') }) }),
     );
     expect(stampsStore.get().signatureOpen).toBe(false);
     expect(coreStore.get()).toMatchObject({ canvasTool: 'stamp', notice: t('sig.placing') });
     expect(coreStore.get().pendingStamp).toMatchObject({ role: 'signature', dataUrl: kept.dataUrl });
-  }, 40_000);
+  });
 
   it('forgets a kept signature from the list', async () => {
     const user = userEvent.setup();
@@ -128,15 +124,11 @@ describe('SignatureDialogHost', () => {
     render(<SignatureDialogHost t={t} canRemember />);
     act(() => openSignatureDialog());
     await user.click(
-      await screen.findByRole(
-        'button',
-        { name: t('sig.saved.delete', { label: t('sig.role.signature') }) },
-        { timeout: 30_000 },
-      ),
+      await screen.findByRole('button', { name: t('sig.saved.delete', { label: t('sig.role.signature') }) }),
     );
     expect(stampsStore.get().savedSignatures).toEqual([]);
     expect(localStorage.getItem('pdf-editor.signatures.v1')).toBe('[]');
-  }, 40_000);
+  });
 });
 
 describe('ImagePickerInput', () => {

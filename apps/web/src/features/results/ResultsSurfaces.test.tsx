@@ -6,12 +6,12 @@
  * (and tested there); here they are stand-ins that expose the props the shell wires.
  */
 
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import type { ViewerApi } from 'pdf-ui/viewer';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { AccessibilityDock, PdfADock, PrintDialogHost, ScanDialogHost } from './ResultsSurfaces';
 import type { AccessibilityOutcome } from './results-actions';
@@ -121,6 +121,10 @@ vi.mock('pdf-ui/panels', async () => {
 
 const t = createTranslator('en');
 
+// The dialogs and panels are dynamic chunks (mocked here): resolve them once up front so no test races the first import.
+beforeAll(async () => {
+  await Promise.all([import('pdf-ui/printing'), import('pdf-ui/scan'), import('pdf-ui/panels')]);
+}, 120_000);
 beforeEach(() => {
   resultsStore.set(initialResultsState());
   coreStore.set(initialCoreState());
@@ -260,7 +264,7 @@ describe('PdfADock', () => {
     const onConvert = vi.fn();
     render(<PdfADock t={t} read={read} onConvert={onConvert} />);
     expect(screen.getByText(t('panel.pdfa')).getAttribute('aria-busy')).toBe('true');
-    await waitFor(() => expect(screen.getByRole('region', { name: 'pdfa panel' })).toBeTruthy());
+    await screen.findByRole('region', { name: 'pdfa panel' });
 
     await user.click(screen.getByRole('button', { name: 'convert' }));
     await user.click(screen.getByRole('button', { name: 'read' }));

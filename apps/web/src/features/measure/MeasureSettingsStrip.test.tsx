@@ -8,7 +8,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { MeasureSettingsStrip } from './MeasureSettingsStrip';
 import { armMeasure, initialMeasureState, measureStore, setMeasureReading } from './measure-store';
@@ -21,6 +21,10 @@ const style = {
   onAuthor: vi.fn(),
 };
 
+// The settings strip is a dynamic chunk: load it once up front so no test races the first import.
+beforeAll(async () => {
+  await import('pdf-ui');
+}, 120_000);
 beforeEach(() => {
   vi.clearAllMocks();
   coreStore.set(initialCoreState());
@@ -31,7 +35,7 @@ afterEach(cleanup);
 
 async function renderStrip() {
   render(<MeasureSettingsStrip t={t} color="#ff0000" opacity={0.5} thickness={3} author="Ada" {...style} />);
-  await screen.findByRole('button', { name: 'Distance' }, { timeout: 30_000 });
+  await screen.findByRole('button', { name: 'Distance' });
 }
 
 describe('MeasureSettingsStrip', () => {
@@ -43,7 +47,7 @@ describe('MeasureSettingsStrip', () => {
 
     act(() => setMeasureReading({ primary: '3.5 m', secondary: '12 m', angle: '45°', points: 2 }));
     expect(screen.getByRole('status', { name: 'Tool settings' }).textContent).toBe('3.5 m · 12 m · 45°');
-  }, 40_000);
+  });
 
   it('arms another measurement, and stops when the armed one is clicked again or Stop is pressed', async () => {
     const user = userEvent.setup();
@@ -59,7 +63,7 @@ describe('MeasureSettingsStrip', () => {
     armMeasure('perimeter');
     await user.click(screen.getByRole('button', { name: 'Close' }));
     expect(coreStore.get().canvasTool).toBe('select');
-  }, 40_000);
+  });
 
   it('writes the scale, unit, grid and snapping the user changes into the store', async () => {
     const user = userEvent.setup();
@@ -83,7 +87,7 @@ describe('MeasureSettingsStrip', () => {
       snapGrid: true,
       snapPoints: true,
     });
-  }, 40_000);
+  });
 
   it('hands the shared annotation style back to the shell, not to the measure store', async () => {
     const user = userEvent.setup();
@@ -98,5 +102,5 @@ describe('MeasureSettingsStrip', () => {
     expect(style.onOpacity).toHaveBeenCalledWith(0.75);
     expect(style.onThickness).toHaveBeenCalledWith(5);
     expect(style.onAuthor).toHaveBeenCalledWith('AdaB');
-  }, 40_000);
+  });
 });
