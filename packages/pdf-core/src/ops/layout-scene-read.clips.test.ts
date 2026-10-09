@@ -1,10 +1,11 @@
 /**
- * A tiling pattern used as a stroke (`/Pattern CS /P1 SCN … S`): MuPDF clips to the stroked
- * outline (`clipStrokePath`), runs the tile, and pops the clip. Every one of those calls has to
- * be answered on both devices (the scene's frames and the raster's `DrawDevice`), or the
- * engine reports "device calls unbalanced". These pages are read in a file of their own:
- * MuPDF keeps the tiles it has drawn by their object number, so a neighbouring file's pattern
- * of the same number would stand in for these.
+ * Clips a page opens that the scene reader must answer as MuPDF counts them. A path or text
+ * stroked with a tiling pattern (`/Pattern CS /P1 SCN … S`) is drawn through its outline: MuPDF
+ * clips to it (`clipStrokePath`, `clipStrokeText`), runs the tile and pops the clip. Every one of
+ * those calls has to be answered on both devices (the scene's frames and the raster's
+ * `DrawDevice`), or the engine reports "device calls unbalanced". These pages are read in a
+ * file of their own: MuPDF keeps the tiles it has drawn by their object number, so a
+ * neighbouring file's pattern of the same number would stand in for these.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -31,8 +32,8 @@ async function sceneOfPage(content: string, resources: (doc: Doc) => Record<stri
   return { mupdf, scene: readPageScene(mupdf, opened.loadPage(0)) };
 }
 
-/** A 10 × 10 coloured tile (`content`), repeated every 10 points; `patterns` are the ones it uses itself. */
-const tile = (doc: Doc, content: string, patterns: Record<string, unknown> = {}) =>
+/** A 10 × 10 coloured tile (`content`), repeated every 10 points; `resources` are what it uses besides. */
+const tile = (doc: Doc, content: string, resources: Record<string, unknown> = {}) =>
   doc.addStream(content, {
     Type: 'Pattern',
     PatternType: 1,
@@ -41,7 +42,7 @@ const tile = (doc: Doc, content: string, patterns: Record<string, unknown> = {})
     BBox: [0, 0, 10, 10],
     XStep: 10,
     YStep: 10,
-    Resources: { Pattern: patterns },
+    Resources: resources,
   });
 
 /** A decoded PNG: its size and every pixel as `[r, g, b, a]`. */
@@ -97,14 +98,18 @@ describe('layout scene: a pattern used as a stroke', () => {
   it('reads the pattern strokes of a pattern another island leaves out, and the ones it draws itself', async () => {
     const { scene } = await sceneOfPage(
       '/Pattern cs /P1 scn 20 20 60 60 re f /Pattern cs /P2 scn 300 400 60 60 re f',
-      (doc) => ({
-        Pattern: {
-          P1: tile(doc, '0 0 1 rg 0 0 10 10 re f'),
-          P2: tile(doc, '/Pattern CS /P3 SCN 2 w 0 5 m 10 5 l S', {
-            P3: tile(doc, '0 1 0 rg 0 0 10 10 re f'),
-          }),
-        },
-      }),
+      (doc) => {
+        const font = doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' });
+        return {
+          Pattern: {
+            P1: tile(doc, '0 0 1 rg 0 0 10 10 re f'),
+            P2: tile(doc, '/Pattern CS /P3 SCN 2 w 0 5 m 10 5 l S BT /F1 8 Tf 1 Tr 0 2 Td (A) Tj ET', {
+              Pattern: { P3: tile(doc, '0 1 0 rg 0 0 10 10 re f') },
+              Font: { F1: font },
+            }),
+          },
+        };
+      },
     );
     expect(kinds(scene)).toEqual(['raster', 'raster']);
     const [first, second] = scene.items as [SceneRaster, SceneRaster];
@@ -112,13 +117,34 @@ describe('layout scene: a pattern used as a stroke', () => {
     close(second.box, [300, 40, 360, 100]);
   });
 
-  it('reads text stroked with a tiling pattern, and the shape after it stays a shape', async () => {
+  it('reads text stroked with a tiling pattern as a raster, the text as text, and the shape after it stays a shape', async () => {
     const { scene } = await sceneOfPage(
       '/Pattern CS /P1 SCN 2 w BT /F1 48 Tf 1 Tr 60 300 Td (Hi) Tj ET 0 g 340 440 40 40 re f',
       (doc) => ({ Pattern: { P1: tile(doc, '1 0 0 rg 0 0 5 5 re f') } }),
     );
-    expect(scene.items.at(-1)?.kind).toBe('shape');
+    expect(kinds(scene)).toEqual(['raster', 'shape']);
     const lines = scene.text.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []));
     expect(lines.map((entry) => entry.chars.map((char) => char.c).join(''))).toEqual(['Hi']);
+  });
+});
+
+describe('layout scene: a stencil mask outside its clip', () => {
+  it('draws nothing for it, and reads what follows', async () => {
+    const { scene } = await sceneOfPage(
+      ['q 0 0 20 20 re W n 100 0 0 100 200 200 cm /Stencil Do Q', '0 g 300 300 20 20 re f'].join('\n'),
+      (doc) => ({
+        XObject: {
+          Stencil: doc.addStream(new Uint8Array([0xa0, 0x50]), {
+            Type: 'XObject',
+            Subtype: 'Image',
+            Width: 2,
+            Height: 2,
+            ImageMask: true,
+            BitsPerComponent: 1,
+          }),
+        },
+      }),
+    );
+    expect(kinds(scene)).toEqual(['shape']);
   });
 });
