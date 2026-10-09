@@ -29,12 +29,13 @@ async function documentXml(bytes: Uint8Array, docxLayout: 'layout' | 'flow') {
   return { xml, text, notes: out.notes };
 }
 
-const shapesOf = (notes: readonly { readonly key: string; readonly params?: unknown }[]) =>
-  (
-    notes.find((entry) => entry.key === 'op.note.exportOffice.layout')?.params as
-      | { shapes: number }
-      | undefined
-  )?.shapes;
+function shapesOf(notes: readonly { readonly key: string; readonly params?: unknown }[]): number {
+  const params = notes.find((entry) => entry.key === 'op.note.exportOffice.layout')?.params;
+  if (params && typeof params === 'object' && 'shapes' in params && typeof params.shapes === 'number') {
+    return params.shapes;
+  }
+  throw new Error('the export carries no layout note with a shape count');
+}
 
 /** Whether `text` holds a control character or any of `extra` (a raw glyph code that was not mapped). */
 const hasRaw = (text: string, extra: string): boolean =>
