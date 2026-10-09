@@ -250,6 +250,14 @@ export function useCurrentForms(tab: SessionTab | null): FormInventory | null {
   );
 }
 
+/**
+ * `tab`'s XFA description, read by a component that needs nothing else of the inventory: it renders
+ * again when the description changes, not each time the inventory is read or re-read.
+ */
+export function useCurrentXfa(tab: SessionTab | null): XfaInfo | null {
+  return useForms((state) => formsOf(state.formInventory, tab)?.xfa ?? null);
+}
+
 /** `currentDetect`, read by a component. */
 export function useCurrentDetect(tab: SessionTab | null): FormDetect | null {
   return detectOf(

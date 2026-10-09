@@ -70,7 +70,9 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
   const rightTab = useCore((state) => state.rightTab);
   const viewer = useSave((state) => state.viewer);
   const currentPage = useSave((state) => state.currentPage);
-  useSave((state) => state.layoutRevision);
+  // The overlays follow the pages' layout, which they can only be placed on once the viewer is there:
+  // a layout the viewer reports before it has handed back its API has nothing to redraw.
+  useSave((state) => (state.viewer === null ? 0 : state.layoutRevision));
   const selectedKeys = useSelection((state) => state.selectedKeys);
   const markTargets = useMarks((state) => state.targets);
   const visibleMarks = useVisibleMarks(activeTab);

@@ -49,7 +49,8 @@ export interface CommandHost {
   /** Save verification has finished inspecting the current document version. */
   readonly canExport: boolean;
   readonly selectedPages: readonly number[];
-  readonly zoom: number;
+  /** The zoom now, asked when a command runs: the list is not rebuilt for every zoom step. */
+  readonly zoom: () => number;
   readonly magnifier: boolean;
   readonly reading: boolean;
   readonly leftDock: boolean;
@@ -474,7 +475,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.zoom-in'),
       disabled: noDocument,
-      run: () => host.setZoom(Math.min(4, host.zoom + 0.25)),
+      run: () => host.setZoom(Math.min(4, host.zoom() + 0.25)),
     },
     {
       id: 'view.zoom-out',
@@ -482,7 +483,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.zoom-out'),
       disabled: noDocument,
-      run: () => host.setZoom(Math.max(0.25, host.zoom - 0.25)),
+      run: () => host.setZoom(Math.max(0.25, host.zoom() - 0.25)),
     },
     {
       id: 'view.zoom-reset',

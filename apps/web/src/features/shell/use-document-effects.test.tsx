@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /** What follows the document on screen without drawing anything. */
 
-import { cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, render, renderHook } from '@testing-library/react';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { SessionStore, type SessionTab } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
@@ -9,9 +9,12 @@ import type { ViewerApi } from 'pdf-ui/viewer';
 import { useEffect, useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState, selectTool } from '../core/core-store';
+import { adoptHandle, dropHandle } from '../core/handles';
+import { existingInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
+import { fileAnnotation } from '../marks/marks-fixtures';
 import { currentMarkTargets, initialMarksState, marksStore } from '../marks/marks-store';
 import { initialSaveState, saveStore, viewerChanged } from '../save/save-store';
-import { documentTitle, PRODUCT_TITLE, useDocumentEffects } from './use-document-effects';
+import { DocumentEffects, documentTitle, PRODUCT_TITLE, useDocumentEffects } from './use-document-effects';
 
 const hooks = vi.hoisted(() => ({
   useDocumentLanguage: vi.fn(),
@@ -42,6 +45,7 @@ beforeEach(() => {
   coreStore.set(initialCoreState());
   saveStore.set(initialSaveState());
   marksStore.set(initialMarksState());
+  formsStore.set(initialFormsState());
   session = new SessionStore();
 });
 
@@ -144,6 +148,8 @@ describe('the order the document effects run in', () => {
       log.push('title');
     });
     const tab = open('a.pdf');
+    // A list that differs from the published one: an unchanged list is not published at all.
+    existingInventoryRead({ tabId: tab.id, bytesKey: 'source', annotations: [fileAnnotation('e1')] });
     renderHook(() => useDocumentEffects({ session, t, tab, handle }));
     expect(log).toEqual([
       'existing annotations',
@@ -169,11 +175,31 @@ describe('the order the document effects run in', () => {
     });
     const tab = open('a.pdf');
     const { rerender } = renderHook(() => useDocumentEffects({ session, t, tab, handle }));
-    // A new viewer is a new input of the derivation: the list is rebuilt and published again.
-    viewerChanged({ document: handle, pageGeometry: () => null } as unknown as ViewerApi);
+    // The file's annotations being read is a new input of the derivation: the list is rebuilt and published again.
+    act(() => {
+      viewerChanged({ document: handle, pageGeometry: () => null } as unknown as ViewerApi);
+      existingInventoryRead({ tabId: tab.id, bytesKey: 'source', annotations: [fileAnnotation('e1')] });
+    });
     rerender();
     expect(seen.length).toBeGreaterThanOrEqual(2);
     for (const entry of seen) expect(entry.published).toBe(entry.handed);
     expect(seen[0]?.handed).not.toBe(seen[seen.length - 1]?.handed);
+  });
+});
+
+describe('DocumentEffects', () => {
+  it('runs the effects for the active tab and its engine handle, and draws nothing', () => {
+    const tab = open('a.pdf');
+    adoptHandle(tab.id, handle);
+    const { container } = render(<DocumentEffects session={session} tier="desktop" t={t} />);
+    expect(container.innerHTML).toBe('');
+    expect(hooks.useTextToolBytes).toHaveBeenCalledWith(
+      session,
+      expect.objectContaining({ id: tab.id }),
+      handle,
+      t,
+    );
+    expect(document.title).toBe('a.pdf');
+    dropHandle(tab.id);
   });
 });

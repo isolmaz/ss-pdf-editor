@@ -9,6 +9,7 @@ import { usePresentation } from 'pdf-ui/tools';
 import { StatusBar } from 'pdf-ui/ui';
 import { PageNavigation } from '../../components/PageNavigation';
 import { useMemorySampler, useMemoryUsage } from '../diagnostics/memory-store';
+import { useCurrentSignatures } from '../facts/facts-store';
 import { currentViewer, useSave } from '../save/save-store';
 import type { ShellActions } from './shell-actions';
 import { useEditState } from './use-edit-state';
@@ -21,10 +22,8 @@ export interface ShellStatusBarProps {
 }
 
 export function ShellStatusBar({ session, tier, t, actions }: ShellStatusBarProps) {
-  const { activeTab, activeHandle, pageCount, verdict, documentFacts, canEdit, isHome } = useEditState(
-    session,
-    tier,
-  );
+  const { activeTab, activeHandle, pageCount, verdict, canEdit, isHome } = useEditState(session, tier);
+  const signatures = useCurrentSignatures(activeTab);
   const zoom = useSave((state) => state.zoom);
   const currentPage = useSave((state) => state.currentPage);
   const viewer = useSave((state) => state.viewer);
@@ -39,7 +38,7 @@ export function ShellStatusBar({ session, tier, t, actions }: ShellStatusBarProp
       zoom={zoom}
       tier={tier}
       limits={verdict}
-      signatures={documentFacts?.signatures ?? []}
+      signatures={signatures}
       memoryUsage={memoryUsage}
       sensitive={activeTab?.sensitive ?? false}
       navigation={

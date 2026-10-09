@@ -2,7 +2,7 @@
  * The command list the menus, the palette and the home screen's tool grid all read, and the
  * home screen's way of running one.
  *
- * The list is built from the stores (what is armed, which docks are open, the zoom, the
+ * The list is built from the stores (what is armed, which docks are open, the
  * selection) and from the feature handlers the shell hands in, so it is rebuilt exactly when
  * one of those changes.
  */
@@ -33,7 +33,7 @@ import {
   useOpen,
 } from '../open/open-store';
 import { toggleMagnifier, toggleReading, useReading } from '../reading/reading-store';
-import { currentViewer, useSave } from '../save/save-store';
+import { currentViewer, saveStore, useSave } from '../save/save-store';
 import { useSelection } from '../selection/selection-store';
 import type { ShellActions } from './shell-actions';
 import { openSettings, renameTab, summonPalette } from './shell-store';
@@ -62,8 +62,7 @@ export function useShellCommands(
 ): ShellCommands {
   const { theme, setTheme } = useTheme();
   const { activeTab, activeHandle, canEdit, canPrepareWrite, pageCount } = useEditState(session, tier);
-  const zoom = useSave((state) => state.zoom);
-  const viewer = useSave((state) => state.viewer);
+  const viewerReady = useSave((state) => state.viewer !== null);
   const selectedPages = useOpen((state) => state.selectedPages);
   const magnifier = useReading((state) => state.magnifierOn);
   const reading = useReading((state) => state.reading);
@@ -111,7 +110,7 @@ export function useShellCommands(
         canSave: canPrepareWrite && activeTab?.source.handle !== undefined,
         canExport: canPrepareWrite,
         selectedPages,
-        zoom,
+        zoom: () => saveStore.get().zoom,
         magnifier,
         reading,
         leftDock,
@@ -173,7 +172,6 @@ export function useShellCommands(
       canEdit,
       canPrepareWrite,
       selectedPages,
-      zoom,
       magnifier,
       reading,
       leftDock,
@@ -234,11 +232,11 @@ export function useShellCommands(
     const pending = openStore.get().pendingHomeCommand;
     // The open that brought the document is still holding the busy gate until it settles:
     // a dialog asked for before then is refused as "another operation is running".
-    if (pending === null || viewer === null || activeHandle === null || busy) return;
+    if (pending === null || !viewerReady || activeHandle === null || busy) return;
     dropHomeCommand();
     const command = commands.find((item) => item.id === pending);
     if (command !== undefined && command.disabled !== true) command.run();
-  }, [viewer, activeHandle, busy, commands]);
+  }, [viewerReady, activeHandle, busy, commands]);
 
   return { commands, runHomeCommand };
 }

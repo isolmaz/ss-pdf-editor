@@ -69,7 +69,7 @@ describe('isEditable', () => {
   const input = () => ({
     tab,
     handle,
-    viewer: { document: handle } as unknown as ViewerApi,
+    viewerShowsHandle: true,
     verdict: documentVerdict(tab, 'desktop'),
     locked: false,
     busy: false,
@@ -82,8 +82,7 @@ describe('isEditable', () => {
   it.each([
     ['no tab', { tab: null }],
     ['no handle', { handle: null }],
-    ['no viewer', { viewer: null }],
-    ['a viewer showing another handle', { viewer: { document: {} } as unknown as ViewerApi }],
+    ['a viewer not showing the handle', { viewerShowsHandle: false }],
     ['a document the tier allows only to view', { verdict: { kind: 'viewing-only' } as never }],
     ['a protected document', { locked: true }],
     ['a held document', { busy: true }],

@@ -14,7 +14,6 @@ import {
   type LimitVerdict,
   type Translator,
 } from 'pdf-shared';
-import type { ViewerApi } from 'pdf-ui/viewer';
 import type { DocumentContext } from '../../operations';
 import { openStore } from '../open/open-store';
 import { saveStore } from '../save/save-store';
@@ -49,7 +48,8 @@ export function documentVerdict(tab: SessionTab | null, forTier: DeviceTier): Li
 export interface EditInput {
   readonly tab: SessionTab | null;
   readonly handle: PdfDocumentHandle | null;
-  readonly viewer: ViewerApi | null;
+  /** The viewer's document is `handle`: what is on screen is the engine handle the tab owns. */
+  readonly viewerShowsHandle: boolean;
   readonly verdict: LimitVerdict;
   /** The tab is a protected document nothing can be written to. */
   readonly locked: boolean;
@@ -60,11 +60,11 @@ export interface EditInput {
  * The rule for editing: a document the viewer shows (its engine handle is the one on screen),
  * that the tier allows editing, is not protected and is not held by an operation.
  */
-export function isEditable({ tab, handle, viewer, verdict, locked, busy }: EditInput): boolean {
+export function isEditable({ tab, handle, viewerShowsHandle, verdict, locked, busy }: EditInput): boolean {
   return (
     tab !== null &&
     handle !== null &&
-    viewer?.document === handle &&
+    viewerShowsHandle &&
     verdict.kind !== 'viewing-only' &&
     !locked &&
     !busy
@@ -74,10 +74,11 @@ export function isEditable({ tab, handle, viewer, verdict, locked, busy }: EditI
 /** Whether the active document may be edited **now**. */
 export function canEdit(session: SessionStore): boolean {
   const tab = session.active;
+  const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   return isEditable({
     tab,
-    handle: tab === null ? null : (handleFor(tab.id) ?? null),
-    viewer: saveStore.get().viewer,
+    handle,
+    viewerShowsHandle: handle !== null && saveStore.get().viewer?.document === handle,
     verdict: documentVerdict(tab, deviceTier()),
     locked: tab !== null && openStore.get().lockedTabs.has(tab.id),
     busy: isBusy(),

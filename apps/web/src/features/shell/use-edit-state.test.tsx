@@ -96,7 +96,6 @@ describe('useEditState', () => {
         security: { encrypted: false, permissions: [] },
       });
     });
-    expect(result.current.documentFacts).not.toBeNull();
     expect(result.current.canPrepareWrite).toBe(false);
     act(() => {
       formInventoryRead({ tabId: tab.id, version: tab.working.id, fields: [] } as never);

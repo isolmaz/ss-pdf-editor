@@ -70,7 +70,7 @@ import { PaletteHost, SettingsHost } from './features/shell/ShellOverlays';
 import { ShellStatusBar } from './features/shell/ShellStatusBar';
 import type { ShellActions } from './features/shell/shell-actions';
 import { ToolStrip } from './features/shell/ToolStrip';
-import { useDocumentEffects } from './features/shell/use-document-effects';
+import { DocumentEffects } from './features/shell/use-document-effects';
 import { useEditState } from './features/shell/use-edit-state';
 import { useShellBindings } from './features/shell/use-shell-bindings';
 import { useShellCommands } from './features/shell/use-shell-commands';
@@ -112,7 +112,7 @@ export function App({ store }: AppProps) {
   useEffect(() => {
     tRef.current = t;
   }, [t]);
-  const { activeTab, activeHandle, canEdit } = useEditState(store, tier);
+  const { activeTab, canEdit } = useEditState(store, tier);
   const currentPage = useSave((state) => state.currentPage);
   const currentPageRef = useRef(currentPage);
   currentPageRef.current = currentPage;
@@ -170,7 +170,6 @@ export function App({ store }: AppProps) {
     [],
   );
 
-  useDocumentEffects({ session: store, t, tab: activeTab, handle: activeHandle });
   useDraftRecovery({ store, translator: tRef, openAndFingerprint });
   useDraftAutosave({ session, store, persist: persistTabDraft, translator: tRef });
   useVaultChannel(store, session);
@@ -381,6 +380,7 @@ export function App({ store }: AppProps) {
         );
       }}
     >
+      <DocumentEffects session={store} tier={tier} t={t} />
       <UpdateBanner t={t} />
       <ShellHeader
         session={store}

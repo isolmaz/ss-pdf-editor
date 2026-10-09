@@ -12,8 +12,8 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { useCore } from '../core/core-store';
 import { documentVerdict, isEditable } from '../core/document';
 import { useDocumentHandle } from '../core/handles';
-import { type DocumentFacts, useCurrentFacts } from '../facts/facts-store';
-import { useCurrentForms } from '../forms/forms-store';
+import { currentFacts, factsStore } from '../facts/facts-store';
+import { currentForms, formsStore } from '../forms/forms-store';
 import { useOpen } from '../open/open-store';
 import { useSave } from '../save/save-store';
 
@@ -32,9 +32,29 @@ export interface EditState {
   readonly canEdit: boolean;
   /** The document's facts and form inventory are read, so a write can be verified. */
   readonly canPrepareWrite: boolean;
-  readonly documentFacts: DocumentFacts | null;
   /** No editor is shown: no document, no engine handle yet, or the start screen is asked for. */
   readonly isHome: boolean;
+}
+
+/** Starts `listener` on a change of either store the write verdict reads. */
+function subscribeInspections(listener: () => void): () => void {
+  const stops = [factsStore.subscribe(listener), formsStore.subscribe(listener)];
+  return () => {
+    for (const stop of stops) stop();
+  };
+}
+
+/**
+ * Whether the facts and the form inventory of `tab`'s current version are both read. Only the
+ * verdict is subscribed to, not the facts or the inventory themselves: the facts arriving, or the
+ * inventory starting to be read, would otherwise re-render every reader of this hook for a
+ * verdict that did not change.
+ */
+function useInspectionsRead(tab: SessionTab | null): boolean {
+  return useSyncExternalStore(
+    subscribeInspections,
+    () => currentFacts(tab) !== null && (currentForms(tab)?.fields ?? null) !== null,
+  );
 }
 
 export function useEditState(session: SessionStore, tier: DeviceTier): EditState {
@@ -44,13 +64,21 @@ export function useEditState(session: SessionStore, tier: DeviceTier): EditState
   const lockedTabs = useOpen((state) => state.lockedTabs);
   const showHomeScreen = useOpen((state) => state.showHomeScreen);
   const busy = useCore((state) => state.busy);
-  const viewer = useSave((state) => state.viewer);
-  const documentFacts = useCurrentFacts(activeTab);
-  const formFields = useCurrentForms(activeTab)?.fields ?? null;
+  const viewerShowsHandle = useSave(
+    (state) => activeHandle !== null && state.viewer?.document === activeHandle,
+  );
+  const inspectionsRead = useInspectionsRead(activeTab);
   const verdict = useMemo(() => documentVerdict(activeTab, tier), [activeTab, tier]);
   const viewingOnly = verdict.kind === 'viewing-only';
   const locked = activeTab !== null && lockedTabs.has(activeTab.id);
-  const canEdit = isEditable({ tab: activeTab, handle: activeHandle, viewer, verdict, locked, busy });
+  const canEdit = isEditable({
+    tab: activeTab,
+    handle: activeHandle,
+    viewerShowsHandle,
+    verdict,
+    locked,
+    busy,
+  });
   return {
     activeTab,
     activeId: snapshot.activeId,
@@ -61,8 +89,7 @@ export function useEditState(session: SessionStore, tier: DeviceTier): EditState
     viewingOnly,
     locked,
     canEdit,
-    canPrepareWrite: activeTab !== null && documentFacts !== null && formFields !== null && !busy,
-    documentFacts,
+    canPrepareWrite: activeTab !== null && inspectionsRead && !busy,
     isHome: activeTab === null || activeHandle === null || showHomeScreen,
   };
 }

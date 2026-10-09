@@ -14,7 +14,7 @@ import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import { markTargetKey } from 'pdf-ui/tools';
 import type { ViewerApi } from 'pdf-ui/viewer';
-import type { ReactNode } from 'react';
+import { Profiler, type ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { pendingOverlays } from '../../operations';
 import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
@@ -358,6 +358,29 @@ describe('ViewerArea', () => {
     const revision = saveStore.get().layoutRevision;
     await user.click(screen.getByRole('button', { name: 'layout' }));
     expect(saveStore.get().layoutRevision).toBe(revision + 1);
+  });
+
+  it('redraws for a layout change only once the viewer has handed back its API', async () => {
+    const user = userEvent.setup();
+    openTab();
+    let commits = 0;
+    render(
+      <Profiler
+        id="viewer-area"
+        onRender={() => {
+          commits += 1;
+        }}
+      >
+        <ViewerArea session={session} tier="desktop" t={t} actions={actions} />
+      </Profiler>,
+    );
+    const mounted = commits;
+    await user.click(screen.getByRole('button', { name: 'layout' }));
+    expect(commits).toBe(mounted);
+    act(() => viewerChanged(viewer));
+    const shown = commits;
+    await user.click(screen.getByRole('button', { name: 'layout' }));
+    expect(commits).toBe(shown + 1);
   });
 
   it('opens find-and-replace from the viewer only while the document can be edited', async () => {

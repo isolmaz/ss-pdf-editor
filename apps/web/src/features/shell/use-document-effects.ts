@@ -6,7 +6,7 @@
 
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { SessionStore, SessionTab } from 'pdf-model';
-import type { Translator } from 'pdf-shared';
+import type { DeviceTier, Translator } from 'pdf-shared';
 import { useEffect } from 'react';
 import { pendingOverlays } from '../../operations';
 import { useAnnotationMarks } from '../annotations/annotation-marks';
@@ -22,6 +22,7 @@ import { useDocumentLanguage } from '../reading/use-document-language';
 import { useSave } from '../save/save-store';
 import { useSelectionEffects } from '../selection/use-selection';
 import { useTextToolBytes } from '../selection/use-text-tool-bytes';
+import { useEditState } from './use-edit-state';
 
 /** The product name the window carries when no document is open; `index.html`'s `<title>` is the same string. */
 export const PRODUCT_TITLE = 'SsPdfEditor';
@@ -76,4 +77,22 @@ export function useDocumentEffects({ session, t, tab, handle }: DocumentEffectsH
     existing,
     targets,
   });
+}
+
+export interface DocumentEffectsProps {
+  readonly session: SessionStore;
+  readonly tier: DeviceTier;
+  readonly t: Translator;
+}
+
+/**
+ * `useDocumentEffects` in a component of its own, rendering nothing. What these effects follow
+ * (the viewer, the inventory revision, the marks, the file's annotations) changes several times
+ * while a document opens, and each change would re-render whatever called the hook: called by the
+ * shell, that is every layout component under it, for a render that draws nothing new.
+ */
+export function DocumentEffects({ session, tier, t }: DocumentEffectsProps): null {
+  const { activeTab, activeHandle } = useEditState(session, tier);
+  useDocumentEffects({ session, t, tab: activeTab, handle: activeHandle });
+  return null;
 }

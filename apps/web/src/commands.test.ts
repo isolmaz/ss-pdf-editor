@@ -40,7 +40,7 @@ function recordingHost(overrides: Partial<CommandHost> = {}) {
     canSave: true,
     canExport: true,
     selectedPages: [0],
-    zoom: 1,
+    zoom: () => 1,
     magnifier: false,
     reading: false,
     leftDock: true,
@@ -240,7 +240,7 @@ describe('buildCommands', () => {
 
   it('zooms in and out by a quarter, never past 400% or under 25%', () => {
     const zoomed = (id: string, zoom: number) => {
-      const { host, calls } = recordingHost({ zoom });
+      const { host, calls } = recordingHost({ zoom: () => zoom });
       byId(buildCommands(host), id).run();
       return calls[0]?.[1];
     };

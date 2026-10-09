@@ -32,7 +32,7 @@ function host(overrides: Partial<CommandHost> = {}): CommandHost {
     canSave: true,
     canExport: true,
     selectedPages: [0],
-    zoom: 1,
+    zoom: () => 1,
     magnifier: false,
     reading: false,
     leftDock: true,
