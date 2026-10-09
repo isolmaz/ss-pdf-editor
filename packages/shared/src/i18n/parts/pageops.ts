@@ -30,7 +30,7 @@ export const pageopsPart = {
     'Bileşim yeni bir katalog yazar: görünüm tercihleri, dil, çıktı amaçları, katman (OCG) yapılandırması ve açılış eylemi taşınmaz.',
   'op.note.compose.rotation': '{count} sayfaya döndürme uygulandı (kaynak döndürme + istenen açı).',
   'op.note.compose.outlineCopies':
-    'Çoğaltılan sayfa nedeniyle içindekiler ağacı {copies} kez yinelendi (extractPages davranışı).',
+    'Bazı yer imlerinin hedefi okunamadığı için çoğaltılan sayfalar bunları en fazla {copies} kez yinelemiş olabilir (extractPages davranışı).',
   'op.note.compose.verified': 'Bileşim doğrulandı: {pages} sayfa.',
 
   // mergeDocuments
@@ -39,6 +39,10 @@ export const pageopsPart = {
     'Birleştirilen belgelerin parola koruması taşınmadı; birleştirilmiş dosya korumasızdır.',
   'op.note.merge.structure':
     'Motorun birleştirdiği yapı ölçüldü: {outline} yer imi, {labels} sayfa etiketi kaydı, {fields} form alanı.',
+  'op.note.merge.labels':
+    'Sayfa etiketleri: her sayfa kendi belgesinin verdiği etiketi korudu; sayfa etiketi olmayan bir belgeden eklenen sayfalar kendi belgesi içinde 1, 2, … diye numaralandı.',
+  'op.note.merge.labelsLost':
+    'Sayfa etiketleri {expected} aralık olarak planlandı, ancak sonuçta {actual} aralık kaldı.',
   'op.note.merge.outlineLost': 'Taban belgede {expected} yer imi vardı, sonuçta {actual} kaldı.',
   'op.note.merge.verified': 'Birleştirme doğrulandı: {pages} sayfa.',
 

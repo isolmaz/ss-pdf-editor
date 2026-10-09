@@ -30,7 +30,10 @@
  *  - the call resolves with **`null`** for *any* internal failure (the worker
  *    catches, warns, returns `null`), so a null result is checked explicitly;
  *  - the produced catalog is built fresh (`#makeRoot`): page tree, outline, page
- *    labels, destinations, embedded files, structure tree, AcroForm. Everything
+ *    labels, destinations, embedded files, structure tree, AcroForm — but the page
+ *    labels only for a **single-document** composition (`#collectPageLabels` returns
+ *    when `!isSingleFile`), so a merge, and `ops/page-insert.ts` which composes with a
+ *    second source, write them back themselves (`ops/page-labels.ts`). Everything
  *    else the source catalog carried — viewer preferences, `Lang`, output
  *    intents, OCG/`OCProperties`, `OpenAction`, `MarkInfo` — is gone, and the
  *    report says so;
@@ -47,8 +50,9 @@
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
-import { openForWrite, pageObjects, resolved, saveRewrite } from '../engines/mupdf-write';
+import { annotsOf, openForWrite, pageObjects, readName, resolved, saveRewrite } from '../engines/mupdf-write';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
+import { composedLabelRanges, type LabelPlacement, readLabelRanges, replaceLabelRanges } from './page-labels';
 import { inspectProtection } from './security';
 import {
   note,
@@ -117,8 +121,8 @@ interface BaseMetadata {
 
 /**
  * The pdf.js surface `composeDocument` needs; `PdfDocumentHandle.raw` satisfies
- * it. The two optional members are read-only measurements the report needs
- * (original data length, outline size) — neither adds engine work of its own.
+ * it. The optional member is a read-only measurement the report needs (original
+ * data length) that adds no engine work of its own.
  */
 export interface PdfComposeHandle {
   /**
@@ -141,8 +145,6 @@ export interface PdfComposeHandle {
   ): Promise<Uint8Array | null>;
   /** `PDFDocumentProxy.getDownloadInfo` — byte length of the loaded file. */
   getDownloadInfo?(): Promise<{ readonly length: number }>;
-  /** `PDFDocumentProxy.getOutline` — counted only, so the shape stays loose. */
-  getOutline?(): Promise<readonly unknown[] | null>;
 }
 
 /**
@@ -182,20 +184,24 @@ export async function composeDocument(
     });
   }
 
-  // When no rotation is asked for, nothing may be written back at all — the page
-  // count is read and the engine's bytes go out as they are.
+  // When no rotation is asked for and no page is repeated, nothing may be written back at all
+  // — the page count is read and the engine's bytes go out as they are.
+  const plan = planCopies(planned);
+  const rewrite = rotated.length > 0 || plan.copies.length > 0;
   let bytes: Uint8Array = produced;
-  if (rotated.length > 0) {
+  let unresolved = false;
+  if (rewrite) {
     const { doc } = await openForWrite(produced);
     try {
       const pages = pageObjects(doc);
       assertPageCount(pages.length, options.pageCount);
       applyRotation(pages, rotated, context);
+      unresolved = restoreCopies(doc, pages, plan);
       // The engine stamped its own producer line; `saveRewrite` puts ours back.
-      bytes = saveRewrite(doc, 'composeDocument.rotate');
+      bytes = saveRewrite(doc, 'composeDocument.rewrite');
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') throw error;
-      throw mapMupdfError(error, 'composeDocument.rotate');
+      throw mapMupdfError(error, 'composeDocument.rewrite');
     } finally {
       doc.destroy();
     }
@@ -209,16 +215,12 @@ export async function composeDocument(
   if (rotated.length > 0) {
     notes.push(note('changed', 'op.note.compose.rotation', { count: rotated.length }));
   }
-  const copies = baseCopyLevelCount(planned, baseIndex);
-  if (copies > 1 && handle.getOutline !== undefined) {
-    // A repeated page is an extra entry over the same document, and the engine
-    // merges the outline once per entry (`#buildOutline` walks every collected
-    // document): the tree comes out repeated. Measured, so the report states it
-    // instead of hiding it.
-    const outline = countOutlineItems(await handle.getOutline());
-    if (outline > 0) {
-      notes.push(note('changed', 'op.note.compose.outlineCopies', { copies }));
-    }
+  if (unresolved) {
+    // The engine merges the outline once per entry (`#buildOutline`), and `restoreCopies` removes
+    // a repeat only after reading what the bookmark points at. A bookmark it could not read (an
+    // internal destination without a page, a tree nested past the bound) stays as the engine
+    // wrote it, so the report says the outline may still be repeated.
+    notes.push(note('changed', 'op.note.compose.outlineCopies', { copies: plan.depth }));
   }
   notes.push(note('preserved', 'op.note.compose.verified', { pages: options.pageCount }));
 
@@ -226,7 +228,9 @@ export async function composeDocument(
     bytes,
     report: {
       engine: 'pdfjs',
-      steps: rotated.length > 0 ? ['pdfjs.extractPages', 'compose.rotate', 'save'] : ['pdfjs.extractPages'],
+      steps: rewrite
+        ? ['pdfjs.extractPages', ...(rotated.length > 0 ? ['compose.rotate'] : []), 'save']
+        : ['pdfjs.extractPages'],
       notes,
       inputBytes: extraBytes + (await downloadInfo(handle)),
       outputBytes: bytes.length,
@@ -238,8 +242,10 @@ export async function composeDocument(
 }
 
 /**
- * Merge several documents into one, preserving outline/labels/attachments where
- * `extractPages` does (each source contributes `includePages`).
+ * Merge several documents into one, preserving outline/attachments where
+ * `extractPages` does (each source contributes `includePages`) and writing the page
+ * labels the engine drops for a multi-document composition: every page keeps the label
+ * its own document gave it (`composedLabelRanges`).
  *
  * This one is **byte-based**, and that is the difference from `composeDocument`:
  * the caller hands over a produced buffer whose engine edits are already baked
@@ -300,8 +306,20 @@ export async function mergeDocuments(
       });
     }
 
+    // Planned once the engine has accepted every source: it needs only the sources' bytes and
+    // the layout the engine was asked for, and a document pdf.js refuses keeps its own error.
+    const labels = await composedLabelRanges(
+      [base.bytes, ...others.map((other) => other.bytes)],
+      planMergePlacements(
+        base.pageCount,
+        others.map((other) => other.pageCount),
+        insertAfter,
+      ),
+      context,
+      'mergeDocuments',
+    );
     const baseMetadata = await readBaseMetadata(handle);
-    const { doc: document } = await openForWrite(produced);
+    const { mupdf, doc: document } = await openForWrite(produced);
     let bytes: Uint8Array;
     let structure: StructureMeasure;
     try {
@@ -313,6 +331,7 @@ export async function mergeDocuments(
         });
       }
       applyBaseMetadata(document, baseMetadata);
+      if (labels.length > 0) replaceLabelRanges(mupdf, document, labels);
       // Measured on the document the caller receives, so the numbers describe the
       // file rather than the engine's intent.
       structure = measureStructure(document);
@@ -333,6 +352,15 @@ export async function mergeDocuments(
         fields: structure.fields,
       }),
     );
+    if (labels.length > 0) {
+      // The plan was written by this operation, so the file is checked against it: a tree
+      // that came out shorter than planned is a loss, never a claim of preserved labels.
+      notes.push(
+        structure.labels < labels.length
+          ? note('lost', 'op.note.merge.labelsLost', { expected: labels.length, actual: structure.labels })
+          : note('changed', 'op.note.merge.labels'),
+      );
+    }
     if (structure.outline < baseMetadata.outline) {
       notes.push(
         note('lost', 'op.note.merge.outlineLost', {
@@ -369,6 +397,34 @@ async function anyEncrypted(inputs: readonly Uint8Array[]): Promise<boolean> {
     if ((await inspectProtection(bytes)).encrypted) return true;
   }
   return false;
+}
+
+/**
+ * Where every page of a merge lands, in the terms `composedLabelRanges` maps labels
+ * through. This mirrors what the engine does with `insertAfter`
+ * (`pdf.worker.mjs:62340-62347`): the added documents go in as one block, in the order
+ * given, after base page `insertAfter` — at the end when that is past the last page — and
+ * the base pages behind them shift by the block's length.
+ */
+function planMergePlacements(
+  basePageCount: number,
+  addedPageCounts: readonly number[],
+  insertAfter: number,
+): LabelPlacement[] {
+  const at = Math.min(insertAfter + 1, basePageCount);
+  const added = addedPageCounts.reduce((sum, count) => sum + count, 0);
+  const placements: LabelPlacement[] = [];
+  for (let page = 0; page < basePageCount; page += 1) {
+    placements.push({ source: 0, page, position: page < at ? page : page + added });
+  }
+  let position = at;
+  for (const [index, count] of addedPageCounts.entries()) {
+    for (let page = 0; page < count; page += 1) {
+      placements.push({ source: index + 1, page, position });
+      position += 1;
+    }
+  }
+  return placements;
 }
 
 /**
@@ -519,17 +575,203 @@ function buildCopyLevels(
   return levels;
 }
 
-/** How many engine entries the base document needs — one per page copy level. */
-function baseCopyLevelCount(planned: readonly PlannedPage[], baseIndex: number): number {
-  const placed = new Map<number, number>();
-  let max = 0;
+/** A repeated page: its output position and the position of the first copy it repeats. */
+interface PageCopy {
+  readonly position: number;
+  readonly original: number;
+}
+
+/**
+ * The repeated pages of a composition, counted the way `buildEntries` places them: the first
+ * occurrence of a source page (in plan order) is the original, every later one a copy.
+ */
+interface CopyPlan {
+  readonly copies: readonly PageCopy[];
+  /** The original every output position repeats — the position itself for an original. */
+  readonly originals: readonly number[];
+  /** How many times the most repeated page appears (`1` when nothing is repeated). */
+  readonly depth: number;
+}
+
+function planCopies(planned: readonly PlannedPage[]): CopyPlan {
+  const seen = new Map<string, { readonly position: number; count: number }>();
+  const originals = Array.from({ length: planned.length }, (_unused, position) => position);
+  const copies: PageCopy[] = [];
+  let depth = 1;
   for (const page of planned) {
-    if (page.source !== baseIndex) continue;
-    const count = (placed.get(page.page) ?? 0) + 1;
-    placed.set(page.page, count);
-    max = Math.max(max, count);
+    const key = `${page.source}:${page.page}`;
+    const earlier = seen.get(key);
+    if (earlier === undefined) {
+      seen.set(key, { position: page.position, count: 1 });
+      continue;
+    }
+    originals[page.position] = earlier.position;
+    earlier.count += 1;
+    depth = Math.max(depth, earlier.count);
+    copies.push({ position: page.position, original: earlier.position });
   }
-  return max;
+  return { copies, originals, depth };
+}
+
+/**
+ * Undo what one engine entry per copy level does to a repeated page, on the composed file.
+ * Each entry is its own document to the engine, so (`#buildOutline`) the outline is merged
+ * once per entry and (`#postCollectPageData`) a GoTo link survives only when its target is
+ * inside the entry — a copy kept no links to the other pages. The copies get the original's
+ * links back and the bookmarks the copy entries appended are removed. Returns whether a
+ * bookmark could not be read, and so may still be repeated.
+ */
+function restoreCopies(doc: PDFDocument, pages: readonly PDFObject[], plan: CopyPlan): boolean {
+  if (plan.copies.length === 0) return false;
+  for (const { position, original } of plan.copies) {
+    copyLinks(doc, pages[original] as PDFObject, pages[position] as PDFObject);
+  }
+  return pruneCopiedBookmarks(doc, plan.originals);
+}
+
+/** A page's annotations told apart: `/Link` entries and everything else, as the array holds them. */
+function splitAnnotations(doc: PDFDocument, page: PDFObject): { links: PDFObject[]; others: PDFObject[] } {
+  const split: { links: PDFObject[]; others: PDFObject[] } = { links: [], others: [] };
+  const annots = annotsOf(doc, page);
+  if (annots === null) return split;
+  for (let index = 0; index < annots.length; index += 1) {
+    const entry = annots.get(index);
+    const kind = readName(entry.resolve().get('Subtype')) === 'Link' ? 'links' : 'others';
+    split[kind].push(entry);
+  }
+  return split;
+}
+
+/**
+ * A copy of `object`'s direct parts. An indirect reference stays a reference: a link's
+ * destination must keep pointing at the very page it pointed at.
+ */
+function cloneDirect(doc: PDFDocument, object: PDFObject): PDFObject {
+  if (object.isIndirect()) return object;
+  if (object.isArray()) {
+    const array = doc.newArray();
+    for (let index = 0; index < object.length; index += 1) array.push(cloneDirect(doc, object.get(index)));
+    return array;
+  }
+  if (object.isDictionary()) {
+    const dictionary = doc.newDictionary();
+    object.forEach((value, key) => {
+      dictionary.put(key, cloneDirect(doc, value));
+    });
+    return dictionary;
+  }
+  return object;
+}
+
+/**
+ * Replace the links of `copy` by clones of `original`'s, so the copy keeps the same rectangles
+ * and the same targets. The clone is not part of the structure tree and belongs to the copy.
+ */
+function copyLinks(doc: PDFDocument, original: PDFObject, copy: PDFObject): void {
+  const source = splitAnnotations(doc, original).links;
+  const own = splitAnnotations(doc, copy);
+  if (source.length === 0 && own.links.length === 0) return;
+  const annots = doc.newArray();
+  for (const entry of own.others) annots.push(entry);
+  for (const link of source) {
+    const clone = cloneDirect(doc, link.resolve());
+    clone.delete('StructParent');
+    clone.put('P', copy);
+    annots.push(doc.addObject(clone));
+  }
+  copy.put('Annots', annots);
+}
+
+/**
+ * Delete the top-level bookmark subtrees the engine appended for the copy entries. The engine
+ * merges the outline once per entry (`#buildOutline`), and which items a later entry repeats
+ * depends on how the bookmark names its page: an explicit page array is valid only in the entry
+ * that holds the page, but a named destination, a URL or an action is valid in every entry. So
+ * the appended block is found by what it says, not by where it points: a top-level subtree goes
+ * when it is what a copy entry leaves of an earlier one (`isRepeatOf`) — the same titles and
+ * targets, a copy read as the page it repeats, with whatever the entry could not use missing:
+ * a heading's own page array (the heading then survives only for a named child) or the
+ * children whose page arrays point elsewhere (the heading survives alone). Returns whether a
+ * bookmark could not be read; that one stays, and the report says the outline may still be
+ * repeated.
+ */
+function pruneCopiedBookmarks(doc: PDFDocument, originals: readonly number[]): boolean {
+  const tree = doc.loadOutline();
+  if (tree === null) return false;
+  const iterator = doc.outlineIterator();
+  // The subtrees kept so far, by title: a repeat has the title of what it repeats.
+  const kept = new Map<string, BookmarkRead[]>();
+  let unresolved = false;
+  for (const node of tree) {
+    const read = readBookmark(node, originals);
+    if (read.unresolved) {
+      unresolved = true;
+      iterator.next();
+      continue;
+    }
+    const earlier = kept.get(read.title);
+    if (earlier?.some((whole) => isRepeatOf(read, whole)) === true) {
+      iterator.delete();
+      continue;
+    }
+    if (earlier === undefined) kept.set(read.title, [read]);
+    else earlier.push(read);
+    iterator.next();
+  }
+  return unresolved;
+}
+
+/** What `PDFDocument.loadOutline` answers for a bookmark. */
+interface OutlineNode {
+  readonly title?: string;
+  readonly uri?: string;
+  readonly page?: number;
+  readonly down?: readonly OutlineNode[];
+}
+
+/** A bookmark subtree as `pruneCopiedBookmarks` compares it. */
+interface BookmarkRead {
+  readonly title: string;
+  /**
+   * What the bookmark points at: `p<page>` for a page of this document (a copy read as the
+   * page it repeats), `u<uri>` for a URL or a link into another file, `-` for nothing MuPDF
+   * can name — the engine's mark for a heading whose own destination it dropped.
+   */
+  readonly target: string;
+  readonly children: readonly BookmarkRead[];
+  /** A destination named a page MuPDF could not resolve, or the tree is nested past the bound. */
+  readonly unresolved: boolean;
+}
+
+function readBookmark(node: OutlineNode, originals: readonly number[], depth = 0): BookmarkRead {
+  if (depth > MAX_STRUCTURE_DEPTH) return { title: '', target: '-', children: [], unresolved: true };
+  const children = (node.down ?? []).map((child) => readBookmark(child, originals, depth + 1));
+  // MuPDF answers a page for a link into another file too (`file:x.pdf#page=2`): only a `#` URI
+  // names a page of this document, and its name differs between the engine's copies of it.
+  const internal = node.uri?.startsWith('#') === true;
+  let target = node.uri === undefined ? '-' : `u${node.uri}`;
+  if (internal && node.page !== undefined) target = `p${originals[node.page] ?? node.page}`;
+  return {
+    title: node.title ?? '',
+    target,
+    children,
+    unresolved: (internal && node.page === undefined) || children.some((child) => child.unresolved),
+  };
+}
+
+/**
+ * Whether `sub` is `whole` as a copy entry leaves it: the same title, the same target — or none,
+ * for a heading the entry kept only for its children (a bookmark with neither a destination nor
+ * a child is never left over, it is a genuine action the engine kept whole) — and every child a
+ * repeat of a child of `whole`. A subtree equal to `whole` is the plain repeat.
+ */
+function isRepeatOf(sub: BookmarkRead, whole: BookmarkRead): boolean {
+  const target = sub.target === whole.target || (sub.target === '-' && sub.children.length > 0);
+  return (
+    sub.title === whole.title &&
+    target &&
+    sub.children.every((child) => whole.children.some((candidate) => isRepeatOf(child, candidate)))
+  );
 }
 
 /**
@@ -661,7 +903,7 @@ function measureStructure(document: PDFDocument): StructureMeasure {
   const catalog = document.getTrailer().get('Root').resolve();
   return {
     outline: countOutlineTree(catalog.get('Outlines')),
-    labels: countNumberTree(catalog.get('PageLabels')),
+    labels: readLabelRanges(document).length,
     fields: countTopLevelFields(catalog.get('AcroForm')),
   };
 }
@@ -700,27 +942,6 @@ function countOutlineTree(outlines: PDFObject): number {
   return total;
 }
 
-/** Page-label ranges live in a number tree: `/Nums` pairs here, `/Kids` below. */
-function countNumberTree(value: PDFObject): number {
-  const visited = new Set<number | PDFObject>();
-  let total = 0;
-  const walk = (entry: PDFObject): void => {
-    const node = dictionaryOf(entry);
-    if (node === undefined || total > MAX_STRUCTURE_ITEMS) return;
-    const key = identity(entry, node);
-    if (visited.has(key)) return;
-    visited.add(key);
-    const numbers = resolved(node.get('Nums'));
-    if (numbers?.isArray() === true) total += Math.floor(numbers.length / 2);
-    const kids = resolved(node.get('Kids'));
-    if (kids?.isArray() === true) {
-      for (let index = 0; index < kids.length; index += 1) walk(kids.get(index));
-    }
-  };
-  walk(value);
-  return total;
-}
-
 function countTopLevelFields(acroForm: PDFObject): number {
   const form = dictionaryOf(acroForm);
   if (form === undefined) return 0;
@@ -729,7 +950,7 @@ function countTopLevelFields(acroForm: PDFObject): number {
 }
 
 /** Outline size of a document, without trusting the engine's node shape. */
-function countOutlineItems(nodes: readonly unknown[] | null, depth = 0): number {
+export function countOutlineItems(nodes: readonly unknown[] | null, depth = 0): number {
   if (nodes === null || depth > MAX_STRUCTURE_DEPTH) return 0;
   let total = 0;
   for (const node of nodes) {
