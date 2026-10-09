@@ -187,7 +187,7 @@ test('a redaction box removes the text under it from the exported file', async (
   await form.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
   await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(notice(page, 'targeted content no longer exists')).toBeVisible({ timeout: 60_000 });
+  await expect(notice(page, 'no text remains in the marked areas')).toBeVisible({ timeout: 60_000 });
 
   const texts = await readProducedPageTexts(await exported(page, 'redacted.pdf'));
   expect(texts[0]).toContain('Third line stays untouched');
