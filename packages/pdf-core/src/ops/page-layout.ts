@@ -46,6 +46,14 @@ export interface LayoutChar {
   readonly color: number;
   /** Drawn invisibly (render mode 3, or a zero alpha): the text layer a scan's OCR leaves behind. */
   readonly invisible?: true;
+  /** The fill opacity of text drawn translucent (above 0, below 1); absent when solid. */
+  readonly alpha?: number;
+  /**
+   * Where the glyph starts and how far it advances, for a line that runs at a slant (neither
+   * across nor up/down the page, so the box says nothing of its geometry): its origin in page
+   * space and the width of its quad along the line's direction.
+   */
+  readonly pen?: { readonly x: number; readonly y: number; readonly advance: number };
 }
 
 export interface LayoutLine {
@@ -362,6 +370,20 @@ export function softMasked(mupdf: Mupdf, image: Image): Image | null {
   }
 }
 
+/** Sine of the angle (1.5°) within which a line counts as running along an axis of the page. */
+const AXIS_SLACK = 0.026;
+
+/**
+ * Whether a line's direction (`LayoutLine.dir`) is none of across (1, 0), down (0, 1) and up
+ * (0, -1) — within 1.5° — so its text is set at a slant (or upside down).
+ */
+export function slanted(dir: readonly [number, number]): boolean {
+  const [x, y] = dir;
+  const across = x > 0 && Math.abs(y) < AXIS_SLACK;
+  const vertical = Math.abs(x) < AXIS_SLACK && Math.abs(y) > 0;
+  return !across && !vertical;
+}
+
 /** The page's characters, blocks and pictures, through MuPDF's structured-text walker. */
 export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): PageLayout {
   const [px0, py0, px1, py1] = page.getBounds();
@@ -423,13 +445,17 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         const [x0, y0] = shift(Math.min(...xs), Math.min(...ys));
         const [x1, y1] = shift(Math.max(...xs), Math.max(...ys));
         origins.push([origin[0], origin[1]]);
+        const [ox, oy] = shift(origin[0], origin[1]);
         chars.push({
           c,
           box: [x0, y0, x1, y1],
-          baseline: shift(origin[0], origin[1])[1],
+          baseline: oy,
           size,
           color: rgb(color),
           ...face,
+          ...(slanted(lineDir)
+            ? { pen: { x: ox, y: oy, advance: Math.hypot(quad[2] - quad[0], quad[3] - quad[1]) } }
+            : {}),
         });
       },
       endLine() {
@@ -469,17 +495,22 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   };
   /** The origins of the glyphs drawn invisibly, on a grid of a quarter point. */
   const hidden = new Set<string>();
-  const hide = (text: Text, ctm: Matrix): void => {
+  /** The same, for glyphs filled with an opacity between 0 and 1: their opacity. */
+  const faded = new Map<string, number>();
+  const hide = (text: Text, ctm: Matrix, opacity?: number): void => {
     text.walk({
       showGlyph(_font, trm) {
         const [x, y] = apply(ctm, trm[4], trm[5]);
-        hidden.add(`${Math.round(x * 4)},${Math.round(y * 4)}`);
+        const key = `${Math.round(x * 4)},${Math.round(y * 4)}`;
+        if (opacity === undefined) hidden.add(key);
+        else faded.set(key, opacity);
       },
     });
   };
   const device = new mupdf.Device({
     fillText(text, ctm, _colorspace, _color, alpha) {
       if (alpha === 0) hide(text, ctm);
+      else if (alpha < 1) hide(text, ctm, Math.round(alpha * 1000) / 1000);
     },
     strokeText(text, _stroke, ctm, _colorspace, _color, alpha) {
       if (alpha === 0) hide(text, ctm);
@@ -530,16 +561,23 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   } finally {
     device.destroy();
   }
-  if (hidden.size > 0) {
+  if (hidden.size > 0 || faded.size > 0) {
     for (const line of walked) {
       for (const [at, origin] of line.origins.entries()) {
         const gx = Math.round(origin[0] * 4);
         const gy = Math.round(origin[1] * 4);
         let found = false;
+        let opacity: number | undefined;
         for (let dx = -1; dx <= 1 && !found; dx += 1) {
-          for (let dy = -1; dy <= 1 && !found; dy += 1) found = hidden.has(`${gx + dx},${gy + dy}`);
+          for (let dy = -1; dy <= 1 && !found; dy += 1) {
+            const key = `${gx + dx},${gy + dy}`;
+            found = hidden.has(key);
+            opacity ??= faded.get(key);
+          }
         }
         if (found) line.chars[at] = { ...(line.chars[at] as LayoutChar), invisible: true };
+        else if (opacity !== undefined)
+          line.chars[at] = { ...(line.chars[at] as LayoutChar), alpha: opacity };
       }
     }
   }

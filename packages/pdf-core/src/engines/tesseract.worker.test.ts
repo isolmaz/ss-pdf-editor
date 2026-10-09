@@ -241,7 +241,7 @@ describe('recognizePage', () => {
     expect(state.created).toEqual([]);
   });
 
-  it('does not keep a worker whose start failed, and gives a second caller waiting on it the failure', async () => {
+  it('does not keep a worker whose start failed, and lets a second caller waiting on it start its own', async () => {
     let fail: (error: unknown) => void = () => undefined;
     state.nextCreate = [
       () =>
@@ -254,8 +254,9 @@ describe('recognizePage', () => {
     const second = engine.recognizePage(input());
     fail(new Error('Failed to fetch worker.min.js'));
     expect(await first.catch((error: unknown) => error)).toMatchObject({ code: 'asset-missing' });
-    expect(await second.catch((error: unknown) => error)).toMatchObject({ code: 'asset-missing' });
-    // The next call starts again.
+    expect((await second).words).toEqual([]);
+    expect(state.created).toHaveLength(2);
+    // The next call has the worker the second started.
     expect((await engine.recognizePage(input())).words).toEqual([]);
     expect(state.created).toHaveLength(2);
   });
@@ -296,29 +297,29 @@ describe('recognizePage', () => {
     });
   });
 
-  it('leaves the progress sink of a newer page alone when an older page finishes after it started', async () => {
+  it('reads one page at a time on a worker, the progress of each going to its page alone', async () => {
     const releases: Array<() => void> = [];
     state.recognize = () =>
       new Promise((resolve) => {
         releases.push(() => resolve(pageOf([])));
       });
     const seen: string[] = [];
+    const progress = { status: 'recognizing text', progress: 0.5, jobId: '', userJobId: '', workerId: '' };
     const older = engine.recognizePage(input({ onProgress: () => seen.push('older') }));
     await vi.waitFor(() => expect(releases).toHaveLength(1));
     const newer = engine.recognizePage(input({ onProgress: () => seen.push('newer') }));
-    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    // The newer page waits for the worker: it has not started to read.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(releases).toHaveLength(1);
+    (state.logger as (message: LoggerMessage) => void)(progress);
     releases[0]?.();
     await older;
-    (state.logger as (message: LoggerMessage) => void)({
-      status: 'recognizing text',
-      progress: 0.5,
-      jobId: '',
-      userJobId: '',
-      workerId: '',
-    });
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    (state.logger as (message: LoggerMessage) => void)(progress);
     releases[1]?.();
     await newer;
-    expect(seen).toEqual(['newer']);
+    expect(seen).toEqual(['older', 'newer']);
+    expect(state.created).toHaveLength(1);
   });
 
   it('names the failures of the engine', async () => {
@@ -412,6 +413,211 @@ describe('recognizeWord', () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(state.workers[0]?.terminated).toBe(1);
+  });
+});
+
+describe('a pool of workers', () => {
+  const reads = (count: number) => {
+    const releases: Array<() => void> = [];
+    state.recognize = () =>
+      new Promise((resolve) => {
+        releases.push(() => resolve(pageOf([])));
+      });
+    return { releases, count };
+  };
+
+  it('starts as many workers as it is allowed for pages read side by side, and a page beyond them waits for one', async () => {
+    engine.allowOcrWorkers(2, ['tur'], 'fast');
+    const { releases } = reads(3);
+    const pages = [
+      engine.recognizePage(input()),
+      engine.recognizePage(input()),
+      engine.recognizePage(input()),
+    ];
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(state.created).toHaveLength(2);
+    expect(releases).toHaveLength(2);
+    releases[1]?.();
+    await vi.waitFor(() => expect(releases).toHaveLength(3));
+    releases[0]?.();
+    releases[2]?.();
+    await Promise.all(pages);
+    // The third took the worker the second gave back; none was started for it.
+    expect(state.created).toHaveLength(2);
+    expect(state.workers.map((worker) => worker.recognize.length)).toEqual([1, 2]);
+  });
+
+  it('keeps a pool for each language set and quality, and allows more than one worker only to the set it was asked for', async () => {
+    engine.allowOcrWorkers(2, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const pages = [
+      engine.recognizePage(input({ languages: ['tur'] })),
+      engine.recognizePage(input({ languages: ['tur'] })),
+      engine.recognizePage(input({ languages: ['eng'] })),
+      engine.recognizePage(input({ languages: ['eng'] })),
+      engine.recognizePage(input({ languages: ['tur'], quality: 'best' })),
+    ];
+    await vi.waitFor(() => expect(releases).toHaveLength(4));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Two for Turkish, one for English (its second page waits), one for Turkish at the other quality.
+    expect(state.created.map((entry) => entry.languages)).toEqual([['tur'], ['tur'], ['eng'], ['tur']]);
+    for (const release of releases) release();
+    await vi.waitFor(() => expect(releases).toHaveLength(5));
+    releases[4]?.();
+    await Promise.all(pages);
+    expect(state.created).toHaveLength(4);
+  });
+
+  it('keeps every worker a cancelled waiter would have taken for the waiter behind it', async () => {
+    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const busy = engine.recognizePage(input());
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    const first = new AbortController();
+    const second = new AbortController();
+    const cancelled = engine.recognizePage(input({ signal: first.signal }));
+    const behind = engine.recognizePage(input({ signal: second.signal }));
+    first.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+    releases[0]?.();
+    await busy;
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    releases[1]?.();
+    await behind;
+    expect(state.created).toHaveLength(1);
+  });
+
+  it('allows no more than three workers to a set', async () => {
+    engine.allowOcrWorkers(50, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const pages = Array.from({ length: 5 }, () => engine.recognizePage(input()));
+    await vi.waitFor(() => expect(releases).toHaveLength(3));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(state.created).toHaveLength(3);
+    for (let at = 0; at < 5; at += 1) {
+      await vi.waitFor(() => expect(releases.length).toBeGreaterThan(at));
+      releases[at]?.();
+    }
+    await Promise.all(pages);
+  });
+
+  it('puts a cancelled read’s worker out of the pool and lets the next page start one in its place', async () => {
+    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    const { releases } = reads(2);
+    const controller = new AbortController();
+    const cancelled = engine.recognizePage(input({ signal: controller.signal }));
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    const waiting = engine.recognizePage(input());
+    controller.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    releases[1]?.();
+    await waiting;
+    expect(state.created).toHaveLength(2);
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 0]);
+  });
+
+  it('stops a page waiting for a worker when it is cancelled, without touching the workers', async () => {
+    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const busy = engine.recognizePage(input());
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    const controller = new AbortController();
+    const waiting = engine.recognizePage(input({ signal: controller.signal }));
+    const waitingWord = engine.recognizeWord({
+      image,
+      languages: ['tur'],
+      quality: 'fast',
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(waitingWord).rejects.toMatchObject({ name: 'AbortError' });
+    releases[0]?.();
+    await busy;
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([0]);
+  });
+
+  it('gives the worker back when the read is cancelled while the worker was starting', async () => {
+    const wordOf = (signal: AbortSignal) =>
+      engine.recognizeWord({ image, languages: ['tur'], quality: 'fast', signal });
+    for (const wordFirst of [false, true]) {
+      await engine.terminateOcrWorkers();
+      state.created = [];
+      let finish: () => void = () => undefined;
+      state.nextCreate = [
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      ];
+      const controller = new AbortController();
+      const starts = wordFirst
+        ? wordOf(controller.signal)
+        : engine.recognizePage(input({ signal: controller.signal }));
+      await vi.waitFor(() => expect(state.created).toHaveLength(1));
+      const waits = wordFirst
+        ? engine.recognizePage(input({ signal: controller.signal }))
+        : wordOf(controller.signal);
+      controller.abort();
+      finish();
+      await expect(starts).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(waits).rejects.toMatchObject({ name: 'AbortError' });
+      // The worker that started is in the pool, free: the next read does not start another.
+      state.recognize = async () => pageOf([]);
+      await engine.recognizePage(input());
+      expect(state.created).toHaveLength(1);
+    }
+  });
+
+  it('terminates what is running, what is free and what is still starting, and sends the waiting pages away', async () => {
+    engine.allowOcrWorkers(3, ['tur'], 'fast');
+    const { releases } = reads(1);
+    const first = engine.recognizePage(input());
+    const second = engine.recognizePage(input());
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    let finish: () => void = () => undefined;
+    state.nextCreate = [
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    ];
+    const third = engine.recognizePage(input());
+    await vi.waitFor(() => expect(state.created).toHaveLength(3));
+    const waiting = engine.recognizePage(input());
+    const ending = engine.terminateOcrWorkers();
+    finish();
+    await ending;
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 1, 1]);
+    // Reads that were running when the pool went give nothing back to it.
+    for (const release of releases) release();
+    await Promise.all([first, second]);
+    releases.length = 0;
+    state.recognize = async () => pageOf([]);
+    await third;
+    // The pool is back to one worker: two pages read one after the other, on one new worker.
+    await Promise.all([engine.recognizePage(input()), engine.recognizePage(input())]);
+    expect(state.created).toHaveLength(4);
+  });
+
+  it('suggests one worker less than the cores, from one to three, and one on a machine with little memory', () => {
+    const suggested = (hardwareConcurrency?: number, deviceMemory?: number) => {
+      vi.stubGlobal('navigator', {
+        ...(hardwareConcurrency === undefined ? {} : { hardwareConcurrency }),
+        ...(deviceMemory === undefined ? {} : { deviceMemory }),
+      });
+      return engine.suggestedOcrWorkers();
+    };
+    expect([undefined, 1, 2, 3, 4, 8, 64].map((cores) => suggested(cores))).toEqual([1, 1, 1, 2, 3, 3, 3]);
+    expect([0.5, 2, 3.5].map((memory) => suggested(8, memory))).toEqual([1, 1, 1]);
+    expect([4, 8].map((memory) => suggested(8, memory))).toEqual([3, 3]);
+    vi.unstubAllGlobals();
+    vi.stubGlobal('navigator', undefined);
+    expect(engine.suggestedOcrWorkers()).toBe(1);
+    vi.unstubAllGlobals();
   });
 });
 

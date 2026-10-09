@@ -188,6 +188,21 @@ describe('the open families of an export', () => {
     expect(fonts.loaded.size).toBe(0);
     releaseOpenFonts(openFontsFor(new Set()));
   });
+
+  it('are loaded once and named once when pages read side by side pick the same family', async () => {
+    serveFonts();
+    const { mupdf, scan, measured } = await scanIn('Inter');
+    const fonts = openFontsFor(new Set());
+    const [first, second] = await Promise.all([
+      chooseOpenFont(mupdf, scan.image, measured, fonts),
+      chooseOpenFont(mupdf, scan.image, measured, fonts),
+    ]);
+    expect(second).toBe(first);
+    expect((first as OpenFont).name).toBe('Inter');
+    expect([...fonts.names]).toEqual(['Inter']);
+    expect(fonts.loaded.size).toBe(1);
+    releaseOpenFonts(fonts);
+  });
 });
 
 describe('the advances of the open family', () => {
