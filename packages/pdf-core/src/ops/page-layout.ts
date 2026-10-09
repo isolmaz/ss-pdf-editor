@@ -46,6 +46,14 @@ export interface LayoutChar {
   readonly color: number;
   /** Drawn invisibly (render mode 3, or a zero alpha): the text layer a scan's OCR leaves behind. */
   readonly invisible?: true;
+  /** The fill opacity of text drawn translucent (above 0, below 1); absent when solid. */
+  readonly alpha?: number;
+  /**
+   * Where the glyph starts and how far it advances, for a line that runs at a slant (neither
+   * across nor up/down the page, so the box says nothing of its geometry): its origin in page
+   * space and the width of its quad along the line's direction.
+   */
+  readonly pen?: { readonly x: number; readonly y: number; readonly advance: number };
 }
 
 export interface LayoutLine {
@@ -79,6 +87,13 @@ export interface TableCell {
   readonly columnSpan: number;
   readonly box: Box;
   readonly text: string;
+  /** Which sides of the cell are drawn (a ruled table only): a side without a rule along it is left blank. */
+  readonly borders?: {
+    readonly top: boolean;
+    readonly right: boolean;
+    readonly bottom: boolean;
+    readonly left: boolean;
+  };
 }
 
 export interface LayoutTable {
@@ -355,6 +370,20 @@ export function softMasked(mupdf: Mupdf, image: Image): Image | null {
   }
 }
 
+/** Sine of the angle (1.5°) within which a line counts as running along an axis of the page. */
+const AXIS_SLACK = 0.026;
+
+/**
+ * Whether a line's direction (`LayoutLine.dir`) is none of across (1, 0), down (0, 1) and up
+ * (0, -1) — within 1.5° — so its text is set at a slant (or upside down).
+ */
+export function slanted(dir: readonly [number, number]): boolean {
+  const [x, y] = dir;
+  const across = x > 0 && Math.abs(y) < AXIS_SLACK;
+  const vertical = Math.abs(x) < AXIS_SLACK && Math.abs(y) > 0;
+  return !across && !vertical;
+}
+
 /** The page's characters, blocks and pictures, through MuPDF's structured-text walker. */
 export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): PageLayout {
   const [px0, py0, px1, py1] = page.getBounds();
@@ -416,13 +445,17 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
         const [x0, y0] = shift(Math.min(...xs), Math.min(...ys));
         const [x1, y1] = shift(Math.max(...xs), Math.max(...ys));
         origins.push([origin[0], origin[1]]);
+        const [ox, oy] = shift(origin[0], origin[1]);
         chars.push({
           c,
           box: [x0, y0, x1, y1],
-          baseline: shift(origin[0], origin[1])[1],
+          baseline: oy,
           size,
           color: rgb(color),
           ...face,
+          ...(slanted(lineDir)
+            ? { pen: { x: ox, y: oy, advance: Math.hypot(quad[2] - quad[0], quad[3] - quad[1]) } }
+            : {}),
         });
       },
       endLine() {
@@ -462,17 +495,22 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   };
   /** The origins of the glyphs drawn invisibly, on a grid of a quarter point. */
   const hidden = new Set<string>();
-  const hide = (text: Text, ctm: Matrix): void => {
+  /** The same, for glyphs filled with an opacity between 0 and 1: their opacity. */
+  const faded = new Map<string, number>();
+  const hide = (text: Text, ctm: Matrix, opacity?: number): void => {
     text.walk({
       showGlyph(_font, trm) {
         const [x, y] = apply(ctm, trm[4], trm[5]);
-        hidden.add(`${Math.round(x * 4)},${Math.round(y * 4)}`);
+        const key = `${Math.round(x * 4)},${Math.round(y * 4)}`;
+        if (opacity === undefined) hidden.add(key);
+        else faded.set(key, opacity);
       },
     });
   };
   const device = new mupdf.Device({
     fillText(text, ctm, _colorspace, _color, alpha) {
       if (alpha === 0) hide(text, ctm);
+      else if (alpha < 1) hide(text, ctm, Math.round(alpha * 1000) / 1000);
     },
     strokeText(text, _stroke, ctm, _colorspace, _color, alpha) {
       if (alpha === 0) hide(text, ctm);
@@ -523,16 +561,23 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   } finally {
     device.destroy();
   }
-  if (hidden.size > 0) {
+  if (hidden.size > 0 || faded.size > 0) {
     for (const line of walked) {
       for (const [at, origin] of line.origins.entries()) {
         const gx = Math.round(origin[0] * 4);
         const gy = Math.round(origin[1] * 4);
         let found = false;
+        let opacity: number | undefined;
         for (let dx = -1; dx <= 1 && !found; dx += 1) {
-          for (let dy = -1; dy <= 1 && !found; dy += 1) found = hidden.has(`${gx + dx},${gy + dy}`);
+          for (let dy = -1; dy <= 1 && !found; dy += 1) {
+            const key = `${gx + dx},${gy + dy}`;
+            found = hidden.has(key);
+            opacity ??= faded.get(key);
+          }
         }
         if (found) line.chars[at] = { ...(line.chars[at] as LayoutChar), invisible: true };
+        else if (opacity !== undefined)
+          line.chars[at] = { ...(line.chars[at] as LayoutChar), alpha: opacity };
       }
     }
   }
@@ -724,14 +769,108 @@ function cluster(values: readonly number[]): number[] {
   return out.map((group) => group.reduce((sum, value) => sum + value, 0) / group.length);
 }
 
-function covers(rule: Ruling, horizontal: boolean, at: number, from: number, to: number): boolean {
+/** The share of a cell edge a rule has to run along for the cell to be split from its neighbour. */
+const SPLIT_SIDE = 0.6;
+/** The share of a cell side that rules have to cover for the side to be drawn. */
+const DRAWN_SIDE = 0.75;
+/** A table's outer edge further than this from its outermost rule is a border the page does not draw. */
+const OUTER_GAP = 6;
+
+function covers(
+  rule: Ruling,
+  horizontal: boolean,
+  at: number,
+  from: number,
+  to: number,
+  share = SPLIT_SIDE,
+): boolean {
   const position = horizontal ? rule.y0 : rule.x0;
   if (Math.abs(position - at) > SNAP * 2) return false;
   const start = horizontal ? rule.x0 : rule.y0;
   const end = horizontal ? rule.x1 : rule.y1;
   // The rule has to run along most of the cell edge, not just touch it.
   const overlap = Math.min(end, to) - Math.max(start, from);
-  return overlap >= (to - from) * 0.6;
+  return overlap >= (to - from) * share;
+}
+
+/**
+ * Completes a rule group's grid where its outer border is not drawn: the group's box is
+ * the extent of all its rules, and a side of it that no row or column line lies near gets an
+ * undrawn line, so the cells along it are cells of the grid (a column of a form whose rules
+ * stop at the first row line, a table framed on two sides only). The lines are added to
+ * `xs` and `ys` in place; no rule is added, so the cells' sides there are drawn blank.
+ *
+ * A grid is only completed along an axis that already has two lines of its own (a single
+ * divider crossed by a rule is not a lattice), at a side that two rules reach (a heading
+ * between two rules, touched by a divider, is not a table), and when the strip added holds
+ * text and is at least a quarter as wide as the cell next to it, or is at least half as wide
+ * (a rule that overshoots its neighbour by a few points does not make a row, nor does a
+ * divider that runs past a header rule and a footer rule make the page a table). The text
+ * is a line that lies wholly in the strip: a caption that only touches it stays a paragraph.
+ * A strip above or below the rules that holds lines of text one under the other (a header
+ * row and a first row that no rule separates) is cut between them into the rows they are,
+ * where the gap between two lines is at least a quarter of a line, a pitch of about 1.7 times
+ * the size (a header cell wrapped in two lines at the font's own leading stays one row). No
+ * pitch alone tells every wrapped leading from every row pitch: this one keeps the leadings
+ * up to 16 pt at 10 pt type in a cell and cuts the pitches from 18 pt.
+ * The cuts are returned, for they separate their rows although no rule is drawn there.
+ */
+function completeOuterEdges(
+  horizontal: readonly Ruling[],
+  vertical: readonly Ruling[],
+  xs: number[],
+  ys: number[],
+  linesIn: (box: Box) => readonly Box[],
+): number[] {
+  const separate: number[] = [];
+  const all = [...horizontal, ...vertical];
+  const x0 = Math.min(...all.map((rule) => rule.x0));
+  const x1 = Math.max(...all.map((rule) => rule.x1));
+  const y0 = Math.min(...all.map((rule) => rule.y0));
+  const y1 = Math.max(...all.map((rule) => rule.y1));
+  const reaching = (rules: readonly Ruling[], reach: (rule: Ruling) => boolean) =>
+    rules.filter(reach).length >= 2;
+  const worth = (strip: number, pitch: number, box: Box) =>
+    strip >= pitch / 2 || (strip >= pitch / 4 && linesIn(box).length > 0);
+  /** The rows of text in a horizontal strip: the cuts between lines that stand one under the other. */
+  const cuts = (box: Box): number[] => {
+    const out: number[] = [];
+    let foot = Number.NEGATIVE_INFINITY;
+    for (const line of [...linesIn(box)].sort((a, b) => a[1] - b[1])) {
+      if (foot !== Number.NEGATIVE_INFINITY && line[1] - foot >= (line[3] - line[1]) / 4)
+        out.push((foot + line[1]) / 2);
+      foot = Math.max(foot, line[3]);
+    }
+    return out;
+  };
+  const firstX = xs[0] as number;
+  const lastX = xs[xs.length - 1] as number;
+  const firstY = ys[0] as number;
+  const lastY = ys[ys.length - 1] as number;
+  // The rules decide the other axis too: read both before either is changed.
+  if (xs.length >= 2) {
+    const left = firstX - x0 > OUTER_GAP && reaching(horizontal, (rule) => rule.x0 <= x0 + SNAP);
+    const right = x1 - lastX > OUTER_GAP && reaching(horizontal, (rule) => rule.x1 >= x1 - SNAP);
+    if (left && worth(firstX - x0, (xs[1] as number) - firstX, [x0, y0, firstX, y1])) xs.unshift(x0);
+    if (right && worth(x1 - lastX, lastX - (xs[xs.length - 2] as number), [lastX, y0, x1, y1])) xs.push(x1);
+  }
+  if (ys.length >= 2) {
+    const top = firstY - y0 > OUTER_GAP && reaching(vertical, (rule) => rule.y0 <= y0 + SNAP);
+    const bottom = y1 - lastY > OUTER_GAP && reaching(vertical, (rule) => rule.y1 >= y1 - SNAP);
+    if (top && worth(firstY - y0, (ys[1] as number) - firstY, [x0, y0, x1, firstY])) {
+      const cut = cuts([x0, y0, x1, firstY]);
+      separate.push(...cut);
+      ys.unshift(y0, ...cut);
+      ys.sort((a, b) => a - b);
+    }
+    if (bottom && worth(y1 - lastY, lastY - (ys[ys.length - 2] as number), [x0, lastY, x1, y1])) {
+      const cut = cuts([x0, lastY, x1, y1]);
+      separate.push(...cut);
+      ys.push(y1, ...cut);
+      ys.sort((a, b) => a - b);
+    }
+  }
+  return separate;
 }
 
 function textIn(lines: readonly LayoutLine[], box: Box): string {
@@ -799,6 +938,18 @@ export function findTables(layout: PageLayout): LayoutTable[] {
   for (const group of groups.values()) {
     const ys = cluster(group.h.map((rule) => rule.y0));
     const xs = cluster(group.v.map((rule) => rule.x0));
+    const cut = completeOuterEdges(group.h, group.v, xs, ys, (strip) =>
+      lines
+        .filter(
+          (line) =>
+            line.box[0] >= strip[0] - 1 &&
+            line.box[1] >= strip[1] - 1 &&
+            line.box[2] <= strip[2] + 1 &&
+            line.box[3] <= strip[3] + 1 &&
+            line.chars.some((char) => char.c.trim() !== ''),
+        )
+        .map((line) => line.box),
+    );
     if (xs.length < 3 || ys.length < 2) continue;
     const rows = ys.length - 1;
     const columns = xs.length - 1;
@@ -818,20 +969,43 @@ export function findTables(layout: PageLayout): LayoutTable[] {
           columnSpan += 1;
         }
         const left = xs[column] as number;
-        const right = xs[column + columnSpan] as number;
+        let right = xs[column + columnSpan] as number;
         // Grow down while no horizontal rule separates this cell from the one below.
         let rowSpan = 1;
         while (
           row + rowSpan < rows &&
+          !cut.includes(ys[row + rowSpan] as number) &&
           !group.h.some((rule) => covers(rule, true, ys[row + rowSpan] as number, left, right))
         ) {
           rowSpan += 1;
         }
+        // A merged region is a rectangle: one that runs into a cell already placed is a
+        // missing rule that does not bound a whole region, and its cell stays single.
+        let clash = false;
+        for (let r = row; r < row + rowSpan; r += 1) {
+          for (let c = column; c < column + columnSpan; c += 1) {
+            if ((r !== row || c !== column) && covered.has(`${r}:${c}`)) clash = true;
+          }
+        }
+        if (clash) {
+          columnSpan = 1;
+          rowSpan = 1;
+          right = xs[column + 1] as number;
+        }
         for (let r = row; r < row + rowSpan; r += 1) {
           for (let c = column; c < column + columnSpan; c += 1) covered.add(`${r}:${c}`);
         }
-        const box: Box = [left, top, right, ys[row + rowSpan] as number];
-        cells.push({ row, column, rowSpan, columnSpan, box, text: textIn(lines, box) });
+        const foot = ys[row + rowSpan] as number;
+        const box: Box = [left, top, right, foot];
+        const side = (horizontal: boolean, at: number, from: number, to: number) =>
+          (horizontal ? group.h : group.v).some((rule) => covers(rule, horizontal, at, from, to, DRAWN_SIDE));
+        const borders = {
+          top: side(true, top, left, right),
+          bottom: side(true, foot, left, right),
+          left: side(false, left, top, foot),
+          right: side(false, right, top, foot),
+        };
+        cells.push({ row, column, rowSpan, columnSpan, box, text: textIn(lines, box), borders });
       }
     }
     // A frame around one paragraph, or rules under headings, is not a table.

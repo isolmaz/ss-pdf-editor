@@ -104,12 +104,15 @@ export interface OpenFonts {
   readonly names: Set<string>;
   /** The families chosen, by catalog id. */
   readonly loaded: Map<string, OpenFont>;
+  /** The families being loaded, by catalog id, for pages read side by side that pick the same one. */
+  readonly loading: Map<string, Promise<OpenFont>>;
 }
 
 /** No family chosen yet; `embedded` are the family names the PDF's own fonts are embedded under. */
 export const openFontsFor = (embedded: ReadonlySet<string>): OpenFonts => ({
   names: new Set(embedded),
   loaded: new Map(),
+  loading: new Map(),
 });
 
 /** Frees the MuPDF fonts of the families chosen. */
@@ -169,15 +172,23 @@ export async function chooseOpenFont(
   if (match.score - (match.runnerUp?.score ?? 0) < CLEAR_MARGIN) return null;
   const standard = matchFamily(mupdf, image, confident, STANDARD);
   if (match.score - standard.score < CLEAR_MARGIN) return null;
-  const chosen = fonts.loaded.get(winner.id);
-  if (chosen !== undefined) return chosen;
+  const chosen = fonts.loaded.get(winner.id) ?? fonts.loading.get(winner.id);
+  if (chosen !== undefined) return await chosen;
+  // Named and registered before the first wait, so a page read beside this one that picks the
+  // same family waits for this load instead of starting (and naming) another.
   let name = winner.name;
   for (let n = 2; fonts.names.has(name); n += 1) name = `${winner.name} ${n}`;
-  const regular = candidates.find((each) => each.family === winner.name)?.bytes as Uint8Array;
-  const open = await loadFamily(mupdf, winner, name, regular);
   fonts.names.add(name);
-  fonts.loaded.set(winner.id, open);
-  return open;
+  const regular = candidates.find((each) => each.family === winner.name)?.bytes as Uint8Array;
+  const load = loadFamily(mupdf, winner, name, regular);
+  fonts.loading.set(winner.id, load);
+  try {
+    const open = await load;
+    fonts.loaded.set(winner.id, open);
+    return open;
+  } finally {
+    fonts.loading.delete(winner.id);
+  }
 }
 
 /** The base-14 face behind each stand-in family of the scan's text. */

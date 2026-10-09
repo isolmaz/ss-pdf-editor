@@ -9,9 +9,16 @@
 import type { OctetString } from 'asn1js';
 import { Certificate, RelativeDistinguishedNames } from 'pkijs';
 import { describe, expect, it } from 'vitest';
-import { detachedCmsSignature, type SignatureDigest } from './signature-cms';
+import { detachedCmsSignature, ecdsaSignatureToDer, type SignatureDigest } from './signature-cms';
 import { readSignedData } from './signature-evidence';
-import { generateKey, issueCertificate, type KeySpec } from './signature-trust.fixtures';
+import { ecdsaDerToRaw } from './signature-trust';
+import {
+  derIntegers,
+  ecdsaRawToDer,
+  generateKey,
+  issueCertificate,
+  type KeySpec,
+} from './signature-trust.fixtures';
 
 const CONTENT = new TextEncoder().encode('the signed byte range');
 
@@ -35,6 +42,76 @@ async function identity(spec: KeySpec, hash: SignatureDigest = 'SHA-256') {
   });
   return { certificate, privateKey: keyPair.privateKey };
 }
+
+describe('ecdsaSignatureToDer', () => {
+  /** `width` octets of `fill`, with `lead` replacing the first octets. */
+  const scalar = (width: number, fill: number, lead: readonly number[] = []): Uint8Array => {
+    const bytes = new Uint8Array(width).fill(fill);
+    bytes.set(lead);
+    return bytes;
+  };
+
+  it.each([
+    ['no leading zero, top bit clear', 66, [0x01]],
+    ['one leading zero, next octet below 0x80 (no padding left)', 66, [0x00, 0x22]],
+    ['two leading zeros, next octet below 0x80 (the case pkijs got wrong)', 66, [0x00, 0x00, 0x22]],
+    ['two leading zeros, next octet 0x80 or more (one sign pad)', 66, [0x00, 0x00, 0x9c]],
+    ['three leading zeros', 66, [0x00, 0x00, 0x00, 0x05]],
+    ['top bit set (one sign pad)', 32, [0x80]],
+    ['two leading zeros on P-256', 32, [0x00, 0x00, 0x01]],
+    ['two leading zeros on P-384', 48, [0x00, 0x00, 0x7f]],
+  ])('agrees with the independent encoder, and reads back whole: %s', (_title, width, lead) => {
+    for (const [r, s] of [
+      [scalar(width, 0x5a, lead), scalar(width, 0x6b)],
+      [scalar(width, 0x6b), scalar(width, 0x5a, lead)],
+      [scalar(width, 0x5a, lead), scalar(width, 0x5a, lead)],
+    ] as const) {
+      const raw = Uint8Array.from([...r, ...s]);
+      const der = ecdsaSignatureToDer(raw);
+      expect(der).toEqual(ecdsaRawToDer(raw));
+      expect(ecdsaDerToRaw(der, width)).toEqual(raw);
+    }
+  });
+
+  it('writes the integers minimally: no redundant zero, a sign pad only where the top bit needs one', () => {
+    const der = ecdsaSignatureToDer(
+      Uint8Array.from([...scalar(66, 0x11, [0, 0, 0x22]), ...scalar(66, 0x11, [0, 0x90])]),
+    );
+    const { r, s } = derIntegers(der);
+    expect(Array.from(r.subarray(0, 2))).toEqual([0x22, 0x11]);
+    expect(r).toHaveLength(64);
+    expect(Array.from(s.subarray(0, 2))).toEqual([0x00, 0x90]);
+    expect(s).toHaveLength(66);
+  });
+
+  it('uses the long length form only where a short one cannot hold the sequence', () => {
+    const small = ecdsaSignatureToDer(new Uint8Array(16).fill(0x01));
+    expect(Array.from(small.subarray(0, 2))).toEqual([0x30, 0x14]);
+    const wide = ecdsaSignatureToDer(new Uint8Array(132).fill(0x01));
+    expect(Array.from(wide.subarray(0, 3))).toEqual([0x30, 0x81, wide.length - 3]);
+    // A scalar that is all zeros is still one octet, never an empty INTEGER.
+    expect(Array.from(ecdsaSignatureToDer(new Uint8Array(4)))).toEqual([
+      0x30, 0x06, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00,
+    ]);
+    // Longer than a short length can say: a two-octet length of the sequence.
+    const huge = ecdsaSignatureToDer(new Uint8Array(600).fill(0x01));
+    expect(Array.from(huge.subarray(0, 4))).toEqual([
+      0x30,
+      0x82,
+      (huge.length - 4) >> 8,
+      (huge.length - 4) & 0xff,
+    ]);
+  });
+
+  it('refuses a value that is not two halves of one width', () => {
+    expect(() => ecdsaSignatureToDer(new Uint8Array(0))).toThrow(
+      'an ECDSA signature is r and s of equal width; got 0 bytes',
+    );
+    expect(() => ecdsaSignatureToDer(new Uint8Array(65))).toThrow(
+      'an ECDSA signature is r and s of equal width; got 65 bytes',
+    );
+  });
+});
 
 describe('detachedCmsSignature', () => {
   it('signs with each key type and digest so an independent verifier accepts the CMS', async () => {
