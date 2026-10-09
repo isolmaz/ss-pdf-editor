@@ -5,11 +5,18 @@
  * document's title or XMP packet, and a merged file without the product producer line.
  */
 
+import type { PDFDocument, PDFObject } from 'mupdf';
 import { isToolError, type ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { PRODUCER_LINE } from '../engines/mupdf-write';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
-import { type ComposeOptions, composeDocument, mergeDocuments, type PdfComposeHandle } from './compose';
+import {
+  type ComposeOptions,
+  composeDocument,
+  countOutlineItems,
+  mergeDocuments,
+  type PdfComposeHandle,
+} from './compose';
 import { readPageLabels } from './page-labels';
 
 const run = { signal: new AbortController().signal };
@@ -258,36 +265,6 @@ describe('composeDocument plans its pages', () => {
     expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.compose.rotation');
   });
 
-  it('says a repeated page repeats the outline and a plain composition does not', async () => {
-    const withOutline = await pages(2);
-    const mupdf = await import('mupdf');
-    const doc = mupdf.PDFDocument.openDocument(withOutline.slice(), 'application/pdf').asPDF();
-    if (doc === null) throw new Error('not a PDF');
-    const outlines = doc.newDictionary();
-    const item = doc.addObject({
-      Title: doc.newString('Giriş'),
-      Dest: [doc.findPage(0), doc.newName('Fit')],
-    });
-    outlines.put('Type', doc.newName('Outlines'));
-    outlines.put('First', item);
-    outlines.put('Last', item);
-    doc.getTrailer().get('Root').put('Outlines', doc.addObject(outlines));
-    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
-    doc.destroy();
-    const repeated = await withHandle(bytes, (handle) =>
-      composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, handle.raw, run),
-    );
-    expect(
-      repeated.report.notes.find((entry) => entry.key === 'op.note.compose.outlineCopies')?.params,
-    ).toEqual({ copies: 2 });
-    const once = await withHandle(bytes, (handle) =>
-      composeDocument({ sources: [{ pages: [0, 1] }], pageCount: 2 }, handle.raw, run),
-    );
-    expect(once.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
-    const bare = await compose({ sources: [{ pages: [0, 0] }], pageCount: 2 });
-    expect(bare.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
-  });
-
   it('composes from a source that is another document, leaving the base out of the report', async () => {
     const other = await pages(2);
     const out = await compose({ sources: [{ bytes: other, pages: [1, 0] }], pageCount: 2 });
@@ -383,37 +360,24 @@ describe('composeDocument across sources and odd outlines', () => {
     );
     expect((await read(out.bytes)).pages).toEqual([{ width: 100, rotate: 90 }]);
   });
+});
 
+describe('countOutlineItems', () => {
   it.each([
-    ['no outline', null, false],
-    ['an empty outline', [], false],
-    ['entries that are not outline nodes', [null, 5, { items: 'x' }], true],
-    ['a nested outline', [{ items: [{ items: [{}] }] }], true],
-  ])('reads %s without trusting its shape', async (_name, outline, repeated) => {
-    await withHandle(await pages(2), async (handle) => {
-      const stub: PdfComposeHandle = Object.create(handle.raw, {
-        getOutline: { value: async () => outline },
-      });
-      const out = await composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, stub, run);
-      expect(out.report.notes.map((entry) => entry.key).includes('op.note.compose.outlineCopies')).toBe(
-        repeated,
-      );
-    });
+    ['no outline', null, 0],
+    ['an empty outline', [], 0],
+    ['entries that are not outline nodes', [null, 5, { items: 'x' }], 3],
+    ['a nested outline', [{ items: [{ items: [{}] }] }], 3],
+  ])('reads %s without trusting its shape', (_name, outline, count) => {
+    expect(countOutlineItems(outline)).toBe(count);
   });
 
-  it('stops counting an outline that is absurdly deep or wide, and still reports it', async () => {
+  it('stops counting an outline that is absurdly deep or wide', () => {
     let deep: unknown = {};
     for (let level = 0; level < 60; level += 1) deep = { items: [deep] };
     const wide = Array.from({ length: 20_005 }, () => ({}));
-    for (const outline of [[deep], wide]) {
-      await withHandle(await pages(2), async (handle) => {
-        const stub: PdfComposeHandle = Object.create(handle.raw, {
-          getOutline: { value: async () => outline },
-        });
-        const out = await composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, stub, run);
-        expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.compose.outlineCopies');
-      });
-    }
+    expect(countOutlineItems([deep])).toBeLessThan(60);
+    expect(countOutlineItems(wide)).toBeLessThanOrEqual(20_001);
   });
 });
 
@@ -541,6 +505,434 @@ describe('mergeDocuments refuses and measures', () => {
     expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.merge.outlineLost');
   });
 });
+
+// ---------------------------------------------------------------------------
+// a duplicated page keeps its links and does not repeat the outline
+// ---------------------------------------------------------------------------
+
+/**
+ * Four pages (widths 100…130). Page 1 holds three internal links to pages 2–4 (the last
+ * through a `/A` GoTo action), one URI link and a text note; every page has one bookmark.
+ * `urlBookmark` adds a bookmark that points at no page; `nested` hangs a child under the bookmark of page 2
+ * that targets page 3; `named` makes every bookmark and link reach its page through a named destination
+ * (`/Names /Dests` and a string `/Dest`, the way hyperref, Word and InDesign write them); `mixed` (with
+ * `nested`) names the page of only the headings or only the child that way, the other one by page array.
+ */
+async function linkedPages(
+  options: {
+    urlBookmark?: boolean;
+    remoteBookmark?: boolean;
+    nested?: boolean;
+    named?: boolean;
+    mixed?: 'named-heading' | 'named-child';
+  } = {},
+): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument((await pages(4)).slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  if (options.named === true || options.mixed !== undefined) {
+    const names = doc.newArray();
+    for (let index = 0; index < 4; index += 1) {
+      names.push(doc.newString(`chap${index + 1}`));
+      names.push(doc.newArray());
+      names.get(index * 2 + 1).push(doc.findPage(index));
+      names.get(index * 2 + 1).push(doc.newName('Fit'));
+    }
+    doc
+      .getTrailer()
+      .get('Root')
+      .put('Names', doc.addObject({ Dests: { Names: names } }));
+  }
+  const byName = (index: number) => doc.newString(`chap${index + 1}`);
+  const byPage = (index: number) => [doc.findPage(index), doc.newName('Fit')];
+  const target = options.named === true ? byName : byPage;
+  const headingTarget = options.named === true || options.mixed === 'named-heading' ? byName : byPage;
+  const childTarget = options.named === true || options.mixed === 'named-child' ? byName : byPage;
+  const annots = doc.newArray();
+  for (const [row, index] of [1, 2].entries()) {
+    annots.push(
+      doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Link',
+        Rect: [10, 10 + row * 20, 60, 25 + row * 20],
+        Dest: target(index),
+      }),
+    );
+  }
+  annots.push(
+    doc.addObject({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [10, 50, 60, 65],
+      A: { S: doc.newName('GoTo'), D: target(3) },
+    }),
+  );
+  annots.push(
+    doc.addObject({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [10, 70, 60, 85],
+      A: { S: doc.newName('URI'), URI: doc.newString('https://example.com/') },
+    }),
+  );
+  annots.push(
+    doc.addObject({ Type: 'Annot', Subtype: 'Text', Rect: [80, 10, 95, 25], Contents: doc.newString('not') }),
+  );
+  doc.findPage(0).put('Annots', doc.addObject(annots));
+  const specs: BookmarkSpec[] = [0, 1, 2, 3].map((index) => ({
+    title: `BM-Pg${index + 1}`,
+    entry: { Dest: headingTarget(index) },
+    children:
+      index === 1 && options.nested === true ? [{ title: 'Sub', entry: { Dest: childTarget(2) } }] : [],
+  }));
+  if (options.urlBookmark === true) {
+    specs.push({
+      title: 'Site',
+      entry: { A: { S: doc.newName('URI'), URI: doc.newString('https://example.com/') } },
+    });
+  }
+  if (options.remoteBookmark === true) {
+    // A link into page 2 of another file: MuPDF answers page 1 for it, which is a copy's position.
+    specs.push({
+      title: 'Remote',
+      entry: {
+        A: { S: doc.newName('GoToR'), F: doc.newString('other.pdf'), D: [1, doc.newName('Fit')] },
+      },
+    });
+  }
+  putOutline(doc, specs);
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** A bookmark to write: its title, the rest of its dictionary (`/Dest` or `/A`) and its children. */
+interface BookmarkSpec {
+  readonly title: string;
+  readonly entry: Record<string, unknown>;
+  readonly children?: readonly BookmarkSpec[];
+}
+
+/** Write `specs` as the outline of `doc`, every sibling list linked through `/Parent`, `/Prev` and `/Next`. */
+function putOutline(doc: PDFDocument, specs: readonly BookmarkSpec[]): void {
+  const link = (list: readonly BookmarkSpec[], parent: PDFObject): void => {
+    const items = list.map((spec) => doc.addObject({ Title: doc.newString(spec.title), ...spec.entry }));
+    let total = items.length;
+    for (const [index, item] of items.entries()) {
+      item.put('Parent', parent);
+      if (index > 0) item.put('Prev', items[index - 1]);
+      if (index < items.length - 1) item.put('Next', items[index + 1]);
+      const children = list[index]?.children ?? [];
+      if (children.length > 0) {
+        link(children, item);
+        total += item.get('Count').asNumber();
+      }
+    }
+    parent.put('First', items[0]);
+    parent.put('Last', items.at(-1));
+    parent.put('Count', total);
+  };
+  const root = doc.addObject({ Type: doc.newName('Outlines') });
+  link(specs, root);
+  doc.getTrailer().get('Root').put('Outlines', root);
+}
+
+/** The bookmarks (title and target page) and, per page, each link (rect and target) plus the note count. */
+async function linkStructure(bytes: Uint8Array) {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    const outline = (doc.loadOutline() ?? []).map((node) => ({
+      title: node.title,
+      page: node.page,
+      children: node.down?.map((child) => ({ title: child.title, page: child.page })),
+    }));
+    const links = Array.from({ length: doc.countPages() }, (_unused, index) =>
+      doc
+        .loadPage(index)
+        .getLinks()
+        .map((link) => ({
+          rect: [...link.getBounds()],
+          target: link.isExternal() ? link.getURI() : doc.resolveLink(link),
+        })),
+    );
+    const notes = Array.from({ length: doc.countPages() }, (_unused, index) => {
+      const annots = doc.findPage(index).get('Annots');
+      let count = 0;
+      for (let at = 0; at < annots.length; at += 1) {
+        if (annots.get(at).resolve().get('Subtype').asName() === 'Text') count += 1;
+      }
+      return count;
+    });
+    return { outline, links, notes };
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** The four links page 1 holds, with the page index each internal one should reach. */
+function expectedLinks(first: number, second: number, third: number) {
+  return [
+    { rect: [10, 175, 60, 190], target: first },
+    { rect: [10, 155, 60, 170], target: second },
+    { rect: [10, 135, 60, 150], target: third },
+    { rect: [10, 115, 60, 130], target: 'https://example.com/' },
+  ];
+}
+
+describe('composeDocument duplicates a page that holds links', () => {
+  it('gives every copy of page 1 its links and leaves the outline as it was', async () => {
+    const out = await withHandle(await linkedPages(), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 0, 1, 2, 3] }], pageCount: 5 }, handle.raw, run),
+    );
+    const result = await linkStructure(out.bytes);
+    expect(result.outline).toEqual([
+      { title: 'BM-Pg1', page: 0 },
+      { title: 'BM-Pg2', page: 2 },
+      { title: 'BM-Pg3', page: 3 },
+      { title: 'BM-Pg4', page: 4 },
+    ]);
+    expect(result.links).toEqual([expectedLinks(2, 3, 4), expectedLinks(2, 3, 4), [], [], []]);
+    expect(result.notes).toEqual([1, 1, 0, 0, 0]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+    expect(out.report.steps).toEqual(['pdfjs.extractPages', 'save']);
+  });
+
+  it('keeps the outline and the links of a duplicated page whose bookmarks and links use named destinations', async () => {
+    const out = await withHandle(await linkedPages({ named: true }), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 0, 1, 2, 3] }], pageCount: 5 }, handle.raw, run),
+    );
+    const result = await linkStructure(out.bytes);
+    expect(result.outline).toEqual([
+      { title: 'BM-Pg1', page: 0 },
+      { title: 'BM-Pg2', page: 2 },
+      { title: 'BM-Pg3', page: 3 },
+      { title: 'BM-Pg4', page: 4 },
+    ]);
+    expect(result.links).toEqual([expectedLinks(2, 3, 4), expectedLinks(2, 3, 4), [], [], []]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+  });
+
+  it('keeps the outline of a duplicated page that holds no links', async () => {
+    const out = await withHandle(await linkedPages(), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 1, 1, 2, 3] }], pageCount: 5 }, handle.raw, run),
+    );
+    const result = await linkStructure(out.bytes);
+    expect(result.outline).toEqual([
+      { title: 'BM-Pg1', page: 0 },
+      { title: 'BM-Pg2', page: 1 },
+      { title: 'BM-Pg3', page: 3 },
+      { title: 'BM-Pg4', page: 4 },
+    ]);
+    expect(result.links).toEqual([expectedLinks(1, 3, 4), [], [], [], []]);
+  });
+
+  it('copies the links onto every further copy and onto a copy whose engine copy kept some', async () => {
+    const triple = await withHandle(await linkedPages(), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 0, 0, 1, 2, 3] }], pageCount: 6 }, handle.raw, run),
+    );
+    const three = await linkStructure(triple.bytes);
+    expect(three.links).toEqual([
+      expectedLinks(3, 4, 5),
+      expectedLinks(3, 4, 5),
+      expectedLinks(3, 4, 5),
+      [],
+      [],
+      [],
+    ]);
+    expect(three.outline.map((node) => node.page)).toEqual([0, 3, 4, 5]);
+    // Pages 1 and 2 repeated together: the engine keeps the copy's link to page 2 and aims it at
+    // page 2's copy; the copy is made to point where the original does.
+    const pair = await withHandle(await linkedPages(), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 1, 0, 1, 2, 3] }], pageCount: 6 }, handle.raw, run),
+    );
+    const both = await linkStructure(pair.bytes);
+    expect(both.links).toEqual([expectedLinks(1, 4, 5), [], expectedLinks(1, 4, 5), [], [], []]);
+    expect(both.outline.map((node) => node.page)).toEqual([0, 1, 4, 5]);
+  });
+
+  it('turns a copy and still keeps its links', async () => {
+    const out = await withHandle(await linkedPages(), (handle) =>
+      composeDocument(
+        { sources: [{ pages: [0, 0, 1, 2, 3], rotations: { 1: 90 } }], pageCount: 5 },
+        handle.raw,
+        run,
+      ),
+    );
+    expect(out.report.steps).toEqual(['pdfjs.extractPages', 'compose.rotate', 'save']);
+    expect((await linkStructure(out.bytes)).links.map((list) => list.length)).toEqual([4, 4, 0, 0, 0]);
+  });
+
+  it('drops a heading whose only targets are copies, with its children, and keeps the nesting of the rest', async () => {
+    const out = await withHandle(await linkedPages({ nested: true }), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 1, 2, 2, 3] }], pageCount: 5 }, handle.raw, run),
+    );
+    expect((await linkStructure(out.bytes)).outline).toEqual([
+      { title: 'BM-Pg1', page: 0 },
+      { title: 'BM-Pg2', page: 1, children: [{ title: 'Sub', page: 2 }] },
+      { title: 'BM-Pg3', page: 2 },
+      { title: 'BM-Pg4', page: 4 },
+    ]);
+    const first = await withHandle(await linkedPages({ nested: true }), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 1, 1, 2, 3] }], pageCount: 5 }, handle.raw, run),
+    );
+    expect((await linkStructure(first.bytes)).outline.map((node) => node.children?.[0]?.page)).toEqual([
+      undefined,
+      3,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('keeps the nesting of a named-destination outline when a nested target is duplicated', async () => {
+    const bytes = await linkedPages({ nested: true, named: true });
+    const out = await withHandle(bytes, (handle) =>
+      composeDocument({ sources: [{ pages: [0, 1, 2, 2, 3] }], pageCount: 5 }, handle.raw, run),
+    );
+    expect((await linkStructure(out.bytes)).outline).toEqual([
+      { title: 'BM-Pg1', page: 0 },
+      { title: 'BM-Pg2', page: 1, children: [{ title: 'Sub', page: 2 }] },
+      { title: 'BM-Pg3', page: 2 },
+      { title: 'BM-Pg4', page: 4 },
+    ]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+  });
+
+  // A heading and its child that name their pages by different mechanisms: a page array is valid
+  // only in the copy entry that holds the page, a named destination in every entry. Copying a page
+  // elsewhere then leaves, in the copy entry, either the heading without its destination (array
+  // heading, named child) or the heading without its child (named heading, array child).
+  describe.each(['named-child', 'named-heading'] as const)(
+    'a heading and a child that name pages differently (%s)',
+    (mixed) => {
+      it.each([
+        ['an unrelated page', [0, 0, 1, 2, 3]],
+        ["the child's page", [0, 1, 2, 2, 3]],
+        ["the heading's page", [0, 1, 1, 2, 3]],
+      ])('leaves no stub of the outline when %s is duplicated', async (_name, plan) => {
+        const out = await withHandle(await linkedPages({ nested: true, mixed }), (handle) =>
+          composeDocument({ sources: [{ pages: plan }], pageCount: 5 }, handle.raw, run),
+        );
+        const at = (page: number) => plan.indexOf(page);
+        expect((await linkStructure(out.bytes)).outline).toEqual([
+          { title: 'BM-Pg1', page: at(0) },
+          { title: 'BM-Pg2', page: at(1), children: [{ title: 'Sub', page: at(2) }] },
+          { title: 'BM-Pg3', page: at(2) },
+          { title: 'BM-Pg4', page: at(3) },
+        ]);
+        expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+      });
+    },
+  );
+
+  it('keeps the outline of a named-destination document once for every further copy', async () => {
+    const out = await withHandle(await linkedPages({ named: true }), (handle) =>
+      composeDocument({ sources: [{ pages: [0, 0, 0, 1, 2, 3] }], pageCount: 6 }, handle.raw, run),
+    );
+    const result = await linkStructure(out.bytes);
+    expect(result.outline.map((node) => [node.title, node.page])).toEqual([
+      ['BM-Pg1', 0],
+      ['BM-Pg2', 3],
+      ['BM-Pg3', 4],
+      ['BM-Pg4', 5],
+    ]);
+    expect(result.links.slice(0, 3)).toEqual([
+      expectedLinks(3, 4, 5),
+      expectedLinks(3, 4, 5),
+      expectedLinks(3, 4, 5),
+    ]);
+  });
+
+  it('keeps a bookmark that points at a URL or into another file once, not once per copy', async () => {
+    const bytes = await linkedPages({ urlBookmark: true, remoteBookmark: true });
+    const repeated = await withHandle(bytes, (handle) =>
+      composeDocument({ sources: [{ pages: [0, 0, 1, 2, 3] }], pageCount: 5 }, handle.raw, run),
+    );
+    expect((await linkStructure(repeated.bytes)).outline.map((node) => node.title)).toEqual([
+      'BM-Pg1',
+      'BM-Pg2',
+      'BM-Pg3',
+      'BM-Pg4',
+      'Site',
+      'Remote',
+    ]);
+    expect(repeated.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+  });
+
+  it('keeps every bookmark when nothing is repeated', async () => {
+    const bytes = await linkedPages({ urlBookmark: true, named: true });
+    const once = await withHandle(bytes, (handle) =>
+      composeDocument({ sources: [{ pages: [0, 1, 2, 3] }], pageCount: 4 }, handle.raw, run),
+    );
+    expect((await linkStructure(once.bytes)).outline.map((node) => node.title)).toEqual([
+      'BM-Pg1',
+      'BM-Pg2',
+      'BM-Pg3',
+      'BM-Pg4',
+      'Site',
+    ]);
+    expect(once.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+  });
+
+  it('removes the copies and the repeats around a bookmark whose destination it cannot read, and says so', async () => {
+    const stub = await stubWithOutline((doc) => [
+      { title: 'Lost', entry: { Dest: doc.newString('nowhere') } },
+      { title: 'Own', entry: { Dest: [doc.findPage(0), doc.newName('Fit')] } },
+      { title: 'Own', entry: { Dest: [doc.findPage(1), doc.newName('Fit')] } },
+      { title: 'Own', entry: { Dest: [doc.findPage(0), doc.newName('Fit')] } },
+    ]);
+    const out = await composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, stub, run);
+    expect((await linkStructure(out.bytes)).outline.map((node) => [node.title, node.page])).toEqual([
+      ['Lost', undefined],
+      ['Own', 0],
+    ]);
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.compose.outlineCopies')?.params).toEqual({
+      copies: 2,
+    });
+  });
+
+  it('keeps a bookmark that only shares a title with an earlier one', async () => {
+    const stub = await stubWithOutline((doc) => {
+      const here = { Dest: [doc.findPage(0), doc.newName('Fit')] };
+      return [
+        { title: 'Same', entry: here, children: [{ title: 'Kid', entry: here }] },
+        // A genuine action the engine kept whole: no page and no child, so no copy entry left it over.
+        { title: 'Same', entry: { A: { S: doc.newName('Named'), N: doc.newName('NextPage') } } },
+        { title: 'Same', entry: here, children: [{ title: 'Other', entry: here }] },
+      ];
+    });
+    const out = await composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, stub, run);
+    expect((await linkStructure(out.bytes)).outline).toEqual([
+      { title: 'Same', page: 0, children: [{ title: 'Kid', page: 0 }] },
+      { title: 'Same', page: undefined },
+      { title: 'Same', page: 0, children: [{ title: 'Other', page: 0 }] },
+    ]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
+  });
+
+  it('says so when a bookmark is nested deeper than the bound it reads to', async () => {
+    const stub = await stubWithOutline(() => {
+      let chain: BookmarkSpec = { title: 'Deep', entry: {} };
+      for (let level = 0; level < 40; level += 1) chain = { title: 'Deep', entry: {}, children: [chain] };
+      return [chain];
+    });
+    const out = await composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, stub, run);
+    expect((await linkStructure(out.bytes)).outline.map((node) => node.title)).toEqual(['Deep']);
+    expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.compose.outlineCopies');
+  });
+});
+
+/** A handle whose engine answers a two-page file with `build`'s bookmarks, as a composition of `[0, 0]` would. */
+async function stubWithOutline(build: (doc: PDFDocument) => BookmarkSpec[]): Promise<PdfComposeHandle> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument((await pages(2)).slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  putOutline(doc, build(doc));
+  const composed = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return { numPages: 1, extractPages: async () => composed };
+}
 
 describe('mergeDocuments keeps every page’s label', () => {
   // The rule under test: a page keeps the label its own document gave it — that document's
