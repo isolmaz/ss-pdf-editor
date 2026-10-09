@@ -3,18 +3,17 @@
  * read-only panels take to the working bytes.
  *
  * The feature's own state is `export-store.ts`. What the shell still holds — the operation
- * dialog opener, the PDF download and the way a tab becomes an operation context — arrives as
- * deps; the active tab and its handle are read **at call time**.
+ * dialog opener and the PDF download — arrives as deps; the active tab and its handle are read **at call time**.
  */
 
-import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { OperationContext } from 'pdf-core/ops/types';
-import type { SessionStore, SessionTab } from 'pdf-model';
-import { ToolError } from 'pdf-shared';
+import type { SessionStore } from 'pdf-model';
+import { ToolError, type Translator } from 'pdf-shared';
 import type { FieldValue } from 'pdf-ui';
 import type { ExportOptions } from 'pdf-ui/dialog';
 import { compressionPresets } from '../../export-presets';
-import { type DocumentContext, materializeBase } from '../../operations';
+import { materializeBase } from '../../operations';
+import { documentContext } from '../core/document';
 import { handleFor } from '../core/handles';
 import { editableOverlays } from '../marks/overlays';
 import { openContextMenu } from './export-store';
@@ -71,8 +70,7 @@ export function showContextMenu(event: {
 /** What the working-bytes reader runs on. */
 export interface CurrentBytesDeps {
   readonly session: SessionStore;
-  /** The context an operation on `tab` runs in. */
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
+  readonly t: Translator;
 }
 
 /**
@@ -87,6 +85,11 @@ export function createCurrentBytes(
     const tab = deps.session.active;
     const handle = tab === null ? null : (handleFor(tab.id) ?? null);
     if (tab === null || handle === null) throw new ToolError('selection-empty', { engine: 'model' });
-    return materializeBase(deps.contextFor(tab, handle), operation, undefined, editableOverlays(tab));
+    return materializeBase(
+      documentContext(deps.session, deps.t, tab, handle),
+      operation,
+      undefined,
+      editableOverlays(tab),
+    );
   };
 }

@@ -6,9 +6,9 @@ import { createOpenActions, type OpenActions, type OpenDeps } from './open-actio
  * the identity the shortcut and command memos depend on.
  */
 export function useOpenActions(deps: OpenDeps): OpenActions {
-  const { session, t, tier, cancelRef, refuseBusy, setCurrentPage, setRedactionMarks } = deps;
+  const { session, t, tier, setCurrentPage, setRedactionMarks } = deps;
   return useMemo(
-    () => createOpenActions({ session, t, tier, cancelRef, refuseBusy, setCurrentPage, setRedactionMarks }),
-    [session, t, tier, cancelRef, refuseBusy, setCurrentPage, setRedactionMarks],
+    () => createOpenActions({ session, t, tier, setCurrentPage, setRedactionMarks }),
+    [session, t, tier, setCurrentPage, setRedactionMarks],
   );
 }

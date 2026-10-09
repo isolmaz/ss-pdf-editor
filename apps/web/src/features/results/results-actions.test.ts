@@ -9,8 +9,8 @@ import { SessionStore, type SessionTab } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { coreStore, initialCoreState, setBusy } from '../core/core-store';
-import { adoptHandle, dropHandle } from '../core/handles';
+import { cancelOperation, coreStore, initialCoreState, operationRunning, setBusy } from '../core/core-store';
+import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import { createResultsActions } from './results-actions';
 import { initialResultsState, openPrintDialog, openScanDialog, resultsStore } from './results-store';
 
@@ -27,30 +27,17 @@ const busy = () => coreStore.get().busy;
 
 let session: SessionStore;
 let tab: SessionTab;
-const contextFor = vi.fn((forTab: SessionTab, forHandle: PdfDocumentHandle) => ({
-  store: session,
-  t,
-  tab: forTab,
-  handle: forHandle,
-}));
-const setHandle = vi.fn();
 const openProducedTab =
   vi.fn<(name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>>();
 const openDialog = vi.fn();
-const refuseBusy = vi.fn();
 const refuseUnappliedRedactions = vi.fn(() => false);
-let cancelRef: { current: AbortController | null };
 
 function actions() {
   return createResultsActions({
     session,
     t,
-    contextFor: contextFor as never,
-    setHandle,
-    cancelRef,
     openProducedTab,
     openDialog,
-    refuseBusy,
     refuseUnappliedRedactions,
   });
 }
@@ -77,7 +64,6 @@ beforeEach(() => {
   vi.useRealTimers();
   coreStore.set(initialCoreState());
   resultsStore.set(initialResultsState());
-  cancelRef = { current: null };
   session = new SessionStore();
   session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1, 2, 3]), sha256: 'hash', pageCount: 4 });
   tab = session.active as SessionTab;
@@ -103,15 +89,14 @@ describe('applyAccessibility', () => {
     await actions().applyAccessibility(outcome);
 
     expect(mocks.applyProducedBytes).toHaveBeenCalledWith(
-      contextFor.mock.results[0]?.value,
+      { store: session, t, tab, handle },
       outcome.bytes,
       4,
       { key: 'a11y.applied', params: { count: 2 } },
       'mupdf',
       ['tagged'],
     );
-    expect(contextFor).toHaveBeenCalledWith(tab, handle);
-    expect(setHandle).toHaveBeenCalledWith(tab.id, produced);
+    expect(handleFor(tab.id)).toBe(produced);
     expect(notice()).toBe('a11y.applied {"count":2}');
   });
 
@@ -126,7 +111,7 @@ describe('applyAccessibility', () => {
     dropHandle(tab.id);
     await actions().applyAccessibility(outcome);
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
-    expect(setHandle).not.toHaveBeenCalled();
+    expect(handleFor(tab.id)).not.toBe(produced);
   });
 });
 
@@ -139,7 +124,7 @@ describe('scanDocument', () => {
     expect(resultsStore.get().scanOpen).toBe(false);
     expect(notice()).toBe('scan.opened {"count":3,"name":"scan.pdf"}');
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(openDialog).not.toHaveBeenCalled();
   });
 
@@ -166,7 +151,7 @@ describe('scanDocument', () => {
   });
 
   it('returns the busy sentence while a run owns the abort controller', async () => {
-    cancelRef.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     await expect(actions().scanDocument(scanned)).resolves.toBe('op.busy');
     expect(openProducedTab).not.toHaveBeenCalled();
   });
@@ -186,7 +171,7 @@ describe('scanDocument', () => {
 
   it('says nothing when the run was cancelled while the tab was opening', async () => {
     openProducedTab.mockImplementation(async () => {
-      cancelRef.current?.abort();
+      cancelOperation();
       throw new ToolError('aborted', { engine: 'model' });
     });
     await expect(actions().scanDocument(scanned)).resolves.toBeUndefined();
@@ -196,7 +181,7 @@ describe('scanDocument', () => {
 
   it('leaves the gate to whoever took the controller over', async () => {
     openProducedTab.mockImplementation(async () => {
-      cancelRef.current = null;
+      coreStore.set({ operation: null });
       return null;
     });
     await actions().scanDocument(scanned);
@@ -213,7 +198,7 @@ describe('printProduced', () => {
     expect(resultsStore.get().printOpen).toBe(false);
     expect(notice()).toBeNull();
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('says the stored-copy warning when there is one', async () => {
@@ -225,14 +210,14 @@ describe('printProduced', () => {
   it('refuses with the busy notice while another operation holds the gate', async () => {
     setBusy(true);
     await actions().printProduced(printed);
-    expect(refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(openProducedTab).not.toHaveBeenCalled();
   });
 
   it('refuses with the busy notice while a run owns the abort controller', async () => {
-    cancelRef.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     await actions().printProduced(printed);
-    expect(refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(openProducedTab).not.toHaveBeenCalled();
   });
 
@@ -241,7 +226,7 @@ describe('printProduced', () => {
     openPrintDialog();
     await actions().printProduced(printed);
     expect(openProducedTab).not.toHaveBeenCalled();
-    expect(refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).toBeNull();
     expect(resultsStore.get().printOpen).toBe(true);
     expect(busy()).toBe(false);
   });
@@ -259,7 +244,7 @@ describe('printProduced', () => {
 
   it('says nothing when the run was cancelled while the tab was opening', async () => {
     openProducedTab.mockImplementation(async () => {
-      cancelRef.current?.abort();
+      cancelOperation();
       throw new ToolError('aborted', { engine: 'model' });
     });
     await actions().printProduced(printed);
@@ -269,7 +254,7 @@ describe('printProduced', () => {
 
   it('leaves the gate to whoever took the controller over', async () => {
     openProducedTab.mockImplementation(async () => {
-      cancelRef.current = null;
+      coreStore.set({ operation: null });
       return null;
     });
     await actions().printProduced(printed);

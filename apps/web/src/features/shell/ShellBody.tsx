@@ -18,6 +18,7 @@ import { BatchDialogHost, StartDialogHost } from '../dialogs/DialogSurfaces';
 import { openBatchDialog } from '../dialogs/dialogs-store';
 import { showContextMenu } from '../export/export-actions';
 import { useOpen } from '../open/open-store';
+import { requestCancel } from '../pages/page-actions';
 import { ReadingLayers } from '../reading/ReadingLayers';
 import { PrintDialogHost, ScanDialogHost } from '../results/ResultsSurfaces';
 import type { ResultsActions } from '../results/results-actions';
@@ -48,7 +49,6 @@ export interface ShellBodyProps {
   readonly right: RightDockProps['actions'];
   readonly results: Pick<ResultsActions, 'printProduced' | 'scanDocument'>;
   readonly startResult: (result: OpRunResult) => Promise<void>;
-  readonly cancelOperation: () => void;
 }
 
 export function ShellBody(props: ShellBodyProps) {
@@ -131,7 +131,7 @@ export function ShellBody(props: ShellBodyProps) {
         notice={notice}
         onDismiss={clearNotice}
         progress={progress}
-        onCancel={props.cancelOperation}
+        onCancel={() => requestCancel({ t })}
         activity={opening ? t('open.progress') : null}
       />
     </main>

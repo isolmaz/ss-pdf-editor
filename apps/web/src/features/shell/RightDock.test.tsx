@@ -254,8 +254,6 @@ let actions: {
   runPageAction: Mock;
   stepHistoryNow: Mock;
   startFormDetect: Mock;
-  abortOperation: Mock;
-  refuseBusy: Mock;
   dialogResult: Mock;
   removeTargets: Mock;
   annotationData: { exportAnnotationData: Mock; importAnnotationData: Mock };
@@ -292,8 +290,6 @@ beforeEach(() => {
     runPageAction: vi.fn(),
     stepHistoryNow: vi.fn(async () => undefined),
     startFormDetect: vi.fn(),
-    abortOperation: vi.fn(),
-    refuseBusy: vi.fn(),
     dialogResult: vi.fn(async () => undefined),
     removeTargets: vi.fn(() => true),
     annotationData: {
@@ -449,7 +445,6 @@ describe('RightDock tools tab', () => {
     act(() => call('tools', 'onSelectTool', 'redact' as never));
     expect(coreStore.get().notice).toBe(t('locked.banner'));
     expect(actions.openDialog).not.toHaveBeenCalled();
-    expect(actions.refuseBusy).not.toHaveBeenCalled();
   });
 
   it('refuses the redaction form while an operation holds the document', () => {
@@ -457,8 +452,7 @@ describe('RightDock tools tab', () => {
     act(() => setBusy(true));
     renderDock('tools');
     act(() => call('tools', 'onSelectTool', 'redact' as never));
-    expect(actions.refuseBusy).toHaveBeenCalledTimes(1);
-    expect(coreStore.get().notice).toBeNull();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(actions.openDialog).not.toHaveBeenCalled();
   });
 
@@ -467,7 +461,6 @@ describe('RightDock tools tab', () => {
     renderDock('tools');
     act(() => call('tools', 'onSelectTool', 'redact' as never));
     expect(coreStore.get().notice).toBeNull();
-    expect(actions.refuseBusy).not.toHaveBeenCalled();
     expect(actions.openDialog).not.toHaveBeenCalled();
   });
 
@@ -478,9 +471,11 @@ describe('RightDock tools tab', () => {
       { id: 'merge' } as never,
     );
     textBlockPicked({ pageIndex: 0, block: 'b', model: 'm', fonts: [] } as never);
+    const controller = new AbortController();
+    coreStore.set({ operation: controller });
     renderDock('tools');
     await userEvent.click(screen.getByRole('button', { name: 'back to tools' }));
-    expect(actions.abortOperation).toHaveBeenCalledTimes(1);
+    expect(controller.signal.aborted).toBe(true);
     expect(dialogsStore.get().dialogSpec).toBeNull();
     expect(dialogsStore.get().dialogInput).toBeNull();
     expect(textToolStore.get().edit).toBeNull();

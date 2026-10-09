@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 /** What follows the document on screen without drawing anything. */
 
-import { renderHook } from '@testing-library/react';
+import { cleanup, renderHook } from '@testing-library/react';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { SessionStore, type SessionTab } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DocumentContext } from '../../operations';
+import { useEffect, useLayoutEffect } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState, selectTool } from '../core/core-store';
 import { currentMarkTargets, initialMarksState, marksStore } from '../marks/marks-store';
 import { initialSaveState, saveStore, viewerChanged } from '../save/save-store';
@@ -34,10 +34,9 @@ vi.mock('../selection/use-selection', () => ({ useSelectionEffects: hooks.useSel
 
 const t = createTranslator('en');
 const handle = { id: 'h' } as unknown as PdfDocumentHandle;
-const contextFor = (tab: SessionTab, h: PdfDocumentHandle): DocumentContext =>
-  ({ tab, handle: h }) as unknown as DocumentContext;
 let session: SessionStore;
 
+afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   coreStore.set(initialCoreState());
@@ -67,7 +66,7 @@ describe('useDocumentEffects', () => {
     const tab = open('contract.pdf');
     const { rerender } = renderHook(
       ({ current }: { current: SessionTab | null }) =>
-        useDocumentEffects({ session, t, tab: current, handle, contextFor }),
+        useDocumentEffects({ session, t, tab: current, handle }),
       { initialProps: { current: null as SessionTab | null } },
     );
     expect(document.title).toBe(PRODUCT_TITLE);
@@ -79,20 +78,20 @@ describe('useDocumentEffects', () => {
     const tab = open('a.pdf');
     const viewer = { document: handle } as unknown as ViewerApi;
     viewerChanged(viewer);
-    renderHook(() => useDocumentEffects({ session, t, tab, handle, contextFor }));
+    renderHook(() => useDocumentEffects({ session, t, tab, handle }));
     expect(hooks.useDocumentLanguage).toHaveBeenCalledWith(viewer);
     expect(hooks.useFormInventory).toHaveBeenCalledWith({ store: session, t, tab, handle });
     expect(hooks.useStoredTrust).toHaveBeenCalled();
     expect(hooks.useDocumentFacts).toHaveBeenCalledWith(
       expect.objectContaining({ tab, handle, revision: 0 }),
     );
-    expect(hooks.useTextToolBytes).toHaveBeenCalledWith(tab, handle, contextFor, t);
+    expect(hooks.useTextToolBytes).toHaveBeenCalledWith(session, tab, handle, t);
     expect(hooks.usePublishExistingAnnotations).toHaveBeenCalledWith(null);
   });
 
   it('publishes no targets while the file inventory is unread, and keeps the select tool as the mark mode', () => {
     const tab = open('a.pdf');
-    renderHook(() => useDocumentEffects({ session, t, tab, handle, contextFor }));
+    renderHook(() => useDocumentEffects({ session, t, tab, handle }));
     expect(currentMarkTargets()).toEqual([]);
     expect(hooks.useSelectionEffects).toHaveBeenLastCalledWith({
       markMode: 'select',
@@ -104,9 +103,77 @@ describe('useDocumentEffects', () => {
 
   it('has no mark mode while another tool is armed, and no tab id with no document', () => {
     selectTool('ink');
-    renderHook(() => useDocumentEffects({ session, t, tab: null, handle: null, contextFor }));
+    renderHook(() => useDocumentEffects({ session, t, tab: null, handle: null }));
     expect(hooks.useSelectionEffects).toHaveBeenLastCalledWith(
       expect.objectContaining({ markMode: null, tabId: undefined }),
     );
+  });
+});
+
+describe('the order the document effects run in', () => {
+  /** Each mocked hook registers the effect it stands for, so the log is the commit's effect order. */
+  function record(log: string[]): void {
+    const passive = (name: string) => () => {
+      useEffect(() => {
+        log.push(name);
+      });
+    };
+    hooks.useDocumentLanguage.mockImplementation(passive('language'));
+    hooks.useFormInventory.mockImplementation(passive('inventory'));
+    hooks.useStoredTrust.mockImplementation(passive('trust'));
+    hooks.useDocumentFacts.mockImplementation(passive('facts'));
+    hooks.useTextToolBytes.mockImplementation(passive('text bytes'));
+    hooks.useSelectionEffects.mockImplementation(passive('selection'));
+    hooks.usePublishExistingAnnotations.mockImplementation(() => {
+      useLayoutEffect(() => {
+        log.push('existing annotations');
+      });
+    });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const hook of Object.values(hooks)) hook.mockReset();
+  });
+
+  it('publishes the file annotations, then the targets, before any passive effect, and keeps the readers in their old order', () => {
+    const log: string[] = [];
+    record(log);
+    marksStore.subscribe(() => log.push('targets'));
+    vi.spyOn(document, 'title', 'set').mockImplementation(() => {
+      log.push('title');
+    });
+    const tab = open('a.pdf');
+    renderHook(() => useDocumentEffects({ session, t, tab, handle }));
+    expect(log).toEqual([
+      'existing annotations',
+      'targets',
+      'language',
+      'title',
+      'inventory',
+      'trust',
+      'facts',
+      'text bytes',
+      'selection',
+    ]);
+  });
+
+  it('never lets an effect or a handler read targets older than the render that committed', () => {
+    const seen: { readonly published: unknown; readonly handed: unknown }[] = [];
+    let handed: unknown;
+    hooks.useSelectionEffects.mockImplementation((input: { readonly targets: unknown }) => {
+      handed = input.targets;
+      useEffect(() => {
+        seen.push({ published: currentMarkTargets(), handed });
+      });
+    });
+    const tab = open('a.pdf');
+    const { rerender } = renderHook(() => useDocumentEffects({ session, t, tab, handle }));
+    // A new viewer is a new input of the derivation: the list is rebuilt and published again.
+    viewerChanged({ document: handle, pageGeometry: () => null } as unknown as ViewerApi);
+    rerender();
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    for (const entry of seen) expect(entry.published).toBe(entry.handed);
+    expect(seen[0]?.handed).not.toBe(seen[seen.length - 1]?.handed);
   });
 });

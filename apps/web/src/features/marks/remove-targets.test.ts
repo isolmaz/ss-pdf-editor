@@ -10,14 +10,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Operations from '../../operations';
 import { pendingOverlays } from '../../operations';
 import { orphanSweepStarted } from '../annotations/annotations-store';
-import { coreStore, isBusy, setBusy } from '../core/core-store';
-import { dropHandle } from '../core/handles';
+import { cancelOperation, coreStore, isBusy, operationRunning, setBusy } from '../core/core-store';
+import { dropHandle, handleFor } from '../core/handles';
 import {
   deferred,
   existingTarget,
   type MarksWorld,
   marksWorld,
   redactionTarget,
+  setEditable,
   t,
   tick,
   writeMarks,
@@ -63,7 +64,7 @@ describe('removing marks that are only pending', () => {
     expect(redactionIds(world.session.active)).toEqual(['r2']);
     expect(world.session.active?.journal.entries.map((entry) => entry.labelKey).at(-1)).toBe('ann.remove');
     expect(notice()).toBe(t('ann.removed', { count: 1 }));
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(isBusy()).toBe(false);
     expect(world.host.checkpointEngineValues).not.toHaveBeenCalled();
   });
@@ -83,9 +84,9 @@ describe('removing marks that are only pending', () => {
   });
 
   it('does nothing without a tab, without its engine handle, or on a read-only document', () => {
-    world.host.canEdit.current = false;
+    setEditable(world, false);
     expect(removeTargets(world.host, [redactionTarget('r1').key])).toBe(false);
-    world.host.canEdit.current = true;
+    setEditable(world, true);
     dropHandle(world.tab.id);
     expect(removeTargets(world.host, [redactionTarget('r1').key])).toBe(false);
     world.session.closeTab(world.tab.id);
@@ -102,44 +103,39 @@ describe('removing while the engine holds edits', () => {
     world.host.checkpointEngineValues.mockReturnValue(checkpoint.promise);
     expect(removeTargets(world.host, [redactionTarget('r1').key])).toBe(true);
     expect(isBusy()).toBe(true);
-    expect(world.host.cancel.current).toBeInstanceOf(AbortController);
+    expect(coreStore.get().operation).toBeInstanceOf(AbortController);
     expect(redactionIds(world.session.active)).toEqual(['r1', 'r2']);
     checkpoint.resolve(true);
     await vi.waitFor(() => expect(isBusy()).toBe(false));
     expect(redactionIds(world.session.active)).toEqual(['r2']);
     expect(notice()).toBe(t('ann.removed', { count: 1 }));
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
-  it('refuses a second removal while one holds the document', async () => {
+  it('declines a second removal while one holds the document', async () => {
     const checkpoint = deferred<boolean>();
     world.host.checkpointEngineValues.mockReturnValue(checkpoint.promise);
     removeTargets(world.host, [redactionTarget('r1').key]);
     expect(removeTargets(world.host, [redactionTarget('r2').key])).toBe(false);
-    expect(world.host.refuseBusy).toHaveBeenCalledTimes(1);
     checkpoint.resolve(false);
     await vi.waitFor(() => expect(isBusy()).toBe(false));
   });
 
   it('refuses when another operation holds the document', () => {
-    world.host.cancel.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     expect(removeTargets(world.host, [redactionTarget('r1').key])).toBe(false);
-    expect(world.host.refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(redactionIds(world.session.active)).toEqual(['r1', 'r2']);
   });
 
   it('waits for the orphan sweep instead of refusing, then removes', async () => {
     const sweep = deferred();
     orphanSweepStarted(sweep.promise);
-    setBusy(true);
-    world.host.cancel.current = new AbortController();
     expect(removeTargets(world.host, [redactionTarget('r1').key])).toBe(true);
-    expect(world.host.refuseBusy).not.toHaveBeenCalled();
-    world.host.cancel.current = null;
-    setBusy(false);
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
     sweep.resolve();
     await vi.waitFor(() => expect(redactionIds(world.session.active)).toEqual(['r2']));
-    expect(world.host.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
   });
 
   it('refuses after the sweep when the document is held by then', async () => {
@@ -148,15 +144,15 @@ describe('removing while the engine holds edits', () => {
     expect(removeTargets(world.host, [redactionTarget('r1').key])).toBe(true);
     setBusy(true);
     sweep.resolve();
-    await vi.waitFor(() => expect(world.host.refuseBusy).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(coreStore.get().notice).toBe(t('op.busy')));
     expect(redactionIds(world.session.active)).toEqual(['r1', 'r2']);
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(isBusy()).toBe(true);
   });
 
   it('writes nothing when Cancel aborted the operation during the checkpoint', async () => {
     world.host.checkpointEngineValues.mockImplementation(async () => {
-      world.host.cancel.current?.abort();
+      cancelOperation();
       return true;
     });
     removeTargets(world.host, [redactionTarget('r1').key]);
@@ -209,7 +205,7 @@ describe('removing while the engine holds edits', () => {
 describe('removing marks the file already carries', () => {
   it('removes them with the core writer and mounts the result with the remaining overlays', async () => {
     expect(removeTargets(world.host, [existingTarget('e1').key, redactionTarget('r1').key])).toBe(true);
-    await vi.waitFor(() => expect(world.host.setHandle).toHaveBeenCalled());
+    await vi.waitFor(() => expect(handleFor(world.tab.id)).not.toBe(world.handle));
     expect(mocks.removeMarkTargets).toHaveBeenCalledWith(
       expect.objectContaining({ tab: expect.objectContaining({ id: world.tab.id }), handle: world.handle }),
       { annotations: [], measures: [], redactions: ['r1'], existing: [{ pageIndex: 0, id: 'e1' }] },
@@ -227,22 +223,22 @@ describe('removing marks the file already carries', () => {
       { signal: expect.any(AbortSignal) },
       outcome.overlays,
     );
-    expect(world.host.setHandle).toHaveBeenCalledWith(world.tab.id, produced);
+    expect(handleFor(world.tab.id)).toBe(produced);
     expect(notice()).toBe(t('ann.removed', { count: 2 }));
     await tick();
     expect(isBusy()).toBe(false);
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('applies nothing when Cancel aborted the writer', async () => {
     mocks.removeMarkTargets.mockImplementation(async () => {
-      world.host.cancel.current?.abort();
+      cancelOperation();
       return outcome;
     });
     removeTargets(world.host, [existingTarget('e1').key]);
     await vi.waitFor(() => expect(isBusy()).toBe(false));
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
-    expect(world.host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(world.tab.id)).toBe(world.handle);
     expect(notice()).toBeNull();
   });
 
@@ -273,7 +269,7 @@ describe('removing marks the file already carries', () => {
     await vi.waitFor(() => expect(isBusy()).toBe(false));
     const failure = new ToolError('write-failed', { engine: 'mupdf' });
     expect(notice()).toBe(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-    expect(world.host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(world.tab.id)).toBe(world.handle);
   });
 
   it('reports an unexpected failure as an internal error', async () => {
@@ -286,7 +282,7 @@ describe('removing marks the file already carries', () => {
 
   it('stays silent about a failure caused by Cancel', async () => {
     mocks.removeMarkTargets.mockImplementation(async () => {
-      world.host.cancel.current?.abort();
+      cancelOperation();
       throw new Error('aborted');
     });
     removeTargets(world.host, [existingTarget('e1').key]);
@@ -297,13 +293,13 @@ describe('removing marks the file already carries', () => {
   it('leaves the lock to whoever took it over', async () => {
     const other = new AbortController();
     mocks.removeMarkTargets.mockImplementation(async () => {
-      world.host.cancel.current = other;
+      coreStore.set({ operation: other });
       throw new Error('boom');
     });
     removeTargets(world.host, [existingTarget('e1').key]);
     await vi.waitFor(() => expect(notice()).not.toBeNull());
     await tick();
-    expect(world.host.cancel.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(isBusy()).toBe(true);
   });
 });

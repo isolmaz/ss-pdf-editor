@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pendingOverlays } from '../../operations';
 import { coreStore, setBusy } from '../core/core-store';
 import { dropHandle } from '../core/handles';
-import { type MarksWorld, marksWorld, redactionTarget, t } from './marks-fixtures';
+import { type MarksWorld, marksWorld, redactionTarget, setEditable, t } from './marks-fixtures';
 import { useMarkActions, useWriterActions } from './use-mark-actions';
 
 let world: MarksWorld;
@@ -47,7 +47,7 @@ describe('useWriterActions', () => {
     const { result } = renderHook(() => useWriterActions(world.host));
     setBusy(true);
     await result.current.writeLayers({ order: ['a'] });
-    expect(world.host.refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
   });
 
   it('is rebuilt only when the translator or another dependency changes', () => {
@@ -76,11 +76,11 @@ describe('useMarkActions', () => {
   });
 
   it('refuses a file-annotation write on a read-only document', () => {
-    world.host.canEdit.current = false;
+    setEditable(world, false);
     const { result } = renderHook(() => useMarkActions(world.host));
     const write = vi.fn();
     expect(result.current.writeFileAnnotation({ key: 'sig.placed' }, write, 'done')).toBe(false);
-    expect(world.host.refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(write).not.toHaveBeenCalled();
   });
 

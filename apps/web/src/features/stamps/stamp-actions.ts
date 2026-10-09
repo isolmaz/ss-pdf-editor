@@ -6,11 +6,13 @@
  * them.
  */
 
+import type { SessionStore } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import type { StampSource } from 'pdf-ui/dialog';
 import type { MarkTarget, StampPlacement } from 'pdf-ui/tools';
 import { addImageStamp, resizeImageStamp } from '../../lazy-ops';
-import { armStampTool, coreStore, isBusy, selectTool, showNotice } from '../core/core-store';
+import { armStampTool, coreStore, isBusy, refuseBusy, selectTool, showNotice } from '../core/core-store';
+import { canEdit } from '../core/document';
 import type { WriteFileAnnotation } from '../marks/host';
 import { openSignatureDialog, signatureChosen } from './stamps-store';
 
@@ -93,19 +95,15 @@ export function resizeStamp(
 
 /** What the shell knows when a command wants to start adding a picture. */
 export interface AddGate {
-  /** A document is open. */
-  readonly hasDocument: boolean;
-  /** The open document accepts edits. */
-  readonly canEdit: boolean;
-  /** Say that the document is busy. */
-  readonly refuseBusy: () => void;
+  readonly session: SessionStore;
+  readonly t: Translator;
 }
 
 /** Whether a picture may be added now; a busy or read-only document is refused out loud. */
 function mayAdd(gate: AddGate): boolean {
-  if (!gate.hasDocument) return false;
-  if (isBusy() || !gate.canEdit) {
-    gate.refuseBusy();
+  if (gate.session.active === null) return false;
+  if (isBusy() || !canEdit(gate.session)) {
+    refuseBusy(gate.t);
     return false;
   }
   return true;

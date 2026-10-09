@@ -12,8 +12,6 @@ const deps = (): OpenDeps => ({
   session: new SessionStore(),
   t: createTranslator('en'),
   tier: 'desktop',
-  cancelRef: { current: null },
-  refuseBusy: vi.fn(),
   setCurrentPage: vi.fn(),
   setRedactionMarks: vi.fn(),
 });

@@ -8,7 +8,7 @@
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { OperationContext } from 'pdf-core/ops/types';
 import { SessionStore, type SessionTab } from 'pdf-model';
-import { ToolError } from 'pdf-shared';
+import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adoptHandle, dropHandle } from '../core/handles';
 import { editableOverlays } from '../marks/overlays';
@@ -106,14 +106,11 @@ describe('showContextMenu', () => {
 });
 
 describe('createCurrentBytes', () => {
+  const t = createTranslator('en');
   const handle = { name: 'handle' } as unknown as PdfDocumentHandle;
   const operation: OperationContext = { signal: new AbortController().signal };
   let session: SessionStore;
   let tab: SessionTab;
-  const contextFor = vi.fn((forTab: SessionTab, forHandle: PdfDocumentHandle) => ({
-    tab: forTab,
-    handle: forHandle,
-  }));
 
   beforeEach(() => {
     session = new SessionStore();
@@ -131,12 +128,11 @@ describe('createCurrentBytes', () => {
     const bytes = new Uint8Array([9]);
     mocks.materializeBase.mockResolvedValue(bytes);
 
-    const read = createCurrentBytes({ session, contextFor: contextFor as never });
+    const read = createCurrentBytes({ session, t });
 
     await expect(read(operation)).resolves.toBe(bytes);
-    expect(contextFor).toHaveBeenCalledWith(tab, handle);
     expect(mocks.materializeBase).toHaveBeenCalledWith(
-      { tab, handle },
+      { store: session, t, tab, handle },
       operation,
       undefined,
       editableOverlays(tab),
@@ -145,7 +141,7 @@ describe('createCurrentBytes', () => {
 
   it('refuses when no document is open', async () => {
     tab = undefined as never;
-    const read = createCurrentBytes({ session, contextFor: contextFor as never });
+    const read = createCurrentBytes({ session, t });
     await expect(read(operation)).rejects.toMatchObject({ code: 'selection-empty' });
     await expect(read(operation)).rejects.toBeInstanceOf(ToolError);
     expect(mocks.materializeBase).not.toHaveBeenCalled();
@@ -153,7 +149,7 @@ describe('createCurrentBytes', () => {
 
   it('refuses when the open document has no engine handle', async () => {
     open();
-    const read = createCurrentBytes({ session, contextFor: contextFor as never });
+    const read = createCurrentBytes({ session, t });
     await expect(read(operation)).rejects.toMatchObject({ code: 'selection-empty' });
     expect(mocks.materializeBase).not.toHaveBeenCalled();
   });

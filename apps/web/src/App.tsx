@@ -2,8 +2,8 @@ import type { OperationOutcome } from 'pdf-core';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
-import type { SessionStore, SessionTab } from 'pdf-model';
-import { createTranslator, detectDeviceTier } from 'pdf-shared';
+import type { SessionStore } from 'pdf-model';
+import { createTranslator } from 'pdf-shared';
 import type { StampPlacement } from 'pdf-ui/tools';
 import { type OperationRunContext, useLocale } from 'pdf-ui/ui';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -18,8 +18,9 @@ import {
 import { useAnnotationActions, useSettleNativeEditors } from './features/annotations/use-annotation-actions';
 import { createAttachmentActions } from './features/attachments/attachments';
 import { useCommentReview } from './features/comments/review';
-import { setInterfaceMode, showNotice, useCore } from './features/core/core-store';
-import { handleReleased, replaceHandle } from './features/core/handles';
+import { cancelOperation, setInterfaceMode, useCore } from './features/core/core-store';
+import { deviceTier } from './features/core/document';
+import { releaseHandle } from './features/core/handles';
 import { useCompactViewport } from './features/core/viewport';
 import { ShortcutsDialogHost } from './features/dialogs/DialogSurfaces';
 import { createDialogOpeners, createDialogRuns } from './features/dialogs/dialog-actions';
@@ -80,7 +81,6 @@ import {
   placeStamp as stampPlace,
   resizeStamp as stampResize,
 } from './features/stamps/stamp-actions';
-import type { DocumentContext } from './operations';
 import type { SaveStepDescription } from './save-plan';
 
 /**
@@ -89,8 +89,8 @@ import type { SaveStepDescription } from './save-plan';
  * A panel or dialog never produces "its own output PDF". It returns produced bytes, and the
  * handlers built here decide what they mean — a new working version (journaled, undoable), a new
  * tab, or a download. The layout (`features/shell/`) subscribes to the stores itself; what
- * remains here is the handlers every feature shares: the translator, the document context, the
- * running operation's controller and the engine handle swap.
+ * remains here is what binds the features to the session and the translator: the open, save and
+ * dialog handlers, the persistence callbacks the audit pins and the hooks that follow the document.
  */
 
 export interface AppProps {
@@ -100,7 +100,7 @@ export interface AppProps {
 export function App({ store }: AppProps) {
   const { locale } = useLocale();
   const t = useMemo(() => createTranslator(locale), [locale]);
-  const tier = useMemo(() => detectDeviceTier(), []);
+  const tier = deviceTier();
   const session = useSyncExternalStore(store.subscribe, store.getSnapshot);
   useCompactViewport();
   /**
@@ -112,19 +112,7 @@ export function App({ store }: AppProps) {
   useEffect(() => {
     tRef.current = t;
   }, [t]);
-  /** The controller of the operation holding the document; the progress overlay's Cancel aborts it. */
-  const cancelRef = useRef<AbortController | null>(null);
-  const abortOperation = useCallback(() => cancelRef.current?.abort(), []);
-  /**
-   * A gesture the synchronous gate refuses says so. The gate itself stays synchronous — this
-   * only speaks when it closes, because an inert control and a refused action must not look the
-   * same.
-   */
-  const refuseBusy = useCallback(() => showNotice(t('op.busy')), [t]);
   const { activeTab, activeHandle, canEdit } = useEditState(store, tier);
-  /** `canEdit` for callbacks that must not act on the render they were created in. */
-  const canEditRef = useRef(canEdit);
-  canEditRef.current = canEdit;
   const currentPage = useSave((state) => state.currentPage);
   const currentPageRef = useRef(currentPage);
   currentPageRef.current = currentPage;
@@ -146,16 +134,13 @@ export function App({ store }: AppProps) {
   const { author: annotationAuthor } = useAnnotationStyle();
 
   /** Switch the interface mode; a dialog the simple mode hides must not stay open behind the filter. */
-  const changeMode = useCallback(
-    (next: InterfaceMode) => {
-      setInterfaceMode(next);
-      if (next === 'simple') {
-        abortOperation();
-        dismissOperationDialog();
-      }
-    },
-    [abortOperation],
-  );
+  const changeMode = useCallback((next: InterfaceMode) => {
+    setInterfaceMode(next);
+    if (next === 'simple') {
+      cancelOperation();
+      dismissOperationDialog();
+    }
+  }, []);
 
   /** Print and Snapshot are refused while a redaction mark is unapplied (`features/marks/redaction.ts`). */
   const refuseUnappliedRedactions = useCallback(
@@ -179,38 +164,19 @@ export function App({ store }: AppProps) {
   const { toggleSensitiveSession, purgeActiveDocument, sweepVault, checkOffline, prepareOfflinePackages } =
     usePersistenceActions(store, t);
 
-  /** A handle that would not shut down says so on the status line, in the current language. */
-  const reportReleaseFailure = useCallback(() => showNotice(tRef.current('notice.engineReleaseFailed')), []);
+  /** A handle the viewer let go that would not shut down says so, in the current language. */
   const handleDocumentReleased = useCallback(
-    (handle: PdfDocumentHandle) => handleReleased(handle, reportReleaseFailure),
-    [reportReleaseFailure],
-  );
-  const setHandle = useCallback(
-    (tabId: string, handle: PdfDocumentHandle) => replaceHandle(tabId, handle, reportReleaseFailure),
-    [reportReleaseFailure],
-  );
-  const contextFor = useCallback(
-    (tab: SessionTab, handle: PdfDocumentHandle): DocumentContext => ({ store, t, tab, handle }),
-    [store, t],
+    (handle: PdfDocumentHandle) => releaseHandle(tRef.current, handle),
+    [],
   );
 
-  useDocumentEffects({ session: store, t, tab: activeTab, handle: activeHandle, contextFor });
+  useDocumentEffects({ session: store, t, tab: activeTab, handle: activeHandle });
   useDraftRecovery({ store, translator: tRef, openAndFingerprint });
   useDraftAutosave({ session, store, persist: persistTabDraft, translator: tRef });
   useVaultChannel(store, session);
 
   /** What the forms handlers need from the shell. */
-  const formsHost = useMemo(
-    () => ({
-      store,
-      t,
-      contextFor,
-      refuseBusy,
-      setHandle,
-      operationRunning: () => cancelRef.current !== null,
-    }),
-    [contextFor, refuseBusy, setHandle, store, t],
-  );
+  const formsHost = useMemo(() => ({ store, t }), [store, t]);
   const openXfaForm = useCallback(() => void openXfaFormFor(formsHost), [formsHost]);
   const saveXfaForm = useCallback(
     (outcome: OperationOutcome & { readonly changed: number }) => saveXfaFormFor(outcome, formsHost),
@@ -223,49 +189,33 @@ export function App({ store }: AppProps) {
   const startFormDetect = useCallback(() => startFormDetectFor(formsHost), [formsHost]);
 
   const { openFile, openProducedTab, openFromSurface, openFilesFromSurface, openViaPicker, selectRecent } =
-    useOpenActions({ session: store, t, tier, cancelRef, refuseBusy, setCurrentPage, setRedactionMarks });
+    useOpenActions({ session: store, t, tier, setCurrentPage, setRedactionMarks });
 
   /** The annotation handlers: the review as a file, the engine's editor takeover, native editors and the orphan sweep. */
-  const annotationActions = useAnnotationActions({
-    session: store,
-    t,
-    viewer: viewerRef,
-    cancel: cancelRef,
-    contextFor,
-    setHandle,
-  });
+  const annotationActions = useAnnotationActions({ session: store, t, viewer: viewerRef });
   const { takeEngineAnnotations, settleNativeEditors, sweepOrphanAnnotations } = annotationActions;
   useSettleNativeEditors(markMode, annotationActions);
 
   const prepareOutput = useCallback(
     (tabId: string, controller: AbortController, executedSteps: SaveStepDescription[] = []) =>
-      prepareDocumentOutput({ session: store, t, contextFor }, tabId, controller, executedSteps),
-    [contextFor, store, t],
+      prepareDocumentOutput({ session: store, t }, tabId, controller, executedSteps),
+    [store, t],
   );
   const saveActive = useCallback(
-    (tabId = store.active?.id): Promise<boolean> =>
-      saveDocument({ session: store, t, cancelRef, refuseBusy, prepareOutput }, tabId),
-    [prepareOutput, refuseBusy, store, t],
+    (tabId = store.active?.id): Promise<boolean> => saveDocument({ session: store, t, prepareOutput }, tabId),
+    [prepareOutput, store, t],
   );
   const discardTab = useCallback(
-    (id: string) => discardDocument({ session: store, cancelRef, translator: tRef, forgetTabDraft }, id),
+    (id: string) => discardDocument({ session: store, translator: tRef, forgetTabDraft }, id),
     [store, forgetTabDraft],
   );
   /** Closing, exporting and the viewer's reports (`features/save/`). */
   const { closeTab, exportActive, checkpointEngineValues, markActiveDirty, handleViewerReady } =
-    useSaveActions({
-      session: store,
-      t,
-      cancelRef,
-      refuseBusy,
-      prepareOutput,
-      discardTab,
-      takeEngineAnnotations,
-    });
+    useSaveActions({ session: store, t, prepareOutput, discardTab, takeEngineAnnotations });
 
   const { openStart, openDialog, showShortcuts, closeShortcuts } = useMemo(
-    () => createDialogOpeners({ session: store, t, contextFor, cancelRef, refuseBusy, setImages }),
-    [contextFor, refuseBusy, store, t],
+    () => createDialogOpeners({ session: store, t, setImages }),
+    [store, t],
   );
   const exportChoice = useMemo(
     () => createExportChoice({ exportActive, openDialog }),
@@ -303,59 +253,26 @@ export function App({ store }: AppProps) {
    * working-version change (undoable), `new-tab` opens beside the current document, `download`
    * writes files and touches nothing.
    */
-  const currentBytes = useMemo(() => createCurrentBytes({ session: store, contextFor }), [contextFor, store]);
+  const currentBytes = useMemo(() => createCurrentBytes({ session: store, t }), [store, t]);
   const resultsActions = useMemo(
-    () =>
-      createResultsActions({
-        session: store,
-        t,
-        contextFor,
-        setHandle,
-        cancelRef,
-        openProducedTab,
-        openDialog,
-        refuseBusy,
-        refuseUnappliedRedactions,
-      }),
-    [store, t, contextFor, setHandle, openProducedTab, openDialog, refuseBusy, refuseUnappliedRedactions],
+    () => createResultsActions({ session: store, t, openProducedTab, openDialog, refuseUnappliedRedactions }),
+    [store, t, openProducedTab, openDialog, refuseUnappliedRedactions],
   );
   const { dialogResult, startResult, unlockActiveCopy } = useMemo(
-    () =>
-      createDialogRuns({
-        session: store,
-        t,
-        contextFor,
-        setHandle,
-        cancelRef,
-        openProducedTab,
-        refuseBusy,
-        dialogContext,
-        lockedTabs,
-      }),
-    [store, t, contextFor, setHandle, openProducedTab, refuseBusy, dialogContext, lockedTabs],
+    () => createDialogRuns({ session: store, t, openProducedTab, dialogContext, lockedTabs }),
+    [store, t, openProducedTab, dialogContext, lockedTabs],
   );
 
   /** The writer pipeline and the layers panel's write (`features/marks/writer.ts`). */
-  const { applyWriterOutcome, writeLayers } = useWriterActions({
-    session: store,
-    t,
-    contextFor,
-    setHandle,
-    refuseBusy,
-  });
+  const { applyWriterOutcome, writeLayers } = useWriterActions({ session: store, t });
   const attachmentActions = useMemo(
-    () => createAttachmentActions({ session: store, t, contextFor, setHandle, applyWriterOutcome }),
-    [store, t, contextFor, setHandle, applyWriterOutcome],
+    () => createAttachmentActions({ session: store, t, applyWriterOutcome }),
+    [store, t, applyWriterOutcome],
   );
   /** Removing, moving and writing marks (`features/marks/`). */
   const { removeTargets, transformTargets, writeFileAnnotation } = useMarkActions({
     session: store,
     t,
-    contextFor,
-    setHandle,
-    refuseBusy,
-    cancel: cancelRef,
-    canEdit: canEditRef,
     checkpointEngineValues,
   });
   const commentReview = useCommentReview({
@@ -383,38 +300,26 @@ export function App({ store }: AppProps) {
       stampResize(key, rect, { targets: currentMarkTargets(), writeFileAnnotation, t }),
     [t, writeFileAnnotation],
   );
-  const openSignature = useCallback(
-    () => openSignatureFor({ hasDocument: store.active !== null, canEdit: canEditRef.current, refuseBusy }),
-    [refuseBusy, store],
-  );
-  const pickImage = useCallback(
-    () => pickImageFor({ hasDocument: store.active !== null, canEdit: canEditRef.current, refuseBusy }),
-    [refuseBusy, store],
-  );
+  const openSignature = useCallback(() => openSignatureFor({ session: store, t }), [store, t]);
+  const pickImage = useCallback(() => pickImageFor({ session: store, t }), [store, t]);
 
   /** Delete, Select all and opening a note (`features/selection/`). */
   const { deleteMarkSelection, selectAllMarks } = useSelectionActions({
     session: store,
-    cancel: cancelRef,
-    refuseBusy,
+    t,
     settleNativeEditors,
     sweepOrphanAnnotations,
     removeTargets,
   });
 
   /** Page actions and undo/redo (`features/pages/page-actions.ts`). */
-  const { runPageAction, cancelOperation, stepHistoryNow } = usePageActions({
+  const { runPageAction, stepHistoryNow } = usePageActions({
     session: store,
     t,
-    cancel: cancelRef,
-    canEdit: canEditRef,
     selectedPages: selectedPagesNow,
     currentPage: currentPageRef,
     holdEngineValues,
     orphanSweepInFlight,
-    contextFor,
-    setHandle,
-    refuseBusy,
     setProgress,
     setCurrentPage,
     settleNativeEditors,
@@ -449,7 +354,7 @@ export function App({ store }: AppProps) {
     changeMode,
   };
   const { commands, runHomeCommand } = useShellCommands(store, tier, actions);
-  useShellBindings({ session: store, actions, canEdit: () => canEditRef.current });
+  useShellBindings({ session: store, actions });
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the shell is a file drop target; the keyboard-equivalent path is the Open button (Ctrl+O).
@@ -482,7 +387,7 @@ export function App({ store }: AppProps) {
         tier={tier}
         t={t}
         commands={commands}
-        actions={{ openViaPicker, saveActive, exportActive, closeTab, openDialog, abortOperation }}
+        actions={{ openViaPicker, saveActive, exportActive, closeTab, openDialog }}
       />
       <ToolStrip
         session={store}
@@ -514,8 +419,6 @@ export function App({ store }: AppProps) {
           runPageAction,
           stepHistoryNow,
           startFormDetect,
-          abortOperation,
-          refuseBusy,
           dialogResult,
           removeTargets,
           annotationData: annotationActions,
@@ -528,7 +431,6 @@ export function App({ store }: AppProps) {
         }}
         results={resultsActions}
         startResult={startResult}
-        cancelOperation={cancelOperation}
       />
       <ShellStatusBar session={store} tier={tier} t={t} actions={{ runPageAction }} />
       <SettingsHost session={store} tier={tier} t={t} actions={actions} />
@@ -541,7 +443,6 @@ export function App({ store }: AppProps) {
       <CloseDocumentHost
         t={t}
         session={store}
-        cancelRef={cancelRef}
         discardTab={discardTab}
         saveActive={saveActive}
         exportActive={exportActive}

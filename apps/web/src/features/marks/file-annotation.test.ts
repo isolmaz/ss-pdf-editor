@@ -8,11 +8,18 @@ import { ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Operations from '../../operations';
 import { pendingOverlays } from '../../operations';
-import { coreStore, isBusy, setBusy } from '../core/core-store';
-import { dropHandle } from '../core/handles';
+import {
+  cancelOperation,
+  clearNotice,
+  coreStore,
+  isBusy,
+  operationRunning,
+  setBusy,
+} from '../core/core-store';
+import { dropHandle, handleFor } from '../core/handles';
 import { selectionStore } from '../selection/selection-store';
 import { writeFileAnnotation } from './file-annotation';
-import { deferred, type MarksWorld, marksWorld, t, tick } from './marks-fixtures';
+import { deferred, type MarksWorld, marksWorld, setEditable, t, tick } from './marks-fixtures';
 
 const mocks = vi.hoisted(() => ({ applyProducedBytes: vi.fn(), materializeBase: vi.fn() }));
 
@@ -52,20 +59,24 @@ describe('what does not start', () => {
     expect(writeFileAnnotation(world.host, label, write, 'done')).toBe(false);
     world.session.closeTab(world.tab.id);
     expect(writeFileAnnotation(world.host, label, write, 'done')).toBe(false);
-    expect(world.host.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
     expect(write).not.toHaveBeenCalled();
   });
 
   it('refuses out loud while the document is held, or when it is read-only', () => {
+    const refused = () => {
+      expect(writeFileAnnotation(world.host, label, write, 'done')).toBe(false);
+      expect(coreStore.get().notice).toBe(t('op.busy'));
+      clearNotice();
+    };
     setBusy(true);
-    expect(writeFileAnnotation(world.host, label, write, 'done')).toBe(false);
+    refused();
     setBusy(false);
-    world.host.cancel.current = new AbortController();
-    expect(writeFileAnnotation(world.host, label, write, 'done')).toBe(false);
-    world.host.cancel.current = null;
-    world.host.canEdit.current = false;
-    expect(writeFileAnnotation(world.host, label, write, 'done')).toBe(false);
-    expect(world.host.refuseBusy).toHaveBeenCalledTimes(3);
+    coreStore.set({ operation: new AbortController() });
+    refused();
+    coreStore.set({ operation: null });
+    setEditable(world, false);
+    refused();
     expect(write).not.toHaveBeenCalled();
   });
 });
@@ -76,7 +87,7 @@ describe('a write that goes through', () => {
     world.host.checkpointEngineValues.mockReturnValue(checkpoint.promise);
     expect(writeFileAnnotation(world.host, label, write, 'Signature placed', 1)).toBe(true);
     expect(isBusy()).toBe(true);
-    expect(world.host.cancel.current).toBeInstanceOf(AbortController);
+    expect(coreStore.get().operation).toBeInstanceOf(AbortController);
     checkpoint.resolve(true);
     await vi.waitFor(() => expect(notice()).toBe('Signature placed'));
     const before = pendingOverlays(world.session.active);
@@ -97,11 +108,11 @@ describe('a write that goes through', () => {
       { signal: expect.any(AbortSignal) },
       before,
     );
-    expect(world.host.setHandle).toHaveBeenCalledWith(world.tab.id, produced);
+    expect(handleFor(world.tab.id)).toBe(produced);
     expect(selectionStore.get().afterWrite).toBe('existing:1:stamp-1');
     await tick();
     expect(isBusy()).toBe(false);
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('selects nothing when the write names no annotation or the caller asked for no page', async () => {
@@ -109,6 +120,8 @@ describe('a write that goes through', () => {
     writeFileAnnotation(world.host, label, write, 'first', 0);
     await vi.waitFor(() => expect(notice()).toBe('first'));
     await tick();
+    // The viewer now shows the handle the first write produced.
+    setEditable(world, true, handleFor(world.tab.id));
     writeFileAnnotation(world.host, label, write, 'second');
     await vi.waitFor(() => expect(notice()).toBe('second'));
     expect(selectionStore.get().afterWrite).toBeNull();
@@ -116,7 +129,7 @@ describe('a write that goes through', () => {
 
   it('writes nothing when Cancel aborted the operation during the checkpoint', async () => {
     world.host.checkpointEngineValues.mockImplementation(async () => {
-      world.host.cancel.current?.abort();
+      cancelOperation();
       return true;
     });
     writeFileAnnotation(world.host, label, write, 'done');
@@ -160,7 +173,7 @@ describe('a write that goes through', () => {
     await vi.waitFor(() => expect(isBusy()).toBe(false));
     const failure = new ToolError('write-failed', { engine: 'mupdf' });
     expect(notice()).toBe(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-    expect(world.host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(world.tab.id)).toBe(world.handle);
   });
 
   it('reports an unexpected failure as an internal error', async () => {
@@ -173,7 +186,7 @@ describe('a write that goes through', () => {
 
   it('stays silent about a failure caused by Cancel', async () => {
     write.mockImplementation(async () => {
-      world.host.cancel.current?.abort();
+      cancelOperation();
       throw new Error('aborted');
     });
     writeFileAnnotation(world.host, label, write, 'done');
@@ -184,13 +197,13 @@ describe('a write that goes through', () => {
   it('leaves the lock to whoever took it over', async () => {
     const other = new AbortController();
     write.mockImplementation(async () => {
-      world.host.cancel.current = other;
+      coreStore.set({ operation: other });
       throw new Error('boom');
     });
     writeFileAnnotation(world.host, label, write, 'done');
     await vi.waitFor(() => expect(notice()).not.toBeNull());
     await tick();
-    expect(world.host.cancel.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(isBusy()).toBe(true);
   });
 });

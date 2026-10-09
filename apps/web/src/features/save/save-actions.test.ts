@@ -7,7 +7,13 @@
 import { SessionStore, type SessionTab, sha256Hex } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { coreStore, initialCoreState } from '../core/core-store';
+import {
+  cancelOperation,
+  clearNotice,
+  coreStore,
+  initialCoreState,
+  operationRunning,
+} from '../core/core-store';
 import { exportDocument, type SaveHost, saveDocument } from './save-actions';
 import { initialSaveState, isSaveLocked, saveLocked, saveStore } from './save-store';
 
@@ -54,8 +60,6 @@ function fakeFile(initial: readonly number[] = [1, 2, 3]) {
 }
 
 let session: SessionStore;
-let cancelRef: { current: AbortController | null };
-let refuseBusy: Mock;
 let prepareOutput: Mock;
 let host: SaveHost;
 
@@ -87,10 +91,8 @@ beforeEach(() => {
   coreStore.set(initialCoreState());
   saveStore.set(initialSaveState());
   session = new SessionStore();
-  cancelRef = { current: null };
-  refuseBusy = vi.fn();
   prepareOutput = vi.fn();
-  host = { session, t, cancelRef, refuseBusy, prepareOutput } as SaveHost;
+  host = { session, t, prepareOutput } as SaveHost;
   mocks.ensureWriteAccess.mockResolvedValue(true);
 });
 
@@ -102,17 +104,19 @@ describe('saveDocument', () => {
     expect(await saveDocument(host, 'gone')).toBe(false);
     expect(await saveDocument(host, undefined)).toBe(false);
     expect(prepareOutput).not.toHaveBeenCalled();
-    expect(refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).toBeNull();
   });
 
   it('is refused while an operation runs, and while another save holds the document', async () => {
     const tab = await open();
     coreStore.set({ busy: true });
     expect(await saveDocument(host, tab.id)).toBe(false);
+    expect(coreStore.get().notice).toBe('op.busy');
+    clearNotice();
     coreStore.set({ busy: false });
     saveLocked();
     expect(await saveDocument(host, tab.id)).toBe(false);
-    expect(refuseBusy).toHaveBeenCalledTimes(2);
+    expect(coreStore.get().notice).toBe('op.busy');
     expect(prepareOutput).not.toHaveBeenCalled();
   });
 
@@ -202,13 +206,13 @@ describe('saveDocument', () => {
 
     const first = saveDocument(host, tab.id);
     expect(isSaveLocked()).toBe(true);
-    expect(cancelRef.current).toBeInstanceOf(AbortController);
+    expect(coreStore.get().operation).toBeInstanceOf(AbortController);
     expect(await saveDocument(host, tab.id)).toBe(false);
-    expect(refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe('op.busy');
     picked.resolve(target.file);
     expect(await first).toBe(true);
     expect(isSaveLocked()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('writes in place to the document file, against the source hash the first time', async () => {
@@ -310,7 +314,7 @@ describe('saveDocument', () => {
     const target = fakeFile();
     const tab = await open('a.pdf', target.file);
     prepareOutput.mockImplementation(async () => {
-      cancelRef.current?.abort();
+      cancelOperation();
       return prepared(tab);
     });
     expect(await saveDocument(host, tab.id)).toBe(false);
@@ -324,7 +328,7 @@ describe('saveDocument', () => {
     const target = fakeFile();
     const tab = await open('a.pdf', target.file);
     prepareOutput.mockResolvedValue(prepared(tab));
-    const cancel = () => cancelRef.current?.abort();
+    const cancel = () => cancelOperation();
     if (step === 'createWritable')
       target.createWritable.mockImplementationOnce(async () => {
         cancel();
@@ -360,11 +364,11 @@ describe('saveDocument', () => {
     vi.stubGlobal('window', {});
     const newer = new AbortController();
     prepareOutput.mockImplementation(async () => {
-      cancelRef.current = newer;
+      coreStore.set({ operation: newer });
       return prepared(tab);
     });
     expect(await saveDocument(host, tab.id)).toBe(true);
-    expect(cancelRef.current).toBe(newer);
+    expect(coreStore.get().operation).toBe(newer);
   });
 });
 
@@ -395,7 +399,7 @@ describe('exportDocument', () => {
     const tab = await open();
     coreStore.set({ busy: true });
     await exportDocument(host, tab.id);
-    expect(refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe('op.busy');
     expect(prepareOutput).not.toHaveBeenCalled();
   });
 
@@ -413,7 +417,7 @@ describe('exportDocument', () => {
     expect(new Uint8Array(await blob.arrayBuffer())).toEqual(output);
     expect(coreStore.get().notice).toContain('export.explained copy.pdf');
     expect(coreStore.get().busy).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(prepareOutput).toHaveBeenCalledWith(tab.id, expect.any(AbortController));
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
     vi.advanceTimersByTime(10_000);
@@ -447,10 +451,10 @@ describe('exportDocument', () => {
     const tab = await open();
     const newer = new AbortController();
     prepareOutput.mockImplementation(async () => {
-      cancelRef.current = newer;
+      coreStore.set({ operation: newer });
       return null;
     });
     await exportDocument(host, tab.id);
-    expect(cancelRef.current).toBe(newer);
+    expect(coreStore.get().operation).toBe(newer);
   });
 });

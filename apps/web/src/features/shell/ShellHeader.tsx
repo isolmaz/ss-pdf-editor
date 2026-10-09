@@ -6,7 +6,7 @@ import type { Command } from 'pdf-ui';
 import { MenuBar } from 'pdf-ui/ui';
 import { visibleCommands } from '../../commands';
 import { ModernEditorHeader } from '../../components/ModernEditorHeader';
-import { showNotice, useCore } from '../core/core-store';
+import { cancelOperation, showNotice, useCore } from '../core/core-store';
 import { openExportDialog } from '../export/export-store';
 import { HomeHeader } from '../open/OpenSurfaces';
 import { clearPageSelection, showStartScreen } from '../open/open-store';
@@ -24,10 +24,7 @@ export interface ShellHeaderProps {
   readonly actions: Pick<
     ShellActions,
     'openViaPicker' | 'saveActive' | 'exportActive' | 'closeTab' | 'openDialog'
-  > & {
-    /** Stop the operation holding the document (the tab being left may be running one). */
-    readonly abortOperation: () => void;
-  };
+  >;
 }
 
 /** What Save does for a tab: write over its file, ask where to write it, or nothing (download is Export). */
@@ -85,7 +82,7 @@ export function ShellHeader({ session, tier, t, commands, actions }: ShellHeader
       tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name, dirty: tab.dirty }))}
       activeTabId={activeId}
       onSelectTab={(id) => {
-        if (session.active?.id !== id) actions.abortOperation();
+        if (session.active?.id !== id) cancelOperation();
         session.setActive(id);
         clearPageSelection();
       }}

@@ -4,15 +4,13 @@
  * (download, a new tab, or the working document); plus the standalone operations that start a
  * document, the shortcut list and the protected-file unlock.
  *
- * The feature's own state is `dialogs-store.ts`. What the shell still holds — the translator,
- * the way a tab becomes an operation context, the handle swap, the busy gate's abort
- * controller, the tab opener — arrives as deps; the active tab, its handle, the dialog the user
+ * The feature's own state is `dialogs-store.ts`. What the shell still holds — the translator
+ * and the tab opener — arrives as deps; the active tab, its handle, the dialog the user
  * has open and the busy gate are read **at call time**.
  */
 
-import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
-import { copyForEngine, type SessionStore, type SessionTab, workingPageCount } from 'pdf-model';
+import { copyForEngine, type SessionStore, workingPageCount } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import type { FieldValue } from 'pdf-ui';
 import {
@@ -26,15 +24,26 @@ import { listPdfImages } from '../../lazy-ops';
 import { appendWarning, failureNotices, noticeLine } from '../../notices';
 import {
   applyProducedBytes,
-  type DocumentContext,
   downloadFiles,
   materializeBase,
   pendingOverlays,
   redactionNeedles,
 } from '../../operations';
 import { heldByPendingRedactions } from '../../save-plan';
-import { clearNotice, isBusy, openRightPanel, selectTool, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import {
+  beginOperation,
+  clearNotice,
+  endOperation,
+  isBusy,
+  openRightPanel,
+  operationRunning,
+  refuseBusy,
+  selectTool,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
+import { documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 import { redactedWordsRead } from '../marks/redaction-store';
 import { openScanDialog, setProgress } from '../results/results-store';
 import {
@@ -51,12 +60,6 @@ import {
 export interface DialogOpenerDeps {
   readonly session: SessionStore;
   readonly t: Translator;
-  /** The context an operation on `tab` runs in. */
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
-  /** Holds the abort controller of the run that owns the busy gate (the progress overlay's Cancel). */
-  readonly cancelRef: { current: AbortController | null };
-  /** Say the busy notice: a gesture the gate refused. */
-  readonly refuseBusy: () => void;
   /** The image dialog's target list, or `null` when the dialog opened is not that one. */
   readonly setImages: (images: readonly PdfImageInfo[] | null) => void;
 }
@@ -71,7 +74,7 @@ export function createDialogOpeners(deps: DialogOpenerDeps) {
    */
   function openStart(id: string): void {
     if (isBusy()) {
-      deps.refuseBusy();
+      refuseBusy(t);
       return;
     }
     clearNotice();
@@ -103,12 +106,11 @@ export function createDialogOpeners(deps: DialogOpenerDeps) {
     const handle = tab === null ? null : (handleFor(tab.id) ?? null);
     if (tab === null || handle === null) return;
     clearNotice();
-    if (isBusy() || deps.cancelRef.current !== null) {
-      deps.refuseBusy();
+    if (isBusy() || operationRunning()) {
+      refuseBusy(t);
       return;
     }
-    const controller = new AbortController();
-    deps.cancelRef.current = controller;
+    const controller = beginOperation();
     setBusy(true);
     /**
      * The frozen bytes are only valid for the version they came from: a tab
@@ -123,7 +125,9 @@ export function createDialogOpeners(deps: DialogOpenerDeps) {
     };
     void (async () => {
       try {
-        const bytes = await materializeBase(deps.contextFor(tab, handle), { signal: controller.signal });
+        const bytes = await materializeBase(documentContext(deps.session, t, tab, handle), {
+          signal: controller.signal,
+        });
         if (stale()) return;
         // The spec is a dynamic import: a capability's dialog code loads when the
         // capability is opened, which is what keeps fifteen dialogs out of the
@@ -162,10 +166,7 @@ export function createDialogOpeners(deps: DialogOpenerDeps) {
         const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
         showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
       } finally {
-        if (deps.cancelRef.current === controller) {
-          deps.cancelRef.current = null;
-          setBusy(false);
-        }
+        if (endOperation(controller)) setBusy(false);
       }
     })();
   }
@@ -213,13 +214,8 @@ export function createDialogOpeners(deps: DialogOpenerDeps) {
 export interface DialogRunDeps {
   readonly session: SessionStore;
   readonly t: Translator;
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
-  /** Swap `tabId`'s engine handle for the one an operation produced. */
-  readonly setHandle: (tabId: string, handle: PdfDocumentHandle) => void;
-  readonly cancelRef: { current: AbortController | null };
   /** Open produced bytes as a new tab; resolves with the stored-copy warning, if any. */
   readonly openProducedTab: (name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>;
-  readonly refuseBusy: () => void;
   /** What the dialog's run received: the redaction marks it was frozen with. */
   readonly dialogContext: OperationRunContext | null;
   /** The open password of each protected tab. */
@@ -250,12 +246,11 @@ export function createDialogRuns(deps: DialogRunDeps) {
       dismissOperationDialog();
       return;
     }
-    if (isBusy() || deps.cancelRef.current !== null) {
-      deps.refuseBusy();
+    if (isBusy() || operationRunning()) {
+      refuseBusy(t);
       return;
     }
-    const controller = new AbortController();
-    deps.cancelRef.current = controller;
+    const controller = beginOperation();
     setBusy(true);
     const first = result.files[0];
     /**
@@ -293,7 +288,7 @@ export function createDialogRuns(deps: DialogRunDeps) {
         return;
       }
       const next = await applyProducedBytes(
-        deps.contextFor(tab, handle),
+        documentContext(deps.session, t, tab, handle),
         first.bytes,
         result.report.pageCount,
         { key: spec.titleKey },
@@ -302,7 +297,7 @@ export function createDialogRuns(deps: DialogRunDeps) {
         { signal: controller.signal },
         spec.id === 'redact' ? { annotations: [], measures: [], redactions: [] } : undefined,
       );
-      deps.setHandle(tab.id, next);
+      swapHandle(t, tab.id, next);
       if (spec.id === 'redact') {
         /**
          * The words this redaction removed, read from the bytes it ran on — the marks
@@ -328,10 +323,7 @@ export function createDialogRuns(deps: DialogRunDeps) {
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
       showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
-      if (deps.cancelRef.current === controller) {
-        deps.cancelRef.current = null;
-        setBusy(false);
-      }
+      if (endOperation(controller)) setBusy(false);
     }
   }
 
@@ -350,12 +342,11 @@ export function createDialogRuns(deps: DialogRunDeps) {
       return;
     }
     if (first === undefined) return;
-    if (isBusy() || deps.cancelRef.current !== null) {
-      deps.refuseBusy();
+    if (isBusy() || operationRunning()) {
+      refuseBusy(t);
       return;
     }
-    const controller = new AbortController();
-    deps.cancelRef.current = controller;
+    const controller = beginOperation();
     setBusy(true);
     try {
       const warning = await deps.openProducedTab(first.name, first.bytes, controller.signal);
@@ -365,10 +356,7 @@ export function createDialogRuns(deps: DialogRunDeps) {
       if (controller.signal.aborted) return;
       showNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
     } finally {
-      if (deps.cancelRef.current === controller) {
-        deps.cancelRef.current = null;
-        setBusy(false);
-      }
+      if (endOperation(controller)) setBusy(false);
     }
   }
 
@@ -378,10 +366,9 @@ export function createDialogRuns(deps: DialogRunDeps) {
     const password = tab === null ? undefined : deps.lockedTabs.get(tab.id);
     if (tab === null || password === undefined || isBusy()) return;
     setBusy(true);
-    const controller = new AbortController();
-    // The progress overlay's Cancel aborts `cancelRef`: registering the run is what makes
-    // that button stop this work rather than nothing.
-    deps.cancelRef.current = controller;
+    // The progress overlay's Cancel aborts the running operation: registering the run is what
+    // makes that button stop this work rather than nothing.
+    const controller = beginOperation();
     try {
       // Loaded on demand: unlocking is reached by a gesture, so it stays off the first paint.
       const { unlockDocument } = await import('pdf-core/ops/security');
@@ -404,7 +391,7 @@ export function createDialogRuns(deps: DialogRunDeps) {
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'mupdf' });
       showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
-      if (deps.cancelRef.current === controller) deps.cancelRef.current = null;
+      endOperation(controller);
       setProgress(null);
       setBusy(false);
     }

@@ -8,7 +8,7 @@ import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { SessionStore, SessionTab } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import { useEffect } from 'react';
-import { type DocumentContext, pendingOverlays } from '../../operations';
+import { pendingOverlays } from '../../operations';
 import { useAnnotationMarks } from '../annotations/annotation-marks';
 import { usePublishExistingAnnotations } from '../annotations/use-annotation-actions';
 import { useCore } from '../core/core-store';
@@ -41,10 +41,9 @@ export interface DocumentEffectsHost {
   readonly t: Translator;
   readonly tab: SessionTab | null;
   readonly handle: PdfDocumentHandle | null;
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
 }
 
-export function useDocumentEffects({ session, t, tab, handle, contextFor }: DocumentEffectsHost): void {
+export function useDocumentEffects({ session, t, tab, handle }: DocumentEffectsHost): void {
   const viewer = useSave((state) => state.viewer);
   const inspectionRevision = useForms((state) => state.inspectionRevision);
   const canvasTool = useCore((state) => state.canvasTool);
@@ -52,14 +51,9 @@ export function useDocumentEffects({ session, t, tab, handle, contextFor }: Docu
   const { redactionMarks } = useRedactionMarks(session);
   const existing = useExistingAnnotations(tab);
 
-  useEffect(() => {
-    document.title = documentTitle(tab, t);
-  }, [tab, t]);
   useDocumentLanguage(viewer);
-  useFormInventory({ store: session, t, tab, handle });
-  useStoredTrust();
-  useDocumentFacts({ store: session, t, tab, handle, revision: inspectionRevision });
-  useTextToolBytes(tab, handle, contextFor, t);
+  // The two layout effects, in this order: the file's annotations are published before the
+  // targets derived from them, and both before any passive effect of the commit runs.
   usePublishExistingAnnotations(existing);
   const targets = useMarkTargets({
     annotations,
@@ -69,6 +63,13 @@ export function useDocumentEffects({ session, t, tab, handle, contextFor }: Docu
     viewer,
     t,
   });
+  useEffect(() => {
+    document.title = documentTitle(tab, t);
+  }, [tab, t]);
+  useFormInventory({ store: session, t, tab, handle });
+  useStoredTrust();
+  useDocumentFacts({ store: session, t, tab, handle, revision: inspectionRevision });
+  useTextToolBytes(session, tab, handle, t);
   useSelectionEffects({
     markMode: canvasTool === 'select' ? 'select' : null,
     tabId: tab?.id,

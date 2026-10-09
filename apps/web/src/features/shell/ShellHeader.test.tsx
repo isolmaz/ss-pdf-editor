@@ -114,7 +114,6 @@ let actions: {
   exportActive: Mock;
   closeTab: Mock;
   openDialog: Mock;
-  abortOperation: Mock;
 };
 
 const COMMANDS: readonly Command[] = [
@@ -165,7 +164,6 @@ beforeEach(() => {
     exportActive: vi.fn(async () => undefined),
     closeTab: vi.fn(),
     openDialog: vi.fn(),
-    abortOperation: vi.fn(),
   };
 });
 afterEach(() => {
@@ -359,9 +357,11 @@ describe('ShellHeader tab switching', () => {
     const second = openTab('b.pdf');
     act(() => session.setActive(first.id));
     openStore.set({ selectedPages: [0, 1] });
+    const controller = new AbortController();
+    coreStore.set({ operation: controller });
     renderHeader();
     act(() => (seen('editor').onSelectTab as (id: string) => void)(second.id));
-    expect(actions.abortOperation).toHaveBeenCalledTimes(1);
+    expect(controller.signal.aborted).toBe(true);
     expect(session.active?.id).toBe(second.id);
     expect(openStore.get().selectedPages).toEqual([]);
   });
@@ -369,9 +369,11 @@ describe('ShellHeader tab switching', () => {
   it('keeps the running operation when the picked tab is the active one', () => {
     const first = openTab('a.pdf');
     openStore.set({ selectedPages: [0] });
+    const controller = new AbortController();
+    coreStore.set({ operation: controller });
     renderHeader();
     act(() => (seen('editor').onSelectTab as (id: string) => void)(first.id));
-    expect(actions.abortOperation).not.toHaveBeenCalled();
+    expect(controller.signal.aborted).toBe(false);
     expect(session.active?.id).toBe(first.id);
     expect(openStore.get().selectedPages).toEqual([]);
   });

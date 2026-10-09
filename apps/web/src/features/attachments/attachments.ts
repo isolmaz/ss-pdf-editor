@@ -4,9 +4,8 @@
  *
  * The feature owns no state of its own — the busy gate and the status line are the core's, the
  * tabs are the session's, the engine handle is `core/handles.ts`'s — so this module is the
- * handlers alone. They take what the shell still holds (the translator, the way a tab is
- * turned into an operation context, the handle swap and the shared writer pipeline) as
- * `AttachmentDeps`, and read the active tab, its handle and the busy gate **at call time**.
+ * handlers alone. They take what the shell still holds (the translator and the shared writer
+ * pipeline) as `AttachmentDeps`, and read the active tab, its handle and the busy gate **at call time**.
  */
 
 import type { OperationOutcome } from 'pdf-core';
@@ -16,18 +15,15 @@ import { type SessionStore, type SessionTab, workingPageCount } from 'pdf-model'
 import { type MessageKey, ToolError, type Translator } from 'pdf-shared';
 import type { AttachmentRow } from 'pdf-ui';
 import { addAttachments, removeAttachments } from '../../lazy-ops';
-import { applyProducedBytes, type DocumentContext, downloadFiles, materializeBase } from '../../operations';
+import { applyProducedBytes, downloadFiles, materializeBase } from '../../operations';
 import { isBusy, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import { documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 
 /** What the shell still holds that the attachment handlers run on. */
 export interface AttachmentDeps {
   readonly session: SessionStore;
   readonly t: Translator;
-  /** The context an operation on `tab` runs in. */
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
-  /** Swap `tabId`'s engine handle for the one an operation produced. */
-  readonly setHandle: (tabId: string, handle: PdfDocumentHandle) => void;
   /** The shared writer pipeline: journal the outcome, swap the handle, say what it did. */
   readonly applyWriterOutcome: (
     tab: SessionTab,
@@ -136,20 +132,20 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
       deps,
       () => files.length > 0,
       async (tab, handle) => {
-        const base = await materializeBase(deps.contextFor(tab, handle));
+        const base = await materializeBase(documentContext(deps.session, deps.t, tab, handle));
         const payloads = await payloadsOf(files, (file) =>
           file.type.length === 0 ? 'application/octet-stream' : file.type,
         );
         const outcome = await addAttachments(base, payloads, { signal: new AbortController().signal });
         const next = await applyProducedBytes(
-          deps.contextFor(tab, handle),
+          documentContext(deps.session, deps.t, tab, handle),
           outcome.bytes,
           workingPageCount(tab),
           { key: 'props.attach.added', params: { count: outcome.added.length } },
           outcome.report.engine,
           outcome.report.steps,
         );
-        deps.setHandle(tab.id, next);
+        swapHandle(deps.t, tab.id, next);
         showNotice(t('props.attach.added', { count: outcome.added.length }));
       },
     );
@@ -161,17 +157,17 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
       deps,
       () => true,
       async (tab, handle) => {
-        const base = await materializeBase(deps.contextFor(tab, handle));
+        const base = await materializeBase(documentContext(deps.session, deps.t, tab, handle));
         const outcome = await removeAttachments(base, [name], { signal: new AbortController().signal });
         const next = await applyProducedBytes(
-          deps.contextFor(tab, handle),
+          documentContext(deps.session, deps.t, tab, handle),
           outcome.bytes,
           workingPageCount(tab),
           { key: 'props.attach.removed', params: { count: outcome.removed.length } },
           outcome.report.engine,
           outcome.report.steps,
         );
-        deps.setHandle(tab.id, next);
+        swapHandle(deps.t, tab.id, next);
         showNotice(
           outcome.missing.length > 0
             ? t('props.attach.missing', { count: outcome.missing.length })
@@ -207,7 +203,7 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
       deps,
       () => true,
       async (tab, handle) => {
-        const bytes = await materializeBase(deps.contextFor(tab, handle), {
+        const bytes = await materializeBase(documentContext(deps.session, deps.t, tab, handle), {
           signal: new AbortController().signal,
         });
         const operation = { signal: new AbortController().signal };

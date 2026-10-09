@@ -6,21 +6,29 @@
  * busy gate at the moment it runs, never from the render that created it.
  */
 
-import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { OperationProgress } from 'pdf-core/ops/types';
-import type { EngineValuesDraft, SessionStore, SessionTab } from 'pdf-model';
+import type { EngineValuesDraft, SessionStore } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import { useCallback } from 'react';
 import {
   applyHistoryStep,
   applyPageAction,
-  type DocumentContext,
   type PageAction,
   pageActionLabel,
   pendingOverlays,
 } from '../../operations';
-import { isBusy, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import {
+  cancelOperation as abortOperation,
+  beginOperation,
+  endOperation,
+  isBusy,
+  operationRunning,
+  refuseBusy,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
+import { canEdit, documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 import {
   failureNotice,
   historyNotice,
@@ -30,25 +38,14 @@ import {
   stillCurrent,
 } from './history-plan';
 
-/** The controller of the operation holding the document; the progress overlay's Cancel aborts it. */
-export interface CancelSlot {
-  current: AbortController | null;
-}
-
 /** What a page action needs from the shell. */
 export interface ActionHost {
   readonly session: SessionStore;
   readonly t: Translator;
-  readonly cancel: CancelSlot;
-  /** `canEdit` for a handler that must not act on the render it was created in. */
-  readonly canEdit: { readonly current: boolean };
   /** The page panel's selection. */
   readonly selectedPages: { readonly current: readonly number[] };
   /** The page on screen. */
   readonly currentPage: { readonly current: number };
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
-  readonly setHandle: (tabId: string, handle: PdfDocumentHandle) => void;
-  readonly refuseBusy: () => void;
   readonly setProgress: (progress: OperationProgress | null) => void;
 }
 
@@ -56,12 +53,8 @@ export interface ActionHost {
 export interface StepHost {
   readonly session: SessionStore;
   readonly t: Translator;
-  readonly cancel: CancelSlot;
   /** Keep a tab's mark values until its viewer can take them; `undefined` forgets what was kept. */
   readonly holdEngineValues: (tabId: string, values: EngineValuesDraft | undefined) => void;
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
-  readonly setHandle: (tabId: string, handle: PdfDocumentHandle) => void;
-  readonly refuseBusy: () => void;
   readonly setCurrentPage: (update: (page: number) => number) => void;
 }
 
@@ -78,34 +71,33 @@ export interface PressHost extends StepHost {
 
 /** Page-structure actions: journaled, cancellable. */
 export function runPageAction(host: ActionHost, action: PageAction): void {
-  const { session, t, cancel } = host;
+  const { session, t } = host;
   const tab = session.active;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   const gate = operationGate({
     hasDocument: tab !== null && handle !== null,
-    canEdit: host.canEdit.current,
-    running: cancel.current !== null,
+    canEdit: canEdit(session),
+    running: operationRunning(),
     busy: isBusy(),
   });
   if (gate === 'ignore' || tab === null || handle === null) return;
   if (gate === 'refuse') {
-    host.refuseBusy();
+    refuseBusy(t);
     return;
   }
   setBusy(true);
   const named = 'pages' in action ? action.pages : undefined;
   const selection = pageSelection(named, host.selectedPages.current, host.currentPage.current);
-  const controller = new AbortController();
-  cancel.current = controller;
+  const controller = beginOperation();
   host.setProgress({ phase: 'pages', labelKey: 'op.step.pages', total: 1, done: 0 });
   void (async () => {
     try {
-      const next = await applyPageAction(host.contextFor(tab, handle), selection, action, {
+      const next = await applyPageAction(documentContext(session, t, tab, handle), selection, action, {
         signal: controller.signal,
         onProgress: host.setProgress,
       });
       if (next !== null) {
-        host.setHandle(tab.id, next);
+        swapHandle(t, tab.id, next);
         // The notice names what actually happened: a delete and a move are different journal
         // steps and the History panel shows both.
         const label = pageActionLabel(action, selection.length);
@@ -118,8 +110,7 @@ export function runPageAction(host: ActionHost, action: PageAction): void {
     } catch (error) {
       showNotice(failureNotice(error, t));
     } finally {
-      if (cancel.current === controller) {
-        cancel.current = null;
+      if (endOperation(controller)) {
         host.setProgress(null);
         setBusy(false);
       }
@@ -128,8 +119,8 @@ export function runPageAction(host: ActionHost, action: PageAction): void {
 }
 
 /** The progress overlay's Cancel: stop what holds the document, and say so. */
-export function cancelOperation(host: Pick<ActionHost, 't' | 'cancel'>): void {
-  host.cancel.current?.abort();
+export function requestCancel(host: Pick<ActionHost, 't'>): void {
+  abortOperation();
   showNotice(host.t('op.cancelRequested'));
 }
 
@@ -139,25 +130,24 @@ export function cancelOperation(host: Pick<ActionHost, 't' | 'cancel'>): void {
  * holds is reported, never guessed.
  */
 export async function stepHistory(host: StepHost, direction: 'undo' | 'redo'): Promise<void> {
-  const { session, t, cancel } = host;
+  const { session, t } = host;
   const tab = session.active;
   const handle = tab === null ? undefined : handleFor(tab.id);
   const gate = operationGate({
     hasDocument: tab !== null && handle !== undefined,
     canEdit: true,
-    running: cancel.current !== null,
+    running: operationRunning(),
     busy: isBusy(),
   });
   if (gate === 'ignore' || tab === null || handle === undefined) return;
   if (gate === 'refuse') {
-    host.refuseBusy();
+    refuseBusy(t);
     return;
   }
-  const controller = new AbortController();
-  cancel.current = controller;
+  const controller = beginOperation();
   setBusy(true);
   try {
-    const result = await applyHistoryStep(host.contextFor(tab, handle), direction, {
+    const result = await applyHistoryStep(documentContext(session, t, tab, handle), direction, {
       signal: controller.signal,
     });
     if (result === null) {
@@ -167,7 +157,7 @@ export async function stepHistory(host: StepHost, direction: 'undo' | 'redo'): P
     if (result.handle !== handle) {
       const values = pendingOverlays(session.active).engineValues;
       host.holdEngineValues(tab.id, values);
-      host.setHandle(tab.id, result.handle);
+      swapHandle(t, tab.id, result.handle);
       host.setCurrentPage((page) => Math.min(page, result.handle.pageCount - 1));
     }
     showNotice(historyNotice(direction, result.entry, t));
@@ -175,10 +165,7 @@ export async function stepHistory(host: StepHost, direction: 'undo' | 'redo'): P
     if (session.active?.id !== tab.id || controller.signal.aborted) return;
     showNotice(failureNotice(error, t));
   } finally {
-    if (cancel.current === controller) {
-      cancel.current = null;
-      setBusy(false);
-    }
+    if (endOperation(controller)) setBusy(false);
   }
 }
 
@@ -208,19 +195,19 @@ let historyPending = 0;
  * one before has finished.
  */
 export function stepHistoryNow(host: PressHost, direction: 'undo' | 'redo'): boolean {
-  const { session, t, cancel } = host;
+  const { session, t } = host;
   const tab = session.active;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   const press = historyPress({
     hasDocument: tab !== null && handle !== null,
     queued: historyPending > 0,
     sweeping: host.orphanSweepInFlight() !== null,
-    running: cancel.current !== null,
+    running: operationRunning(),
     busy: isBusy(),
   });
   if (press === 'decline' || tab === null) return false;
   if (press === 'refuse') {
-    host.refuseBusy();
+    refuseBusy(t);
     return false;
   }
   if (host.settleNativeEditors()) void host.sweepOrphanAnnotations();
@@ -234,8 +221,8 @@ export function stepHistoryNow(host: PressHost, direction: 'undo' | 'redo'): boo
     const sweep = host.orphanSweepInFlight();
     if (sweep !== null) await sweep;
     if (!stillCurrent(session.active?.id, tab.id, handleFor(tab.id), start)) return;
-    if (isBusy() || cancel.current !== null) {
-      host.refuseBusy();
+    if (isBusy() || operationRunning()) {
+      refuseBusy(t);
       return;
     }
     // The engine's live storage is checkpointed first, for the same reason an erase
@@ -267,15 +254,10 @@ export function usePageActions(host: PressHost & ActionHost) {
   const {
     session,
     t,
-    cancel,
-    canEdit,
     selectedPages,
     currentPage,
     holdEngineValues,
     orphanSweepInFlight,
-    contextFor,
-    setHandle,
-    refuseBusy,
     setProgress,
     setCurrentPage,
     settleNativeEditors,
@@ -283,32 +265,12 @@ export function usePageActions(host: PressHost & ActionHost) {
     checkpointEngineValues,
   } = host;
   const run = useCallback(
-    (action: PageAction) =>
-      runPageAction(
-        {
-          session,
-          t,
-          cancel,
-          canEdit,
-          selectedPages,
-          currentPage,
-          contextFor,
-          setHandle,
-          refuseBusy,
-          setProgress,
-        },
-        action,
-      ),
-    [session, t, cancel, canEdit, selectedPages, currentPage, contextFor, setHandle, refuseBusy, setProgress],
+    (action: PageAction) => runPageAction({ session, t, selectedPages, currentPage, setProgress }, action),
+    [session, t, selectedPages, currentPage, setProgress],
   );
-  const stop = useCallback(() => cancelOperation({ t, cancel }), [t, cancel]);
   const step = useCallback(
-    (direction: 'undo' | 'redo') =>
-      stepHistory(
-        { session, t, cancel, holdEngineValues, contextFor, setHandle, refuseBusy, setCurrentPage },
-        direction,
-      ),
-    [session, t, cancel, holdEngineValues, contextFor, setHandle, refuseBusy, setCurrentPage],
+    (direction: 'undo' | 'redo') => stepHistory({ session, t, holdEngineValues, setCurrentPage }, direction),
+    [session, t, holdEngineValues, setCurrentPage],
   );
   const stepNow = useCallback(
     (direction: 'undo' | 'redo') =>
@@ -316,12 +278,8 @@ export function usePageActions(host: PressHost & ActionHost) {
         {
           session,
           t,
-          cancel,
           holdEngineValues,
           orphanSweepInFlight,
-          contextFor,
-          setHandle,
-          refuseBusy,
           setCurrentPage,
           settleNativeEditors,
           sweepOrphanAnnotations,
@@ -332,17 +290,13 @@ export function usePageActions(host: PressHost & ActionHost) {
     [
       session,
       t,
-      cancel,
       holdEngineValues,
       orphanSweepInFlight,
-      contextFor,
-      setHandle,
-      refuseBusy,
       setCurrentPage,
       settleNativeEditors,
       sweepOrphanAnnotations,
       checkpointEngineValues,
     ],
   );
-  return { runPageAction: run, cancelOperation: stop, stepHistory: step, stepHistoryNow: stepNow };
+  return { runPageAction: run, stepHistory: step, stepHistoryNow: stepNow };
 }

@@ -7,9 +7,10 @@
 
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { type SessionStore, type SessionTab, workingPageCount } from 'pdf-model';
-import { checkDocumentLimits, type DeviceTier, type LimitVerdict } from 'pdf-shared';
+import type { DeviceTier, LimitVerdict } from 'pdf-shared';
 import { useMemo, useSyncExternalStore } from 'react';
 import { useCore } from '../core/core-store';
+import { documentVerdict, isEditable } from '../core/document';
 import { useDocumentHandle } from '../core/handles';
 import { type DocumentFacts, useCurrentFacts } from '../facts/facts-store';
 import { useCurrentForms } from '../forms/forms-store';
@@ -46,20 +47,10 @@ export function useEditState(session: SessionStore, tier: DeviceTier): EditState
   const viewer = useSave((state) => state.viewer);
   const documentFacts = useCurrentFacts(activeTab);
   const formFields = useCurrentForms(activeTab)?.fields ?? null;
-  const verdict = useMemo(() => {
-    if (activeTab === null) return checkDocumentLimits(tier, 0, 0);
-    const currentBytes = activeTab.working.produced?.bytes.byteLength ?? activeTab.source.size;
-    return checkDocumentLimits(tier, workingPageCount(activeTab), currentBytes);
-  }, [activeTab, tier]);
+  const verdict = useMemo(() => documentVerdict(activeTab, tier), [activeTab, tier]);
   const viewingOnly = verdict.kind === 'viewing-only';
   const locked = activeTab !== null && lockedTabs.has(activeTab.id);
-  const canEdit =
-    activeTab !== null &&
-    activeHandle !== null &&
-    viewer?.document === activeHandle &&
-    !viewingOnly &&
-    !locked &&
-    !busy;
+  const canEdit = isEditable({ tab: activeTab, handle: activeHandle, viewer, verdict, locked, busy });
   return {
     activeTab,
     activeId: snapshot.activeId,

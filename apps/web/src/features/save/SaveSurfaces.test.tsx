@@ -50,7 +50,6 @@ beforeAll(async () => {
 
 let session: SessionStore;
 let tab: SessionTab;
-let cancelRef: { current: AbortController | null };
 let discardTab: Mock<(id: string) => void>;
 let saveActive: Mock<(id: string) => Promise<boolean>>;
 let exportActive: Mock<(id: string) => Promise<void>>;
@@ -60,7 +59,6 @@ function host() {
     <CloseDocumentHost
       t={t}
       session={session}
-      cancelRef={cancelRef}
       discardTab={discardTab}
       saveActive={saveActive}
       exportActive={exportActive}
@@ -75,7 +73,6 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => callback());
   session = new SessionStore();
   tab = session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'a', pageCount: 1 });
-  cancelRef = { current: null };
   discardTab = vi.fn();
   saveActive = vi.fn(async () => true);
   exportActive = vi.fn(async () => undefined);
@@ -139,7 +136,7 @@ describe('CloseDocumentHost', () => {
 
   it('keeps the document open on Cancel, stopping what is running', async () => {
     const controller = new AbortController();
-    cancelRef.current = controller;
+    coreStore.set({ operation: controller });
     host();
     act(() => closeRequested(tab.id, null));
     await userEvent.click(await screen.findByRole('button', { name: 'cancel' }));

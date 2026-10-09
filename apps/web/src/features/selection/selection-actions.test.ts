@@ -4,14 +4,17 @@
  */
 
 import { SessionStore } from 'pdf-model';
+import { createTranslator } from 'pdf-shared';
 import { markTargetKey } from 'pdf-ui/tools';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
-import { coreStore, initialCoreState, isBusy, selectTool, setBusy } from '../core/core-store';
+import { clearNotice, coreStore, initialCoreState, isBusy, selectTool, setBusy } from '../core/core-store';
 import { annotationMark, existingTarget, fileAnnotation, redactionTarget } from '../marks/marks-fixtures';
 import { initialMarksState, marksStore } from '../marks/marks-store';
 import { deleteMarkSelection, openNote, type SelectionHost, selectAllMarks } from './selection-actions';
 import { initialSelectionState, selectedMarkKeys, selectionStore, selectMarks } from './selection-store';
+
+const t = createTranslator('en');
 
 function openSession(): SessionStore {
   const session = new SessionStore();
@@ -22,8 +25,7 @@ function openSession(): SessionStore {
 function hostFor(session: SessionStore, overrides: Partial<SelectionHost> = {}) {
   const base = {
     session,
-    cancel: { current: null } as SelectionHost['cancel'],
-    refuseBusy: vi.fn(),
+    t,
     settleNativeEditors: vi.fn(() => false),
     sweepOrphanAnnotations: vi.fn(async () => undefined),
     removeTargets: vi.fn(() => true),
@@ -43,7 +45,7 @@ describe('deleteMarkSelection', () => {
     const host = hostFor(openSession());
     expect(deleteMarkSelection(host)).toBe(false);
     expect(host.removeTargets).not.toHaveBeenCalled();
-    expect(host.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
   });
 
   it('removes the whole selection in one call and returns what the removal answered', () => {
@@ -60,11 +62,13 @@ describe('deleteMarkSelection', () => {
     selectMarks(['a']);
     setBusy(true);
     expect(deleteMarkSelection(host)).toBe(false);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
+    clearNotice();
     setBusy(false);
-    const held = hostFor(openSession(), { cancel: { current: new AbortController() } });
+    coreStore.set({ operation: new AbortController() });
+    const held = hostFor(openSession());
     expect(deleteMarkSelection(held)).toBe(false);
-    expect(host.refuseBusy).toHaveBeenCalledTimes(1);
-    expect(held.refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(host.removeTargets).not.toHaveBeenCalled();
     expect(held.removeTargets).not.toHaveBeenCalled();
     expect(isBusy()).toBe(false);
@@ -76,7 +80,7 @@ describe('deleteMarkSelection', () => {
     setBusy(true);
     annotationsStore.set({ sweep: new Promise<void>(() => undefined) });
     expect(deleteMarkSelection(host)).toBe(true);
-    expect(host.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
     expect(host.removeTargets).toHaveBeenCalledWith(['a']);
   });
 

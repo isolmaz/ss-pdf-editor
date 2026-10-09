@@ -25,15 +25,24 @@ import {
 } from '../../annotation-interaction';
 import { applyProducedBytes, hasEngineEdits, pruneOverlays, removeMarkTargets } from '../../operations';
 import { knownExistingAnnotations, orphanSweepInFlight } from '../annotations/annotations-store';
-import { isBusy, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import {
+  beginOperation,
+  endOperation,
+  isBusy,
+  operationRunning,
+  refuseBusy,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
+import { canEdit, documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 import type { MarksHost } from './host';
 import { currentMarkTargets } from './marks-store';
 import { editableOverlays } from './overlays';
 
 /** Remove the marks named by `keys`; `false` means nothing was removed and nothing is in flight. */
 export function removeTargets(host: MarksHost, keys: readonly string[]): boolean {
-  const { session, t, cancel } = host;
+  const { session, t } = host;
   const request = planMarkRemoval(
     currentMarkTargets(),
     withThreadRecords(keys, knownExistingAnnotations() ?? []),
@@ -41,7 +50,7 @@ export function removeTargets(host: MarksHost, keys: readonly string[]): boolean
   if (isEmptyRemoval(request)) return false;
   const tab = session.active;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-  if (tab === null || handle === null || !host.canEdit.current) return false;
+  if (tab === null || handle === null || !canEdit(session)) return false;
   const count = removalCount(request);
 
   /**
@@ -67,19 +76,19 @@ export function removeTargets(host: MarksHost, keys: readonly string[]): boolean
    * housekeeping.
    */
   const inFlight = orphanSweepInFlight();
-  if (inFlight === null && (isBusy() || cancel.current !== null)) {
-    host.refuseBusy();
+  if (inFlight === null && (isBusy() || operationRunning())) {
+    refuseBusy(t);
     return false;
   }
   void (async () => {
-    const controller = new AbortController();
+    let controller: AbortController | undefined;
     try {
       if (inFlight !== null) await inFlight;
-      if (isBusy() || cancel.current !== null) {
-        host.refuseBusy();
+      if (isBusy() || operationRunning()) {
+        refuseBusy(t);
         return;
       }
-      cancel.current = controller;
+      controller = beginOperation();
       setBusy(true);
       await host.checkpointEngineValues();
       if (controller.signal.aborted) return;
@@ -104,7 +113,7 @@ export function removeTargets(host: MarksHost, keys: readonly string[]): boolean
         return;
       }
       const outcome = await removeMarkTargets(
-        host.contextFor(fresh, handle),
+        documentContext(session, t, fresh, handle),
         request,
         { signal: controller.signal },
         [],
@@ -117,7 +126,7 @@ export function removeTargets(host: MarksHost, keys: readonly string[]): boolean
       )
         return;
       const next = await applyProducedBytes(
-        host.contextFor(fresh, handle),
+        documentContext(session, t, fresh, handle),
         outcome.bytes,
         outcome.pageCount,
         { key: 'ann.remove', params: { count } },
@@ -126,17 +135,14 @@ export function removeTargets(host: MarksHost, keys: readonly string[]): boolean
         { signal: controller.signal },
         outcome.overlays,
       );
-      host.setHandle(fresh.id, next);
+      swapHandle(t, fresh.id, next);
       showNotice(t('ann.removed', { count }));
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller?.signal.aborted === true) return;
       const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
       showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
-      if (cancel.current === controller) {
-        cancel.current = null;
-        setBusy(false);
-      }
+      if (controller !== undefined && endOperation(controller)) setBusy(false);
     }
   })();
   return true;

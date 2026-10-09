@@ -2,19 +2,24 @@
 
 import type { AnnotationMark } from 'pdf-core';
 import type { SessionStore } from 'pdf-model';
+import type { Translator } from 'pdf-shared';
 import { markTargetKey } from 'pdf-ui/tools';
 import { knownExistingAnnotations, orphanSweepInFlight } from '../annotations/annotations-store';
-import { coreStore, isBusy, openRightPanel, selectTool } from '../core/core-store';
+import {
+  coreStore,
+  isBusy,
+  openRightPanel,
+  operationRunning,
+  refuseBusy,
+  selectTool,
+} from '../core/core-store';
 import { currentMarkTargets } from '../marks/marks-store';
 import { selectedMarkKeys, selectMarks } from './selection-store';
 
 /** What the selection handlers need from the shell: the pieces it still owns. */
 export interface SelectionHost {
   readonly session: SessionStore;
-  /** The controller of the operation holding the document. */
-  readonly cancel: { readonly current: AbortController | null };
-  /** Say that the document is busy. */
-  readonly refuseBusy: () => void;
+  readonly t: Translator;
   /** Commit native editors; whether the engine still holds entries that must be materialised. */
   readonly settleNativeEditors: () => boolean;
   readonly sweepOrphanAnnotations: () => Promise<void>;
@@ -33,8 +38,8 @@ export interface SelectionHost {
 export function deleteMarkSelection(host: SelectionHost): boolean {
   const keys = selectedMarkKeys();
   if (keys.length === 0) return false;
-  if (orphanSweepInFlight() === null && (isBusy() || host.cancel.current !== null)) {
-    host.refuseBusy();
+  if (orphanSweepInFlight() === null && (isBusy() || operationRunning())) {
+    refuseBusy(host.t);
     return false;
   }
   if (host.settleNativeEditors()) void host.sweepOrphanAnnotations();

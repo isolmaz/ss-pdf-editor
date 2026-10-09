@@ -9,7 +9,7 @@ import { SessionStore, type SessionTab } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import type { OperationDialogSpec } from 'pdf-ui/ui';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { coreStore, initialCoreState } from '../core/core-store';
+import { coreStore, initialCoreState, operationRunning } from '../core/core-store';
 import { dialogsStore, initialDialogsState } from '../dialogs/dialogs-store';
 import {
   type CloseHost,
@@ -36,7 +36,6 @@ vi.mock('../marks/redaction-store', () => ({ redactedWordsForgotten: mocks.redac
 
 const t = ((key: string) => key) as Translator;
 let session: SessionStore;
-let cancelRef: { current: AbortController | null };
 
 function open(name = 'a.pdf'): SessionTab {
   return session.openDocument({ name, bytes: new Uint8Array([1]), sha256: name, pageCount: 1 });
@@ -48,7 +47,6 @@ beforeEach(() => {
   saveStore.set(initialSaveState());
   dialogsStore.set(initialDialogsState());
   session = new SessionStore();
-  cancelRef = { current: null };
   mocks.handleFor.mockReturnValue(undefined);
   mocks.hasEngineEdits.mockReturnValue(false);
   document.body.innerHTML = '';
@@ -65,7 +63,7 @@ describe('discardDocument', () => {
 
   beforeEach(async () => {
     forgetTabDraft = vi.fn(async () => []);
-    host = { session, cancelRef, translator: { current: t }, forgetTabDraft };
+    host = { session, translator: { current: t }, forgetTabDraft };
     const { draftWrites } = await import('../persistence/persistence-store');
     draftWrites.current = Promise.resolve();
   });
@@ -87,7 +85,7 @@ describe('discardDocument', () => {
     const first = open('a.pdf');
     const second = open('b.pdf');
     const controller = new AbortController();
-    cancelRef.current = controller;
+    coreStore.set({ operation: controller });
     discardDocument(host, first.id);
     expect(controller.signal.aborted).toBe(false);
     discardDocument(host, second.id);
@@ -97,7 +95,7 @@ describe('discardDocument', () => {
   it('closes the active tab without an operation to cancel', () => {
     const tab = open();
     discardDocument(host, tab.id);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('destroys the abandoned engine handle, and reports a handle that would not shut down', async () => {
@@ -140,18 +138,16 @@ describe('discardDocument', () => {
 });
 
 describe('closeTab', () => {
-  let refuseBusy: Mock<() => void>;
   let discardTab: Mock<(id: string) => void>;
-  const host = () => ({ session, cancelRef, refuseBusy, discardTab });
+  const host = () => ({ session, t, discardTab });
 
   beforeEach(() => {
-    refuseBusy = vi.fn();
     discardTab = vi.fn();
   });
 
   it.each([
     ['an operation is running', () => coreStore.set({ busy: true })],
-    ['a save holds the controller', () => (cancelRef.current = new AbortController())],
+    ['a save holds the controller', () => coreStore.set({ operation: new AbortController() })],
     [
       'an operation dialog is open',
       () => dialogsStore.set({ dialogSpec: { id: 'compress' } as unknown as OperationDialogSpec }),
@@ -160,7 +156,7 @@ describe('closeTab', () => {
     const tab = open();
     arrange();
     closeTab(host(), tab.id);
-    expect(refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe('op.busy');
     expect(discardTab).not.toHaveBeenCalled();
     expect(saveStore.get().closeRequest).toBeNull();
   });
@@ -168,7 +164,7 @@ describe('closeTab', () => {
   it('ignores a tab that is gone', () => {
     closeTab(host(), 'gone');
     expect(discardTab).not.toHaveBeenCalled();
-    expect(refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).toBeNull();
   });
 
   it('discards a tab with nothing unsaved at once', () => {
@@ -250,13 +246,13 @@ describe('the answers to the close question', () => {
 
   it('Cancel stops what is running and keeps the document open', () => {
     const controller = new AbortController();
-    cancelRef.current = controller;
-    keepOpen({ cancelRef });
+    coreStore.set({ operation: controller });
+    keepOpen();
     expect(controller.signal.aborted).toBe(true);
     expect(saveStore.get().closeRequest).toBeNull();
     expect(() => {
-      cancelRef.current = null;
-      keepOpen({ cancelRef });
+      coreStore.set({ operation: null });
+      keepOpen();
     }).not.toThrow();
   });
 
@@ -272,7 +268,7 @@ describe('the answers to the close question', () => {
   });
 
   describe('Save and close', () => {
-    const host = () => ({ session, cancelRef, discardTab, saveActive });
+    const host = () => ({ session, discardTab, saveActive });
 
     it('closes the document once the save left it clean', async () => {
       const tab = open();

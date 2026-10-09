@@ -10,8 +10,8 @@ import type { FieldCandidate, FormDetection } from 'pdf-core/ops/form-detect';
 import { SessionStore, type SessionTab } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { coreStore, initialCoreState, setBusy } from '../core/core-store';
-import { adoptHandle, dropHandle } from '../core/handles';
+import { clearNotice, coreStore, initialCoreState, setBusy } from '../core/core-store';
+import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import type { WriteFileAnnotation } from '../marks/host';
 import {
   applyFormDetect,
@@ -62,7 +62,6 @@ const produced = { name: 'produced' } as never;
 let store: SessionStore;
 let tab: SessionTab;
 let host: FormsHost;
-let running = false;
 
 function bump(): SessionTab {
   store.applyOperation({
@@ -106,18 +105,10 @@ beforeEach(() => {
   coreStore.set(initialCoreState());
   formsStore.set(initialFormsState());
   vi.clearAllMocks();
-  running = false;
   store = new SessionStore();
   tab = store.openDocument({ name: 'a.pdf', bytes: base, sha256: 'a', pageCount: 1 });
   adoptHandle(tab.id, handle);
-  host = {
-    store,
-    t,
-    contextFor: (opened, engine) => ({ store, t, tab: opened, handle: engine }),
-    refuseBusy: vi.fn(),
-    setHandle: vi.fn(),
-    operationRunning: () => running,
-  };
+  host = { store, t };
   pdfCore.materializeBase.mockResolvedValue(base);
   pdfCore.applyProducedBytes.mockResolvedValue(produced);
 });
@@ -150,10 +141,12 @@ describe('openXfaForm', () => {
   it('refuses while an operation holds the document, or a cancellable one runs', async () => {
     setBusy(true);
     await openXfaForm(host);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
+    clearNotice();
     setBusy(false);
-    running = true;
+    coreStore.set({ operation: new AbortController() });
     await openXfaForm(host);
-    expect(host.refuseBusy).toHaveBeenCalledTimes(2);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(pdfCore.materializeBase).not.toHaveBeenCalled();
   });
 
@@ -226,7 +219,7 @@ describe('saveXfaForm', () => {
       'mupdf',
       ['form.fill'],
     );
-    expect(host.setHandle).toHaveBeenCalledWith(tab.id, produced);
+    expect(handleFor(tab.id)).toBe(produced);
     expect(formsStore.get().xfaForm).toBeNull();
     expect(coreStore.get().notice).toBe(t('xfa.fill.saved', { count: 3 }));
   });
@@ -263,7 +256,7 @@ describe('fillField', () => {
       'mupdf',
       ['form.fill'],
     );
-    expect(host.setHandle).toHaveBeenCalledWith(tab.id, produced);
+    expect(handleFor(tab.id)).toBe(produced);
     expect(coreStore.get()).toMatchObject({
       notice: t('op.result.applied', { label: t('panel.forms') }),
       busy: false,
@@ -298,7 +291,7 @@ describe('fillField', () => {
   it('refuses while an operation holds the document', async () => {
     setBusy(true);
     await fillField('Name', 'x', host);
-    expect(host.refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(pdfCore.materializeBase).not.toHaveBeenCalled();
   });
 
@@ -307,7 +300,7 @@ describe('fillField', () => {
     pdfCore.fillFormFields.mockRejectedValue(error);
     await fillField('Name', 'x', host);
     expect(coreStore.get()).toMatchObject({ notice: failure(error), busy: false });
-    expect(host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(tab.id)).toBe(handle);
   });
 });
 
@@ -362,7 +355,7 @@ describe('startFormDetect', () => {
   it('refuses while an operation holds the document, without opening the panel', async () => {
     setBusy(true);
     await startFormDetect(host);
-    expect(host.refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(coreStore.get().rightTab).toBe('history');
     expect(formsStore.get().formDetect).toBeNull();
   });

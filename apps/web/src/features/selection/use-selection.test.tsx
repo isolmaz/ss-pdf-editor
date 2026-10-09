@@ -7,6 +7,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { ExistingAnnotation } from 'pdf-core';
 import { SessionStore } from 'pdf-model';
+import { createTranslator } from 'pdf-shared';
 import type { MarkTarget } from 'pdf-ui/tools';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
@@ -35,8 +36,7 @@ describe('useSelectionActions', () => {
     session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'hash', pageCount: 1 });
     return {
       session,
-      cancel: { current: null },
-      refuseBusy: vi.fn(),
+      t: createTranslator('en'),
       settleNativeEditors: vi.fn(() => false),
       sweepOrphanAnnotations: vi.fn(async () => undefined),
       removeTargets: vi.fn(() => true),

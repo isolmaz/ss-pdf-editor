@@ -8,8 +8,16 @@ import { planMarkTransform } from '../../annotation-interaction';
 import { applyProducedBytes, hasEngineEdits, materializeBase } from '../../operations';
 import type { SaveStepDescription } from '../../save-plan';
 import { knownExistingAnnotations } from '../annotations/annotations-store';
-import { isBusy, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import {
+  beginOperation,
+  endOperation,
+  isBusy,
+  operationRunning,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
+import { canEdit, documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 import type { MarksHost } from './host';
 import { currentMarkTargets } from './marks-store';
 import { editableOverlays } from './overlays';
@@ -20,11 +28,11 @@ export function transformTargets(
   keys: readonly string[],
   transform: MarkTransform,
 ): boolean {
-  const { session, t, cancel } = host;
+  const { session, t } = host;
   const tab = session.active;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   if (tab === null || handle === null || knownExistingAnnotations() === null) return false;
-  if (isBusy() || cancel.current !== null || !host.canEdit.current) return false;
+  if (isBusy() || operationRunning() || !canEdit(session)) return false;
   if (transform.dx === 0 && transform.dy === 0 && transform.rotation === 0) return false;
   const targets = currentMarkTargets();
   const wanted = new Set(keys);
@@ -46,8 +54,7 @@ export function transformTargets(
     showNotice(t('ann.transformed', { count }));
     return true;
   }
-  const controller = new AbortController();
-  cancel.current = controller;
+  const controller = beginOperation();
   setBusy(true);
   void (async () => {
     try {
@@ -72,7 +79,7 @@ export function transformTargets(
       } else {
         // Keep pending marks outside the bytes. Otherwise the untouched PDF
         // version and the transformed overlay would both paint the same mark.
-        const context = host.contextFor(fresh, handle);
+        const context = documentContext(session, t, fresh, handle);
         const executedSteps: SaveStepDescription[] = [];
         const base = await materializeBase(context, { signal: controller.signal }, executedSteps, {
           ...before,
@@ -94,7 +101,7 @@ export function transformTargets(
           { signal: controller.signal },
           after,
         );
-        host.setHandle(fresh.id, next);
+        swapHandle(t, fresh.id, next);
       }
       showNotice(t('ann.transformed', { count }));
     } catch (error) {
@@ -102,10 +109,7 @@ export function transformTargets(
       const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
       showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
     } finally {
-      if (cancel.current === controller) {
-        cancel.current = null;
-        setBusy(false);
-      }
+      if (endOperation(controller)) setBusy(false);
     }
   })();
   return true;

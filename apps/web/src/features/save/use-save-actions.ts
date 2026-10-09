@@ -31,15 +31,14 @@ export interface SaveActions {
  * and the annotation takeover, so the viewer is not torn down on every render.
  */
 export function useSaveActions(deps: SaveActionsDeps): SaveActions {
-  const { session, t, cancelRef, refuseBusy, prepareOutput, discardTab, takeEngineAnnotations } = deps;
+  const { session, t, prepareOutput, discardTab, takeEngineAnnotations } = deps;
   const closeTab = useCallback(
-    (id: string) => closeTabFor({ session, cancelRef, refuseBusy, discardTab }, id),
-    [session, cancelRef, refuseBusy, discardTab],
+    (id: string) => closeTabFor({ session, t, discardTab }, id),
+    [session, t, discardTab],
   );
   const exportActive = useCallback(
-    (tabId = session.active?.id) =>
-      exportDocument({ session, t, cancelRef, refuseBusy, prepareOutput }, tabId),
-    [session, t, cancelRef, refuseBusy, prepareOutput],
+    (tabId = session.active?.id) => exportDocument({ session, t, prepareOutput }, tabId),
+    [session, t, prepareOutput],
   );
   const checkpoint = useCallback(() => checkpointEngineValues(session), [session]);
   const markDirty = useCallback(

@@ -216,6 +216,8 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   const notices = [];
   const downloads = [];
   const busyRef = { current: false };
+  // The running operation's controller: the core's `beginOperation` / `endOperation`, in a variable.
+  let operation = null;
   // `saveActive` runs the app's own arrow over the real `features/save` save path; the notice
   // line, the busy flag and the download are the doubles. The save lock is the real store's.
   const modules = saveModules({
@@ -226,6 +228,16 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
         busyRef.current = value;
       },
       isBusy: () => busyRef.current,
+      refuseBusy: () => notices.push('busy'),
+      beginOperation: () => {
+        operation = new AbortController();
+        return operation;
+      },
+      endOperation: (controller) => {
+        if (operation !== controller) return false;
+        operation = null;
+        return true;
+      },
     },
     '../../operations': { downloadFiles: (files) => downloads.push(...files) },
   });
@@ -238,8 +250,6 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   const bindings = {
     store,
     saveDocument: modules('save-actions.ts').saveDocument,
-    cancelRef: { current: null },
-    refuseBusy: () => notices.push('busy'),
     t: (key) => key,
     prepareOutput: async () => {
       if (prepare) return prepare(store);
@@ -1150,6 +1160,7 @@ async function main() {
     const savePlan = load(path.join(ROOT, 'apps/web/src/save-plan.ts'));
     const modules = saveModules({
       '../core/core-store': { showNotice: (notice) => notices.push(notice) },
+      '../core/document': { documentContext: (_session, _t, tab, handle) => ({ tab, handle }) },
       '../core/handles': { handleFor: (id) => new Map([[tab.id, handle]]).get(id) },
       '../facts/facts-store': {
         currentFacts: () =>
@@ -1198,7 +1209,6 @@ async function main() {
     const bindings = {
       store,
       t: (key) => key,
-      contextFor: (tab, handle) => ({ tab, handle }),
       prepareDocumentOutput: modules('prepare-output.ts').prepareOutput,
     };
     return {
@@ -1325,11 +1335,14 @@ async function main() {
     // `discardTab` runs the app's own arrow over the real `features/save/close-actions`; the
     // engine handle, the staged values, the needles and the notice line are the doubles.
     const draftWrites = { current: Promise.resolve() };
+    // The running operation's controller, which the core's `cancelOperation` aborts.
+    const operation = { current: null };
     const closing = saveModules({
       '../core/core-store': {
         showNotice: (notice) => notices.push(notice),
         clearNotice() {},
         isBusy: () => false,
+        cancelOperation: () => operation.current?.abort(),
       },
       '../core/handles': { dropHandle: () => undefined, handleFor: () => undefined },
       '../annotations/annotations-store': { releaseEngineValues: (id) => pendingEngineValues.delete(id) },
@@ -1341,7 +1354,7 @@ async function main() {
     });
     const bindings = {
       store,
-      cancelRef: { current: null },
+      cancelRef: operation,
       draftWrites,
       forgetTabDraft,
       tRef: { current: (key) => key },

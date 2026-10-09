@@ -26,9 +26,9 @@ export interface AnnotationActions {
  * rebuilding the pdf.js stack.
  */
 export function useAnnotationActions(host: AnnotationHost): AnnotationActions {
-  const { session, t, viewer, cancel, contextFor, setHandle } = host;
+  const { session, t, viewer } = host;
   return useMemo(() => {
-    const bound: AnnotationHost = { session, t, viewer, cancel, contextFor, setHandle };
+    const bound: AnnotationHost = { session, t, viewer };
     return {
       exportAnnotationData: (format) => exportAnnotationData(bound, format),
       importAnnotationData: (file) => importAnnotationData(bound, file),
@@ -36,7 +36,7 @@ export function useAnnotationActions(host: AnnotationHost): AnnotationActions {
       settleNativeEditors: () => settleNativeEditors(bound),
       sweepOrphanAnnotations: () => sweepOrphanAnnotations(bound),
     };
-  }, [session, t, viewer, cancel, contextFor, setHandle]);
+  }, [session, t, viewer]);
 }
 
 /**

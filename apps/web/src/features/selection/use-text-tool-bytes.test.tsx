@@ -10,7 +10,6 @@ import { SessionStore, type SessionTab } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Operations from '../../operations';
-import type { DocumentContext } from '../../operations';
 import { coreStore, initialCoreState, selectTool } from '../core/core-store';
 import { initialTextToolState, textToolStore } from './text-tool-store';
 import { useTextToolBytes } from './use-text-tool-bytes';
@@ -26,18 +25,12 @@ const handle = { raw: {}, pageCount: 1, destroy: vi.fn() } as unknown as PdfDocu
 const session = new SessionStore();
 session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'hash', pageCount: 1 });
 const tab = session.active as SessionTab;
-const contextFor = (forTab: SessionTab, forHandle: PdfDocumentHandle): DocumentContext => ({
-  store: session,
-  t,
-  tab: forTab,
-  handle: forHandle,
-});
 
 const frozen = () => textToolStore.get().bytes;
 const mount = (initial: { tab?: SessionTab | null; handle?: PdfDocumentHandle | null } = {}) =>
   renderHook(
     (props: { tab: SessionTab | null; handle: PdfDocumentHandle | null }) =>
-      useTextToolBytes(props.tab, props.handle, contextFor, t),
+      useTextToolBytes(session, props.tab, props.handle, t),
     {
       initialProps: {
         tab: initial.tab === undefined ? tab : initial.tab,

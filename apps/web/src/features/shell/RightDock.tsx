@@ -20,7 +20,15 @@ import type { AnnotationActions } from '../annotations/use-annotation-actions';
 import type { AttachmentActions } from '../attachments/attachments';
 import { CommentsDock } from '../comments/CommentsDock';
 import type { CommentReview } from '../comments/review';
-import { hideRightDock, selectRightTab, selectTool, showNotice, useCore } from '../core/core-store';
+import {
+  cancelOperation,
+  hideRightDock,
+  refuseBusy,
+  selectRightTab,
+  selectTool,
+  showNotice,
+  useCore,
+} from '../core/core-store';
 import { dismissOperationDialog, useDialogs } from '../dialogs/dialogs-store';
 import { openExportDialog } from '../export/export-store';
 import { PropertiesFacts } from '../facts/PropertiesFacts';
@@ -74,8 +82,6 @@ export interface RightDockProps {
     ShellActions,
     'openDialog' | 'runPageAction' | 'stepHistoryNow' | 'startFormDetect'
   > & {
-    readonly abortOperation: () => void;
-    readonly refuseBusy: () => void;
     readonly dialogResult: (result: OpRunResult) => Promise<void>;
     readonly removeTargets: MarkActions['removeTargets'];
     readonly annotationData: Pick<AnnotationActions, 'exportAnnotationData' | 'importAnnotationData'>;
@@ -127,13 +133,13 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
               // tab nothing can be written to, and a protected one says why.
               if (id === 'redact' && !canEdit) {
                 if (locked) showNotice(t('locked.banner'));
-                else if (busy) actions.refuseBusy();
+                else if (busy) refuseBusy(t);
                 return;
               }
               actions.openDialog(id);
             }}
             onBackToTools={() => {
-              actions.abortOperation();
+              cancelOperation();
               dismissOperationDialog();
               // The block selection belongs to exactly one run: leaving it in
               // place would let a later `text-edit` open on a paragraph the

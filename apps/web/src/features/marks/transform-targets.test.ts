@@ -11,14 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Operations from '../../operations';
 import { pendingOverlays } from '../../operations';
 import { existingAnnotationsRead } from '../annotations/annotations-store';
-import { coreStore, isBusy, setBusy } from '../core/core-store';
-import { dropHandle } from '../core/handles';
+import { cancelOperation, coreStore, isBusy, operationRunning, setBusy } from '../core/core-store';
+import { dropHandle, handleFor } from '../core/handles';
 import {
   deferred,
   existingTarget,
   type MarksWorld,
   marksWorld,
   redactionTarget,
+  setEditable,
   t,
   tick,
 } from './marks-fixtures';
@@ -83,13 +84,13 @@ describe('what is refused without a word', () => {
     setBusy(true);
     expect(transformTargets(world.host, keys, move)).toBe(false);
     setBusy(false);
-    world.host.cancel.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     expect(transformTargets(world.host, keys, move)).toBe(false);
-    world.host.cancel.current = null;
-    world.host.canEdit.current = false;
+    coreStore.set({ operation: null });
+    setEditable(world, false);
     expect(transformTargets(world.host, keys, move)).toBe(false);
     expect(rects(world.session.active)).toEqual([10, 10]);
-    expect(world.host.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
   });
 
   it('does nothing for an edit that moves nothing, or keys that name no mark', () => {
@@ -110,7 +111,7 @@ describe('moving marks that are only pending', () => {
     expect(world.session.active?.journal.entries.map((entry) => entry.labelKey).at(-1)).toBe('ann.transform');
     expect(notice()).toBe(t('ann.transformed', { count: 1 }));
     expect(isBusy()).toBe(false);
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(world.host.checkpointEngineValues).not.toHaveBeenCalled();
   });
 
@@ -131,7 +132,7 @@ describe('moving marks that are only pending', () => {
     await vi.waitFor(() => expect(isBusy()).toBe(false));
     expect(rects(world.session.active)).toEqual([15, 10]);
     expect(notice()).toBe(t('ann.transformed', { count: 1 }));
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(mocks.materializeBase).not.toHaveBeenCalled();
   });
 });
@@ -141,7 +142,7 @@ describe('moving marks the file already carries', () => {
 
   it('moves them with the core writer and mounts the result with the moved overlays', async () => {
     expect(transformTargets(world.host, keys, move)).toBe(true);
-    await vi.waitFor(() => expect(world.host.setHandle).toHaveBeenCalled());
+    await vi.waitFor(() => expect(handleFor(world.tab.id)).not.toBe(world.handle));
     const before = pendingOverlays(world.session.active);
     expect(mocks.materializeBase).toHaveBeenCalledWith(
       expect.objectContaining({ handle: world.handle }),
@@ -164,16 +165,16 @@ describe('moving marks the file already carries', () => {
       { signal: expect.any(AbortSignal) },
       expect.objectContaining({ redactions: [expect.objectContaining({ id: 'r1' }), before.redactions[1]] }),
     );
-    expect(world.host.setHandle).toHaveBeenCalledWith(world.tab.id, produced);
+    expect(handleFor(world.tab.id)).toBe(produced);
     expect(notice()).toBe(t('ann.transformed', { count: 2 }));
     await tick();
     expect(isBusy()).toBe(false);
-    expect(world.host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('writes nothing when Cancel aborted the operation during the checkpoint', async () => {
     world.host.checkpointEngineValues.mockImplementation(async () => {
-      world.host.cancel.current?.abort();
+      cancelOperation();
       return true;
     });
     transformTargets(world.host, keys, move);
@@ -218,7 +219,7 @@ describe('moving marks the file already carries', () => {
     await vi.waitFor(() => expect(isBusy()).toBe(false));
     const failure = new ToolError('write-failed', { engine: 'mupdf' });
     expect(notice()).toBe(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-    expect(world.host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(world.tab.id)).toBe(world.handle);
   });
 
   it('reports an unexpected failure as an internal error', async () => {
@@ -231,7 +232,7 @@ describe('moving marks the file already carries', () => {
 
   it('stays silent about a failure caused by Cancel', async () => {
     mocks.transformPdfAnnotations.mockImplementation(async () => {
-      world.host.cancel.current?.abort();
+      cancelOperation();
       throw new Error('aborted');
     });
     transformTargets(world.host, keys, move);
@@ -242,13 +243,13 @@ describe('moving marks the file already carries', () => {
   it('leaves the lock to whoever took it over', async () => {
     const other = new AbortController();
     mocks.transformPdfAnnotations.mockImplementation(async () => {
-      world.host.cancel.current = other;
+      coreStore.set({ operation: other });
       throw new Error('boom');
     });
     transformTargets(world.host, keys, move);
     await vi.waitFor(() => expect(notice()).not.toBeNull());
     await tick();
-    expect(world.host.cancel.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(isBusy()).toBe(true);
   });
 });

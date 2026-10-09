@@ -8,6 +8,7 @@ import { type SessionStore, workingPageCount } from 'pdf-model';
 import { useMemo } from 'react';
 import { useShellShortcuts } from '../../useShortcuts';
 import { toggleLeftDock, toggleRightDock } from '../core/core-store';
+import { canEdit } from '../core/document';
 import { openExportDialog } from '../export/export-store';
 import { toggleReading } from '../reading/reading-store';
 import { currentViewer, saveStore } from '../save/save-store';
@@ -17,11 +18,9 @@ import { summonPalette } from './shell-store';
 export interface ShellBindingHost {
   readonly session: SessionStore;
   readonly actions: ShellActions;
-  /** Whether a write may start now, read when the key is pressed. */
-  readonly canEdit: () => boolean;
 }
 
-export function useShellBindings({ session, actions, canEdit }: ShellBindingHost): void {
+export function useShellBindings({ session, actions }: ShellBindingHost): void {
   const {
     openViaPicker,
     saveActive,
@@ -60,14 +59,13 @@ export function useShellBindings({ session, actions, canEdit }: ShellBindingHost
         reading: toggleReading,
         documentProperties: () => openDialog('properties'),
         findReplace: () => {
-          if (!canEdit()) return false;
+          if (!canEdit(session)) return false;
           openDialog('find-replace');
           return true;
         },
         selectAllMarks,
       }),
       [
-        canEdit,
         deleteMarkSelection,
         openDialog,
         openPrint,

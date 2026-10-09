@@ -192,7 +192,6 @@ let props: {
   right: Record<string, unknown>;
   results: { printProduced: Mock; scanDocument: Mock };
   startResult: Mock;
-  cancelOperation: Mock;
 };
 
 function renderBody() {
@@ -210,7 +209,6 @@ function renderBody() {
       right={props.right as unknown as ShellBodyProps['right']}
       results={props.results as unknown as ShellBodyProps['results']}
       startResult={props.startResult}
-      cancelOperation={props.cancelOperation}
     />,
   );
 }
@@ -247,7 +245,6 @@ beforeEach(() => {
     right: { marker: 'right' },
     results: { printProduced: vi.fn(async () => undefined), scanDocument: vi.fn(async () => undefined) },
     startResult: vi.fn(async () => undefined),
-    cancelOperation: vi.fn(),
   };
 });
 afterEach(() => {
@@ -411,11 +408,14 @@ describe('ShellBody dialogs and status overlay', () => {
   });
 
   it('shows the running operation’s progress and cancels it through the shell', async () => {
+    const controller = new AbortController();
+    coreStore.set({ operation: controller });
     renderBody();
     act(() => setProgress({ step: 1, total: 3 } as never));
     expect(screen.getByLabelText('activity overlay').dataset.progress).toBe('{"step":1,"total":3}');
     await userEvent.click(screen.getByRole('button', { name: 'cancel' }));
-    expect(props.cancelOperation).toHaveBeenCalledTimes(1);
+    expect(controller.signal.aborted).toBe(true);
+    expect(coreStore.get().notice).toBe(t('op.cancelRequested'));
   });
 
   it('says a file is opening while it is being read', () => {

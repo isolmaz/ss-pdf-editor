@@ -14,6 +14,11 @@ import type { ShellActions } from './shell-actions';
 import { initialShellState, shellStore } from './shell-store';
 import { useShellBindings } from './use-shell-bindings';
 
+const gate = vi.hoisted(() => ({ editing: true }));
+vi.mock('../core/document', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../core/document')>()),
+  canEdit: () => gate.editing,
+}));
 const captured = vi.hoisted(() => ({ shortcuts: null as unknown as ShellShortcuts }));
 vi.mock('../../useShortcuts', () => ({
   useShellShortcuts: (shortcuts: ShellShortcuts) => {
@@ -23,13 +28,10 @@ vi.mock('../../useShortcuts', () => ({
 
 let session: SessionStore;
 let actions: Record<string, ReturnType<typeof vi.fn>>;
-let editing: boolean;
 let viewer: { setZoom: ReturnType<typeof vi.fn>; goToPage: ReturnType<typeof vi.fn> };
 
 function mount() {
-  renderHook(() =>
-    useShellBindings({ session, actions: actions as unknown as ShellActions, canEdit: () => editing }),
-  );
+  renderHook(() => useShellBindings({ session, actions: actions as unknown as ShellActions }));
   return captured.shortcuts;
 }
 
@@ -39,7 +41,7 @@ beforeEach(() => {
   shellStore.set(initialShellState());
   exportStore.set(initialExportState());
   session = new SessionStore();
-  editing = true;
+  gate.editing = true;
   viewer = { setZoom: vi.fn(), goToPage: vi.fn() };
   actions = {
     openViaPicker: vi.fn(async () => undefined),
@@ -144,10 +146,10 @@ describe('shell bindings', () => {
 
   it('declines find and replace unless editing is allowed when the key is pressed', () => {
     const shortcuts = mount();
-    editing = false;
+    gate.editing = false;
     expect(shortcuts.findReplace?.()).toBe(false);
     expect(actions.openDialog).not.toHaveBeenCalled();
-    editing = true;
+    gate.editing = true;
     expect(shortcuts.findReplace?.()).toBe(true);
     expect(actions.openDialog).toHaveBeenCalledWith('find-replace');
   });

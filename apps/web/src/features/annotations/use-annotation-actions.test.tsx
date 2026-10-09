@@ -37,21 +37,12 @@ let tab: SessionTab;
 let handle: PdfDocumentHandle;
 let entries: { id: string; value: Record<string, unknown> }[];
 let api: ViewerApi;
-const setHandle = vi.fn();
 
 function hostWith(overrides: Partial<AnnotationHost> = {}): AnnotationHost {
   return {
     session,
     t,
     viewer: { current: api },
-    cancel: { current: null },
-    contextFor: ((forTab: SessionTab, forHandle: PdfDocumentHandle) => ({
-      store: session,
-      t,
-      tab: forTab,
-      handle: forHandle,
-    })) as never,
-    setHandle,
     ...overrides,
   };
 }

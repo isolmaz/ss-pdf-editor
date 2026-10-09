@@ -13,7 +13,15 @@ import { noticeLine, verificationNotices } from '../../notices';
 import { downloadFiles } from '../../operations';
 import { ensureWriteAccess } from '../../recent-handles';
 import type { SaveStepDescription } from '../../save-plan';
-import { clearNotice, isBusy, setBusy, showNotice } from '../core/core-store';
+import {
+  beginOperation,
+  clearNotice,
+  endOperation,
+  isBusy,
+  refuseBusy,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
 import type { PreparedOutput } from './prepare-output';
 import { isSaveLocked, saveLocked, saveReleased } from './save-store';
 
@@ -21,10 +29,6 @@ import { isSaveLocked, saveLocked, saveReleased } from './save-store';
 export interface SaveHost {
   readonly session: SessionStore;
   readonly t: Translator;
-  /** The running operation's controller; a save registers itself here while it holds the document. */
-  readonly cancelRef: { current: AbortController | null };
-  /** Say that a gesture was refused because an operation is running. */
-  readonly refuseBusy: () => void;
   /** The checked bytes of `tabId`'s current version (`prepareOutput`), or `null` when it said why not. */
   readonly prepareOutput: (
     tabId: string,
@@ -48,11 +52,11 @@ function failureLine(error: unknown, t: Translator): string {
  * version was written.
  */
 export async function saveDocument(host: SaveHost, tabId: string | undefined): Promise<boolean> {
-  const { session, t, cancelRef, refuseBusy, prepareOutput } = host;
+  const { session, t, prepareOutput } = host;
   const tab = session.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
   if (tab === null) return false;
   if (isSaveLocked() || isBusy()) {
-    refuseBusy();
+    refuseBusy(t);
     return false;
   }
 
@@ -64,8 +68,7 @@ export async function saveDocument(host: SaveHost, tabId: string | undefined): P
    * other already replaced. The `finally` below releases it on every path,
    * including cancellation.
    */
-  const controller = new AbortController();
-  cancelRef.current = controller;
+  const controller = beginOperation();
   saveLocked();
   clearNotice();
   setBusy(true);
@@ -164,7 +167,7 @@ export async function saveDocument(host: SaveHost, tabId: string | undefined): P
     showNotice(failureLine(error, t));
     return false;
   } finally {
-    if (cancelRef.current === controller) cancelRef.current = null;
+    endOperation(controller);
     saveReleased();
     setBusy(false);
   }
@@ -176,17 +179,16 @@ export async function saveDocument(host: SaveHost, tabId: string | undefined): P
  * *this* file, not the bytes the user opened.
  */
 export async function exportDocument(host: SaveHost, tabId: string | undefined): Promise<void> {
-  const { session, t, cancelRef, refuseBusy, prepareOutput } = host;
+  const { session, t, prepareOutput } = host;
   // Read the tab at call time like every other entry point: the export must write
   // the version the user is looking at, not the one the rendering control saw.
   const tab = session.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
   if (tab === null) return;
   if (isBusy()) {
-    refuseBusy();
+    refuseBusy(t);
     return;
   }
-  const controller = new AbortController();
-  cancelRef.current = controller;
+  const controller = beginOperation();
   setBusy(true);
   try {
     const prepared = await prepareOutput(tab.id, controller);
@@ -221,7 +223,7 @@ export async function exportDocument(host: SaveHost, tabId: string | undefined):
   } catch (error) {
     showNotice(failureLine(error, t));
   } finally {
-    if (cancelRef.current === controller) cancelRef.current = null;
+    endOperation(controller);
     setBusy(false);
   }
 }

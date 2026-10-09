@@ -5,13 +5,15 @@ import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { type JsonValue, SessionStore, type SessionTab } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import { type MarkTarget, markTargetKey } from 'pdf-ui/tools';
+import type { ViewerApi } from 'pdf-ui/viewer';
 import { type Mock, vi } from 'vitest';
 import type { MarkedRedaction } from '../../annotation-interaction';
-import type { DocumentContext, PendingOverlays } from '../../operations';
+import type { PendingOverlays } from '../../operations';
 import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
 import { formsStore, initialFormsState } from '../forms/forms-store';
+import { initialSaveState, saveStore, viewerChanged } from '../save/save-store';
 import { initialSelectionState, selectionStore } from '../selection/selection-store';
 import type { MarksHost } from './host';
 import { initialMarksState, marksStore } from './marks-store';
@@ -96,12 +98,19 @@ export interface MarksWorld {
   readonly session: SessionStore;
   readonly tab: SessionTab;
   readonly handle: PdfDocumentHandle;
-  readonly host: MarksHost & {
-    readonly canEdit: { current: boolean };
-    readonly setHandle: Mock;
-    readonly refuseBusy: Mock;
-    readonly checkpointEngineValues: Mock;
-  };
+  readonly host: MarksHost & { readonly checkpointEngineValues: Mock };
+}
+
+/**
+ * Let the world's document be edited (the viewer shows its engine handle, `shown` when an
+ * operation has since swapped it), or take that away.
+ */
+export function setEditable(
+  world: Pick<MarksWorld, 'handle'>,
+  editable: boolean,
+  shown: PdfDocumentHandle = world.handle,
+): void {
+  viewerChanged(editable ? ({ document: shown } as unknown as ViewerApi) : null);
 }
 
 /**
@@ -110,6 +119,7 @@ export interface MarksWorld {
  */
 export function marksWorld(overrides: Partial<MarksHost> = {}): MarksWorld {
   coreStore.set(initialCoreState());
+  saveStore.set(initialSaveState());
   annotationsStore.set(initialAnnotationsState());
   formsStore.set(initialFormsState());
   marksStore.set(initialMarksState());
@@ -129,18 +139,10 @@ export function marksWorld(overrides: Partial<MarksHost> = {}): MarksWorld {
   const host = {
     session,
     t,
-    cancel: { current: null },
-    canEdit: { current: true },
-    contextFor: (forTab: SessionTab, forHandle: PdfDocumentHandle): DocumentContext => ({
-      store: session,
-      t,
-      tab: forTab,
-      handle: forHandle,
-    }),
-    setHandle: vi.fn(),
-    refuseBusy: vi.fn(),
     checkpointEngineValues: vi.fn(async () => false),
     ...overrides,
   } as MarksWorld['host'];
-  return { session, tab, handle, host };
+  const world = { session, tab, handle, host };
+  setEditable(world, true);
+  return world;
 }
