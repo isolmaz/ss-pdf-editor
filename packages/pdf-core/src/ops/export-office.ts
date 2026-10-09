@@ -913,13 +913,29 @@ function tableXml(grid: Grid, column: Column, context: DocxContext): string {
   const span = (from: number, count: number) =>
     Math.round(widths.slice(from, from + count).reduce((sum, width) => sum + width, 0) * TWIPS);
   const indent = Math.max(0, (table.xs[0] as number) - column.left);
-  // A table read from the spacing of the text had no rules, and gets none.
-  const border = table.ruled
-    ? '<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
-    : '<w:{side} w:val="nil"/>';
+  // A table read from the spacing of the text had no rules, and gets none; a ruled one
+  // draws the sides of each cell that have a rule along them (`tcBorders`), not a full grid.
   const borders = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
-    .map((side) => border.replace('{side}', side))
+    .map((side) => `<w:${side} w:val="nil"/>`)
     .join('');
+  const drawn = (cell: TableCell, row: number) => {
+    const { borders: sides } = cell;
+    if (sides === undefined) return '';
+    // In a cell merged down, the row it continues in has its top inside the cell and, but
+    // in the last row, its bottom too: only the region's own edges are drawn.
+    const lines = {
+      top: sides.top && row === cell.row,
+      left: sides.left,
+      bottom: sides.bottom && row === cell.row + cell.rowSpan - 1,
+      right: sides.right,
+    };
+    const xmlSides = (['top', 'left', 'bottom', 'right'] as const).map((side) =>
+      lines[side]
+        ? `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`
+        : `<w:${side} w:val="nil"/>`,
+    );
+    return `<w:tcBorders>${xmlSides.join('')}</w:tcBorders>`;
+  };
   const out: string[] = [
     '<w:tbl><w:tblPr>',
     `<w:tblW w:w="${span(0, columns)}" w:type="dxa"/>`,
@@ -952,6 +968,7 @@ function tableXml(grid: Grid, column: Column, context: DocxContext): string {
         columnSpan > 1 ? `<w:gridSpan w:val="${columnSpan}"/>` : '',
         start !== undefined && start.rowSpan > 1 ? '<w:vMerge w:val="restart"/>' : '',
         above !== undefined ? '<w:vMerge/>' : '',
+        drawn(cell, row),
       ].join('');
       let body = '<w:p/>';
       if (start !== undefined) {

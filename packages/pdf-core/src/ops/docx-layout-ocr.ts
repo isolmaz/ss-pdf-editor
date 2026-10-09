@@ -32,16 +32,18 @@ import {
   textPictures,
   wordsInPicture,
 } from './docx-layout-mixed';
-import { chooseOpenFont, type OpenFonts, ocrAdvance } from './docx-ocr-font';
+import { chooseOpenFont, type OpenFont, type OpenFonts, ocrAdvance, settleReadings } from './docx-ocr-font';
 import { cappedPerPoint } from './docx-pages';
 import type { PageScene, SceneImage, SceneItem, SceneShape, TextBox } from './layout-scene';
 import { readPageScene } from './layout-scene-read';
+import { turnBoxes, uprightScan } from './ocr-preprocess';
 import { type ReadWord, refineWords } from './ocr-refine';
 import {
   dropDuplicates,
   dropEdgeMarks,
   dropMisreads,
   eraseRules,
+  eraseRulesTurned,
   eraseWords,
   findUnderlines,
   markWords,
@@ -63,6 +65,8 @@ export interface OcrOptions {
   readonly readWord?: ReadWord;
   /** Whether `readWord` with `'english'` reads with another set of languages than with `'all'` (not when English is the only one, or not among them); default no. */
   readonly englishAlone?: boolean;
+  /** How many scanned pages the writer reads at a time, the recogniser being able to read as many side by side; default 1. */
+  readonly concurrency?: number;
 }
 
 /** A scan is read at its own resolution within these bounds, dpi. */
@@ -220,7 +224,9 @@ interface OcrRead {
   readonly words: readonly OcrWord[];
   readonly duplicates: readonly OcrWord[];
   readonly rules: readonly Rule[];
+  /** The upright copy as read (rules erased) and, for a crooked scan, the scan with them erased too. */
   readonly image: RgbaImage;
+  readonly picture: RgbaImage;
 }
 
 /** The words `ocr` reads off the rendered page, `null` when it cannot run (the caller keeps the page as it was). */
@@ -230,8 +236,10 @@ async function readWords(
   firstPng: Uint8Array,
   ocr: OcrOptions,
   signal: AbortSignal,
+  turn: { readonly picture: RgbaImage; readonly angle: number } | null = null,
 ): Promise<OcrRead | null> {
   let image = firstImage;
+  let picture = turn?.picture ?? firstImage;
   let png = firstPng;
   const recognise = async (): Promise<readonly OcrWord[] | null> => {
     try {
@@ -249,6 +257,7 @@ async function readWords(
   // Rules under words (links) make tesseract misread them: the page is read again without them.
   const rules = findUnderlines(image, read);
   if (rules.length > 0) {
+    if (turn !== null) picture = eraseRulesTurned(image, rules, picture, turn.angle);
     image = eraseRules(image, rules);
     png = pngOf(mupdf, image);
     read = (await recognise()) ?? read;
@@ -273,10 +282,21 @@ async function readWords(
   );
   throwIfAborted(signal);
   // Words read twice are dropped from the text, but their ink is erased all the same.
-  return { words, duplicates: [...read.filter((word) => !unique.includes(word)), ...marks], rules, image };
+  return {
+    words,
+    duplicates: [...read.filter((word) => !unique.includes(word)), ...marks],
+    rules,
+    image,
+    picture,
+  };
 }
 
-/** The words as positioned text boxes, set in the stand-in that fits their boxes best, or in the open family they appear to be set in (`chooseOpenFont`). */
+/**
+ * The words as positioned text boxes (in the frame of `image`), set in the stand-in that fits their
+ * boxes best, or in the open family they appear to be set in (`chooseOpenFont`); a word the second
+ * look read two ways is drawn in the page's face once per reading, and the ink that lies on the scan
+ * best is the word (`settleReadings`), with the page set again with those.
+ */
 async function setWords(
   mupdf: Mupdf,
   image: RgbaImage,
@@ -285,14 +305,19 @@ async function setWords(
   solid: readonly Box[],
   rules: readonly Rule[],
   fonts: OpenFonts,
-): Promise<ReturnType<typeof ocrTextBoxes>> {
-  // The words as set tell whether the scan is in one of the open families, and then the page is
-  // set again in that family's own advances.
-  const set = ocrTextBoxes(words, image, lowConfidence, solid, ocrAdvance(null), undefined, rules);
+): Promise<{ boxes: TextBox[]; flagged: ReturnType<typeof ocrTextBoxes>['flagged'] }> {
+  const setIn = (read: readonly OcrWord[], open: OpenFont | null) =>
+    ocrTextBoxes(read, image, lowConfidence, solid, ocrAdvance(open), open?.name, rules);
+  let set = setIn(words, null);
   const open = await chooseOpenFont(mupdf, image, set.measured, fonts);
-  return open === null
-    ? set
-    : ocrTextBoxes(words, image, lowConfidence, solid, ocrAdvance(open), open.name, rules);
+  if (open !== null) set = setIn(words, open);
+  const settled = settleReadings(mupdf, image, set.unsettled, set.family, open);
+  if (settled.size > 0)
+    set = setIn(
+      words.map((word) => ({ ...word, ...settled.get(word) })),
+      open,
+    );
+  return { boxes: set.boxes, flagged: set.flagged };
 }
 
 /** Whether any pixel of the picture is see-through. */
@@ -472,21 +497,40 @@ export async function readScanPage(
   // The PNG goes to the recogniser only for a whole scan read by OCR; a mixed page sends its masked render.
   const scan = renderScan(mupdf, page, scanDpi(scene), !mixed && !useLayer && ocr !== null);
   const masked = maskBoxes(scan.image, visible);
+  // Read now: the page is not used after the first wait (a page read beside this one uses the document).
+  const shapes = shapesOnPage(mupdf, page, scene);
   const inked = inkBoxes(masked, pictureBoxes(scene));
   if (mixed && !useLayer && inked.length === 0) return null;
-  let image = masked;
   // A layer word under a patch in the render (an opaque annotation, a picture over the scan) is not on the page.
   let words: readonly OcrWord[] = dropCovered(layer, masked);
+  let image = masked;
+  // A crooked scan is read on an upright copy (`ocr-preprocess.ts`): the recogniser cuts its lines
+  // and the table reader groups its rows on level text. Everything made from the words — the
+  // lines, the paragraphs, the boxes — is in the copy's frame, `image`; the scan itself, `picture`,
+  // keeps its pixels and gives the background, and the text boxes are put on it turned by the
+  // skew angle at the end. A level scan, a page with a text layer and a page with real text over
+  // the scan (its masks and boxes are in the page's own frame) are read as they are.
+  const upright = !useLayer && !mixed && ocr !== null ? uprightScan(masked) : null;
+  let picture = masked;
+  image = upright?.image ?? masked;
+  // Words read twice are dropped from the text, but their ink is erased all the same.
   let duplicates: readonly OcrWord[] = [];
   let rules: readonly Rule[] = [];
   let reread = false;
   let fromOcr = false;
   if (!useLayer && ocr !== null) {
     throwIfAborted(signal);
-    const read = await readWords(mupdf, masked, mixed ? pngOf(mupdf, masked) : scan.png, ocr, signal);
+    const read = await readWords(
+      mupdf,
+      image,
+      upright === null ? (mixed ? pngOf(mupdf, masked) : scan.png) : pngOf(mupdf, image),
+      ocr,
+      signal,
+      upright === null ? null : { picture, angle: upright.angle },
+    );
     if (read === null && layer.length === 0) return null;
     if (read !== null) {
-      ({ words, duplicates, rules, image } = read);
+      ({ words, duplicates, rules, image, picture } = read);
       reread = layer.length > 0;
       fromOcr = true;
     }
@@ -506,16 +550,30 @@ export async function readScanPage(
   provideStandardMetrics(mupdf);
   const misread = misreadWords(words);
   const text = words.filter((word) => !misread.has(word));
-  const first = ocrBackground(image, [...text, ...duplicates]);
+  const turn = upright === null ? undefined : { scan: picture, angle: upright.angle };
+  const first = ocrBackground(image, [...text, ...duplicates], turn);
   const kept = dropMisreads(
     words,
     first.regions.map((region) => region.box),
     misread,
   );
   const { pageColor, regions } =
-    kept.length === text.length ? first : ocrBackground(image, [...kept, ...duplicates]);
+    kept.length === text.length ? first : ocrBackground(image, [...kept, ...duplicates], turn);
   const solid = regions.filter((region) => region.solid).map((region) => region.box);
-  const { boxes, flagged } = await setWords(mupdf, image, kept, ocr?.lowConfidence ?? 0, solid, rules, fonts);
+  const { boxes: set, flagged } = await setWords(
+    mupdf,
+    image,
+    kept,
+    ocr?.lowConfidence ?? 0,
+    solid,
+    rules,
+    fonts,
+  );
+  // Put back on the scan: each box turned by the skew about the page centre (a slanted line's box).
+  const boxes =
+    upright === null
+      ? set
+      : turnBoxes(set, upright.angle, image.width / (2 * image.scale), image.height / (2 * image.scale));
   const background: SceneShape = {
     kind: 'shape',
     box: [0, 0, scene.width, scene.height],
@@ -526,13 +584,13 @@ export async function readScanPage(
   const pictures = regions.map(
     (region): SceneImage => ({
       kind: 'image',
-      box: region.box,
+      box: region.placed,
       data: pngOf(mupdf, region.rgba),
       mime: 'image/png',
     }),
   );
   return {
-    items: [background, ...pictures, ...shapesOnPage(mupdf, page, scene)],
+    items: [background, ...pictures, ...shapes],
     boxes,
     flagged,
     regions: pictures.length,
