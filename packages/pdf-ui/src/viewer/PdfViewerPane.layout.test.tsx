@@ -147,4 +147,59 @@ describe('PdfViewerPane layout notification', () => {
     await tick();
     expect(onLayoutChange).toHaveBeenCalledTimes(rewritten + 1);
   });
+
+  it('says nothing for a pane that unmounted between the layout and the frame', async () => {
+    const onLayoutChange = vi.fn();
+    const { unmount } = render(
+      <PdfViewerPane
+        document={handleOf('upright')}
+        documentKey="tab"
+        t={t}
+        onLayoutChange={onLayoutChange}
+      />,
+    );
+    const bus = await busOf(0);
+    await tick();
+    const opened = onLayoutChange.mock.calls.length;
+
+    await act(async () => bus.dispatch('pagesinit'));
+    unmount();
+    await tick();
+    expect(onLayoutChange).toHaveBeenCalledTimes(opened);
+  });
+
+  it('says nothing for a stack a rewrite froze between the layout and the frame, and still does for its replacement', async () => {
+    const onLayoutChange = vi.fn();
+    const pane = (document: PdfDocumentHandle) => (
+      <PdfViewerPane document={document} documentKey="tab" t={t} onLayoutChange={onLayoutChange} />
+    );
+    const { rerender } = render(pane(handleOf('upright')));
+    const first = await busOf(0);
+    await tick();
+    const opened = onLayoutChange.mock.calls.length;
+
+    // The first stack has laid out and painted, and the document is rewritten before the frame.
+    await act(async () => first.dispatch('pagesinit'));
+    await act(async () => first.dispatch('pagerendered', { pageNumber: 1 }));
+    rerender(pane(handleOf('turned')));
+    const second = await busOf(1);
+    await tick();
+    expect(onLayoutChange).toHaveBeenCalledTimes(opened);
+
+    await act(async () => second.dispatch('pagesinit'));
+    await tick();
+    expect(onLayoutChange).toHaveBeenCalledTimes(opened + 1);
+  });
+
+  it('keeps working without a layout callback', async () => {
+    const onReady = vi.fn();
+    render(<PdfViewerPane document={handleOf('upright')} documentKey="tab" t={t} onReady={onReady} />);
+    const bus = await busOf(0);
+    await tick();
+
+    await act(async () => bus.dispatch('pagesinit'));
+    await tick();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(onReady).toHaveBeenCalledWith(expect.objectContaining({ getZoom: expect.any(Function) }));
+  });
 });
