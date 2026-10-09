@@ -72,7 +72,10 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
   const currentPage = useSave((state) => state.currentPage);
   // The overlays follow the pages' layout, which they can only be placed on once the viewer is there:
   // a layout the viewer reports before it has handed back its API has nothing to redraw.
-  useSave((state) => (state.viewer === null ? 0 : state.layoutRevision));
+  // The revision is a value the overlay depends on, handed to the layer that reads the pages'
+  // geometry as it renders: the compiler keeps the overlay's elements while their props are the
+  // same, and the viewer object they hold is the same across layouts.
+  const layout = useSave((state) => (state.viewer === null ? 0 : state.layoutRevision));
   const selectedKeys = useSelection((state) => state.selectedKeys);
   const markTargets = useMarks((state) => state.targets);
   const visibleMarks = useVisibleMarks(activeTab);
@@ -202,7 +205,7 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
               {/* The accessibility panel's numbered reading-order boxes. */}
               {rightDock && rightTab === 'accessibility' ? (
                 <Suspense fallback={null}>
-                  <ReadingOrderLayer t={t} viewer={viewer} />
+                  <ReadingOrderLayer t={t} viewer={viewer} layout={layout} />
                 </Suspense>
               ) : null}
             </>

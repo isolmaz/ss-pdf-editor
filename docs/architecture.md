@@ -1453,7 +1453,12 @@ an external store (`useSyncExternalStore`), because the panel is re-mounted for 
 revision of the document and the overlay lives three components away. The overlay
 (`ReadingOrderLayer.tsx`) is mounted in the viewer's `overlay` slot while the accessibility
 tab is open and draws numbered boxes from the store, mapping `/Rotate` itself; it reads no
-file. `TagsView` keeps the user's work as a list of `StructEdit`s (the tree on screen is
+file. It places the boxes against the viewer's geometry as read while it renders, and the
+viewer is one long-lived object, so the shell hands it the layout revision (`layout`) and the
+layer takes its readings through a call that has the revision as an argument: the React
+Compiler memoizes a call on its arguments, and a layer that read `viewer.pageRect()` directly
+would keep the first reading after a zoom or a turned page. `TagsView` keeps the user's work
+as a list of `StructEdit`s (the tree on screen is
 `applyStructureEdits(base, edits)`, the same function the writer verifies against) and
 writes once on **Apply**; for an untagged file it shows the content order and applies
 `tagDocument({ plan })` plus the artifact fix. The Dock's `wide` prop gives the tab a

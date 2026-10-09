@@ -162,7 +162,8 @@ vi.mock('pdf-ui/ui', async (original) => {
 vi.mock('pdf-ui/panels', async () => {
   const { createElement } = await import('react');
   return {
-    ReadingOrderLayer: () => createElement('section', { 'aria-label': 'reading order' }),
+    ReadingOrderLayer: (props: { layout: number }) =>
+      createElement('section', { 'aria-label': 'reading order', 'data-layout': String(props.layout) }),
   };
 });
 vi.mock('../marks/RedactionSurfaces', async () => {
@@ -603,5 +604,19 @@ describe('ViewerArea', () => {
     expect(screen.queryByLabelText('reading order')).toBeNull();
     act(() => coreStore.set({ rightTab: 'accessibility', rightDock: false }));
     expect(screen.queryByLabelText('reading order')).toBeNull();
+  });
+
+  it('hands the reading-order layer the layout revision, so its boxes follow every layout the pages take', async () => {
+    const user = userEvent.setup();
+    openTab();
+    viewerChanged(viewer);
+    coreStore.set({ rightDock: true, rightTab: 'accessibility' });
+    mount();
+    const layer = await screen.findByLabelText('reading order');
+    const shown = Number(layer.getAttribute('data-layout'));
+    await user.click(screen.getByRole('button', { name: 'layout' }));
+    expect(layer.getAttribute('data-layout')).toBe(String(shown + 1));
+    await user.click(screen.getByRole('button', { name: 'layout' }));
+    expect(layer.getAttribute('data-layout')).toBe(String(shown + 2));
   });
 });
