@@ -324,7 +324,7 @@ the same certificate twice is one entry.
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
-| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
+| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
 | `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
@@ -405,7 +405,15 @@ had to stay green. The moves, and the defects they fixed on the way:
   - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
     paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
-    rule between two cells merges them). Tables without rules come from runs of rows that
+    rule between two cells merges them, unless that would make a region that runs into
+    a cell already placed, which then stays single). A rule group whose outer border is not
+    drawn is completed with an undrawn grid line at that side, but only along an axis that
+    already has two lines of its own, at a side that two rules reach, and when the strip holds
+    a line of text that lies wholly in it and is a quarter as deep as the cell next to it, or
+    is half as deep: a divider crossed by one rule, a heading between two rules, or rules that
+    overshoot by a few points are not a lattice. The Word table carries no table-wide borders
+    (`tblBorders` all `nil`); each cell gets `tcBorders` for the sides a rule covers by 75 % or
+    more, so the undrawn edges stay blank. Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
@@ -614,6 +622,38 @@ had to stay green. The moves, and the defects they fixed on the way:
          and without a layer `readScanPage` returns `null`, the page keeps its pictures, and
          `ocrUnavailable` lists it; a recogniser that throws (a language pack missing, offline,
          a crashed worker) does the same, and only the reader's own cancel stops the export.
+       - *Crooked scans* (`ops/ocr-preprocess.ts`). Before the recogniser runs, `uprightScan`
+         measures the skew of the render (projection profile of the ink on a copy of at most
+         1100 px: ink pixels without pictures, the outer 3 % and every piece of ink — 8-connected —
+         longer than a tenth of the page's long side, which is a rule, a frame or a card's edge and
+         would out-vote the lines of text by being one straight stroke, or at most 2 px high and
+         at least 4 wide, a dash of a dashed rule or a hairline fragment; at most 60 000 points,
+         projected across the lines for angles of ±6° in 0.5° and then 0.05° steps, the sharpest
+         histogram wins). The page is turned only when there are at least 2000 points (a page
+         number measures noise), |angle| is 0.3°–5.9° and the best score is at least 2.5 × the
+         mean of the coarse scores (level text pages measure 4–22 and the rough sample 4, a sheet of
+         text running up the page 1.4–2.0, a lone page number 1.7–2.1); otherwise `null`, and the
+         page is read exactly as before. The limit that remains is a dashed or dotted rule at
+         another angle than the text that is thicker than a sliver: measured on level 12 pt text
+         beside a 5-inch rule crooked by 3° or 1°, 1 pt dashes still turn pages of 5 lines or
+         fewer and of eight lines of 12 characters, and 2–3 pt dashes pages of up to eight lines
+         of 25 characters; eight lines of 43 characters held against every dash tried. A turned page is read on an *upright copy* (the render turned about
+         the page centre on the same canvas, bilinear, the corners that come in repeating the
+         nearest edge pixel): the recogniser, the underline search, the second look, the words'
+         lines and paragraphs and the table reader's rows (which group by baseline) are all in
+         the copy's frame. The scan itself keeps its pixels: `ocrBackground(image, words, turn)`
+         finds the page colour and the regions on the copy but paints each word's fill on the
+         scan where it lands (a scan pixel takes the colour when its centre, turned back, is
+         inside the fill's box: the quad, so the lines beside a skewed word are not touched; the
+         ring colour and the ripple growth are the copy's), cuts the pictures from that erased
+         scan and places them by `placed`, the box of the scan that holds the region;
+         `eraseRulesTurned` does the same for an underline. At the end `turnBoxes` puts each text
+         box on the scan: its centre goes where the page centre's rotation by the skew puts it,
+         `rotation` is the skew angle (0–360, clockwise, as a slanted line's), and the letters'
+         positions move with the frame; `textBoxXml` writes it as a frame turned by `a:xfrm rot`
+         like a slanted PDF line, so the text sits on the scan's own lines, which Word draws
+         turned and LibreOffice draws level at the same centre. A page read from its own text
+         layer is never turned.
        - *Underlines.* Rules under words make Tesseract misread them (a link's underline cuts
          the descenders). `findUnderlines` looks, for every word of at least two letters or
          digits and at least 1.2 × its height wide, at the rows from 0.35 × its height above its
@@ -659,6 +699,24 @@ had to stay green. The moves, and the defects they fixed on the way:
             the first reading's when both are the same length. Each read sets its own mode for
             that call only (8 for a word, 3 for an export page) and the shared worker is left in
             the engine's default single-block mode (6), which "Make searchable" reads in.
+         4. *Other readings.* What lost in 2 and 3 stays with the word as `OcrWord.alternatives`, each
+            with the confidence it was read at: the first read when a reread or the capitals
+            replaced it, and a reread that was not taken (another shape, or less sure). Once the page's face is known (the open family's regular
+            or the stand-in's base-14 face), `settleReadings` (`docx-ocr-font.ts`, `chooseReadings`
+            in `ocr-font-match.ts`) draws every reading of such a word at its box and size and
+            lays it over the ink of the scan like the family match does (shape, with the proportions
+            of the ink box, so a reading of another length cannot be stretched into place; unlike
+            the family match, which takes a median over many words, one word decides here, so the
+            drawing is also tried on boxes a pixel wider, narrower, taller and shorter than the
+            ink's and the best stands: a pixel more or less in a trimmed box is not a reading); a
+            reading other than the settled one replaces it only when it scores 0.15 higher
+            (`READING_MARGIN`: "9020" for "%20" where the scan has a 9, not "i" for "l") and at
+            least 0.3 (`READING_FLOOR`: two drawings that do not lie on the ink are no evidence
+            however far apart), and only for words of 16 px to the em or more (`READING_MIN_EM`: at
+            a smaller size a pixel of tolerance is a tenth of the glyphs and the proportions stop
+            keeping another length out; those words keep their text), and the page is then set
+            again with that reading and the confidence it was read at, so the low-confidence flag
+            follows the text written. Only words the second look read have alternatives.
        - *Rules for what Tesseract returned.* `dropDuplicates` keeps, of two words overlapping by
          more than 30 % of the smaller box (one word read at two segmentations), the one whose
          box is larger (the surer when equal); the dropped ones are still erased from the
@@ -705,6 +763,17 @@ had to stay green. The moves, and the defects they fixed on the way:
          1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
          paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
          ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart.
+         The cells of a table never join a paragraph: rows are lines on one baseline (within
+         0.5 × the size), and consecutive rows form a table when at least 3 cells of each (2
+         for label and amount rows) stand under cells of the row above by left edge, right edge
+         or centre, the cells average at most 4 words, the rows are at most 4 × the size apart
+         (2 × for two cells), and there is a column of figures (more digits than letters: a
+         figure under a figure for 3 or more cells, the left-most or the right-most cell of
+         both rows for 2), so side-by-side lists of short lines stay columns. A line alone on its baseline keeps the table open only as the
+         second line of a wrapped cell (it continues a cell above by the paragraph rule); any
+         other line ends it. Every cell line is a paragraph of its own, and a table is one item
+         of the cut below, read row by row inside (`inRows` of its paragraphs), so an invoice's
+         descriptions are not read before its quantities.
          *Reading order* is by recursive cuts (`readingOrder`): the paragraphs are split at the
          widest horizontal gap no box crosses (the part above first) and at the widest vertical
          one (the part to the left first), a vertical cut counting only where the two parts
@@ -726,6 +795,10 @@ had to stay green. The moves, and the defects they fixed on the way:
          a speck (more than 1.3 × the size the word widths give) is set at 1.1 × the width-based
          size; a line within 0.88–1.1 × of its paragraph's upper-quartile size is set at that
          size, and sizes are rounded to half-points.
+         A paragraph's box starts where the middle of its lines' baselines says (each line's
+         baseline less its index × the line height the paragraph is set at, the median of them;
+         that is the scan's pitch unless the first line's size is larger, as Word sets it at the
+         size), so one line whose baseline Tesseract misjudged does not carry the box.
          The colour is the median of the word's ink pixels (those at least 60 % as far from the
          local background as its strongest pixel).
          *Bold* is per word. The stroke of a word is the mean of the shortest 60 % of its
@@ -786,15 +859,42 @@ had to stay green. The moves, and the defects they fixed on the way:
 - page boxes, resize, scale, shift, content rotation and auto-crop (`ops/page-boxes.ts`), where
   a content transform wraps the page's streams through `wrapPageContent` and auto-crop now
   measures on the document it edits instead of opening a second copy, and a page that needed no change is counted once in the unchanged-pages note (it used to be counted twice);
-- the rotation pass and the merge's metadata step after pdf.js `extractPages`
-  (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`; `compose.rotate` is now
+- the rotation pass, the repeated-page repair and the merge's metadata step after pdf.js
+  `extractPages` (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`; `compose.rotate` is now
   declared to the save verification (it may change `rotation`), where `pdf-lib.setRotation`
-  was an unknown step; the merge also counts the form field names used by more than one
-  document (`readFormFields` on each input) and reports `op.note.merge.sharedFields`, because
-  fields with one name share one value;
+  was an unknown step. A page repeated in a composition needs one pdf.js entry per copy level,
+  and each entry is its own document to the engine: it merges the outline once per entry and keeps a
+  GoTo link only when the target is inside the entry, so a copy lost its links and every bookmark
+  came back appended once per copy. The same MuPDF pass that turns pages therefore copies the
+  original's `/Link` annotations onto each copy (same rectangles, same targets) and deletes the
+  top-level bookmark subtrees the copy entries appended. Which items an entry repeats depends
+  on how the bookmark names its page: an explicit page array is valid only in the entry that
+  holds the page, but a named destination (`/Names /Dests` and a string `/Dest`, what hyperref,
+  Word and InDesign write), a URL or an action is valid in every entry, so pruning by "points
+  only at copies" left those repeated. A heading and its child that name their pages by
+  different mechanisms are left half-repeated: the entry keeps the heading without its array
+  destination for a named child, or the named heading without the child whose array points
+  elsewhere. The appended block is therefore found by what it says: each top-level subtree is
+  read as its titles, its targets (a copy's page read as the page it repeats; a link into
+  another file by its URI, since MuPDF also answers a page for it) and its nesting, and a
+  subtree goes when it is what a copy entry leaves of an earlier one — the same title, the
+  same target (or none, for a heading kept only for its children), and every child a repeat of
+  a child of the earlier subtree, so a bare or destination-less remainder goes with the equal
+  repeats. A bookmark with neither a destination nor a child is a genuine action and stays. A
+  bookmark whose internal destination MuPDF cannot resolve, or one nested past the structure
+  bound, is never removed, and only then does the report say the outline may still be
+  repeated (`op.note.compose.outlineCopies`); a document's own top-level bookmarks with the
+  same title and target, one a reduced copy of the other, collapse to one when a page is
+  repeated. A composition that repeats no page and turns none is still never rewritten; the merge opens the base and every added document with MuPDF once
+  (`readMergeInputs`) and takes the label ranges, the encryption and the form field names from
+  that one parse, checking the abort signal between documents. It reports
+  `op.note.merge.encryptionDropped` when a document had `/Encrypt`, because the merged file is
+  written without any protection, and counts the fully qualified field names used by more than
+  one document (`fieldNamesOf`; a field's widget kids without a `/T` of their own belong to
+  it) as `op.note.merge.sharedFields`, because fields with one name share one value;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
-  written) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
+  written, plus the planned page labels) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
   pages of another document inserted its *first* pages instead (the plan's slot index was
   handed to the engine as the page number), so "insert pages 3-4 of this file" put in 1-2;
 - imposition and the print layout (`ops/impose.ts`), where each source page is a form XObject
@@ -1258,6 +1358,12 @@ result, with the writer's real step ids.
 and both `protectDocument()` and `unlockDocument()` **re-open their own output and
 verify** (cipher and permissions for protect; page count plus a text sample for unlock),
 because a mis-authenticated MuPDF save writes undecryptable garbage instead of failing.
+Encrypting or unlocking rewrites the file, so a signed input (counted by
+`collectSignatureFields`, the collector `verifySignatures` uses: the `/AcroForm /Fields` tree plus
+signature widgets only a page's `/Annots` reach, once the password has opened the file) gets a
+`lost` note in the report: `op.note.security.signatureInvalidated` for protect,
+`op.note.security.signatureInvalidatedUnlock` for unlock. The download path never reaches the
+save plan's signature warning.
 The Security dialog's `resultKind` is `download`: the encrypted copy is handed over, never
 applied to the open document (a protected file is read-only in the editor, so applying it
 ended in a password prompt). A run may also overrule its dialog's `resultKind` for one result
@@ -2288,7 +2394,22 @@ the user just typed.
 
 Structural page actions (rotate, delete, duplicate, move, insert, replace) go through
 `composeDocument`, i.e. pdf.js `extractPages` on the live document, so annotations, form
-values, outlines and page labels travel with the pages. `planPageAction()` computes the new
+values and outlines travel with the pages. Page labels travel with them too, but only where the
+engine writes them: `extractPages` builds `/PageLabels` for a composition with a single source
+document (`#collectPageLabels` returns when `!isSingleFile`), so rotate, delete, duplicate and
+move keep them and a composition with a second source — insert and replace through
+`ops/page-insert.ts`, and `mergeDocuments` — would drop the tree. Those write it back themselves in
+their MuPDF pass (`composedLabelRanges` — `mergeDocuments` calls `composeLabelRanges` on the ranges
+it reads in its single pass over each input — and `replaceLabelRanges`, `ops/page-labels.ts`): every output
+page is mapped to its source page and keeps the label that source gave it, so the pages of the
+current document keep exactly the label they had, and an inserted or added page keeps its own
+document's label — its `/PageLabels`, or its decimal page number in that document when it has none
+(a blank page reads `1`). Ranges are emitted only where style, prefix or consecutive numbering
+breaks, and nothing is written when no contributing document has labels; the merge report
+measures the ranges in the file it produced and says `lost` if they are fewer than planned.
+A duplicated page keeps its links and the outline stays
+as it was, whether its bookmarks name pages by array or by name: the copies are repaired after the
+engine call (`ops/compose.ts`, listed with the MuPDF writers). `planPageAction()` computes the new
 page list purely, so the effect of an action on the page order is reviewable without
 rendering anything. Applying a result re-checks that the tab and working version it started
 from are still current; if not, the operation throws `aborted` and the model is untouched.
@@ -2571,7 +2692,8 @@ why. The rules:
 Check coverage and its honest edges: rotation and view box on every page; page text
 identity (size plus the head of the extracted text) positionally on every page up to 64
 pages and on first/middle/last above that; form names and values against the session's
-inventory; outline titles and page labels read from both documents. Two facts are reported
+inventory (fields that share a name, as a merge of two forms leaves them, are paired in
+document order); outline titles and page labels read from both documents. Two facts are reported
 `unsupported` **by construction** and never claimed: `annotations` (the reference's page
 annotations do not include the engine's pending annotation storage, so a count could not
 tell a dropped annotation from one this run is writing) and `signatures` (validity needs

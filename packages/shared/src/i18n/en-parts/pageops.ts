@@ -10,12 +10,18 @@ export const pageopsPart = {
     'Composition writes a new catalog: viewer preferences, language, output intents, layer (OCG) config and open action are not carried over.',
   'op.note.compose.rotation': 'Rotation applied to {count} page(s) (source rotation + requested angle).',
   'op.note.compose.outlineCopies':
-    'Outline tree repeated {copies} times due to duplicated pages (extractPages behavior).',
+    'Some bookmarks have a destination that could not be read, so the duplicated pages may have left them repeated up to {copies} times (extractPages behavior).',
   'op.note.compose.verified': 'Composition verified: {pages} page(s).',
   'op.note.merge.metadata':
     'Metadata from added documents not carried over; Info and XMP taken from base document.',
+  'op.note.merge.encryptionDropped':
+    'Password protection of the merged documents was not carried over; the merged file is unprotected.',
   'op.note.merge.structure':
     'Merged structure measured: {outline} bookmark(s), {labels} page label entries, {fields} form field(s).',
+  'op.note.merge.labels':
+    'Page labels: each page kept the label its own document gave it; pages of an added document without page labels are numbered 1, 2, … within that document.',
+  'op.note.merge.labelsLost':
+    'Page labels were planned as {expected} range(s), but the result retained {actual}.',
   'op.note.merge.outlineLost': 'Base document had {expected} bookmark(s), result retained {actual}.',
   'op.note.merge.sharedFields':
     '{count} form field name(s) appear in more than one merged document; fields with the same name now share one value.',

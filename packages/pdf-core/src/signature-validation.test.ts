@@ -155,9 +155,11 @@ describe('evaluateEvidence', () => {
 });
 
 describe('evaluateEvidence with several timestamp tokens', () => {
+  type Pki = Awaited<ReturnType<typeof pki>>;
+
   /** A CMS whose timestamp attribute carries every token given, in that order. */
-  async function stamped(tokens: (covered: Uint8Array) => Promise<Uint8Array[]>) {
-    const { ca, signer } = await pki();
+  async function stamped(setup: Pki, tokens: (covered: Uint8Array) => Promise<Uint8Array[]>) {
+    const { ca, signer } = setup;
     const base = await signedCms(signer, [ca], SIGNED_AT);
     const [first, ...rest] = await tokens(signatureValueOf(base));
     if (first === undefined) throw new Error('at least one token');
@@ -169,55 +171,59 @@ describe('evaluateEvidence with several timestamp tokens', () => {
     return { cms, signer, ca };
   }
 
-  const stampOf = async (covered: Uint8Array, genTime: Date, extra: { tsa?: CertificateFixture } = {}) => {
-    const { ca } = await pki();
-    const tsa = extra.tsa ?? (await pki()).tsa;
-    return await issueTimestampToken({ tsa, covered, genTime, extraCertificates: [ca] });
-  };
+  /** A token from the one TSA under the one CA of `setup`: a single PKI per test, not one per token. */
+  const stampOf = async ({ ca, tsa }: Pki, covered: Uint8Array, genTime: Date) =>
+    await issueTimestampToken({ tsa, covered, genTime, extraCertificates: [ca] });
 
-  it('uses the first token that verifies, and keeps it when a later one also verifies or fails', async () => {
-    const { tsa } = await pki();
+  // Four scenarios of real CMS building and verification: ~0.3 s alone, but over the 5 s default
+  // when the whole unit suite saturates the machine (the CPU-bound work is slowed ~15x).
+  it('uses the first token that verifies, and keeps it when a later one also verifies or fails', {
+    timeout: 60_000,
+  }, async () => {
+    // Every scenario shares this PKI: each `pki()` is six key generations and signatures, and
+    // building one per token made the test take 13 of them.
+    const setup = await pki();
     const wrong = new Uint8Array([1, 2, 3]);
     // A bad token first: the good one after it wins.
-    const badFirst = await stamped(async (covered) => [
-      await stampOf(wrong, day(2, 1), { tsa }),
-      await stampOf(covered, day(3, 2), { tsa }),
+    const badFirst = await stamped(setup, async (covered) => [
+      await stampOf(setup, wrong, day(2, 1)),
+      await stampOf(setup, covered, day(3, 2)),
     ]);
     const chosen = await evaluateEvidence(input(badFirst.cms, badFirst.signer, badFirst.ca));
     expect(chosen.timestamp?.status).toBe('valid');
     expect(chosen.timestamp?.genTime).toBe(day(3, 2).toISOString());
 
     // A good token first stays, whether the next one is good or bad.
-    const goodThenGood = await stamped(async (covered) => [
-      await stampOf(covered, day(3, 2), { tsa }),
-      await stampOf(covered, day(3, 3), { tsa }),
+    const goodThenGood = await stamped(setup, async (covered) => [
+      await stampOf(setup, covered, day(3, 2)),
+      await stampOf(setup, covered, day(3, 3)),
     ]);
     expect(
       (await evaluateEvidence(input(goodThenGood.cms, goodThenGood.signer, goodThenGood.ca))).timestamp
         ?.genTime,
     ).toBe(day(3, 2).toISOString());
-    const goodThenBad = await stamped(async (covered) => [
-      await stampOf(covered, day(3, 2), { tsa }),
-      await stampOf(wrong, day(3, 3), { tsa }),
+    const goodThenBad = await stamped(setup, async (covered) => [
+      await stampOf(setup, covered, day(3, 2)),
+      await stampOf(setup, wrong, day(3, 3)),
     ]);
     expect(
       (await evaluateEvidence(input(goodThenBad.cms, goodThenBad.signer, goodThenBad.ca))).timestamp?.genTime,
     ).toBe(day(3, 2).toISOString());
 
     // Nothing verifies: the first failing token is still reported, never silently dropped.
-    const allBad = await stamped(async () => [
-      await stampOf(wrong, day(2, 1), { tsa }),
-      await stampOf(new Uint8Array([9]), day(2, 2), { tsa }),
+    const allBad = await stamped(setup, async () => [
+      await stampOf(setup, wrong, day(2, 1)),
+      await stampOf(setup, new Uint8Array([9]), day(2, 2)),
     ]);
     const reported = await evaluateEvidence(input(allBad.cms, allBad.signer, allBad.ca));
-    expect(reported.timestamp?.status).not.toBe('valid');
+    expect(reported.timestamp).toMatchObject({ status: 'invalid', genTime: day(2, 1).toISOString() });
     expect(reported.validationTimeSource).not.toBe('timestamp');
   });
 
   it('ignores timestamp tokens when the signature value is unknown', async () => {
-    const { tsa } = await pki();
-    const { cms, signer, ca } = await stamped(async (covered) => [
-      await stampOf(covered, day(3, 2), { tsa }),
+    const setup = await pki();
+    const { cms, signer, ca } = await stamped(setup, async (covered) => [
+      await stampOf(setup, covered, day(3, 2)),
     ]);
     const outcome = await evaluateEvidence({ ...input(cms, signer, ca), signatureValue: null });
     expect(outcome.timestamp).toBeNull();

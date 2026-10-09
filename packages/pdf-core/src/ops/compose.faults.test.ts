@@ -13,8 +13,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 interface Plan {
   /** Runs on the document being written, just before it is saved. */
   tamper?: (document: PDFDocument) => void;
+  /** Runs on the document being written, right after each page-label range is written to it. */
+  afterLabels?: (document: PDFDocument) => void;
   /** A method of the document that throws when called. */
   trap?: { readonly method: string; readonly error: unknown };
+  /** Runs each time an opened document is asked for its metadata — the merge does that once per input. */
+  onMetaData?: () => void;
   /** What `countPages` answers instead of the real count. */
   pageCount?: number;
   /** What the n-th `loadMupdf` call (1-based) rejects with. */
@@ -39,6 +43,18 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
             if (property === state.trap?.method) {
               return () => {
                 throw state.trap?.error;
+              };
+            }
+            if (property === 'getMetaData' && state.onMetaData !== undefined) {
+              return (...args: Parameters<PDFDocument['getMetaData']>) => {
+                state.onMetaData?.();
+                return target.getMetaData(...args);
+              };
+            }
+            if (property === 'setPageLabels') {
+              return (...args: Parameters<PDFDocument['setPageLabels']>) => {
+                target.setPageLabels(...args);
+                state.afterLabels?.(target);
               };
             }
             if (property === 'setMetaData') {
@@ -76,6 +92,8 @@ const { openWithPdfjs } = await import('../engines/pdfjs-handle');
 
 afterEach(() => {
   state.tamper = undefined;
+  state.afterLabels = undefined;
+  state.onMetaData = undefined;
   state.trap = undefined;
   state.pageCount = undefined;
   state.failLoad = new Map();
@@ -193,6 +211,19 @@ describe('the structure a merge measures in the file it produced', () => {
   });
 });
 
+describe('the page labels a merge writes are checked against the plan', () => {
+  it('says the labels were lost when the file holds fewer ranges than were planned', async () => {
+    state.afterLabels = (doc) => doc.getTrailer().get('Root').delete('PageLabels');
+    const out = await merged(undefined, (doc) => doc.setPageLabels(0, 'D', 'A-', 1));
+    // `A-1` on the base page, then the added page counting on its own from `1`: two ranges.
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.merge.labelsLost')?.params).toEqual({
+      expected: 2,
+      actual: 0,
+    });
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.merge.labels');
+  });
+});
+
 describe('an engine failure while composing or merging', () => {
   it('refuses a merged document whose page count is not the one planned', async () => {
     state.pageCount = 5;
@@ -205,6 +236,40 @@ describe('an engine failure while composing or merging', () => {
     state.trap = { method: 'countPages', error: new Error('page tree is damaged') };
     const error = await refusal(merged());
     expect(error.details.engineMessage).toBe('mergeDocuments: page tree is damaged');
+  });
+
+  it('maps an engine failure while the inputs are read, naming the step', async () => {
+    state.trap = { method: 'getMetaData', error: new Error('info is damaged') };
+    const error = await refusal(merged());
+    expect(error.details.engineMessage).toBe('mergeDocuments: info is damaged');
+  });
+
+  it('opens each input once and stops between inputs when the signal aborts', async () => {
+    const controller = new AbortController();
+    let reads = 0;
+    state.onMetaData = () => {
+      reads += 1;
+      controller.abort();
+    };
+    await expect(
+      mergeDocuments(
+        { bytes: pages(1), pageCount: 1 },
+        [{ name: 'ek.pdf', bytes: pages(1), pageCount: 1 }],
+        0,
+        { signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    // The base was read (its encryption asked for once); the added document never was.
+    expect(reads).toBe(1);
+  });
+
+  it('opens each input of an uninterrupted merge exactly once', async () => {
+    let reads = 0;
+    state.onMetaData = () => {
+      reads += 1;
+    };
+    await merged();
+    expect(reads).toBe(2);
   });
 
   it('maps an engine failure while the composed page count is read back', async () => {
