@@ -57,8 +57,8 @@ export function findViewerDom(viewer: ViewerApi | null): ViewerDom | null {
   if (viewer === null) return null;
   const element = document.querySelector('.pdfViewer[data-active-viewer]');
   if (!(element instanceof HTMLElement)) return null;
-  const container = element.parentElement;
-  if (container === null) return null;
+  // A node `document.querySelector` returns sits under the document, so only `<html>` has no parent.
+  const container = element.parentElement as HTMLElement;
   const pages: ViewerPage[] = [];
   for (const page of element.querySelectorAll<HTMLElement>('.page[data-page-number]')) {
     const number = Number(page.dataset.pageNumber);
@@ -84,8 +84,8 @@ export function pageIndexAtTop(dom: ViewerDom): number {
   let found = 0;
   while (low <= high) {
     const index = (low + high) >> 1;
-    const page = dom.pages[index];
-    if (page === undefined) break;
+    // `low <= high` keeps `index` inside the page list.
+    const page = dom.pages[index] as ViewerPage;
     if (page.element.getBoundingClientRect().top <= middle) {
       found = index;
       low = index + 1;

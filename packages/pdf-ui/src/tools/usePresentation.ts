@@ -159,8 +159,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
 
   useEffect(() => {
     if (!active) return undefined;
-    const container =
-      viewerRef.current === null ? null : (findViewerDom(viewerRef.current)?.container ?? null);
+    const container = findViewerDom(viewerRef.current)?.container ?? null;
 
     /**
      * Entering full screen resizes the container, and pdf.js re-applies a
@@ -186,7 +185,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
 
     const move = (kind: MoveKind) => {
       const current = viewerRef.current;
-      const dom = current === null ? null : findViewerDom(current);
+      const dom = findViewerDom(current);
       if (current === null || dom === null || dom.pages.length === 0) return;
       const last = dom.pages.length - 1;
       const from = kind === 'next' || kind === 'previous' ? pageIndexAtTop(dom) : 0;
@@ -218,7 +217,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
 
     const onScroll = () => {
       const current = viewerRef.current;
-      const dom = current === null ? null : findViewerDom(current);
+      const dom = findViewerDom(current);
       if (dom === null) return;
       setPage(pageIndexAtTop(dom));
     };
