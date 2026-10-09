@@ -1,29 +1,13 @@
-import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
+import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 // The annotation and form ops are imported by **module**, not through the
 // package barrel: a barrel re-export keeps every operation module in the graph the
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
 // and the engine chunk it pulls in is what the ≤250 KiB budget is there to keep
 // out.
 import { readAnnotations } from 'pdf-core/ops/annotations';
-import {
-  CONVERT_ACCEPT,
-  CONVERT_PICKER_ACCEPT,
-  convertFormatOf,
-  formatLabel,
-  isImageName,
-  pdfNameFor,
-  unsupportedDocumentKind,
-} from 'pdf-core/ops/convert-formats';
 import { fieldValueText } from 'pdf-core/ops/form-value';
 import type { ProtectionState } from 'pdf-core/ops/security';
-import {
-  type JsonValue,
-  type SessionStore,
-  type SessionTab,
-  sha256Hex,
-  sourceKeyFor,
-  workingPageCount,
-} from 'pdf-model';
+import { type JsonValue, type SessionStore, type SessionTab, sha256Hex, workingPageCount } from 'pdf-model';
 import { checkDocumentLimits, createTranslator, detectDeviceTier, ToolError } from 'pdf-shared';
 import { lazy, Suspense } from 'react';
 
@@ -39,12 +23,8 @@ const SettingsDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.SettingsDialog };
 });
-const PasswordDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.PasswordDialog };
-});
 
-import { CaretLeft, CaretRight, Command, FilePdf, FolderOpen, GearSix } from '@phosphor-icons/react';
+import { CaretLeft, CaretRight } from '@phosphor-icons/react';
 import type { OperationOutcome } from 'pdf-core';
 import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
@@ -129,7 +109,6 @@ import {
   useCore,
 } from './features/core/core-store';
 import {
-  adoptHandle,
   dropHandle,
   handleFor,
   handleInUse,
@@ -187,10 +166,25 @@ import { useMarkActions, useWriterActions } from './features/marks/use-mark-acti
 import { MeasureOverlay } from './features/measure/MeasureOverlay';
 import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
 import { armMeasure, useMeasureMode } from './features/measure/measure-store';
+import { HomeHeader, OpenFileInput, PasswordPromptHost } from './features/open/OpenSurfaces';
+import { openAndFingerprint } from './features/open/open-actions';
+import {
+  awaitHomeCommand,
+  clearPageSelection,
+  dropHomeCommand,
+  hideStartScreen,
+  openStore,
+  selectAllPages,
+  selectedPagesNow,
+  selectPages,
+  showStartScreen,
+  useOpen,
+} from './features/open/open-store';
+import { useOpenActions } from './features/open/use-open-actions';
 import { usePageActions } from './features/pages/page-actions';
 import { persistDraft, saveDraft } from './features/persistence/draft-persist';
 import { forgetDraft } from './features/persistence/draft-vault';
-import { draftStorage, draftWrites } from './features/persistence/persistence-store';
+import { draftWrites } from './features/persistence/persistence-store';
 import { useDraftRecovery } from './features/persistence/use-draft-recovery';
 import { usePersistenceActions } from './features/persistence/use-persistence-actions';
 import { useDraftAutosave, useVaultChannel } from './features/persistence/use-vault-sync';
@@ -218,15 +212,8 @@ import {
   placeStamp as stampPlace,
   resizeStamp as stampResize,
 } from './features/stamps/stamp-actions';
-import { convertToPdf, imagesToPdf, inspectProtection, verifySignatures } from './lazy-ops';
-import {
-  appendWarning,
-  engineValuesNotices,
-  failureNotices,
-  noticeLine,
-  storedCopyWarning,
-  verificationNotices,
-} from './notices';
+import { inspectProtection, verifySignatures } from './lazy-ops';
+import { engineValuesNotices, failureNotices, noticeLine, verificationNotices } from './notices';
 import {
   type DocumentContext,
   downloadFiles,
@@ -237,8 +224,7 @@ import {
   verifyForWrite,
   type WriteVerification,
 } from './operations';
-import { addRecentDocument } from './recent';
-import { ensureWriteAccess, getRecentHandle, putRecentHandle, reopenFromHandle } from './recent-handles';
+import { ensureWriteAccess } from './recent-handles';
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
@@ -301,27 +287,6 @@ const ComparePanel = lazy(async () => {
   return { default: module.ComparePanel };
 });
 
-/**
- * Open a document with the engine and fingerprint its bytes, side by side — the two only
- * read the bytes, so neither waits for the other. `Promise.all` would reject on the first
- * failure and abandon the other half: a fingerprint that fails after the engine opened the
- * document left that handle (a pdf.js worker and its parsed document) alive with no owner.
- * Both halves are awaited here, a handle the other half's failure made useless is destroyed,
- * and the error thrown is the engine's when it failed (a password request is its answer), else
- * the fingerprint's.
- */
-async function openAndFingerprint(
-  opening: Promise<PdfDocumentHandle>,
-  fingerprinting: Promise<string>,
-): Promise<readonly [PdfDocumentHandle, string]> {
-  const [opened, fingerprint] = await Promise.allSettled([opening, fingerprinting]);
-  if (opened.status === 'fulfilled' && fingerprint.status === 'fulfilled') {
-    return [opened.value, fingerprint.value];
-  }
-  if (opened.status === 'fulfilled') await opened.value.destroy().catch(() => undefined);
-  throw opened.status === 'rejected' ? opened.reason : (fingerprint as PromiseRejectedResult).reason;
-}
-
 export function App({ store }: AppProps) {
   const { theme, setTheme } = useTheme();
   const { locale } = useLocale();
@@ -342,7 +307,6 @@ export function App({ store }: AppProps) {
     tRef.current = t;
   }, [t]);
   const saveLock = useRef(false);
-  const fileInput = useRef<HTMLInputElement | null>(null);
   const viewerApi = useRef<ViewerApi | null>(null);
   const cancelRef = useRef<AbortController | null>(null);
   const [zoom, setZoomState] = useState(1);
@@ -365,30 +329,9 @@ export function App({ store }: AppProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   /** Language, theme, interface mode, privacy and offline preferences — one dialog. */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showHomeScreen, setShowHomeScreen] = useState(true);
-  /**
-   * The command a home-screen tool promised to run once its document is open: the tool was
-   * picked first and the file asked for after, so the command waits for the tab.
-   */
-  const pendingHomeCommand = useRef<string | null>(null);
-  /** A file is being read and parsed: the overlay says so until its tab exists. */
-  const [opening, setOpening] = useState(false);
-  /**
-   * A protected file waiting for its open password, and whether the last one was refused.
-   * The file (and its handle, for save-in-place) is kept so the retry opens the same one.
-   */
-  const [passwordPrompt, setPasswordPrompt] = useState<{
-    readonly file: File;
-    readonly handle?: FileSystemFileHandle;
-    readonly incorrect: boolean;
-  } | null>(null);
-  /**
-   * Tabs opened with a password, and that password — **in memory only**, never in a
-   * draft. Such a tab is read-only: every writer re-opens the bytes it edits, and a
-   * protected file cannot be rewritten without dropping or re-applying its protection,
-   * a decision the user makes explicitly with "create unlocked copy".
-   */
-  const [lockedTabs, setLockedTabs] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const showHomeScreen = useOpen((state) => state.showHomeScreen);
+  const opening = useOpen((state) => state.opening);
+  const lockedTabs = useOpen((state) => state.lockedTabs);
   /**
    * **The one canvas tool.** Every surface
    * that can arm or stop a tool writes this value and nothing else — the left rail,
@@ -411,7 +354,7 @@ export function App({ store }: AppProps) {
   const rightDock = useCore((state) => state.rightDock);
   useCompactViewport();
   const rightTab = useCore((state) => state.rightTab);
-  const [selectedPages, setSelectedPages] = useState<readonly number[]>([]);
+  const selectedPages = useOpen((state) => state.selectedPages);
   const progress = useResults((state) => state.progress);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   /** The block the text tool picked, which travels to the dialog in the run context (`features/selection/`). */
@@ -630,353 +573,16 @@ export function App({ store }: AppProps) {
   useDraftAutosave({ session, store, persist: persistTabDraft, translator: tRef });
   useVaultChannel(store, session);
 
-  const openFile = useCallback(
-    async (file: File, fileHandle?: FileSystemFileHandle, password?: string) => {
-      clearNotice();
-      if (isBusy()) {
-        // A tool picked on the home screen waits for this document; an open refused never
-        // brings it, so the tool must not run on whatever is opened next.
-        pendingHomeCommand.current = null;
-        refuseBusy();
-        return;
-      }
-      const earlyVerdict = checkDocumentLimits(tier, 0, file.size);
-      setBusy(true);
-      setOpening(true);
-      try {
-        /**
-         * The size gate runs **inside** the guarded block. Thrown before it, the
-         * error escaped the function itself: the drop zone, the home screen and the file
-         * input all call this fire-and-forget, so an oversized file produced no notice at
-         * all — the one failure the limit exists to explain.
-         */
-        if (earlyVerdict.kind === 'blocked') {
-          throw new ToolError('file-too-large', { engine: 'model' });
-        }
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        // The fingerprint is independent of the open and only reads the bytes, so it
-        // runs alongside the engine instead of after it: on a 130 MB document that is
-        // a few hundred milliseconds off the path the user waits on.
-        const [handle, sha256] = await openAndFingerprint(
-          openWithPdfjs(bytes, password === undefined ? {} : { password }),
-          sha256Hex(bytes),
-        );
-        const fileVerdict = checkDocumentLimits(tier, handle.pageCount, bytes.byteLength);
-        if (fileVerdict.kind === 'blocked') {
-          await handle.destroy();
-          throw new ToolError(fileVerdict.reason === 'pages' ? 'page-limit' : 'file-too-large', {
-            engine: 'model',
-            ...(fileVerdict.reason === 'pages' ? { path: file.name } : {}),
-          });
-        }
-        // Read before the tab exists: it only needs the engine handle, and a rejection here
-        // is an open failure with nothing registered — the handle is released like the
-        // limit-blocked one above, and the original error is the one reported.
-        let encrypted: boolean;
-        try {
-          encrypted = (await handle.raw.getPermissions()) !== null;
-        } catch (error) {
-          await handle.destroy().catch(() => undefined);
-          throw error;
-        }
-        const tab = store.openDocument({
-          name: file.name,
-          bytes,
-          sha256,
-          pageCount: handle.pageCount,
-          ...(fileHandle === undefined ? {} : { handle: fileHandle }),
-        });
-        adoptHandle(tab.id, handle);
-        if (password !== undefined) {
-          setLockedTabs((current) => new Map(current).set(tab.id, password));
-          showNotice(t('locked.banner'));
-        }
-        addRecentDocument({
-          id: tab.id,
-          name: file.name,
-          sizeBytes: file.size,
-          pageCount: handle.pageCount,
-        });
-        setShowHomeScreen(false);
-        let storageWarning: string | null = null;
-        if (encrypted) store.setSensitive(tab.id, true);
-        else {
-          // The tab is registered: keeping a recovery copy is not part of opening. A write
-          // that fails (storage full, OPFS unavailable) costs the copy, never the
-          // document, and is reported as exactly that — not as an open failure below.
-          try {
-            await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
-            // A reference to the file, never its bytes; a sensitive session keeps none.
-            if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
-          } catch (error) {
-            storageWarning = storedCopyWarning(error, t);
-          }
-        }
-        setCurrentPage(0);
-        // No zoom reset here: the viewer reports the scale it draws the new document at
-        // (fit width), and a reset after the awaits above would overwrite that report.
-        setSelectedPages([]);
-        setRedactionMarks([]);
-        const limitNotice =
-          fileVerdict.kind === 'warn'
-            ? t('limit.warn.pages')
-            : fileVerdict.kind === 'viewing-only'
-              ? t(fileVerdict.reason === 'pages' ? 'limit.viewingOnly.pages' : 'limit.viewingOnly.bytes')
-              : null;
-        // One notice line: the limit and the storage warning say different things and both stay.
-        if (limitNotice !== null) showNotice(appendWarning(limitNotice, storageWarning));
-        else if (storageWarning !== null) showNotice(storageWarning);
-      } catch (error) {
-        const toolError =
-          error instanceof ToolError ? error : new ToolError('corrupt-document', { engine: 'model' });
-        // A protected file is a question, not a failure: ask for the password and open
-        // the same file again with it.
-        if (toolError.code === 'password-required' || toolError.code === 'wrong-password') {
-          setPasswordPrompt({
-            file,
-            ...(fileHandle === undefined ? {} : { handle: fileHandle }),
-            incorrect: toolError.code === 'wrong-password',
-          });
-          return;
-        }
-        pendingHomeCommand.current = null;
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        setOpening(false);
-        setBusy(false);
-      }
-    },
-    [store, t, tier, setRedactionMarks, refuseBusy],
-  );
-
-  /**
-   * The fire-and-forget way in.
-   *
-   * Four surfaces open a file — the picker, the drop zone, the home screen and the
-   * hidden input — and three of them have no promise to await, so `void openFile(...)`
-   * there left a rejection with nowhere to go: the browser's unhandled-rejection report
-   * is not a notice, and the user saw a document that simply did not open. One wrapper
-   * for the four, so the handling cannot be forgotten at one of them.
-   */
-  const openFromSurface = useCallback(
-    async (file: File, handle?: FileSystemFileHandle): Promise<void> => {
-      try {
-        // A Word, Excel, HTML or text file is not refused: it is converted, and the PDF
-        // opens in its own tab (`pdf-core/ops/convert.ts`). A `.pdf` always opens as one.
-        if (!file.name.toLowerCase().endsWith('.pdf')) {
-          if (convertFormatOf(file.name) !== null || isImageName(file.name)) {
-            await convertAndOpenRef.current(file);
-            return;
-          }
-          const kind = unsupportedDocumentKind(file.name);
-          if (kind !== null) {
-            // No document comes of this file, so a tool picked for it is dropped.
-            pendingHomeCommand.current = null;
-            showNotice(t('convert.unsupported', { kind }));
-            return;
-          }
-        }
-        await openFile(file, handle);
-      } catch (error) {
-        pendingHomeCommand.current = null;
-        showNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
-      }
-    },
-    [openFile, t],
-  );
-
-  /**
-   * Several files at once (a drop, a multi-file pick on the home screen): each opens in its
-   * own tab, one after the other, because an open holds the busy gate until it settles.
-   */
-  const openFilesFromSurface = useCallback(
-    async (
-      files: readonly File[],
-      fileHandles: readonly (FileSystemFileHandle | null)[] = [],
-    ): Promise<void> => {
-      for (const file of files) {
-        // Paired by name, not position: the drop's item list and file list are separate.
-        const handle = fileHandles.find((item) => item?.name === file.name) ?? undefined;
-        await openFromSurface(file, handle);
-      }
-    },
-    [openFromSurface],
-  );
-
-  /**
-   * Open with the File System Access picker when it exists: the returned
-   * handle is what makes in-place **Save** possible later. Without it the shell
-   * keeps its file-input path and Save stays disabled in favour of Export — the
-   * browser-matrix contract, not a defect.
-   */
-  const openViaPicker = useCallback(async () => {
-    if (typeof showOpenFilePicker !== 'function') {
-      fileInput.current?.click();
-      return;
-    }
-    let picked: FileSystemFileHandle | undefined;
-    try {
-      [picked] = await showOpenFilePicker({
-        multiple: false,
-        excludeAcceptAllOption: false,
-        types: [
-          { description: t('open.pdfFilter'), accept: { 'application/pdf': ['.pdf'] } },
-          {
-            description: t('open.anyFilter'),
-            accept: { 'application/pdf': ['.pdf'], ...CONVERT_PICKER_ACCEPT },
-          },
-        ],
-      });
-    } catch (error) {
-      // A cancelled picker is a user decision, not an error worth a banner — and only a
-      // *picker* failure gets the picker's sentence: an open that failed has its own
-      // message and hint, which `openFromSurface` reports.
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        // A tool picked first must not run on whatever document is opened later.
-        pendingHomeCommand.current = null;
-        return;
-      }
-      pendingHomeCommand.current = null;
-      showNotice(t('open.pickerFailed'));
-      return;
-    }
-    if (picked === undefined) return;
-    const file = await picked.getFile();
-    await openFromSurface(file, picked);
-  }, [openFromSurface, t]);
-
-  /**
-   * Open produced bytes as a new tab (extract, split, unlock, image→PDF results).
-   *
-   * It settles once the tab is registered, and a rejection means *no* tab was opened. Storing
-   * the recovery copy comes after that and is not part of opening: when it fails the tab
-   * stays and the resolved value is the warning sentence for the caller to put on its notice
-   * line (`null` when the copy is stored). The caller owns the notice because it sets its own
-   * success line right after, and the shell has one line: a warning set here would be
-   * replaced by that line.
-   */
-  const openProducedTab = useCallback(
-    async (name: string, bytes: Uint8Array, signal?: AbortSignal): Promise<string | null> => {
-      const earlyVerdict = checkDocumentLimits(tier, 0, bytes.byteLength);
-      if (earlyVerdict.kind === 'blocked') {
-        throw new ToolError('file-too-large', { engine: 'model' });
-      }
-      const [handle, sha256] = await openAndFingerprint(openWithPdfjs(bytes), sha256Hex(bytes));
-      /**
-       * Opening is the transition, so a cancelled caller — the tab it came from
-       * was closed while the dialog's result was opening — must not leave an
-       * orphan tab behind: the handle is destroyed and nothing is registered.
-       */
-      if (signal?.aborted === true) {
-        await handle.destroy();
-        throw new ToolError('aborted', { engine: 'model' });
-      }
-      const fileVerdict = checkDocumentLimits(tier, handle.pageCount, bytes.byteLength);
-      if (fileVerdict.kind === 'blocked') {
-        await handle.destroy();
-        throw new ToolError(fileVerdict.reason === 'pages' ? 'page-limit' : 'file-too-large', {
-          engine: 'model',
-          ...(fileVerdict.reason === 'pages' ? { path: name } : {}),
-        });
-      }
-      const tab = store.openDocument({ name, bytes, sha256, pageCount: handle.pageCount });
-      adoptHandle(tab.id, handle);
-      addRecentDocument({
-        id: tab.id,
-        name,
-        sizeBytes: bytes.byteLength,
-        pageCount: handle.pageCount,
-      });
-      setShowHomeScreen(false);
-      let warning: string | null = null;
-      try {
-        await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
-      } catch (error) {
-        warning = storedCopyWarning(error, t);
-      }
-      setCurrentPage(0);
-      return warning;
-    },
-    [store, t, tier],
-  );
-
-  /**
-   * A document in another format, opened: converted in this tab with the defaults (the
-   * locale's paper, portrait — a spreadsheet landscape — and a 15 mm margin), then opened
-   * as a new PDF tab. A picture is placed on a page of the same paper, as "Images to PDF"
-   * would. The conversion's own notes say what it approximated; the File menu's
-   * "Convert to PDF" offers the same conversion with every option.
-   */
-  const convertAndOpen = useCallback(
-    async (file: File): Promise<void> => {
-      const format = convertFormatOf(file.name);
-      if (format === null && !isImageName(file.name)) return;
-      clearNotice();
-      if (isBusy() || cancelRef.current !== null) {
-        pendingHomeCommand.current = null;
-        refuseBusy();
-        return;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      setOpening(true);
-      try {
-        const letter = /^en-(?:US|CA)\b/i.test(navigator.language);
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        if (format === null) {
-          // A picture becomes a page the way "Images to PDF" makes one: on the paper,
-          // contained, its EXIF turn applied.
-          const pictures = await imagesToPdf(
-            {
-              images: [{ name: file.name, bytes }],
-              pageSize: letter ? 'letter' : 'a4',
-              fit: 'contain',
-              marginMm: 0,
-              applyExif: true,
-            },
-            { signal: controller.signal },
-          );
-          const warning = await openProducedTab(pdfNameFor(file.name), pictures.bytes, controller.signal);
-          showNotice(appendWarning(t('convert.imageOpened'), warning));
-          return;
-        }
-        const outcome = await convertToPdf(
-          {
-            name: file.name,
-            bytes,
-            pageSize: letter ? 'letter' : 'a4',
-            orientation: format === 'xlsx' || format === 'csv' || format === 'tsv' ? 'landscape' : 'portrait',
-            marginMm: 15,
-          },
-          { signal: controller.signal },
-        );
-        const warning = await openProducedTab(pdfNameFor(file.name), outcome.bytes, controller.signal);
-        const caveats = outcome.report.notes
-          .filter((item) => item.key !== 'op.note.convert.done')
-          .map((item) => t(item.key, item.params));
-        showNotice(
-          appendWarning(
-            [t('convert.opened', { format: formatLabel(format) }), ...caveats].join(' '),
-            warning,
-          ),
-        );
-      } catch (error) {
-        pendingHomeCommand.current = null;
-        if (controller.signal.aborted) return;
-        showNotice(noticeLine(failureNotices(error, 'error.unsupported-format.message'), t));
-      } finally {
-        setOpening(false);
-        if (cancelRef.current === controller) {
-          cancelRef.current = null;
-          setBusy(false);
-        }
-      }
-    },
-    [openProducedTab, refuseBusy, t],
-  );
-  const convertAndOpenRef = useRef(convertAndOpen);
-  convertAndOpenRef.current = convertAndOpen;
+  const { openFile, openProducedTab, openFromSurface, openFilesFromSurface, openViaPicker, selectRecent } =
+    useOpenActions({
+      session: store,
+      t,
+      tier,
+      cancelRef,
+      refuseBusy,
+      setCurrentPage,
+      setRedactionMarks,
+    });
 
   /**
    * The annotation handlers: the review as a file, the engine's editor takeover, native
@@ -1604,16 +1210,6 @@ export function App({ store }: AppProps) {
     [store, t, contextFor, setHandle, applyWriterOutcome],
   );
 
-  /**
-   * The selection a page action must act on, kept in a ref as well as in state. The
-   * buttons that emit page actions live in the panel, and a control rendered in an
-   * earlier commit holds that commit's closure — measured: a rotate whose handler was
-   * one render old did nothing at all (no notice, no error, no progress), and it
-   * started working the moment anything else re-rendered the panel. Reading the ref
-   * makes the handler independent of the render it was created in.
-   */
-  const selectedPagesRef = useRef<readonly number[]>(selectedPages);
-  selectedPagesRef.current = selectedPages;
   const currentPageRef = useRef(currentPage);
   currentPageRef.current = currentPage;
 
@@ -1694,7 +1290,7 @@ export function App({ store }: AppProps) {
     t,
     cancel: cancelRef,
     canEdit: canEditRef,
-    selectedPages: selectedPagesRef,
+    selectedPages: selectedPagesNow,
     currentPage: currentPageRef,
     holdEngineValues,
     orphanSweepInFlight,
@@ -1756,8 +1352,8 @@ export function App({ store }: AppProps) {
         openSnapshot: openSnapshotMenu,
         toggleLeftDock,
         toggleRightDock,
-        selectAllPages: () => setSelectedPages(Array.from({ length: pageCount }, (_v, index) => index)),
-        clearSelection: () => setSelectedPages([]),
+        selectAllPages: () => selectAllPages(pageCount),
+        clearSelection: clearPageSelection,
         palette: () => {
           // A modal surface takes the pointer: the measure overlay covers the viewer, so a
           // tool left armed would swallow the palette's own clicks (measured in the harness).
@@ -1847,37 +1443,25 @@ export function App({ store }: AppProps) {
       }
       if (activeTab !== null && activeHandle !== null) {
         if (command.disabled === true) return;
-        setShowHomeScreen(false);
+        hideStartScreen();
         command.run();
         return;
       }
-      pendingHomeCommand.current = commandId;
+      awaitHomeCommand(commandId);
       void openViaPicker();
     },
     [activeHandle, activeTab, commands, openViaPicker],
   );
 
   useEffect(() => {
-    const pending = pendingHomeCommand.current;
+    const pending = openStore.get().pendingHomeCommand;
     // The open that brought the document is still holding the busy gate until it settles:
     // a dialog asked for before then is refused as "another operation is running".
     if (pending === null || viewer === null || activeHandle === null || busy) return;
-    pendingHomeCommand.current = null;
+    dropHomeCommand();
     const command = commands.find((item) => item.id === pending);
     if (command !== undefined && command.disabled !== true) command.run();
   }, [viewer, activeHandle, busy, commands]);
-
-  // The plain file input's own "cancel" (no File System Access picker): the tool picked
-  // first is dropped, so it cannot run on a document opened later for another reason.
-  useEffect(() => {
-    const input = fileInput.current;
-    if (input === null) return undefined;
-    const clear = () => {
-      pendingHomeCommand.current = null;
-    };
-    input.addEventListener('cancel', clear);
-    return () => input.removeEventListener('cancel', clear);
-  }, []);
 
   useShellShortcuts(
     useMemo(
@@ -1961,57 +1545,14 @@ export function App({ store }: AppProps) {
     >
       <UpdateBanner t={t} />
       {isHome ? (
-        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-kumo-line bg-kumo-base px-4 select-none">
-          <div className="flex min-w-0 items-center gap-2.5">
-            {/* `bg-pdf-accent`/`text-pdf-on-accent` are the product's own contrast
-                pair: `bg-kumo-strong` is not a token Kumo declares, which left this
-                mark a transparent chip with white glyph on white (found by the
-                compiled-CSS audit). Same pair as the editor header's mark. */}
-            <div className="flex size-7 shrink-0 items-center justify-center rounded bg-pdf-accent text-pdf-on-accent">
-              <FilePdf size={18} weight="fill" />
-            </div>
-            {/* Below 400px the wordmark is dropped rather than clipped to one letter:
-                the mark still identifies the app, and the controls keep their real
-                size. */}
-            <span className="hidden shrink-0 text-sm font-semibold text-kumo-strong min-[400px]:inline">
-              {PRODUCT_TITLE}
-            </span>
-            <span className="hidden text-xs text-kumo-subtle md:inline">{t('shell.homeTagline')}</span>
-          </div>
-          {/* `shrink-0` keeps the controls at their real size: without it flex
-              shrinks them below their content and the row overflows the viewport
-              on a phone. The identity above is what yields, via `min-w-0`. */}
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={GearSix}
-              onClick={() => setSettingsOpen(true)}
-              title={t('settings.open')}
-              aria-label={t('settings.open')}
-            />
-            {activeTab !== null ? (
-              <Button size="sm" variant="outline" onClick={() => setShowHomeScreen(false)}>
-                {t('shell.backToDocument')} ({activeTab.name})
-              </Button>
-            ) : null}
-            {/* Below `md` the icon carries the control and the tooltip names it;
-                the full label is what pushed the row past the viewport edge. */}
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={Command}
-              onClick={() => setPaletteOpen(true)}
-              title={t('shell.commandPalette')}
-              aria-label={t('shell.commandPalette')}
-            >
-              <span className="hidden md:inline">{t('shell.commandPaletteShort')}</span>
-            </Button>
-            <Button size="sm" variant="primary" icon={FolderOpen} onClick={() => void openViaPicker()}>
-              {t('shell.open')}
-            </Button>
-          </div>
-        </header>
+        <HomeHeader
+          t={t}
+          title={PRODUCT_TITLE}
+          activeDocumentName={activeTab === null ? null : activeTab.name}
+          onSettings={() => setSettingsOpen(true)}
+          onPalette={() => setPaletteOpen(true)}
+          onOpen={() => void openViaPicker()}
+        />
       ) : (
         <ModernEditorHeader
           t={t}
@@ -2029,7 +1570,7 @@ export function App({ store }: AppProps) {
           canEdit={canEdit}
           onConvert={() => openExportDialog()}
           onSign={() => openDialog('sign')}
-          onHome={() => setShowHomeScreen(true)}
+          onHome={showStartScreen}
           onOpen={() => void openViaPicker()}
           canSave={canPrepareWrite}
           saveMode={
@@ -2053,7 +1594,7 @@ export function App({ store }: AppProps) {
           onSelectTab={(id) => {
             if (store.active?.id !== id) cancelRef.current?.abort();
             store.setActive(id);
-            setSelectedPages([]);
+            clearPageSelection();
           }}
           onCloseTab={closeTab}
           onSettings={() => setSettingsOpen(true)}
@@ -2149,61 +1690,7 @@ export function App({ store }: AppProps) {
             onRunCommand={runHomeCommand}
             activeDocumentName={activeTab === null ? null : activeTab.name}
             openIds={openTabIds}
-            onSelectRecent={async (item) => {
-              const matched = store
-                .getSnapshot()
-                // By identity only: two different files may share a name, and matching on
-                // it opened whichever tab happened to carry that name.
-                .tabs.find((tab) => tab.id === item.id);
-              if (matched) {
-                store.setActive(matched.id);
-                setShowHomeScreen(false);
-                return;
-              }
-              // The file the entry was opened from, reopened directly (Chromium keeps the
-              // handle; the browser asks for permission again on this click).
-              const stored = await getRecentHandle(item.id);
-              if (stored !== null) {
-                const reopened = await reopenFromHandle(stored);
-                if (reopened.kind === 'file') {
-                  await openFromSurface(reopened.file, reopened.handle);
-                  return;
-                }
-                showNotice(
-                  t(reopened.kind === 'denied' ? 'home.reopen.denied' : 'home.reopen.missing', {
-                    name: item.name,
-                  }),
-                );
-                // A refused permission is the user's answer; the picker would ask again.
-                if (reopened.kind === 'denied') return;
-              }
-              try {
-                const drafts = await draftStorage().readDrafts();
-                const matchedDraft = drafts.find((d) => d.id === item.id);
-                if (matchedDraft) {
-                  const bytes = await draftStorage().getSource(matchedDraft.sourceKey);
-                  if (bytes) {
-                    const [handle, sha256] = await openAndFingerprint(openWithPdfjs(bytes), sha256Hex(bytes));
-                    const tab = store.openDocument({
-                      id: matchedDraft.id,
-                      name: matchedDraft.name,
-                      bytes,
-                      sha256,
-                      pageCount: matchedDraft.pageCount,
-                    });
-                    adoptHandle(tab.id, handle);
-                    store.setActive(tab.id);
-                    setShowHomeScreen(false);
-                    return;
-                  }
-                }
-              } catch (error) {
-                // The draft could not be read back: say so, then offer the picker so the
-                // user can open the file itself.
-                showNotice(noticeLine(failureNotices(error, 'error.corrupt-document.message'), t));
-              }
-              void openViaPicker();
-            }}
+            onSelectRecent={selectRecent}
             onOpenPalette={() => setPaletteOpen(true)}
             busy={busy}
           />
@@ -2217,7 +1704,7 @@ export function App({ store }: AppProps) {
                   t={t}
                   currentPage={currentPage}
                   selectedPages={selectedPages}
-                  onSelectionChange={setSelectedPages}
+                  onSelectionChange={selectPages}
                   onPageAction={runPageAction}
                   editing={canEdit}
                   version={activeTab.working.stateId}
@@ -2645,24 +2132,10 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       ) : null}
-      {passwordPrompt === null ? null : (
-        <Suspense fallback={null}>
-          <PasswordDialog
-            t={t}
-            name={passwordPrompt.file.name}
-            incorrect={passwordPrompt.incorrect}
-            onCancel={() => {
-              pendingHomeCommand.current = null;
-              setPasswordPrompt(null);
-            }}
-            onSubmit={(password) => {
-              const { file, handle } = passwordPrompt;
-              setPasswordPrompt(null);
-              void openFile(file, handle, password);
-            }}
-          />
-        </Suspense>
-      )}
+      <PasswordPromptHost
+        t={t}
+        onSubmit={(file, handle, password) => void openFile(file, handle, password)}
+      />
       <ShortcutsDialogHost t={t} onClose={closeShortcuts} />
       {/* Same boundary as the print dialog: the palette mounts when it opens, so its
           Kumo dependency tree never reaches the entry chunk. */}
@@ -2727,17 +2200,7 @@ export function App({ store }: AppProps) {
         onPageAction={runPageAction}
       />
       <ExportDialogHost t={t} tab={activeTab} onExport={exportChoice} />
-      <input
-        ref={fileInput}
-        type="file"
-        accept={`application/pdf,.pdf,${CONVERT_ACCEPT}`}
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.item(0);
-          if (file != null) void openFromSurface(file);
-          event.target.value = '';
-        }}
-      />
+      <OpenFileInput onFile={(file) => void openFromSurface(file)} />
     </div>
   );
 }
