@@ -16,6 +16,10 @@ export const pageopsPart = {
     'Metadata from added documents not carried over; Info and XMP taken from base document.',
   'op.note.merge.structure':
     'Merged structure measured: {outline} bookmark(s), {labels} page label entries, {fields} form field(s).',
+  'op.note.merge.labels':
+    'Page labels: each page kept the label its own document gave it; pages of an added document without page labels are numbered 1, 2, … within that document.',
+  'op.note.merge.labelsLost':
+    'Page labels were planned as {expected} range(s), but the result retained {actual}.',
   'op.note.merge.outlineLost': 'Base document had {expected} bookmark(s), result retained {actual}.',
   'op.note.merge.verified': 'Merge verified: {pages} page(s).',
   'op.note.images.unsupported': 'Unsupported image skipped: {name}',

@@ -57,6 +57,8 @@ export const pageeditPart = {
   'insert.note.catalog':
     'Bileşim yeni bir katalog yazar: görünüm tercihleri, dil, çıktı amaçları, katman (OCG) yapılandırması ve açılış eylemi taşınmaz.',
   'insert.note.info': 'Belge bilgisi (başlık, yazar, tarihler) taban belgeden kopyalandı.',
+  'insert.note.labels':
+    'Sayfa etiketleri: her sayfa kendi belgesinin verdiği etiketi korudu; sayfa etiketi olmayan bir belgeden gelen sayfa, o belgedeki sayfa numarasıyla etiketlendi (yeni boş sayfa 1 olur).',
   'insert.note.inserted': '{count} sayfa eklendi; ilk sayfa {position}. sırada.',
   'insert.note.skipped': '{count} görsel eklenemedi ve atlandı.',
 

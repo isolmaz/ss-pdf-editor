@@ -30,7 +30,10 @@
  *  - the call resolves with **`null`** for *any* internal failure (the worker
  *    catches, warns, returns `null`), so a null result is checked explicitly;
  *  - the produced catalog is built fresh (`#makeRoot`): page tree, outline, page
- *    labels, destinations, embedded files, structure tree, AcroForm. Everything
+ *    labels, destinations, embedded files, structure tree, AcroForm — but the page
+ *    labels only for a **single-document** composition (`#collectPageLabels` returns
+ *    when `!isSingleFile`), so a merge, and `ops/page-insert.ts` which composes with a
+ *    second source, write them back themselves (`ops/page-labels.ts`). Everything
  *    else the source catalog carried — viewer preferences, `Lang`, output
  *    intents, OCG/`OCProperties`, `OpenAction`, `MarkInfo` — is gone, and the
  *    report says so;
@@ -49,6 +52,7 @@ import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { annotsOf, openForWrite, pageObjects, readName, resolved, saveRewrite } from '../engines/mupdf-write';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
+import { composedLabelRanges, type LabelPlacement, readLabelRanges, replaceLabelRanges } from './page-labels';
 import {
   note,
   type OperationContext,
@@ -237,8 +241,10 @@ export async function composeDocument(
 }
 
 /**
- * Merge several documents into one, preserving outline/labels/attachments where
- * `extractPages` does (each source contributes `includePages`).
+ * Merge several documents into one, preserving outline/attachments where
+ * `extractPages` does (each source contributes `includePages`) and writing the page
+ * labels the engine drops for a multi-document composition: every page keeps the label
+ * its own document gave it (`composedLabelRanges`).
  *
  * This one is **byte-based**, and that is the difference from `composeDocument`:
  * the caller hands over a produced buffer whose engine edits are already baked
@@ -299,8 +305,20 @@ export async function mergeDocuments(
       });
     }
 
+    // Planned once the engine has accepted every source: it needs only the sources' bytes and
+    // the layout the engine was asked for, and a document pdf.js refuses keeps its own error.
+    const labels = await composedLabelRanges(
+      [base.bytes, ...others.map((other) => other.bytes)],
+      planMergePlacements(
+        base.pageCount,
+        others.map((other) => other.pageCount),
+        insertAfter,
+      ),
+      context,
+      'mergeDocuments',
+    );
     const baseMetadata = await readBaseMetadata(handle);
-    const { doc: document } = await openForWrite(produced);
+    const { mupdf, doc: document } = await openForWrite(produced);
     let bytes: Uint8Array;
     let structure: StructureMeasure;
     try {
@@ -312,6 +330,7 @@ export async function mergeDocuments(
         });
       }
       applyBaseMetadata(document, baseMetadata);
+      if (labels.length > 0) replaceLabelRanges(mupdf, document, labels);
       // Measured on the document the caller receives, so the numbers describe the
       // file rather than the engine's intent.
       structure = measureStructure(document);
@@ -329,6 +348,15 @@ export async function mergeDocuments(
         fields: structure.fields,
       }),
     );
+    if (labels.length > 0) {
+      // The plan was written by this operation, so the file is checked against it: a tree
+      // that came out shorter than planned is a loss, never a claim of preserved labels.
+      notes.push(
+        structure.labels < labels.length
+          ? note('lost', 'op.note.merge.labelsLost', { expected: labels.length, actual: structure.labels })
+          : note('changed', 'op.note.merge.labels'),
+      );
+    }
     if (structure.outline < baseMetadata.outline) {
       notes.push(
         note('lost', 'op.note.merge.outlineLost', {
@@ -354,6 +382,34 @@ export async function mergeDocuments(
   } finally {
     await handle.destroy();
   }
+}
+
+/**
+ * Where every page of a merge lands, in the terms `composedLabelRanges` maps labels
+ * through. This mirrors what the engine does with `insertAfter`
+ * (`pdf.worker.mjs:62340-62347`): the added documents go in as one block, in the order
+ * given, after base page `insertAfter` — at the end when that is past the last page — and
+ * the base pages behind them shift by the block's length.
+ */
+function planMergePlacements(
+  basePageCount: number,
+  addedPageCounts: readonly number[],
+  insertAfter: number,
+): LabelPlacement[] {
+  const at = Math.min(insertAfter + 1, basePageCount);
+  const added = addedPageCounts.reduce((sum, count) => sum + count, 0);
+  const placements: LabelPlacement[] = [];
+  for (let page = 0; page < basePageCount; page += 1) {
+    placements.push({ source: 0, page, position: page < at ? page : page + added });
+  }
+  let position = at;
+  for (const [index, count] of addedPageCounts.entries()) {
+    for (let page = 0; page < count; page += 1) {
+      placements.push({ source: index + 1, page, position });
+      position += 1;
+    }
+  }
+  return placements;
 }
 
 /**
@@ -832,7 +888,7 @@ function measureStructure(document: PDFDocument): StructureMeasure {
   const catalog = document.getTrailer().get('Root').resolve();
   return {
     outline: countOutlineTree(catalog.get('Outlines')),
-    labels: countNumberTree(catalog.get('PageLabels')),
+    labels: readLabelRanges(document).length,
     fields: countTopLevelFields(catalog.get('AcroForm')),
   };
 }
@@ -868,27 +924,6 @@ function countOutlineTree(outlines: PDFObject): number {
     }
   };
   walk(root.get('First'));
-  return total;
-}
-
-/** Page-label ranges live in a number tree: `/Nums` pairs here, `/Kids` below. */
-function countNumberTree(value: PDFObject): number {
-  const visited = new Set<number | PDFObject>();
-  let total = 0;
-  const walk = (entry: PDFObject): void => {
-    const node = dictionaryOf(entry);
-    if (node === undefined || total > MAX_STRUCTURE_ITEMS) return;
-    const key = identity(entry, node);
-    if (visited.has(key)) return;
-    visited.add(key);
-    const numbers = resolved(node.get('Nums'));
-    if (numbers?.isArray() === true) total += Math.floor(numbers.length / 2);
-    const kids = resolved(node.get('Kids'));
-    if (kids?.isArray() === true) {
-      for (let index = 0; index < kids.length; index += 1) walk(kids.get(index));
-    }
-  };
-  walk(value);
   return total;
 }
 

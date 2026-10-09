@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
+import { notice } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
-import { encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { encryptedPdf, encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { cmsBy, fromNow, signedDocument, signingPki } from './ui-panels9-helpers';
 
 /**
  * The document stays where the reader put it (2026-09-28 audit).
@@ -167,6 +169,64 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   // strip offers the copy.
   await expect(rail(page).getByRole('button', { name: 'Add Text', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Create unlocked copy' })).toBeVisible();
+
+  // Permanent redaction is refused through every door, not only the toolbar. Nothing is
+  // written to a protected tab, so neither its form nor its drawing layer may appear.
+  await useAdvancedMode(page);
+  const redactForm = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
+  const redactLayer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+
+  // (a) The command palette lists the command but disabled; choosing it opens nothing.
+  await page.keyboard.press('Control+k');
+  await page.getByRole('combobox').fill('Redaction (Permanent Erase)');
+  await expect.soft(page.getByRole('option', { name: /Redaction \(Permanent Erase\)/ })).toBeDisabled();
+  await page.keyboard.press('Enter');
+  // The form is a lazy chunk: give an opening one the time it needs before asserting absence.
+  await page.waitForTimeout(2_000);
+  await expect.soft(redactForm).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // (b) Tools tab → Security & Redaction → Permanent Redaction.
+  await page.getByRole('tab', { name: 'Tools', exact: true }).click();
+  const tools = page.getByRole('tabpanel', { name: 'Tools' });
+  const back = tools.getByRole('button', { name: 'Back to All Tools' });
+  if (await back.isVisible()) await back.click();
+  const security = tools.getByRole('button', { name: 'Security & Redaction', exact: true });
+  await expect(security).toBeVisible();
+  if ((await security.getAttribute('aria-expanded')) !== 'true') await security.click();
+  const permanent = tools.getByRole('button', { name: /^Permanent Redaction/ });
+  await expect(permanent).toBeVisible();
+  await permanent.click();
+  await page.waitForTimeout(2_000);
+  await expect(redactForm).toHaveCount(0);
+  await expect(redactLayer).toHaveCount(0);
+});
+
+test('unlocking a signed protected PDF says its signature no longer validates', async ({ page }) => {
+  const { root, leaf } = await signingPki();
+  const signed = await signedDocument(cmsBy(leaf, [root], fromNow(-100)));
+  await page.goto('/editor/');
+  await page
+    .locator('input[type="file"][accept*="application/pdf"]')
+    .first()
+    .setInputFiles({
+      name: 'signed-locked.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from(await encryptedPdf(signed, 'parola')),
+    });
+  const prompt = page.getByRole('dialog', { name: /signed-locked\.pdf/ });
+  await expect(prompt).toBeVisible({ timeout: 30_000 });
+  await prompt.getByLabel('Document open password').fill('parola');
+  await prompt.getByRole('button', { name: 'Open', exact: true }).click();
+  await page.getByRole('button', { name: 'Create unlocked copy' }).click();
+
+  // The copy opens, and the same notice says what unlocking cost the file.
+  await expect(
+    notice(
+      page,
+      /The unlocked copy opened in a new tab; the original file stays protected\. The document carries a digital signature\. Removing the password rewrites the file, so the signature is no longer valid\./,
+    ),
+  ).toBeVisible({ timeout: 60_000 });
 });
 
 test('an operation applied from the tools panel reaches the document', async ({ page }) => {

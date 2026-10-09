@@ -14,6 +14,11 @@
  * only (a candidate carries one program, bold and italic are synthesised by Word). The result is
  * the best family with the next best beside it; a caller that wants to keep its default unless
  * the evidence is clear looks at the difference between the two.
+ *
+ * The same drawing settles a word that has more than one reading (`chooseReadings`): each
+ * reading is drawn in the page's face at the word's box and laid over the ink, and the one that
+ * lies on it best is the word, when it beats the one OCR settled on by a clear margin and does
+ * lie on it (a drawing that covers less than half of the ink and paper around it is no evidence).
  */
 
 import type { Font } from 'mupdf';
@@ -59,6 +64,14 @@ const MIN_CONTRAST = 48;
 const SHIFT = 2;
 /** The spread (natural log of the aspect ratio) over which the proportions stop agreeing. */
 const ASPECT_SPREAD = 0.1;
+/** A reading other than the settled one replaces it when its drawing scores this much (0–1) above the settled one's. */
+export const READING_MARGIN = 0.15;
+/** A reading replaces the settled one only when its drawing scores at least this (0–1): a clear win of two poor fits is not a reading of the ink. */
+export const READING_FLOOR = 0.3;
+/** A word set smaller than this (px to the em) is not judged by its ink: a pixel of tolerance is over a tenth of its glyphs, and the proportions that keep another length out stop counting. */
+export const READING_MIN_EM = 16;
+/** The box a reading is laid on may be this many pixels wider, narrower, taller or shorter than the ink's. */
+const READING_SLACK = 1;
 /** The glyphs sit this far (× size) above the pixmap's bottom, and the pixmap is this tall (× size). */
 const BASELINE = 0.5;
 const HEIGHT = 1.9;
@@ -146,7 +159,7 @@ function resampled(ink: Ink, width: number, height: number): Ink {
  * strongest differences (the top 2 % of them are full ink); cut to its bounding box. `null`
  * when the crop is off the page or has no ink to speak of.
  */
-function scanInk(image: RgbaImage, word: MatchWord): Ink | null {
+function scanInk(image: RgbaImage, word: Pick<MatchWord, 'box' | 'size'>): Ink | null {
   const margin = Math.ceil(word.size * image.scale * CROP_MARGIN);
   const x0 = Math.max(0, Math.floor(word.box[0] * image.scale) - margin);
   const y0 = Math.max(0, Math.floor(word.box[1] * image.scale) - margin);
@@ -230,15 +243,30 @@ function overlap(scan: Ink, drawn: Ink, dx: number, dy: number): number {
   return both / either;
 }
 
-/** How well `drawn` lies on `scan`: the best overlap over the shifts, weighed by the agreement of their proportions. */
-function wordScore(scan: Ink, drawn: Ink): number {
-  const onto = resampled(drawn, scan.width, scan.height);
+/**
+ * How well `drawn` lies on `scan`: the best overlap over the shifts, weighed by the agreement of
+ * their proportions. The drawing is resampled onto the scan's box and, with a `slack` above 0, onto
+ * every box up to `slack` pixels wider, narrower, taller or shorter (the proportions taken
+ * against that box too), the best of them standing: a pixel more or less in either bounding
+ * box (the faint tail of a glyph just over or under `INK`) is not a difference between words.
+ */
+function wordScore(scan: Ink, drawn: Ink, slack: number): number {
   let best = 0;
-  for (let dy = -SHIFT; dy <= SHIFT; dy++) {
-    for (let dx = -SHIFT; dx <= SHIFT; dx++) best = Math.max(best, overlap(scan, onto, dx, dy));
+  for (let dh = -slack; dh <= slack; dh++) {
+    for (let dw = -slack; dw <= slack; dw++) {
+      const width = scan.width + dw;
+      const height = scan.height + dh;
+      if (width < 1 || height < 1) continue;
+      const onto = resampled(drawn, width, height);
+      let lying = 0;
+      for (let dy = -SHIFT; dy <= SHIFT; dy++) {
+        for (let dx = -SHIFT; dx <= SHIFT; dx++) lying = Math.max(lying, overlap(scan, onto, dx, dy));
+      }
+      const ratio = Math.log(drawn.width / drawn.height / (width / height));
+      best = Math.max(best, lying * Math.exp(-(ratio * ratio) / (2 * ASPECT_SPREAD * ASPECT_SPREAD)));
+    }
   }
-  const ratio = Math.log(drawn.width / drawn.height / (scan.width / scan.height));
-  return best * Math.exp(-(ratio * ratio) / (2 * ASPECT_SPREAD * ASPECT_SPREAD));
+  return best;
 }
 
 const median = (values: readonly number[]): number => {
@@ -316,6 +344,7 @@ export function matchFamily(
             word.text,
             word.size * image.scale,
           ),
+          0,
         ),
       );
       return { family: candidate.family, score: scores.length === 0 ? 0 : median(scores) };
@@ -326,4 +355,48 @@ export function matchFamily(
   } finally {
     for (const font of fonts) font.destroy();
   }
+}
+
+/** A word with other readings: its settled text, the others, its box (page points, y down) and the size it is set at. */
+export interface ReadingWord {
+  readonly text: string;
+  readonly alternatives: readonly string[];
+  readonly box: Box;
+  readonly size: number;
+}
+
+/**
+ * What each word reads, by its ink: every reading the `font` has the glyphs for is drawn at the
+ * word's size and box (`wordScore`: shape, with the proportions of the ink box, so a reading of
+ * another length cannot pass for the word by being stretched) and the best-scoring one wins —
+ * only when it beats the settled text by {@link READING_MARGIN} and scores at least
+ * {@link READING_FLOOR}, and only for a word of {@link READING_MIN_EM} px to the em or more
+ * (smaller glyphs keep their text: a pixel is too much of them). The boxes of the drawing and of
+ * the ink may differ by a pixel ({@link READING_SLACK}) without costing the right reading its
+ * score. A word on blank paper, or whose settled text the font cannot draw, keeps its text.
+ */
+export function chooseReadings(
+  mupdf: Mupdf,
+  image: RgbaImage,
+  words: readonly ReadingWord[],
+  font: Font,
+): string[] {
+  return words.map((word) => {
+    const shown = [word.text, ...word.alternatives].flatMap((reading) => {
+      const glyphs = glyphsOf(font, reading);
+      return glyphs === null ? [] : [{ reading, glyphs }];
+    });
+    const judged =
+      shown.length > 1 && shown[0]?.reading === word.text && word.size * image.scale >= READING_MIN_EM;
+    const scan = judged ? scanInk(image, word) : null;
+    if (scan === null) return word.text;
+    const scores = shown.map(({ reading, glyphs }) =>
+      wordScore(scan, drawnInk(mupdf, font, glyphs, reading, word.size * image.scale), READING_SLACK),
+    );
+    const best = scores.indexOf(Math.max(...scores));
+    return (scores[best] as number) >= READING_FLOOR &&
+      (scores[best] as number) - (scores[0] as number) >= READING_MARGIN
+      ? (shown[best] as (typeof shown)[number]).reading
+      : word.text;
+  });
 }

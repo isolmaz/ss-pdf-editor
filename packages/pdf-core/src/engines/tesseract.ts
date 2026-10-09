@@ -24,6 +24,12 @@ import type { LoggerMessage, Page, Worker as TesseractWorker } from 'tesseract.j
 import { TESSERACT_ASSETS } from '../assets';
 import { throwIfAborted } from '../ops/types';
 
+/** A reading of a word: the text and how sure (0–100) the engine was of it. */
+export type OcrReading = {
+  readonly text: string;
+  readonly confidence: number;
+};
+
 export type OcrWord = {
   readonly text: string;
   readonly x0: number;
@@ -43,6 +49,8 @@ export type OcrWord = {
   readonly size?: number;
   /** The baseline of the word's line in page points, when tesseract found one. */
   readonly baseline?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  /** The other readings of the word the second look saw (the first read, a reread that was not adopted), each with the confidence it was read at: the ink decides between them and `text` (`ocr-font-match.ts`). */
+  readonly alternatives?: readonly OcrReading[];
 };
 
 /**

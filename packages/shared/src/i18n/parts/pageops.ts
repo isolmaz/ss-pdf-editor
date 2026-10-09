@@ -37,6 +37,10 @@ export const pageopsPart = {
   'op.note.merge.metadata': 'Eklenen belgelerin üst verisi taşınmadı; Info ve XMP taban belgeden alındı.',
   'op.note.merge.structure':
     'Motorun birleştirdiği yapı ölçüldü: {outline} yer imi, {labels} sayfa etiketi kaydı, {fields} form alanı.',
+  'op.note.merge.labels':
+    'Sayfa etiketleri: her sayfa kendi belgesinin verdiği etiketi korudu; sayfa etiketi olmayan bir belgeden eklenen sayfalar kendi belgesi içinde 1, 2, … diye numaralandı.',
+  'op.note.merge.labelsLost':
+    'Sayfa etiketleri {expected} aralık olarak planlandı, ancak sonuçta {actual} aralık kaldı.',
   'op.note.merge.outlineLost': 'Taban belgede {expected} yer imi vardı, sonuçta {actual} kaldı.',
   'op.note.merge.verified': 'Birleştirme doğrulandı: {pages} sayfa.',
 
