@@ -44,5 +44,4 @@ export const ocrPart = {
   'ocr.skipped': '{count} page(s) already contained text; untouched.',
   'ocr.running': 'Recognizing page {done}/{total}',
   'ocr.done': 'Text layer added to {count} page(s).',
-  'ocr.empty': 'No text found on any page.',
 } as const;

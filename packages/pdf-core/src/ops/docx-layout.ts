@@ -2,7 +2,9 @@
  * The "exact layout" Word layout of `exportOffice` (`docxLayout: 'layout'`): each page is
  * rebuilt in Word with the geometry it has in the PDF.
  *
- *  - A page is read once (`readPageScene`): the drawing in paint order, the links, the text.
+ *  - A page is read once (`readPageScene`): the drawing in paint order, the links, the text, and
+ *    the text the form fields' and annotations' appearances draw (a field's value is in its
+ *    appearance, not in the page's content), set in text boxes like the rest.
  *  - A section is the page's size with no margins; a page above Word's 22-inch limit is
  *    shrunk by one factor on both sides (`wordPageScale`), text sizes and offsets with it.
  *  - The page's one paragraph is a point high and holds every drawing as an anchored run:
@@ -74,6 +76,8 @@ export interface LayoutDocx {
   readonly scaled: readonly { readonly page: number; readonly scale: number }[];
   /** 1-based numbers of the pages without any text. */
   readonly textless: readonly number[];
+  /** Form fields with a value that no appearance shows, so the document cannot carry it. */
+  readonly unseenFields: number;
   /** Characters the PDF has no Unicode for (U+FFFD), over all pages. */
   readonly unreadable: number;
   /** Fonts of the PDF embedded in the document (`docx-fonts.ts`). */
@@ -197,6 +201,7 @@ async function writePages(
   let pictures = 0;
   let rasters = 0;
   let unreadable = 0;
+  let unseenFields = 0;
   let lastSection = '';
   /** A page read: its scene, and what OCR made of it if it is a scan (`unavailable`: it is one, and there is no reading of it). */
   const readPage = async (
@@ -250,11 +255,15 @@ async function writePages(
       const scale = wordPageScale(scene.width, scene.height);
       if (scale < 1) scaled.push({ page: index + 1, scale });
       const section = pageSectionXml(scene.width * scale, scene.height * scale);
+      const faceOf = (face: string) => embedded.faceOf(index, face);
       const vector = scan === null || scan.mixed;
-      const sceneBoxes = vector
-        ? textBoxes(scene.text, scene.links, (face) => embedded.faceOf(index, face))
-        : [];
-      const boxes = [...sceneBoxes, ...(scan?.boxes ?? [])];
+      // The fields' text goes in boxes of its own, on a scan too: a scan's picture does not show it.
+      const boxes = [
+        ...(vector ? textBoxes(scene.text, scene.links, faceOf) : []),
+        ...(scan?.boxes ?? []),
+        ...textBoxes(scene.appearances, scene.links, faceOf),
+      ];
+      unseenFields += scene.unseenFields;
       const items = scan?.items ?? scene.items;
       if (scan !== null) {
         if (scan.mixed) mixedPages.push(index + 1);
@@ -270,8 +279,8 @@ async function writePages(
         else if (item.kind === 'image') pictures += 1;
         else rasters += 1;
       }
-      // The scene reads the page's text without pictures, so its blocks are text.
-      for (const block of vector ? scene.text.blocks : []) {
+      // The scene reads the page's text without pictures, so its blocks are text; a field's or an annotation's text counts too.
+      for (const block of [...(vector ? scene.text.blocks : []), ...scene.appearances.blocks]) {
         for (const line of block.kind === 'text' ? block.lines : []) {
           for (const char of line.chars) if (char.c === '\uFFFD' && char.invisible !== true) unreadable += 1;
         }
@@ -343,6 +352,7 @@ async function writePages(
     rasters,
     scaled,
     textless,
+    unseenFields,
     unreadable,
     fonts: fonts.count,
     ocr: {

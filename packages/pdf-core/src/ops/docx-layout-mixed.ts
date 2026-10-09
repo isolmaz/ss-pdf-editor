@@ -78,12 +78,17 @@ const hasVisibleText = (scene: PageScene): boolean =>
 export const pictureBoxes = (scene: PageScene): Box[] =>
   scene.items.flatMap((item) => (item.kind === 'shape' ? [] : [item.box]));
 
+/** Whether pictures covering `area` (square points) make a page of `width` × `height` a scan. */
+export function coversPage(area: number, width: number, height: number): boolean {
+  return area >= SCAN_COVER * width * height;
+}
+
 /** Whether the pictures cover at least half the page. */
 function picturesCover(scene: PageScene): boolean {
   let covered = 0;
   for (const box of pictureBoxes(scene))
     covered += Math.max(0, box[2] - box[0]) * Math.max(0, box[3] - box[1]);
-  return covered >= SCAN_COVER * scene.width * scene.height;
+  return coversPage(covered, scene.width, scene.height);
 }
 
 /** Whether the page shows no text and is mostly pictures: a scan, with or without an invisible text layer. */

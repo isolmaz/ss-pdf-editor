@@ -48,5 +48,4 @@ export const ocrPart = {
   'ocr.skipped': '{count} sayfa zaten metin içeriyordu; değiştirilmedi.',
   'ocr.running': 'Sayfa {done}/{total} tanınıyor',
   'ocr.done': '{count} sayfaya metin katmanı eklendi.',
-  'ocr.empty': 'Hiçbir sayfada metin bulunamadı.',
 } as const;

@@ -56,7 +56,16 @@ import type {
   ShapeFill,
   ShapeStroke,
 } from './layout-scene';
-import { apply, type Box, borrowed, readPageLayout, rgb, softMasked, transformBox } from './page-layout';
+import {
+  apply,
+  type Box,
+  borrowed,
+  readAppearances,
+  readPageLayout,
+  rgb,
+  softMasked,
+  transformBox,
+} from './page-layout';
 
 /** More shapes and islands than this on a page and the drawing becomes one raster. */
 const MAX_SHAPES = 1500;
@@ -890,7 +899,8 @@ export function readPageScene(mupdf: Mupdf, page: Page, contentsOnly = false): P
     }
   }
 
-  return { width, height, items, links: externalLinks(page, shifted), text };
+  const { layout: appearances, unseen: unseenFields } = readAppearances(mupdf, page);
+  return { width, height, items, links: externalLinks(page, shifted), text, appearances, unseenFields };
 }
 
 /** The page's external links, their boxes in page space. */
@@ -918,11 +928,14 @@ export function readPageRaster(mupdf: Mupdf, page: Page): PageScene {
   const height = py1 - py0;
   const box: Box = [0, 0, width, height];
   const data = renderWithoutText(mupdf, page, box, null, new Set());
+  const { layout: appearances, unseen: unseenFields } = readAppearances(mupdf, page);
   return {
     width,
     height,
     items: [{ kind: 'raster', box, data, mime: 'image/png' }],
     links: externalLinks(page, (r) => [r[0] - px0, r[1] - py0, r[2] - px0, r[3] - py0]),
     text,
+    appearances,
+    unseenFields,
   };
 }
