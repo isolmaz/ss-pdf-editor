@@ -203,7 +203,9 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
         root.remove();
         for (const url of urls) URL.revokeObjectURL(url);
         urls.length = 0;
-        if (jobRef.current?.controller === controller) jobRef.current = null;
+        // A job is only replaced by `start`, which cancels it first: while it can still be
+        // torn down it is the active one.
+        jobRef.current = null;
       };
       const onAfterPrint = () => {
         teardown();
@@ -228,7 +230,6 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
         let rendered = 0;
         try {
           for (const pageNumber of request.pages) {
-            if (controller.signal.aborted) return;
             const size = await source.getPageSize(pageNumber - 1, 1);
             const scale = sheetScale(request.scale, size);
             await source.renderPage(pageNumber - 1, canvas, {
@@ -238,6 +239,11 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
             });
             if (controller.signal.aborted) return;
             const url = await toImageUrl(canvas);
+            // Cancelled while the image was made: the job is gone, and so is its list of URLs.
+            if (controller.signal.aborted) {
+              URL.revokeObjectURL(url);
+              return;
+            }
             urls.push(url);
             root.append(printSheet(url, size, scale, request.scale));
             rendered += 1;
@@ -254,7 +260,9 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
           // An abort is control flow, not a failure: whoever aborted has already
           // torn the job down and reset the state.
           if (controller.signal.aborted) return;
-          const page = request.pages[rendered] ?? request.pages[request.pages.length - 1] ?? 1;
+          // The sheet that was being made; once every page is rendered, the last one (the images'
+          // decode failed). A job always has a page.
+          const page = request.pages[rendered] ?? (request.pages[request.pages.length - 1] as number);
           teardown();
           setState({ phase: 'idle', done: rendered, total: request.pages.length, failure: { page } });
         }

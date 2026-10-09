@@ -49,7 +49,8 @@ export function resolvePrintSource(viewer: ViewerApi | null): PrintPageSource | 
   if (viewer === null) return null;
   const candidate: unknown = viewer;
   if (isPrintPageSource(candidate)) return candidate;
-  const nested = 'document' in viewer ? viewer.document : null;
+  // A viewer without the handle yields `undefined` here, which is not a page source either.
+  const nested: unknown = viewer.document;
   return isPrintPageSource(nested) ? nested : null;
 }
 
@@ -67,7 +68,8 @@ export function currentViewPages(): readonly number[] {
   const viewerElement = document.querySelector<HTMLElement>('.pdfViewer[data-active-viewer]');
   if (viewerElement === null) return [];
 
-  const scroller = viewerElement.parentElement ?? viewerElement;
+  // A viewer found in the document is inside something: only `<html>` has no parent.
+  const scroller = viewerElement.parentElement as HTMLElement;
   const box = scroller.getBoundingClientRect();
   const visible: number[] = [];
   for (const page of viewerElement.querySelectorAll<HTMLElement>('.page[data-page-number]')) {
