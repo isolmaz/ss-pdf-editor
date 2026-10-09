@@ -15,13 +15,14 @@
 
 import type { Font } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
+import type { OcrReading, OcrWord } from '../engines/tesseract';
 import { trueTypeForWord } from './docx-font-sfnt';
 import type { FontFile } from './docx-fonts';
 import { standardAdvance } from './docx-fonts';
 import type { TextBox } from './layout-scene';
 import { loadOpenFace, OPEN_FAMILIES, type OpenFaceStyle, type OpenFamily } from './ocr-font-catalog';
-import { type FaceCandidate, type MatchWord, matchFamily, varied } from './ocr-font-match';
-import type { Advance, MeasuredWord, RgbaImage } from './ocr-scene';
+import { chooseReadings, type FaceCandidate, type MatchWord, matchFamily, varied } from './ocr-font-match';
+import type { Advance, MeasuredWord, RgbaImage, UnsettledWord } from './ocr-scene';
 
 /** Words OCR is at least this sure of (0–100) are drawn to tell the typeface. */
 const CONFIDENT = 90;
@@ -103,12 +104,15 @@ export interface OpenFonts {
   readonly names: Set<string>;
   /** The families chosen, by catalog id. */
   readonly loaded: Map<string, OpenFont>;
+  /** The families being loaded, by catalog id, for pages read side by side that pick the same one. */
+  readonly loading: Map<string, Promise<OpenFont>>;
 }
 
 /** No family chosen yet; `embedded` are the family names the PDF's own fonts are embedded under. */
 export const openFontsFor = (embedded: ReadonlySet<string>): OpenFonts => ({
   names: new Set(embedded),
   loaded: new Map(),
+  loading: new Map(),
 });
 
 /** Frees the MuPDF fonts of the families chosen. */
@@ -168,15 +172,75 @@ export async function chooseOpenFont(
   if (match.score - (match.runnerUp?.score ?? 0) < CLEAR_MARGIN) return null;
   const standard = matchFamily(mupdf, image, confident, STANDARD);
   if (match.score - standard.score < CLEAR_MARGIN) return null;
-  const chosen = fonts.loaded.get(winner.id);
-  if (chosen !== undefined) return chosen;
+  const chosen = fonts.loaded.get(winner.id) ?? fonts.loading.get(winner.id);
+  if (chosen !== undefined) return await chosen;
+  // Named and registered before the first wait, so a page read beside this one that picks the
+  // same family waits for this load instead of starting (and naming) another.
   let name = winner.name;
   for (let n = 2; fonts.names.has(name); n += 1) name = `${winner.name} ${n}`;
-  const regular = candidates.find((each) => each.family === winner.name)?.bytes as Uint8Array;
-  const open = await loadFamily(mupdf, winner, name, regular);
   fonts.names.add(name);
-  fonts.loaded.set(winner.id, open);
-  return open;
+  const regular = candidates.find((each) => each.family === winner.name)?.bytes as Uint8Array;
+  const load = loadFamily(mupdf, winner, name, regular);
+  fonts.loading.set(winner.id, load);
+  try {
+    const open = await load;
+    fonts.loaded.set(winner.id, open);
+    return open;
+  } finally {
+    fonts.loading.delete(winner.id);
+  }
+}
+
+/** The base-14 face behind each stand-in family of the scan's text. */
+const STANDARD_FACE: Readonly<Record<string, string>> = {
+  Arial: 'Helvetica',
+  'Times New Roman': 'Times-Roman',
+  'Courier New': 'Courier',
+};
+
+/**
+ * The words whose reading the ink settles: each `unsettled` word (one the second look read in
+ * more than one way) is drawn in the page's face — `open`'s regular, or the stand-in `family` —
+ * once per reading, and the reading that lies on the scan's ink best is the word's
+ * (`chooseReadings`). Only the words that differ from what was settled are returned, with the
+ * reading and the confidence it was read at.
+ */
+export function settleReadings(
+  mupdf: Mupdf,
+  image: RgbaImage,
+  unsettled: readonly UnsettledWord[],
+  family: string,
+  open: OpenFont | null,
+): Map<OcrWord, OcrReading> {
+  const chosen = new Map<OcrWord, OcrReading>();
+  if (unsettled.length === 0) return chosen;
+  const own = open === null ? new mupdf.Font(STANDARD_FACE[family] ?? 'Helvetica') : null;
+  try {
+    const texts = chooseReadings(
+      mupdf,
+      image,
+      unsettled.map(({ word, size }) => ({
+        text: word.text,
+        alternatives: (word.alternatives as readonly OcrReading[]).map((reading) => reading.text),
+        box: [word.x0, word.y0, word.x1, word.y1],
+        size,
+      })),
+      open === null ? (own as Font) : open.regular.font,
+    );
+    for (const [at, { word }] of unsettled.entries()) {
+      if (texts[at] !== word.text) {
+        chosen.set(
+          word,
+          (word.alternatives as readonly OcrReading[]).find(
+            (reading) => reading.text === texts[at],
+          ) as OcrReading,
+        );
+      }
+    }
+  } finally {
+    own?.destroy();
+  }
+  return chosen;
 }
 
 /**

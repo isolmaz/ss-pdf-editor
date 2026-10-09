@@ -103,6 +103,58 @@ describe('XFDF round trip of the session marks', () => {
     expect(note).toMatchObject({ kind: 'note', rect: [100, 120, 124, 144] });
   });
 
+  it('keeps a stroked rectangle, ellipse and ink box their size however often they travel through XFDF', async () => {
+    // The XFDF `rect` is the annotation's rectangle, which holds the whole stroke; the
+    // shape itself is that rectangle less half the stroke on every side.
+    let marks: readonly AnnotationMark[] = [
+      mark({
+        id: 'sq',
+        kind: 'shapes',
+        shape: 'square',
+        quads: [[100, 100, 200, 150]],
+        rect: [100, 100, 200, 150],
+        thickness: 10,
+      }),
+      mark({
+        id: 'ci',
+        kind: 'shapes',
+        shape: 'circle',
+        quads: [[50, 300, 150, 360]],
+        rect: [50, 300, 150, 360],
+        thickness: 4,
+      }),
+      mark({
+        id: 'ink',
+        kind: 'ink',
+        quads: [[10, 10, 90, 50]],
+        strokes: [[10, 10, 50, 50, 90, 20]],
+        thickness: 6,
+      }),
+    ];
+    for (let trip = 0; trip < 3; trip += 1) {
+      const parsed = await parseXfdf(serializeXfdf({ marks, existing: [], pageTop: () => TOP }).bytes);
+      marks = parsed.marks.map((entry) => toAppSpace(entry, TOP));
+    }
+    const [square, circle, ink] = marks;
+    expect(square).toMatchObject({
+      rect: [100, 100, 200, 150],
+      quads: [[100, 100, 200, 150]],
+      thickness: 10,
+    });
+    expect(circle).toMatchObject({ rect: [50, 300, 150, 360], quads: [[50, 300, 150, 360]], thickness: 4 });
+    expect(ink).toMatchObject({ quads: [[10, 10, 90, 50]], thickness: 6 });
+  });
+
+  it('narrows a rectangle thinner than its stroke to its centre line, never to an inverted box', async () => {
+    const parsed = await parseXfdf(
+      encode(
+        `<?xml version="1.0"?><xfdf xmlns="http://ns.adobe.com/xfdf/"><annots><square name="s" page="0" rect="10,20,14,40" width="10"/></annots></xfdf>`,
+      ),
+    );
+    // 4 pt wide under a 10 pt stroke: the width closes on x = 12; the 20 pt height loses 5 a side.
+    expect(parsed.marks[0]?.rect).toEqual([12, 25, 12, 35]);
+  });
+
   it('keeps the replies (oldest first) and the review state on their comment, and mints fresh ids', async () => {
     const parsed = await parseXfdf(serializeXfdf({ marks: session, existing: [], pageTop: () => TOP }).bytes);
     const note = parsed.marks[5];
