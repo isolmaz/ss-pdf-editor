@@ -930,10 +930,10 @@ export function App({ store }: AppProps) {
    * refused with the same notice as Save while a mark is unapplied.
    */
   const refuseUnappliedRedactions = useCallback((): boolean => {
-    if (activeTab === null || pendingOverlays(activeTab).redactions.length === 0) return false;
+    if (pendingOverlays(store.active).redactions.length === 0) return false;
     setNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
     return true;
-  }, [activeTab, t]);
+  }, [store, t]);
   const openPrint = useCallback(() => {
     if (!refuseUnappliedRedactions()) setPrintOpen(true);
   }, [refuseUnappliedRedactions]);
