@@ -471,7 +471,13 @@ had to stay green. The moves, and the defects they fixed on the way:
     catalog's `/Lang`. The package is written by hand and read back with mammoth, whose
     word count must equal the words written. A picture MuPDF could not draw, and one inside a
     ruled table (whose cells carry text only), is left out of the file and counted in a `lost`
-    note (`op.note.exportOffice.picturesLost`).
+    note (`op.note.exportOffice.picturesLost`). Text the document itself hides (render mode 3, or
+    drawn at opacity 0: `LayoutChar.invisible`) is not written, as the exact layout does not write it
+    (`withoutHiddenText`). The one hidden text kept is a scanned page's invisible OCR layer, told
+    apart as `isScanPage` tells a scan: the page shows no text and its pictures cover at least half
+    of it (`coversPage`); that layer is the only text such a page has. This needs the picture
+    blocks, so it applies to the Word read only; the Excel and CSV reads do not drop hidden text. Form fields and
+    annotations are not carried; the `lost` note `op.note.exportOffice.docxApproximate` says so.
   - **Word layout** (`OfficeExportOptions.docxLayout`: `flow`, `page-images` or `layout`; the UI's
     `layout` field and the Export dialog's second select default to `layout`, the exact layout, and
     the dialog lists it first). Two of the three skip the flowing reader. `page-images` skips the layout reader: `ops/docx-pages.ts` draws each
@@ -540,7 +546,17 @@ had to stay green. The moves, and the defects they fixed on the way:
        144 dpi by MuPDF **without its text** (and without what Word draws itself over or under
        it), so the text above stays editable. A page of more than 1500 shapes and islands
        becomes one raster. Links (external URIs only) and the text (`readPageLayout`) are read
-       in the same pass. Three limits keep one odd drawing from costing the export: a filled
+       in the same pass. The page's own text read skips annotations and form fields (MuPDF's
+       `toStructuredText` of a page leaves out their appearance streams), so a filled field's value
+       would be lost: `readAppearances` runs the page's annotations and widgets into a display
+       list of their own and reads that one's text (`PageScene.appearances`), set in text boxes of
+       their own after the page's (also on a scanned page, whose `isScanPage` test looks at the
+       page's text only, so a field does not make a scan a non-scan). A text or choice field with
+       a value, or a checked box or radio button, whose appearance draws nothing at its place (no
+       text there, or for a button no text, path, picture or shading) is counted
+       (`PageScene.unseenFields`) and reported as a `lost` note
+       (`op.note.exportOffice.layoutFieldsLost`); a hidden or no-view field is not counted. MuPDF
+       draws a default appearance for a field that has none, so that value is carried. Three limits keep one odd drawing from costing the export: a filled
        rectangle reaching further than five page sides off the page is cut to the page and any
        other shape that far out is an island (Word's offsets are 32-bit); an even-odd fill of
        more than 1500 subpaths is an island (finding its holes is quadratic); and a colour of

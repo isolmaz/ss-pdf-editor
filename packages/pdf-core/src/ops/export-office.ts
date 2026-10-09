@@ -33,7 +33,9 @@
  *
  * What is not carried over is said in the report: exact positions, a paragraph's
  * continuation in the next column, form fields, annotations; text on scanned pages (OCR
- * first).
+ * first). The exact layout does carry a filled form field's value, as text where the field is
+ * (its appearance), and names the fields whose value nothing draws. The flowing layout leaves
+ * out the text the document itself hides, except the invisible OCR layer of a scanned page.
  */
 
 import type { PDFDocument } from 'mupdf';
@@ -56,6 +58,7 @@ import {
   zipped,
 } from './docx-drawing';
 import { type LayoutDocx, type OcrOptions, writeLayoutDocx } from './docx-layout';
+import { coversPage } from './docx-layout-ocr';
 import { type PageImage, pageImagesDocx, renderPageImages } from './docx-pages';
 import {
   type Box,
@@ -63,7 +66,9 @@ import {
   findTables,
   findTextTables,
   inside,
+  type LayoutBlock,
   type LayoutChar,
+  type LayoutLine,
   type LayoutTable,
   lineSegments,
   type PageLayout,
@@ -211,6 +216,51 @@ interface ReadPage {
   readonly figures: readonly { readonly box: Box; readonly png: Uint8Array }[];
 }
 
+/** The box that holds all of `boxes`. */
+function unionBox(boxes: readonly Box[]): Box {
+  return [
+    Math.min(...boxes.map((box) => box[0])),
+    Math.min(...boxes.map((box) => box[1])),
+    Math.max(...boxes.map((box) => box[2])),
+    Math.max(...boxes.map((box) => box[3])),
+  ];
+}
+
+/**
+ * The page as the reader sees it: text the document itself hides (render mode 3, no opacity) is
+ * left out, as the exact layout leaves it out. The one hidden text kept is the invisible layer of
+ * a scanned page — OCR's words over the picture of the page: no visible text, and pictures
+ * covering most of the page (`isScanPage`'s test) — which is exported on purpose, since it is the
+ * only text the scan has. Needs the picture blocks, so only a read with `images` can tell.
+ */
+function withoutHiddenText(layout: PageLayout): PageLayout {
+  const lines = layout.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []));
+  if (!lines.some((line) => line.chars.some((char) => char.invisible === true))) return layout;
+  const shown = lines.some((line) =>
+    line.chars.some((char) => char.invisible !== true && char.c.trim() !== ''),
+  );
+  const pictures = layout.blocks.reduce(
+    (sum, block) =>
+      block.kind === 'image'
+        ? sum + Math.max(0, block.box[2] - block.box[0]) * Math.max(0, block.box[3] - block.box[1])
+        : sum,
+    0,
+  );
+  if (!shown && coversPage(pictures, layout.width, layout.height)) return layout;
+  const blocks = layout.blocks.flatMap((block): LayoutBlock[] => {
+    if (block.kind !== 'text') return [block];
+    const kept = block.lines.flatMap((line): LayoutLine[] => {
+      const chars = line.chars.filter((char) => char.invisible !== true);
+      if (chars.length === 0) return [];
+      return [chars.length === line.chars.length ? line : { ...line, chars, box: lineBox(chars) }];
+    });
+    if (kept.length === 0) return [];
+    const same = kept.length === block.lines.length && kept.every((line, at) => line === block.lines[at]);
+    return [same ? block : { ...block, lines: kept, box: unionBox(kept.map((line) => line.box)) }];
+  });
+  return { ...layout, blocks };
+}
+
 async function readPages(
   doc: PDFDocument,
   pages: readonly number[],
@@ -229,7 +279,9 @@ async function readPages(
     });
     const page = doc.loadPage(index);
     try {
-      const layout = readPageLayout(mupdf, page, { images });
+      // Word only: telling a scan's OCR layer from hidden text takes the pictures (see `withoutHiddenText`).
+      const read = readPageLayout(mupdf, page, { images });
+      const layout = images ? withoutHiddenText(read) : read;
       const tables = findTables(layout);
       const ruled = tables.map((table) => table.box);
       // A chart's labels line up like a table's cells, so drawings are found first.
@@ -1689,6 +1741,9 @@ async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExpo
   }
   if (layout.unreadable > 0) {
     notes.push(note('lost', 'op.note.exportOffice.unreadable', { count: layout.unreadable }));
+  }
+  if (layout.unseenFields > 0) {
+    notes.push(note('lost', 'op.note.exportOffice.layoutFieldsLost', { count: layout.unseenFields }));
   }
   if (layout.ocr.pages.length > 0) {
     notes.push(note('changed', 'op.note.exportOffice.ocrPages', { pages: layout.ocr.pages.join(', ') }));

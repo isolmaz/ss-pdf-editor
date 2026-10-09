@@ -19,7 +19,7 @@
  * ("stream" mode).
  */
 
-import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade, Text } from 'mupdf';
+import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade, StructuredText, Text } from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 
 export type Box = readonly [number, number, number, number];
@@ -384,22 +384,27 @@ export function slanted(dir: readonly [number, number]): boolean {
   return !across && !vertical;
 }
 
-/** The page's characters, blocks and pictures, through MuPDF's structured-text walker. */
-export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): PageLayout {
-  const [px0, py0, px1, py1] = page.getBounds();
-  const shift = (x: number, y: number): readonly [number, number] => [x - px0, y - py0];
+/** What the structured-text walker reads: the blocks, and every line's characters with their origins. */
+interface Walked {
+  readonly blocks: LayoutBlock[];
+  /** Every line's `chars` with each character's origin (page space, unshifted), for `invisible`. */
+  readonly walked: { readonly chars: LayoutChar[]; readonly origins: (readonly [number, number])[] }[];
+}
+
+/** `text` read to blocks, lines and characters (page space shifted by `shift`); `text` is destroyed. */
+function walkText(
+  mupdf: Mupdf,
+  text: StructuredText,
+  shift: (x: number, y: number) => readonly [number, number],
+): Walked {
   const blocks: LayoutBlock[] = [];
   let lines: LayoutLine[] = [];
   let chars: LayoutChar[] = [];
-  /** Every line's `chars` with each character's origin (page space, unshifted), for `invisible`. */
-  const walked: { readonly chars: LayoutChar[]; readonly origins: (readonly [number, number])[] }[] = [];
+  const walked: Walked['walked'] = [];
   let origins: (readonly [number, number])[] = [];
   let blockBox: Box = [0, 0, 0, 0];
   let lineBox: Box = [0, 0, 0, 0];
   let lineDir: readonly [number, number] = [1, 0];
-  const text = page.toStructuredText(
-    options.images ? 'preserve-whitespace,preserve-images' : 'preserve-whitespace',
-  );
   try {
     text.walk({
       onImageBlock(bbox, transform, image) {
@@ -469,6 +474,18 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   } finally {
     text.destroy();
   }
+  return { blocks, walked };
+}
+
+/** The page's characters, blocks and pictures, through MuPDF's structured-text walker. */
+export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): PageLayout {
+  const [px0, py0, px1, py1] = page.getBounds();
+  const shift = (x: number, y: number): readonly [number, number] => [x - px0, y - py0];
+  const { blocks, walked } = walkText(
+    mupdf,
+    page.toStructuredText(options.images ? 'preserve-whitespace,preserve-images' : 'preserve-whitespace'),
+    shift,
+  );
 
   const rulings: Ruling[] = [];
   const keep = (x0: number, y0: number, x1: number, y1: number): void => {
@@ -583,6 +600,111 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   }
 
   return { width: px1 - px0, height: py1 - py0, blocks, rulings, marks };
+}
+
+/** The text of a page's annotations and form fields, and the fields whose value nothing shows. */
+export interface Appearances {
+  /** What their appearance streams draw as text; `readPageLayout` leaves it out. */
+  readonly layout: PageLayout;
+  /** Form fields that hold a value (or are checked) while their appearance draws nothing at their place. */
+  readonly unseen: number;
+}
+
+/** A widget flagged hidden or no-view is not drawn, so it is not "unseen" either. */
+const WIDGET_NOT_SHOWN = 2 | 32;
+/** How far outside its rectangle a field's appearance may lie and still be that field's (points). */
+const FIELD_SLACK = 2;
+
+/**
+ * The text that the annotations' and form fields' appearance streams draw, read apart from the
+ * page's own content (`toStructuredText` of the page skips them), and how many form fields have a
+ * value that nothing of the appearance shows — no appearance stream, or one that draws nothing:
+ * a text or choice field needs text at its place, a checked box or radio button any drawing.
+ */
+export function readAppearances(mupdf: Mupdf, page: Page): Appearances {
+  const bounds = page.getBounds();
+  const [px0, py0, px1, py1] = bounds;
+  const shift = (x: number, y: number): readonly [number, number] => [x - px0, y - py0];
+  const inks: Box[] = [];
+  const ink = (box: Box): void => {
+    const [x0, y0] = shift(box[0], box[1]);
+    const [x1, y1] = shift(box[2], box[3]);
+    inks.push([x0, y0, x1, y1]);
+  };
+  const list = new mupdf.DisplayList(bounds);
+  let walked: Walked;
+  try {
+    const recorder = new mupdf.DisplayListDevice(list);
+    try {
+      page.runPageAnnots(recorder, mupdf.Matrix.identity);
+      page.runPageWidgets(recorder, mupdf.Matrix.identity);
+      recorder.close();
+    } finally {
+      recorder.destroy();
+    }
+    const device = new mupdf.Device({
+      fillPath: (path, _evenOdd, ctm) => ink(pathShape(path, ctm).box),
+      strokePath: (path, _stroke, ctm) => ink(pathShape(path, ctm).box),
+      fillShade(shade, ctm) {
+        borrowed(shade);
+        ink(transformBox(shade.getBounds(), ctm));
+      },
+      fillImage(image, ctm) {
+        borrowed(image);
+        ink(transformBox([0, 0, 1, 1], ctm));
+      },
+      fillImageMask(image, ctm) {
+        borrowed(image);
+        ink(transformBox([0, 0, 1, 1], ctm));
+      },
+    });
+    try {
+      list.run(device, mupdf.Matrix.identity);
+      device.close();
+    } finally {
+      device.destroy();
+    }
+    walked = walkText(mupdf, list.toStructuredText('preserve-whitespace'), shift);
+  } finally {
+    list.destroy();
+  }
+  const letters: Box[] = [];
+  for (const block of walked.blocks) {
+    if (block.kind !== 'text') continue;
+    for (const line of block.lines)
+      for (const char of line.chars) if (char.c.trim() !== '') letters.push(char.box);
+  }
+  const at = (boxes: readonly Box[], rect: Box): boolean =>
+    boxes.some((box) => {
+      const x = (box[0] + box[2]) / 2;
+      const y = (box[1] + box[3]) / 2;
+      return (
+        x >= rect[0] - FIELD_SLACK &&
+        x <= rect[2] + FIELD_SLACK &&
+        y >= rect[1] - FIELD_SLACK &&
+        y <= rect[3] + FIELD_SLACK
+      );
+    });
+  let unseen = 0;
+  for (const widget of page instanceof mupdf.PDFPage ? page.getWidgets() : []) {
+    try {
+      if ((widget.getFlags() & WIDGET_NOT_SHOWN) !== 0) continue;
+      const value = widget.getValue().trim();
+      const typed = widget.isText() || widget.isChoice();
+      const checked = (widget.isCheckbox() || widget.isRadioButton()) && value !== 'Off';
+      if (value === '' || !(typed || checked)) continue;
+      const [wx0, wy0, wx1, wy1] = widget.getBounds();
+      const [x0, y0] = shift(wx0, wy0);
+      const [x1, y1] = shift(wx1, wy1);
+      if (!at(typed ? letters : [...letters, ...inks], [x0, y0, x1, y1])) unseen += 1;
+    } finally {
+      widget.destroy();
+    }
+  }
+  return {
+    layout: { width: px1 - px0, height: py1 - py0, blocks: walked.blocks, rulings: [], marks: [] },
+    unseen,
+  };
 }
 
 /* ------------------------------------------------------------------ *

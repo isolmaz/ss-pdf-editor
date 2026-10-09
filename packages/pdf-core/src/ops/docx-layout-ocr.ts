@@ -52,6 +52,11 @@ export interface OcrOptions {
 
 /** The pictures cover at least this much of the page for it to be a scan. */
 const SCAN_COVER = 0.5;
+
+/** Whether pictures covering `area` (square points) make a page of `width` × `height` a scan. */
+export function coversPage(area: number, width: number, height: number): boolean {
+  return area >= SCAN_COVER * width * height;
+}
 /** A scan is read at its own resolution within these bounds, dpi. */
 const MIN_DPI = 150;
 const MAX_DPI = 300;
@@ -89,7 +94,7 @@ export function isScanPage(scene: PageScene): boolean {
     if (item.kind === 'shape') continue;
     covered += Math.max(0, item.box[2] - item.box[0]) * Math.max(0, item.box[3] - item.box[1]);
   }
-  return covered >= SCAN_COVER * scene.width * scene.height;
+  return coversPage(covered, scene.width, scene.height);
 }
 
 /** The words of the page's invisible text layer, as OCR words (boxes from the baseline and size the layer was written with). */

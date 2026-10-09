@@ -272,7 +272,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     are recognised from the spacing of the text and become borderless tables. Pictures keep
     their transparency; charts and drawings made of vector graphics are carried as pictures, their labels staying text over them.
     A picture that cannot be read, or one inside a table cell, is left out, and the report
-    says how many.
+    says how many. Text the PDF itself hides (invisible text) is not exported, except the
+    invisible OCR text layer of a scanned page, which is the only text that page has. Form
+    fields and annotations are not carried, and the report says so.
   - **Word layout.** Word has three layouts, chosen in the Export dialog and in the form: *Text
     and pictures, exact layout* (the default; "Metin + resim, tam düzen" in Turkish), *Flowing
     text* (described above, the one to edit at length) and *One picture per page*. Word's pages
@@ -346,6 +348,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
         With no language ticked, or when the engine cannot start, a scan stays a picture and
         the report says so. How the engine and the 90 % threshold were chosen:
         [docs/ocr-evaluation.md](docs/ocr-evaluation.md).
+      - **Form fields.** A filled form field is carried as text where the field is, as the
+        page shows it; a checked box or radio button is drawn as the shape the PDF draws. A
+        field whose value the PDF does not draw is not in the document, and the report lists how
+        many under Losses.
     - **Flowing text** is described above.
     - **One picture per page** draws every page exactly as a viewer shows it (annotations and
       form fields included, on white paper) and puts it in its own section as one picture
