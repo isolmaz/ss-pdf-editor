@@ -20,7 +20,6 @@ import type { RedactRect } from 'pdf-core/ops/redact';
 import type { ProtectionState } from 'pdf-core/ops/security';
 import type { OperationContext } from 'pdf-core/ops/types';
 import {
-  copyForEngine,
   type Draft,
   type DraftInventory,
   type DraftSnapshot,
@@ -62,22 +61,12 @@ const PasswordDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.PasswordDialog };
 });
-/**
- * The keyboard shortcut list. Help is not a document operation — it opens with no tab
- * and in either mode — but it carries Kumo's dialog primitives, so it rides the dialog
- * boundary with the other modals rather than the first paint.
- */
-const ShortcutsDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.ShortcutsDialog };
-});
 
 import { CaretLeft, CaretRight, Command, FilePdf, FolderOpen, GearSix } from '@phosphor-icons/react';
 import type { OperationOutcome } from 'pdf-core';
 import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
-import type { FieldValue } from 'pdf-ui';
 import {
   type CanvasToolId,
   MarkInteractionLayer,
@@ -87,17 +76,14 @@ import {
   ToolProperties,
   usePresentation,
 } from 'pdf-ui/tools';
-import type { AnnotationTool, OperationDialogSpec, OperationRunContext, OpRunResult } from 'pdf-ui/ui';
+import type { AnnotationTool, OperationRunContext } from 'pdf-ui/ui';
 import {
   AnnotationLayer,
   Button,
   ContextMenu,
   Dock,
   DocumentPanel,
-  dialogById,
   HistoryPanel,
-  hasDialog,
-  isStandaloneDialog,
   MenuBar,
   StatusBar,
   ToolsRailPanel,
@@ -178,6 +164,15 @@ import {
   useDocumentHandle,
 } from './features/core/handles';
 import { useCompactViewport } from './features/core/viewport';
+import { BatchDialogHost, ShortcutsDialogHost, StartDialogHost } from './features/dialogs/DialogSurfaces';
+import { createDialogOpeners, createDialogRuns } from './features/dialogs/dialog-actions';
+import {
+  dialogsStore,
+  dismissOperationDialog,
+  openBatchDialog,
+  useDialogs,
+} from './features/dialogs/dialogs-store';
+import { useStaleDialogDismissal } from './features/dialogs/use-dialog-dismissal';
 import { currentFacts, currentFactsError, useCurrentFacts } from './features/facts/facts-store';
 import { PropertiesFacts } from './features/facts/PropertiesFacts';
 import { RedactionAuditView } from './features/facts/RedactionAuditView';
@@ -210,7 +205,7 @@ import {
   refuseUnappliedRedactions as refuseUnappliedRedactionsFor,
   useRedactionMarks,
 } from './features/marks/redaction';
-import { erasedWordsOf, redactedWordsForgotten, redactedWordsRead } from './features/marks/redaction-store';
+import { erasedWordsOf, redactedWordsForgotten } from './features/marks/redaction-store';
 import { useMarkActions, useWriterActions } from './features/marks/use-mark-actions';
 import { MeasureOverlay } from './features/measure/MeasureOverlay';
 import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
@@ -235,7 +230,7 @@ import {
   placeStamp as stampPlace,
   resizeStamp as stampResize,
 } from './features/stamps/stamp-actions';
-import { convertToPdf, imagesToPdf, inspectProtection, listPdfImages, verifySignatures } from './lazy-ops';
+import { convertToPdf, imagesToPdf, inspectProtection, verifySignatures } from './lazy-ops';
 import {
   appendWarning,
   engineValuesNotices,
@@ -251,14 +246,12 @@ import {
   requiredCapabilities,
 } from './offline';
 import {
-  applyProducedBytes,
   type DocumentContext,
   downloadFiles,
   hasEngineEdits,
   materializeBase,
   type PageAction,
   pendingOverlays,
-  redactionNeedles,
   verifyForWrite,
   type WriteVerification,
 } from './operations';
@@ -274,12 +267,11 @@ import {
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
-  heldByPendingRedactions,
   planSaveExecution,
   type SaveExecutionPlan,
   type SaveStepDescription,
 } from './save-plan';
-import { SHELL_SHORTCUT_GROUPS, useShellShortcuts } from './useShortcuts';
+import { useShellShortcuts } from './useShortcuts';
 import { createVaultChannel, type VaultChannel } from './vault-channel';
 
 /**
@@ -330,21 +322,6 @@ export interface AppProps {
 }
 
 /**
- * What an open operation dialog runs against: frozen bytes plus the identity of
- * the tab and working version they were frozen from. A dialog whose input is no
- * longer that exact version applies nothing.
- */
-interface DialogInput {
-  readonly tabId: string;
-  readonly workingId: string;
-  readonly name: string;
-  readonly pageCount: number;
-  readonly bytes: Uint8Array;
-  /** Field values the opener chose before the form existed (the export choice's image format). */
-  readonly presets?: Readonly<Record<string, FieldValue>>;
-}
-
-/**
  * The command palette is the only consumer of Kumo's command palette, which held the entry
  * chunk over the budget. It is reached by a gesture, so it loads on demand — and `main.tsx`
  * prefetches it while the browser is idle, so the first `Ctrl+K` is not a visible wait.
@@ -352,22 +329,6 @@ interface DialogInput {
 const CommandPalette = lazy(async () => {
   const module = await import('pdf-ui/palette');
   return { default: module.CommandPalette };
-});
-/**
- * The batch dialog: a queue of files, not the open document. It carries Kumo's form and
- * dialog primitives, so it lives behind the same boundary as the other dialogs.
- */
-const BatchDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.BatchDialog };
-});
-/**
- * The modal host of an operation that starts a document (blank, images, merge): it runs
- * with no document open, so it cannot live in a tab's tools panel.
- */
-const StartDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.StartDialog };
 });
 /**
  * The comparison panel reads the working bytes, so it rides the dock panels' own boundary
@@ -452,44 +413,20 @@ export function App({ store }: AppProps) {
   const refuseBusy = useCallback(() => showNotice(t('op.busy')), [t]);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const closeTrigger = useRef<HTMLElement | null>(null);
-  const [batchOpen, setBatchOpen] = useState(false);
   const reading = useReading((state) => state.reading);
   const magnifierOn = useReading((state) => state.magnifierOn);
   /** Surface state: dialogs, palette, docks, page selection, progress, tools. */
-  const [dialogSpec, setDialogSpec] = useState<OperationDialogSpec | null>(null);
-  /**
-   * The frozen input of the open dialog: the tab it belongs to, the working
-   * version its bytes were materialised from and the bytes themselves. Storing
-   * the origin here — instead of reading the *active* tab when the dialog
-   * renders — is what stops a tab switch during materialisation from pairing one
-   * document's bytes with another document's name, page count and handle, and it
-   * makes an operation that landed behind the dialog a reason to dismiss rather
-   * than a silent mismatch.
-   */
-  const [dialogInput, setDialogInput] = useState<DialogInput | null>(null);
+  const dialogSpec = useDialogs((state) => state.dialogSpec);
+  const dialogInput = useDialogs((state) => state.dialogInput);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  /**
-   * The shortcut list (`useShortcuts.ts` owns the bindings it prints). Its own state
-   * rather than a dialog id: help is not a document operation, so it opens with no tab
-   * and in either interface mode.
-   */
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** Language, theme, interface mode, privacy and offline preferences — one dialog. */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /**
-   * What had the focus when the list opened. It is usually still there when the list
-   * closes (the Help menu trigger), but a palette search field is gone by then — the
-   * close path below falls back rather than dropping focus on `<body>`.
-   */
-  const shortcutsTrigger = useRef<HTMLElement | null>(null);
   const [showHomeScreen, setShowHomeScreen] = useState(true);
   /**
    * The command a home-screen tool promised to run once its document is open: the tool was
    * picked first and the file asked for after, so the command waits for the tab.
    */
   const pendingHomeCommand = useRef<string | null>(null);
-  /** The standalone operation shown in its modal (`StartDialog`), or `null`. */
-  const [startSpec, setStartSpec] = useState<OperationDialogSpec | null>(null);
   /** A file is being read and parsed: the overlay says so until its tab exists. */
   const [opening, setOpening] = useState(false);
   /**
@@ -542,8 +479,6 @@ export function App({ store }: AppProps) {
   const [selectedPages, setSelectedPages] = useState<readonly number[]>([]);
   const progress = useResults((state) => state.progress);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  /** Drives which operation dialog is mounted; the value itself is only read by the host's key. */
-  const [, setDialogId] = useState<string | null>(null);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     readonly x: number;
@@ -580,9 +515,7 @@ export function App({ store }: AppProps) {
     // on a screen the menus can no longer reach.
     if (next === 'simple') {
       cancelRef.current?.abort();
-      setDialogId(null);
-      setDialogSpec(null);
-      setDialogInput(null);
+      dismissOperationDialog();
     }
   }, []);
   /** Leave the simple mode; the palette's "hidden by the simple mode" hint calls this. */
@@ -1915,7 +1848,7 @@ export function App({ store }: AppProps) {
 
   const closeTab = useCallback(
     (id: string) => {
-      if (isBusy() || cancelRef.current !== null || dialogSpec !== null) {
+      if (isBusy() || cancelRef.current !== null || dialogsStore.get().dialogSpec !== null) {
         refuseBusy();
         return;
       }
@@ -1931,7 +1864,7 @@ export function App({ store }: AppProps) {
       }
       discardTab(id);
     },
-    [discardTab, dialogSpec, refuseBusy, store],
+    [discardTab, refuseBusy, store],
   );
 
   const cancelClose = useCallback(() => {
@@ -2150,194 +2083,10 @@ export function App({ store }: AppProps) {
     else await document.exitFullscreen();
   }, []);
 
-  /**
-   * Dialog opening materialises the base **first**: the dialog's `run` receives
-   * frozen bytes, so a form value typed a second earlier cannot be lost between
-   * opening the panel and pressing Apply.
-   */
-  /**
-   * Open an operation that starts a document (`isStandaloneDialog`). It needs no tab and
-   * freezes no bytes, so it skips everything `openDialog` does for a document and only
-   * loads its spec; `StartDialog` hosts it and `handleStartResult` opens its result.
-   */
-  const openStart = useCallback(
-    (id: string) => {
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      clearNotice();
-      void dialogById(id).then((spec) => {
-        if (spec !== undefined) setStartSpec(spec);
-      });
-    },
-    [refuseBusy],
+  const { openStart, openDialog, showShortcuts, closeShortcuts } = useMemo(
+    () => createDialogOpeners({ session: store, t, contextFor, cancelRef, refuseBusy, setImages }),
+    [contextFor, refuseBusy, store, t],
   );
-
-  const openDialog = useCallback(
-    (id: string, presets?: Readonly<Record<string, FieldValue>>) => {
-      // The camera scanner is a modal of its own, not an operation dialog.
-      if (id === 'scan-camera') {
-        clearNotice();
-        openScanDialog();
-        return;
-      }
-      if (!hasDialog(id)) return;
-      if (isStandaloneDialog(id)) {
-        openStart(id);
-        return;
-      }
-      // The tab and its handle are read at call time, like every other entry
-      // point: a control one render old must not freeze the previous handle.
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) return;
-      clearNotice();
-      if (isBusy() || cancelRef.current !== null) {
-        refuseBusy();
-        return;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      /**
-       * The frozen bytes are only valid for the version they came from: a tab
-       * switch, a close or an operation landing while this runs makes them an
-       * input to a document that is no longer in front. The check runs after
-       * every `await`, so the dialog either opens with a coherent input or does
-       * not open at all.
-       */
-      const stale = () => {
-        const current = store.active;
-        return controller.signal.aborted || current?.id !== tab.id || current.working.id !== tab.working.id;
-      };
-      void (async () => {
-        try {
-          const bytes = await materializeBase(contextFor(tab, handle), { signal: controller.signal });
-          if (stale()) return;
-          // The spec is a dynamic import: a capability's dialog code loads when the
-          // capability is opened, which is what keeps fifteen dialogs out of the
-          // first-paint bundle.
-          const spec = await dialogById(id);
-          if (spec === undefined || stale()) return;
-          if (heldByPendingRedactions(spec) && pendingOverlays(tab).redactions.length > 0) {
-            throw new ToolError('pending-redactions', { engine: 'model' });
-          }
-          // The image dialog's target list is document data, so it is read here, from
-          // the same frozen bytes the run receives (`pdf-core/ops/image-edit.ts`).
-          const listing =
-            id === 'image-edit'
-              ? await listPdfImages(bytes, { signal: controller.signal }).then((images) => images.images)
-              : null;
-          if (stale()) return;
-          setImages(listing);
-          setDialogInput({
-            tabId: tab.id,
-            workingId: tab.working.id,
-            name: tab.name,
-            pageCount: workingPageCount(tab),
-            bytes,
-            ...(presets === undefined ? {} : { presets }),
-          });
-          setDialogSpec(spec);
-          setDialogId(id);
-          // **Every operation opens in the tools panel**, beside the document it will
-          // change. It used to open there only when that tab happened to be showing and
-          // as a modal otherwise — the same capability in two places, with two sets of
-          // buttons. Modals are kept for the decisions that block (password, close,
-          // signature warning, export choice, print).
-          openRightPanel('tools');
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          const toolError =
-            error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-        } finally {
-          if (cancelRef.current === controller) {
-            cancelRef.current = null;
-            setBusy(false);
-          }
-        }
-      })();
-    },
-    // `existingAnnotations` and the takeover are part of the call: the dialog host
-    // freezes the same working bytes a save writes, marks included.
-    [contextFor, openStart, store, t, refuseBusy],
-  );
-
-  /**
-   * The Help menu's shortcut list. It is deliberately not `openDialog`: that path
-   * freezes the open document's bytes for a run, and help has no document, no bytes
-   * and no run — it answers with no tab open, in either interface mode.
-   *
-   * A modal surface takes the pointer, so an armed tool is put away first, exactly as
-   * the palette does it: a measure overlay left armed under the dialog would swallow
-   * its clicks.
-   */
-  const showShortcuts = useCallback(() => {
-    /**
-     * `document.activeElement` is `<body>` whenever nothing holds the focus, and `<body>`
-     * is an `HTMLElement` that stays connected for the life of the page: storing it would
-     * make the close path below "focus `<body>`" — the one outcome it exists to prevent.
-     * Only an element that was really focused counts as the opener.
-     */
-    const opener = document.activeElement;
-    shortcutsTrigger.current = opener instanceof HTMLElement && opener !== document.body ? opener : null;
-    selectTool('select');
-    setShortcutsOpen(true);
-  }, []);
-
-  const closeShortcuts = useCallback(() => {
-    setShortcutsOpen(false);
-    /**
-     * Focus goes back where it came from, or to the shell's own first control: the
-     * opener is often a menu trigger that is still mounted, but the palette's search
-     * field is not, and a dialog that leaves focus on `<body>` costs the keyboard user
-     * their place. The same rule the close-tab prompt follows.
-     */
-    requestAnimationFrame(() => {
-      const target = shortcutsTrigger.current;
-      if (target?.isConnected) target.focus();
-      else document.querySelector<HTMLElement>('[role="menubar"] [role="menuitem"], main button')?.focus();
-    });
-  }, []);
-
-  /** Build an unlocked copy of a protected tab, in a new tab; the original stays protected. */
-  const unlockActiveCopy = useCallback(async () => {
-    const tab = store.active;
-    const password = tab === null ? undefined : lockedTabs.get(tab.id);
-    if (tab === null || password === undefined || isBusy()) return;
-    setBusy(true);
-    const controller = new AbortController();
-    // The progress overlay's Cancel aborts `cancelRef`: registering the run is what makes
-    // that button stop this work rather than nothing.
-    cancelRef.current = controller;
-    try {
-      const { unlockDocument } = await import('pdf-core/ops/security');
-      const outcome = await unlockDocument(copyForEngine(tab.source.master), password, {
-        signal: controller.signal,
-        onProgress: setProgress,
-      });
-      const warning = await openProducedTab(
-        tab.name.replace(/\.pdf$/i, `-${t('security.unlock.suffix')}.pdf`),
-        outcome.bytes,
-      );
-      // What unlocking cost the file (a signature that no longer validates) must reach the
-      // user: the report's `lost` notes are the only place that is said.
-      const lost = outcome.report.notes
-        .filter((entry) => entry.kind === 'lost')
-        .map((entry) => t(entry.key, entry.params ?? {}))
-        .join(' ');
-      showNotice(appendWarning(appendWarning(t('locked.done'), lost === '' ? null : lost), warning));
-    } catch (error) {
-      const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'mupdf' });
-      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-    } finally {
-      if (cancelRef.current === controller) cancelRef.current = null;
-      setProgress(null);
-      setBusy(false);
-    }
-  }, [lockedTabs, openProducedTab, store, t]);
 
   const handleExportWithOptions = useCallback(
     (options: {
@@ -2403,24 +2152,11 @@ export function App({ store }: AppProps) {
     };
   }, [dialogInput, currentPage, images, linkRegion, selectedPages, redactionMarks, t, textEdit]);
 
-  /**
-   * A dialog belongs to the version it froze. When the active tab changes — the
-   * user switched, closed it, or an operation landed behind the modal — the
-   * frozen input is no longer that tab's document, so the dialog is dismissed
-   * instead of being applied to bytes it was never opened for.
-   */
-  useEffect(() => {
-    const input = dialogInput;
-    if (input === null) return;
-    const tab = session.tabs.find((item) => item.id === input.tabId);
-    if (tab === undefined || tab.working.id !== input.workingId || session.activeId !== input.tabId) {
-      setDialogInput(null);
-      setDialogSpec(null);
-      setDialogId(null);
-      setTextEdit(null);
-      setImages(null);
-    }
-  }, [dialogInput, session]);
+  const dropFrozenSelections = useCallback(() => {
+    setTextEdit(null);
+    setImages(null);
+  }, []);
+  useStaleDialogDismissal(session, dropFrozenSelections);
 
   /**
    * Freeze the working bytes for the text tool the moment it is armed. Arming is a
@@ -2488,165 +2224,20 @@ export function App({ store }: AppProps) {
     [store, t, contextFor, setHandle, openProducedTab, openDialog, refuseBusy, refuseUnappliedRedactions],
   );
 
-  const handleDialogResult = useCallback(
-    async (result: OpRunResult) => {
-      const input = dialogInput;
-      if (input === null || dialogSpec === null) return;
-      /**
-       * The result belongs to the tab and version the dialog froze, not to
-       * whatever is active when the click lands. Read both fresh from the store:
-       * a tab switch or a landed operation between opening and applying must
-       * refuse the result rather than write one document's bytes onto another.
-       */
-      const tab = store.getSnapshot().tabs.find((item) => item.id === input.tabId) ?? null;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (
-        tab === null ||
-        handle === null ||
-        tab.working.id !== input.workingId ||
-        store.active?.id !== input.tabId
-      ) {
-        setDialogInput(null);
-        setDialogId(null);
-        setDialogSpec(null);
-        return;
-      }
-      if (isBusy() || cancelRef.current !== null) {
-        refuseBusy();
-        return;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      const first = result.files[0];
-      /**
-       * The dialog is done the moment its result action has been taken, and it closes
-       * here rather than waiting for a "Kapat" press. Two reasons: the outcome is
-       * already reported where the product says it belongs — the notice line, the
-       * History dock and the save report — and a dialog left mounted past its last
-       * action is what left an invisible Base UI backdrop over the shell, swallowing
-       * the next click anywhere in the app.
-       */
-      const close = () => {
-        setDialogId(null);
-        setDialogInput(null);
-        setDialogSpec(null);
-      };
-      try {
-        const kind = result.deliver ?? dialogSpec.resultKind;
-        if (kind === 'download') {
-          downloadFiles(result.files);
-          showNotice(
-            result.noticeKey === undefined
-              ? t('op.result.downloaded', { name: first?.name ?? '' })
-              : t(result.noticeKey, result.noticeParams ?? {}),
-          );
-          close();
-          return;
-        }
-        if (first === undefined) return;
-        if (kind === 'new-tab') {
-          const warning = await openProducedTab(first.name, first.bytes, controller.signal);
-          showNotice(
-            appendWarning(
-              result.noticeKey === undefined
-                ? t('op.result.opened', { name: first.name })
-                : t(result.noticeKey, result.noticeParams ?? {}),
-              warning,
-            ),
-          );
-          close();
-          return;
-        }
-        const next = await applyProducedBytes(
-          contextFor(tab, handle),
-          first.bytes,
-          result.report.pageCount,
-          { key: dialogSpec.titleKey },
-          result.report.engine,
-          result.report.steps,
-          { signal: controller.signal },
-          dialogSpec.id === 'redact' ? { annotations: [], measures: [], redactions: [] } : undefined,
-        );
-        setHandle(tab.id, next);
-        if (dialogSpec.id === 'redact') {
-          /**
-           * The words this redaction removed, read from the bytes it ran on — the marks
-           * the run received are frozen in `dialogContext`, and `input.bytes` is the
-           * version they were measured against. Taken *before* the notice
-           * because the audit that needs them runs later, on bytes where those words are
-           * already gone.
-           */
-          const marks = dialogContext?.redactions ?? [];
-          void redactionNeedles(input.bytes, marks, { signal: new AbortController().signal })
-            .then((terms) => redactedWordsRead(tab.id, terms))
-            .catch(() => undefined);
-        }
-        showNotice(
-          result.noticeKey === undefined
-            ? t('op.result.applied', { label: t(dialogSpec.titleKey) })
-            : t(result.noticeKey, result.noticeParams ?? {}),
-        );
-        close();
-        return;
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        if (cancelRef.current === controller) {
-          cancelRef.current = null;
-          setBusy(false);
-        }
-      }
-    },
-    [contextFor, dialogContext, dialogInput, dialogSpec, openProducedTab, setHandle, store, t, refuseBusy],
-  );
-
-  /**
-   * The result of a standalone operation: it has no document to replace, so it either
-   * downloads or opens as a new tab, and the modal closes once that has happened.
-   */
-  const handleStartResult = useCallback(
-    async (result: OpRunResult) => {
-      const spec = startSpec;
-      if (spec === null) return;
-      const first = result.files[0];
-      if ((result.deliver ?? spec.resultKind) === 'download') {
-        downloadFiles(result.files);
-        showNotice(t('op.result.downloaded', { name: first?.name ?? '' }));
-        setStartSpec(null);
-        return;
-      }
-      if (first === undefined) return;
-      if (isBusy() || cancelRef.current !== null) {
-        refuseBusy();
-        return;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      try {
-        const warning = await openProducedTab(first.name, first.bytes, controller.signal);
-        setStartSpec(null);
-        showNotice(appendWarning(t('op.result.opened', { name: first.name }), warning));
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        showNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
-      } finally {
-        if (cancelRef.current === controller) {
-          cancelRef.current = null;
-          setBusy(false);
-        }
-      }
-    },
-    [openProducedTab, refuseBusy, startSpec, t],
-  );
-
-  /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
-  const startContext: OperationRunContext = useMemo(
-    () => ({ bytes: new Uint8Array(0), pageCount: 0, name: '', currentPage: 0, selectedPages: [], t }),
-    [t],
+  const { dialogResult, startResult, unlockActiveCopy } = useMemo(
+    () =>
+      createDialogRuns({
+        session: store,
+        t,
+        contextFor,
+        setHandle,
+        cancelRef,
+        openProducedTab,
+        refuseBusy,
+        dialogContext,
+        lockedTabs,
+      }),
+    [store, t, contextFor, setHandle, openProducedTab, refuseBusy, dialogContext, lockedTabs],
   );
 
   /** The writer pipeline and the layers panel's write (`features/marks/writer.ts`). */
@@ -2856,7 +2447,7 @@ export function App({ store }: AppProps) {
         save: () => void saveActive(),
         exportDocument: () => void exportActive(),
         print: openPrint,
-        openBatch: () => setBatchOpen(true),
+        openBatch: openBatchDialog,
         openSignature,
         addImage: pickImage,
         measure: armMeasure,
@@ -3257,7 +2848,7 @@ export function App({ store }: AppProps) {
             onOpenFiles={(files) => void openFilesFromSurface(files)}
             onOpenPicker={() => void openViaPicker()}
             onStart={(action) => {
-              if (action === 'batch') setBatchOpen(true);
+              if (action === 'batch') openBatchDialog();
               else if (action === 'scan') openScanDialog();
               else
                 openStart(
@@ -3573,15 +3164,13 @@ export function App({ store }: AppProps) {
                       }}
                       onBackToTools={() => {
                         cancelRef.current?.abort();
-                        setDialogId(null);
-                        setDialogSpec(null);
-                        setDialogInput(null);
+                        dismissOperationDialog();
                         // The block selection belongs to exactly one run: leaving it in
                         // place would let a later `text-edit` open on a paragraph the
                         // user is no longer looking at.
                         setTextEdit(null);
                       }}
-                      onResult={(result) => void handleDialogResult(result)}
+                      onResult={(result) => void dialogResult(result)}
                       onPageAction={(action) => runPageAction(action as PageAction)}
                       onArmTool={(tool) => {
                         // The rail emits the redaction tool today and offered the
@@ -3740,29 +3329,9 @@ export function App({ store }: AppProps) {
             mounted unconditionally still fetches immediately. The `open` prop stays
             as it was, so the dialog's own open/close contract is unchanged.
           */}
-        {startSpec === null ? null : (
-          <Suspense fallback={null}>
-            <StartDialog
-              t={t}
-              spec={startSpec}
-              context={startContext}
-              onClose={() => setStartSpec(null)}
-              onResult={(result) => void handleStartResult(result)}
-            />
-          </Suspense>
-        )}
+        <StartDialogHost t={t} onResult={startResult} />
         <ScanDialogHost t={t} onDocument={resultsActions.scanDocument} />
-        {batchOpen ? (
-          <Suspense fallback={null}>
-            <BatchDialog
-              t={t}
-              open={batchOpen}
-              onClose={() => setBatchOpen(false)}
-              onDownload={downloadFiles}
-              onNotice={showNotice}
-            />
-          </Suspense>
-        ) : null}
+        <BatchDialogHost t={t} />
         <ActivityOverlay
           t={t}
           notice={notice}
@@ -3836,16 +3405,7 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       )}
-      {shortcutsOpen ? (
-        <Suspense fallback={null}>
-          <ShortcutsDialog
-            t={t}
-            open={shortcutsOpen}
-            groups={SHELL_SHORTCUT_GROUPS}
-            onClose={closeShortcuts}
-          />
-        </Suspense>
-      ) : null}
+      <ShortcutsDialogHost t={t} onClose={closeShortcuts} />
       {/* Same boundary as the print dialog: the palette mounts when it opens, so its
           Kumo dependency tree never reaches the entry chunk. */}
       {paletteOpen ? (
