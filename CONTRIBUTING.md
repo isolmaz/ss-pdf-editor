@@ -66,9 +66,14 @@ and on manual dispatch:
   with a LibreOffice installed from the official `.deb` tarball pinned by version and sha256. It
   gates `deploy` like the jobs above (a `null` threshold is measured, not gated); the report goes
   to the job summary and the `fidelity` artifact.
-- **`coverage`** (after `verify`) runs `pnpm coverage --min=100`: the unit suite and the whole
-  Playwright suite against the unminified build, added together, must cover every line,
-  statement, branch and function; the report is the `coverage-report` artifact.
+- **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
+  (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each shard builds the
+  unminified editor, runs its quarter of the Playwright suite (the last also the service-worker
+  tests) and uploads the V8 coverage its pages wrote, so no runner holds the whole browser run.
+- **`coverage`** (after both) downloads what they uploaded and runs `pnpm coverage
+  --merge=coverage-parts --min=100`: the unit suite and the Playwright suite against the
+  unminified build, added together, must cover every line, statement, branch and function; the
+  report is the `coverage-report` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed: `wrangler deploy`
   with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
   `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
@@ -77,8 +82,8 @@ and on manual dispatch:
   `main`'s head when its deploy starts deploys nothing, so a late older run cannot replace a
   newer build.
 
-`.github/workflows/nightly.yml` runs daily and on manual dispatch. It runs `pnpm coverage
---min=100`, which fails when any total is under 100 % and uploads the report, and
+`.github/workflows/nightly.yml` runs daily and on manual dispatch. It runs the same three
+coverage jobs, whose `coverage` fails when any total is under 100 % and uploads the report, and
 the Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, so
 a flaky test fails the night.
 
@@ -122,7 +127,12 @@ build's source maps and added to the unit figures statement by statement
 `coverage/report/` (`html/index.html`); it rebuilds the production `dist/` before it exits.
 `pnpm coverage --skip-e2e` reports the unit suite alone, and `pnpm coverage --min=100` exits
 with an error, naming the files that miss, when the total lines, statements, branches or
-functions are under 100 % (the CI `coverage` job and the nightly run do this). On a machine
+functions are under 100 % (the CI and nightly `coverage` jobs do this on the merge of the
+parts). Those jobs split the run with `pnpm coverage --unit-only`, `pnpm coverage
+--e2e-shard=N/M` (shard N of M of the chromium project, which leaves its records in
+`coverage/e2e-v8/`) and `pnpm coverage --merge=<dir>[,<dir>...]` (the unit result and every
+shard's records, read from those directories); a page's record is its own gzipped file, written as
+the page closes, so no worker or shard holds the whole run. On a machine
 you are working on, `E2E_WORKERS=4` caps the browsers Playwright runs at once and
 `VITEST_MAX_WORKERS=8` the unit workers; both apply to `pnpm e2e`, `pnpm unit` and
 `pnpm coverage`. Playwright serves `dist/` on port 4178 and, outside CI, reuses a server already

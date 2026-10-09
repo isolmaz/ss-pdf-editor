@@ -837,7 +837,7 @@ The limits are defined once, in
 | `pnpm lint` / `check` / `format` | Biome: lint / lint and format check / format write |
 | `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions; `VITEST_MAX_WORKERS=N` caps the unit workers |
 | `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`); `E2E_WORKERS=N` caps the browsers running at once |
-| `pnpm coverage [--skip-e2e] [--min=N]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits); `--min=N` fails the run when the total lines, statements, branches or functions are under N % |
+| `pnpm coverage [--skip-e2e] [--min=N]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits); `--min=N` fails the run when the total lines, statements, branches or functions are under N %. CI splits the run over jobs with `--unit-only`, `--e2e-shard=N/M` and `--merge=<dir>[,<dir>...]` (see `tools/coverage/report.mjs`) |
 | `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
 | `pnpm fidelity [playwright args]` | PDF → Word export accuracy against LibreOffice (needs the assembled `dist/` and `LIBREOFFICE` set to the path of `soffice`); results in `test-results/fidelity/` |
 | `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
@@ -900,14 +900,18 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
   `e2e/fidelity/thresholds.json`; a `null` threshold is measured, not gated. Locally: `pnpm fidelity`
   with `LIBREOFFICE` set to the path of `soffice`. The report goes to the job summary and the
   `fidelity` artifact.
-- **`coverage`** (after `verify`) runs `pnpm coverage --min=100`: unit and browser coverage added
-  together must be 100 % on lines, statements, branches and functions; the report is the
-  `coverage-report` artifact.
+- **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
+  (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each builds the unminified
+  editor, runs its quarter of the Playwright suite (the last shard also the service-worker tests)
+  and uploads the V8 coverage its pages wrote, so no runner holds the whole browser run.
+- **`coverage`** (after both) downloads what they uploaded and runs `pnpm coverage
+  --merge=coverage-parts --min=100`: unit and browser coverage added together must be 100 % on
+  lines, statements, branches and functions; the report is the `coverage-report` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 
-`.github/workflows/nightly.yml` runs daily and on manual dispatch: `pnpm coverage
---min=100`, which fails when any total is under 100 % and uploads the report, and the
+`.github/workflows/nightly.yml` runs daily and on manual dispatch: the same three coverage jobs,
+whose `coverage` fails when any total is under 100 % and uploads the report, and the
 Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
 `.github/workflows/revert-proof.yml` runs on manual dispatch and on a pull request labelled
 `revert-proof`: for every fix on the list that `tools/review/revert-proof.mjs` reads, the
