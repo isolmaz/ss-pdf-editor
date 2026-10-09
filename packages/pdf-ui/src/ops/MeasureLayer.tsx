@@ -338,7 +338,7 @@ export function MeasureLayer({
     try {
       // The same call the writer makes with the same points: what the user reads
       // while clicking is what the annotation will carry.
-      return { points, measurement: measureMark(frame.geometry, points, mode) };
+      return { points, frame, measurement: measureMark(frame.geometry, points, mode) };
     } catch {
       // A two-point chain in area mode is already a rectangle; anything the geometry
       // refuses (a single point, a non-finite coordinate) simply has no value yet.
@@ -463,11 +463,7 @@ export function MeasureLayer({
 
       {/* The chain being clicked, with the live value at the pointer. */}
       {preview !== null && chain !== null ? (
-        <ChainShape
-          frame={frames.of(chain.pageIndex)}
-          chain={preview.points}
-          mark={{ color, opacity, thickness }}
-        />
+        <ChainShape frame={preview.frame} chain={preview.points} mark={{ color, opacity, thickness }} />
       ) : null}
 
       {/* The gesture half. Mounted only while a tool is armed: an inert overlay that
@@ -570,11 +566,10 @@ function ChainShape({
   chain,
   mark,
 }: {
-  readonly frame: PageFrame | null;
+  readonly frame: PageFrame;
   readonly chain: readonly MeasurePoint[];
   readonly mark: { readonly color: string; readonly opacity: number; readonly thickness: number };
 }) {
-  if (frame === null) return null;
   const screen = chain.map((point) => toScreen(frame, point));
   return (
     <svg
