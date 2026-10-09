@@ -5,9 +5,13 @@
  * in it, and corners returned in an order the rest of the scanner cannot use.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { detectPage, WORKING_SIZE } from './scan-detect';
 import { distance, type Point, type Quad, type RasterImage } from './scan-geometry';
+
+// Each case finds a sheet in a full-size photograph: about a second alone, several under the
+// coverage run on a loaded core.
+vi.setConfig({ testTimeout: 30_000 });
 
 /** Whether `point` lies inside the convex polygon (any winding). */
 function inside(polygon: readonly Point[], x: number, y: number): boolean {

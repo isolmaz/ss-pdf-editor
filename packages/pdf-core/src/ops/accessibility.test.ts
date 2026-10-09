@@ -9,7 +9,7 @@
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import type { PageTextInput, Rect } from 'pdf-text-engine';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   checkAccessibility,
   claimsFor,
@@ -33,6 +33,10 @@ import {
   treeOrder,
 } from './accessibility';
 import type { OperationContext } from './types';
+
+// Each case reads a whole document with MuPDF: under a second alone, several under the
+// coverage run on a loaded core.
+vi.setConfig({ testTimeout: 30_000 });
 
 const run = { signal: new AbortController().signal };
 

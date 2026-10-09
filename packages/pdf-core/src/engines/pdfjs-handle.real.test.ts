@@ -11,6 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { xfaPdf } from '../ops/xfa-form.fixtures';
 import { loadPdfjs, openWithPdfjs, type PdfDocumentHandle, warmPdfjs } from './pdfjs-handle';
 
+// Each case loads and renders a document with the real pdf.js: about a second alone, several
+// under the coverage run on a loaded core.
+vi.setConfig({ testTimeout: 30_000 });
+
 /** Two pages: "Merhaba" on the first, the second turned a quarter; labels i, ii; a nested outline. */
 function document(options: { outline?: boolean; labels?: boolean } = {}): Uint8Array {
   const doc = new PDFDocument();

@@ -10,7 +10,7 @@
 import { DOMParser } from '@xmldom/xmldom';
 import JSZip from 'jszip';
 import type { PDFDocument } from 'mupdf';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import {
@@ -33,6 +33,10 @@ import { readPageScene } from './layout-scene-read';
 import type { RgbaImage } from './ocr-scene';
 import type { LayoutChar, LayoutLine } from './page-layout';
 import type { OperationContext } from './types';
+
+// Each case renders and reads whole pages with MuPDF: under a second alone, several under the
+// coverage run on a loaded core.
+vi.setConfig({ testTimeout: 30_000 });
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const run: OperationContext = { signal: new AbortController().signal };
