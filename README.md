@@ -210,7 +210,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
   the box from the ink bounds.
 - **Structure.**
-  - Page labels.
+  - Page labels. Inserting, replacing or merging pages keeps the label every page already had;
+    a page from a document without labels is numbered by its page number in that document.
   - Outline editing.
   - Links, limited by a URI allow-list.
   - Attachments: add, save and remove in the Attachments panel; the Properties panel lists
@@ -449,7 +450,8 @@ nothing leaving the browser.
   - A dynamic XFA form keeps its content only in the XFA, so a run that would remove the XFA
     (scripts, or form fields) is refused; flatten the XFA form to a normal PDF first.
 - **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
-  encrypted copy is downloaded, not applied to the open document.
+  encrypted copy is downloaded, not applied to the open document. Encrypting or removing a
+  password rewrites the file, so a digital signature does not survive; the report says so.
 - **Simple signatures and images.** Draw a signature, type your name in one of two
   handwriting faces, or take it from a photo of a signature on paper (the paper is made
   transparent). Choose signature or initials and black, blue or navy ink, then click where

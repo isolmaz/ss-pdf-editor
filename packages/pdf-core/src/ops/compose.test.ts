@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { PRODUCER_LINE } from '../engines/mupdf-write';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { type ComposeOptions, composeDocument, mergeDocuments, type PdfComposeHandle } from './compose';
+import { readPageLabels } from './page-labels';
 
 const run = { signal: new AbortController().signal };
 
@@ -35,6 +36,29 @@ async function pages(count: number, turned: readonly number[] = [], title?: stri
   doc.destroy();
   return bytes;
 }
+
+/** One /PageLabels rule: first page, the PDF style letter (`D`, `r`, `A`…), prefix and start value. */
+type LabelRule = readonly [page: number, style: string, prefix?: string, start?: number];
+
+/** `pages()` that also carries a /PageLabels plan. */
+async function labelled(count: number, rules: readonly LabelRule[]): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument((await pages(count)).slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    for (const [page, style, prefix, start] of rules) doc.setPageLabels(page, style, prefix, start);
+    return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** Four pages labelled `i, ii, 1, 2`. */
+const frontMatter = () =>
+  labelled(4, [
+    [0, 'r'],
+    [2, 'D'],
+  ]);
 
 /** Each page's MediaBox width and /Rotate, plus the Info title, producer and XMP presence. */
 async function read(bytes: Uint8Array) {
@@ -515,5 +539,84 @@ describe('mergeDocuments refuses and measures', () => {
       fields: 1,
     });
     expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.merge.outlineLost');
+  });
+});
+
+describe('mergeDocuments keeps every page’s label', () => {
+  // The rule under test: a page keeps the label its own document gave it — that document's
+  // /PageLabels, or its decimal page number in that document when it has none.
+  const merge = async (
+    others: readonly Uint8Array[],
+    insertAfter: number,
+    base: Uint8Array | Promise<Uint8Array> = frontMatter(),
+  ) => {
+    const baseBytes = await base;
+    const added = await Promise.all(
+      others.map(async (bytes, index) => ({
+        name: `ek${index}.pdf`,
+        bytes,
+        pageCount: (await read(bytes)).pages.length,
+      })),
+    );
+    return mergeDocuments(
+      { bytes: baseBytes, pageCount: (await read(baseBytes)).pages.length },
+      added,
+      insertAfter,
+      run,
+    );
+  };
+  const labelsOf = async (bytes: Uint8Array) => readPageLabels(bytes, (await read(bytes)).pages.length);
+  const donor = () => labelled(2, [[0, 'D', 'Ek-', 10]]);
+
+  it('keeps the base labels and the donor labels when a document is added at the end', async () => {
+    const out = await merge([await donor()], 3);
+    expect(await labelsOf(out.bytes)).toEqual(['i', 'ii', '1', '2', 'Ek-10', 'Ek-11']);
+  });
+
+  it('keeps the base labels when a document is added at the start', async () => {
+    const out = await merge([await donor()], -1);
+    expect(await labelsOf(out.bytes)).toEqual(['Ek-10', 'Ek-11', 'i', 'ii', '1', '2']);
+  });
+
+  it('keeps the base labels on both sides of a document added in the middle', async () => {
+    const out = await merge([await donor()], 1);
+    expect(await labelsOf(out.bytes)).toEqual(['i', 'ii', 'Ek-10', 'Ek-11', '1', '2']);
+  });
+
+  it('puts a document asked to go past the last page at the end', async () => {
+    const out = await merge([await donor()], 99);
+    expect(await labelsOf(out.bytes)).toEqual(['i', 'ii', '1', '2', 'Ek-10', 'Ek-11']);
+  });
+
+  it('numbers the pages of a document without labels within that document', async () => {
+    const out = await merge([await pages(3)], 3);
+    expect(await labelsOf(out.bytes)).toEqual(['i', 'ii', '1', '2', '1', '2', '3']);
+  });
+
+  it('keeps several added documents in the order they were given', async () => {
+    const out = await merge([await donor(), await pages(3)], -1);
+    expect(await labelsOf(out.bytes)).toEqual(['Ek-10', 'Ek-11', '1', '2', '3', 'i', 'ii', '1', '2']);
+  });
+
+  it('numbers the pages of a base without labels and keeps the labels of the added document', async () => {
+    const out = await merge([await donor()], 0, pages(2));
+    expect(await labelsOf(out.bytes)).toEqual(['1', 'Ek-10', 'Ek-11', '2']);
+  });
+
+  it('writes no labels when no document has any', async () => {
+    const out = await merge([await pages(1)], 0, pages(2));
+    expect(await labelsOf(out.bytes)).toEqual([]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.merge.labels');
+  });
+
+  it('reports the labels it measured in the file, and says how they were numbered', async () => {
+    const out = await merge([await donor()], 3);
+    const notes = out.report.notes;
+    // `i` (page 1), `1` (page 3) and `Ek-10` (page 5): the ranges the produced file holds.
+    expect(notes.find((entry) => entry.key === 'op.note.merge.structure')?.params).toMatchObject({
+      labels: 3,
+    });
+    expect(notes.find((entry) => entry.key === 'op.note.merge.labels')).toMatchObject({ kind: 'changed' });
+    expect(notes.map((entry) => entry.key)).not.toContain('op.note.merge.labelsLost');
   });
 });
