@@ -11,6 +11,7 @@ import { openExportDialog } from '../export/export-store';
 import { HomeHeader } from '../open/OpenSurfaces';
 import { clearPageSelection, showStartScreen } from '../open/open-store';
 import { currentViewer } from '../save/save-store';
+import { useEditorSurfaces } from './editor-store';
 import type { ShellActions } from './shell-actions';
 import { openPalette, openSettings, renameTab, useShell } from './shell-store';
 import { PRODUCT_TITLE } from './use-document-effects';
@@ -39,7 +40,9 @@ export function ShellHeader({ session, tier, t, commands, actions }: ShellHeader
   const { activeTab, activeId, tabs, canEdit, canPrepareWrite, isHome } = useEditState(session, tier);
   const mode = useCore((state) => state.mode);
   const renamingId = useShell((state) => state.renamingId);
-  if (isHome || activeTab === null) {
+  const editor = useEditorSurfaces();
+  // The editor's header waits for the editor chunk, so header and body switch in one commit.
+  if (isHome || activeTab === null || editor === null) {
     return (
       <HomeHeader
         t={t}

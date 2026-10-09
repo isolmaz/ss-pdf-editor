@@ -661,15 +661,19 @@ The limits are defined once, in
   is disabled and the UI says why.
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
-- **Build budgets.** These are targets that are measured by hand. No script or quality gate
-  measures the built output against them; `BUILD_BUDGETS` in `packages/shared/src/limits.ts`
-  only holds the numbers, and `pnpm assemble:dist` only prints the sizes of what it
-  assembles.
-  - ≤ 250 KiB gzip for the first-paint JavaScript. The entry chunk is about 224 KiB; with the
-    11 UI chunks that `dist/editor/index.html` preloads, the first paint is about 319 KiB,
-    because the editor shell loads with the home screen (`docs/architecture.md` §2). The
-    target therefore holds for the entry chunk, not for the first paint as a whole. (Sizes:
-    the gzip size of each script a production build names in `dist/editor/index.html`.)
+- **Build budgets.** `BUILD_BUDGETS` in `packages/shared/src/limits.ts` holds the numbers.
+  `pnpm check:budgets` (a step of `pnpm ci:verify`, after `pnpm build`) measures the first-paint
+  JavaScript against the first one and fails when it is over. The other two are measured by
+  hand; `pnpm assemble:dist` only prints the sizes of what it assembles.
+  - ≤ 250 KiB gzip for the first-paint JavaScript: the entry chunk plus every
+    `<link rel="modulepreload">` script that `dist/editor/index.html` names, which is what the
+    browser fetches before the home screen renders. It is about 243 KiB: the entry chunk is about
+    180 KiB and the 11 preloaded chunks (the React runtime, Kumo's shared dialog chunk, the
+    `mupdf-write` vocabulary and a few `pdf-core` modules the shell and the editor share) the
+    rest. The editor layout (docks, canvas, tool strip) is not part of it: it is its own chunk,
+    fetched on idle and as soon as a document is opening (`docs/architecture.md` §2). (Sizes:
+    the gzip of each file at Node's default level, which `pnpm check:budgets` prints one line
+    per file.)
   - ≤ 60 KiB for the landing page: about 15 KiB of HTML and 11 KiB of CSS, gzipped.
   - ≤ 25 MiB per asset.
 
@@ -833,6 +837,7 @@ The limits are defined once, in
 | `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
 | `pnpm fidelity [playwright args]` | PDF → Word export accuracy against LibreOffice (needs the assembled `dist/` and `LIBREOFFICE` set to the path of `soffice`); results in `test-results/fidelity/` |
 | `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
+| `pnpm check:budgets` | Gzips the entry chunk and every modulepreloaded script of the built `apps/web/dist/index.html` and fails above `BUILD_BUDGETS.firstPaintJsGzipBytes` (run after `pnpm build`) |
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
 | `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist, and that each Turkish site page has the same structure as its English page |
@@ -918,9 +923,10 @@ how changes land.
   6. `unit`
   7. `audit:model-types`
   8. `build`
-  9. `verify:assets`
-  10. `check:licenses`
-  11. `assemble:dist`
+  9. `check:budgets` (the first-paint JavaScript must stay inside its gzip budget)
+  10. `verify:assets`
+  11. `check:licenses`
+  12. `assemble:dist`
 - **`pnpm ci:full`** adds `ci:behavior`:
   - `tools/behavior/editor-flow-check.mjs` drives a real browser through one editing session
     end to end: open, search, highlight, comment, fill a form, delete two pages and add one,

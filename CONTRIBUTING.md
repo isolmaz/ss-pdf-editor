@@ -46,7 +46,7 @@ and on manual dispatch:
 
 - **`verify`** installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
   `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`,
-  `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist` and
+  `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist` and
   `wrangler deploy --dry-run`.
 - **`e2e`** (after `verify`) runs the Playwright suite in four shards. Each shard builds
   `dist/` itself, installs Playwright Chromium (cached) and runs

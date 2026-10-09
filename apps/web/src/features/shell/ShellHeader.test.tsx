@@ -21,6 +21,7 @@ import { factsRead, factsStore } from '../facts/facts-store';
 import { formInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
 import { hideStartScreen, initialOpenState, openStore, showStartScreen } from '../open/open-store';
 import { initialSaveState, saveStore, viewerChanged } from '../save/save-store';
+import { type EditorSurfaces, editorStore, initialEditorState } from './editor-store';
 import { ShellHeader, type ShellHeaderProps } from './ShellHeader';
 import { initialShellState, renameTab, shellStore } from './shell-store';
 
@@ -156,6 +157,8 @@ beforeEach(() => {
   factsStore.set({ facts: null, failure: null });
   exportStore.set(initialExportState());
   shellStore.set(initialShellState());
+  // The header only checks that the editor chunk has arrived; none of its surfaces render here.
+  editorStore.set({ surfaces: {} as EditorSurfaces, loading: null });
   session = new SessionStore();
   tabIds = [];
   actions = {
@@ -188,6 +191,17 @@ describe('ShellHeader on the home screen', () => {
     act(() => showStartScreen());
     expect(screen.getByLabelText('home header').dataset.document).toBe('open.pdf');
     expect(screen.queryByLabelText('editor header')).toBeNull();
+  });
+
+  it('keeps the home header over an open document until the editor chunk has arrived', () => {
+    editorStore.set(initialEditorState());
+    openTab('open.pdf');
+    renderHeader();
+    expect(screen.getByLabelText('home header').dataset.document).toBe('open.pdf');
+    expect(screen.queryByLabelText('editor header')).toBeNull();
+    act(() => editorStore.set({ surfaces: {} as EditorSurfaces }));
+    expect(screen.getByLabelText('editor header')).toBeTruthy();
+    expect(screen.queryByLabelText('home header')).toBeNull();
   });
 
   it('opens the settings, the palette and the file picker', async () => {

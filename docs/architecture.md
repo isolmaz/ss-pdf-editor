@@ -106,8 +106,8 @@ concrete consequences are recorded in the code:
   its own chunk.
 
 Everything heavy is a dynamic `import()`: the pdf.js core, the viewer stack, the dialogs,
-the dock panels, the print surface and the palette are all loaded on demand, and
-`main.tsx` warms the engine, printer and palette chunks on idle so the first user action
+the dock panels, the editor layout, the print surface and the palette are all loaded on demand, and
+`main.tsx` warms the engine, editor, printer and palette chunks on idle so the first user action
 does not pay for the download — but only online: Chromium keeps a failed dynamic import for
 the page's lifetime, so a warm-up run offline waits for the `online` event instead.
 The readers and writers the shell calls only from a user action go through
@@ -132,14 +132,32 @@ which nothing draws (the editor uses `regular`, `bold`, `fill` and `duotone`; Ku
 language's catalogue before the first render. `main.tsx` imports from `pdf-ui/ui`, not the
 `pdf-ui` barrel, which `App.tsx` loads lazily.
 
+**The editor is its own chunk.** The home screen is all the first paint needs, so what only an
+open document shows leaves the entry graph: `features/shell/editor.ts` re-exports `EditorSurface`
+(the document dock, the tool rail, the canvas with its mark layers, the right dock, the reading
+layers and the print host, moved out of `ShellBody`) and `ToolStrip`, and everything those import
+(the viewer, the panels, the operation forms, the Phosphor icons only they draw) goes with them.
+`features/shell/editor-store.ts` reaches the module through one dynamic `import()` and publishes
+it to a store. The shell never renders it through `React.lazy`, because a lazy boundary commits
+its fallback for a frame even when the module is cached. `ShellBody`, `ShellHeader` and
+`ToolStripHost` render the editor only when the store holds the module; until then they render
+what they render for a document that is still opening — the home screen and header under the
+"opening the document" overlay that is already shown while a file is read — so header, body and
+strip switch in one commit and no empty frame is painted. The chunk is requested twice over:
+`main.tsx` warms it on idle with the engine, so a document opened after the first seconds never
+waits for it, and `ShellBody` asks for it as soon as a file is opening or a tab exists
+(`requestEditor`), in parallel with reading and parsing the file. A fetch that fails (offline,
+evicted cache) is reported as the `asset-offline` notice and forgotten, where the browser retries.
+
 The entry chunk is not all of the first paint: the `modulepreload` links the build adds for
-it (Kumo's and base-ui's shared chunks, the React runtime, the `mupdf-write` vocabulary)
-download with it. Measured as gzip (default level) of the built files, the entry chunk is
-about 224 KiB and the entry plus every preload about 319 KiB. The rest is the editor shell, which
-loads with the home screen, and the shared UI chunks. The 250 KiB target
-(`BUILD_BUDGETS.firstPaintJsGzipBytes`, measured by hand; no gate checks it) therefore holds
-for the entry chunk and not for the first paint as a whole, which is what the README's
-build-budget note says.
+it (Kumo's shared dialog chunk, the React runtime, the `mupdf-write` vocabulary and the few
+`pdf-core` modules the shell's hooks and the editor chunk share) download with it. The first
+paint is the entry chunk plus every one of those links, gzipped at Node's default level: about
+243 KiB, of which the entry chunk is about 180 KiB. The 250 KiB target
+(`BUILD_BUDGETS.firstPaintJsGzipBytes`) is checked on that sum: `pnpm check:budgets`
+(`tools/check-build-budgets.mjs`) reads the built `apps/web/dist/index.html`, prints each file's
+gzip size and fails when the sum is over the budget; it is a step of `pnpm ci:verify` and of the
+CI `verify` job, after `pnpm build`.
 
 ---
 
@@ -2354,13 +2372,13 @@ testable logic lives:
 | `features/selection/` | Mark selection and the text tool: the selected marks and the mark to select after a write (`selection-store.ts`), deleting and selecting all marks and opening a note (`selection-actions.ts`), the selection effects (`use-selection.ts`), the text tool's picked block and frozen bytes (`text-tool-store.ts`, `use-text-tool-bytes.ts`) and the text layer host (`TextToolSurface.tsx`) |
 | `features/open/` | Opening and producing documents: the home screen, opening state, password prompt, locked tabs, page selection and pending home command (`open-store.ts`), opening a file, a produced tab, a conversion, a recent entry or the picker (`open-actions.ts`, `use-open-actions.ts`), and the home header, password prompt and file input hosts (`OpenSurfaces.tsx`) |
 | `features/save/` | Saving, closing and the viewer handle: the save lock, viewer, zoom, current page, layout revision and close request (`save-store.ts`), preparing the output (`prepare-output.ts`), saving and exporting (`save-actions.ts`), closing and discarding a tab (`close-actions.ts`), the viewer-ready handler and engine-value checkpoints (`viewer-actions.ts`), and the close-document host (`SaveSurfaces.tsx`) |
-| `features/shell/` | The shell: the palette, settings and rename state (`shell-store.ts`, `shell-actions.ts`), the command list (`use-shell-commands.ts`), the shortcut wiring (`use-shell-bindings.ts`), the document effects in their fixed order (`use-document-effects.ts`), the edit state (`use-edit-state.ts`), and the layout: header, tool strip, document and right docks, viewer area, body, status bar and the palette and settings overlays, each reading the stores it shows |
+| `features/shell/` | The shell: the palette, settings and rename state (`shell-store.ts`, `shell-actions.ts`), the command list (`use-shell-commands.ts`), the shortcut wiring (`use-shell-bindings.ts`), the document effects in their fixed order (`use-document-effects.ts`), the edit state (`use-edit-state.ts`), and the layout: header, tool strip, document and right docks, viewer area, body, status bar and the palette and settings overlays, each reading the stores it shows. The home path (`ShellHeader`, `ShellBody`, `ShellStatusBar`, `ToolStripHost`) is in the entry chunk; the editor layout (`EditorSurface.tsx`, which holds the document dock, tool rail, viewer area, right dock, reading layers and print host, and `ToolStrip.tsx`) is the lazy `editor.ts` chunk that `editor-store.ts` loads (`loadEditor`, `requestEditor`, `useEditorSurfaces`), as §2 describes |
 | `features/diagnostics/` | The memory sampler (`memory-store.ts`): a sample every 2.5 s, kept only when it changed, read by the status bar alone |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
 | `notices.ts` | Turns notice descriptors, verification results and failures into sentences (i18n keys and params only, no English literals) |
-| `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App`, then warms the engine, printer and palette chunks on idle (§2) |
+| `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App`, then warms the engine, editor, printer and palette chunks on idle (§2) |
 | `lazy-ops.ts` | Same-signature wrappers that load the writers and readers the shell runs only on an action (§2) |
 | `export-presets.ts`, `signature-store.ts` | What the export dialog's "Compressed PDF" level fills into the Optimize form, and the remembered simple signature (§8.7) |
 | `drafts.ts` | The OPFS half of draft storage |
@@ -3030,7 +3048,7 @@ merges are merge commits.
 - `.github/workflows/ci.yml` runs on `pull_request`, `push` to `main` and `workflow_dispatch`.
   `verify` installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
   `pnpm check:docs` (the documentation sync check), `pnpm fetch:engines --sync`, `pnpm unit`,
-  `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`,
+  `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`,
   `pnpm assemble:dist` and `wrangler deploy --dry-run`. `e2e` needs `verify`: four shards,
   each builds `dist/` itself, installs Playwright Chromium (cached) and runs
   `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading, on failure,
@@ -3084,7 +3102,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`) and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. `--skip-e2e` reports the unit suite alone; `--min-lines=<percent>` fails the run under that total (the nightly workflow passes 98). `E2E_WORKERS` caps the browsers and Vitest's own `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
 | Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
-| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `fidelity` (`pnpm fidelity`: DOCX export round trip through LibreOffice, SSIM and word accuracy against `e2e/fidelity/thresholds.json`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
+| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `fidelity` (`pnpm fidelity`: DOCX export round trip through LibreOffice, SSIM and word accuracy against `e2e/fidelity/thresholds.json`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
 | Nightly | `.github/workflows/nightly.yml`: `pnpm coverage --min-lines=98` (fails under 98 % total lines, uploads the report) and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
 | Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix a pull request lists in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
 | Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |

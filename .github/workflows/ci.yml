@@ -44,6 +44,7 @@ jobs:
       - run: pnpm unit
       - run: pnpm audit:model-types
       - run: pnpm build
+      - run: pnpm check:budgets
       - run: pnpm verify:assets
       - run: pnpm check:licenses
       - run: pnpm assemble:dist

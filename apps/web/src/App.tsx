@@ -69,7 +69,7 @@ import { ShellHeader } from './features/shell/ShellHeader';
 import { PaletteHost, SettingsHost } from './features/shell/ShellOverlays';
 import { ShellStatusBar } from './features/shell/ShellStatusBar';
 import type { ShellActions } from './features/shell/shell-actions';
-import { ToolStrip } from './features/shell/ToolStrip';
+import { ToolStripHost } from './features/shell/ToolStripHost';
 import { DocumentEffects } from './features/shell/use-document-effects';
 import { useEditState } from './features/shell/use-edit-state';
 import { useShellBindings } from './features/shell/use-shell-bindings';
@@ -389,7 +389,7 @@ export function App({ store }: AppProps) {
         commands={commands}
         actions={{ openViaPicker, saveActive, exportActive, closeTab, openDialog }}
       />
-      <ToolStrip
+      <ToolStripHost
         session={store}
         tier={tier}
         t={t}
