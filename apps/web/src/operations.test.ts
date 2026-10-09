@@ -34,12 +34,13 @@ import { redactDocument } from 'pdf-core/ops/redact';
 import { readPageText } from 'pdf-core/text-source';
 import { encodeEngineValues, type JsonValue, SessionStore, workingPageCount } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyHistoryStep,
   applyPageAction,
   applyProducedBytes,
   DOCUMENT_FACTS,
+  downloadFiles,
   hasEngineEdits,
   materializeBase,
   pageActionLabel,
@@ -1764,5 +1765,46 @@ describe('materializeBase over a static XFA form', () => {
     } finally {
       await live.destroy();
     }
+  });
+});
+
+describe('downloadFiles', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('clicks a named download link per file and revokes each blob URL ten seconds later', () => {
+    vi.useFakeTimers();
+    const clicks: { href: string; download: string }[] = [];
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => {
+        expect(tag).toBe('a');
+        const anchor: { href: string; download: string; click: () => void } = {
+          href: '',
+          download: '',
+          click: () => clicks.push({ href: anchor.href, download: anchor.download }),
+        };
+        return anchor;
+      },
+    });
+    let issued = 0;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:file-${++issued}`);
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    downloadFiles([
+      { name: 'a.pdf', bytes: new Uint8Array([1]), mime: 'application/pdf' },
+      { name: 'b.txt', bytes: new Uint8Array([2]), mime: 'text/plain' },
+    ]);
+
+    expect(clicks).toEqual([
+      { href: 'blob:file-1', download: 'a.pdf' },
+      { href: 'blob:file-2', download: 'b.txt' },
+    ]);
+    vi.advanceTimersByTime(9_999);
+    expect(revoke).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(revoke.mock.calls).toEqual([['blob:file-1'], ['blob:file-2']]);
   });
 });
