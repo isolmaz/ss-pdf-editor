@@ -791,10 +791,11 @@ function readBookmark(node: OutlineNode, originals: readonly number[], depth = 0
   if (depth > MAX_STRUCTURE_DEPTH) return { title: '', target: '-', children: [], unresolved: true };
   const children = (node.down ?? []).map((child) => readBookmark(child, originals, depth + 1));
   // MuPDF answers a page for a link into another file too (`file:x.pdf#page=2`): only a `#` URI
-  // names a page of this document, and its name differs between the engine's copies of it.
+  // names a page of this document, and its name differs between the engine's copies of it. MuPDF
+  // raises for a page past the document's end, so `node.page` is always one of `originals`.
   const internal = node.uri?.startsWith('#') === true;
   let target = node.uri === undefined ? '-' : `u${node.uri}`;
-  if (internal && node.page !== undefined) target = `p${originals[node.page] ?? node.page}`;
+  if (internal && node.page !== undefined) target = `p${originals[node.page] as number}`;
   return {
     title: node.title ?? '',
     target,
