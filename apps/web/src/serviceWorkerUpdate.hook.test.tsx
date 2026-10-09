@@ -22,7 +22,7 @@ describe('useServiceWorkerUpdate', () => {
       }),
     });
 
-    const { result } = renderHook(() => useServiceWorkerUpdate());
+    const { result, unmount } = renderHook(() => useServiceWorkerUpdate());
     expect(result.current.updateAvailable).toBe(false);
 
     await act(async () => {
@@ -36,5 +36,13 @@ describe('useServiceWorkerUpdate', () => {
 
     act(() => result.current.reloadToUpdate());
     expect(waiting.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'SKIP_WAITING' });
+
+    // An unmounted banner stops listening: a later update leaves what it last showed.
+    unmount();
+    await act(async () => {
+      initServiceWorkerUpdates();
+      await Promise.resolve();
+    });
+    expect(result.current.updateAvailable).toBe(false);
   });
 });
