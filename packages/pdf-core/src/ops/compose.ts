@@ -184,14 +184,14 @@ export async function composeDocument(
   const plan = planCopies(planned);
   const rewrite = rotated.length > 0 || plan.copies.length > 0;
   let bytes: Uint8Array = produced;
-  let untargeted = 0;
+  let unresolved = false;
   if (rewrite) {
     const { doc } = await openForWrite(produced);
     try {
       const pages = pageObjects(doc);
       assertPageCount(pages.length, options.pageCount);
       applyRotation(pages, rotated, context);
-      untargeted = restoreCopies(doc, pages, plan);
+      unresolved = restoreCopies(doc, pages, plan);
       // The engine stamped its own producer line; `saveRewrite` puts ours back.
       bytes = saveRewrite(doc, 'composeDocument.rewrite');
     } catch (error) {
@@ -210,10 +210,11 @@ export async function composeDocument(
   if (rotated.length > 0) {
     notes.push(note('changed', 'op.note.compose.rotation', { count: rotated.length }));
   }
-  if (untargeted > 0) {
-    // The engine merges the outline once per entry (`#buildOutline`), and a bookmark without a
-    // page target (a URL, an action) is valid in every entry, so `restoreCopies` cannot tell
-    // its repeats from the original. Measured on the produced file, so the report states it.
+  if (unresolved) {
+    // The engine merges the outline once per entry (`#buildOutline`), and `restoreCopies` removes
+    // a repeat only after reading what the bookmark points at. A bookmark it could not read (an
+    // internal destination without a page, a tree nested past the bound) stays as the engine
+    // wrote it, so the report says the outline may still be repeated.
     notes.push(note('changed', 'op.note.compose.outlineCopies', { copies: plan.depth }));
   }
   notes.push(note('preserved', 'op.note.compose.verified', { pages: options.pageCount }));
@@ -515,15 +516,15 @@ interface PageCopy {
  */
 interface CopyPlan {
   readonly copies: readonly PageCopy[];
-  /** The copy level of each output position — `0` for an original. */
-  readonly levels: readonly number[];
+  /** The original every output position repeats — the position itself for an original. */
+  readonly originals: readonly number[];
   /** How many times the most repeated page appears (`1` when nothing is repeated). */
   readonly depth: number;
 }
 
 function planCopies(planned: readonly PlannedPage[]): CopyPlan {
   const seen = new Map<string, { readonly position: number; count: number }>();
-  const levels: number[] = new Array<number>(planned.length).fill(0);
+  const originals = Array.from({ length: planned.length }, (_unused, position) => position);
   const copies: PageCopy[] = [];
   let depth = 1;
   for (const page of planned) {
@@ -533,12 +534,12 @@ function planCopies(planned: readonly PlannedPage[]): CopyPlan {
       seen.set(key, { position: page.position, count: 1 });
       continue;
     }
-    levels[page.position] = earlier.count;
+    originals[page.position] = earlier.position;
     earlier.count += 1;
     depth = Math.max(depth, earlier.count);
     copies.push({ position: page.position, original: earlier.position });
   }
-  return { copies, levels, depth };
+  return { copies, originals, depth };
 }
 
 /**
@@ -546,15 +547,15 @@ function planCopies(planned: readonly PlannedPage[]): CopyPlan {
  * Each entry is its own document to the engine, so (`#buildOutline`) the outline is merged
  * once per entry and (`#postCollectPageData`) a GoTo link survives only when its target is
  * inside the entry — a copy kept no links to the other pages. The copies get the original's
- * links back and the bookmarks the copy entries appended are removed. Returns how many
- * top-level bookmarks point at no page and so may still be repeated.
+ * links back and the bookmarks the copy entries appended are removed. Returns whether a
+ * bookmark could not be read, and so may still be repeated.
  */
-function restoreCopies(doc: PDFDocument, pages: readonly PDFObject[], plan: CopyPlan): number {
-  if (plan.copies.length === 0) return 0;
+function restoreCopies(doc: PDFDocument, pages: readonly PDFObject[], plan: CopyPlan): boolean {
+  if (plan.copies.length === 0) return false;
   for (const { position, original } of plan.copies) {
     copyLinks(doc, pages[original] as PDFObject, pages[position] as PDFObject);
   }
-  return pruneCopiedBookmarks(doc, plan.levels);
+  return pruneCopiedBookmarks(doc, plan.originals);
 }
 
 /** A page's annotations told apart: `/Link` entries and everything else, as the array holds them. */
@@ -611,43 +612,79 @@ function copyLinks(doc: PDFDocument, original: PDFObject, copy: PDFObject): void
 }
 
 /**
- * Delete the top-level bookmark subtrees whose page targets are all copies — the outline the
- * engine merged for each extra entry. Returns the number of top-level subtrees with no page
- * target at all; those are valid in every entry and stay.
+ * Delete the top-level bookmark subtrees the engine appended for the copy entries. The engine
+ * merges the outline once per entry (`#buildOutline`), and which items a later entry repeats
+ * depends on how the bookmark names its page: an explicit page array is valid only in the entry
+ * that holds the page, but a named destination, a URL or an action is valid in every entry. So
+ * the appended block is found by what it says, not by where it points: a subtree goes when
+ * every page it reaches is a copy (what is left of a heading whose own destination the entry
+ * could not use), or when it reads like an earlier subtree — same titles, same targets, a
+ * copy read as the page it repeats. Returns whether a bookmark could not be read; that one
+ * stays, and the report says the outline may still be repeated.
  */
-function pruneCopiedBookmarks(doc: PDFDocument, levels: readonly number[]): number {
+function pruneCopiedBookmarks(doc: PDFDocument, originals: readonly number[]): boolean {
   const tree = doc.loadOutline();
-  if (tree === null) return 0;
+  if (tree === null) return false;
   const iterator = doc.outlineIterator();
-  let untargeted = 0;
+  const kept = new Set<string>();
+  let unresolved = false;
   for (const node of tree) {
-    const found = targetLevels(node, levels);
-    if (found.length > 0 && found.every((level) => level > 0)) {
+    const read = readBookmark(node, originals);
+    if (read.unresolved) {
+      unresolved = true;
+      iterator.next();
+      continue;
+    }
+    const onlyCopies =
+      read.pages.length > 0 && read.pages.every((page) => (originals[page] ?? page) !== page);
+    if (onlyCopies || kept.has(read.key)) {
       iterator.delete();
       continue;
     }
-    if (found.length === 0) untargeted += 1;
+    kept.add(read.key);
     iterator.next();
   }
-  return untargeted;
+  return unresolved;
 }
 
-/** What `PDFDocument.loadOutline` answers for a bookmark: its resolved page and its children. */
+/** What `PDFDocument.loadOutline` answers for a bookmark. */
 interface OutlineNode {
+  readonly title?: string;
+  readonly uri?: string;
   readonly page?: number;
   readonly down?: readonly OutlineNode[];
 }
 
-/** The copy level of every page a bookmark subtree points at. */
-function targetLevels(root: OutlineNode, levels: readonly number[]): number[] {
-  const found: number[] = [];
-  const pending = [root];
-  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
-    const level = levels[node.page ?? -1];
-    if (level !== undefined) found.push(level);
-    for (const child of node.down ?? []) pending.push(child);
+/** A bookmark subtree as `pruneCopiedBookmarks` compares it. */
+interface BookmarkRead {
+  /** Titles, targets and nesting as one string; a copy's target reads as the page it repeats. */
+  readonly key: string;
+  /** The output pages the subtree's internal destinations reach. */
+  readonly pages: readonly number[];
+  /** A destination named a page MuPDF could not resolve, or the tree is nested past the bound. */
+  readonly unresolved: boolean;
+}
+
+function readBookmark(node: OutlineNode, originals: readonly number[], depth = 0): BookmarkRead {
+  if (depth > MAX_STRUCTURE_DEPTH) return { key: '', pages: [], unresolved: true };
+  const children = (node.down ?? []).map((child) => readBookmark(child, originals, depth + 1));
+  const pages = children.flatMap((child) => child.pages);
+  // MuPDF answers a page for a link into another file too (`file:x.pdf#page=2`): only a `#` URI
+  // names a page of this document, and its name differs between the engine's copies of it.
+  const internal = node.uri?.startsWith('#') === true;
+  let target = node.uri === undefined ? '-' : `u${node.uri}`;
+  if (internal && node.page !== undefined) {
+    pages.push(node.page);
+    target = `p${originals[node.page] ?? node.page}`;
   }
-  return found;
+  const title = node.title ?? '';
+  const nested = children.map((child) => child.key).join('');
+  return {
+    // Length-prefixed, so no title or URL can pass for the separator between the parts.
+    key: `${title.length}:${title}${target.length}:${target}${nested.length}:${nested}`,
+    pages,
+    unresolved: (internal && node.page === undefined) || children.some((child) => child.unresolved),
+  };
 }
 
 /**

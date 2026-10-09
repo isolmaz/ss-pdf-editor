@@ -794,10 +794,19 @@ had to stay green. The moves, and the defects they fixed on the way:
   GoTo link only when the target is inside the entry, so a copy lost its links and every bookmark
   came back appended once per copy. The same MuPDF pass that turns pages therefore copies the
   original's `/Link` annotations onto each copy (same rectangles, same targets) and deletes the
-  top-level bookmark subtrees that point only at copies; only bookmarks that point at no page (a
-  URL, an action) cannot be told from their repeats, and the report says so
-  (`op.note.compose.outlineCopies`). A composition that repeats no page and turns none is still
-  never rewritten;
+  top-level bookmark subtrees the copy entries appended. Which items an entry repeats depends
+  on how the bookmark names its page: an explicit page array is valid only in the entry that
+  holds the page, but a named destination (`/Names /Dests` and a string `/Dest`, what hyperref,
+  Word and InDesign write), a URL or an action is valid in every entry, so pruning by "points
+  only at copies" left those repeated. The appended block is therefore found by what it
+  says: each top-level subtree is read as its titles, its targets (a copy's page read as the
+  page it repeats; a link into another file by its URI, since MuPDF also answers a page for
+  it) and its nesting, and a subtree goes when it points only at copies or reads like an
+  earlier one. A bookmark whose internal destination MuPDF cannot resolve, or one nested past
+  the structure bound, is never removed, and only then does the report say the outline may
+  still be repeated (`op.note.compose.outlineCopies`); a document's own top-level bookmarks
+  that are identical to each other collapse to one when a page is repeated. A composition that
+  repeats no page and turns none is still never rewritten;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
@@ -2295,7 +2304,8 @@ the user just typed.
 Structural page actions (rotate, delete, duplicate, move, insert, replace) go through
 `composeDocument`, i.e. pdf.js `extractPages` on the live document, so annotations, form
 values, outlines and page labels travel with the pages. A duplicated page keeps its links and the outline stays
-as it was: the copies are repaired after the engine call (`ops/compose.ts`, listed with the MuPDF writers). `planPageAction()` computes the new
+as it was, whether its bookmarks name pages by array or by name: the copies are repaired after the
+engine call (`ops/compose.ts`, listed with the MuPDF writers). `planPageAction()` computes the new
 page list purely, so the effect of an action on the page order is reviewable without
 rendering anything. Applying a result re-checks that the tab and working version it started
 from are still current; if not, the operation throws `aborted` and the model is untouched.
