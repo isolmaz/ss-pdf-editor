@@ -752,9 +752,14 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'an embedded image is drawn content',
   },
   {
-    steps: ['mupdf:redact', 'applyRedactions'],
+    steps: ['mupdf:redact'],
     mayChange: ['pageContent', 'textContent', 'annotations'],
-    why: 'redaction removes glyphs from the content stream and can remove the annotations it covers',
+    why: 'the text editor erases the old glyphs through a MuPDF redaction pass, which also deletes the links it touches',
+  },
+  {
+    steps: ['applyRedactions', 'annotate(Redact)', 'clean(annotations+fields)'],
+    mayChange: ['pageContent', 'textContent', 'annotations', 'formFieldCount', 'formFieldValues'],
+    why: 'redaction removes glyphs from the content stream and removes every annotation and form field widget whose rectangle meets a mark (annotate(Redact) draws the marks, clean(annotations+fields) is the sweep of those widgets and annotations); removing a field changes the field count, and the values of the fields that go with it',
   },
   {
     steps: ['text.draw'],
@@ -869,14 +874,15 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
       'mupdf:save',
       'text.font',
       'save',
-      'save(*)',
+      'save(garbage=compact,compress,clean)',
       'producer',
       'metadata',
       'xmp',
+      'clean(Info+XMP)',
       'structure',
     ],
     mayChange: [],
-    why: 'loading, serialising and adding the producer line change none of the twelve facts',
+    why: 'loading, serialising (the full rewrite a redaction ends with included), adding the producer line and clearing the Info and XMP metadata change none of the twelve facts',
   },
   {
     steps: ['render', 'scan', 'text', 'text.find', 'inspect', 'measure', 'extract-text'],
@@ -889,9 +895,9 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'the operation verifies or authenticates the bytes it already has; it writes nothing',
   },
   {
-    steps: ['attach', 'remove'],
+    steps: ['attach', 'remove', 'clean(attachments)'],
     mayChange: [],
-    why: 'an embedded file is not one of the twelve facts: the page list, the pages and the forms are untouched',
+    why: 'an embedded file is not one of the twelve facts: attaching, removing or clearing one leaves the page list, the pages and the forms untouched',
   },
   {
     steps: ['.skipped'],
@@ -1234,10 +1240,18 @@ async function checkForms(
       count: produced.length,
     });
   }
-  const byName = new Map(produced.map((field) => [field.name, fieldValueText(field.value)]));
+  // Two fields may share a name (a merge of two forms that both have `name`): each name
+  // keeps its values in document order and the reference's fields take them in turn, so
+  // the second field is compared with the second value rather than with the last one.
+  const byName = new Map<string, string[]>();
+  for (const field of produced) {
+    const values = byName.get(field.name);
+    if (values === undefined) byName.set(field.name, [fieldValueText(field.value)]);
+    else values.push(fieldValueText(field.value));
+  }
   let changedValues = 0;
   for (const field of expected) {
-    const value = byName.get(field.name);
+    const value = byName.get(field.name)?.shift();
     if (value !== undefined && value !== field.value) changedValues += 1;
   }
   if (changedValues === 0) record('formFieldValues', 'verified');

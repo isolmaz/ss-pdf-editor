@@ -29,12 +29,22 @@
  * the app, the worker and the build cannot drift apart. The build derives the version from
  * `tools/asset-pins.json` — the table `verify-assets` enforces — so changing a pinned asset
  * changes the cache name, the manifest and the worker together.
+ *
+ * ## Why the editor's own code is a capability
+ *
+ * The editor is its own set of hashed files: the entry the page loads before the worker
+ * controls it, and a chunk per tool that is fetched only when the tool is opened. Nothing
+ * but a preparation caches those for a first-visit user, so a readiness that ignored them
+ * said "ready" to a device that could not open a PDF offline. `app` is that set. Its names
+ * exist only after the build, so its list in `offline-packages.json` is empty and the
+ * build writes the real one into the manifest the worker reads; the page asks for it by
+ * name, as it does every other capability.
  */
 
 import packages from './offline-packages.json';
 
-/** The four capabilities a user can prepare for offline use. */
-export type OfflineCapability = 'core' | 'pdfjs' | 'mupdf' | 'tesseract' | 'fonts';
+/** The capabilities a user can prepare for offline use. */
+export type OfflineCapability = 'core' | 'app' | 'pdfjs' | 'mupdf' | 'tesseract' | 'fonts';
 
 export interface OfflineManifest {
   /** The release identity: the same for every asset of one build, different across builds. */
@@ -43,11 +53,14 @@ export interface OfflineManifest {
   readonly capabilities: Readonly<Record<OfflineCapability, readonly string[]>>;
 }
 
-/** The capability path lists as they are shipped, before a version is attached. */
+/**
+ * The capability path lists as they are shipped, before a version is attached. `app` is empty
+ * here: the build lists the editor's own chunks in the manifest it deploys.
+ */
 export const OFFLINE_CAPABILITIES: Readonly<Record<OfflineCapability, readonly string[]>> =
   packages.capabilities;
 
-const CAPABILITIES: readonly OfflineCapability[] = ['core', 'pdfjs', 'mupdf', 'tesseract', 'fonts'];
+const CAPABILITIES: readonly OfflineCapability[] = ['core', 'app', 'pdfjs', 'mupdf', 'tesseract', 'fonts'];
 
 /** A capability is ready only when every path it needs is present in the cache. */
 export interface CapabilityReadiness {
@@ -147,6 +160,8 @@ export function offlineReadiness(
 /**
  * The capabilities a document needs before it can be opened offline.
  *
+ * `app` is unconditional too: opening, editing and exporting all run through the editor's
+ * own chunks, and a device that holds the engines but not those cannot open anything.
  * `pdfjs` is unconditional — it is what renders every document — and so is `mupdf`: it
  * writes document properties, and the other writers are moving onto it
  * (`engines/mupdf-write.ts`), so core editing is not ready offline without it. OCR is
@@ -154,7 +169,7 @@ export function offlineReadiness(
  * an open that would have worked or promise one that would not.
  */
 export function requiredCapabilities(input: { readonly ocr: boolean }): readonly OfflineCapability[] {
-  const required: OfflineCapability[] = ['core', 'pdfjs', 'mupdf', 'fonts'];
+  const required: OfflineCapability[] = ['core', 'app', 'pdfjs', 'mupdf', 'fonts'];
   if (input.ocr) required.push('tesseract');
   return required;
 }
@@ -253,16 +268,25 @@ export async function requestOfflineReadiness(): Promise<WorkerReadiness | null>
  * Fills the cache for the requested capabilities. `null` when the worker is unavailable
  * or did not answer; `failed` lists the paths that did not make it, so an interrupted
  * preparation is reported rather than rounded up to success.
+ *
+ * The worker is asked by capability name, not by URL: it resolves the names against the
+ * manifest the build wrote, which is the only place the editor's own chunks (`app`) are
+ * listed. When the worker fails outright, the paths this module ships name what was lost;
+ * a request that is only build-listed capabilities is reported by their names.
+ *
+ * The shipped paths travel too, as `urls`: a worker from before the capability protocol
+ * (still serving during an update window) ignores `capabilities`, and without `urls` it
+ * would fetch every package, OCR's 25 MiB included. The current worker ignores `urls`.
  */
 export async function prepareOffline(
   capabilities: readonly OfflineCapability[],
 ): Promise<PreparationResult | null> {
-  const manifest = { version: '', capabilities: OFFLINE_CAPABILITIES };
-  const urls = capabilities.flatMap((capability) => [...manifest.capabilities[capability]]);
+  const shipped = capabilities.flatMap((capability) => [...OFFLINE_CAPABILITIES[capability]]);
+  const lost = shipped.length > 0 ? shipped : [...capabilities];
   return await askWorker(
-    { type: 'PREPARE_PACKAGE', urls },
+    { type: 'PREPARE_PACKAGE', capabilities: [...capabilities], urls: shipped },
     (data) => {
-      if (data.type === 'PREPARE_FAILED') return { version: null, prepared: 0, failed: urls };
+      if (data.type === 'PREPARE_FAILED') return { version: null, prepared: 0, failed: lost };
       if (data.type !== 'PREPARE_DONE') return null;
       return {
         version: typeof data.version === 'string' ? data.version : null,

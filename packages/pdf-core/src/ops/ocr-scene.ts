@@ -14,7 +14,9 @@
  *    with a letter or digit the engine was unsure of is a run of its own carrying a `note`.
  *  - `ocrBackground`: the words are erased from the image (filled with the background around
  *    them); what still differs from the page colour afterwards (a card, a photo, a logo) is cut
- *    out as one picture per connected region, and everything else is the page colour.
+ *    out as one picture per connected region, and everything else is the page colour. A crooked
+ *    scan is read on an upright copy of it (`ocr-preprocess.ts`): the words are the copy's, and
+ *    the erasing and the pictures are the scan's own (`ocrBackground`'s `turn`, `eraseRulesTurned`).
  *    `misreadWords` / `dropMisreads` name what tesseract made of an icon or a chart (symbols,
  *    stems, low-confidence letters) lying over a picture: not text, it stays in the picture;
  *    `dropDuplicates` keeps the surer of two words read at the same place.
@@ -25,6 +27,7 @@
 
 import type { OcrWord } from '../engines/tesseract';
 import type { RunFit, TextBox, TextLine, TextParagraph, TextRun } from './layout-scene';
+import { rotateAbout } from './ocr-preprocess';
 import type { Box } from './page-layout';
 
 export interface RgbaImage {
@@ -64,6 +67,15 @@ const SAME_SIZE_LOW = 0.75;
 const SAME_SIZE_HIGH = 1.33;
 /** …and left edges or centres at most this × the size apart. */
 const ALIGN = 0.8;
+
+/** Lines on baselines at most this × the size apart are cells of one row. */
+const ROW_BAND = 0.5;
+/** Two rows are rows of a table when this many of their cells stand under cells of the row above (a left edge, a right edge or a centre); rows need a column of figures too (`amountLike`: the left-most or the right-most cell of both rows for two cells, a figure under a figure for more)… */
+const TABLE_CELLS = 3;
+/** …and rows of three cells or more further apart than this × the size are not one table (rows are padded: twice the size is usual; two cells reach `MAX_LEADING` only: cards, paragraph breaks of two columns). */
+const TABLE_MAX_LEADING = 4;
+/** …and their cells hold this many words or fewer on average (a line of prose has more). */
+const TABLE_CELL_WORDS = 4;
 
 /** A symbol-only word is a misread graphic when tesseract is less sure than this (0–100). */
 const MISREAD_CONFIDENCE = 60;
@@ -306,6 +318,80 @@ function distance(data: Uint8Array, at: number, color: Rgb): number {
 }
 
 const rgbNumber = (color: Rgb): number => (color[0] << 16) | (color[1] << 8) | color[2];
+
+/** A rectangle of pixels filled with one colour. */
+interface Fill {
+  readonly box: PixelBox;
+  readonly color: Rgb;
+}
+
+/** Fill the pixels of `fill` in `data` (opaque). */
+function paint(data: Uint8Array, width: number, fill: Fill): void {
+  const [x0, y0, x1, y1] = fill.box;
+  const [r, g, b] = fill.color;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const at = (y * width + x) * 4;
+      data[at] = r;
+      data[at + 1] = g;
+      data[at + 2] = b;
+      data[at + 3] = 255;
+    }
+  }
+}
+
+/** The pixel box of the scan that holds `box`, a box of its upright copy turned by `angle` about the canvas centre (`frame`'s), clamped to the canvas. */
+function scanBox(frame: Pick<RgbaImage, 'width' | 'height'>, box: PixelBox, angle: number): PixelBox {
+  const { width, height } = frame;
+  const [x0, y0, x1, y1] = box;
+  const corners = [
+    rotateAbout(x0, y0, width / 2, height / 2, angle),
+    rotateAbout(x1, y0, width / 2, height / 2, angle),
+    rotateAbout(x1, y1, width / 2, height / 2, angle),
+    rotateAbout(x0, y1, width / 2, height / 2, angle),
+  ];
+  const xs = corners.map((corner) => corner[0]);
+  const ys = corners.map((corner) => corner[1]);
+  const px0 = Math.min(width - 1, Math.max(0, Math.floor(Math.min(...xs))));
+  const py0 = Math.min(height - 1, Math.max(0, Math.floor(Math.min(...ys))));
+  return [
+    px0,
+    py0,
+    Math.min(width, Math.max(px0 + 1, Math.ceil(Math.max(...xs)))),
+    Math.min(height, Math.max(py0 + 1, Math.ceil(Math.max(...ys)))),
+  ];
+}
+
+/**
+ * The fills of an upright copy (`ocr-preprocess.ts`) painted on the scan it was turned from by
+ * `angle`: a scan pixel takes a fill's colour when its centre, turned back, lies inside the
+ * fill's box — the quad the box becomes, not the box around it, so the lines beside a skewed
+ * word are not touched.
+ */
+function paintTurned(
+  data: Uint8Array,
+  frame: Pick<RgbaImage, 'width' | 'height'>,
+  fills: readonly Fill[],
+  angle: number,
+): void {
+  const { width, height } = frame;
+  for (const fill of fills) {
+    const [x0, y0, x1, y1] = fill.box;
+    const [r, g, b] = fill.color;
+    const [bx0, by0, bx1, by1] = scanBox(frame, fill.box, angle);
+    for (let y = by0; y < by1; y += 1) {
+      for (let x = bx0; x < bx1; x += 1) {
+        const [u, v] = rotateAbout(x + 0.5, y + 0.5, width / 2, height / 2, -angle);
+        if (u < x0 || u >= x1 || v < y0 || v >= y1) continue;
+        const at = (y * width + x) * 4;
+        data[at] = r;
+        data[at + 1] = g;
+        data[at + 2] = b;
+        data[at + 3] = 255;
+      }
+    }
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * text
@@ -665,7 +751,14 @@ function meetsVerticalRule(image: RgbaImage, rule: Rule, wordHeight: number): bo
  */
 export function eraseRules(image: RgbaImage, rules: readonly Rule[]): RgbaImage {
   const { width, height, scale } = image;
+  return { width, height, data: ruleFills(image, rules).data, scale };
+}
+
+/** The pixels of `image` without the rules, and the fills that erased them (columns of the rule not crossed by a descender). */
+function ruleFills(image: RgbaImage, rules: readonly Rule[]): { data: Uint8Array; fills: Fill[] } {
+  const { width, height, scale } = image;
   const data = new Uint8Array(image.data);
+  const fills: Fill[] = [];
   for (const rule of rules) {
     const x0 = Math.max(0, Math.floor(rule.x0 * scale));
     const x1 = Math.min(width, Math.ceil(rule.x1 * scale));
@@ -675,20 +768,42 @@ export function eraseRules(image: RgbaImage, rules: readonly Rule[]): RgbaImage 
     const below = Math.min(height - 1, y1);
     const [r, g, b] = ringMedian(data, width, height, [x0, y0, x1, y1], RING);
     const background: Rgb = [r, g, b];
+    // Runs of columns that are not crossed (the columns do not read each other's rows).
+    let start = x0;
+    const flush = (end: number): void => {
+      if (end <= start) return;
+      const fill: Fill = { box: [start, y0, end, y1], color: background };
+      paint(data, width, fill);
+      fills.push(fill);
+    };
     for (let x = x0; x < x1; x += 1) {
       const crossed =
         distance(data, (above * width + x) * 4, background) >= MIN_CONTRAST &&
         distance(data, (below * width + x) * 4, background) >= MIN_CONTRAST;
-      if (crossed) continue;
-      for (let y = y0; y < y1; y += 1) {
-        const at = (y * width + x) * 4;
-        data[at] = r;
-        data[at + 1] = g;
-        data[at + 2] = b;
+      if (crossed) {
+        flush(x);
+        start = x + 1;
       }
     }
+    flush(x1);
   }
-  return { width, height, data, scale };
+  return { data, fills };
+}
+
+/**
+ * `scan` without the rules found on its upright copy `image` (`ocr-preprocess.ts`, turned by
+ * `angle`): the copy's fills are painted on the scan where they land, so the rule is erased
+ * along the line it is drawn on.
+ */
+export function eraseRulesTurned(
+  image: RgbaImage,
+  rules: readonly Rule[],
+  scan: RgbaImage,
+  angle: number,
+): RgbaImage {
+  const data = new Uint8Array(scan.data);
+  paintTurned(data, image, ruleFills(image, rules).fills, angle);
+  return { width: scan.width, height: scan.height, data, scale: scan.scale };
 }
 
 /** A word of at most two characters smaller than this × the word it sits on is that word's mark, not a word. */
@@ -1081,6 +1196,100 @@ function groupLines(words: readonly OcrWord[], regionOf: (word: OcrWord) => numb
   return lines;
 }
 
+const rightmost = (row: readonly Line[]): Line =>
+  row.reduce((best, line) => (line.x1 > best.x1 ? line : best));
+const leftmost = (row: readonly Line[]): Line =>
+  row.reduce((best, line) => (line.x0 < best.x0 ? line : best));
+
+/** A cell of figures: more digits than letters (an amount, a quantity, a percentage, a date). */
+function amountLike(cell: Line): boolean {
+  const text = cell.words.map((word) => word.text).join('');
+  return (text.match(/\p{N}/gu)?.length ?? 0) > (text.match(/\p{L}/gu)?.length ?? 0);
+}
+
+/**
+ * Whether the cells of a row stand under the cells of the row above, as a table's do (see
+ * `tableRows`); `leading` is the distance from the lowest line above, which a wrapped cell
+ * brings closer than the row's own baseline.
+ */
+function gridPair(above: readonly Line[], below: readonly Line[], leading: number): boolean {
+  const size = Math.max(...above.map((line) => line.size), ...below.map((line) => line.size));
+  const cells = Math.min(above.length, below.length);
+  const need = cells >= TABLE_CELLS ? TABLE_CELLS : 2;
+  const reachDown = cells >= TABLE_CELLS ? TABLE_MAX_LEADING : MAX_LEADING;
+  if (leading > reachDown * size || cells < need) return false;
+  const reach = ALIGN * size;
+  const sameColumn = (over: Line, cell: Line) =>
+    over.region === cell.region &&
+    (Math.abs(over.x0 - cell.x0) <= reach ||
+      Math.abs(over.x1 - cell.x1) <= reach ||
+      Math.abs((over.x0 + over.x1) / 2 - (cell.x0 + cell.x1) / 2) <= reach);
+  // A table has a column of figures; side-by-side blocks of short lines (skill lists, label blocks) are columns. Two cells need it in the left-most or in the right-most cell of both rows; more cells, a figure under a figure.
+  const edge = (pick: (row: readonly Line[]) => Line) => amountLike(pick(above)) && amountLike(pick(below));
+  const figures =
+    need === 2
+      ? edge(rightmost) || edge(leftmost)
+      : below.some(
+          (cell) => amountLike(cell) && above.some((over) => amountLike(over) && sameColumn(over, cell)),
+        );
+  if (!figures) return false;
+  const stands = (cell: Line) => above.some((over) => sameColumn(over, cell));
+  const words = [...above, ...below].reduce((sum, cell) => sum + cell.words.length, 0);
+  return below.filter(stands).length >= need && words <= TABLE_CELL_WORDS * (above.length + below.length);
+}
+
+/**
+ * The tables of a page, as the lines that are their cells: rows are lines on one baseline (two
+ * or more), and consecutive rows whose cells stand under each other (`gridPair`) are one table.
+ * A line alone on its baseline keeps the table open only as the second line of a wrapped cell
+ * (it continues a cell of the row above, or such a line, as `continues` has it); any other line — a
+ * sub-heading — ends it.
+ * A column of single-line cells (an invoice's descriptions) looks like a paragraph of short
+ * lines to `groupParagraphs`; this is what tells it apart.
+ */
+function tableRows(lines: readonly Line[]): Line[][] {
+  const rows: Line[][] = [];
+  for (const line of [...lines].sort((a, b) => a.baseline - b.baseline)) {
+    const row = rows.find(
+      (cells) => Math.abs((cells[0] as Line).baseline - line.baseline) <= ROW_BAND * line.size,
+    );
+    if (row === undefined) rows.push([line]);
+    else row.push(line);
+  }
+  const tables: Line[][] = [];
+  let open = false;
+  let above: Line[] | undefined;
+  /** The cells of the last row and the lines that wrapped under them. */
+  let refs: Line[] = [];
+  let lowest = -Infinity;
+  for (const row of rows) {
+    const baseline = (row[0] as Line).baseline;
+    if (row.length > 1) {
+      if (above !== undefined && gridPair(above, row, baseline - lowest)) {
+        if (!open) tables.push([...above]);
+        (tables[tables.length - 1] as Line[]).push(...row);
+        open = true;
+      } else {
+        open = false;
+      }
+      above = row;
+      refs = [...row];
+    } else {
+      const line = row[0] as Line;
+      const wraps =
+        baseline - lowest <= MAX_LEADING * line.size && refs.some((cell) => continues(cell, line));
+      if (wraps) refs.push(line);
+      else {
+        open = false;
+        above = undefined;
+        refs = [];
+      }
+    }
+    lowest = baseline;
+  }
+  return tables;
+}
+
 /** Whether `line` carries on the paragraph whose last line is `last`: same region, aligned, a line below at a similar size. */
 function continues(last: Line, line: Line): boolean {
   if (last.region !== line.region) return false;
@@ -1096,8 +1305,8 @@ function continues(last: Line, line: Line): boolean {
   );
 }
 
-/** Lines, top to bottom, into paragraphs: each line joins the nearest paragraph above it that it continues. */
-function groupParagraphs(lines: readonly Line[]): Line[][] {
+/** Lines, top to bottom, into paragraphs: each line joins the nearest paragraph above it that it continues; a cell of a table starts its own. */
+function groupParagraphs(lines: readonly Line[], cells: ReadonlySet<Line>): Line[][] {
   const paragraphs: Line[][] = [];
   for (const line of [...lines].sort((a, b) => a.baseline - b.baseline || a.x0 - b.x0)) {
     let best: Line[] | undefined;
@@ -1105,7 +1314,7 @@ function groupParagraphs(lines: readonly Line[]): Line[][] {
     for (const paragraph of paragraphs) {
       const last = paragraph[paragraph.length - 1] as Line;
       const leading = line.baseline - last.baseline;
-      if (leading < nearest && continues(last, line)) {
+      if (leading < nearest && !cells.has(line) && continues(last, line)) {
         best = paragraph;
         nearest = leading;
       }
@@ -1220,6 +1429,12 @@ export interface MeasuredWord {
   readonly confidence: number;
 }
 
+/** A word that has other readings (`OcrWord.alternatives`), with the size it was set at. */
+export interface UnsettledWord {
+  readonly word: OcrWord;
+  readonly size: number;
+}
+
 /**
  * The text boxes of a recognised page: one per paragraph, in reading order. `regions` are the
  * boxes of the solid regions `ocrBackground` found (cards, bands, photos; not loose marks): lines and paragraphs never cross their edge.
@@ -1227,7 +1442,8 @@ export interface MeasuredWord {
  * each is a run of its own with a `note`. With `advance` the page is set in the stand-in family
  * whose letter widths fit the word boxes best (`font` names one instead) and every run carries
  * where the scan has its letters, so the writer places each word where the scan has it.
- * `measured` lists the words as they were set, for whoever judges the typeface.
+ * `measured` lists the words as they were set, for whoever judges the typeface; `family` is the
+ * one they were set in and `unsettled` the words that have other readings, for whoever judges those.
  */
 export function ocrTextBoxes(
   words: readonly OcrWord[],
@@ -1241,13 +1457,32 @@ export function ocrTextBoxes(
   boxes: TextBox[];
   flagged: { text: string; confidence: number }[];
   measured: MeasuredWord[];
+  family: string;
+  unsettled: UnsettledWord[];
 } {
   const flagged: { text: string; confidence: number }[] = [];
   const measured: MeasuredWord[] = [];
+  const unsettled: UnsettledWord[] = [];
   const inks = new Map<OcrWord, WordInk>();
   const lines = groupLines(words, regionIndex(regions));
   const typical = lines.length === 0 ? 0 : median(lines.map((line) => line.size));
-  const paragraphs = readingOrder(groupParagraphs(lines), boundsOf, typical, (paragraph) => paragraph.length);
+  const tables = tableRows(lines);
+  const cells = new Set(tables.flat());
+  const grouped = groupParagraphs(lines, cells);
+  // A table is one item of the reading order, read row by row inside; paragraphs are items of their own.
+  const units: Line[][][] = grouped
+    .filter((paragraph) => !cells.has(paragraph[0] as Line))
+    .map((paragraph) => [paragraph]);
+  for (const table of tables) {
+    const own = grouped.filter((paragraph) => table.includes(paragraph[0] as Line));
+    units.push(inRows(own, boundsOf));
+  }
+  const paragraphs = readingOrder(
+    units,
+    (unit) => boundsOf(unit.flat()),
+    typical,
+    (unit) => (unit.length === 1 ? (unit[0] as Line[]).length : 1),
+  ).flat();
   const lineStroke = new Map<Line, number>();
   const sizes = new Map<Line, number>();
   const slants = new Map<Line, boolean>();
@@ -1308,6 +1543,7 @@ export function ocrTextBoxes(
           italic,
           confidence: word.confidence,
         });
+        if (word.alternatives !== undefined) unsettled.push({ word, size });
         return {
           text: at === 0 && line.words.length > 1 && BULLET_LIKE.test(word.text) ? '\u2022' : word.text,
           bold,
@@ -1337,7 +1573,11 @@ export function ocrTextBoxes(
       SQUEEZE_MARGIN * naturalWidth(textLines),
     );
     const x0 = centred ? centre - width / 2 : left;
-    const top = (baselines[0] as number) - BASELINE_IN_LINE * lineHeight;
+    // Every line says where the box would start for its own baseline at the pitch the lines are set
+    // at (the line height, which is the scan's only when it is no tighter than the size); the middle
+    // of them stands, so one line whose baseline is off (a heading, a speck) does not carry the box.
+    const top =
+      median(baselines.map((baseline, at) => baseline - at * lineHeight)) - BASELINE_IN_LINE * lineHeight;
     const bottom = Math.max(top + lineHeight * lines.length, ...lines.map((line) => line.y1));
     const paragraph: TextParagraph = {
       align: centred ? 'center' : 'left',
@@ -1346,7 +1586,7 @@ export function ocrTextBoxes(
     };
     boxes.push({ box: [x0, top, x0 + width, bottom], rotation: 0, paragraphs: [paragraph] });
   }
-  return { boxes, flagged, measured };
+  return { boxes, flagged, measured, family, unsettled };
 }
 
 /* ------------------------------------------------------------------ *
@@ -1403,17 +1643,11 @@ function commonColor(data: Uint8Array): Rgb {
   ];
 }
 
-/**
- * The page without its words: every word box is filled with the background around it, the
- * page colour is the commonest colour left, and each connected region that differs from it is
- * cropped out of the erased image.
- */
-export function ocrBackground(
-  image: RgbaImage,
-  words: readonly OcrWord[],
-): { pageColor: number; regions: { box: Box; rgba: RgbaImage; solid: boolean }[] } {
+/** The image with every word box filled with the background around it, and the fills. */
+function eraseFills(image: RgbaImage, words: readonly OcrWord[]): { data: Uint8Array; fills: Fill[] } {
   const { width, height, scale } = image;
   const data = new Uint8Array(image.data);
+  const fills: Fill[] = [];
 
   for (const word of words) {
     const h = word.y1 - word.y0;
@@ -1423,16 +1657,41 @@ export function ocrBackground(
     const below = CEDILLA.test(word.text) ? MARK_PAD * h : pad;
     const box = pixelBox(image, word.x0 - pad, word.y0 - above, word.x1 + pad, word.y1 + below);
     const [r, g, b] = ringMedian(data, width, height, box, RING);
-    const [x0, y0, x1, y1] = growOverRipples(data, width, height, scale, box, [r, g, b]);
-    for (let y = y0; y < y1; y += 1) {
-      for (let x = x0; x < x1; x += 1) {
-        const at = (y * width + x) * 4;
-        data[at] = r;
-        data[at + 1] = g;
-        data[at + 2] = b;
-        data[at + 3] = 255;
-      }
-    }
+    const fill: Fill = { box: growOverRipples(data, width, height, scale, box, [r, g, b]), color: [r, g, b] };
+    paint(data, width, fill);
+    fills.push(fill);
+  }
+  return { data, fills };
+}
+
+/** The image with every word box filled with the background around it (a copy; `words` in page points on the image's own scale). */
+export function eraseWords(image: RgbaImage, words: readonly OcrWord[]): RgbaImage {
+  return { ...image, data: eraseFills(image, words).data };
+}
+
+/**
+ * The page without its words: every word box is filled with the background around it, the
+ * page colour is the commonest colour left, and each connected region that differs from it is
+ * cropped out of the erased image.
+ *
+ * With `turn`, `image` is the upright copy of a crooked scan and `words` are its: the page
+ * colour, the regions and their `box` are found on the copy (the frame the words and the text
+ * boxes are in), but the words are erased from `turn.scan` itself, each fill painted where the
+ * scan has it (`paintTurned`), and the pictures are cut from it: `placed` is the box of the
+ * scan that holds a region (the region's own box, when the page is not turned).
+ */
+export function ocrBackground(
+  image: RgbaImage,
+  words: readonly OcrWord[],
+  turn?: { readonly scan: RgbaImage; readonly angle: number },
+): { pageColor: number; regions: { box: Box; placed: Box; rgba: RgbaImage; solid: boolean }[] } {
+  const { width, height, scale } = image;
+  const { data, fills } = eraseFills(image, words);
+  // The pixels the pictures are cut from: the page itself, or the scan with the same fills.
+  let cut = data;
+  if (turn !== undefined) {
+    cut = new Uint8Array(turn.scan.data);
+    paintTurned(cut, image, fills, turn.angle);
   }
 
   const page = commonColor(data);
@@ -1442,7 +1701,7 @@ export function ocrBackground(
   }
   const grown = dilate(mask, width, height, Math.max(1, Math.round(MERGE_GAP * scale)));
 
-  const regions: { box: Box; rgba: RgbaImage; solid: boolean }[] = [];
+  const regions: { box: Box; placed: Box; rgba: RgbaImage; solid: boolean }[] = [];
   const stack = new Int32Array(width * height);
   for (let start = 0; start < grown.length; start += 1) {
     if (grown[start] === 0) continue;
@@ -1487,15 +1746,18 @@ export function ocrBackground(
     const y0 = Math.max(0, minY - 1);
     const x1 = Math.min(width, maxX + 2);
     const y1 = Math.min(height, maxY + 2);
-    const cropWidth = x1 - x0;
-    const crop = new Uint8Array(cropWidth * (y1 - y0) * 4);
-    for (let y = y0; y < y1; y += 1) {
-      const from = (y * width + x0) * 4;
-      crop.set(data.subarray(from, from + cropWidth * 4), (y - y0) * cropWidth * 4);
+    const [px0, py0, px1, py1] =
+      turn === undefined ? [x0, y0, x1, y1] : scanBox(image, [x0, y0, x1, y1], turn.angle);
+    const cropWidth = px1 - px0;
+    const crop = new Uint8Array(cropWidth * (py1 - py0) * 4);
+    for (let y = py0; y < py1; y += 1) {
+      const from = (y * width + px0) * 4;
+      crop.set(cut.subarray(from, from + cropWidth * 4), (y - py0) * cropWidth * 4);
     }
     regions.push({
       box: [x0 / scale, y0 / scale, x1 / scale, y1 / scale],
-      rgba: { width: cropWidth, height: y1 - y0, data: crop, scale },
+      placed: [px0 / scale, py0 / scale, px1 / scale, py1 / scale],
+      rgba: { width: cropWidth, height: py1 - py0, data: crop, scale },
       solid: inked >= SOLID_FILL * (maxX - minX + 1) * (maxY - minY + 1),
     });
   }
