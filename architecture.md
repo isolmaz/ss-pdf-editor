@@ -1275,7 +1275,8 @@ the 25 MiB asset limit. A `fast` run that includes one of them runs at `best`
 (`effectiveOcrQuality`, one worker reads every language from one directory), and the report
 says so. `existingText: 'skip' | 'overwrite'`
 decides what happens to pages that already have text, and overwriting is reported as a
-warning because it is additive. A worker that fails to start (a missing core, language pack or worker script) is mapped to
+warning because it is additive; the dialog therefore calls it "Read again (adds a layer)",
+not "Overwrite", since the existing text stays. A worker that fails to start (a missing core, language pack or worker script) is mapped to
 `ocr-language-missing` or `asset-missing` rather than surfacing as a raw error, and a failed
 start is not cached. Cancellation is a real `worker.terminate()`, and the
 `finally` awaits worker termination, so "memory is back" is true when the function

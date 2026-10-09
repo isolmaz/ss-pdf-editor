@@ -45,7 +45,8 @@ export const enginesPart = {
   'op.progress.ocr.save': 'Metin katmanı yazılıyor',
   'op.note.ocr.layerAdded': '{pages} sayfaya {words} kelimelik görünmez metin katmanı eklendi ({dpi} DPI).',
   'op.note.ocr.skippedPages': 'Metni olan {count} sayfa atlandı.',
-  'op.note.ocr.overwriteIsAdditive': 'Üzerine yaz modu mevcut metni silmez; yeni katman eklenir.',
+  'op.note.ocr.overwriteIsAdditive':
+    '"Yeniden oku" mevcut metni silmez; tanınan sözcükler yeni bir katman olarak eklenir.',
   'op.note.ocr.lowConfidence': 'Sayfa {page}: düşük güvenilirlik (%{confidence}).',
   'op.note.ocr.hiddenLayer': 'Metin katmanı görünmez yazıldı; seçilebilir ve aranabilir.',
   'op.note.ocr.bestModel':
