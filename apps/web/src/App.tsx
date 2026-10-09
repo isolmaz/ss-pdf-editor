@@ -5,8 +5,6 @@ import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-ha
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
 // and the engine chunk it pulls in is what the ≤250 KiB budget is there to keep
 // out.
-import type { MarkTransform } from 'pdf-core/ops/annotation-transform';
-import { transformPdfAnnotations } from 'pdf-core/ops/annotation-transform';
 import { readAnnotations } from 'pdf-core/ops/annotations';
 import {
   CONVERT_ACCEPT,
@@ -77,15 +75,12 @@ const ShortcutsDialog = lazy(async () => {
 import { CaretLeft, CaretRight, Command, FilePdf, FolderOpen, GearSix } from '@phosphor-icons/react';
 import type { OperationOutcome } from 'pdf-core';
 import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
-import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
-import type { MessageKey } from 'pdf-shared';
 import type { FieldValue } from 'pdf-ui';
 import {
   type CanvasToolId,
   MarkInteractionLayer,
-  type MarkTarget,
   markTargetKey,
   type StampPlacement,
   selectionBoxes,
@@ -104,8 +99,6 @@ import {
   hasDialog,
   isStandaloneDialog,
   MenuBar,
-  RedactionLayer,
-  RedactionPanel,
   StatusBar,
   ToolsRailPanel,
   useLocale,
@@ -113,15 +106,6 @@ import {
 } from 'pdf-ui/ui';
 import { PdfViewerPane, type ViewerApi } from 'pdf-ui/viewer';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import {
-  buildMarkTargets,
-  isEmptyRemoval,
-  normalizePendingMarks,
-  planMarkRemoval,
-  planMarkTransform,
-  removalCount,
-  withThreadRecords,
-} from './annotation-interaction';
 import {
   buildCommands,
   type InterfaceMode,
@@ -148,7 +132,6 @@ import {
   chooseThickness,
   heldEngineValues,
   holdEngineValues,
-  knownExistingAnnotations,
   orphanSweepInFlight,
   releaseEngineValues,
   useAnnotationStyle,
@@ -183,7 +166,6 @@ import {
   showRightDock,
   toggleLeftDock,
   toggleRightDock,
-  toggleTool,
   useCore,
 } from './features/core/core-store';
 import {
@@ -195,7 +177,6 @@ import {
   replaceHandle,
   useDocumentHandle,
 } from './features/core/handles';
-import { type OverlayChange, writeOverlay } from './features/core/overlays';
 import { useCompactViewport } from './features/core/viewport';
 import { currentFacts, currentFactsError, useCurrentFacts } from './features/facts/facts-store';
 import { PropertiesFacts } from './features/facts/PropertiesFacts';
@@ -213,7 +194,6 @@ import {
   startFormDetect as startFormDetectFor,
 } from './features/forms/form-actions';
 import {
-  existingAnnotationsOf,
   existingInventoryRead,
   existingInventoryUnknown,
   retryInspection,
@@ -222,6 +202,16 @@ import {
   useForms,
 } from './features/forms/forms-store';
 import { useFormInventory } from './features/forms/use-form-inventory';
+import { useMarkTargets } from './features/marks/mark-targets';
+import { currentMarkTargets } from './features/marks/marks-store';
+import { editableOverlays, useVisibleMarks } from './features/marks/overlays';
+import { RedactionDock, RedactionMarkLayer } from './features/marks/RedactionSurfaces';
+import {
+  refuseUnappliedRedactions as refuseUnappliedRedactionsFor,
+  useRedactionMarks,
+} from './features/marks/redaction';
+import { erasedWordsOf, redactedWordsForgotten, redactedWordsRead } from './features/marks/redaction-store';
+import { useMarkActions, useWriterActions } from './features/marks/use-mark-actions';
 import { MeasureOverlay } from './features/measure/MeasureOverlay';
 import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
 import { armMeasure, useMeasureMode } from './features/measure/measure-store';
@@ -245,14 +235,7 @@ import {
   placeStamp as stampPlace,
   resizeStamp as stampResize,
 } from './features/stamps/stamp-actions';
-import {
-  applyLayerWrite,
-  convertToPdf,
-  imagesToPdf,
-  inspectProtection,
-  listPdfImages,
-  verifySignatures,
-} from './lazy-ops';
+import { convertToPdf, imagesToPdf, inspectProtection, listPdfImages, verifySignatures } from './lazy-ops';
 import {
   appendWarning,
   engineValuesNotices,
@@ -275,9 +258,7 @@ import {
   materializeBase,
   type PageAction,
   pendingOverlays,
-  pruneOverlays,
   redactionNeedles,
-  removeMarkTargets,
   verifyForWrite,
   type WriteVerification,
 } from './operations';
@@ -346,11 +327,6 @@ function selectionRedactAreas(viewer: ViewerApi): readonly RedactRect[] {
 
 export interface AppProps {
   readonly store: SessionStore;
-}
-
-interface MarkedRect {
-  readonly id: string;
-  readonly mark: RedactRect;
 }
 
 /**
@@ -441,15 +417,6 @@ export function App({ store }: AppProps) {
     undefined,
   );
   const session = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  /**
-   * The words a document's applied redactions removed.
-   *
-   * The audit's question is "does this file still carry what was erased", and the marks
-   * themselves cannot answer it: a `RedactRect` is geometry, and the words under it are
-   * gone from the working bytes the moment the redaction lands. So they are read once,
-   * from the bytes the redaction ran on, and kept per tab until the tab is closed.
-   */
-  const redactedTerms = useRef(new Map<string, readonly string[]>());
   const persistedSnapshots = useRef(new Map<string, readonly string[]>());
   const draftWrites = useRef<Promise<unknown>>(Promise.resolve());
   /**
@@ -627,17 +594,8 @@ export function App({ store }: AppProps) {
    * the moment the user points at a paragraph.
    */
   const [textToolBytes, setTextToolBytes] = useState<Uint8Array | null>(null);
-  /**
-   * Drawn redaction marks. The list needs a stable identity for its rows, and the
-   * operation needs the engine rectangle, so the app keeps both instead of letting
-   * either side re-derive the other.
-   */
-  const redactionMarks = pendingOverlays(store.active).redactions;
-  const setRedactionMarks = useCallback(
-    (change: OverlayChange<readonly MarkedRect[]>) =>
-      writeOverlay(store, 'redactions', change, 'panel.redaction'),
-    [store],
-  );
+  /** The drawn redaction marks of the active tab (`features/marks/redaction.ts`). */
+  const { redactionMarks, setRedactionMarks } = useRedactionMarks(store);
   /**
    * The annotation marks of the active tab and the look the next one is drawn with
    * (`features/annotations/`). The marks are the tab's pending overlay, not engine state.
@@ -655,7 +613,6 @@ export function App({ store }: AppProps) {
   const measureMarks = pendingOverlays(store.active).measures;
   // The file's own annotations and form fields, each keyed to the bytes it was read from
   // (`features/forms`); the forms store owns them.
-  const existingInventory = useForms((state) => state.existingInventory);
   const inspectionRevision = useForms((state) => state.inspectionRevision);
 
   /**
@@ -671,17 +628,11 @@ export function App({ store }: AppProps) {
 
   const activeTab = session.tabs.find((tab) => tab.id === session.activeId) ?? null;
 
-  /**
-   * Print and Snapshot render the engine document, which carries none of the session's staged
-   * redaction marks: the browser's "Save as PDF" or a saved image would deliver the content the
-   * marks were meant to remove, and the print dialog's imposed file opens as a new tab. They are
-   * refused with the same notice as Save while a mark is unapplied.
-   */
-  const refuseUnappliedRedactions = useCallback((): boolean => {
-    if (pendingOverlays(store.active).redactions.length === 0) return false;
-    showNotice(`${t('error.pending-redactions.message')} ${t('error.pending-redactions.hint')}`);
-    return true;
-  }, [store, t]);
+  /** Print and Snapshot are refused while a redaction mark is unapplied (`features/marks/redaction.ts`). */
+  const refuseUnappliedRedactions = useCallback(
+    (): boolean => refuseUnappliedRedactionsFor(store, t),
+    [store, t],
+  );
   const openPrint = useCallback(() => {
     if (!refuseUnappliedRedactions()) openPrintDialog();
   }, [refuseUnappliedRedactions]);
@@ -699,66 +650,24 @@ export function App({ store }: AppProps) {
    */
   const existingAnnotations = useExistingAnnotations(activeTab);
   usePublishExistingAnnotations(existingAnnotations);
-  const editableOverlays = useCallback(
-    (tab: SessionTab) => {
-      const stored = pendingOverlays(tab);
-      const existing = existingAnnotationsOf(existingInventory, tab);
-      if (existing === null) return stored;
-      const normalized = normalizePendingMarks(stored, existing);
-      return normalized === stored ? stored : { ...stored, ...normalized };
-    },
-    [existingInventory],
-  );
-  const visibleMarks = useMemo(
-    () => (activeTab === null ? pendingOverlays(null) : editableOverlays(activeTab)),
-    [activeTab, editableOverlays],
-  );
+  const visibleMarks = useVisibleMarks(activeTab);
 
   /** Which measurement is armed; `null` whenever the ruler does not own the pointer. */
   const measureMode = useMeasureMode();
-  const redactionActive = canvasTool === 'redact';
   const textTool = canvasTool === 'text';
   /** Only creation gestures reach the annotation overlay. */
   const annotationLayerTool = ANNOTATION_LAYER_TOOLS[canvasTool] ?? null;
   const markMode = canvasTool === 'select' ? 'select' : null;
 
-  /**
-   * Every mark the page shows, in the common layer's identity space: the session's
-   * annotations, its measurements, its redaction intents and the annotations the file
-   * itself carries, with our own saved marks deduplicated against their pending
-   * copies (`annotation-interaction.ts`).
-   *
-   * Memoized on the model it is derived from: the geometry conversion walks every
-   * existing annotation and every page, which is not work a re-render should repeat.
-   */
-  const markTargets = useMemo(
-    () =>
-      existingAnnotations === null
-        ? []
-        : buildMarkTargets({
-            annotations,
-            measures: measureMarks,
-            redactions: redactionMarks,
-            existing: existingAnnotations,
-            // The page's own top edge: `viewBox[3]` read from the fields the viewer
-            // has always returned (`y + height`), the same edge `pointToPage` flips
-            // against. The writer's own `pageBox` wins where it is available.
-            pageTop: (pageIndex) => {
-              const geometry = viewer?.pageGeometry(pageIndex) ?? null;
-              return geometry === null ? null : geometry.y + geometry.height;
-            },
-            labelFor: (family, messageKey, subtype) => {
-              const name = t(messageKey);
-              if (family !== 'existing') return name;
-              return subtype === undefined
-                ? `${name} · ${t('ann.inFile')}`
-                : `${subtype} · ${t('ann.inFile')}`;
-            },
-          }),
-    [annotations, existingAnnotations, measureMarks, redactionMarks, t, viewer],
-  );
-  const markTargetsRef = useRef<readonly MarkTarget[]>(markTargets);
-  markTargetsRef.current = markTargets;
+  /** Every mark the page shows, in the common layer's identity space (`features/marks/mark-targets.ts`). */
+  const markTargets = useMarkTargets({
+    annotations,
+    measures: measureMarks,
+    redactions: redactionMarks,
+    existing: existingAnnotations,
+    viewer,
+    t,
+  });
 
   /**
    * The document names the browser's own surfaces: the printed file, a "Save as…"
@@ -1845,7 +1754,7 @@ export function App({ store }: AppProps) {
         verification,
       };
     },
-    [contextFor, currentForms, editableOverlays, formFields, store, t],
+    [contextFor, currentForms, formFields, store, t],
   );
 
   const saveActive = useCallback(
@@ -1989,7 +1898,7 @@ export function App({ store }: AppProps) {
       }
       store.closeTab(id);
       releaseEngineValues(id);
-      redactedTerms.current.delete(id);
+      redactedWordsForgotten(id);
       draftWrites.current = draftWrites.current
         .then(async () => {
           // The reference graph is read fresh and *whole*: the previous version derived it
@@ -2560,7 +2469,7 @@ export function App({ store }: AppProps) {
       if (tab === null || handle === null) throw new ToolError('selection-empty', { engine: 'model' });
       return materializeBase(contextFor(tab, handle), operation, undefined, editableOverlays(tab));
     },
-    [contextFor, editableOverlays, store],
+    [contextFor, store],
   );
 
   const resultsActions = useMemo(
@@ -2670,11 +2579,7 @@ export function App({ store }: AppProps) {
            */
           const marks = dialogContext?.redactions ?? [];
           void redactionNeedles(input.bytes, marks, { signal: new AbortController().signal })
-            .then((terms) => {
-              if (terms.length === 0) return;
-              const known = redactedTerms.current.get(tab.id) ?? [];
-              redactedTerms.current.set(tab.id, [...new Set([...known, ...terms])]);
-            })
+            .then((terms) => redactedWordsRead(tab.id, terms))
             .catch(() => undefined);
         }
         showNotice(
@@ -2744,82 +2649,14 @@ export function App({ store }: AppProps) {
     [t],
   );
 
-  /**
-   * A writer ran on the working document: journal it, swap the handle, and say what the
-   * report said.
-   *
-   * Three panels now reach a MuPDF writer this way (layer state, attachments add and
-   * remove), and the rules they share are the ones that are easy to get subtly wrong:
-   * a report that changed nothing must not be journaled (`incremental: true` is the op's
-   * own "same bytes back"), the notice carries every note the report is not merely
-   * preserving — warnings and losses included, because a panel has no report surface —
-   * and the handle swap is what makes the produced bytes the working version.
-   */
-  const applyWriterOutcome = useCallback(
-    async (
-      tab: SessionTab,
-      handle: PdfDocumentHandle,
-      outcome: OperationOutcome,
-      labelKey: MessageKey,
-    ): Promise<void> => {
-      if (outcome.report.incremental) {
-        const unchanged = outcome.report.notes.find((entry) => entry.kind !== 'preserved');
-        showNotice(unchanged === undefined ? t(labelKey) : t(unchanged.key, unchanged.params ?? {}));
-        return;
-      }
-      const next = await applyProducedBytes(
-        contextFor(tab, handle),
-        outcome.bytes,
-        outcome.report.pageCount,
-        { key: labelKey },
-        outcome.report.engine,
-        outcome.report.steps,
-      );
-      setHandle(tab.id, next);
-      const spoken = outcome.report.notes
-        .filter((entry) => entry.kind !== 'preserved')
-        .map((entry) => t(entry.key, entry.params ?? {}));
-      showNotice(spoken.length === 0 ? t(labelKey) : spoken.join(' '));
-    },
-    [contextFor, setHandle, t],
-  );
-
-  /**
-   * The layers panel writes the view state it shows into the file
-   * (“layers (OCG) view/edit”).
-   *
-   * The panel holds the engine's view state and no bytes; this file holds the bytes and
-   * no view, so the request travels from there to here — the same ownership rule every
-   * other write follows. The bytes are the *working* document, session marks included,
-   * so a layer write cannot drop an annotation the user has drawn but not yet saved.
-   */
-  const writeLayers = useCallback(
-    async (request: LayerWriteRequest) => {
-      const tab = activeTab;
-      const handle = activeHandle;
-      if (tab === null || handle === null) return;
-      // Read at call time, like every other control that replaces the handle: a panel
-      // rendered one commit earlier holds that commit's closure.
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      setBusy(true);
-      try {
-        const bytes = await materializeBase(contextFor(tab, handle), {
-          signal: new AbortController().signal,
-        });
-        const outcome = await applyLayerWrite(bytes, request, { signal: new AbortController().signal });
-        await applyWriterOutcome(tab, handle, outcome, 'panel.layers');
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [activeTab, activeHandle, applyWriterOutcome, contextFor, t, refuseBusy],
-  );
+  /** The writer pipeline and the layers panel's write (`features/marks/writer.ts`). */
+  const { applyWriterOutcome, writeLayers } = useWriterActions({
+    session: store,
+    t,
+    contextFor,
+    setHandle,
+    refuseBusy,
+  });
 
   const attachmentActions = useMemo(
     () => createAttachmentActions({ session: store, t, contextFor, setHandle, applyWriterOutcome }),
@@ -2843,308 +2680,20 @@ export function App({ store }: AppProps) {
   const canEditRef = useRef(canEdit);
   canEditRef.current = canEdit;
 
-  /**
-   * **The one removal intent**: the Delete key, selection controls and comment
-   * panels call this and nothing else, so every family shares one journal step.
-   *
-   * It takes the two paths the contract names, and which one runs is decided by the
-   * request alone:
-   *
-   *  - **pending marks only** — one `setOverlays` call, so the whole batch (across all
-   *    three session families) is a *single* journal entry and a single undo step;
-   *  - **anything the file already carries** — the frozen base is materialised from the
-   *    marks that survive, the persisted ids are removed by the core writer, and the
-   *    result is mounted by `applyProducedBytes` with the remaining redaction intents.
-   *    Nothing is applied until all of that has succeeded, and every `await` is
-   *    followed by a stale check, so a failure or a document change behind the
-   *    gesture leaves the original state exactly as it was.
-   */
-  const removeTargets = useCallback(
-    (keys: readonly string[]): boolean => {
-      const request = planMarkRemoval(
-        markTargetsRef.current,
-        withThreadRecords(keys, knownExistingAnnotations() ?? []),
-      );
-      if (isEmptyRemoval(request)) return false;
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null || !canEditRef.current) return false;
-      const count = removalCount(request);
-
-      /**
-       * A pending-only removal whose document has engine-side edits is not a pure
-       * overlay edit either: deletion adds the step a later undo will come back
-       * through, and typed form values are not in a step yet. They are captured
-       * first so the deletion's own `before` carries them.
-       */
-      if (request.existing.length === 0 && !hasEngineEdits(handle)) {
-        store.setOverlays(
-          tab.id,
-          pruneOverlays(editableOverlays(tab), request) as unknown as JsonValue,
-          'ann.remove',
-        );
-        showNotice(t('ann.removed', { count }));
-        return true;
-      }
-
-      /**
-       * The lock is taken inside the async block, not here: when the orphan sweep is
-       * running, this gesture waits for it (it is about to replace the working
-       * version) instead of being refused because the shell is busy with its own
-       * housekeeping.
-       */
-      const inFlight = orphanSweepInFlight();
-      if (inFlight === null && (isBusy() || cancelRef.current !== null)) {
-        refuseBusy();
-        return false;
-      }
-      void (async () => {
-        const controller = new AbortController();
-        try {
-          if (inFlight !== null) await inFlight;
-          if (isBusy() || cancelRef.current !== null) {
-            refuseBusy();
-            return;
-          }
-          cancelRef.current = controller;
-          setBusy(true);
-          await checkpointEngineValues();
-          if (controller.signal.aborted) return;
-          // Read the tab after the checkpoint: it journals a step of its own, so the
-          // version id and the overlay state have both moved on. What must *not* have
-          // moved is the document the request was planned against — the tab and the
-          // bytes behind it.
-          const fresh = store.getSnapshot().tabs.find((item) => item.id === tab.id) ?? null;
-          if (
-            fresh === null ||
-            store.active?.id !== tab.id ||
-            fresh.working.produced?.id !== tab.working.produced?.id
-          )
-            return;
-          if (request.existing.length === 0) {
-            store.setOverlays(
-              fresh.id,
-              pruneOverlays(editableOverlays(fresh), request) as unknown as JsonValue,
-              'ann.remove',
-            );
-            showNotice(t('ann.removed', { count }));
-            return;
-          }
-          const outcome = await removeMarkTargets(
-            contextFor(fresh, handle),
-            request,
-            { signal: controller.signal },
-            [],
-            editableOverlays(fresh),
-          );
-          if (
-            controller.signal.aborted ||
-            store.active?.id !== tab.id ||
-            store.getSnapshot().tabs.find((item) => item.id === tab.id)?.working.id !== fresh.working.id
-          )
-            return;
-          const next = await applyProducedBytes(
-            contextFor(fresh, handle),
-            outcome.bytes,
-            outcome.pageCount,
-            { key: 'ann.remove', params: { count } },
-            outcome.engine,
-            outcome.steps,
-            { signal: controller.signal },
-            outcome.overlays,
-          );
-          setHandle(fresh.id, next);
-          showNotice(t('ann.removed', { count }));
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          const toolError =
-            error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-        } finally {
-          if (cancelRef.current === controller) {
-            cancelRef.current = null;
-            setBusy(false);
-          }
-        }
-      })();
-      return true;
-    },
-    [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setHandle, store, t],
-  );
+  /** Removing, moving and writing marks (`features/marks/`). */
+  const { removeTargets, transformTargets, writeFileAnnotation } = useMarkActions({
+    session: store,
+    t,
+    contextFor,
+    setHandle,
+    refuseBusy,
+    cancel: cancelRef,
+    canEdit: canEditRef,
+    checkpointEngineValues,
+    selectAfterWrite,
+  });
   const removeTargetsRef = useRef(removeTargets);
   removeTargetsRef.current = removeTargets;
-
-  /** Geometry changes share deletion's frozen-version and engine-delta boundary. */
-  const transformTargets = useCallback(
-    (keys: readonly string[], transform: MarkTransform): boolean => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null || existingAnnotations === null) return false;
-      if (isBusy() || cancelRef.current !== null || !canEditRef.current) return false;
-      if (transform.dx === 0 && transform.dy === 0 && transform.rotation === 0) return false;
-      const targets = markTargetsRef.current;
-      const wanted = new Set(keys);
-      const count = targets.filter((target) => wanted.has(target.key)).length;
-      if (count === 0) return false;
-      const current = editableOverlays(tab);
-      const plan = planMarkTransform(current, targets, keys, transform);
-      if (plan.existing.length === 0 && !hasEngineEdits(handle)) {
-        store.setOverlays(
-          tab.id,
-          {
-            ...current,
-            annotations: plan.annotations,
-            measures: plan.measures,
-            redactions: plan.redactions,
-          } as unknown as JsonValue,
-          'ann.transform',
-        );
-        showNotice(t('ann.transformed', { count }));
-        return true;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      void (async () => {
-        try {
-          await checkpointEngineValues();
-          const fresh = store.active;
-          if (
-            controller.signal.aborted ||
-            fresh?.id !== tab.id ||
-            fresh.working.produced?.id !== tab.working.produced?.id
-          )
-            return;
-          const before = editableOverlays(fresh);
-          const nextPlan = planMarkTransform(before, targets, keys, transform);
-          const after = {
-            ...before,
-            annotations: nextPlan.annotations,
-            measures: nextPlan.measures,
-            redactions: nextPlan.redactions,
-          };
-          if (nextPlan.existing.length === 0) {
-            store.setOverlays(fresh.id, after as unknown as JsonValue, 'ann.transform');
-          } else {
-            // Keep pending marks outside the bytes. Otherwise the untouched PDF
-            // version and the transformed overlay would both paint the same mark.
-            const context = contextFor(fresh, handle);
-            const executedSteps: SaveStepDescription[] = [];
-            const base = await materializeBase(context, { signal: controller.signal }, executedSteps, {
-              ...before,
-              annotations: [],
-              measures: [],
-            });
-            const outcome = await transformPdfAnnotations(
-              base,
-              { targets: nextPlan.existing, transform },
-              { signal: controller.signal },
-            );
-            const next = await applyProducedBytes(
-              context,
-              outcome.bytes,
-              outcome.report.pageCount,
-              { key: 'ann.transform' },
-              outcome.report.engine,
-              [...executedSteps.map((step) => step.id), ...outcome.report.steps],
-              { signal: controller.signal },
-              after,
-            );
-            setHandle(fresh.id, next);
-          }
-          showNotice(t('ann.transformed', { count }));
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-        } finally {
-          if (cancelRef.current === controller) {
-            cancelRef.current = null;
-            setBusy(false);
-          }
-        }
-      })();
-      return true;
-    },
-    [checkpointEngineValues, contextFor, editableOverlays, existingAnnotations, setHandle, store, t],
-  );
-
-  /**
-   * One write into a file annotation that is not a geometry edit of the selection: a
-   * placed picture, a resized one. The same boundary as `transformTargets` — engine
-   * values checkpointed, the version checked after every `await`, pending marks kept
-   * out of the bytes and handed back as the remaining overlays — so the stamp is one
-   * journal step that undo takes back whole.
-   */
-  const writeFileAnnotation = useCallback(
-    (
-      label: { readonly key: MessageKey; readonly params?: Record<string, string | number> },
-      write: (
-        base: Uint8Array,
-        signal: AbortSignal,
-      ) => Promise<OperationOutcome & { readonly annotationId?: string }>,
-      done: string,
-      selectOnPage?: number,
-    ): boolean => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) return false;
-      if (isBusy() || cancelRef.current !== null || !canEditRef.current) {
-        refuseBusy();
-        return false;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      void (async () => {
-        try {
-          await checkpointEngineValues();
-          const fresh = store.active;
-          if (
-            controller.signal.aborted ||
-            fresh?.id !== tab.id ||
-            fresh.working.produced?.id !== tab.working.produced?.id
-          )
-            return;
-          const before = editableOverlays(fresh);
-          const context = contextFor(fresh, handle);
-          const executedSteps: SaveStepDescription[] = [];
-          const base = await materializeBase(context, { signal: controller.signal }, executedSteps, {
-            ...before,
-            annotations: [],
-            measures: [],
-          });
-          const outcome = await write(base, controller.signal);
-          const next = await applyProducedBytes(
-            context,
-            outcome.bytes,
-            outcome.report.pageCount,
-            label,
-            outcome.report.engine,
-            [...executedSteps.map((step) => step.id), ...outcome.report.steps],
-            { signal: controller.signal },
-            before,
-          );
-          setHandle(fresh.id, next);
-          if (outcome.annotationId !== undefined && selectOnPage !== undefined) {
-            selectAfterWrite.current = markTargetKey('existing', outcome.annotationId, selectOnPage);
-          }
-          showNotice(done);
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-        } finally {
-          if (cancelRef.current === controller) {
-            cancelRef.current = null;
-            setBusy(false);
-          }
-        }
-      })();
-      return true;
-    },
-    [checkpointEngineValues, contextFor, editableOverlays, refuseBusy, setHandle, store, t],
-  );
 
   /** Replies, review states and taking a reply back (`features/comments/review.ts`). */
   const commentReview = useCommentReview({
@@ -3171,7 +2720,7 @@ export function App({ store }: AppProps) {
   /** A corner handle's drop: the stamp's `/Rect` becomes the new box, nothing else changes. */
   const resizeStamp = useCallback(
     (key: string, rect: readonly [number, number, number, number]) =>
-      stampResize(key, rect, { targets: markTargetsRef.current, writeFileAnnotation, t }),
+      stampResize(key, rect, { targets: currentMarkTargets(), writeFileAnnotation, t }),
     [t, writeFileAnnotation],
   );
 
@@ -3221,7 +2770,7 @@ export function App({ store }: AppProps) {
   const selectAllMarks = useCallback((): boolean => {
     if (coreStore.get().canvasTool !== 'select') return false;
     if (store.active === null || existingAnnotations === null) return false;
-    const keys = markTargetsRef.current.map((target) => target.key);
+    const keys = currentMarkTargets().map((target) => target.key);
     if (keys.length === 0) return false;
     setSelectedKeys(keys);
     return true;
@@ -3864,16 +3413,12 @@ export function App({ store }: AppProps) {
                   viewer === null ? null : (
                     <>
                       {/* A protected tab is read-only: no area can be marked on it. */}
-                      {redactionActive && !locked && !viewingOnly && viewer !== null ? (
-                        <RedactionLayer
-                          t={t}
-                          viewer={viewer}
-                          onMark={(mark) =>
-                            setRedactionMarks((marks) => [...marks, { id: crypto.randomUUID(), mark }])
-                          }
-                          onDone={() => selectTool('select')}
-                        />
-                      ) : null}
+                      <RedactionMarkLayer
+                        t={t}
+                        viewer={viewer}
+                        session={store}
+                        enabled={!locked && !viewingOnly}
+                      />
                       {/*
                 Measurements remain visible after switching to selection. Only creation
                 and the settings strip follow the armed tool, not the marks themselves.
@@ -4118,11 +3663,7 @@ export function App({ store }: AppProps) {
                       onReadAttachment={(name) => void attachmentActions.readOut(name)}
                     />
                   ) : rightTab === 'redaction-audit' ? (
-                    <RedactionAuditView
-                      store={store}
-                      t={t}
-                      erasedTerms={(tabId) => redactedTerms.current.get(tabId) ?? []}
-                    />
+                    <RedactionAuditView store={store} t={t} erasedTerms={erasedWordsOf} />
                   ) : rightTab === 'compare' ? (
                     <Suspense
                       fallback={
@@ -4171,40 +3712,13 @@ export function App({ store }: AppProps) {
                       onFill={(name, value) => void fillField(name, value)}
                     />
                   ) : (
-                    <RedactionPanel
+                    <RedactionDock
                       t={t}
-                      marks={redactionMarks.map((item) => ({
-                        id: item.id,
-                        pageIndex: item.mark.pageIndex,
-                      }))}
-                      onRemove={(id) => void removeTargets([markTargetKey('redaction', id, 0)])}
-                      onClear={() =>
-                        void removeTargets(
-                          markTargets
-                            .filter((target) => target.family === 'redaction')
-                            .map((target) => target.key),
-                        )
-                      }
-                    >
-                      <Button
-                        size="sm"
-                        shape="base"
-                        aria-pressed={redactionActive}
-                        disabled={!canEdit}
-                        onClick={() => toggleTool('redact')}
-                      >
-                        {redactionActive ? t('redact.tool.stop') : t('redact.tool.start')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        shape="base"
-                        variant="primary"
-                        disabled={!canEdit || redactionMarks.length === 0}
-                        onClick={() => openDialog('redact')}
-                      >
-                        {t('redact.title')}
-                      </Button>
-                    </RedactionPanel>
+                      marks={redactionMarks}
+                      canEdit={canEdit}
+                      removeTargets={removeTargets}
+                      onApply={() => openDialog('redact')}
+                    />
                   )}
                 </Dock>
               </div>
