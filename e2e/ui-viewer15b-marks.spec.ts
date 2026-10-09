@@ -17,17 +17,23 @@ test('pressing a resize handle without moving, and an interrupted drag, leave th
   await placePicture(page, 400, 200, 300, 400);
   const before = rectOf(await exported(page, 'placed.pdf', 'Stamp'));
   const handle = page.locator('[data-mark-resize="se"]');
+  const handles = page.locator('[data-mark-resize]');
+
+  // A press and release in place is no resize. The pointer is put on the handle with `hover`,
+  // which waits until the handle has stopped moving (the export just before unmounts and
+  // remounts the handles, and the page may still be laying out) and is what receives the
+  // pointer: a press on coordinates read a moment earlier lands on the page behind the handle
+  // when it has moved, and a press on the page clears the selection and the handles with it.
+  await handle.hover();
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(handles).toHaveCount(4);
+
+  // A drag taken over by the system: the box follows the pointer until it is cancelled.
+  await handle.hover();
   const box = await handle.boundingBox();
   if (box === null) throw new Error('the handle has no box');
   const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-
-  // A press and release in place is no resize.
-  await page.mouse.move(at.x, at.y);
-  await page.mouse.down();
-  await page.mouse.up();
-
-  // A drag taken over by the system: the box follows the pointer until it is cancelled.
-  await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   await page.mouse.move(at.x + 80, at.y + 40, { steps: 5 });
   await handle.dispatchEvent('pointercancel', { pointerId: 1, bubbles: true });

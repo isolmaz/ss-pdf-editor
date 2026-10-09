@@ -550,15 +550,30 @@ describe('resizing the container', () => {
     expect(rig.goToPage).toHaveBeenCalledExactlyOnceWith(1);
   });
 
-  it('leaves the scale to a reader who zoomed away from the fit', () => {
+  it('leaves the scale to a reader who zoomed away from the fit, and still puts the page on screen at the top', () => {
     const rig = mountRig(3);
     const { result } = mountHook(rig);
     act(() => result.current.enter());
     rig.state.zoom = 2;
+    rig.state.scrollTop = 600;
     rig.setZoom.mockClear();
     act(() => FakeResizeObserver.resize());
     expect(rig.setZoom).not.toHaveBeenCalled();
-    expect(rig.goToPage).not.toHaveBeenCalled();
+    expect(rig.goToPage).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('aligns the page when the pane re-applied the width fit before the observer first ran', () => {
+    // Full screen can land before this hook's observer reports: the pane's own resize handler
+    // then rescales to the new width (pdf.js keeps the old scroll fraction, cutting the page off
+    // at the top) and the zoom no longer equals the one recorded at the start.
+    const rig = mountRig(3);
+    const { result } = mountHook(rig);
+    act(() => result.current.enter());
+    rig.state.zoom = 1.8;
+    rig.state.scrollTop = 640;
+    rig.setZoom.mockClear();
+    act(() => FakeResizeObserver.resize());
+    expect(rig.goToPage).toHaveBeenLastCalledWith(1);
   });
 
   it('refits to the first page when the viewer markup is gone', () => {
