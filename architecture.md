@@ -405,7 +405,15 @@ had to stay green. The moves, and the defects they fixed on the way:
   - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
     paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
-    rule between two cells merges them). Tables without rules come from runs of rows that
+    rule between two cells merges them, unless that would make a region that runs into
+    a cell already placed, which then stays single). A rule group whose outer border is not
+    drawn is completed with an undrawn grid line at that side, but only along an axis that
+    already has two lines of its own, at a side that two rules reach, and when the strip holds
+    a line of text that lies wholly in it and is a quarter as deep as the cell next to it, or
+    is half as deep: a divider crossed by one rule, a heading between two rules, or rules that
+    overshoot by a few points are not a lattice. The Word table carries no table-wide borders
+    (`tblBorders` all `nil`); each cell gets `tcBorders` for the sides a rule covers by 75 % or
+    more, so the undrawn edges stay blank. Tables without rules come from runs of rows that
     each hold two or more pieces of text, their columns being the gaps that run through
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
@@ -499,7 +507,20 @@ had to stay green. The moves, and the defects they fixed on the way:
     fallback back, so the `verify` step still compares the words written with the words found.
     Text that runs up or down the page (MuPDF's line direction, which holds for one character too) is a
     vertical text box (`bodyPr vert="vert270"` / `"vert"` on the visual box): LibreOffice ignores
-    `a:xfrm rot` on a text box. A line's baseline is its characters' origin (`LayoutChar.baseline`);
+    `a:xfrm rot` on a text box (measured with LibreOffice 26 for every other form of a text box
+    too: DrawingML with and without `txBox`, a rotated group, VML `rotation`: the frame turns, its text
+    does not). Text at any other angle (not across, up or down within 1.5°, upside down included) is
+    a box of its own whose frame is turned by the line's angle about its centre (`a:xfrm rot`,
+    `effectExtent` for the room the turn takes, VML `rotation`): LibreOffice draws the frame turned
+    but its text level (across, in the same place and at the PDF's advances), Word turns both:
+    `a:xfrm rot` rotates the shape about its centre ([MS-OE376 xfrm](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/9ce071a0-4053-4714-9025-1951253cab2a)) and the
+    text rotates with it unless `bodyPr upright="1"` ([ECMA-376 `bodyPr`](https://c-rex.net/samples/ooxml/e1/part4/OOXML_P4_DOCX_bodyPr_topic_ID0EMGMKB.html)); Word itself was not run
+    here. `w14:alpha` is the transparency, unlike DrawingML's `a:alpha`: LibreOffice's test document semi-transparent-text.docx, authored by Word 14.0, has `w14:alpha 74000` asserted as 74 % transparency (see `runXml`). The frame is placed so that the first
+    glyph's origin (`LayoutChar.pen`: origin and quad advance, read for slanted lines only) is
+    `TEXT_LEFT` in and 0.8 line heights down in the frame's own axes, and the line is fitted along
+    them. Text drawn with a fill opacity below 1 (`LayoutChar.alpha`, from the page device's
+    `fillText`) is written `w14:textFill` with the colour and `w14:alpha` (the value is the transparency, 100 % − opacity) beside the solid `w:color`
+    (`w14` is declared ignorable), which LibreOffice honours. A line's baseline is its characters' origin (`LayoutChar.baseline`);
     the box top is that minus 0.8 × the exact line height, and the box starts `TEXT_LEFT` (0.1 pt)
     left of the first glyph origin, where LibreOffice puts it. The 22-inch rule above applies too: a
     larger page is scaled down (`wordPageScale`) and everything on it with it. XML shared with the
@@ -692,6 +713,17 @@ had to stay green. The moves, and the defects they fixed on the way:
          1.5 × the size (a gutter) or a solid region's edge runs between them; lines become
          paragraphs when they share a region, sit 0.7–2 × the size apart, have sizes within a
          ratio of 0.75–1.33 and left edges or centres less than 0.8 × the size apart.
+         The cells of a table never join a paragraph: rows are lines on one baseline (within
+         0.5 × the size), and consecutive rows form a table when at least 3 cells of each (2
+         for label and amount rows) stand under cells of the row above by left edge, right edge
+         or centre, the cells average at most 4 words, the rows are at most 4 × the size apart
+         (2 × for two cells), and there is a column of figures (more digits than letters: a
+         figure under a figure for 3 or more cells, the left-most or the right-most cell of
+         both rows for 2), so side-by-side lists of short lines stay columns. A line alone on its baseline keeps the table open only as the
+         second line of a wrapped cell (it continues a cell above by the paragraph rule); any
+         other line ends it. Every cell line is a paragraph of its own, and a table is one item
+         of the cut below, read row by row inside (`inRows` of its paragraphs), so an invoice's
+         descriptions are not read before its quantities.
          *Reading order* is by recursive cuts (`readingOrder`): the paragraphs are split at the
          widest horizontal gap no box crosses (the part above first) and at the widest vertical
          one (the part to the left first), a vertical cut counting only where the two parts

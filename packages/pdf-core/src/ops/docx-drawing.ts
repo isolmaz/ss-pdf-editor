@@ -120,7 +120,8 @@ export function documentRelsXml(mediaNames: readonly string[], links: readonly D
  * The extra namespaces of a document that holds Word shapes and text boxes
  * (`docx-layout-shapes.ts`, `docx-layout-text.ts`), each declared once: `wps` for the
  * shape, `mc` for the `mc:AlternateContent` it sits in, `v`, `o` and `w10` for the VML
- * fallback. Pass as `wordDocumentXml`'s second argument; a second declaration of a prefix
+ * fallback, `w14` for a translucent run's `w14:textFill` (ignorable: readers without it show
+ * the run's solid `w:color`). Pass as `wordDocumentXml`'s second argument; a second declaration of a prefix
  * makes the XML invalid.
  */
 export const SHAPE_NAMESPACES =
@@ -128,7 +129,9 @@ export const SHAPE_NAMESPACES =
   'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
   'xmlns:v="urn:schemas-microsoft-com:vml" ' +
   'xmlns:o="urn:schemas-microsoft-com:office:office" ' +
-  'xmlns:w10="urn:schemas-microsoft-com:office:word"';
+  'xmlns:w10="urn:schemas-microsoft-com:office:word" ' +
+  'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" ' +
+  'mc:Ignorable="w14"';
 
 /** `word/document.xml` around a body, with the namespaces pictures need (and `extraNamespaces`). */
 export function wordDocumentXml(body: string, extraNamespaces = ''): string {
