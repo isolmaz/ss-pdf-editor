@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mergeProcessCovs, type ScriptCov } from '@bcoe/v8-coverage';
+import { gzipSync } from 'node:zlib';
+import type { ScriptCov } from '@bcoe/v8-coverage';
 import { test as base, expect, type Page } from 'playwright/test';
 
 /**
@@ -19,9 +20,10 @@ import { test as base, expect, type Page } from 'playwright/test';
  * still fails it.
  *
  * With `E2E_COVERAGE` set to a directory (`pnpm coverage` sets it), every page of a test's
- * browser context also records the V8 coverage of the editor's own scripts; each worker
- * merges what its tests recorded and writes one file there when it ends. `tools/coverage/report.mjs`
- * maps those files back to the sources and merges them with the unit suite's coverage.
+ * browser context also records the V8 coverage of the editor's own scripts, and writes it there
+ * as its own gzipped file the moment the page is collected: a worker holds no coverage between
+ * tests, however many it runs. `tools/coverage/report.mjs` merges the files a batch at a time,
+ * maps them back to the sources and adds them to the unit suite's coverage.
  */
 
 const coverageDir = process.env.E2E_COVERAGE;
@@ -36,10 +38,17 @@ const isEditorScript = (url: string): boolean => {
   }
 };
 
-export const test = base.extend<
-  { allowedErrors: readonly RegExp[]; pageErrors: readonly string[] },
-  { v8Coverage: ScriptCov[][] }
->({
+/** Writes one page's coverage to its own file, as the V8 process coverage `mergeProcessCovs` takes. */
+const writeRecord = (dir: string, scripts: ScriptCov[]): void => {
+  if (scripts.length === 0) return;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `e2e-${randomUUID()}.json.gz`),
+    gzipSync(JSON.stringify({ result: scripts }), { level: 1 }),
+  );
+};
+
+export const test = base.extend<{ allowedErrors: readonly RegExp[]; pageErrors: readonly string[] }>({
   allowedErrors: [[], { option: true }],
   pageErrors: [
     async ({ context, allowedErrors }, use) => {
@@ -57,19 +66,7 @@ export const test = base.extend<
     },
     { auto: true },
   ],
-  v8Coverage: [
-    // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's dependencies from this pattern; this one has none.
-    async ({}, use) => {
-      const recorded: ScriptCov[][] = [];
-      await use(recorded);
-      if (coverageDir === undefined || recorded.length === 0) return;
-      const merged = mergeProcessCovs(recorded.map((result) => ({ result })));
-      mkdirSync(coverageDir, { recursive: true });
-      writeFileSync(join(coverageDir, `e2e-${randomUUID()}.json`), JSON.stringify(merged));
-    },
-    { scope: 'worker' },
-  ],
-  context: async ({ context, v8Coverage }, use) => {
+  context: async ({ context }, use) => {
     if (coverageDir === undefined) {
       await use(context);
       return;
@@ -81,7 +78,8 @@ export const test = base.extend<
     const collect = async (page: Page): Promise<void> => {
       if (!recording.delete(page) || page.isClosed()) return;
       const entries = await page.coverage.stopJSCoverage();
-      v8Coverage.push(
+      writeRecord(
+        coverageDir,
         entries
           .filter((entry) => isEditorScript(entry.url))
           .map(({ scriptId, url, functions }) => ({ scriptId, url, functions })),
