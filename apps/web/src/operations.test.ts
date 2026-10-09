@@ -30,6 +30,7 @@ import type { Mupdf } from 'pdf-core/engines/mupdf';
 import { openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
 import { readFormFields } from 'pdf-core/ops/forms';
 import { scaleForRatio } from 'pdf-core/ops/measure';
+import { redactDocument } from 'pdf-core/ops/redact';
 import { readPageText } from 'pdf-core/text-source';
 import { encodeEngineValues, type JsonValue, SessionStore, workingPageCount } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
@@ -532,6 +533,70 @@ describe('materializeBase → verifyForWrite', () => {
       await changed.destroy();
       await lossyHandle.destroy();
     }
+  });
+});
+
+/**
+ * A redaction run journals the step ids `redactDocument` reports. The table has to know
+ * every one of them: a single unknown id makes the whole run `unverified`, and then the
+ * form fields the redaction removed are an unexplained change instead of the declared one.
+ * The ids here come from the real writer, run with every optional clean-up switched on.
+ */
+describe('verifyForWrite: the steps a redaction reports', () => {
+  it('declares every step the writer reports, so the form fields it removed are a declared change', async () => {
+    const source = await threePageDocument();
+    const filled = await withFields(source.bytes, [
+      ['fullName', 'Ada Lovelace'],
+      ['city', 'Izmir'],
+    ]);
+    const document = reopen(filled);
+    document.setMetaData('info:Title', 'Secret title');
+    const attachment = new TextEncoder().encode('ATTACHED');
+    document.insertEmbeddedFile(
+      'secret.txt',
+      document.addEmbeddedFile('secret.txt', 'text/plain', attachment, new Date(0), new Date(0)),
+    );
+    const bytes = saved(document);
+
+    // Both widgets span x 40–220, user y 40–60 of a 500 pt page; the text sits far above.
+    const outcome = await redactDocument(
+      bytes,
+      {
+        marks: [{ pageIndex: 0, space: 'app-v1', rect: [30, 430, 230, 470] }],
+        imageMethod: 0,
+        textMethod: 0,
+        cleanMetadata: true,
+        cleanAttachments: ['secret.txt'],
+      },
+      SIGNAL,
+    );
+    expect(outcome.report.steps).toEqual([
+      'open',
+      'annotate(Redact)',
+      'applyRedactions',
+      'clean(annotations+fields)',
+      'clean(Info+XMP)',
+      'clean(attachments)',
+      'save(garbage=compact,compress,clean)',
+      'verify',
+    ]);
+
+    const result = await verify(outcome.bytes, bytes, {
+      expectedPageCount: 3,
+      steps: outcome.report.steps,
+      expectedFormFields: [
+        { name: 'fullName', value: 'Ada Lovelace' },
+        { name: 'city', value: 'Izmir' },
+      ],
+    });
+    expect(result.operation).toEqual({ kind: 'declared', steps: [] });
+    expect(result.declared).toEqual(expect.arrayContaining(['formFieldCount', 'formFieldValues']));
+    expect(checkFor(result, 'formFieldCount')).toEqual({
+      fact: 'formFieldCount',
+      verdict: 'degraded',
+      reason: 'changed',
+      params: { count: 0 },
+    });
   });
 });
 

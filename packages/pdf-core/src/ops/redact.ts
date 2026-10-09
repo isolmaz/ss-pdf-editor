@@ -38,8 +38,18 @@ import {
   topLeftRectToUserSpace,
 } from '../engines/mupdf';
 import { PRODUCER_LINE } from './metadata';
-import { type AnnotationTally, annotationUnder, finishSweep, newTally, sweepPage } from './redact-annots';
+import {
+  type AnnotationTally,
+  annotationUnder,
+  finishSweep,
+  formHasXfa,
+  newTally,
+  sweepPage,
+} from './redact-annots';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
+
+/** The XFA writers bring an XML parser with them: they load only for a form that has XFA. */
+const loadXfa = () => import('./xfa');
 
 export interface RedactRect {
   readonly pageIndex: number;
@@ -115,6 +125,7 @@ export async function redactDocument(
   const removed = newTally();
   let cleanedAttachments = 0;
   let cleanedMetadata = false;
+  let xfaDropped = false;
   let pageCount: number;
   let produced: Uint8Array;
   try {
@@ -141,6 +152,12 @@ export async function redactDocument(
     }
     // The widgets leave the form and every removed object is deleted once all pages are swept.
     finishSweep(doc, removed);
+    // A static XFA form keeps each field's value in its datasets packet too, and an XFA reader
+    // paints the field from there at the marked spot, widget or not: the XFA goes with the
+    // widgets, and the saved file does not carry the packets (nothing references them).
+    if (removed.widgets > 0 && formHasXfa(doc)) {
+      xfaDropped = (await loadXfa()).removeXfaEntries(doc);
+    }
     throwIfAborted(context.signal);
 
     if (options.cleanMetadata) {
@@ -181,7 +198,8 @@ export async function redactDocument(
         'open',
         'annotate(Redact)',
         'applyRedactions',
-        ...(removed.fields + removed.annotations > 0 ? ['clean(annotations+fields)'] : []),
+        ...(removed.widgets + removed.annotations > 0 ? ['clean(annotations+fields)'] : []),
+        ...(xfaDropped ? ['xfa.remove'] : []),
         ...(cleanedMetadata ? ['clean(Info+XMP)'] : []),
         ...(cleanedAttachments > 0 ? ['clean(attachments)'] : []),
         'save(garbage=compact,compress,clean)',
@@ -195,6 +213,7 @@ export async function redactDocument(
         ...(removed.fields > 0
           ? [note('lost', 'op.note.redact.fieldsRemoved', { count: removed.fields })]
           : []),
+        ...(xfaDropped ? [note('lost', 'op.note.redact.xfaDropped')] : []),
         ...(removed.annotations > 0
           ? [note('lost', 'op.note.redact.annotationsRemoved', { count: removed.annotations })]
           : []),

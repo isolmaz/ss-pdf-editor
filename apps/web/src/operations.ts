@@ -757,9 +757,9 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'the text editor erases the old glyphs through a MuPDF redaction pass, which also deletes the links it touches',
   },
   {
-    steps: ['applyRedactions'],
+    steps: ['applyRedactions', 'annotate(Redact)', 'clean(annotations+fields)'],
     mayChange: ['pageContent', 'textContent', 'annotations', 'formFieldCount', 'formFieldValues'],
-    why: 'redaction removes glyphs from the content stream and removes every annotation and form field widget whose rectangle meets a mark; removing a field changes the field count, and the values of the fields that go with it',
+    why: 'redaction removes glyphs from the content stream and removes every annotation and form field widget whose rectangle meets a mark (annotate(Redact) draws the marks, clean(annotations+fields) is the sweep of those widgets and annotations); removing a field changes the field count, and the values of the fields that go with it',
   },
   {
     steps: ['text.draw'],
@@ -874,14 +874,15 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
       'mupdf:save',
       'text.font',
       'save',
-      'save(*)',
+      'save(garbage=compact,compress,clean)',
       'producer',
       'metadata',
       'xmp',
+      'clean(Info+XMP)',
       'structure',
     ],
     mayChange: [],
-    why: 'loading, serialising and adding the producer line change none of the twelve facts',
+    why: 'loading, serialising (the full rewrite a redaction ends with included), adding the producer line and clearing the Info and XMP metadata change none of the twelve facts',
   },
   {
     steps: ['render', 'scan', 'text', 'text.find', 'inspect', 'measure', 'extract-text'],
@@ -894,9 +895,9 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     why: 'the operation verifies or authenticates the bytes it already has; it writes nothing',
   },
   {
-    steps: ['attach', 'remove'],
+    steps: ['attach', 'remove', 'clean(attachments)'],
     mayChange: [],
-    why: 'an embedded file is not one of the twelve facts: the page list, the pages and the forms are untouched',
+    why: 'an embedded file is not one of the twelve facts: attaching, removing or clearing one leaves the page list, the pages and the forms untouched',
   },
   {
     steps: ['.skipped'],

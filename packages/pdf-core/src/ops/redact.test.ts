@@ -32,6 +32,7 @@ import {
   setForm,
   TWO_LINES,
 } from './redact.fixtures';
+import { editWidgets, withPdf, xfaPdf } from './xfa-form.fixtures';
 
 const run = { signal: new AbortController().signal };
 
@@ -432,10 +433,12 @@ describe('redactDocument: annotations and form fields under a mark', () => {
     // The field that still has a widget keeps its value: that widget shows it.
     expect(forensic).toContain('KEEPVALUE');
     expect(forensic).toContain('PLAINVALUE');
+    // Four widgets went, two fields with them: `drop` (two widgets) and the loose `inline` one.
+    // `keep` lost a widget but still has the other, so it is not a removed field.
     expect(outcome.report.notes).toContainEqual({
       kind: 'lost',
       key: 'op.note.redact.fieldsRemoved',
-      params: { count: 4 },
+      params: { count: 2 },
     });
     expect(outcome.report.notes.some((entry) => entry.key === 'op.note.redact.annotationsRemoved')).toBe(
       false,
@@ -457,6 +460,9 @@ describe('redactDocument: annotations and form fields under a mark', () => {
     expect(await annotationsOf(onePage.bytes, 0)).toEqual([]);
     expect(await annotationsOf(onePage.bytes, 1)).toHaveLength(1);
     expect(await decompressed(onePage.bytes)).toContain('BOTHVALUE');
+    // The widget went, the field did not: no field is reported as removed.
+    expect(onePage.report.steps).toContain('clean(annotations+fields)');
+    expect(onePage.report.notes.some((entry) => entry.key === 'op.note.redact.fieldsRemoved')).toBe(false);
 
     const bothPages = await redactDocument(
       source,
@@ -465,14 +471,51 @@ describe('redactDocument: annotations and form fields under a mark', () => {
     );
     expect(await fieldNames(bothPages.bytes)).toEqual([]);
     expect(await decompressed(bothPages.bytes)).not.toContain('BOTHVALUE');
+    // Two widgets, one field.
     expect(bothPages.report.notes).toContainEqual({
       kind: 'lost',
       key: 'op.note.redact.fieldsRemoved',
-      params: { count: 2 },
+      params: { count: 1 },
     });
   });
 
-  it('takes the popups and replies of a removed comment along, and unlinks a popup that goes alone', async () => {
+  it('counts a field once however many widgets it has, and every field that went', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      // A radio group of three widgets, a field of two, and a field of one, all under the mark.
+      const radio = doc.addObject({ FT: 'Btn', T: doc.newString('radio'), V: 'RADIOVALUE' });
+      const radios = [0, 1, 2].map((step) =>
+        addWidget(doc, { rect: [45 + step * 20, 292, 60 + step * 20, 312], parent: radio }),
+      );
+      radio.put('Kids', radios);
+      const pair = doc.addObject({ FT: 'Tx', T: doc.newString('pair'), V: doc.newString('PAIRVALUE') });
+      const pairKids = [0, 1].map((step) =>
+        addWidget(doc, { rect: [110 + step * 40, 292, 140 + step * 40, 312], parent: pair }),
+      );
+      pair.put('Kids', pairKids);
+      const single = addWidget(doc, { name: 'single', value: 'SINGLEVALUE', rect: [45, 316, 190, 330] });
+      listOnPage(doc, [...radios, ...pairKids, single]);
+      // A widget written inside `/Annots` itself has no object number: it is a field of its own.
+      const inline = doc.newDictionary();
+      inline.put('Type', 'Annot');
+      inline.put('Subtype', 'Widget');
+      inline.put('FT', 'Tx');
+      inline.put('T', doc.newString('inline'));
+      inline.put('Rect', [150, 316, 190, 330]);
+      doc.findPage(0).get('Annots').push(inline);
+      setForm(doc, [radio, pair, single]);
+    });
+    const outcome = await redactDocument(source, { ...BASE, marks: [mark([40, 170, 200, 210])] }, run);
+    expect(await fieldNames(outcome.bytes)).toEqual([]);
+    expect(await annotationsOf(outcome.bytes)).toEqual([]);
+    // Seven widgets: the three of `radio`, the two of `pair`, `single` and the inline one.
+    expect(outcome.report.notes).toContainEqual({
+      kind: 'lost',
+      key: 'op.note.redact.fieldsRemoved',
+      params: { count: 4 },
+    });
+  });
+
+  it('takes the popups and replies of a removed comment along, and the comment whose popup window is marked', async () => {
     const source = await build([TWO_LINES], (doc) => {
       const root = addNote(doc, {
         contents: NOTE_SECRET,
@@ -490,12 +533,25 @@ describe('redactDocument: annotations and form fields under a mark', () => {
         replyTo: reply.note,
       });
       const free = addNote(doc, { contents: 'FREE', rect: [300, 20, 320, 40] });
-      // The comment stays, its popup window lies inside the mark.
+      // The popup window lies inside the mark and shows the comment's text, so the comment
+      // goes with it, and so does the reply to that comment.
       const owner = addNote(doc, {
-        contents: 'OWNER',
+        contents: 'OWNERSECRET',
         rect: [300, 140, 320, 160],
         popupRect: [60, 292, 100, 312],
       });
+      const ownerReply = addNote(doc, {
+        contents: 'OWNERREPLY',
+        rect: [300, 120, 320, 135],
+        replyTo: owner.note,
+      });
+      // A comment that no page lists keeps nothing to draw its popup from: only its link to the window goes.
+      const unlisted = addNote(doc, {
+        contents: 'UNLISTED',
+        rect: [300, 440, 320, 460],
+        popupRect: [192, 292, 199, 312],
+      });
+      doc.getTrailer().get('Root').put('Probe', unlisted.note);
       // A popup that names a parent whose `/Popup` is another popup, and one without a parent.
       const other = addNote(doc, {
         contents: 'OTHER',
@@ -518,8 +574,10 @@ describe('redactDocument: annotations and form fields under a mark', () => {
         free.note,
         owner.note,
         owner.popup as PDFObject,
+        ownerReply.note,
         other.note,
         other.popup as PDFObject,
+        unlisted.popup as PDFObject,
         stray,
         orphan,
       ]);
@@ -528,30 +586,25 @@ describe('redactDocument: annotations and form fields under a mark', () => {
 
     expect(
       (await annotationsOf(outcome.bytes)).map((annotation) => annotation.contents ?? annotation.subtype),
-    ).toEqual(['FREE', 'OWNER', 'OTHER', 'Popup']);
+    ).toEqual(['FREE', 'OTHER', 'Popup']);
     const links = await inProduced(outcome.bytes, (doc) => {
       const list = doc.findPage(0).get('Annots');
-      const byContents = (text: string): PDFObject => {
-        for (let index = 0; index < list.length; index += 1) {
-          const annotation = list.get(index).resolve();
-          if (annotation.get('Contents').isString() && annotation.get('Contents').asString() === text)
-            return annotation;
-        }
-        throw new Error(`no annotation ${text}`);
-      };
+      const other = list.get(1).resolve();
       return {
-        ownerPopup: byContents('OWNER').get('Popup').isNull(),
-        otherPopup: byContents('OTHER').get('Popup').isIndirect(),
+        otherPopup: other.get('Popup').isIndirect(),
+        unlistedPopup: doc.getTrailer().get('Root').get('Probe').get('Popup').isNull(),
       };
     });
-    expect(links).toEqual({ ownerPopup: true, otherPopup: true });
+    expect(links).toEqual({ otherPopup: true, unlistedPopup: true });
     const forensic = await decompressed(outcome.bytes);
-    for (const secret of [NOTE_SECRET, 'REPLYSECRET1', 'REPLYSECRET2'])
+    for (const secret of [NOTE_SECRET, 'REPLYSECRET1', 'REPLYSECRET2', 'OWNERSECRET', 'OWNERREPLY'])
       expect(forensic).not.toContain(secret);
+    expect(forensic).toContain('UNLISTED');
+    // The comments that went: the marked one, its two replies, the one whose popup window was marked, its reply.
     expect(outcome.report.notes).toContainEqual({
       kind: 'lost',
       key: 'op.note.redact.annotationsRemoved',
-      params: { count: 3 },
+      params: { count: 5 },
     });
     expect(outcome.report.notes.some((entry) => entry.key === 'op.note.redact.fieldsRemoved')).toBe(false);
   });
@@ -595,6 +648,12 @@ describe('redactDocument: annotations and form fields under a mark', () => {
       });
       const outcome = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
       expect(await annotationsOf(outcome.bytes), `form variant ${index}`).toEqual([]);
+      // The field is counted from the widget, so a form tree that cannot be walked does not hide it.
+      expect(outcome.report.notes, `form variant ${index}`).toContainEqual({
+        kind: 'lost',
+        key: 'op.note.redact.fieldsRemoved',
+        params: { count: 1 },
+      });
       expect(await decompressed(outcome.bytes), `form variant ${index}`).not.toContain(FIELD_SECRET);
     }
   });
@@ -664,6 +723,56 @@ describe('redactDocument: annotations and form fields under a mark', () => {
       false,
     );
     expect(await annotationsOf(overNothing.bytes)).toHaveLength(8);
+  });
+});
+
+describe('redactDocument: a static XFA form', () => {
+  const XFA_SECRET = 'XFASECRET9';
+  const datasetsWith = (value: string) =>
+    `<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><Name>${value}</Name><Agree>0</Agree><Birth>2000-01-01</Birth></form1></xfa:data></xfa:datasets>`;
+  /** The `Name` widget spans x 20–180, user y 250–270 of a 300 pt page. */
+  const NAME_MARK = mark([10, 25, 190, 55]);
+
+  it('drops the XFA when a field under the mark leaves, so the value is not in the file any more, and says so', async () => {
+    for (const layout of ['array', 'stream'] as const) {
+      const form = await xfaPdf({ kind: 'static', layout, datasets: datasetsWith(XFA_SECRET) });
+      const source = await editWidgets(form, { 'Name[0]': XFA_SECRET });
+      // The value is in the file twice: the widget's /V and the XFA data.
+      expect(await decompressed(source), layout).toContain(XFA_SECRET);
+
+      const outcome = await redactDocument(source, { ...BASE, marks: [NAME_MARK] }, run);
+
+      expect(await annotationsOf(outcome.bytes), layout).toHaveLength(2);
+      expect(new TextDecoder('latin1').decode(outcome.bytes), layout).not.toContain(XFA_SECRET);
+      expect(await decompressed(outcome.bytes), layout).not.toContain(XFA_SECRET);
+      const kept = await withPdf(outcome.bytes, (doc) => {
+        const acro = doc.getTrailer().get('Root').get('AcroForm');
+        return { xfaGone: acro.get('XFA').isNull(), fields: acro.get('Fields').length };
+      });
+      expect(kept, layout).toEqual({ xfaGone: true, fields: 1 });
+      expect(outcome.report.notes, layout).toContainEqual({ kind: 'lost', key: 'op.note.redact.xfaDropped' });
+      expect(outcome.verification, layout).toEqual({ marksCleared: true, remaining: [] });
+    }
+  });
+
+  it('keeps the XFA when nothing under the marks was a form field', async () => {
+    const form = await xfaPdf({ kind: 'static', datasets: datasetsWith(XFA_SECRET) });
+    const outcome = await redactDocument(form, { ...BASE, marks: [mark([300, 200, 390, 290])] }, run);
+    const xfa = await withPdf(outcome.bytes, (doc) =>
+      doc.getTrailer().get('Root').get('AcroForm').get('XFA').isNull(),
+    );
+    expect(xfa).toBe(false);
+    expect(await decompressed(outcome.bytes)).toContain(XFA_SECRET);
+    expect(outcome.report.notes.some((entry) => entry.key === 'op.note.redact.xfaDropped')).toBe(false);
+  });
+
+  it('does not mention an XFA for a form that has none', async () => {
+    const outcome = await redactDocument(
+      await build([TWO_LINES], formAndNotes),
+      { ...BASE, marks: [SECRET_MARK] },
+      run,
+    );
+    expect(outcome.report.notes.some((entry) => entry.key === 'op.note.redact.xfaDropped')).toBe(false);
   });
 });
 

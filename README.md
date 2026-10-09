@@ -407,8 +407,12 @@ nothing leaving the browser.
   - Marks become MuPDF redaction annotations, and `applyRedactions` removes the glyphs.
   - MuPDF leaves form fields and annotations alone, so the writer removes every one whose
     rectangle meets a mark: a field's widget (and the field itself, with its value), a note
-    or other markup with its popup and replies, a link. Their objects are deleted, so
-    neither a value nor a note's text stays in the file. The report counts what went.
+    or other markup with its popup and replies (a mark over a popup window removes its note),
+    a link. Their objects are deleted, so neither a value nor a note's text stays in the file.
+    A hybrid XFA form also keeps each value in its XFA data, so its XFA is dropped when a
+    field goes and the form falls back to its AcroForm fields. The report counts the fields
+    (each once, however many widgets it has) and annotations that went, and says when the
+    XFA was dropped.
   - The file is then rewritten with `garbage=compact,compress,clean`, and the output is
     re-checked glyph by glyph and for any annotation or field still under a mark.
   - An object-level audit reports any remaining terms, earlier revisions and leftover
@@ -698,8 +702,9 @@ The limits are defined once, in
 - **Redaction and forms.**
   - A comment or field is removed whole when its rectangle meets a mark; there is no partial
     erase of a note.
-  - The XFA packets of a hybrid form are not edited, so a removed field's value can remain in
-    them.
+  - The XFA of a hybrid form is dropped whole, not edited, when a field under a mark goes; the
+    remaining AcroForm fields keep their values. A dynamic XFA form has no widgets to remove,
+    and its XFA data is not touched.
 - **PDF/A.**
   - The checker is a subset of veraPDF. A clean result is not a certificate: font programs,
     ICC profile bodies, exact file syntax, XMP value formats and the accessibility rules of

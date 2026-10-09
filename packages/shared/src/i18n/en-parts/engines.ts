@@ -15,6 +15,8 @@ export const enginesPart = {
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
   'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
+  'op.note.redact.xfaDropped':
+    'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining AcroForm fields keep their values.',
   'op.note.redact.annotationsRemoved':
     '{count} annotation(s) (comments, markup) under the marked areas removed.',
   'op.progress.encrypt': 'Encrypting document',

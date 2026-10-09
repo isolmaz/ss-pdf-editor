@@ -27,6 +27,8 @@ export const enginesPart = {
   'op.note.redact.producerKept': 'Üretici satırı korundu.',
   'op.note.redact.attachmentsRemoved': '{count} ek kaldırıldı.',
   'op.note.redact.fieldsRemoved': 'İşaretli alanların altındaki {count} form alanı kaldırıldı.',
+  'op.note.redact.xfaDropped':
+    'XFA form tanımı ve verisi atıldı: kaldırılan alanların değerlerini hâlâ taşıyorlardı. Kalan AcroForm alanları değerlerini korur.',
   'op.note.redact.annotationsRemoved':
     'İşaretli alanların altındaki {count} açıklama (yorum, işaretleme) kaldırıldı.',
 
