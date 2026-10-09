@@ -5701,6 +5701,7 @@ export function App({ store }: AppProps) {
                         // tab nothing can be written to, and a protected one says why.
                         if (id === 'redact' && !canEdit) {
                           if (locked) setNotice(t('locked.banner'));
+                          else if (busy) refuseBusy();
                           return;
                         }
                         openDialog(id);
