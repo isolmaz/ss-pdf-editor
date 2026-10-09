@@ -123,7 +123,7 @@ export const shellPart = {
   'settings.sweep.action': 'Temizle',
   'settings.offline': 'Çevrimdışı paketler',
   'settings.offline.hint':
-    'PDF motorlarını ve yazı tiplerini bu cihaza indirir; burada kullandığınız araçlar internet yokken de çalışır.',
+    'Düzenleyicinin araçlarını, PDF motorlarını ve yazı tiplerini bu cihaza indirir; sonrasında internet yokken de çalışırlar.',
   'settings.offline.check': 'Durumu denetle',
   'settings.offline.prepare': 'Hazırla',
   'settings.shortcuts.open': 'Göster',

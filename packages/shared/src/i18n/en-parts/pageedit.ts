@@ -35,6 +35,8 @@ export const pageeditPart = {
   'insert.note.catalog':
     'Composition writes a new catalog: viewer preferences, language, output intents, layer (OCG) config and open action are not carried over.',
   'insert.note.info': 'Document metadata (title, author, dates) copied from base document.',
+  'insert.note.labels':
+    'Page labels: each page kept the label its own document gave it; a page from a document without page labels is numbered by its page number there (a new blank page reads 1).',
   'insert.note.inserted': '{count} page(s) inserted; first page at position {position}.',
   'insert.note.skipped': '{count} image(s) could not be inserted and were skipped.',
 

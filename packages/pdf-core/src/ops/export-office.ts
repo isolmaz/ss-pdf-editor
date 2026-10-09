@@ -59,7 +59,7 @@ import {
   zipped,
 } from './docx-drawing';
 import { type LayoutDocx, type OcrOptions, writeLayoutDocx } from './docx-layout';
-import { coversPage } from './docx-layout-ocr';
+import { coversPage } from './docx-layout-mixed';
 import { type PageImage, pageImagesDocx, renderPageImages } from './docx-pages';
 import {
   type Box,
@@ -1766,6 +1766,14 @@ async function writeLayout(layout: LayoutDocx, stem: string): Promise<OfficeExpo
   }
   if (layout.ocr.pages.length > 0) {
     notes.push(note('changed', 'op.note.exportOffice.ocrPages', { pages: layout.ocr.pages.join(', ') }));
+  }
+  if (layout.ocr.mixed.length > 0) {
+    notes.push(note('changed', 'op.note.exportOffice.ocrMixedPages', { pages: layout.ocr.mixed.join(', ') }));
+  }
+  if (layout.ocr.untrusted.length > 0) {
+    notes.push(
+      note('changed', 'op.note.exportOffice.ocrLayerRejected', { pages: layout.ocr.untrusted.join(', ') }),
+    );
   }
   if (layout.ocr.families.length > 0) {
     notes.push(

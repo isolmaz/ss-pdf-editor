@@ -77,6 +77,10 @@ export const officePart = {
     'Şu sayfalarda okunabilir metin yok (taranmış görünüyor); düzenlenebilir metin için önce OCR uygulayın: {pages}.',
   'op.note.exportOffice.ocrPages':
     'Şu sayfalar resim olduğu için OCR ile okundu; metinleri Word’de düzenlenebilir metin kutuları, geri kalanı sayfanın arkasında resim olarak yerleşti: {pages}.',
+  'op.note.exportOffice.ocrMixedPages':
+    'Şu sayfalarda gerçek metnin yanında taranmış bir resim var; gerçek metin olduğu gibi kaldı, resmin içindeki yazı OCR ile okunup düzenlenebilir metin kutusu yapıldı: {pages}.',
+  'op.note.exportOffice.ocrLayerRejected':
+    'Şu sayfalardaki gizli metin katmanı güvenilir değildi (okunamayan karakterler veya eğik satırlar); sayfalar katman yerine OCR ile yeniden okundu: {pages}.',
   'op.note.exportOffice.ocrFont':
     'Taranmış metin, taramanın kullandığı görünen yazı tipiyle ({families}) dizildi ve yazı tipi belgeye gömüldü.',
   'op.note.exportOffice.ocrLowConfidence':

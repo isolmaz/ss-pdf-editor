@@ -448,6 +448,7 @@ function renderWithoutText(
   box: Box,
   drawn: ReadonlySet<number> | null,
   always: ReadonlySet<number>,
+  contentsOnly = false,
 ): Uint8Array {
   const [px0, py0] = page.getBounds();
   const width = box[2] - box[0];
@@ -539,7 +540,8 @@ function renderWithoutText(
         },
       });
       try {
-        page.run(forward, mupdf.Matrix.identity);
+        if (contentsOnly) page.runPageContents(forward, mupdf.Matrix.identity);
+        else page.run(forward, mupdf.Matrix.identity);
         forward.close();
       } finally {
         forward.destroy();
@@ -578,7 +580,15 @@ interface Island {
 
 type Slot = Island | { readonly kind: 'item'; readonly item: SceneShape | SceneImage };
 
-export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
+/**
+ * The page's scene. `contentsOnly` leaves out the annotations and form fields (what a scan's
+ * render already holds, drawn into the background picture, must not be drawn again above it).
+ */
+export function readPageScene(mupdf: Mupdf, page: Page, contentsOnly = false): PageScene {
+  const run = (device: Parameters<Page['run']>[0]): void => {
+    if (contentsOnly) page.runPageContents(device, mupdf.Matrix.identity);
+    else page.run(device, mupdf.Matrix.identity);
+  };
   const text = readPageLayout(mupdf, page, { images: false });
   const [px0, py0, px1, py1] = page.getBounds();
   const width = px1 - px0;
@@ -859,7 +869,7 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     },
   });
   try {
-    page.run(device, mupdf.Matrix.identity);
+    run(device);
     device.close();
   } finally {
     device.destroy();
@@ -874,7 +884,7 @@ export function readPageScene(mupdf: Mupdf, page: Page): PageScene {
     return {
       kind: 'raster',
       box: aligned,
-      data: renderWithoutText(mupdf, page, aligned, drawn, inner),
+      data: renderWithoutText(mupdf, page, aligned, drawn, inner, contentsOnly),
       mime: 'image/png',
     };
   };
