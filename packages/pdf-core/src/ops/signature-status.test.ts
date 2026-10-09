@@ -25,7 +25,7 @@ import {
   type IssueOptions,
   issueCertificate,
 } from '../signature-trust.fixtures';
-import { verifySignatures } from './signature-status';
+import { countSignedFields, verifySignatures } from './signature-status';
 import {
   algorithmIdentifier,
   appendRevision,
@@ -1865,11 +1865,64 @@ describe('a cross-reference chain this verifier cannot follow', () => {
     expect((await onlyVerdict(bytes)).changesAfterSigning).toBe(2);
   });
 
+  it.each([
+    ['a hex string value', '/Info <aa bb> '],
+    ['an array holding a string', '/Arr [ (x) ] '],
+    ['an array holding an array', '/Arr [ [ 1 ] 2 ] '],
+    ['an array holding a dictionary', '/Arr [ << /A 1 >> ] '],
+    ['a dictionary holding a dictionary', '/Deep << /Inner << /A 1 >> >> '],
+    ['a stray closing parenthesis', '/Info ) /Foo 1 '],
+    ['a number followed by a second number that is no reference', '/Foo 1 0 /Bar 2 '],
+    ['a reference marker that runs into more name characters', '/Foo 1 0 Rx '],
+    ['an indirect reference closed by a delimiter', '/Foo 1 0 R'],
+  ])('follows /Prev past %s in the newest trailer', async (_title, entry) => {
+    const signer = await identity();
+    const bytes = await signedThenRevised(cmsBy(signer), [
+      DECOY,
+      { trailer: (previous) => `<< /Size 106 /Root 1 0 R ${entry}/Prev ${previous} >>` },
+    ]);
+    expect((await onlyVerdict(bytes)).changesAfterSigning).toBe(2);
+  });
+
   it('reports at most 1024 revisions however many the file holds', async () => {
     const signer = await identity();
     const later = Array.from({ length: 1030 }, () => ({}) satisfies Later);
     const bytes = await signedThenRevised(cmsBy(signer), later);
     expect((await onlyVerdict(bytes)).changesAfterSigning).toBe(1024);
+  });
+});
+
+describe('how many signed fields an opened document carries', () => {
+  const countIn = async (bytes: Uint8Array): Promise<number> => {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument(bytes);
+    try {
+      return countSignedFields(doc);
+    } finally {
+      doc.destroy();
+    }
+  };
+
+  it('counts each signature once, however many widgets point at it', async () => {
+    const bytes = formFile({
+      fields: '[10 0 R 11 0 R 12 0 R]',
+      objects: [
+        { number: 10, body: '<< /T (first) /FT /Sig /V 20 0 R >>' },
+        { number: 11, body: '<< /T (second) /FT /Sig /V 20 0 R >>' },
+        { number: 12, body: '<< /T (third) /FT /Sig /V 21 0 R >>' },
+        { number: 20, body: SIGNATURE },
+        { number: 21, body: SIGNATURE },
+      ],
+    });
+    expect(await countIn(bytes)).toBe(2);
+  });
+
+  it('counts none in a form whose only field holds no signature', async () => {
+    const bytes = formFile({
+      fields: '[10 0 R]',
+      objects: [{ number: 10, body: '<< /T (text) /V (hello) >>' }],
+    });
+    expect(await countIn(bytes)).toBe(0);
   });
 });
 
@@ -1891,6 +1944,12 @@ describe('what stops a verification', () => {
       code: 'encrypted-unsupported',
       details: { engineMessage: 'verify signatures: the document needs a password to be read' },
     });
+  });
+
+  it('answers a document whose bytes never name a /ByteRange with an empty list', async () => {
+    const bytes = formFile({ fields: '[]' });
+    expect(latin1(bytes)).not.toContain('/ByteRange');
+    expect(await verdictsOf(bytes)).toEqual([]);
   });
 
   it('answers a document with no /Root, and so no signature field, with an empty list', async () => {

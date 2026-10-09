@@ -30,16 +30,11 @@ function u32(value: number): number[] {
   return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 }
 
+/** The OpenType checksum: the sum of the big-endian 32-bit words. `bytes` is a whole number of words. */
 function checksum(bytes: readonly number[]): number {
+  const view = new DataView(Uint8Array.from(bytes).buffer);
   let sum = 0;
-  for (let index = 0; index < bytes.length; index += 4) {
-    const word =
-      ((bytes[index] ?? 0) << 24) |
-      ((bytes[index + 1] ?? 0) << 16) |
-      ((bytes[index + 2] ?? 0) << 8) |
-      (bytes[index + 3] ?? 0);
-    sum = (sum + (word >>> 0)) >>> 0;
-  }
+  for (let index = 0; index < bytes.length; index += 4) sum = (sum + view.getUint32(index)) >>> 0;
   return sum;
 }
 

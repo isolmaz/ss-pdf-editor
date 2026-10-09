@@ -184,7 +184,8 @@ export async function importPkcs12(
 export function describeCertificate(der: Uint8Array): {
   readonly commonName: string | null;
   readonly issuer: string | null;
-  readonly notAfter: string | null;
+  /** The last moment of validity, ISO 8601: every certificate has one. */
+  readonly notAfter: string;
 } {
   const certificate = Certificate.fromBER(der.slice());
   const nameOf = (rdns: readonly AttributeTypeAndValue[]): string | null => {

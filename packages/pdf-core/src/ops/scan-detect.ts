@@ -245,9 +245,13 @@ function detectEdges(gray: GrayImage): EdgeMap {
 }
 
 /** A straight line `x cos θ + y sin θ = ρ`, `θ` being the direction of its normal. */
-interface Line {
+export interface Side {
   readonly theta: number;
   readonly rho: number;
+}
+
+/** A side the Hough transform found, or one of the picture's own edges. */
+interface Line extends Side {
   readonly votes: number;
   /** One of the picture's own four edges, offered for a page that runs out of the frame. */
   readonly frame: boolean;
@@ -354,7 +358,7 @@ function angleBetween(a: number, b: number): number {
   return Math.min(d, Math.PI - d);
 }
 
-function intersect(a: Line, b: Line): Point | null {
+function intersect(a: Side, b: Side): Point | null {
   const ca = Math.cos(a.theta);
   const sa = Math.sin(a.theta);
   const cb = Math.cos(b.theta);
@@ -599,6 +603,25 @@ function refine(map: EdgeMap, line: Line, from: Point, to: Point): Line {
 }
 
 /**
+ * The corners four sides close, given in the order `detectPage` refits them (the sides
+ * `p00→p01`, `p01→p11`, `p11→p10`, `p10→p00`). A refit moves each side a few pixels and a few
+ * degrees; when that leaves two neighbouring sides parallel, or crosses the outline over itself,
+ * the corners the sides had before the refit stand.
+ */
+export function cornersOfSides(
+  sides: readonly [Side, Side, Side, Side],
+  before: readonly Point[],
+): readonly Point[] {
+  const p00 = intersect(sides[0], sides[3]);
+  const p01 = intersect(sides[0], sides[1]);
+  const p11 = intersect(sides[2], sides[1]);
+  const p10 = intersect(sides[2], sides[3]);
+  return p00 !== null && p01 !== null && p11 !== null && p10 !== null && isConvexQuad([p00, p01, p11, p10])
+    ? [p00, p01, p11, p10]
+    : before;
+}
+
+/**
  * Find the page's four corners in `image`, in the picture's own pixel coordinates, or
  * `null` when no outline is convincing enough to offer (the caller falls back to an inset
  * rectangle the user adjusts).
@@ -625,14 +648,7 @@ export function detectPage(image: RasterImage): DetectedPage | null {
     refine(map, second, corners[2], corners[3]),
     refine(map, third, corners[3], corners[0]),
   ];
-  const p00 = intersect(refitted[0], refitted[3]);
-  const p01 = intersect(refitted[0], refitted[1]);
-  const p11 = intersect(refitted[2], refitted[1]);
-  const p10 = intersect(refitted[2], refitted[3]);
-  const final =
-    p00 !== null && p01 !== null && p11 !== null && p10 !== null && isConvexQuad([p00, p01, p11, p10])
-      ? [p00, p01, p11, p10]
-      : [...corners];
+  const final = cornersOfSides(refitted, corners);
 
   // Pixel centres: the working raster's pixel `i` covers `[i, i + 1)` of the source, so a
   // corner found at integer coordinates sits half a pixel to the lower right.

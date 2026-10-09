@@ -47,20 +47,22 @@ export function commentThreads(existing: readonly ExistingAnnotation[]): {
 } {
   const byId = new Map<string, ExistingAnnotation>();
   for (const annotation of existing) byId.set(annotation.id, annotation);
-  const isRecord = (annotation: ExistingAnnotation): boolean =>
+  const isRecord = (
+    annotation: ExistingAnnotation,
+  ): annotation is ExistingAnnotation & { inReplyTo: string } =>
     annotation.inReplyTo !== undefined && annotation.replyType !== 'Group';
 
   const records = new Set<string>();
   const grouped = new Map<string, { annotation: ExistingAnnotation; depth: number }[]>();
   for (const annotation of existing) {
     if (!isRecord(annotation)) continue;
-    let target = byId.get(annotation.inReplyTo ?? '');
+    let target = byId.get(annotation.inReplyTo);
     let depth = 1;
     const seen = new Set<string>([annotation.id]);
     while (target !== undefined && isRecord(target) && !seen.has(target.id)) {
       seen.add(target.id);
       depth += 1;
-      target = byId.get(target.inReplyTo ?? '');
+      target = byId.get(target.inReplyTo);
     }
     if (target === undefined || isRecord(target)) continue;
     records.add(annotation.id);
@@ -75,20 +77,22 @@ export function commentThreads(existing: readonly ExistingAnnotation[]): {
       reviewDateMillis(annotation.modified ?? annotation.created ?? null);
     const ordered = [...list].sort((a, b) => when(a.annotation) - when(b.annotation));
     const replies = ordered.filter((item) => item.annotation.state === undefined);
-    const reviews = ordered.filter(
-      (item) => item.annotation.state !== undefined && (item.annotation.stateModel ?? 'Review') === 'Review',
+    const reviews = ordered.flatMap(({ annotation }) =>
+      annotation.state !== undefined && (annotation.stateModel ?? 'Review') === 'Review'
+        ? [{ annotation, state: annotation.state }]
+        : [],
     );
     const marks = ordered.filter((item) => item.annotation.stateModel === 'Marked');
-    const latest = reviews.at(-1)?.annotation;
+    const latest = reviews.at(-1);
     threads.set(rootId, {
       replies,
       review:
         latest === undefined
           ? null
           : {
-              state: latest.state ?? 'None',
-              author: latest.author,
-              at: latest.modified ?? latest.created ?? null,
+              state: latest.state,
+              author: latest.annotation.author,
+              at: latest.annotation.modified ?? latest.annotation.created ?? null,
             },
       marked: marks.at(-1)?.annotation.state === 'Marked',
       records: list.map((item) => item.annotation.id),
