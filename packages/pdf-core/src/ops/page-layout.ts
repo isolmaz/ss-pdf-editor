@@ -19,7 +19,19 @@
  * ("stream" mode).
  */
 
-import type { Image, Matrix, Page, Path, Pixmap, Rect, Shade, Text } from 'mupdf';
+import type {
+  ColorSpace,
+  Image,
+  Matrix,
+  Page,
+  Path,
+  Pixmap,
+  Rect,
+  Shade,
+  StrokeState,
+  StructuredText,
+  Text,
+} from 'mupdf';
 import type { Mupdf } from '../engines/mupdf';
 
 export type Box = readonly [number, number, number, number];
@@ -384,22 +396,27 @@ export function slanted(dir: readonly [number, number]): boolean {
   return !across && !vertical;
 }
 
-/** The page's characters, blocks and pictures, through MuPDF's structured-text walker. */
-export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): PageLayout {
-  const [px0, py0, px1, py1] = page.getBounds();
-  const shift = (x: number, y: number): readonly [number, number] => [x - px0, y - py0];
+/** What the structured-text walker reads: the blocks, and every line's characters with their origins. */
+interface Walked {
+  readonly blocks: LayoutBlock[];
+  /** Every line's `chars` with each character's origin (page space, unshifted), for `invisible`. */
+  readonly walked: { readonly chars: LayoutChar[]; readonly origins: (readonly [number, number])[] }[];
+}
+
+/** `text` read to blocks, lines and characters (page space shifted by `shift`); `text` is destroyed. */
+function walkText(
+  mupdf: Mupdf,
+  text: StructuredText,
+  shift: (x: number, y: number) => readonly [number, number],
+): Walked {
   const blocks: LayoutBlock[] = [];
   let lines: LayoutLine[] = [];
   let chars: LayoutChar[] = [];
-  /** Every line's `chars` with each character's origin (page space, unshifted), for `invisible`. */
-  const walked: { readonly chars: LayoutChar[]; readonly origins: (readonly [number, number])[] }[] = [];
+  const walked: Walked['walked'] = [];
   let origins: (readonly [number, number])[] = [];
   let blockBox: Box = [0, 0, 0, 0];
   let lineBox: Box = [0, 0, 0, 0];
   let lineDir: readonly [number, number] = [1, 0];
-  const text = page.toStructuredText(
-    options.images ? 'preserve-whitespace,preserve-images' : 'preserve-whitespace',
-  );
   try {
     text.walk({
       onImageBlock(bbox, transform, image) {
@@ -469,6 +486,143 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   } finally {
     text.destroy();
   }
+  return { blocks, walked };
+}
+
+/**
+ * ZapfDingbats code → the symbol it draws: the marks a form field's button draws (PDF 32000-1
+ * `/MK /CA`: `4` check, `l` circle, `8` cross, `u` diamond, `n` square, `H` star) and the
+ * check mark MuPDF writes itself (`3`), with their neighbours in the font.
+ */
+const ZAPF_SYMBOLS: Readonly<Record<string, string>> = {
+  '3': '\u2713',
+  '4': '\u2714',
+  '5': '\u2715',
+  '6': '\u2716',
+  '7': '\u2717',
+  '8': '\u2718',
+  H: '\u2605',
+  l: '\u25CF',
+  m: '\u274D',
+  n: '\u25A0',
+  s: '\u25B2',
+  t: '\u25BC',
+  u: '\u25C6',
+};
+/** MuPDF's own ZapfDingbats numbers its glyphs from the space (code 0x20 is glyph 1): code = glyph + 0x1F. */
+const ZAPF_GLYPH_BASE = 0x1f;
+
+/** What a page's device calls say about its glyphs, to be applied to the characters the structured-text walker read. */
+interface GlyphNotes {
+  /** Device calls to spread into the page's `Device`. */
+  readonly calls: {
+    readonly fillText: (
+      text: Text,
+      ctm: Matrix,
+      colorspace: ColorSpace,
+      color: number[],
+      alpha: number,
+    ) => void;
+    readonly strokeText: (
+      text: Text,
+      stroke: StrokeState,
+      ctm: Matrix,
+      colorspace: ColorSpace,
+      color: number[],
+      alpha: number,
+    ) => void;
+    readonly ignoreText: (text: Text, ctm: Matrix) => void;
+  };
+  /** Marks the characters of `walked` that the page draws without showing (`invisible`) or faded (`alpha`). */
+  apply(walked: Walked['walked']): void;
+}
+
+/**
+ * The glyphs a page draws invisibly (render mode 3, opacity 0) or faded, found by where their
+ * origin lies (a grid of a quarter point, a neighbouring cell counting too), for the characters
+ * of the structured-text walker, which does not say how a glyph is drawn. With `symbols`, the
+ * glyphs of MuPDF's built-in ZapfDingbats are told too: the walker gives their code as a letter
+ * or number (`3` for a check mark, U+0014 for another), so such a character is replaced by the
+ * symbol the glyph draws, and one that has none known is `invisible` — no text to write.
+ */
+function glyphNotes(symbols: boolean): GlyphNotes {
+  /** The origins of the glyphs drawn invisibly, on a grid of a quarter point. */
+  const hidden = new Set<string>();
+  /** The same, for glyphs filled with an opacity between 0 and 1: their opacity. */
+  const faded = new Map<string, number>();
+  /** The same, for ZapfDingbats glyphs: the symbol, or `''` for one with none known. */
+  const dingbats = new Map<string, string>();
+  const keyOf = (x: number, y: number): string => `${Math.round(x * 4)},${Math.round(y * 4)}`;
+  const hide = (text: Text, ctm: Matrix, opacity?: number): void => {
+    text.walk({
+      showGlyph(_font, trm) {
+        const [x, y] = apply(ctm, trm[4], trm[5]);
+        const key = keyOf(x, y);
+        if (opacity === undefined) hidden.add(key);
+        else faded.set(key, opacity);
+      },
+    });
+  };
+  const draw = (text: Text, ctm: Matrix): void => {
+    text.walk({
+      showGlyph(font, trm, gid, unicode) {
+        // A glyph already read as a symbol of the Dingbats block (an embedded font's own map) stays.
+        if ((unicode >= 0x2700 && unicode <= 0x27bf) || !/^(zapf)?dingbats$/i.test(font.getName())) return;
+        const [x, y] = apply(ctm, trm[4], trm[5]);
+        dingbats.set(keyOf(x, y), ZAPF_SYMBOLS[String.fromCharCode(gid + ZAPF_GLYPH_BASE)] ?? '');
+      },
+    });
+  };
+  return {
+    calls: {
+      fillText(text, ctm, _colorspace, _color, alpha) {
+        if (alpha === 0) hide(text, ctm);
+        else if (alpha < 1) hide(text, ctm, Math.round(alpha * 1000) / 1000);
+        if (symbols) draw(text, ctm);
+      },
+      strokeText(text, _stroke, ctm, _colorspace, _color, alpha) {
+        if (alpha === 0) hide(text, ctm);
+      },
+      ignoreText: hide,
+    },
+    apply(walked) {
+      if (hidden.size === 0 && faded.size === 0 && dingbats.size === 0) return;
+      for (const line of walked) {
+        for (const [at, origin] of line.origins.entries()) {
+          const gx = Math.round(origin[0] * 4);
+          const gy = Math.round(origin[1] * 4);
+          let found = false;
+          let opacity: number | undefined;
+          let symbol: string | undefined;
+          for (let dx = -1; dx <= 1 && !found; dx += 1) {
+            for (let dy = -1; dy <= 1 && !found; dy += 1) {
+              const key = `${gx + dx},${gy + dy}`;
+              found = hidden.has(key);
+              opacity ??= faded.get(key);
+              symbol ??= dingbats.get(key);
+            }
+          }
+          const char = line.chars[at] as LayoutChar;
+          if (found) line.chars[at] = { ...char, invisible: true };
+          else if (symbol === '') line.chars[at] = { ...char, invisible: true };
+          else if (symbol !== undefined)
+            line.chars[at] = { ...char, c: symbol, ...(opacity === undefined ? {} : { alpha: opacity }) };
+          else if (opacity !== undefined) line.chars[at] = { ...char, alpha: opacity };
+        }
+      }
+    },
+  };
+}
+
+/** The page's characters, blocks and pictures, through MuPDF's structured-text walker. */
+export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): PageLayout {
+  const [px0, py0, px1, py1] = page.getBounds();
+  const shift = (x: number, y: number): readonly [number, number] => [x - px0, y - py0];
+  const { blocks, walked } = walkText(
+    mupdf,
+    page.toStructuredText(options.images ? 'preserve-whitespace,preserve-images' : 'preserve-whitespace'),
+    shift,
+  );
 
   const rulings: Ruling[] = [];
   const keep = (x0: number, y0: number, x1: number, y1: number): void => {
@@ -493,29 +647,9 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
     if (width * height > area * 0.6 || (width < 0.5 && height < 0.5)) return;
     marks.push({ box: [x0, y0, x1, y1], seed });
   };
-  /** The origins of the glyphs drawn invisibly, on a grid of a quarter point. */
-  const hidden = new Set<string>();
-  /** The same, for glyphs filled with an opacity between 0 and 1: their opacity. */
-  const faded = new Map<string, number>();
-  const hide = (text: Text, ctm: Matrix, opacity?: number): void => {
-    text.walk({
-      showGlyph(_font, trm) {
-        const [x, y] = apply(ctm, trm[4], trm[5]);
-        const key = `${Math.round(x * 4)},${Math.round(y * 4)}`;
-        if (opacity === undefined) hidden.add(key);
-        else faded.set(key, opacity);
-      },
-    });
-  };
+  const glyphs = glyphNotes(false);
   const device = new mupdf.Device({
-    fillText(text, ctm, _colorspace, _color, alpha) {
-      if (alpha === 0) hide(text, ctm);
-      else if (alpha < 1) hide(text, ctm, Math.round(alpha * 1000) / 1000);
-    },
-    strokeText(text, _stroke, ctm, _colorspace, _color, alpha) {
-      if (alpha === 0) hide(text, ctm);
-    },
-    ignoreText: hide,
+    ...glyphs.calls,
     fillShade(shade, ctm) {
       borrowed(shade);
       mark(transformBox(shade.getBounds(), ctm), true);
@@ -561,28 +695,132 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   } finally {
     device.destroy();
   }
-  if (hidden.size > 0 || faded.size > 0) {
-    for (const line of walked) {
-      for (const [at, origin] of line.origins.entries()) {
-        const gx = Math.round(origin[0] * 4);
-        const gy = Math.round(origin[1] * 4);
-        let found = false;
-        let opacity: number | undefined;
-        for (let dx = -1; dx <= 1 && !found; dx += 1) {
-          for (let dy = -1; dy <= 1 && !found; dy += 1) {
-            const key = `${gx + dx},${gy + dy}`;
-            found = hidden.has(key);
-            opacity ??= faded.get(key);
-          }
+  glyphs.apply(walked);
+
+  return { width: px1 - px0, height: py1 - py0, blocks, rulings, marks };
+}
+
+/** The text of a page's annotations and form fields, and the fields whose value nothing shows. */
+export interface Appearances {
+  /** What their appearance streams draw as text; `readPageLayout` leaves it out. */
+  readonly layout: PageLayout;
+  /** Form fields that hold a value (or are checked) while their appearance draws nothing at their place. */
+  readonly unseen: number;
+}
+
+/** A widget flagged hidden or no-view is not drawn, so it is not "unseen" either; nor is one under an optional-content entry (`/OC`), which may hide it. */
+const WIDGET_NOT_SHOWN = 2 | 32;
+/** How far outside its rectangle a field's appearance may lie and still be that field's (points). */
+const FIELD_SLACK = 2;
+
+/**
+ * The text that the annotations' and form fields' appearance streams draw, read apart from the
+ * page's own content (`toStructuredText` of the page skips them), and how many form fields have a
+ * value that nothing of the appearance shows — no appearance stream, or one that draws nothing:
+ * a text or choice field needs text at its place, a checked box or radio button (its own
+ * appearance state `/AS`, not the group's `/V`) any drawing or text. Text drawn without being
+ * shown (render mode 3, opacity 0) is left out, as in `readPageLayout`; a ZapfDingbats mark is the
+ * symbol it draws, not the letter of its code.
+ */
+export function readAppearances(mupdf: Mupdf, page: Page): Appearances {
+  const bounds = page.getBounds();
+  const [px0, py0, px1, py1] = bounds;
+  const shift = (x: number, y: number): readonly [number, number] => [x - px0, y - py0];
+  const inks: Box[] = [];
+  const ink = (box: Box): void => {
+    const [x0, y0] = shift(box[0], box[1]);
+    const [x1, y1] = shift(box[2], box[3]);
+    inks.push([x0, y0, x1, y1]);
+  };
+  const glyphs = glyphNotes(true);
+  const list = new mupdf.DisplayList(bounds);
+  let walked: Walked;
+  try {
+    const recorder = new mupdf.DisplayListDevice(list);
+    try {
+      page.runPageAnnots(recorder, mupdf.Matrix.identity);
+      page.runPageWidgets(recorder, mupdf.Matrix.identity);
+      recorder.close();
+    } finally {
+      recorder.destroy();
+    }
+    const device = new mupdf.Device({
+      ...glyphs.calls,
+      fillPath: (path, _evenOdd, ctm) => ink(pathShape(path, ctm).box),
+      strokePath: (path, _stroke, ctm) => ink(pathShape(path, ctm).box),
+      fillShade(shade, ctm) {
+        borrowed(shade);
+        ink(transformBox(shade.getBounds(), ctm));
+      },
+      fillImage(image, ctm) {
+        borrowed(image);
+        ink(transformBox([0, 0, 1, 1], ctm));
+      },
+      fillImageMask(image, ctm) {
+        borrowed(image);
+        ink(transformBox([0, 0, 1, 1], ctm));
+      },
+    });
+    try {
+      list.run(device, mupdf.Matrix.identity);
+      device.close();
+    } finally {
+      device.destroy();
+    }
+    walked = walkText(mupdf, list.toStructuredText('preserve-whitespace'), shift);
+  } finally {
+    list.destroy();
+  }
+  glyphs.apply(walked.walked);
+  // What shows as text: not hidden, not whitespace, and no control character (a glyph of no known meaning).
+  const letters: Box[] = [];
+  for (const block of walked.blocks) {
+    if (block.kind !== 'text') continue;
+    for (const line of block.lines) {
+      for (const char of line.chars) {
+        if (char.invisible !== true && char.c.trim() !== '' && (char.c.codePointAt(0) as number) >= 0x20) {
+          letters.push(char.box);
         }
-        if (found) line.chars[at] = { ...(line.chars[at] as LayoutChar), invisible: true };
-        else if (opacity !== undefined)
-          line.chars[at] = { ...(line.chars[at] as LayoutChar), alpha: opacity };
       }
     }
   }
-
-  return { width: px1 - px0, height: py1 - py0, blocks, rulings, marks };
+  const at = (boxes: readonly Box[], rect: Box): boolean =>
+    boxes.some((box) => {
+      const x = (box[0] + box[2]) / 2;
+      const y = (box[1] + box[3]) / 2;
+      return (
+        x >= rect[0] - FIELD_SLACK &&
+        x <= rect[2] + FIELD_SLACK &&
+        y >= rect[1] - FIELD_SLACK &&
+        y <= rect[3] + FIELD_SLACK
+      );
+    });
+  let unseen = 0;
+  // The page keeps these wrappers for the next read of it (the raster fallback reads the page again): none is destroyed here.
+  for (const widget of page instanceof mupdf.PDFPage ? page.getWidgets() : []) {
+    try {
+      const dict = widget.getObject();
+      if ((widget.getFlags() & WIDGET_NOT_SHOWN) !== 0 || !dict.get('OC').isNull()) continue;
+      const value = widget.getValue().trim();
+      const typed = widget.isText() || widget.isChoice();
+      // A button is checked by the state its own widget shows; a group's `/V` is the same for every kid.
+      const state = dict.get('AS');
+      const checked =
+        (widget.isCheckbox() || widget.isRadioButton()) &&
+        (state.isName() ? state.asName() !== 'Off' : value !== '' && value !== 'Off');
+      if (typed ? value === '' : !checked) continue;
+      const [wx0, wy0, wx1, wy1] = widget.getBounds();
+      const [x0, y0] = shift(wx0, wy0);
+      const [x1, y1] = shift(wx1, wy1);
+      if (!at(typed ? letters : [...letters, ...inks], [x0, y0, x1, y1])) unseen += 1;
+    } catch {
+      // A field MuPDF cannot read (a parent chain that loops) says nothing of its value: it is not counted.
+    }
+  }
+  return {
+    layout: { width: px1 - px0, height: py1 - py0, blocks: walked.blocks, rulings: [], marks: [] },
+    unseen,
+  };
 }
 
 /* ------------------------------------------------------------------ *
