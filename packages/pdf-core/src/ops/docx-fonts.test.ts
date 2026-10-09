@@ -11,11 +11,12 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
+import type { PDFDocument } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import { buildCff, index } from './docx-font-fixtures';
 import { cffForWord } from './docx-font-sfnt';
-import { obfuscateFont } from './docx-fonts';
+import { embedFonts, obfuscateFont, provideStandardMetrics, standardAdvance } from './docx-fonts';
 import { exportOffice } from './export-office';
 import { line, officeDocument } from './export-office-fixtures';
 import type { OperationContext } from './types';
@@ -221,7 +222,7 @@ describe('exact layout: which fonts are embedded', () => {
 
 describe('exact layout with an embedded OpenType-CFF font', () => {
   /** A one-page PDF drawing "A" in an OpenType-CFF CID font whose `OS/2` has `fsType`. */
-  async function openTypePdf(fsType: number): Promise<Uint8Array> {
+  async function openTypePdf(fsType: number, unitsPerEm?: number): Promise<Uint8Array> {
     const mupdf = await loadMupdf();
     const doc = new mupdf.PDFDocument();
     try {
@@ -232,6 +233,15 @@ describe('exact layout with an embedded OpenType-CFF font', () => {
         { family: 'Sample', style: 'Regular' },
         { ascent: 900, descent: -250, fsType },
       ) as Uint8Array;
+      if (unitsPerEm !== undefined) {
+        // head.unitsPerEm, patched in place
+        const dv = new DataView(program.buffer, program.byteOffset, program.byteLength);
+        for (let index = 0; index < dv.getUint16(4); index += 1) {
+          const record = 12 + index * 16;
+          if (String.fromCharCode(...program.subarray(record, record + 4)) === 'head')
+            dv.setUint16(dv.getUint32(record + 8) + 18, unitsPerEm);
+        }
+      }
       const descriptor = doc.addObject({
         Type: 'FontDescriptor',
         FontName: 'AAAAAA+Sample',
@@ -292,6 +302,23 @@ describe('exact layout with an embedded OpenType-CFF font', () => {
       }
       expect(found).toBe(fsType);
     }
+  });
+
+  it('scales the line metrics by 1000 units to the em when the font header says none', async () => {
+    const result = await exportOffice(await openTypePdf(0x0004, 0), options, run);
+    const zip = await JSZip.loadAsync(result.file.bytes);
+    const table = (await zip.file('word/fontTable.xml')?.async('string')) ?? '';
+    const key = /w:fontKey="(\{[^"]+\})"/.exec(table)?.[1] as string;
+    const odttf = await zip.file('word/fonts/font1.odttf')?.async('uint8array');
+    const bytes = obfuscateFont(odttf as Uint8Array, key);
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let ascent = Number.NaN;
+    for (let index = 0; index < dv.getUint16(4); index += 1) {
+      const record = 12 + index * 16;
+      if (String.fromCharCode(...bytes.subarray(record, record + 4)) === 'hhea')
+        ascent = dv.getInt16(dv.getUint32(record + 8) + 4);
+    }
+    expect(ascent).toBe(900);
   });
 
   it('embeds nothing of one that allows only bitmaps', async () => {
@@ -439,7 +466,11 @@ describe('exact layout with a ligature glyph', () => {
 
 describe('exact layout with a bare CFF font program', () => {
   /** The test CFF's glyph 1 is named "A" (SID 34); as a CID font it is CID 34, code <0022>. */
-  async function bareCffPdf(program: Uint8Array, kind: 'name-keyed' | 'cid-keyed'): Promise<Uint8Array> {
+  async function bareCffPdf(
+    program: Uint8Array,
+    kind: 'name-keyed' | 'cid-keyed',
+    omit: 'nothing' | 'BaseFont' | 'metrics' = 'nothing',
+  ): Promise<Uint8Array> {
     const mupdf = await loadMupdf();
     const doc = new mupdf.PDFDocument();
     try {
@@ -450,8 +481,7 @@ describe('exact layout with a bare CFF font program', () => {
         Flags: cid ? 4 : 32,
         FontBBox: [-200, -1500, 2000, 900],
         ItalicAngle: 0,
-        Ascent: 900,
-        Descent: -250,
+        ...(omit === 'metrics' ? {} : { Ascent: 900, Descent: -250 }),
         CapHeight: 700,
         StemV: 80,
         FontFile3: doc.addStream(program, { Subtype: cid ? 'CIDFontType0C' : 'Type1C' }),
@@ -483,7 +513,7 @@ describe('exact layout with a bare CFF font program', () => {
         font = doc.addObject({
           Type: 'Font',
           Subtype: 'Type1',
-          BaseFont: 'AAAAAA+Sample',
+          ...(omit === 'BaseFont' ? {} : { BaseFont: 'AAAAAA+Sample' }),
           FirstChar: 65,
           LastChar: 65,
           Widths: [600],
@@ -507,7 +537,9 @@ describe('exact layout with a bare CFF font program', () => {
   }
 
   /** The embedded program of the export (de-obfuscated) opened in MuPDF, or `null` when nothing was embedded. */
-  async function embeddedGlyphs(pdf: Uint8Array): Promise<{ a: boolean; table: string } | null> {
+  async function embeddedGlyphs(
+    pdf: Uint8Array,
+  ): Promise<{ a: boolean; table: string; program: Uint8Array } | null> {
     const result = await exportOffice(pdf, options, run);
     const zip = await JSZip.loadAsync(result.file.bytes);
     const odttf = await zip.file('word/fonts/font1.odttf')?.async('uint8array');
@@ -515,13 +547,42 @@ describe('exact layout with a bare CFF font program', () => {
     const table = (await zip.file('word/fontTable.xml')?.async('string')) as string;
     const key = /w:fontKey="(\{[^"]+\})"/.exec(table)?.[1] as string;
     const mupdf = await loadMupdf();
-    const program = new mupdf.Font('Embedded', obfuscateFont(odttf, key));
+    const bytes = obfuscateFont(odttf, key);
+    const program = new mupdf.Font('Embedded', bytes);
     try {
-      return { a: program.encodeCharacter(0x41) !== 0, table };
+      return { a: program.encodeCharacter(0x41) !== 0, table, program: bytes };
     } finally {
       program.destroy();
     }
   }
+
+  /** The signed 16-bit field at `at` of table `name` of an sfnt program. */
+  const field = (bytes: Uint8Array, name: string, at: number): number => {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let index = 0; index < dv.getUint16(4); index += 1) {
+      const record = 12 + index * 16;
+      if (String.fromCharCode(...bytes.subarray(record, record + 4)) === name)
+        return dv.getInt16(dv.getUint32(record + 8) + at);
+    }
+    throw new Error(`no ${name} table`);
+  };
+
+  it('sets the line metrics from the font descriptor, and to 800 and -200 when it has none', async () => {
+    const described = await embeddedGlyphs(await bareCffPdf(buildCff(), 'name-keyed'));
+    expect([
+      field(described?.program as Uint8Array, 'hhea', 4),
+      field(described?.program as Uint8Array, 'hhea', 6),
+    ]).toEqual([900, -250]);
+    const bare = await embeddedGlyphs(await bareCffPdf(buildCff(), 'name-keyed', 'metrics'));
+    expect([
+      field(bare?.program as Uint8Array, 'hhea', 4),
+      field(bare?.program as Uint8Array, 'hhea', 6),
+    ]).toEqual([800, -200]);
+  });
+
+  it('embeds nothing for a font that names no BaseFont: no page font can be matched to its program', async () => {
+    expect(await embeddedGlyphs(await bareCffPdf(buildCff(), 'name-keyed', 'BaseFont'))).toBeNull();
+  });
 
   it('embeds a name-keyed CFF, its glyph for "A" kept under "A"', async () => {
     const seen = await embeddedGlyphs(await bareCffPdf(buildCff(), 'name-keyed'));
@@ -619,6 +680,7 @@ describe('exact layout with a damaged font program', () => {
     ['an OpenType header with no tables', 'FontFile3', sfnt('OTTO', 0, 32)],
     ['a TrueType collection', 'FontFile2', sfnt('ttcf', 0, 64)],
     ['a CFF cut off after its header', 'FontFile3', new Uint8Array([1, 0, 4, 1, 0, 9, 1, 1])],
+    ['a CFF of one byte', 'FontFile3', new Uint8Array([1])],
     ['a CFF of two bytes', 'FontFile3', new Uint8Array([1, 0])],
     [
       'a CFF whose header size points beyond it',
@@ -1011,5 +1073,165 @@ describe('exact layout with fonts in form XObjects', () => {
   it('does not look for fonts past six levels of forms: the text keeps the fallback', async () => {
     expect(await programsOf(await formPdf(5))).toBe(1);
     expect(await programsOf(await formPdf(8))).toBe(0);
+  });
+});
+
+describe('the stand-ins Word falls back to', () => {
+  it('measures a character in the face of the style: regular, bold, italic or both', async () => {
+    provideStandardMetrics(await loadMupdf());
+    const advance = (bold: boolean, italic: boolean) =>
+      standardAdvance('Times New Roman', bold, italic, 0x41);
+    expect(advance(false, false)).toBeCloseTo(0.722, 3);
+    expect(advance(true, false)).toBeCloseTo(0.722, 3);
+    expect(advance(false, true)).toBeCloseTo(0.611, 3);
+    expect(advance(true, true)).toBeCloseTo(0.667, 3);
+    expect(standardAdvance('Arial', true, false, 0x69)).toBeCloseTo(0.278, 3);
+    expect(standardAdvance('Arial', false, false, 0x69)).toBeCloseTo(0.222, 3);
+    expect(standardAdvance('Calibri', false, false, 0x41)).toBeUndefined();
+  });
+});
+
+describe('fonts added to an export that embeds none', () => {
+  it('make the whole embedded set: the package parts and the family, with no PDF font to match', async () => {
+    const mupdf = await loadMupdf();
+    const bytes = await officeDocument([{ content: line('helvetica', 12, 60, 200, 'Plain Helvetica text') }]);
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF() as PDFDocument;
+    try {
+      const none = await embedFonts(mupdf, doc, [0], run);
+      expect(none.count).toBe(0);
+      expect(none.plus([])).toBe(none);
+      const more = none.plus([{ family: 'Inter', style: 'Regular', bytes: new Uint8Array([0, 1, 0, 0]) }]);
+      expect(more.count).toBe(1);
+      expect([...more.families]).toEqual(['Inter']);
+      expect(more.faceOf(0, 'Helvetica')).toBeUndefined();
+      expect(Object.keys(more.files)).toContain('word/fonts/font1.odttf');
+      expect(more.files['word/fontTable.xml']).toMatch(/<w:font w:name="Inter"><w:embedRegular /);
+    } finally {
+      doc.destroy();
+    }
+  });
+});
+
+describe('exact layout: one font program over several pages and styles', () => {
+  const hexOf = (font: { encodeCharacter(code: number): number }, text: string): string =>
+    [...text]
+      .map((c) =>
+        font
+          .encodeCharacter(c.codePointAt(0) as number)
+          .toString(16)
+          .padStart(4, '0'),
+      )
+      .join('');
+
+  it('embeds the font of two pages once, with the characters of both', async () => {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    const font = new mupdf.Font('NotoSans-Regular', notoRegular());
+    try {
+      const object = doc.addFont(font);
+      for (const [index, text] of ['ab', 'bc'].entries()) {
+        doc.insertPage(
+          index,
+          doc.addPage(
+            [0, 0, 400, 300],
+            0,
+            { Font: { F0: object } },
+            `BT /F0 18 Tf 40 200 Td <${hexOf(font, text)}> Tj ET\n`,
+          ),
+        );
+      }
+      doc.subsetFonts();
+      const result = await exportOffice(
+        new Uint8Array(doc.saveToBuffer('garbage=compact,compress').asUint8Array()),
+        { ...options, pages: [0, 1] },
+        run,
+      );
+      const zip = await JSZip.loadAsync(result.file.bytes);
+      expect(Object.keys(zip.files).filter((name) => name.endsWith('.odttf'))).toEqual([
+        'word/fonts/font1.odttf',
+      ]);
+      const table = (await zip.file('word/fontTable.xml')?.async('string')) as string;
+      const key = /w:fontKey="(\{[^"]+\})"/.exec(table)?.[1] as string;
+      const program = new mupdf.Font(
+        'Embedded',
+        obfuscateFont((await zip.file('word/fonts/font1.odttf')?.async('uint8array')) as Uint8Array, key),
+      );
+      try {
+        expect(
+          ['a', 'b', 'c', 'd'].map((c) => program.encodeCharacter(c.codePointAt(0) as number) > 0),
+        ).toEqual([true, true, true, false]);
+      } finally {
+        program.destroy();
+      }
+    } finally {
+      font.destroy();
+      doc.destroy();
+    }
+  });
+
+  it('embeds an italic face and a bold italic one under their styles', async () => {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    const fonts = [
+      new mupdf.Font('NotoSans-Italic', noto('400Regular_Italic/NotoSans_400Regular_Italic.ttf')),
+      new mupdf.Font('NotoSans-BoldItalic', noto('700Bold_Italic/NotoSans_700Bold_Italic.ttf')),
+    ];
+    try {
+      const [italic, both] = fonts as [(typeof fonts)[number], (typeof fonts)[number]];
+      doc.insertPage(
+        0,
+        doc.addPage(
+          [0, 0, 400, 300],
+          0,
+          { Font: { F0: doc.addFont(italic), F1: doc.addFont(both) } },
+          `BT /F0 18 Tf 40 200 Td <${hexOf(italic, 'ab')}> Tj ET\nBT /F1 18 Tf 40 150 Td <${hexOf(both, 'cd')}> Tj ET\n`,
+        ),
+      );
+      doc.subsetFonts();
+      const result = await exportOffice(
+        new Uint8Array(doc.saveToBuffer('garbage=compact,compress').asUint8Array()),
+        options,
+        run,
+      );
+      const zip = await JSZip.loadAsync(result.file.bytes);
+      const table = (await zip.file('word/fontTable.xml')?.async('string')) as string;
+      expect(table).toMatch(/<w:embedItalic [^>]*\/>/);
+      expect(table).toMatch(/<w:embedBoldItalic [^>]*\/>/);
+      expect(table).not.toMatch(/<w:embedRegular /);
+    } finally {
+      for (const font of fonts) font.destroy();
+      doc.destroy();
+    }
+  });
+
+  it('reads past a font entry that is null and a form that is a plain dictionary, and still embeds the page font', async () => {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    const font = new mupdf.Font('NotoSans-Regular', notoRegular());
+    try {
+      const object = doc.addFont(font);
+      const page = doc.addPage(
+        [0, 0, 400, 300],
+        0,
+        {
+          Font: { F0: object },
+          XObject: { D: { Type: 'XObject', Subtype: 'Form', Resources: { Font: { F0: object } } } },
+        },
+        `BT /F0 18 Tf 40 200 Td <${hexOf(font, 'ab')}> Tj ET\n`,
+      );
+      page.get('Resources').get('Font').put('F1', doc.newNull());
+      doc.insertPage(0, page);
+      doc.subsetFonts();
+      const result = await exportOffice(
+        new Uint8Array(doc.saveToBuffer('garbage=compact,compress').asUint8Array()),
+        options,
+        run,
+      );
+      const zip = await JSZip.loadAsync(result.file.bytes);
+      expect(Object.keys(zip.files).filter((name) => name.endsWith('.odttf'))).toHaveLength(1);
+    } finally {
+      font.destroy();
+      doc.destroy();
+    }
   });
 });
