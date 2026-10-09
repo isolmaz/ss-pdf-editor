@@ -70,8 +70,9 @@ export function MenuBar({ t, commands }: MenuBarProps) {
   useEffect(() => {
     if (openGroup === null) return;
     const dismiss = (event: PointerEvent) => {
-      const root = rootRef.current;
-      if (root !== null && event.target instanceof Node && root.contains(event.target)) return;
+      // A document-level `pointerdown` always targets a node, and the root is mounted
+      // for as long as a menu is open.
+      if (rootRef.current?.contains(event.target as Node)) return;
       setOpenGroup(null);
     };
     document.addEventListener('pointerdown', dismiss);
@@ -87,14 +88,14 @@ export function MenuBar({ t, commands }: MenuBarProps) {
   };
 
   const closeMenu = (refocus: boolean) => {
-    const group = openGroup;
+    const trigger = openGroup === null ? undefined : triggerRefs.current.get(openGroup);
     setOpenGroup(null);
-    if (refocus && group !== null) triggerRefs.current.get(group)?.focus();
+    if (refocus) trigger?.focus();
   };
 
   const focusGroupAt = (index: number) => {
-    const next = groups[(index + groups.length) % groups.length];
-    if (next === undefined) return;
+    // The index is wrapped into `0..groups.length`, and the bar has a group to be here.
+    const next = groups[(index + groups.length) % groups.length] as MenuGroup;
     setAnchorGroup(next);
     triggerRefs.current.get(next)?.focus();
     // Moving along an open bar swaps which menu is showing.
@@ -179,7 +180,8 @@ export function MenuBar({ t, commands }: MenuBarProps) {
       case 'Enter':
       case ' ':
         event.preventDefault();
-        if (current !== undefined) activate(current);
+        // `enabled` is not empty here, so the highlight names an entry.
+        activate(current as Command);
         break;
       case 'Tab':
         closeMenu(false);
