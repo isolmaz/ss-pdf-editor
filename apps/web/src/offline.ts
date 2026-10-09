@@ -273,6 +273,10 @@ export async function requestOfflineReadiness(): Promise<WorkerReadiness | null>
  * manifest the build wrote, which is the only place the editor's own chunks (`app`) are
  * listed. When the worker fails outright, the paths this module ships name what was lost;
  * a request that is only build-listed capabilities is reported by their names.
+ *
+ * The shipped paths travel too, as `urls`: a worker from before the capability protocol
+ * (still serving during an update window) ignores `capabilities`, and without `urls` it
+ * would fetch every package, OCR's 25 MiB included. The current worker ignores `urls`.
  */
 export async function prepareOffline(
   capabilities: readonly OfflineCapability[],
@@ -280,7 +284,7 @@ export async function prepareOffline(
   const shipped = capabilities.flatMap((capability) => [...OFFLINE_CAPABILITIES[capability]]);
   const lost = shipped.length > 0 ? shipped : [...capabilities];
   return await askWorker(
-    { type: 'PREPARE_PACKAGE', capabilities: [...capabilities] },
+    { type: 'PREPARE_PACKAGE', capabilities: [...capabilities], urls: shipped },
     (data) => {
       if (data.type === 'PREPARE_FAILED') return { version: null, prepared: 0, failed: lost };
       if (data.type !== 'PREPARE_DONE') return null;

@@ -954,6 +954,11 @@ pnpm worker:deploy:dry      # same, with --dry-run
   pack is reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
   reads an older cache.
+- **After an app update.** The cache name follows the pinned assets, not the app, so an app
+  deploy keeps the same cache while its hashed scripts change. The new build's readiness then
+  reports the new scripts as `missing` and asks you to Prepare again; Prepare fetches them and
+  deletes the editor scripts and styles the new build no longer ships, so superseded ones do
+  not accumulate.
 
 ---
 

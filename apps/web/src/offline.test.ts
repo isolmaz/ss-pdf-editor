@@ -273,8 +273,20 @@ describe('the page ↔ worker exchange', () => {
     const result = await prepareOffline(['core', 'app', 'fonts']);
     // Names, not URLs: the chunks of `app` are hashed, so only the build's manifest, which the
     // worker reads, can say which files they are.
-    expect(received[0]).toEqual({ type: 'PREPARE_PACKAGE', capabilities: ['core', 'app', 'fonts'] });
+    // The shipped paths ride along so a worker that predates the capability protocol fetches
+    // only those, not every package (OCR's 25 MiB included), during the update window.
+    expect(received[0]).toEqual({
+      type: 'PREPARE_PACKAGE',
+      capabilities: ['core', 'app', 'fonts'],
+      urls: [...OFFLINE_CAPABILITIES.core, ...OFFLINE_CAPABILITIES.app, ...OFFLINE_CAPABILITIES.fonts],
+    });
     expect(result).toEqual({ version: 'v7', prepared: 4, failed: ['/a'] });
+  });
+
+  it('sends no path for a capability only the build can list, so an old worker fetches nothing for it', async () => {
+    const received = stubWorker(() => ({ type: 'PREPARE_DONE', version: 'v7', count: 0, failed: [] }));
+    await prepareOffline(['app']);
+    expect(received[0]).toEqual({ type: 'PREPARE_PACKAGE', capabilities: ['app'], urls: [] });
   });
 
   it('reads a bare readiness reply as no version, no match and no capabilities, skipping entries that are not objects', async () => {

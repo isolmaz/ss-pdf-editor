@@ -170,4 +170,35 @@ test.describe('offline shell', { tag: '@service-worker' }, () => {
     await expect(notice(page, 'Every package offline use needs is ready.')).toBeVisible({ timeout: 60_000 });
     expect(await cachedPaths(page)).toContain(lost);
   });
+
+  // The cache name follows the pinned assets, not the app, so an app deploy keeps the cache and
+  // its hashed chunks change: what the new build no longer ships must not pile up.
+  test('Prepare deletes editor chunks the build no longer ships and keeps the ones it does', async ({
+    page,
+  }) => {
+    await page.goto('/editor/');
+    const settings = await openOfflineSettings(page);
+    await prepare(page, settings);
+
+    const stale = ['/editor/assets/superseded-0a1b2c3d.js', '/editor/assets/superseded-0a1b2c3d.css'];
+    await page.evaluate(async (paths) => {
+      const name = (await caches.keys()).find((key) => key.startsWith('pdf-editor-static-'));
+      if (name === undefined) throw new Error('the worker has no static cache');
+      const cache = await caches.open(name);
+      for (const path of paths) await cache.put(path, new Response('/* from an older build */'));
+    }, stale);
+    expect(await cachedPaths(page)).toEqual(expect.arrayContaining(stale));
+
+    // The first pass's "prepared" notice is still on screen, so the second pass is awaited
+    // through the cache itself rather than through that notice.
+    await settings.getByRole('button', { name: 'Prepare', exact: true }).click();
+    await expect
+      .poll(async () => (await cachedPaths(page)).filter((path) => stale.includes(path)), {
+        timeout: 180_000,
+      })
+      .toEqual([]);
+    const held = new Set(await cachedPaths(page));
+    expect(BUILT_CHUNKS.filter((path) => !held.has(path))).toEqual([]);
+    expect(held.has('/editor/index.html')).toBe(true);
+  });
 });

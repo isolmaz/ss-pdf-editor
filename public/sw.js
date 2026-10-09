@@ -84,6 +84,23 @@ function pathsOf(manifest, names) {
   return [...paths];
 }
 
+/**
+ * Drops the editor chunks this build no longer ships. The cache name carries the release of
+ * the pinned assets, not of the app, so an app deploy keeps the same cache and its hashed
+ * chunks would otherwise pile up beside their replacements. What stays is exactly what the
+ * manifest names — the `app` chunks and the interface catalogues. A manifest that lists no
+ * `app` chunk (a build that did not write them) prunes nothing rather than everything.
+ */
+async function pruneSupersededChunks(cache, manifest) {
+  const app = pathsOf(manifest, ['app']);
+  if (app.length === 0) return;
+  const current = new Set([...app, ...shellPathsOf(manifest)]);
+  for (const key of await cache.keys()) {
+    const path = new URL(key.url).pathname;
+    if (path.startsWith('/editor/assets/') && !current.has(path)) await cache.delete(key);
+  }
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
@@ -318,6 +335,7 @@ self.addEventListener('message', (event) => {
             failed.push(url);
           }
         }
+        await pruneSupersededChunks(cache, manifest);
         event.ports[0]?.postMessage({
           type: 'PREPARE_DONE',
           version: manifest.version,
