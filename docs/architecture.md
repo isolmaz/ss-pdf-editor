@@ -2332,6 +2332,7 @@ testable logic lives:
 | `features/reading/` | Reading mode, snapshot, magnifier and lens zoom, the document language, and the reading-order layer |
 | `features/facts/` | The facts read for the active document (protection, signatures, fonts, attachments) and its failure, the imported trust roots and revocation lists, the signature-warning prompt before a write, the redaction audit, and the properties panel host |
 | `features/attachments/` | The embedded files: the measured list the properties panel shows, and adding, removing, reading out and writing them (`createAttachmentActions`) |
+| `features/comments/` | Comment review: replies, review states and removing a reply (`useCommentReview`), and the comments panel host (`CommentsDock`) |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
