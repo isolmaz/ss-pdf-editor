@@ -1,5 +1,4 @@
 import type { AnnotationMark, ExistingAnnotation, FormFieldInfo } from 'pdf-core';
-import { listPdfAttachments, readPdfAttachment } from 'pdf-core/attachments';
 import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
 // The annotation and form ops are imported by **module**, not through the
@@ -150,6 +149,7 @@ import { ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
 import { createOpfsDraftStorage } from './drafts';
 import { compressionPresets } from './export-presets';
+import { createAttachmentActions } from './features/attachments/attachments';
 import {
   armStampTool,
   clearNotice,
@@ -199,7 +199,6 @@ import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
 import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
 import { useDocumentLanguage } from './features/reading/use-document-language';
 import {
-  addAttachments,
   addImageStamp,
   applyLayerWrite,
   convertToPdf,
@@ -209,7 +208,6 @@ import {
   inspectXfa,
   listPdfImages,
   readFormFields,
-  removeAttachments,
   resizeImageStamp,
   verifySignatures,
 } from './lazy-ops';
@@ -1356,104 +1354,6 @@ export function App({ store }: AppProps) {
   const canPrepareWrite = activeTab !== null && documentFacts !== null && formFields !== null && !busy;
   useDocumentFacts({ store, t, tab: activeTab, handle: activeHandle, revision: inspectionRevision });
   const signaturePending = useSignaturePending();
-
-  /** Embedded files: the three writes the properties panel offers. */
-  const addAttachmentsToDocument = useCallback(
-    async (files: readonly File[]) => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null || files.length === 0) return;
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      setBusy(true);
-      try {
-        const base = await materializeBase(contextFor(tab, handle));
-        const payloads = await Promise.all(
-          files.map(async (file) => ({
-            name: file.name,
-            bytes: new Uint8Array(await file.arrayBuffer()),
-            mime: file.type.length === 0 ? 'application/octet-stream' : file.type,
-          })),
-        );
-        const outcome = await addAttachments(base, payloads, { signal: new AbortController().signal });
-        const next = await applyProducedBytes(
-          contextFor(tab, handle),
-          outcome.bytes,
-          workingPageCount(tab),
-          { key: 'props.attach.added', params: { count: outcome.added.length } },
-          outcome.report.engine,
-          outcome.report.steps,
-        );
-        setHandle(tab.id, next);
-        showNotice(t('props.attach.added', { count: outcome.added.length }));
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [contextFor, setHandle, store, t, refuseBusy],
-  );
-
-  const removeAttachmentFromDocument = useCallback(
-    async (name: string) => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) return;
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      setBusy(true);
-      try {
-        const base = await materializeBase(contextFor(tab, handle));
-        const outcome = await removeAttachments(base, [name], { signal: new AbortController().signal });
-        const next = await applyProducedBytes(
-          contextFor(tab, handle),
-          outcome.bytes,
-          workingPageCount(tab),
-          { key: 'props.attach.removed', params: { count: outcome.removed.length } },
-          outcome.report.engine,
-          outcome.report.steps,
-        );
-        setHandle(tab.id, next);
-        showNotice(
-          outcome.missing.length > 0
-            ? t('props.attach.missing', { count: outcome.missing.length })
-            : t('props.attach.removed', { count: outcome.removed.length }),
-        );
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [contextFor, setHandle, store, t, refuseBusy],
-  );
-
-  /** Write one embedded file out — the only operation that never touches the document. */
-  const readAttachmentOut = useCallback(
-    async (name: string) => {
-      const handle = activeHandle;
-      if (handle === null) return;
-      try {
-        const attachments = await listPdfAttachments(handle);
-        const attachment = attachments.find((entry) => entry.filename === name);
-        if (attachment === undefined) return;
-        const bytes = await readPdfAttachment(handle, attachment);
-        downloadFiles([{ name: attachment.filename, bytes, mime: 'application/octet-stream' }]);
-        showNotice(t('props.attach.readNamed', { name: attachment.filename }));
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      }
-    },
-    [activeHandle, t],
-  );
 
   /**
    * The dynamic XFA form being filled: the tab it belongs to and the bytes frozen when the
@@ -3605,53 +3505,9 @@ export function App({ store }: AppProps) {
     [activeTab, activeHandle, applyWriterOutcome, contextFor, t, refuseBusy],
   );
 
-  /**
-   * The attachments panel's two writes (“attachments add/remove”).
-   * Same route as the layer write: the panel hands over the picked files (or the names to
-   * drop) and the shell runs the operation on the working document.
-   */
-  const writeAttachments = useCallback(
-    async (request: { readonly add?: readonly File[]; readonly remove?: readonly string[] }) => {
-      const tab = activeTab;
-      const handle = activeHandle;
-      if (tab === null || handle === null) return;
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      setBusy(true);
-      try {
-        const bytes = await materializeBase(contextFor(tab, handle), {
-          signal: new AbortController().signal,
-        });
-        const operation = { signal: new AbortController().signal };
-        let outcome: OperationOutcome;
-        if (request.add !== undefined && request.add.length > 0) {
-          const additions = await Promise.all(
-            request.add.map(async (file) => ({
-              name: file.name,
-              // `File.arrayBuffer` is the only read that does not need a URL or a reader,
-              // and the bytes are what the writer embeds. A browser that knows nothing
-              // about the type says `''`, and the writer stores that as no `/Subtype`.
-              bytes: new Uint8Array(await file.arrayBuffer()),
-              mime: file.type,
-            })),
-          );
-          outcome = await addAttachments(bytes, additions, operation);
-        } else if (request.remove !== undefined && request.remove.length > 0) {
-          outcome = await removeAttachments(bytes, request.remove, operation);
-        } else {
-          return;
-        }
-        await applyWriterOutcome(tab, handle, outcome, 'panel.attachments');
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [activeTab, activeHandle, applyWriterOutcome, contextFor, t, refuseBusy],
+  const attachmentActions = useMemo(
+    () => createAttachmentActions({ session: store, t, contextFor, setHandle, applyWriterOutcome }),
+    [store, t, contextFor, setHandle, applyWriterOutcome],
   );
 
   /**
@@ -5048,8 +4904,8 @@ export function App({ store }: AppProps) {
                   onExtract={() => openDialog('extract-pages')}
                   onEditOutline={() => openDialog('outline-edit')}
                   onWriteLayers={(request) => void writeLayers(request)}
-                  onAddAttachments={(files) => void writeAttachments({ add: files })}
-                  onRemoveAttachments={(names) => void writeAttachments({ remove: names })}
+                  onAddAttachments={(files) => void attachmentActions.write({ add: files })}
+                  onRemoveAttachments={(names) => void attachmentActions.write({ remove: names })}
                   visibleTabs={mode === 'simple' ? SIMPLE_MODE_DOCK_TABS : undefined}
                   tab={leftTab}
                   onTabChange={selectLeftTab}
@@ -5420,9 +5276,9 @@ export function App({ store }: AppProps) {
                       tab={activeTab}
                       disabled={!canEdit}
                       onRetry={() => setInspectionRevision((value) => value + 1)}
-                      onAddAttachments={(files) => void addAttachmentsToDocument(files)}
-                      onRemoveAttachment={(name) => void removeAttachmentFromDocument(name)}
-                      onReadAttachment={(name) => void readAttachmentOut(name)}
+                      onAddAttachments={(files) => void attachmentActions.addToDocument(files)}
+                      onRemoveAttachment={(name) => void attachmentActions.removeFromDocument(name)}
+                      onReadAttachment={(name) => void attachmentActions.readOut(name)}
                     />
                   ) : rightTab === 'redaction-audit' ? (
                     <RedactionAuditView
