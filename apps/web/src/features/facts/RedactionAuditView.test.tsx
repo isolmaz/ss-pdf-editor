@@ -53,10 +53,10 @@ function openSession(withHandle = true) {
   return { store, tab };
 }
 
-// The panel is a dynamic chunk: load it once up front so no test waits on the first import.
+// The panel is a dynamic chunk: load it once up front so no test races the first import.
 beforeAll(async () => {
   await import('pdf-ui/panels');
-}, 60_000);
+}, 120_000);
 beforeEach(() => {
   coreStore.set(initialCoreState());
   redactionAuditStore.set({ report: null, loading: false });

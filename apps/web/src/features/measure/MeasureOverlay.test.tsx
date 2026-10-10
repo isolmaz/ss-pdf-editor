@@ -11,7 +11,7 @@ import { scaleForRatio } from 'pdf-core/ops/measure';
 import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pendingOverlays } from '../../operations';
 import { coreStore, initialCoreState, selectTool } from '../core/core-store';
 import { MeasureOverlay, type MeasureOverlayProps } from './MeasureOverlay';
@@ -30,6 +30,10 @@ const viewer = {
 
 let session: SessionStore;
 
+// The layer is a dynamic chunk: load it once up front so no test races the first import.
+beforeAll(async () => {
+  await import('pdf-ui');
+}, 120_000);
 beforeEach(() => {
   coreStore.set(initialCoreState());
   measureStore.set(initialMeasureState());
@@ -55,7 +59,7 @@ function overlay(props: Partial<MeasureOverlayProps> = {}) {
   );
 }
 
-const ruler = () => screen.findByRole('application', { name: 'Measure' }, { timeout: 30_000 });
+const ruler = () => screen.findByRole('application', { name: 'Measure' });
 
 describe('MeasureOverlay', () => {
   it('draws nothing while no ruler is armed and the session holds no measurements', () => {
@@ -94,7 +98,7 @@ describe('MeasureOverlay', () => {
     });
     expect(session.active?.dirty).toBe(true);
     expect(measureStore.get().reading).toBeNull();
-  }, 40_000);
+  });
 
   it('stops the tool on Escape with no chain under way', async () => {
     const user = userEvent.setup();
@@ -104,7 +108,7 @@ describe('MeasureOverlay', () => {
 
     await user.keyboard('{Escape}');
     expect(coreStore.get().canvasTool).toBe('select');
-  }, 40_000);
+  });
 
   it('draws the grid while a ruler is armed with the grid on, and not once the ruler is put away', async () => {
     armMeasure('distance');
@@ -115,7 +119,7 @@ describe('MeasureOverlay', () => {
 
     act(() => selectTool('select'));
     expect(container.querySelector('path[stroke="currentColor"]')).toBeNull();
-  }, 40_000);
+  });
 
   const mark = {
     id: 'm1',
@@ -136,14 +140,14 @@ describe('MeasureOverlay', () => {
 
   it('keeps measurements drawn with no ruler armed, but takes no pointer', async () => {
     render(overlay({ marks: [mark] }));
-    await screen.findByRole('button', { name: 'Distance' }, { timeout: 30_000 });
+    await screen.findByRole('button', { name: 'Distance' });
     expect(screen.queryByRole('application', { name: 'Measure' })).toBeNull();
-  }, 40_000);
+  });
 
   it('draws the measurements but never lets the ruler take the pointer while the document cannot be edited', async () => {
     armMeasure('distance');
     render(overlay({ marks: [mark], canEdit: false }));
-    await screen.findByRole('button', { name: 'Distance' }, { timeout: 30_000 });
+    await screen.findByRole('button', { name: 'Distance' });
     expect(screen.queryByRole('application', { name: 'Measure' })).toBeNull();
-  }, 40_000);
+  });
 });

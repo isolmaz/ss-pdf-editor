@@ -193,6 +193,7 @@ import { useDocumentFacts } from './features/facts/use-document-facts';
 import { MeasureOverlay } from './features/measure/MeasureOverlay';
 import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
 import { armMeasure, useMeasureMode } from './features/measure/measure-store';
+import { usePageActions } from './features/pages/page-actions';
 import { ReadingLayers } from './features/reading/ReadingLayers';
 import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
 import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
@@ -238,15 +239,12 @@ import {
   requiredCapabilities,
 } from './offline';
 import {
-  applyHistoryStep,
-  applyPageAction,
   applyProducedBytes,
   type DocumentContext,
   downloadFiles,
   hasEngineEdits,
   materializeBase,
   type PageAction,
-  pageActionLabel,
   pendingOverlays,
   pruneOverlays,
   redactionNeedles,
@@ -3815,208 +3813,25 @@ export function App({ store }: AppProps) {
     openRightPanel('comments');
   }, []);
 
-  /** Page-structure actions: journaled, cancellable. */
-  const runPageAction = useCallback(
-    (action: PageAction) => {
-      /**
-       * The tab and its engine handle are read at call time, never from the render that
-       * created this callback. A page action replaces the handle, so a control one render
-       * old handed the *previous* document to `extractPages` and pdf.js answered
-       * `Cannot read properties of null (reading 'sendWithPromise')` — measured on the
-       * second of two consecutive rotations; the shell reported it as an internal error
-       * while the first action looked perfectly healthy.
-       */
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null || !canEditRef.current || cancelRef.current !== null) return;
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      setBusy(true);
-      // The page panel's selection when there is one, else the page on screen: the
-      // status-bar rotate and the context menu act on "this page", and with no selection
-      // they used to do nothing at all and say so in a sentence with a raw `{count}`.
-      // A control that names its pages (a thumbnail's own rotate or delete) wins over both.
-      const named = 'pages' in action ? action.pages : undefined;
-      const selection =
-        named !== undefined && named.length > 0
-          ? named
-          : selectedPagesRef.current.length > 0
-            ? selectedPagesRef.current
-            : [currentPageRef.current];
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setProgress({ phase: 'pages', labelKey: 'op.step.pages', total: 1, done: 0 });
-      void (async () => {
-        try {
-          const next = await applyPageAction(contextFor(tab, handle), selection, action, {
-            signal: controller.signal,
-            onProgress: setProgress,
-          });
-          if (next !== null) {
-            setHandle(tab.id, next);
-            // The notice names what actually happened: a delete and a move are
-            // different journal steps and the History panel shows both.
-            const label = pageActionLabel(action, selection.length);
-            showNotice(t('op.result.applied', { label: t(label.key, label.params) }));
-          } else {
-            /**
-             * A page action that did nothing says so. The silent version was found by a
-             * driver that clicked a disabled button and saw only a stale notice — an
-             * inert control and a refused action must not look the same.
-             */
-            showNotice(t('op.result.noChangePages'));
-          }
-        } catch (error) {
-          const toolError =
-            error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-        } finally {
-          if (cancelRef.current === controller) {
-            cancelRef.current = null;
-            setProgress(null);
-            setBusy(false);
-          }
-        }
-      })();
-    },
-    [contextFor, setHandle, store, t, refuseBusy],
-  );
-
-  const cancelOperation = useCallback(() => {
-    cancelRef.current?.abort();
-    showNotice(t('op.cancelRequested'));
-  }, [t]);
-
-  /**
-   * Undo/redo. The model moves its own state and reports which bytes the
-   * viewer must show; mounting them is the app's half of the contract. A step whose
-   * snapshot the session no longer holds is reported, never guessed.
-   */
-  const stepHistory = useCallback(
-    async (direction: 'undo' | 'redo'): Promise<void> => {
-      const tab = store.active;
-      const handle = tab === null ? undefined : handleFor(tab.id);
-      if (tab === null || handle === undefined || cancelRef.current !== null) return;
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      await (async () => {
-        try {
-          const result = await applyHistoryStep(contextFor(tab, handle), direction, {
-            signal: controller.signal,
-          });
-          if (result === null) {
-            if (store.active?.id === tab.id) showNotice(t('op.undo.unavailable'));
-            return;
-          }
-          if (result.handle !== handle) {
-            const values = pendingOverlays(store.active).engineValues;
-            if (values !== undefined) pendingEngineValues.current.set(tab.id, values);
-            else pendingEngineValues.current.delete(tab.id);
-            setHandle(tab.id, result.handle);
-            setCurrentPage((page) => Math.min(page, result.handle.pageCount - 1));
-          }
-          const label = t(
-            result.entry.labelKey as Parameters<typeof t>[0],
-            (result.entry.labelParams ?? {}) as Readonly<Record<string, string | number>>,
-          );
-          showNotice(t(direction === 'undo' ? 'op.undo.done' : 'op.redo.done', { label }));
-        } catch (error) {
-          if (store.active?.id !== tab.id || controller.signal.aborted) return;
-          const toolError =
-            error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-        } finally {
-          if (cancelRef.current === controller) {
-            cancelRef.current = null;
-            setBusy(false);
-          }
-        }
-      })();
-    },
-    [contextFor, setHandle, store, t, refuseBusy],
-  );
-
-  /**
-   * Undo/redo with the engine's pending gesture folded in first, so there is **one**
-   * history rather than two.
-   *
-   * pdf.js owns a highlight or an ink stroke until something commits it — and this app
-   * takes that editor over the moment it commits. An undo that ran before the takeover
-   * would therefore undo a different step than the one the user just made, or leave the
-   * mark they can see untouched while the engine undid a record nothing else holds.
-   * Committing and taking over first makes the two one step: the takeover journals the
-   * new mark, and the undo the user asked for is the undo of exactly that.
-   *
-   * `false` declines the key: with no document, or while an operation is already
-   * running, `Ctrl+Z` is not the shell's to answer and is left to whatever owns it.
-   *
-   * **Steps queue, they are never dropped.** A step spans several awaits (the sweep, the
-   * engine checkpoint, the model's own move), so a second press lands while the first is
-   * still in flight. Refusing it as "busy" — or letting it run beside the first, where
-   * `stepHistory` returns silently on the held lock — loses the press: two quick undos
-   * would undo one step. A press that arrives while history steps are pending is chained
-   * behind them and runs when the one before has finished.
-   */
-  const historyTail = useRef<Promise<void>>(Promise.resolve());
-  const historyPending = useRef(0);
-  const stepHistoryNow = useCallback(
-    (direction: 'undo' | 'redo'): boolean => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) return false;
-      const inFlight = orphanSweep.current;
-      const queued = historyPending.current > 0;
-      if (!queued && inFlight === null && (isBusy() || cancelRef.current !== null)) {
-        refuseBusy();
-        return false;
-      }
-      if (settleNativeEditors()) void sweepOrphanAnnotations();
-      const run = async (): Promise<void> => {
-        // A step queued behind another starts from the version that one produced, so the
-        // handle is read when this step begins, not when the key was pressed.
-        const start = handleFor(tab.id);
-        if (store.active?.id !== tab.id || start === undefined) return;
-        // The sweep replaces the working version, so it must be over before the
-        // checkpoint reads the engine and before the model moves.
-        const sweep = orphanSweep.current;
-        if (sweep !== null) await sweep;
-        if (store.active?.id !== tab.id || handleFor(tab.id) !== start) return;
-        if (isBusy() || cancelRef.current !== null) {
-          refuseBusy();
-          return;
-        }
-        /**
-         * The engine's live storage is checkpointed first, for the same reason an erase
-         * checkpoints it: a history step restores the mark state of *its own* moment,
-         * and a form value typed a second ago is not in any step yet — undoing without
-         * this would reopen the bytes from before the typing and drop a value the user
-         * can still see on the page.
-         */
-        await checkpointEngineValues();
-        if (store.active?.id === tab.id && handleFor(tab.id) === start) await stepHistory(direction);
-      };
-      historyPending.current += 1;
-      historyTail.current = historyTail.current
-        .then(run)
-        .catch((error) => {
-          if (store.active?.id !== tab.id) return;
-          const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-          showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
-        })
-        .finally(() => {
-          historyPending.current -= 1;
-        });
-      return true;
-    },
-    [checkpointEngineValues, refuseBusy, settleNativeEditors, stepHistory, store, sweepOrphanAnnotations, t],
-  );
+  /** Page actions and undo/redo (`features/pages/page-actions.ts`). */
+  const { runPageAction, cancelOperation, stepHistoryNow } = usePageActions({
+    session: store,
+    t,
+    cancel: cancelRef,
+    canEdit: canEditRef,
+    selectedPages: selectedPagesRef,
+    currentPage: currentPageRef,
+    engineValues: pendingEngineValues.current,
+    orphanSweep,
+    contextFor,
+    setHandle,
+    refuseBusy,
+    setProgress,
+    setCurrentPage,
+    settleNativeEditors,
+    sweepOrphanAnnotations,
+    checkpointEngineValues,
+  });
 
   const commands = useMemo(
     () =>

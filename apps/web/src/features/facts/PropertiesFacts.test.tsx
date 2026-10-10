@@ -12,7 +12,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { revocationListFrom, SessionStore, trustRootFrom } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearNotice, coreStore } from '../core/core-store';
 import { type DocumentFacts, factsFailed, factsRead, factsReading } from './facts-store';
 import { PropertiesFacts } from './PropertiesFacts';
@@ -107,6 +107,10 @@ function view(overrides: Partial<Parameters<typeof PropertiesFacts>[0]> = {}) {
   return handlers;
 }
 
+// The panel is a dynamic chunk (mocked here): resolve it once up front so no test races the first import.
+beforeAll(async () => {
+  await import('pdf-ui/panels');
+}, 120_000);
 beforeEach(() => {
   factsReading();
   trustStore.set(empty);

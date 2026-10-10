@@ -2336,6 +2336,7 @@ testable logic lives:
 | `features/stamps/` | Stamps and signatures: the signature dialog and the saved signatures (`stamps-store.ts`), arming, placing and resizing a stamp, picking an image and placing a signature (`stamp-actions.ts`), and their hosts (`StampSurface.tsx`) |
 | `features/measure/` | Measuring: the ruler mode, scale, grid, snapping and live reading (`measure-store.ts`), adding a measurement as one undoable step (`measure-marks.ts`), and the settings strip and overlay hosts |
 | `features/results/` | Print, scan and accessibility: the print and scan dialogs' open state and the operation progress (`results-store.ts`), applying accessibility fixes, scanning a document and opening a printable result (`results-actions.ts`), and the print, scan, accessibility and PDF/A hosts (`ResultsSurfaces.tsx`) |
+| `features/pages/` | Page actions and undo/redo: the pure planner (`history-plan.ts`: the operation gate, the page selection, whether a history press is declined, refused or queued, and its notices) and the runner (`page-actions.ts`, `usePageActions`) |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |

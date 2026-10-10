@@ -10,7 +10,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import type { CommentsPanelProps } from 'pdf-ui/panels';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CommentsDock } from './CommentsDock';
 
 vi.mock('pdf-ui/panels', () => ({
@@ -30,6 +30,10 @@ vi.mock('pdf-ui/panels', () => ({
 
 const t = createTranslator('en');
 
+// The panel is a dynamic chunk (mocked here): resolve it once up front so no test races the first import.
+beforeAll(async () => {
+  await import('pdf-ui/panels');
+}, 120_000);
 afterEach(cleanup);
 
 describe('CommentsDock', () => {
