@@ -58,9 +58,8 @@ function loader(mocks = {}) {
 
 const load = loader();
 const model = load('pdf-model');
-const appNotices = load(path.join(ROOT, 'apps/web/src/notices.ts'));
-const recentHandles = load(path.join(ROOT, 'apps/web/src/recent-handles.ts'));
-const { ToolError } = load('pdf-shared');
+const _appNotices = load(path.join(ROOT, 'apps/web/src/notices.ts'));
+const _recentHandles = load(path.join(ROOT, 'apps/web/src/recent-handles.ts'));
 const appPath = path.join(ROOT, 'apps/web/src/App.tsx');
 const appSource = ts.createSourceFile(
   appPath,
@@ -97,6 +96,19 @@ function persistenceModules(mocks = {}) {
     ...mocks,
   });
   return (name) => modules(path.join(ROOT, 'apps/web/src/features/persistence', name));
+}
+/**
+ * The save feature's modules (`features/save`), loaded from source with the shell's boundaries
+ * (the notice line and busy flag, the handles, the facts and the heavy byte operations) replaced
+ * by doubles. Every call builds a fresh module graph, so each harness owns its save store.
+ */
+function saveModules(mocks = {}) {
+  const modules = loader({
+    // The store helper's React side is never rendered here.
+    react: { useSyncExternalStore: () => undefined, useRef: () => ({ current: undefined }) },
+    ...mocks,
+  });
+  return (name) => modules(path.join(ROOT, 'apps/web/src/features/save', name));
 }
 const results = [];
 // Report detached failures too, including when auditing the original checkout.
@@ -203,30 +215,32 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   store.setOverlays(tab.id, { annotations: ['edit'] }, 'ann.engineEdit');
   const notices = [];
   const downloads = [];
-  const saveLock = { current: false };
   const busyRef = { current: false };
+  // `saveActive` runs the app's own arrow over the real `features/save` save path; the notice
+  // line, the busy flag and the download are the doubles. The save lock is the real store's.
+  const modules = saveModules({
+    '../core/core-store': {
+      showNotice: (value) => notices.push(value),
+      clearNotice: () => notices.push(null),
+      setBusy: (value) => {
+        busyRef.current = value;
+      },
+      isBusy: () => busyRef.current,
+    },
+    '../../operations': { downloadFiles: (files) => downloads.push(...files) },
+  });
+  const saveStore = modules('save-store.ts');
+  const saveLock = {
+    get current() {
+      return saveStore.isSaveLocked();
+    },
+  };
   const bindings = {
     store,
-    saveLock,
-    isBusy: () => busyRef.current,
-    ToolError,
-    AbortController,
-    window: picker ? { showSaveFilePicker: picker } : {},
+    saveDocument: modules('save-actions.ts').saveDocument,
     cancelRef: { current: null },
     refuseBusy: () => notices.push('busy'),
-    showNotice: (value) => notices.push(value),
-    clearNotice: () => notices.push(null),
-    setBusy: (value) => {
-      busyRef.current = value;
-    },
     t: (key) => key,
-    sha256Hex: model.sha256Hex,
-    ensureWriteAccess: recentHandles.ensureWriteAccess,
-    downloadFiles: (files) => downloads.push(...files),
-    // The save path words its notices with the app's own helpers; binding the real
-    // functions keeps the harness honest about what the user would read.
-    noticeLine: appNotices.noticeLine,
-    verificationNotices: appNotices.verificationNotices,
     prepareOutput: async () => {
       if (prepare) return prepare(store);
       const current = store.active;
@@ -241,8 +255,21 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
       };
     },
   };
+  // The module reads the browser's `window` for the file picker: it is present for the length of a run.
+  const saveActive = callback('saveActive', bindings);
+  const run = async (...args) => {
+    const had = Object.hasOwn(globalThis, 'window');
+    const previous = globalThis.window;
+    globalThis.window = picker ? { showSaveFilePicker: picker } : {};
+    try {
+      return await saveActive(...args);
+    } finally {
+      if (had) globalThis.window = previous;
+      else delete globalThis.window;
+    }
+  };
   return {
-    run: callback('saveActive', bindings),
+    run,
     store,
     tab,
     notices,
@@ -1118,46 +1145,61 @@ async function main() {
     const asked = [];
     const confirmations = [];
     const verifyCalls = [];
+    // `prepareOutput` runs the app's own arrow over the real `features/save/prepare-output`; the
+    // document's facts and forms, the engine's byte operations and the prompt are the doubles.
+    const savePlan = load(path.join(ROOT, 'apps/web/src/save-plan.ts'));
+    const modules = saveModules({
+      '../core/core-store': { showNotice: (notice) => notices.push(notice) },
+      '../core/handles': { handleFor: (id) => new Map([[tab.id, handle]]).get(id) },
+      '../facts/facts-store': {
+        currentFacts: () =>
+          facts === 'current' ? { tabId: tab.id, version: store.active.working.id } : null,
+        currentFactsError: () => null,
+      },
+      '../forms/forms-store': {
+        currentForms: () =>
+          forms === null ? null : { tabId: tab.id, version: store.active.working.id, fields: forms },
+      },
+      '../marks/overlays': { editableOverlays: (tab) => tab.working.overlays },
+      '../facts/trust-store': { trustStore: { get: () => ({ rootBytes: [] }) } },
+      '../facts/signature-prompt': {
+        confirmSignature: async (signatures, appended) => {
+          confirmations.push({ signatures, appended });
+          return confirm(store);
+        },
+      },
+      '../../operations': {
+        pendingOverlays: (tab) => tab.working.overlays,
+        materializeBase: async (_context, _options, steps) => {
+          materialized += 1;
+          steps.push({ id: 'pdfjs.saveDocument', engine: 'pdfjs', note: 'engine save' });
+          return output;
+        },
+        hasEngineEdits: () => false,
+        verifyForWrite: async (_bytes, verifyOptions) => {
+          verifyCalls.push(verifyOptions);
+          return { state: 'verified', checks: [], declared: [] };
+        },
+      },
+      '../../lazy-ops': {
+        inspectProtection: async () => ({ encrypted: false }),
+        verifySignatures: async (bytes) => {
+          asked.push(bytes);
+          return signed ? ['sig'] : [];
+        },
+      },
+      // The real decision (`save-plan.ts`): with no signatures it asks for no confirmation, which
+      // is the path this regression drives; only the execution plan is stubbed.
+      '../../save-plan': {
+        ...savePlan,
+        planSaveExecution: () => ({ plan: { incremental: false }, steps: [], appliedSteps: [] }),
+      },
+    });
     const bindings = {
       store,
-      handleFor: (id) => new Map([[tab.id, handle]]).get(id),
-      ToolError,
-      currentFacts: () => (facts === 'current' ? { tabId: tab.id, version: store.active.working.id } : null),
-      currentForms: { tabId: tab.id, version: store.active.working.id },
-      formFields: forms,
-      currentFactsError: () => null,
-      showNotice: (notice) => notices.push(notice),
       t: (key) => key,
-      pendingOverlays: (tab) => tab.working.overlays,
-      editableOverlays: (tab) => tab.working.overlays,
       contextFor: (tab, handle) => ({ tab, handle }),
-      materializeBase: async (_context, _options, steps) => {
-        materialized += 1;
-        steps.push({ id: 'pdfjs.saveDocument', engine: 'pdfjs', note: 'engine save' });
-        return output;
-      },
-      inspectProtection: async () => ({ encrypted: false }),
-      hasEngineEdits: () => false,
-      planSaveExecution: () => ({ plan: { incremental: false }, steps: [], appliedSteps: [] }),
-      // The real decision (`save-plan.ts`): with no signatures it asks for no
-      // confirmation, which is the path this regression drives.
-      decideSignatureWarning: load(path.join(ROOT, 'apps/web/src/save-plan.ts')).signatureWarning,
-      appliedVersionBytes: load(path.join(ROOT, 'apps/web/src/save-plan.ts')).appliedVersionBytes,
-      verifySignatures: async (bytes) => {
-        asked.push(bytes);
-        return signed ? ['sig'] : [];
-      },
-      confirmSignature: async (signatures, appended) => {
-        confirmations.push({ signatures, appended });
-        return confirm(store);
-      },
-      trustStore: { get: () => ({ rootBytes: [] }) },
-      verifyForWrite: async (_bytes, verifyOptions) => {
-        verifyCalls.push(verifyOptions);
-        return { state: 'verified', checks: [], declared: [] };
-      },
-      sha256Hex: model.sha256Hex,
-      workingPageCount: model.workingPageCount,
+      prepareDocumentOutput: modules('prepare-output.ts').prepareOutput,
     };
     return {
       run: callback('prepareOutput', bindings),
@@ -1280,19 +1322,30 @@ async function main() {
     const pendingEngineValues = new Map([[tab.id, { entries: [], dropped: 0 }]]);
     // The redaction needles a document accumulated (`features/marks/redaction-store.ts`).
     const erasedWords = new Map();
+    // `discardTab` runs the app's own arrow over the real `features/save/close-actions`; the
+    // engine handle, the staged values, the needles and the notice line are the doubles.
+    const draftWrites = { current: Promise.resolve() };
+    const closing = saveModules({
+      '../core/core-store': {
+        showNotice: (notice) => notices.push(notice),
+        clearNotice() {},
+        isBusy: () => false,
+      },
+      '../core/handles': { dropHandle: () => undefined, handleFor: () => undefined },
+      '../annotations/annotations-store': { releaseEngineValues: (id) => pendingEngineValues.delete(id) },
+      // Closing a document releases the needles it accumulated.
+      '../marks/redaction-store': { redactedWordsForgotten: (id) => erasedWords.delete(id) },
+      '../persistence/persistence-store': { draftWrites },
+      '../dialogs/dialogs-store': { dialogsStore: { get: () => ({ dialogSpec: null }) } },
+      '../../operations': { hasEngineEdits: () => false },
+    });
     const bindings = {
       store,
       cancelRef: { current: null },
-      dropHandle: () => undefined,
-      releaseEngineValues: (id) => pendingEngineValues.delete(id),
-      // Closing a document releases the needles it accumulated, so the binding has to
-      // exist for the extracted callback to run at all.
-      redactedWordsForgotten: (id) => erasedWords.delete(id),
-      draftWrites: { current: Promise.resolve() },
+      draftWrites,
       forgetTabDraft,
-      ToolError,
       tRef: { current: (key) => key },
-      showNotice: (notice) => notices.push(notice),
+      discardDocument: closing('close-actions.ts').discardDocument,
     };
     return {
       run: callback('discardTab', bindings),
