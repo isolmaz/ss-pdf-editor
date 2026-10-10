@@ -87,7 +87,6 @@ import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
 import type { FieldValue, MeasureReading } from 'pdf-ui';
-import type { SavedSignature, StampSource } from 'pdf-ui/dialog';
 import type { ScannedDocument } from 'pdf-ui/scan';
 import {
   type CanvasToolId,
@@ -96,7 +95,6 @@ import {
   type MarkTarget,
   markTargetKey,
   type StampPlacement,
-  StampPlacementLayer,
   selectionBoxes,
   ToolProperties,
   usePresentation,
@@ -152,7 +150,6 @@ import { createAttachmentActions } from './features/attachments/attachments';
 import { CommentsDock } from './features/comments/CommentsDock';
 import { useCommentReview } from './features/comments/review';
 import {
-  armStampTool,
   clearNotice,
   coreStore,
   hideLeftDock,
@@ -199,8 +196,14 @@ import { ReadingLayers } from './features/reading/ReadingLayers';
 import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
 import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
 import { useDocumentLanguage } from './features/reading/use-document-language';
+import { ImagePickerInput, SignatureDialogHost, StampPlacementHost } from './features/stamps/StampSurface';
 import {
-  addImageStamp,
+  openSignature as openSignatureFor,
+  pickImage as pickImageFor,
+  placeStamp as stampPlace,
+  resizeStamp as stampResize,
+} from './features/stamps/stamp-actions';
+import {
   applyLayerWrite,
   convertToPdf,
   fillFormFields,
@@ -209,7 +212,6 @@ import {
   inspectXfa,
   listPdfImages,
   readFormFields,
-  resizeImageStamp,
   verifySignatures,
 } from './lazy-ops';
 import {
@@ -260,7 +262,6 @@ import {
   type SaveExecutionPlan,
   type SaveStepDescription,
 } from './save-plan';
-import { forgetSignature, loadSavedSignatures, rememberSignature } from './signature-store';
 import { SHELL_SHORTCUT_GROUPS, useShellShortcuts } from './useShortcuts';
 import { createVaultChannel, type VaultChannel } from './vault-channel';
 
@@ -382,11 +383,6 @@ const StartDialog = lazy(async () => {
 const ScanDialog = lazy(async () => {
   const module = await import('pdf-ui/scan');
   return { default: module.ScanDialog };
-});
-/** The simple-signature dialog: draw, type or photograph a signature (`SignatureDialog`). */
-const SignatureDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.SignatureDialog };
 });
 /** Fills a dynamic XFA form in pdf.js's XFA renderer (`XfaFormDialog`). */
 const XfaFormDialog = lazy(async () => {
@@ -584,19 +580,6 @@ export function App({ store }: AppProps) {
    * state; nothing else is.
    */
   const canvasTool = useCore((state) => state.canvasTool);
-  /**
-   * The picture the `stamp` tool places with the next click on a page — a signature,
-   * initials or an image (`pendingStamp` in the core store; any other tool drops it) — and
-   * whether the signature dialog is open. Remembered signatures are opt-in and stay in this
-   * browser (`signature-store.ts`).
-   */
-  const pendingStamp = useCore((state) => state.pendingStamp);
-  const [signatureOpen, setSignatureOpen] = useState(false);
-  const [savedSignatures, setSavedSignatures] = useState<readonly SavedSignature[]>(() =>
-    loadSavedSignatures(),
-  );
-  /** The image picker the "add an image" command opens. */
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
   /** A stamp just written: selected as soon as the re-read inventory lists it. */
   const selectAfterWrite = useRef<string | null>(null);
   /**
@@ -3858,107 +3841,28 @@ export function App({ store }: AppProps) {
     );
   }, [currentDetect, t, writeFileAnnotation]);
 
-  /** What a picture is called in the notices and in the comment list readers show. */
-  const stampKind = useCallback(
-    (role: StampSource['role']) =>
-      t(
-        role === 'signature'
-          ? 'sig.role.signature'
-          : role === 'initials'
-            ? 'sig.role.initials'
-            : 'img.add.label',
-      ),
-    [t],
-  );
-
   /** The click that places the armed picture: one `/Stamp`, one journal step, then selected. */
   const placeStamp = useCallback(
-    (placement: StampPlacement) => {
-      const source = pendingStamp;
-      if (source === null) return;
-      const kind = stampKind(source.role);
-      const started = writeFileAnnotation(
-        { key: 'sig.placed', params: { kind } },
-        (base, signal) =>
-          addImageStamp(
-            base,
-            {
-              id: crypto.randomUUID(),
-              pageIndex: placement.pageIndex,
-              center: placement.center,
-              width: placement.width,
-              height: placement.height,
-              image: source.bytes,
-              role: source.role,
-              label: kind,
-              author: annotationAuthor,
-            },
-            { signal },
-          ),
-        t('sig.placed', { kind }),
-        placement.pageIndex,
-      );
-      if (started) selectTool('select');
-    },
-    [annotationAuthor, pendingStamp, stampKind, t, writeFileAnnotation],
+    (placement: StampPlacement) =>
+      stampPlace(placement, { writeFileAnnotation, author: annotationAuthor, t }),
+    [annotationAuthor, t, writeFileAnnotation],
   );
 
   /** A corner handle's drop: the stamp's `/Rect` becomes the new box, nothing else changes. */
   const resizeStamp = useCallback(
-    (key: string, rect: readonly [number, number, number, number]) => {
-      const target = markTargetsRef.current.find((candidate) => candidate.key === key);
-      if (target === undefined || target.family !== 'existing' || target.resizable !== true) {
-        showNotice(t('stamp.notResizable'));
-        return;
-      }
-      writeFileAnnotation(
-        { key: 'stamp.resize' },
-        (base, signal) =>
-          resizeImageStamp(base, { pageIndex: target.pageIndex, id: target.id, rect }, { signal }),
-        t('stamp.resized'),
-      );
-    },
+    (key: string, rect: readonly [number, number, number, number]) =>
+      stampResize(key, rect, { targets: markTargetsRef.current, writeFileAnnotation, t }),
     [t, writeFileAnnotation],
   );
 
-  /** Arm the `stamp` tool with a picture; the next click on a page places it. */
-  const armStamp = useCallback(
-    (source: StampSource) => {
-      armStampTool(source);
-      showNotice(t('sig.placing'));
-    },
-    [t],
+  const openSignature = useCallback(
+    () => openSignatureFor({ hasDocument: store.active !== null, canEdit: canEditRef.current, refuseBusy }),
+    [refuseBusy, store],
   );
 
-  const openSignature = useCallback(() => {
-    if (store.active === null) return;
-    if (isBusy() || !canEditRef.current) {
-      refuseBusy();
-      return;
-    }
-    setSignatureOpen(true);
-  }, [refuseBusy, store]);
-
-  const pickImage = useCallback(() => {
-    if (store.active === null) return;
-    if (isBusy() || !canEditRef.current) {
-      refuseBusy();
-      return;
-    }
-    imageInputRef.current?.click();
-  }, [refuseBusy, store]);
-
-  const onImagePicked = useCallback(
-    async (file: File) => {
-      const { imageFromFile } = await import('pdf-ui/dialog');
-      const source = await imageFromFile(file);
-      if (source === null) {
-        showNotice(t('img.add.failed', { name: file.name }));
-        return;
-      }
-      armStamp(source);
-    },
-    [armStamp, t],
+  const pickImage = useCallback(
+    () => pickImageFor({ hasDocument: store.active !== null, canEdit: canEditRef.current, refuseBusy }),
+    [refuseBusy, store],
   );
 
   /** The stamp a write just added is selected once the re-read inventory lists it. */
@@ -4986,15 +4890,7 @@ export function App({ store }: AppProps) {
                           resizeLabel={t('stamp.resize')}
                         />
                       ) : null}
-                      {viewer !== null && canEdit && canvasTool === 'stamp' && pendingStamp !== null ? (
-                        <StampPlacementLayer
-                          viewer={viewer}
-                          source={pendingStamp}
-                          hint={t('sig.placing')}
-                          onPlace={placeStamp}
-                          onCancel={() => selectTool('select')}
-                        />
-                      ) : null}
+                      <StampPlacementHost viewer={viewer} canEdit={canEdit} t={t} onPlace={placeStamp} />
                       {viewer !== null &&
                       canEdit &&
                       currentDetect?.phase === 'review' &&
@@ -5568,46 +5464,8 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       )}
-      {signatureOpen ? (
-        <Suspense fallback={null}>
-          <SignatureDialog
-            t={t}
-            saved={savedSignatures}
-            // A sensitive session stores nothing, a signature picture included.
-            canRemember={activeTab?.sensitive !== true}
-            onClose={() => setSignatureOpen(false)}
-            onForget={(id) => setSavedSignatures(forgetSignature(id))}
-            onPlace={(source, remember) => {
-              if (remember && source.role !== 'image' && activeTab?.sensitive !== true) {
-                setSavedSignatures(
-                  rememberSignature({
-                    id: crypto.randomUUID(),
-                    role: source.role,
-                    dataUrl: source.dataUrl,
-                    width: source.pixelWidth,
-                    height: source.pixelHeight,
-                  }),
-                );
-              }
-              setSignatureOpen(false);
-              armStamp(source);
-            }}
-          />
-        </Suspense>
-      ) : null}
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
-        className="sr-only"
-        tabIndex={-1}
-        aria-hidden="true"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = '';
-          if (file !== undefined) void onImagePicked(file);
-        }}
-      />
+      <SignatureDialogHost t={t} canRemember={activeTab?.sensitive !== true} />
+      <ImagePickerInput t={t} />
       <SignatureWarningPrompt t={t} />
       {contextMenu !== null ? (
         <ContextMenu
