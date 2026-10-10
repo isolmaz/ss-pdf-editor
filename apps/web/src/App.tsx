@@ -22,7 +22,7 @@ import type { FormDetection } from 'pdf-core/ops/form-detect';
 import { fieldValueText } from 'pdf-core/ops/form-value';
 import type { RedactRect } from 'pdf-core/ops/redact';
 import type { ProtectionState } from 'pdf-core/ops/security';
-import type { OperationContext, OperationNote, OperationProgress } from 'pdf-core/ops/types';
+import type { OperationContext } from 'pdf-core/ops/types';
 import type { XfaInfo } from 'pdf-core/ops/xfa';
 import {
   copyForEngine,
@@ -86,7 +86,6 @@ import type { LinkTargetRect } from 'pdf-core/ops/link-edit';
 import type { ProducedDocument } from 'pdf-model';
 import type { MessageKey } from 'pdf-shared';
 import type { FieldValue } from 'pdf-ui';
-import type { ScannedDocument } from 'pdf-ui/scan';
 import {
   type CanvasToolId,
   FieldCandidateLayer,
@@ -198,6 +197,14 @@ import { ReadingLayers } from './features/reading/ReadingLayers';
 import { ReadingOrderLayer } from './features/reading/ReadingOrderLayer';
 import { openSnapshot, toggleMagnifier, toggleReading, useReading } from './features/reading/reading-store';
 import { useDocumentLanguage } from './features/reading/use-document-language';
+import {
+  AccessibilityDock,
+  PdfADock,
+  PrintDialogHost,
+  ScanDialogHost,
+} from './features/results/ResultsSurfaces';
+import { createResultsActions } from './features/results/results-actions';
+import { openPrintDialog, openScanDialog, setProgress, useResults } from './features/results/results-store';
 import { ImagePickerInput, SignatureDialogHost, StampPlacementHost } from './features/stamps/StampSurface';
 import {
   openSignature as openSignatureFor,
@@ -346,18 +353,10 @@ const FormDetectPanel = lazy(async () => {
   return { default: module.FormDetectPanel };
 });
 /**
- * Printing and the command palette are the two surfaces that held the entry chunk
- * over the budget:
- * `PrintDialog` is the only file that puts Kumo's dialog/select/checkbox/input/radio
- * primitives on the first-paint graph, and the palette is the only consumer of
- * Kumo's command palette. Both are reached by a gesture, so both load on demand —
- * and `main.tsx` prefetches them while the browser is idle, so the first `Ctrl+P`
- * or `Ctrl+K` is not a visible wait.
+ * The command palette is the only consumer of Kumo's command palette, which held the entry
+ * chunk over the budget. It is reached by a gesture, so it loads on demand — and `main.tsx`
+ * prefetches it while the browser is idle, so the first `Ctrl+K` is not a visible wait.
  */
-const PrintDialog = lazy(async () => {
-  const module = await import('pdf-ui/printing');
-  return { default: module.PrintDialog };
-});
 const CommandPalette = lazy(async () => {
   const module = await import('pdf-ui/palette');
   return { default: module.CommandPalette };
@@ -378,35 +377,18 @@ const StartDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.StartDialog };
 });
-/**
- * The camera scanner: live preview, edge detection, perspective correction and filters
- * (`pdf-ui/src/scan`). Its own chunk: the detector and the warp are needed only here.
- */
-const ScanDialog = lazy(async () => {
-  const module = await import('pdf-ui/scan');
-  return { default: module.ScanDialog };
-});
 /** Fills a dynamic XFA form in pdf.js's XFA renderer (`XfaFormDialog`). */
 const XfaFormDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.XfaFormDialog };
 });
 /**
- * The comparison and accessibility panels read the working bytes and (for the
- * accessibility writer) touch the file, so they ride the dock panels' own boundary rather
- * than the first paint.
+ * The comparison panel reads the working bytes, so it rides the dock panels' own boundary
+ * rather than the first paint.
  */
 const ComparePanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
   return { default: module.ComparePanel };
-});
-const AccessibilityPanel = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.AccessibilityPanel };
-});
-const PdfAPanel = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.PdfAPanel };
 });
 /**
  * The text tool's overlay — it reads the page's structured text and parses the font
@@ -498,9 +480,7 @@ export function App({ store }: AppProps) {
   const refuseBusy = useCallback(() => showNotice(t('op.busy')), [t]);
   const [closeRequest, setCloseRequest] = useState<string | null>(null);
   const closeTrigger = useRef<HTMLElement | null>(null);
-  const [printOpen, setPrintOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
-  const [scanOpen, setScanOpen] = useState(false);
   const reading = useReading((state) => state.reading);
   const magnifierOn = useReading((state) => state.magnifierOn);
   /** Surface state: dialogs, palette, docks, page selection, progress, tools. */
@@ -588,7 +568,7 @@ export function App({ store }: AppProps) {
   useCompactViewport();
   const rightTab = useCore((state) => state.rightTab);
   const [selectedPages, setSelectedPages] = useState<readonly number[]>([]);
-  const [progress, setProgress] = useState<OperationProgress | null>(null);
+  const progress = useResults((state) => state.progress);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   /** Drives which operation dialog is mounted; the value itself is only read by the host's key. */
   const [, setDialogId] = useState<string | null>(null);
@@ -755,7 +735,7 @@ export function App({ store }: AppProps) {
     return true;
   }, [store, t]);
   const openPrint = useCallback(() => {
-    if (!refuseUnappliedRedactions()) setPrintOpen(true);
+    if (!refuseUnappliedRedactions()) openPrintDialog();
   }, [refuseUnappliedRedactions]);
   const openSnapshotMenu = useCallback(() => {
     if (!refuseUnappliedRedactions()) openSnapshot();
@@ -2822,7 +2802,7 @@ export function App({ store }: AppProps) {
       // The camera scanner is a modal of its own, not an operation dialog.
       if (id === 'scan-camera') {
         clearNotice();
-        setScanOpen(true);
+        openScanDialog();
         return;
       }
       if (!hasDialog(id)) return;
@@ -3115,32 +3095,20 @@ export function App({ store }: AppProps) {
     [contextFor, editableOverlays, store],
   );
 
-  /**
-   * The accessibility writers' results arrive as bytes plus notes; they land in the session
-   * exactly like every other produced file (journal entry → save router), so the panel never
-   * writes a file of its own.
-   */
-  const applyAccessibility = useCallback(
-    async (outcome: {
-      readonly bytes: Uint8Array;
-      readonly notes: readonly OperationNote[];
-      readonly steps: readonly string[];
-    }) => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) return;
-      const next = await applyProducedBytes(
-        contextFor(tab, handle),
-        outcome.bytes,
-        workingPageCount(tab),
-        { key: 'a11y.applied', params: { count: outcome.notes.length } },
-        'mupdf',
-        outcome.steps,
-      );
-      setHandle(tab.id, next);
-      showNotice(t('a11y.applied', { count: outcome.notes.length }));
-    },
-    [contextFor, setHandle, store, t],
+  const resultsActions = useMemo(
+    () =>
+      createResultsActions({
+        session: store,
+        t,
+        contextFor,
+        setHandle,
+        cancelRef,
+        openProducedTab,
+        openDialog,
+        refuseBusy,
+        refuseUnappliedRedactions,
+      }),
+    [store, t, contextFor, setHandle, openProducedTab, openDialog, refuseBusy, refuseUnappliedRedactions],
   );
 
   const handleDialogResult = useCallback(
@@ -3300,73 +3268,6 @@ export function App({ store }: AppProps) {
       }
     },
     [openProducedTab, refuseBusy, startSpec, t],
-  );
-
-  /**
-   * The scanner's document: the pages the camera produced, opened as a new tab. With the
-   * "offer OCR" box ticked the OCR dialog opens on the new tab once it exists — the existing
-   * operation, with its own language choice and report, not a second recogniser.
-   */
-  const handleScanDocument = useCallback(
-    async (result: ScannedDocument): Promise<string | undefined> => {
-      // The scanner is a modal: a notice set here would sit behind it, so a refusal or a
-      // failure is returned to the dialog, which shows it where the user is looking.
-      if (isBusy() || cancelRef.current !== null) return t('op.busy');
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      let opened = false;
-      try {
-        const warning = await openProducedTab(result.name, result.bytes, controller.signal);
-        opened = true;
-        setScanOpen(false);
-        showNotice(appendWarning(t('scan.opened', { count: result.pageCount, name: result.name }), warning));
-      } catch (error) {
-        if (controller.signal.aborted) return undefined;
-        return noticeLine(failureNotices(error, 'error.internal.message'), t);
-      } finally {
-        if (cancelRef.current === controller) {
-          cancelRef.current = null;
-          setBusy(false);
-        }
-      }
-      // After the gate is released: `openDialog` refuses while an operation is running.
-      if (opened && result.offerOcr) window.setTimeout(() => openDialog('ocr'), 0);
-      return undefined;
-    },
-    [openDialog, openProducedTab, t],
-  );
-
-  /**
-   * The print dialog's imposed file (N-up, booklet, duplex sides): opened as a new tab, the
-   * place a user can read, save or print it from.
-   */
-  const handlePrintProduced = useCallback(
-    async (file: { readonly name: string; readonly bytes: Uint8Array }) => {
-      if (isBusy() || cancelRef.current !== null) {
-        refuseBusy();
-        return;
-      }
-      if (refuseUnappliedRedactions()) return;
-      const controller = new AbortController();
-      cancelRef.current = controller;
-      setBusy(true);
-      try {
-        const warning = await openProducedTab(file.name, file.bytes, controller.signal);
-        setPrintOpen(false);
-        // The print dialog has no success line of its own: the warning is the only notice.
-        if (warning !== null) showNotice(warning);
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        showNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));
-      } finally {
-        if (cancelRef.current === controller) {
-          cancelRef.current = null;
-          setBusy(false);
-        }
-      }
-    },
-    [openProducedTab, refuseBusy, refuseUnappliedRedactions, t],
   );
 
   /** What a standalone operation runs against: no bytes, no pages, nothing selected. */
@@ -4577,7 +4478,7 @@ export function App({ store }: AppProps) {
             onOpenPicker={() => void openViaPicker()}
             onStart={(action) => {
               if (action === 'batch') setBatchOpen(true);
-              else if (action === 'scan') setScanOpen(true);
+              else if (action === 'scan') openScanDialog();
               else
                 openStart(
                   action === 'blank'
@@ -5035,45 +4936,23 @@ export function App({ store }: AppProps) {
                       />
                     </Suspense>
                   ) : rightTab === 'accessibility' ? (
-                    <Suspense
-                      fallback={
-                        <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
-                          {t('panel.accessibility')}
-                        </p>
-                      }
-                    >
-                      <AccessibilityPanel
-                        key={activeTab.working.id}
-                        t={t}
-                        read={currentBytes}
-                        // The document's own language cannot be guessed; the interface's is
-                        // what the shell knows, and the report says which one it wrote.
-                        language={locale}
-                        currentPage={currentPage}
-                        canEdit={canEdit}
-                        onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
-                        onWritten={(outcome) => void applyAccessibility(outcome)}
-                        onTagged={(outcome) => void applyAccessibility(outcome)}
-                        onAltWritten={(outcome) => void applyAccessibility(outcome)}
-                        onNotice={showNotice}
-                      />
-                    </Suspense>
+                    <AccessibilityDock
+                      key={activeTab.working.id}
+                      t={t}
+                      read={currentBytes}
+                      language={locale}
+                      currentPage={currentPage}
+                      canEdit={canEdit}
+                      onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                      onWritten={resultsActions.applyAccessibility}
+                    />
                   ) : rightTab === 'pdfa' ? (
-                    <Suspense
-                      fallback={
-                        <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
-                          {t('panel.pdfa')}
-                        </p>
-                      }
-                    >
-                      <PdfAPanel
-                        key={activeTab.working.id}
-                        t={t}
-                        read={currentBytes}
-                        onConvert={() => openDialog('pdfa')}
-                        onNotice={showNotice}
-                      />
-                    </Suspense>
+                    <PdfADock
+                      key={activeTab.working.id}
+                      t={t}
+                      read={currentBytes}
+                      onConvert={() => openDialog('pdfa')}
+                    />
                   ) : rightTab === 'forms' ? (
                     <Suspense
                       fallback={
@@ -5189,18 +5068,7 @@ export function App({ store }: AppProps) {
               viewerRef={viewerApi}
               pageNumber={currentPage}
             />
-            {printOpen ? (
-              <Suspense fallback={null}>
-                <PrintDialog
-                  t={t}
-                  viewer={viewerApi.current}
-                  open={printOpen}
-                  onClose={() => setPrintOpen(false)}
-                  onNotice={showNotice}
-                  onProduced={(file) => void handlePrintProduced(file)}
-                />
-              </Suspense>
-            ) : null}
+            <PrintDialogHost t={t} viewer={viewer} onProduced={resultsActions.printProduced} />
           </div>
         )}
         {/*
@@ -5221,16 +5089,7 @@ export function App({ store }: AppProps) {
             />
           </Suspense>
         )}
-        {scanOpen ? (
-          <Suspense fallback={null}>
-            <ScanDialog
-              t={t}
-              mode="document"
-              onClose={() => setScanOpen(false)}
-              onDocument={handleScanDocument}
-            />
-          </Suspense>
-        ) : null}
+        <ScanDialogHost t={t} onDocument={resultsActions.scanDocument} />
         {batchOpen ? (
           <Suspense fallback={null}>
             <BatchDialog
