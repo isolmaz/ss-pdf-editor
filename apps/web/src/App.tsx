@@ -16,9 +16,7 @@ import {
   unsupportedDocumentKind,
 } from 'pdf-core/ops/convert-formats';
 import { fieldValueText } from 'pdf-core/ops/form-value';
-import type { RedactRect } from 'pdf-core/ops/redact';
 import type { ProtectionState } from 'pdf-core/ops/security';
-import type { OperationContext } from 'pdf-core/ops/types';
 import {
   type JsonValue,
   type SessionStore,
@@ -38,10 +36,6 @@ const CloseDocumentDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.CloseDocumentDialog };
 });
-const ExportDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.ExportDialog };
-});
 const SettingsDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.SettingsDialog };
@@ -60,7 +54,6 @@ import {
   MarkInteractionLayer,
   markTargetKey,
   type StampPlacement,
-  selectionBoxes,
   ToolProperties,
   usePresentation,
 } from 'pdf-ui/tools';
@@ -68,7 +61,6 @@ import type { AnnotationTool, OperationRunContext } from 'pdf-ui/ui';
 import {
   AnnotationLayer,
   Button,
-  ContextMenu,
   Dock,
   DocumentPanel,
   HistoryPanel,
@@ -94,7 +86,6 @@ import { ModernEditorHeader } from './components/ModernEditorHeader';
 import { PageNavigation } from './components/PageNavigation';
 import { ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
-import { compressionPresets } from './export-presets';
 import { useAnnotationMarks } from './features/annotations/annotation-marks';
 import {
   chooseAuthor,
@@ -125,7 +116,6 @@ import {
   isBusy,
   openLeftPanel,
   openRightPanel,
-  pickTool,
   selectLeftTab,
   selectRightTab,
   selectShape,
@@ -159,6 +149,9 @@ import {
   useDialogs,
 } from './features/dialogs/dialogs-store';
 import { useStaleDialogDismissal } from './features/dialogs/use-dialog-dismissal';
+import { ContextMenuHost, ExportDialogHost } from './features/export/ExportSurfaces';
+import { createCurrentBytes, createExportChoice, showContextMenu } from './features/export/export-actions';
+import { openExportDialog } from './features/export/export-store';
 import { currentFacts, currentFactsError, useCurrentFacts } from './features/facts/facts-store';
 import { PropertiesFacts } from './features/facts/PropertiesFacts';
 import { RedactionAuditView } from './features/facts/RedactionAuditView';
@@ -282,18 +275,6 @@ const ANNOTATION_LAYER_TOOLS: Readonly<Partial<Record<CanvasToolId, AnnotationTo
   link: 'link',
   freetext: 'freetext',
 };
-
-/**
- * The browser's text selection as pending redaction areas, one per selected line, in
- * the redaction writer's own space. The words the user selected are exactly the words
- * the areas cover, so "select, right-click, Redact" marks what was selected instead of
- * only arming a tool that then waits for a drag.
- */
-function selectionRedactAreas(viewer: ViewerApi): readonly RedactRect[] {
-  return selectionBoxes(viewer).flatMap((selection) =>
-    selection.boxes.map((box) => ({ pageIndex: selection.pageIndex, space: 'app-v1' as const, rect: box })),
-  );
-}
 
 export interface AppProps {
   readonly store: SessionStore;
@@ -447,13 +428,6 @@ export function App({ store }: AppProps) {
   const [selectedPages, setSelectedPages] = useState<readonly number[]>([]);
   const progress = useResults((state) => state.progress);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{
-    readonly x: number;
-    readonly y: number;
-    readonly hasSelection: boolean;
-    readonly selectedText?: string;
-  } | null>(null);
   /**
    * The redaction and text tools are **derived** from `canvasTool`, never stored:
    * `canvasTool === 'redact'` means the redaction layer owns the pointer, and
@@ -1568,47 +1542,10 @@ export function App({ store }: AppProps) {
     [contextFor, refuseBusy, store, t],
   );
 
-  const handleExportWithOptions = useCallback(
-    (options: {
-      kind: 'pdf' | 'compressed' | 'images' | 'text' | 'office';
-      compressionLevel?: string;
-      imageFormat?: string;
-      officeFormat?: 'docx' | 'xlsx' | 'csv';
-      officeLayout?: 'layout' | 'flow' | 'page-images';
-    }) => {
-      if (options.kind === 'pdf') {
-        void exportActive();
-      } else if (options.kind === 'compressed') {
-        // The level chosen in the export dialog fills the form; it was read and dropped.
-        openDialog('compress', compressionPresets(options.compressionLevel));
-      } else if (options.kind === 'images') {
-        // The choice made in the export dialog is the form's starting value; dropping it
-        // made a JPG request open a PNG form.
-        openDialog('export-images', { format: options.imageFormat === 'jpg' ? 'jpeg' : 'png' });
-      } else if (options.kind === 'text') {
-        openDialog('export-text');
-      } else if (options.kind === 'office') {
-        // The Word layout is the form's own field only while Word is the format.
-        const format = options.officeFormat ?? 'docx';
-        openDialog(
-          'export-office',
-          format === 'docx' ? { format, layout: options.officeLayout ?? 'layout' } : { format },
-        );
-      }
-    },
+  const exportChoice = useMemo(
+    () => createExportChoice({ exportActive, openDialog }),
     [exportActive, openDialog],
   );
-
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const selection = window.getSelection()?.toString().trim() ?? '';
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      hasSelection: selection.length > 0,
-      selectedText: selection,
-    });
-  }, []);
 
   /**
    * The frozen input a dialog runs against. `signal` and `onProgress` are absent
@@ -1673,20 +1610,7 @@ export function App({ store }: AppProps) {
    * in a journaled working-version change (undoable), `new-tab` opens beside the
    * current document, `download` writes files and touches nothing.
    */
-  /**
-   * The session-to-bytes route the read-only panels take (`workingBytes`): the live tab and
-   * handle are read at call time for the same reason a save reads them — a control rendered
-   * before the last operation must not hand over the previous version.
-   */
-  const currentBytes = useCallback(
-    async (operation: OperationContext) => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) throw new ToolError('selection-empty', { engine: 'model' });
-      return materializeBase(contextFor(tab, handle), operation, undefined, editableOverlays(tab));
-    },
-    [contextFor, store],
-  );
+  const currentBytes = useMemo(() => createCurrentBytes({ session: store, contextFor }), [contextFor, store]);
 
   const resultsActions = useMemo(
     () =>
@@ -2083,7 +2007,7 @@ export function App({ store }: AppProps) {
       () => ({
         open: () => void openViaPicker(),
         save: () => void saveActive(),
-        exportDocument: () => setExportModalOpen(true),
+        exportDocument: () => openExportDialog(),
         // The whole common selection, across every mark family, and only when there is
         // one: the key is not swallowed to mean nothing.
         deleteSelection: deleteMarkSelection,
@@ -2226,7 +2150,7 @@ export function App({ store }: AppProps) {
           }}
           isDirty={activeTab.dirty}
           canEdit={canEdit}
-          onConvert={() => setExportModalOpen(true)}
+          onConvert={() => openExportDialog()}
           onSign={() => openDialog('sign')}
           onHome={() => setShowHomeScreen(true)}
           onOpen={() => void openViaPicker()}
@@ -2241,7 +2165,7 @@ export function App({ store }: AppProps) {
           onSave={() => void saveActive()}
           canExport={canPrepareWrite}
           onExport={() => void exportActive()}
-          onExportOptions={() => setExportModalOpen(true)}
+          onExportOptions={() => openExportDialog()}
           onSearch={() => viewerApi.current?.openFind()}
           onPalette={() => setPaletteOpen(true)}
           menu={
@@ -2438,7 +2362,7 @@ export function App({ store }: AppProps) {
             ) : null}
             <ToolRail t={t} canEdit={canEdit} />
             {/* biome-ignore lint/a11y/noStaticElementInteractions: context menu listener on the document canvas container */}
-            <div className="relative min-w-0 flex-1 overflow-hidden" onContextMenu={handleContextMenu}>
+            <div className="relative min-w-0 flex-1 overflow-hidden" onContextMenu={showContextMenu}>
               {/* Persistent edge handle to reopen Left Dock */}
               {!leftDock ? (
                 <button
@@ -2662,7 +2586,7 @@ export function App({ store }: AppProps) {
                         } else if (tool === 'highlight') selectTool('highlight');
                       }}
                       onOpenPalette={() => setPaletteOpen(true)}
-                      onExportModal={() => setExportModalOpen(true)}
+                      onExportModal={() => openExportDialog()}
                       visibleGroups={mode === 'simple' ? SIMPLE_MODE_RAIL_GROUPS : undefined}
                     />
                   ) : rightTab === 'history' ? (
@@ -2941,59 +2865,14 @@ export function App({ store }: AppProps) {
       <SignatureDialogHost t={t} canRemember={activeTab?.sensitive !== true} />
       <ImagePickerInput t={t} />
       <SignatureWarningPrompt t={t} />
-      {contextMenu !== null ? (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          t={t}
-          hasSelection={contextMenu.hasSelection}
-          selectedText={contextMenu.selectedText}
-          canEdit={canEdit}
-          onHighlight={() => selectTool('highlight')}
-          onUnderline={() => selectTool('underline')}
-          onStrikeout={() => selectTool('strikeout')}
-          onCopy={() => {
-            if (contextMenu.selectedText) void navigator.clipboard.writeText(contextMenu.selectedText);
-          }}
-          onRedact={() => {
-            // The selected words become pending redaction areas at once; the tool stays
-            // armed so the strip offers the explicit Apply.
-            const viewerNow = viewerApi.current;
-            if (viewerNow !== null) {
-              const areas = selectionRedactAreas(viewerNow);
-              if (areas.length > 0) {
-                setRedactionMarks((marks) => [
-                  ...marks,
-                  ...areas.map((mark) => ({ id: crypto.randomUUID(), mark })),
-                ]);
-                window.getSelection()?.removeAllRanges();
-              }
-            }
-            selectTool('redact');
-          }}
-          onAddNote={() => pickTool('note')}
-          onRotateRight={() => runPageAction({ kind: 'rotate', direction: 'right' })}
-          onRotateLeft={() => runPageAction({ kind: 'rotate', direction: 'left' })}
-          onDeletePage={() => runPageAction({ kind: 'delete' })}
-          onAddText={() => pickTool('freetext')}
-          onEditText={() => pickTool('text')}
-          onDrawInk={() => pickTool('ink')}
-          onFitWidth={() => viewerApi.current?.setZoom('page-width')}
-          onClose={() => setContextMenu(null)}
-        />
-      ) : null}
-      {exportModalOpen && activeTab !== null ? (
-        <Suspense fallback={null}>
-          <ExportDialog
-            open={exportModalOpen}
-            t={t}
-            fileName={activeTab.name}
-            fileSize={(activeTab.working.produced?.bytes ?? activeTab.source.master).byteLength}
-            onClose={() => setExportModalOpen(false)}
-            onExport={(opts) => handleExportWithOptions(opts)}
-          />
-        </Suspense>
-      ) : null}
+      <ContextMenuHost
+        t={t}
+        canEdit={canEdit}
+        viewer={viewerApi}
+        setRedactionMarks={setRedactionMarks}
+        onPageAction={runPageAction}
+      />
+      <ExportDialogHost t={t} tab={activeTab} onExport={exportChoice} />
       <input
         ref={fileInput}
         type="file"
