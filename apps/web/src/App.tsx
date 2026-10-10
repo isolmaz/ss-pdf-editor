@@ -1,4 +1,3 @@
-import type { AnnotationMark } from 'pdf-core';
 import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 // The annotation and form ops are imported by **module**, not through the
 // package barrel: a barrel re-export keeps every operation module in the graph the
@@ -110,7 +109,6 @@ import { CommentsDock } from './features/comments/CommentsDock';
 import { useCommentReview } from './features/comments/review';
 import {
   clearNotice,
-  coreStore,
   hideLeftDock,
   hideRightDock,
   isBusy,
@@ -208,6 +206,11 @@ import {
 } from './features/results/ResultsSurfaces';
 import { createResultsActions } from './features/results/results-actions';
 import { openPrintDialog, openScanDialog, setProgress, useResults } from './features/results/results-store';
+import { clearMarkSelection, selectMarks, useSelection } from './features/selection/selection-store';
+import { TextToolSurface } from './features/selection/TextToolSurface';
+import { clearTextEdit, useTextTool } from './features/selection/text-tool-store';
+import { useSelectionActions, useSelectionEffects } from './features/selection/use-selection';
+import { useTextToolBytes } from './features/selection/use-text-tool-bytes';
 import { ImagePickerInput, SignatureDialogHost, StampPlacementHost } from './features/stamps/StampSurface';
 import {
   openSignature as openSignatureFor,
@@ -296,14 +299,6 @@ const CommandPalette = lazy(async () => {
 const ComparePanel = lazy(async () => {
   const module = await import('pdf-ui/panels');
   return { default: module.ComparePanel };
-});
-/**
- * The text tool's overlay — it reads the page's structured text and parses the font
- * metric tables, so it arrives with the tool.
- */
-const TextLayer = lazy(async () => {
-  const module = await import('pdf-ui/text-edit');
-  return { default: module.TextLayer };
 });
 
 /**
@@ -408,18 +403,9 @@ export function App({ store }: AppProps) {
    * state; nothing else is.
    */
   const canvasTool = useCore((state) => state.canvasTool);
-  /** A stamp just written: selected as soon as the re-read inventory lists it. */
-  const selectAfterWrite = useRef<string | null>(null);
   const shape = useCore((state) => state.shape);
-  /**
-   * The common layer's selection: target keys across all four mark families, in the
-   * one identity space `annotation-interaction.ts` builds. Nothing else may hold a
-   * "selected mark" — the single-id state this replaces mixed session mark ids,
-   * engine storage keys and pdf.js annotation ids in one string.
-   */
-  const [selectedKeys, setSelectedKeys] = useState<readonly string[]>([]);
-  const selectedKeysRef = useRef<readonly string[]>(selectedKeys);
-  selectedKeysRef.current = selectedKeys;
+  /** The common layer's selection (`features/selection/`). */
+  const selectedKeys = useSelection((state) => state.selectedKeys);
   const compactViewport = useCore((state) => state.compactViewport);
   const leftDock = useCore((state) => state.leftDock);
   const rightDock = useCore((state) => state.rightDock);
@@ -428,13 +414,8 @@ export function App({ store }: AppProps) {
   const [selectedPages, setSelectedPages] = useState<readonly number[]>([]);
   const progress = useResults((state) => state.progress);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  /**
-   * The redaction and text tools are **derived** from `canvasTool`, never stored:
-   * `canvasTool === 'redact'` means the redaction layer owns the pointer, and
-   * `canvasTool === 'text'` mounts the block overlay whose selection travels to the
-   * dialog in the run context.
-   */
-  const [textEdit, setTextEdit] = useState<NonNullable<OperationRunContext['textEdit']> | null>(null);
+  /** The block the text tool picked, which travels to the dialog in the run context (`features/selection/`). */
+  const textEdit = useTextTool((state) => state.edit);
   /**
    * The rectangle the link tool dragged, held here for the same reason the text
    * selection is: the dialog's `run` must operate on the region the user pointed at,
@@ -462,13 +443,6 @@ export function App({ store }: AppProps) {
   }, []);
   /** Leave the simple mode; the palette's "hidden by the simple mode" hint calls this. */
   const useAdvancedMode = useCallback(() => changeMode('advanced'), [changeMode]);
-  /**
-   * The working bytes the text tool reads the page model from. Materialised when the
-   * tool is armed rather than on every render: `materializeBase` runs the engine's own
-   * deltas, which is real work, and the model must describe the document as it is at
-   * the moment the user points at a paragraph.
-   */
-  const [textToolBytes, setTextToolBytes] = useState<Uint8Array | null>(null);
   /** The drawn redaction marks of the active tab (`features/marks/redaction.ts`). */
   const { redactionMarks, setRedactionMarks } = useRedactionMarks(store);
   /**
@@ -529,7 +503,6 @@ export function App({ store }: AppProps) {
 
   /** Which measurement is armed; `null` whenever the ruler does not own the pointer. */
   const measureMode = useMeasureMode();
-  const textTool = canvasTool === 'text';
   /** Only creation gestures reach the annotation overlay. */
   const annotationLayerTool = ANNOTATION_LAYER_TOOLS[canvasTool] ?? null;
   const markMode = canvasTool === 'select' ? 'select' : null;
@@ -1570,40 +1543,13 @@ export function App({ store }: AppProps) {
   }, [dialogInput, currentPage, images, linkRegion, selectedPages, redactionMarks, t, textEdit]);
 
   const dropFrozenSelections = useCallback(() => {
-    setTextEdit(null);
+    clearTextEdit();
     setImages(null);
   }, []);
   useStaleDialogDismissal(session, dropFrozenSelections);
 
-  /**
-   * Freeze the working bytes for the text tool the moment it is armed. Arming is a
-   * user gesture, so this is one engine pass per tool activation — not a per-render
-   * cost — and the model cannot describe a document the user has already changed.
-   */
-  useEffect(() => {
-    if (!textTool || activeTab === null || activeHandle === null) {
-      setTextToolBytes(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const bytes = await materializeBase(contextFor(activeTab, activeHandle), {
-          signal: new AbortController().signal,
-        });
-        if (!cancelled) setTextToolBytes(bytes);
-      } catch (error) {
-        if (cancelled) return;
-        setTextToolBytes(null);
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-        selectTool('select');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, activeHandle, contextFor, t, textTool]);
+  /** The working bytes the text tool reads its page model from, frozen when it is armed (`features/selection/`). */
+  useTextToolBytes(activeTab, activeHandle, contextFor, t);
 
   /**
    * What a produced file *means* is decided here and nowhere else: `replace` ends
@@ -1685,10 +1631,7 @@ export function App({ store }: AppProps) {
     cancel: cancelRef,
     canEdit: canEditRef,
     checkpointEngineValues,
-    selectAfterWrite,
   });
-  const removeTargetsRef = useRef(removeTargets);
-  removeTargetsRef.current = removeTargets;
 
   /** Replies, review states and taking a reply back (`features/comments/review.ts`). */
   const commentReview = useCommentReview({
@@ -1729,87 +1672,21 @@ export function App({ store }: AppProps) {
     [refuseBusy, store],
   );
 
-  /** The stamp a write just added is selected once the re-read inventory lists it. */
-  useEffect(() => {
-    const key = selectAfterWrite.current;
-    if (key === null || !markTargets.some((target) => target.key === key)) return;
-    selectAfterWrite.current = null;
-    setSelectedKeys([key]);
-  }, [markTargets]);
-
-  /**
-   * `Delete` acts on the **whole** common selection — every family at once, and on the
-   * marks the user can see rather than on whichever list happens to be first.
-   *
-   * Recovered native records are adopted first, so a draft's annotation cannot be
-   * left outside the journal-owned selection. New gestures are already session
-   * marks. `false` means the key was not the shell's to answer, so it is not swallowed.
-   */
-  const deleteMarkSelection = useCallback((): boolean => {
-    const keys = selectedKeysRef.current;
-    if (keys.length === 0) return false;
-    if (orphanSweepInFlight() === null && (isBusy() || cancelRef.current !== null)) {
-      refuseBusy();
-      return false;
-    }
-    if (settleNativeEditors()) void sweepOrphanAnnotations();
-    return removeTargetsRef.current(keys);
-  }, [refuseBusy, settleNativeEditors, sweepOrphanAnnotations]);
-
-  /**
-   * `Ctrl/Cmd+A` selects every mark the common layer can act on. It answers only in the
-   * select tool with a document open and marks to select: anywhere else the key belongs
-   * to the engine (while one of its tools is armed) or to the page's own text, and the
-   * shell declines it instead of stealing it.
-   */
-  const selectAllMarks = useCallback((): boolean => {
-    if (coreStore.get().canvasTool !== 'select') return false;
-    if (store.active === null || existingAnnotations === null) return false;
-    const keys = currentMarkTargets().map((target) => target.key);
-    if (keys.length === 0) return false;
-    setSelectedKeys(keys);
-    return true;
-  }, [existingAnnotations, store]);
-
-  /**
-   * A selection never outlives what it names. **Leaving the common layer's modes**
-   * clears it outright — a selection made with the select tool has no meaning under a
-   * highlighter, and the strip must not offer to delete marks the user is not looking
-   * at — and changing the document clears it too, because one document's marks are not
-   * another's. A selection that survives into a new walking version keeps only the
-   * keys that are still there: a removal removes its own keys, an undo can bring
-   * others back.
-   *
-   * Entering the modes is deliberately *not* a clear: the note tool selects the note it
-   * just made as it returns to `select`, and that selection is the point.
-   */
-  useEffect(() => {
-    if (markMode === null) setSelectedKeys([]);
-  }, [markMode]);
-
-  useEffect(() => {
-    if (activeTab?.id === undefined) return;
-    setSelectedKeys([]);
-  }, [activeTab?.id]);
-
-  useEffect(() => {
-    // A byte rewrite temporarily has no inventory. That is not evidence that the
-    // selected objects disappeared; prune only once their replacement was read.
-    if (existingAnnotations === null) return;
-    setSelectedKeys((keys) => {
-      if (keys.length === 0) return keys;
-      const live = new Set(markTargets.map((target) => target.key));
-      const kept = keys.filter((key) => live.has(key));
-      return kept.length === keys.length ? keys : kept;
-    });
-  }, [existingAnnotations, markTargets]);
-
-  /** Opens the note the common layer just created: selected, visible, contents editable. */
-  const openNote = useCallback((mark: AnnotationMark) => {
-    selectTool('select');
-    setSelectedKeys([markTargetKey('annotation', mark.id, mark.pageIndex)]);
-    openRightPanel('comments');
-  }, []);
+  /** Delete, Select all and opening a note, and the effects that keep the selection honest (`features/selection/`). */
+  const { deleteMarkSelection, selectAllMarks, openNote } = useSelectionActions({
+    session: store,
+    cancel: cancelRef,
+    refuseBusy,
+    settleNativeEditors,
+    sweepOrphanAnnotations,
+    removeTargets,
+  });
+  useSelectionEffects({
+    markMode,
+    tabId: activeTab?.id,
+    existing: existingAnnotations,
+    targets: markTargets,
+  });
 
   /** Page actions and undo/redo (`features/pages/page-actions.ts`). */
   const { runPageAction, cancelOperation, stepHistoryNow } = usePageActions({
@@ -2237,7 +2114,7 @@ export function App({ store }: AppProps) {
               onDeleteSelection={() => void removeTargets(selectedKeys)}
               onRotateSelection={() => void transformTargets(selectedKeys, { dx: 0, dy: 0, rotation: 90 })}
               onMoveSelection={(dx, dy) => void transformTargets(selectedKeys, { dx, dy, rotation: 0 })}
-              onClearSelection={() => setSelectedKeys([])}
+              onClearSelection={clearMarkSelection}
             />
           )}
         </div>
@@ -2481,7 +2358,7 @@ export function App({ store }: AppProps) {
                           // Saved marks become editable only when their current inventory
                           // is ready; unread does not mean the PDF contains no annotations.
                           disabled={!canEdit || existingAnnotations === null}
-                          onSelectionChange={setSelectedKeys}
+                          onSelectionChange={selectMarks}
                           onMove={(keys, dx, dy) => void transformTargets(keys, { dx, dy, rotation: 0 })}
                           onResize={resizeStamp}
                           resizeLabel={t('stamp.resize')}
@@ -2489,35 +2366,12 @@ export function App({ store }: AppProps) {
                       ) : null}
                       <StampPlacementHost viewer={viewer} canEdit={canEdit} t={t} onPlace={placeStamp} />
                       <FieldCandidateHost t={t} tab={activeTab} viewer={viewer} canEdit={canEdit} />
-                      {/*
-                The text tool wears its own layer rather than sharing the annotation
-                one: it reads the page's structured text (an engine call) and paints
-                block boxes, and the annotation layer's gesture set has nothing to do
-                with it. Both are inert unless their own tool is armed, and the layer
-                only mounts once its bytes are in hand — anything else would paint a
-                model of a document nobody asked for.
-              */}
-                      {textTool && viewer !== null && textToolBytes !== null ? (
-                        <Suspense fallback={null}>
-                          <TextLayer
-                            t={t}
-                            viewer={viewer}
-                            bytes={textToolBytes}
-                            pageIndex={currentPage}
-                            onSelect={(selection) => {
-                              setTextEdit({
-                                pageIndex: selection.pageIndex,
-                                block: selection.block,
-                                model: selection.model,
-                                fonts: selection.fonts,
-                              });
-                              selectTool('select');
-                              openDialog('text-edit');
-                            }}
-                            onClose={() => selectTool('select')}
-                          />
-                        </Suspense>
-                      ) : null}
+                      <TextToolSurface
+                        viewer={viewer}
+                        currentPage={currentPage}
+                        t={t}
+                        onEdit={() => openDialog('text-edit')}
+                      />
                       {/* The accessibility panel's numbered reading-order boxes. */}
                       {viewer !== null && rightDock && rightTab === 'accessibility' ? (
                         <Suspense fallback={null}>
@@ -2572,7 +2426,7 @@ export function App({ store }: AppProps) {
                         // The block selection belongs to exactly one run: leaving it in
                         // place would let a later `text-edit` open on a paragraph the
                         // user is no longer looking at.
-                        setTextEdit(null);
+                        clearTextEdit();
                       }}
                       onResult={(result) => void dialogResult(result)}
                       onPageAction={(action) => runPageAction(action as PageAction)}
@@ -2614,12 +2468,12 @@ export function App({ store }: AppProps) {
                         // The panel toggles: a second click on the selected row
                         // reports `null`, which is the empty selection.
                         if (id === null) {
-                          setSelectedKeys([]);
+                          clearMarkSelection();
                           return;
                         }
                         const mark = annotations.find((item) => item.id === id);
                         if (mark !== undefined) {
-                          setSelectedKeys([markTargetKey('annotation', mark.id, mark.pageIndex)]);
+                          selectMarks([markTargetKey('annotation', mark.id, mark.pageIndex)]);
                         }
                       }}
                       onGoToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}

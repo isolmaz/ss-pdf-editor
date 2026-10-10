@@ -12,6 +12,7 @@ import { applyProducedBytes, materializeBase } from '../../operations';
 import type { SaveStepDescription } from '../../save-plan';
 import { isBusy, setBusy, showNotice } from '../core/core-store';
 import { handleFor } from '../core/handles';
+import { selectAfterWrite } from '../selection/selection-store';
 import type { MarksHost, WriteFileAnnotation } from './host';
 import { editableOverlays } from './overlays';
 
@@ -65,7 +66,7 @@ export function writeFileAnnotation(
       );
       host.setHandle(fresh.id, next);
       if (outcome.annotationId !== undefined && selectOnPage !== undefined) {
-        host.selectAfterWrite.current = markTargetKey('existing', outcome.annotationId, selectOnPage);
+        selectAfterWrite(markTargetKey('existing', outcome.annotationId, selectOnPage));
       }
       showNotice(done);
     } catch (error) {

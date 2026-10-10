@@ -46,17 +46,7 @@ export interface MarkActions {
 
 /** The mark handlers, rebuilt only when what they run on changes. */
 export function useMarkActions(host: MarksHost): MarkActions {
-  const {
-    session,
-    t,
-    contextFor,
-    setHandle,
-    refuseBusy,
-    cancel,
-    canEdit,
-    checkpointEngineValues,
-    selectAfterWrite,
-  } = host;
+  const { session, t, contextFor, setHandle, refuseBusy, cancel, canEdit, checkpointEngineValues } = host;
   return useMemo(() => {
     const bound: MarksHost = {
       session,
@@ -67,7 +57,6 @@ export function useMarkActions(host: MarksHost): MarkActions {
       cancel,
       canEdit,
       checkpointEngineValues,
-      selectAfterWrite,
     };
     return {
       removeTargets: (keys) => removeTargets(bound, keys),
@@ -75,15 +64,5 @@ export function useMarkActions(host: MarksHost): MarkActions {
       writeFileAnnotation: (label, write, done, selectOnPage) =>
         writeFileAnnotation(bound, label, write, done, selectOnPage),
     };
-  }, [
-    session,
-    t,
-    contextFor,
-    setHandle,
-    refuseBusy,
-    cancel,
-    canEdit,
-    checkpointEngineValues,
-    selectAfterWrite,
-  ]);
+  }, [session, t, contextFor, setHandle, refuseBusy, cancel, canEdit, checkpointEngineValues]);
 }

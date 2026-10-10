@@ -10,6 +10,7 @@ import type * as Operations from '../../operations';
 import { pendingOverlays } from '../../operations';
 import { coreStore, isBusy, setBusy } from '../core/core-store';
 import { dropHandle } from '../core/handles';
+import { selectionStore } from '../selection/selection-store';
 import { writeFileAnnotation } from './file-annotation';
 import { deferred, type MarksWorld, marksWorld, t, tick } from './marks-fixtures';
 
@@ -97,7 +98,7 @@ describe('a write that goes through', () => {
       before,
     );
     expect(world.host.setHandle).toHaveBeenCalledWith(world.tab.id, produced);
-    expect(world.host.selectAfterWrite.current).toBe('existing:1:stamp-1');
+    expect(selectionStore.get().afterWrite).toBe('existing:1:stamp-1');
     await tick();
     expect(isBusy()).toBe(false);
     expect(world.host.cancel.current).toBeNull();
@@ -110,7 +111,7 @@ describe('a write that goes through', () => {
     await tick();
     writeFileAnnotation(world.host, label, write, 'second');
     await vi.waitFor(() => expect(notice()).toBe('second'));
-    expect(world.host.selectAfterWrite.current).toBeNull();
+    expect(selectionStore.get().afterWrite).toBeNull();
   });
 
   it('writes nothing when Cancel aborted the operation during the checkpoint', async () => {
