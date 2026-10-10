@@ -84,6 +84,20 @@ function callback(name, bindings) {
   return Function(...Object.keys(bindings), `${code}\nreturn result;`)(...Object.values(bindings));
 }
 
+/**
+ * The persistence feature's modules (`features/persistence`), loaded from source with the
+ * notice line and any other boundary replaced by doubles. Every call builds a fresh module graph,
+ * so each harness owns its vault state.
+ */
+function persistenceModules(mocks = {}) {
+  const modules = loader({
+    // The store helper's React side is never rendered here.
+    react: { useSyncExternalStore: () => undefined },
+    '../core/core-store': { showNotice() {}, showNoticeOnce() {} },
+    ...mocks,
+  });
+  return (name) => modules(path.join(ROOT, 'apps/web/src/features/persistence', name));
+}
 const results = [];
 // Report detached failures too, including when auditing the original checkout.
 const unhandled = [];
@@ -368,21 +382,28 @@ async function main() {
         const store = new model.SessionStore();
         const tab = store.openDocument(documentInput());
         const forgotten = [];
-        const bindings = {
-          activeTab: tab,
-          store,
-          channel: { runExclusive: (work) => work() },
-          draftWrites: { current: Promise.resolve() },
-          forgetTabDraft: async () => [],
-          deleteRecentHandle: async (id) => {
-            forgotten.push(id);
+        const modules = persistenceModules({
+          '../../recent-handles': {
+            deleteRecentHandle: async (id) => {
+              forgotten.push(id);
+            },
           },
-          showNotice: () => {},
-          t: (key) => key,
-          ToolError,
-        };
-        await callback(name, bindings)();
-        await bindings.draftWrites.current;
+        });
+        const persistence = modules('persistence-store.ts');
+        persistence.persistenceStore.set({
+          channel: { runExclusive: (work) => work(), peerReferences: () => [] },
+          draftStorage: {
+            readDraftInventory: async () => ({ drafts: [], unreadable: [] }),
+            deleteDraft: async () => {},
+            deleteSource: async () => {},
+          },
+        });
+        const run =
+          name === 'toggleSensitiveSession'
+            ? modules('draft-persist.ts').toggleSensitiveSession
+            : modules('draft-vault.ts').purgeActiveDocument;
+        await run(store, (key) => key);
+        await persistence.draftWrites.current;
         assert.deepEqual(forgotten, [tab.id], name);
       }
     },
@@ -672,42 +693,41 @@ async function main() {
         drafts.delete(id);
       },
     };
-    // The manual save runs the *shared* persistence callback: the harness builds
-    // that callback from the same source the app calls, then the `opfsSave` command over it.
-    const persistBindings = {
+    // The manual save runs the *shared* persistence callback: the harness builds that
+    // callback from the app's own source over the real `features/persistence` functions
+    // (the vault's removal is the one double), then the `opfsSave` command over it.
+    const modules = persistenceModules({
+      '../core/core-store': { showNotice: (notice) => notices.push(notice), showNoticeOnce() {} },
+      './draft-vault': {
+        ...persistenceModules()('draft-vault.ts'),
+        forgetDraft: async (_session, id) => {
+          drafts.delete(id);
+          for (const key of [...sources.keys()]) sources.delete(key);
+          return [];
+        },
+      },
+      '../core/handles': { handleFor: (id) => new Map([[tab.id, { raw: {} }]]).get(id) },
+    });
+    const persistence = modules('persistence-store.ts');
+    persistence.persistenceStore.set({ draftStorage: storage });
+    persistence.draftWrites.current = queue;
+    const persistTabDraft = callback('persistTabDraft', {
       store,
       tier: 'desktop',
-      handleFor: (id) => new Map([[tab.id, { raw: {} }]]).get(id),
-      draftStorage: storage,
-      persistedSnapshots: { current: new Map() },
-      forgetTabDraft: async (id) => {
-        drafts.delete(id);
-        for (const key of [...sources.keys()]) sources.delete(key);
-        return [];
-      },
-      retainedSnapshotsFor: (candidate) => store.snapshotsFor(candidate.id),
-      draftFor: model.draftFor,
-      encodeEngineValues: model.encodeEngineValues,
-      sourceKeyFor: model.sourceKeyFor,
-      workingPageCount: model.workingPageCount,
-      ToolError,
-    };
-    const persistTabDraft = callback('persistTabDraft', persistBindings);
+      persistDraft: modules('draft-persist.ts').persistDraft,
+    });
     const bindings = {
-      activeTab: store.active,
       store,
-      draftWrites: { current: queue },
       persistTabDraft,
-      ToolError,
-      showNotice: (notice) => notices.push(notice),
+      saveDraft: modules('draft-persist.ts').saveDraft,
       t: (key) => key,
     };
     return {
       run: callback('opfsSave', bindings),
       persist: persistTabDraft,
-      persisted: persistBindings.persistedSnapshots,
+      persisted: persistence,
       writeStarts,
-      queue: bindings.draftWrites,
+      queue: persistence.draftWrites,
       sources,
       drafts,
       notices,
@@ -774,7 +794,7 @@ async function main() {
   await check('persistence drops the snapshot blobs the new manifest no longer references', async () => {
     const h = await draftHarness();
     h.sources.set('snapshot-old', new Uint8Array([9]));
-    h.persisted.current.set(h.tab.id, ['snapshot-old']);
+    h.persisted.persistedKeysRecorded(h.tab.id, ['snapshot-old']);
     assert.equal(await h.persist(h.tab.id), 'written');
     assert.equal(h.sources.has('snapshot-old'), false);
     assert.ok(h.sources.has(h.drafts.get(h.tab.id).sourceKey));
@@ -801,17 +821,25 @@ async function main() {
   });
   await check('draft recovery does not rerun when only the UI language changes', async () => {
     let effect;
+    const recoveryPath = path.join(ROOT, 'apps/web/src/features/persistence/use-draft-recovery.ts');
+    const recoverySource = ts.createSourceFile(
+      recoveryPath,
+      fs.readFileSync(recoveryPath, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
     function visit(node) {
       if (
         ts.isCallExpression(node) &&
         ts.isIdentifier(node.expression) &&
         node.expression.text === 'useEffect' &&
-        node.arguments[0]?.getText(appSource).includes('const drafts = sortDrafts')
+        node.arguments[0]?.getText(recoverySource).includes('const drafts = sortDrafts')
       )
-        effect = node.getText(appSource);
+        effect = node.getText(recoverySource);
       ts.forEachChild(node, visit);
     }
-    visit(appSource);
+    visit(recoverySource);
     assert.ok(effect);
     let previous;
     let cleanup;
@@ -823,15 +851,17 @@ async function main() {
       pruneRecentHandles: async (keep) => {
         pruned.push([...keep]);
       },
-      draftStorage: {
+      draftStorage: () => ({
         readDraftInventory: async () => {
           reads += 1;
           return { drafts: [], unreadable: [] };
         },
-      },
+      }),
       store: new model.SessionStore(),
-      t: () => 'en',
-      restoreTranslator: { current: () => 'en' },
+      translator: { current: () => 'en' },
+      openAndFingerprint: async () => {
+        throw new Error('nothing to restore');
+      },
       sortDrafts: model.sortDrafts,
       useEffect: (run, dependencies) => {
         if (!previous || dependencies.some((value, index) => value !== previous[index])) {
@@ -845,8 +875,7 @@ async function main() {
     const render = () => Function(...Object.keys(bindings), code)(...Object.values(bindings));
     render();
     await tick();
-    bindings.t = () => 'tr';
-    bindings.restoreTranslator.current = bindings.t;
+    bindings.translator.current = () => 'tr';
     render();
     await tick();
     cleanup?.();
@@ -1229,31 +1258,24 @@ async function main() {
       unreadable: unreadable ? ['damaged.json'] : [],
       enumerationFailed,
     };
-    // `forgetTabDraft` is the app's own cleanup callback: the harness builds it
-    // from source, so a discard that stopped consulting the whole inventory would show up
-    // here as a delete it must not have made.
-    const cleanupBindings = {
-      readInventory: async () => inventory,
-      persistedSnapshots: { current: new Map([[tab.id, []]]) },
+    // `forgetTabDraft` is the app's own cleanup callback over the real vault removal: the
+    // harness builds it from source, so a discard that stopped consulting the whole inventory
+    // would show up here as a delete it must not have made.
+    const modules = persistenceModules();
+    modules('persistence-store.ts').persistenceStore.set({
+      channel: { peerReferences: () => [] },
       draftStorage: {
+        readDraftInventory: async () => inventory,
         async deleteDraft() {},
         async deleteSource(key) {
           deleted.push(key);
         },
       },
-      planDocumentCleanup: model.planDocumentCleanup,
-      keysForDraft: model.keysForDraft,
-      openVaultKeys: (excludedTabId) =>
-        store
-          .getSnapshot()
-          .tabs.filter((candidate) => candidate.id !== excludedTabId)
-          .map((candidate) => ({
-            source: model.sourceKeyFor(candidate.id, candidate.source.sha256),
-            snapshots: [],
-          })),
-      channel: { peerReferences: () => [] },
-    };
-    const forgetTabDraft = callback('forgetTabDraft', cleanupBindings);
+    });
+    const forgetTabDraft = callback('forgetTabDraft', {
+      store,
+      forgetDraft: modules('draft-vault.ts').forgetDraft,
+    });
     // The engine values a restored draft waits to hand its viewer (`features/annotations`).
     const pendingEngineValues = new Map([[tab.id, { entries: [], dropped: 0 }]]);
     // The redaction needles a document accumulated (`features/marks/redaction-store.ts`).
