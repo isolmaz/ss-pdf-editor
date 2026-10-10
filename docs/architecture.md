@@ -2080,8 +2080,9 @@ translator. Text comes from a required `t: Translator` prop on every surface; no
 fallback text of its own. `ThemeSelector` and `LanguageSelector` render one layout (the
 segmented control the settings dialog shows).
 
-Document state lives in `pdf-model`; UI state lives in `apps/web/src/App.tsx`; engine
-state lives inside the pdf.js viewer. The **one reverse channel** is the viewer's
+Document state lives in `pdf-model`; the shell's UI state lives in feature stores under
+`apps/web/src/features/` (§8) and in `apps/web/src/App.tsx`; engine state lives inside the
+pdf.js viewer. The **one reverse channel** is the viewer's
 imperative `ViewerApi`, handed back once through `onReady` and stored both in a ref and in
 state (state, so the lazy tool layers re-render when it arrives).
 
@@ -2313,12 +2314,22 @@ them once rather than twice.
 
 ## 8. `apps/web` — the shell
 
-`apps/web/src/App.tsx` is the composition root: one component holding the UI state, every
-path in and out of the document, and the wiring between `pdf-model`, `pdf-core` and
-`pdf-ui`. The supporting modules are where the testable logic lives:
+`apps/web/src/App.tsx` is the composition root: every path in and out of the document and
+the wiring between `pdf-model`, `pdf-core` and `pdf-ui`. UI state that several surfaces share
+lives in feature stores under `apps/web/src/features/`, each made with `createStore` from
+`features/store.ts` (module state read through `useSyncExternalStore`, the same convention as
+`SessionStore` and `reading-order-store.ts`). A component subscribes with a selector and
+re-renders only when the value it selected changes; a handler reads the store with `get()` when
+it runs, so no ref mirrors the state for callbacks. Writes go through actions named for what the
+user did (`showNotice`, `pickTool`, `openRightPanel`), one action per intent. The tabs stay in
+`pdf-model`'s `SessionStore`; no store copies them. The supporting modules are where the
+testable logic lives:
 
 | Module | Responsibility |
 |---|---|
+| `features/store.ts` | `createStore()` and `useStore(store, selector, equality?)`, the one store helper |
+| `features/core/` | The state every feature shares: notice line, busy gate, the armed canvas tool, docks and tabs, interface mode (`core-store.ts`), engine handles (`handles.ts`), the pending-overlay writer (`overlays.ts`), the markup tool set (`tools.ts`) and the compact-viewport watcher (`viewport.ts`) |
+| `features/reading/` | Reading mode, snapshot, magnifier and lens zoom, the document language, and the reading-order layer |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
