@@ -1254,11 +1254,13 @@ async function main() {
       channel: { peerReferences: () => [] },
     };
     const forgetTabDraft = callback('forgetTabDraft', cleanupBindings);
+    // The engine values a restored draft waits to hand its viewer (`features/annotations`).
+    const pendingEngineValues = new Map([[tab.id, { entries: [], dropped: 0 }]]);
     const bindings = {
       store,
       cancelRef: { current: null },
       dropHandle: () => undefined,
-      pendingEngineValues: { current: new Map([[tab.id, { entries: [], dropped: 0 }]]) },
+      releaseEngineValues: (id) => pendingEngineValues.delete(id),
       // The redaction needles a document accumulated: closing it releases them, so
       // the binding has to exist for the extracted callback to run at all.
       redactedTerms: { current: new Map() },
@@ -1268,7 +1270,15 @@ async function main() {
       tRef: { current: (key) => key },
       showNotice: (notice) => notices.push(notice),
     };
-    return { run: callback('discardTab', bindings), tab, bindings, deleted, sourceKey, notices };
+    return {
+      run: callback('discardTab', bindings),
+      tab,
+      bindings,
+      pendingEngineValues,
+      deleted,
+      sourceKey,
+      notices,
+    };
   }
   for (const scenario of ['unreadable', 'enumerationFailed']) {
     await check(
@@ -1293,7 +1303,7 @@ async function main() {
     h.run(h.tab.id);
     await h.bindings.draftWrites.current;
     assert.ok(h.deleted.includes(h.sourceKey));
-    assert.equal(h.bindings.pendingEngineValues.current.has(h.tab.id), false);
+    assert.equal(h.pendingEngineValues.has(h.tab.id), false);
   });
   await check('a failed PDF file write is aborted and leaves the tab dirty', async () => {
     const target = fakeFile();

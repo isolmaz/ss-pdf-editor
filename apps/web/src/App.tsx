@@ -1,6 +1,5 @@
 import type { AnnotationMark, ExistingAnnotation, FormFieldInfo } from 'pdf-core';
 import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
 // The annotation and form ops are imported by **module**, not through the
 // package barrel: a barrel re-export keeps every operation module in the graph the
 // entry chunk is built from (measured: 160 kB of op code in the first paint),
@@ -8,7 +7,7 @@ import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
 // out.
 import type { MarkTransform } from 'pdf-core/ops/annotation-transform';
 import { transformPdfAnnotations } from 'pdf-core/ops/annotation-transform';
-import { marksFromEngineEntries, readAnnotations } from 'pdf-core/ops/annotations';
+import { readAnnotations } from 'pdf-core/ops/annotations';
 import {
   CONVERT_ACCEPT,
   CONVERT_PICKER_ACCEPT,
@@ -30,7 +29,6 @@ import {
   type DraftInventory,
   type DraftSnapshot,
   draftFor,
-  type EngineValuesDraft,
   encodeEngineValues,
   isRestorable,
   type JsonValue,
@@ -119,7 +117,6 @@ import {
 import { PdfViewerPane, type ViewerApi } from 'pdf-ui/viewer';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  annotationStepLabel,
   buildMarkTargets,
   isEmptyRemoval,
   normalizePendingMarks,
@@ -144,6 +141,26 @@ import { ToolRail } from './components/ToolRail';
 import { UpdateBanner } from './components/UpdateBanner';
 import { createOpfsDraftStorage } from './drafts';
 import { compressionPresets } from './export-presets';
+import { useAnnotationMarks } from './features/annotations/annotation-marks';
+import {
+  chooseAuthor,
+  chooseColor,
+  chooseFontSize,
+  chooseOpacity,
+  chooseTextColor,
+  chooseThickness,
+  heldEngineValues,
+  holdEngineValues,
+  knownExistingAnnotations,
+  orphanSweepInFlight,
+  releaseEngineValues,
+  useAnnotationStyle,
+} from './features/annotations/annotations-store';
+import {
+  useAnnotationActions,
+  usePublishExistingAnnotations,
+  useSettleNativeEditors,
+} from './features/annotations/use-annotation-actions';
 import { createAttachmentActions } from './features/attachments/attachments';
 import { CommentsDock } from './features/comments/CommentsDock';
 import { useCommentReview } from './features/comments/review';
@@ -429,12 +446,6 @@ export function App({ store }: AppProps) {
   );
   const session = useSyncExternalStore(store.subscribe, store.getSnapshot);
   /**
-   * Engine-side deltas restored from drafts, keyed by tab: they can only be applied
-   * once the viewer has loaded that tab's document (`PdfViewerPane` mounts the active
-   * document), so they wait here until the pane reports ready for the tab.
-   */
-  const pendingEngineValues = useRef(new Map<string, EngineValuesDraft>());
-  /**
    * The words a document's applied redactions removed.
    *
    * The audit's question is "does this file still carry what was erased", and the marks
@@ -632,31 +643,18 @@ export function App({ store }: AppProps) {
     [store],
   );
   /**
-   * Annotation marks of the active tab. They are session
-   * state, not engine state: the engine owns the gesture for the four types it has
-   * an editor for, and the mark it produces is taken over here so the journal, the
-   * comment panel and the writer all see the same list.
-   *
-   * A ref mirrors the state because the save path must read the marks of the
-   * **moment it runs**, not of the render that created its callback — the same rule
-   * that fixed the page-action defect (a control one render old handed the previous
-   * handle to the engine).
+   * The annotation marks of the active tab and the look the next one is drawn with
+   * (`features/annotations/`). The marks are the tab's pending overlay, not engine state.
    */
-  const annotations = pendingOverlays(store.active).annotations;
-  const setAnnotations = useCallback(
-    (change: OverlayChange<readonly AnnotationMark[]>) =>
-      writeOverlay(store, 'annotations', change, annotationStepLabel),
-    [store],
-  );
-  const annotationsRef = useRef<readonly AnnotationMark[]>(annotations);
-  annotationsRef.current = annotations;
-  const [annotationColor, setAnnotationColor] = useState('#ffd400');
-  /** Typed text is ink, not a marker: its own colour and size, not the marker's style. */
-  const [textColor, setTextColor] = useState('#000000');
-  const [fontSize, setFontSize] = useState(12);
-  const [annotationOpacity, setAnnotationOpacity] = useState(0.4);
-  const [annotationThickness, setAnnotationThickness] = useState(2);
-  const [annotationAuthor, setAnnotationAuthor] = useState('');
+  const { annotations, setAnnotations } = useAnnotationMarks(store);
+  const {
+    color: annotationColor,
+    textColor,
+    fontSize,
+    opacity: annotationOpacity,
+    thickness: annotationThickness,
+    author: annotationAuthor,
+  } = useAnnotationStyle();
   /** The measurements the session holds (the measure tool's own state is `features/measure`). */
   const measureMarks = pendingOverlays(store.active).measures;
   /**
@@ -766,8 +764,7 @@ export function App({ store }: AppProps) {
     existingInventory.bytesKey === existingBytesKey
       ? existingInventory.annotations
       : null;
-  const existingAnnotationsRef = useRef(existingAnnotations);
-  existingAnnotationsRef.current = existingAnnotations;
+  usePublishExistingAnnotations(existingAnnotations);
   const editableOverlays = useCallback(
     (tab: SessionTab) => {
       const stored = pendingOverlays(tab);
@@ -1513,7 +1510,7 @@ export function App({ store }: AppProps) {
             (draft.snapshots ?? []).map((item) => item.key),
           );
           if (draft.engineValues.entries.length > 0) {
-            pendingEngineValues.current.set(tab.id, draft.engineValues);
+            holdEngineValues(tab.id, draft.engineValues);
           }
           if (draft.dirty) store.setDirty(tab.id, true);
           addRecentDocument({
@@ -1942,325 +1939,27 @@ export function App({ store }: AppProps) {
   convertAndOpenRef.current = convertAndOpen;
 
   /**
-   * The review as a file (`annotation-data.ts`). The session's
-   * marks leave as JSON (lossless) or FDF (the container Acrobat's own comment
-   * export uses, carrying the same records), and come back the same way — a mark the
-   * engine drew is in the engine's storage and a mark we own is in the session, so
-   * neither travels inside the PDF until a save writes it.
+   * The annotation handlers: the review as a file, the engine's editor takeover, native
+   * editors and the orphan sweep (`features/annotations/`). What the shell still owns is
+   * handed in: the viewer's API, the running operation's controller, and the way a tab becomes
+   * an operation context.
    */
-  const exportAnnotationData = useCallback(
-    async (format: 'json' | 'fdf' | 'xfdf') => {
-      const tab = store.active;
-      const marks = annotationsRef.current;
-      if (tab === null) return;
-      let bytes: Uint8Array;
-      let message: string;
-      if (format === 'xfdf') {
-        // XFDF is the whole review: the file's own comments and their threads as well
-        // as the session's marks, so it is loaded only when asked for.
-        const { serializeXfdf } = await import('pdf-core/ops/annotation-xfdf');
-        const exported = serializeXfdf({
-          marks,
-          existing: existingAnnotationsRef.current ?? [],
-          pageTop: (pageIndex) => {
-            const geometry = viewerApi.current?.pageGeometry(pageIndex) ?? null;
-            return geometry === null ? null : geometry.y + geometry.height;
-          },
-          fileName: tab.name,
-        });
-        if (exported.count === 0) {
-          showNotice(t('ann.data.empty'));
-          return;
-        }
-        bytes = exported.bytes;
-        const name = `${tab.name.replace(/\.pdf$/i, '')}-comments.xfdf`;
-        message =
-          exported.skipped === 0
-            ? t('ann.data.xfdfExported', { count: exported.count, name })
-            : `${t('ann.data.xfdfExported', { count: exported.count, name })} ${t('ann.data.xfdfSkipped', { count: exported.skipped })}`;
-      } else {
-        if (marks.length === 0) {
-          showNotice(t('ann.data.empty'));
-          return;
-        }
-        const pageCount = workingPageCount(tab);
-        const data = await import('pdf-core/ops/annotation-data');
-        bytes =
-          format === 'json'
-            ? data.serializeAnnotationsJson(marks, pageCount)
-            : data.serializeAnnotationsFdf(marks, pageCount);
-        message = t('ann.data.exported', {
-          count: marks.length,
-          name: `${tab.name.replace(/\.pdf$/i, '')}-comments.${format}`,
-        });
-      }
-      const name = `${tab.name.replace(/\.pdf$/i, '')}-comments.${format}`;
-      const blob = new Blob([bytes as unknown as BlobPart], {
-        type:
-          format === 'json'
-            ? 'application/json'
-            : format === 'xfdf'
-              ? 'application/vnd.adobe.xfdf'
-              : 'application/vnd.fdf',
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = name;
-      anchor.click();
-      // Blob URLs are cleaned up right after the operation.
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      showNotice(message);
-    },
-    [store, t],
-  );
-
-  const importAnnotationData = useCallback(
-    async (file: File) => {
-      try {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        // XFDF is XML; everything else this reads is JSON or FDF. The XML reader is
-        // loaded only for a file that starts like one.
-        const head = new TextDecoder('utf-8').decode(bytes.slice(0, 64)).trimStart();
-        // Both readers are their own chunks: an import is a user action, not first paint.
-        const data = await import('pdf-core/ops/annotation-data');
-        const parsed: AnnotationDataResult = head.startsWith('<')
-          ? await (await import('pdf-core/ops/annotation-xfdf')).parseXfdf(bytes)
-          : data.parseAnnotationData(bytes);
-        // Acrobat's comments are in PDF user space; the page's own top edge turns them
-        // into the app's space. A page the viewer cannot measure is not guessed at: its
-        // comments are counted as skipped instead of landing mirrored.
-        let unplaced = 0;
-        const placed =
-          parsed.space === 'app'
-            ? parsed.marks
-            : parsed.marks.flatMap((mark) => {
-                const geometry = viewerApi.current?.pageGeometry(mark.pageIndex) ?? null;
-                if (geometry === null) {
-                  unplaced += 1;
-                  return [];
-                }
-                return [data.toAppSpace(mark, geometry.y + geometry.height)];
-              });
-        const result = { ...parsed, marks: placed, skipped: parsed.skipped + unplaced };
-        if (result.marks.length > 0) {
-          /**
-           * Ids are reminted at the boundary where a foreign file becomes session
-           * state. JSON import mints fresh ids, but FDF carries the `/NM` the file was
-           * annotated with (`ops/annotation-data.ts`), and that name is not unique
-           * across documents — two imports of the same review, or an import over a
-           * session that already holds the mark, would produce duplicate identities.
-           * Duplicate ids break React keys and make one erase delete several marks,
-           * which is exactly the "mark count" defect this work removes.
-           */
-          setAnnotations((current) => {
-            const used = new Set(current.map((mark) => mark.id));
-            const imported = result.marks.map((mark) => {
-              if (!used.has(mark.id)) {
-                used.add(mark.id);
-                return mark;
-              }
-              let id = crypto.randomUUID();
-              while (used.has(id)) id = crypto.randomUUID();
-              used.add(id);
-              return { ...mark, id };
-            });
-            return [...current, ...imported];
-          });
-          const id = store.active?.id;
-          if (id !== undefined) store.setDirty(id, true);
-        }
-        const answers = result.marks.reduce(
-          (sum, mark) => sum + (mark.replies?.length ?? 0) + (mark.review === undefined ? 0 : 1),
-          0,
-        );
-        showNotice(
-          [
-            t('ann.data.imported', { count: result.marks.length }),
-            ...(answers === 0 ? [] : [t('ann.data.repliesImported', { count: answers })]),
-            ...(result.skipped === 0 ? [] : [t('ann.data.importSkipped', { count: result.skipped })]),
-          ].join(' '),
-        );
-      } catch (error) {
-        const toolError =
-          error instanceof ToolError ? error : new ToolError('unsupported-format', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      }
-    },
-    [store, t, setAnnotations],
-  );
-
-  /**
-   * Takes over every annotation the engine's editor produced, and **returns them**.
-   *
-   * The engine holds its editors in `annotationStorage`, where the next
-   * `saveDocument()` would write them. The app needs them in its own list first —
-   * the journal, the comment panel and the retag step all read that list — so each
-   * captured entry becomes a mark and its storage entry is removed. Leaving it
-   * would make the same annotation arrive twice: once from the storage and once
-   * from our own writer.
-   *
-   * Returning the list, not only storing it, is what lets a save/export started in
-   * the same tick see the marks it just captured: the state update has not rendered
-   * by then.
-   */
-  const annotationStyleRef = useRef({
-    color: annotationColor,
-    opacity: annotationOpacity,
-    author: annotationAuthor,
+  const annotationActions = useAnnotationActions({
+    session: store,
+    t,
+    viewer: viewerApi,
+    cancel: cancelRef,
+    contextFor,
+    setHandle,
   });
-  annotationStyleRef.current = {
-    color: annotationColor,
-    opacity: annotationOpacity,
-    author: annotationAuthor,
-  };
-  const takeEngineAnnotations = useCallback(
-    (api: ViewerApi | null = viewerApi.current): readonly AnnotationMark[] => {
-      if (api === null || api.document !== handleFor(store.active?.id ?? '')) return [];
-      const entries = api.captureAnnotationEntries();
-      if (entries.length === 0) return [];
-      const boxes: { x: number; y: number; width: number; height: number }[] = [];
-      for (let index = 0; index < api.document.pageCount; index += 1) {
-        // PDF **user space**, not CSS pixels: the engine's own records and this
-        // model both express geometry in points from the page's top-left. Mixing
-        // the two mapped every captured mark onto the wrong part of the page —
-        // a 1527 px page box against 841.89 pt of geometry (2026-09-16).
-        const geometry = api.pageGeometry(index);
-        if (geometry === null) continue;
-        boxes[index] = { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height };
-      }
-      const marks = marksFromEngineEntries(entries, boxes, {
-        // Read from the ref, never from the render that created this callback: the
-        // engine's own record wins where it carries a value, and these are only the
-        // defaults for the ones it does not.
-        color: annotationStyleRef.current.color,
-        opacity: annotationStyleRef.current.opacity,
-        author: annotationStyleRef.current.author,
-      });
-      if (marks.length === 0) return [];
-      for (const mark of marks) api.dropAnnotationEntry(mark.id);
-      const current = pendingOverlays(store.active).annotations;
-      // Engine ids restart when history reopens the viewer. They identify entries
-      // only until removal, never durable marks: reusing one would lose the next
-      // stroke after undo/redo by confusing it with a restored owned annotation.
-      const added = marks.map((mark) => ({ ...mark, id: crypto.randomUUID() }));
-      setAnnotations([...current, ...added]);
-      showNotice(t('ann.captured', { count: marks.length }));
-      // Returned as well as stored: a writer that runs in the same tick reads the
-      // fresh marks from here, because the state update above has not rendered yet
-      // (`workingBytes` — the export path lost exactly these marks).
-      return added;
-    },
-    // No tool setting is a dependency: this callback is handed to `PdfViewerPane`,
-    // whose load effect depends on it, and reading the style from the ref is what
-    // stops "change the colour" from tearing down and rebuilding the pdf.js stack.
-    [setAnnotations, store, t],
-  );
-  const takeEngineAnnotationsRef = useRef(takeEngineAnnotations);
-  takeEngineAnnotationsRef.current = takeEngineAnnotations;
-
-  /**
-   * Restore engine-held annotation records from drafts into controlled session marks.
-   * New gestures already belong to the session and never enter native editors.
-   *
-   * Returns whether the engine still holds entries this app cannot model (a signature
-   * or stamp editor it never armed, or a value restored from a draft): those must be
-   * materialised into bytes before a common gesture can reach them, and the caller is
-   * the only place that knows whether it can afford the write.
-   */
-  const settleNativeEditors = useCallback((): boolean => {
-    const api = viewerApi.current;
-    if (api === null) return false;
-    takeEngineAnnotationsRef.current(api);
-    return api.captureAnnotationEntries().length > 0;
-  }, []);
-
-  /**
-   * Write the engine's unmodellable entries into the bytes and mount the result as
-   * the working version.
-   *
-   * This is the only path that reaches those entries at all: they are invisible to
-   * every list and tool, and the engine's own `saveDocument()` would write them on
-   * the next save anyway — so materialising them turns "silently kept, silently
-   * written" into a version the journal, the comment panel and the common layer can
-   * all see. The marks this session holds are written by the same pass and the
-   * pending lists are then cleared, exactly as a save clears them.
-   */
-  const materializeOrphanAnnotations = useCallback(async (): Promise<void> => {
-    if (isBusy() || cancelRef.current !== null) return;
-    const tab = store.getSnapshot().tabs.find((item) => item.id === store.active?.id) ?? null;
-    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-    if (tab === null || handle === null) return;
-    const controller = new AbortController();
-    cancelRef.current = controller;
-    setBusy(true);
-    try {
-      const executed: SaveStepDescription[] = [];
-      const bytes = await materializeBase(contextFor(tab, handle), { signal: controller.signal }, executed);
-      if (
-        controller.signal.aborted ||
-        store.active?.id !== tab.id ||
-        store.getSnapshot().tabs.find((item) => item.id === tab.id)?.working.id !== tab.working.id
-      )
-        return;
-      const next = await applyProducedBytes(
-        contextFor(tab, handle),
-        bytes,
-        workingPageCount(tab),
-        { key: 'ann.engineEdit' },
-        executed[executed.length - 1]?.engine ?? 'pdfjs',
-        executed.map((step) => step.id),
-        { signal: controller.signal },
-      );
-      setHandle(tab.id, next);
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-    } finally {
-      if (cancelRef.current === controller) {
-        cancelRef.current = null;
-        setBusy(false);
-      }
-    }
-  }, [contextFor, setHandle, store, t]);
-
-  /**
-   * The orphan sweep in flight, if any.
-   *
-   * The sweep replaces the working version, so it holds the operation lock while it
-   * runs — but a gesture that lands *during* it is not a gesture that must be refused:
-   * erasing a mark a moment after the tool was armed is exactly the expected sequence.
-   * Keeping the promise lets the removal path wait for the sweep instead of reporting
-   * a busy document to a user who did nothing wrong.
-   */
-  const orphanSweep = useRef<Promise<void> | null>(null);
-  const sweepOrphanAnnotations = useCallback((): Promise<void> => {
-    const run = materializeOrphanAnnotations();
-    const tracked = run.then(
-      () => {
-        if (orphanSweep.current === tracked) orphanSweep.current = null;
-      },
-      () => {
-        if (orphanSweep.current === tracked) orphanSweep.current = null;
-      },
-    );
-    orphanSweep.current = tracked;
-    return tracked;
-  }, [materializeOrphanAnnotations]);
-
-  /**
-   * Entering select hands the pointer to the common layer, and a restored native
-   * gesture must not be left half-open when it does: pdf.js keeps its editor in
-   * `annotationStorage` until something commits it, and an entry left there is
-   * invisible to every list — so it is committed and taken over, and any entry this
-   * app cannot model is materialised into bytes rather than silently kept.
-   */
-  useEffect(() => {
-    if (markMode === null) return;
-    if (!settleNativeEditors()) return;
-    void sweepOrphanAnnotations();
-  }, [markMode, settleNativeEditors, sweepOrphanAnnotations]);
+  const {
+    exportAnnotationData,
+    importAnnotationData,
+    takeEngineAnnotations,
+    settleNativeEditors,
+    sweepOrphanAnnotations,
+  } = annotationActions;
+  useSettleNativeEditors(markMode, annotationActions);
 
   const prepareOutput = useCallback(
     async (
@@ -2518,7 +2217,7 @@ export function App({ store }: AppProps) {
         void abandoned.destroy().catch(() => showNotice(tRef.current('notice.engineReleaseFailed')));
       }
       store.closeTab(id);
-      pendingEngineValues.current.delete(id);
+      releaseEngineValues(id);
       redactedTerms.current.delete(id);
       draftWrites.current = draftWrites.current
         .then(async () => {
@@ -2586,7 +2285,7 @@ export function App({ store }: AppProps) {
       }
       handleInUse(api.document);
       setZoomState(api.getZoom());
-      takeEngineAnnotationsRef.current(api);
+      takeEngineAnnotations(api);
       // Every annotation the file already carries, listed once per document so the
       // comment panel can show the document's own notes beside the new marks.
       const controller = new AbortController();
@@ -2612,7 +2311,7 @@ export function App({ store }: AppProps) {
       // the one on screen; the tab stays dirty until a real save writes them.
       const id = store.active?.id;
       if (id === undefined) return;
-      const pending = pendingEngineValues.current.get(id) ?? pendingOverlays(store.active).engineValues;
+      const pending = heldEngineValues(id) ?? pendingOverlays(store.active).engineValues;
       if (pending === undefined) return;
       void api
         .applyEngineValues(pending)
@@ -2622,8 +2321,8 @@ export function App({ store }: AppProps) {
           // must leave the entries where a retry can still reach them, and a restore
           // that applied **nothing** is reported with its own count instead of the
           // silence the previous version kept for exactly that case.
-          pendingEngineValues.current.delete(id);
-          takeEngineAnnotationsRef.current(api);
+          releaseEngineValues(id);
+          takeEngineAnnotations(api);
           const restoration = noticeLine(
             engineValuesNotices({ applied, carried: pending.entries.length, dropped: pending.dropped }),
             t,
@@ -2639,7 +2338,7 @@ export function App({ store }: AppProps) {
           showNotice(noticeLine(failureNotices(error, 'error.write-failed.message'), t));
         });
     },
-    [store, t],
+    [store, t, takeEngineAnnotations],
   );
   const handleScaleChange = useCallback((scale: number) => setZoomState(scale), []);
   /**
@@ -3393,7 +3092,7 @@ export function App({ store }: AppProps) {
     (keys: readonly string[]): boolean => {
       const request = planMarkRemoval(
         markTargetsRef.current,
-        withThreadRecords(keys, existingAnnotationsRef.current ?? []),
+        withThreadRecords(keys, knownExistingAnnotations() ?? []),
       );
       if (isEmptyRemoval(request)) return false;
       const tab = store.active;
@@ -3423,7 +3122,7 @@ export function App({ store }: AppProps) {
        * version) instead of being refused because the shell is busy with its own
        * housekeeping.
        */
-      const inFlight = orphanSweep.current;
+      const inFlight = orphanSweepInFlight();
       if (inFlight === null && (isBusy() || cancelRef.current !== null)) {
         refuseBusy();
         return false;
@@ -3750,7 +3449,7 @@ export function App({ store }: AppProps) {
   const deleteMarkSelection = useCallback((): boolean => {
     const keys = selectedKeysRef.current;
     if (keys.length === 0) return false;
-    if (orphanSweep.current === null && (isBusy() || cancelRef.current !== null)) {
+    if (orphanSweepInFlight() === null && (isBusy() || cancelRef.current !== null)) {
       refuseBusy();
       return false;
     }
@@ -3821,8 +3520,8 @@ export function App({ store }: AppProps) {
     canEdit: canEditRef,
     selectedPages: selectedPagesRef,
     currentPage: currentPageRef,
-    engineValues: pendingEngineValues.current,
-    orphanSweep,
+    holdEngineValues,
+    orphanSweepInFlight,
     contextFor,
     setHandle,
     refuseBusy,
@@ -4204,13 +3903,13 @@ export function App({ store }: AppProps) {
               // ruler and a highlighter are the same kind of mark, so the ruler's
               // settings edit the same state the marker tools do.
               color={annotationColor}
-              onColor={setAnnotationColor}
+              onColor={chooseColor}
               opacity={annotationOpacity}
-              onOpacity={setAnnotationOpacity}
+              onOpacity={chooseOpacity}
               thickness={annotationThickness}
-              onThickness={setAnnotationThickness}
+              onThickness={chooseThickness}
               author={annotationAuthor}
-              onAuthor={setAnnotationAuthor}
+              onAuthor={chooseAuthor}
             />
           ) : (
             <ToolProperties
@@ -4223,17 +3922,17 @@ export function App({ store }: AppProps) {
               shape={shape}
               textColor={textColor}
               fontSize={fontSize}
-              onTextColor={setTextColor}
-              onFontSize={setFontSize}
+              onTextColor={chooseTextColor}
+              onFontSize={chooseFontSize}
               redactionCount={redactionMarks.length}
               onApplyRedaction={() => openDialog('redact')}
               onTool={selectTool}
               selectedCount={selectedKeys.length}
               disabled={!canEdit || (canvasTool === 'select' && existingAnnotations === null)}
-              onColor={setAnnotationColor}
-              onOpacity={setAnnotationOpacity}
-              onThickness={setAnnotationThickness}
-              onAuthor={setAnnotationAuthor}
+              onColor={chooseColor}
+              onOpacity={chooseOpacity}
+              onThickness={chooseThickness}
+              onAuthor={chooseAuthor}
               onShape={selectShape}
               // Selection actions share one intent across every mark family.
               onDeleteSelection={() => void removeTargets(selectedKeys)}

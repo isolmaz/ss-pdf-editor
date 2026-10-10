@@ -57,8 +57,8 @@ export interface StepHost {
   readonly session: SessionStore;
   readonly t: Translator;
   readonly cancel: CancelSlot;
-  /** Mark values the engine still holds for a tab, waiting to be journaled. */
-  readonly engineValues: Map<string, EngineValuesDraft>;
+  /** Keep a tab's mark values until its viewer can take them; `undefined` forgets what was kept. */
+  readonly holdEngineValues: (tabId: string, values: EngineValuesDraft | undefined) => void;
   readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
   readonly setHandle: (tabId: string, handle: PdfDocumentHandle) => void;
   readonly refuseBusy: () => void;
@@ -68,7 +68,7 @@ export interface StepHost {
 /** What an undo/redo press needs from the shell, beyond the step itself. */
 export interface PressHost extends StepHost {
   /** The orphan sweep in flight, if any. */
-  readonly orphanSweep: { readonly current: Promise<void> | null };
+  readonly orphanSweepInFlight: () => Promise<void> | null;
   /** Commit the engine's pending gesture; `true` when it left something to sweep. */
   readonly settleNativeEditors: () => boolean;
   readonly sweepOrphanAnnotations: () => Promise<void>;
@@ -166,8 +166,7 @@ export async function stepHistory(host: StepHost, direction: 'undo' | 'redo'): P
     }
     if (result.handle !== handle) {
       const values = pendingOverlays(session.active).engineValues;
-      if (values !== undefined) host.engineValues.set(tab.id, values);
-      else host.engineValues.delete(tab.id);
+      host.holdEngineValues(tab.id, values);
       host.setHandle(tab.id, result.handle);
       host.setCurrentPage((page) => Math.min(page, result.handle.pageCount - 1));
     }
@@ -215,7 +214,7 @@ export function stepHistoryNow(host: PressHost, direction: 'undo' | 'redo'): boo
   const press = historyPress({
     hasDocument: tab !== null && handle !== null,
     queued: historyPending > 0,
-    sweeping: host.orphanSweep.current !== null,
+    sweeping: host.orphanSweepInFlight() !== null,
     running: cancel.current !== null,
     busy: isBusy(),
   });
@@ -232,7 +231,7 @@ export function stepHistoryNow(host: PressHost, direction: 'undo' | 'redo'): boo
     if (!stillCurrent(session.active?.id, tab.id, start, start)) return;
     // The sweep replaces the working version, so it must be over before the checkpoint reads
     // the engine and before the model moves.
-    const sweep = host.orphanSweep.current;
+    const sweep = host.orphanSweepInFlight();
     if (sweep !== null) await sweep;
     if (!stillCurrent(session.active?.id, tab.id, handleFor(tab.id), start)) return;
     if (isBusy() || cancel.current !== null) {
@@ -272,8 +271,8 @@ export function usePageActions(host: PressHost & ActionHost) {
     canEdit,
     selectedPages,
     currentPage,
-    engineValues,
-    orphanSweep,
+    holdEngineValues,
+    orphanSweepInFlight,
     contextFor,
     setHandle,
     refuseBusy,
@@ -306,10 +305,10 @@ export function usePageActions(host: PressHost & ActionHost) {
   const step = useCallback(
     (direction: 'undo' | 'redo') =>
       stepHistory(
-        { session, t, cancel, engineValues, contextFor, setHandle, refuseBusy, setCurrentPage },
+        { session, t, cancel, holdEngineValues, contextFor, setHandle, refuseBusy, setCurrentPage },
         direction,
       ),
-    [session, t, cancel, engineValues, contextFor, setHandle, refuseBusy, setCurrentPage],
+    [session, t, cancel, holdEngineValues, contextFor, setHandle, refuseBusy, setCurrentPage],
   );
   const stepNow = useCallback(
     (direction: 'undo' | 'redo') =>
@@ -318,8 +317,8 @@ export function usePageActions(host: PressHost & ActionHost) {
           session,
           t,
           cancel,
-          engineValues,
-          orphanSweep,
+          holdEngineValues,
+          orphanSweepInFlight,
           contextFor,
           setHandle,
           refuseBusy,
@@ -334,8 +333,8 @@ export function usePageActions(host: PressHost & ActionHost) {
       session,
       t,
       cancel,
-      engineValues,
-      orphanSweep,
+      holdEngineValues,
+      orphanSweepInFlight,
       contextFor,
       setHandle,
       refuseBusy,
