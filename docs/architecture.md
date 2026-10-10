@@ -2334,6 +2334,7 @@ testable logic lives:
 | `features/attachments/` | The embedded files: the measured list the properties panel shows, and adding, removing, reading out and writing them (`createAttachmentActions`) |
 | `features/comments/` | Comment review: replies, review states and removing a reply (`useCommentReview`), and the comments panel host (`CommentsDock`) |
 | `features/stamps/` | Stamps and signatures: the signature dialog and the saved signatures (`stamps-store.ts`), arming, placing and resizing a stamp, picking an image and placing a signature (`stamp-actions.ts`), and their hosts (`StampSurface.tsx`) |
+| `features/measure/` | Measuring: the ruler mode, scale, grid, snapping and live reading (`measure-store.ts`), adding a measurement as one undoable step (`measure-marks.ts`), and the settings strip and overlay hosts |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
