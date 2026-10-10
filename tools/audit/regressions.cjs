@@ -1093,10 +1093,10 @@ async function main() {
       store,
       handleFor: (id) => new Map([[tab.id, handle]]).get(id),
       ToolError,
-      documentFacts: facts === 'current' ? { tabId: tab.id, version: store.active.working.id } : null,
+      currentFacts: () => (facts === 'current' ? { tabId: tab.id, version: store.active.working.id } : null),
       currentForms: { tabId: tab.id, version: store.active.working.id },
       formFields: forms,
-      currentFactsError: null,
+      currentFactsError: () => null,
       showNotice: (notice) => notices.push(notice),
       t: (key) => key,
       pendingOverlays: (tab) => tab.working.overlays,
@@ -1122,7 +1122,7 @@ async function main() {
         confirmations.push({ signatures, appended });
         return confirm(store);
       },
-      trustRootBytes: [],
+      trustStore: { get: () => ({ rootBytes: [] }) },
       verifyForWrite: async (_bytes, verifyOptions) => {
         verifyCalls.push(verifyOptions);
         return { state: 'verified', checks: [], declared: [] };
