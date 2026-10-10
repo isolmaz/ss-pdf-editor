@@ -21,11 +21,14 @@ const TextLayer = lazy(async () => {
 /** The block overlay while the text tool is armed; a picked paragraph opens the text-edit dialog. */
 export function TextToolSurface({
   viewer,
+  layout,
   currentPage,
   t,
   onEdit,
 }: {
   readonly viewer: ViewerApi | null;
+  /** The shell's layout revision, for the blocks to be placed again at each layout. */
+  readonly layout: number;
   readonly currentPage: number;
   readonly t: Translator;
   /** Open the text-edit dialog on the block just picked. */
@@ -39,6 +42,7 @@ export function TextToolSurface({
       <TextLayer
         t={t}
         viewer={viewer}
+        layout={layout}
         bytes={bytes}
         pageIndex={currentPage}
         onSelect={(selection) => {

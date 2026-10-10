@@ -151,7 +151,8 @@ export function useCamera(): UseCamera {
           });
         } catch (error) {
           if (mine !== generation.current) return;
-          setState((current) => ({ ...current, status: 'problem', problem: classifyCameraError(error) }));
+          const problem = classifyCameraError(error);
+          setState((current) => ({ ...current, status: 'problem', problem }));
         }
       })();
     },

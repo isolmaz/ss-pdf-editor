@@ -240,6 +240,45 @@ export function markPageFrameOf(viewer: ViewerApi, pageIndex: number): MarkPageF
   });
 }
 
+/** The pages' frames as the viewer laid them out at one layout revision. */
+export interface PageFrames<Frame extends object = MarkPageFrame> {
+  /** The shell's layout revision the frames belong to. */
+  readonly layout: number;
+  /** The frame of a page, or `null` for one the viewer has not laid out. Measured once per page. */
+  of(pageIndex: number): Frame | null;
+}
+
+/**
+ * What a layer that places marks **while it renders** reads the viewer through. The viewer
+ * answers where a page is through methods on one long-lived object, and the React Compiler
+ * keeps a component's output for as long as its inputs are the same, so the shell's layout
+ * revision is an argument: a new revision is a new reading. A page is measured once per
+ * reading, however many marks sit on it; one the viewer has not laid out is asked again.
+ * Handlers and effects read the viewer at the time of the event instead.
+ */
+export function readPagesAt<Frame extends object>(
+  layout: number,
+  measure: (pageIndex: number) => Frame | null,
+): PageFrames<Frame> {
+  const measured = new Map<number, Frame>();
+  return {
+    layout,
+    of(pageIndex) {
+      let frame = measured.get(pageIndex) ?? null;
+      if (frame === null) {
+        frame = measure(pageIndex);
+        if (frame !== null) measured.set(pageIndex, frame);
+      }
+      return frame;
+    },
+  };
+}
+
+/** The mark layers' reading: each page's `markPageFrameOf`, at one layout revision. */
+export function pageFramesAt(viewer: ViewerApi, layout: number): PageFrames {
+  return readPagesAt(layout, (pageIndex) => markPageFrameOf(viewer, pageIndex));
+}
+
 // ---------------------------------------------------------------------------
 // pointer ownership: does a mark tool own this pointer?
 // ---------------------------------------------------------------------------

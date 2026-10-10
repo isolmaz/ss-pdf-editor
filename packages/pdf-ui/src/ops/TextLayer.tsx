@@ -19,7 +19,7 @@
  */
 
 import type { OperationContext } from 'pdf-core';
-import { readPageText } from 'pdf-core/text-source';
+import { loadTextFonts, readPageText } from 'pdf-core/text-source';
 import type { Translator } from 'pdf-shared';
 import { toToolError } from 'pdf-shared';
 import type { FontCatalog, FontMetrics, TextBlock, TextPage } from 'pdf-text-engine';
@@ -46,6 +46,12 @@ export interface TextBlockSelection {
 export interface TextLayerProps {
   readonly t: Translator;
   readonly viewer: ViewerApi;
+  /**
+   * The shell's layout revision: it moves each time the pages are laid out again. The blocks are placed while the layer renders,
+   * and the viewer answers where a page is through one long-lived object, so nothing else in
+   * the props says it has to be placed again.
+   */
+  readonly layout: number;
   /** The bytes of the working version: the model must describe what the user sees. */
   readonly bytes: Uint8Array;
   readonly pageIndex: number;
@@ -91,12 +97,34 @@ export function displayedBox(
   return [Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1)];
 }
 
+/** Where the viewer has laid one page out, as it was at one layout. */
+interface PageSurface {
+  readonly layout: number;
+  readonly page: ReturnType<ViewerApi['pageRect']>;
+  readonly view: ReturnType<ViewerApi['pageGeometry']>;
+  readonly container: ReturnType<ViewerApi['containerRect']>;
+}
+
+/**
+ * Read where the viewer has put page `pageIndex` at `layout`. The revision is an argument, and part
+ * of what comes back, because the React Compiler memoizes a call on its arguments: `viewer` is the
+ * same object across layouts, so without it the first reading would be kept for good.
+ */
+function surfaceOf(viewer: ViewerApi, pageIndex: number, layout: number): PageSurface {
+  return {
+    layout,
+    page: viewer.pageRect(pageIndex),
+    view: viewer.pageGeometry(pageIndex),
+    container: viewer.containerRect(),
+  };
+}
+
 /** One translation of a message key without the `t()` shape, for `data-*` and titles. */
 function reasonKeyFor(reason: string): string {
   return `textedit.reason.${reason}`;
 }
 
-export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: TextLayerProps) {
+export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClose }: TextLayerProps) {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const [painted, setPainted] = useState<readonly PaintedBlock[]>([]);
   /** The model's page size, the space `PaintedBlock.rect` is measured in. */
@@ -118,10 +146,7 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
     setLoading(true);
     void (async () => {
       try {
-        const [source, fonts] = await Promise.all([
-          readPageText(bytes, pageIndex, context),
-          import('pdf-core/text-source').then((module) => module.loadTextFonts()),
-        ]);
+        const [source, fonts] = await Promise.all([readPageText(bytes, pageIndex, context), loadTextFonts()]);
         if (cancelled) return;
         const model = buildTextPage(source);
         const report = measureEditability(model);
@@ -197,9 +222,7 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
    * scaled straight across, the boxes of a turned page sat where its text would be
    * without the turn.
    */
-  const page = viewer.pageRect(pageIndex);
-  const view = viewer.pageGeometry(pageIndex);
-  const container = viewer.containerRect();
+  const { page, view, container } = surfaceOf(viewer, pageIndex, layout);
   const place = (rect: PaintedBlock['rect']) => {
     if (page === null || view === null || modelSize === null) return null;
     const box = { x: view.x, y: view.y, width: modelSize.width, height: modelSize.height };

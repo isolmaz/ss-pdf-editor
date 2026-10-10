@@ -37,7 +37,7 @@ export function useSaveActions(deps: SaveActionsDeps): SaveActions {
     [session, t, discardTab],
   );
   const exportActive = useCallback(
-    (tabId = session.active?.id) => exportDocument({ session, t, prepareOutput }, tabId),
+    (tabId?: string) => exportDocument({ session, t, prepareOutput }, tabId ?? session.active?.id),
     [session, t, prepareOutput],
   );
   const checkpoint = useCallback(() => checkpointEngineValues(session), [session]);

@@ -5,8 +5,9 @@
  * The layer draws what the panel put in `readingOrderStore` and nothing else — it reads no
  * file and knows nothing about structure. It is mounted inside the viewer's scroll
  * container (the pane's `overlay` slot), so the browser carries it with the pages, and it is
- * placed at render against the page as laid out now (zoom, spread and resize all re-render
- * it through the shell's layout signal), the same contract `TextLayer` follows.
+ * placed at render against the page as laid out now (zoom, spread, resize and a turned page
+ * all move the shell's layout revision, which it takes as `layout`), the same contract
+ * `TextLayer` follows.
  *
  * Rects arrive page-relative and unrotated; a turned page is mapped here, once, with the
  * four quarter-turn cases written out.
@@ -14,11 +15,54 @@
 
 import type { Translator } from 'pdf-shared';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
-import { type OverlayRect, readingOrderStore, useReadingOrder } from './reading-order-store';
+import {
+  type OverlayPage,
+  type OverlayRect,
+  readingOrderStore,
+  useReadingOrder,
+} from './reading-order-store';
 
 export interface ReadingOrderLayerProps {
   readonly t: Translator;
   readonly viewer: ViewerApi;
+  /**
+   * The shell's layout revision: it moves each time the pages are laid out again. The viewer
+   * answers where a page is through methods on one long-lived object, so nothing else in the
+   * props says the boxes have to be placed again.
+   */
+  readonly layout: number;
+}
+
+/** A box in client pixels, as the viewer reports one. */
+interface ClientBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The viewer's geometry as it was at one layout: what the boxes are placed on. */
+interface Frame {
+  readonly layout: number;
+  readonly container: ClientBox;
+  /** Each listed page that is on screen, with its painted box. */
+  readonly placed: readonly { readonly page: OverlayPage; readonly box: ClientBox }[];
+}
+
+/**
+ * Read the viewer's geometry for `pages` at `layout`. The revision is an argument, and part of
+ * what comes back, because the React Compiler memoizes a call on its arguments: `viewer` is the
+ * same object across layouts, so without it the first reading would be kept for good.
+ */
+function measure(viewer: ViewerApi, pages: readonly OverlayPage[], layout: number): Frame {
+  return {
+    layout,
+    container: viewer.containerRect(),
+    placed: pages.flatMap((page) => {
+      const box = viewer.pageRect(page.pageIndex);
+      return box === null ? [] : [{ page, box }];
+    }),
+  };
 }
 
 /** An unrotated page-relative rect → the displayed page's own space after `/Rotate`. */
@@ -41,14 +85,12 @@ function rotateRect(
   }
 }
 
-export function ReadingOrderLayer({ t, viewer }: ReadingOrderLayerProps) {
+export function ReadingOrderLayer({ t, viewer, layout }: ReadingOrderLayerProps) {
   const { pages, selectedKeys } = useReadingOrder();
-  const container = viewer.containerRect();
+  const { container, placed } = measure(viewer, pages, layout);
   return (
     <div data-reading-order-layer="true" className="pointer-events-none absolute inset-0 z-10">
-      {pages.map((page) => {
-        const box = viewer.pageRect(page.pageIndex);
-        if (box === null) return null;
+      {placed.map(({ page, box }) => {
         return page.items.map((item) => {
           const turned = rotateRect(item.rect, page.width, page.height, page.rotation);
           const scaleX = box.width / Math.max(1, turned.width);

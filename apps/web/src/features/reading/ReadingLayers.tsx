@@ -11,7 +11,7 @@ export interface ReadingLayersProps {
   readonly locale: string;
   /** The viewer API of the document on screen (state: the layers that need it render when it arrives). */
   readonly viewer: ViewerApi | null;
-  /** The same API as the shell's ref, which the reading pane takes. */
+  /** The same API as the shell's ref, read when the reading pane turns a page. */
   readonly viewerRef: RefObject<ViewerApi | null>;
   /** The page being read, 0-based. */
   readonly pageNumber: number;
@@ -35,7 +35,7 @@ export function ReadingLayers({ t, locale, viewer, viewerRef, pageNumber }: Read
         lang={documentLanguage ?? locale}
         open={reading}
         onClose={closeReading}
-        viewer={viewerRef.current}
+        viewer={viewer}
         pageNumber={pageNumber}
         onPageChange={(page) => viewerRef.current?.goToPage(page)}
         onNotice={showNotice}

@@ -112,11 +112,14 @@ export function FieldCandidateHost({
   t,
   tab,
   viewer,
+  layout,
   canEdit,
 }: {
   readonly t: Translator;
   readonly tab: SessionTab | null;
   readonly viewer: FieldCandidateLayerProps['viewer'] | null;
+  /** The shell's layout revision, for the frames to be placed again at each layout. */
+  readonly layout: number;
   readonly canEdit: boolean;
 }) {
   const review = useCurrentDetect(tab);
@@ -125,6 +128,7 @@ export function FieldCandidateHost({
     <FieldCandidateLayer
       t={t}
       viewer={viewer}
+      layout={layout}
       candidates={review.detection.candidates.filter((candidate) => !review.removed.has(candidate.id))}
       selectedId={review.selectedId}
       onSelect={candidateSelected}

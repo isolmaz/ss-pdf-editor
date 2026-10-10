@@ -667,8 +667,11 @@ The limits are defined once, in
   hand; `pnpm assemble:dist` only prints the sizes of what it assembles.
   - ≤ 250 KiB gzip for the first-paint JavaScript: the entry chunk plus every
     `<link rel="modulepreload">` script that `dist/editor/index.html` names, which is what the
-    browser fetches before the home screen renders. It is about 243 KiB: the entry chunk is about
-    180 KiB and the 11 preloaded chunks (the React runtime, Kumo's shared dialog chunk, the
+    browser fetches before the home screen renders. It is about 248 KiB: the entry chunk is about
+    187 KiB (the React Compiler's memo caches for `App` and the status bar are about 5 KiB of
+    it; compiling the whole first paint would add 20 KiB and fail this budget, so
+    `apps/web/vite.config.ts` compiles only the editor chunk and those two) and the 11 preloaded
+    chunks (the React runtime, Kumo's shared dialog chunk, the
     `mupdf-write` vocabulary and a few `pdf-core` modules the shell and the editor share) the
     rest. The editor layout (docks, canvas, tool strip) is not part of it: it is its own chunk,
     fetched on idle and as soon as a document is opening (`docs/architecture.md` §2). (Sizes:

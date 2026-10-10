@@ -275,6 +275,14 @@ interface LiveStack {
   dispose(preservePredecessor?: boolean): void;
 }
 
+/**
+ * The pdf.js viewer and its stylesheet, fetched when the first pane mounts. It lives outside the
+ * component because the React Compiler cannot lower an `import()` inside a component body, and
+ * a component it cannot lower is left unmemoized.
+ */
+const loadPdfjsViewer = () =>
+  Promise.all([import('pdfjs-dist/web/pdf_viewer.mjs'), import('pdfjs-dist/web/pdf_viewer.css')]);
+
 export function PdfViewerPane({
   document,
   documentKey,
@@ -541,10 +549,7 @@ export function PdfViewerPane({
     }
 
     void (async () => {
-      const [{ EventBus, PDFFindController, PDFLinkService, PDFViewer }, _styles] = await Promise.all([
-        import('pdfjs-dist/web/pdf_viewer.mjs'),
-        import('pdfjs-dist/web/pdf_viewer.css'),
-      ]);
+      const [{ EventBus, PDFFindController, PDFLinkService, PDFViewer }, _styles] = await loadPdfjsViewer();
       if (disposed) return;
       // Both slots keep pdf.js styling while one is frozen, but DOM consumers
       // (printing and canvas tools) must follow only the current stack.
@@ -732,6 +737,14 @@ export function PdfViewerPane({
           requestAnimationFrame(applyPageOffset);
         }
         viewer.update();
+        // The pages of a new stack have their geometry from here. A stack can lay out at the
+        // size the last measure already saw (a half turn is the upright page again, and the
+        // slot it replaced was measured at that size), so the size signature alone cannot see
+        // it; the overlays that read the pages are told once, a frame on, whatever the size.
+        requestAnimationFrame(() => {
+          if (stackDisposed || frozenStack) return;
+          callbacksRef.current.onLayoutChange?.();
+        });
       };
       const onPageChanging = (payload: { pageNumber: number }) => {
         // A frozen stack keeps running (its scroll listener still fires), but it no

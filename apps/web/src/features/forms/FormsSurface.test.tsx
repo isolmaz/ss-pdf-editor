@@ -210,15 +210,19 @@ describe('XfaBanner', () => {
 });
 
 describe('FieldCandidateHost', () => {
-  function host(over: { viewer?: ViewerApi | null; canEdit?: boolean } = {}) {
-    return render(
+  function hosted(over: { viewer?: ViewerApi | null; layout?: number; canEdit?: boolean } = {}) {
+    return (
       <FieldCandidateHost
         t={t}
         tab={tab}
         viewer={over.viewer === undefined ? viewer : over.viewer}
+        layout={over.layout ?? 0}
         canEdit={over.canEdit ?? true}
-      />,
+      />
     );
+  }
+  function host(over: { viewer?: ViewerApi | null; layout?: number; canEdit?: boolean } = {}) {
+    return render(hosted(over));
   }
 
   it('draws one frame per candidate while they are under review, and nothing before', () => {
@@ -229,6 +233,28 @@ describe('FieldCandidateHost', () => {
 
     review('a', 'b');
     expect(container.querySelectorAll('[data-field-candidate]').length).toBe(2);
+  });
+
+  it('places the frames again at a new layout, on the same mounted layer, where the viewer now puts the page', () => {
+    let page = { x: 0, y: 0, width: 600, height: 800 };
+    const moving = { ...viewer, pageRect: () => page } as unknown as ViewerApi;
+    review('a');
+    const view = host({ viewer: moving, layout: 0 });
+    const frame = () =>
+      view.container.querySelector('[data-field-candidate="a"]')?.parentElement as
+        | HTMLElement
+        | null
+        | undefined;
+    const first = frame();
+    expect(first?.style.left).toBe('50px');
+    expect(first?.style.width).toBe('100px');
+
+    // The page is laid out at twice the size, beside the scrolled content's origin.
+    page = { x: 50, y: 0, width: 1200, height: 1600 };
+    view.rerender(hosted({ viewer: moving, layout: 1 }));
+    expect(frame()).toBe(first);
+    expect(first?.style.left).toBe('150px');
+    expect(first?.style.width).toBe('200px');
   });
 
   it('draws nothing without a viewer or on a read-only document', () => {

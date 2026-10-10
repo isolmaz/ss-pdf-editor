@@ -1,5 +1,6 @@
 import type { MeasureRotation } from 'pdf-core/ops/measure';
 import { describe, expect, it, vi } from 'vitest';
+import type { ViewerApi } from '../viewer/PdfViewerPane';
 import {
   clickSuppression,
   hitTargets,
@@ -9,6 +10,8 @@ import {
   markPageFrame,
   markTargetKey,
   marqueeTargets,
+  pageFramesAt,
+  readPagesAt,
   targetBounds,
   targetMarqueeHit,
   targetPointHit,
@@ -351,5 +354,52 @@ describe('clickSuppression', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('the pages as laid out at one layout revision', () => {
+  // A viewer is one object whose answers change: the page is where it says it is now.
+  function movingViewer() {
+    const state = { page: { x: 0, y: 0, width: 600, height: 800 }, reads: 0 };
+    const viewer = {
+      pageGeometry: (pageIndex: number) =>
+        pageIndex === 0 ? { rotation: 0, x: 0, y: 0, width: 600, height: 800 } : null,
+      pageRect: (pageIndex: number) => {
+        state.reads += 1;
+        return pageIndex === 0 ? state.page : null;
+      },
+      containerRect: () => ({ x: 0, y: 0, width: 600, height: 800 }),
+    } as unknown as ViewerApi;
+    return { viewer, state };
+  }
+
+  it('measures a page once per reading, and keeps asking for one the viewer has not laid out', () => {
+    const { viewer, state } = movingViewer();
+    const frames = pageFramesAt(viewer, 4);
+    expect(frames.layout).toBe(4);
+    const first = frames.of(0);
+    expect(first?.scale).toBe(1);
+    expect(frames.of(0)).toBe(first);
+    expect(state.reads).toBe(1);
+    expect(frames.of(1)).toBeNull();
+    expect(frames.of(1)).toBeNull();
+    expect(state.reads).toBe(3);
+  });
+
+  it('is a new reading at a new layout: the page is where the viewer puts it now', () => {
+    const { viewer, state } = movingViewer();
+    const before = pageFramesAt(viewer, 0).of(0);
+    expect(before?.left).toBe(0);
+    state.page = { x: 50, y: 0, width: 1200, height: 1600 };
+    const after = pageFramesAt(viewer, 1).of(0);
+    expect(after?.left).toBe(50);
+    expect(after?.scale).toBe(2);
+  });
+
+  it('reads any kind of frame the layer asks for', () => {
+    const frames = readPagesAt(7, (pageIndex) => (pageIndex === 2 ? { pageIndex } : null));
+    expect(frames.layout).toBe(7);
+    expect(frames.of(2)).toEqual({ pageIndex: 2 });
+    expect(frames.of(3)).toBeNull();
   });
 });

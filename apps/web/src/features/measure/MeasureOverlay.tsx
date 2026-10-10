@@ -16,6 +16,8 @@ export interface MeasureOverlayProps {
   readonly t: Translator;
   readonly session: SessionStore;
   readonly viewer: ViewerApi;
+  /** The shell's layout revision, for the measurements to be placed again at each layout. */
+  readonly layout: number;
   /** The measurements to draw: the session's, minus any the viewer hides. */
   readonly marks: readonly MeasureMark[];
   /** The ruler takes the pointer only while the document can be edited. */
@@ -37,6 +39,7 @@ export function MeasureOverlay({
   t,
   session,
   viewer,
+  layout,
   marks,
   canEdit,
   color,
@@ -56,6 +59,7 @@ export function MeasureOverlay({
       <MeasureLayer
         t={t}
         viewer={viewer}
+        layout={layout}
         mode={canEdit ? mode : null}
         scale={scale}
         marks={marks}
