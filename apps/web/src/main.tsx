@@ -5,6 +5,7 @@ import { getStoredLocale } from 'pdf-ui/ui';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { loadEditor } from './features/shell/editor-store';
 import { initServiceWorkerUpdates } from './serviceWorkerUpdate';
 import './app.css';
 
@@ -31,6 +32,9 @@ loadLocale(getStoredLocale()).then(render, render);
 // It is the same same-origin chunk the open path would fetch - no new request appears
 // that a cold open would not have made.
 //
+// The editor layout (`features/shell/editor.ts`: the docks, the canvas and the tool strip an
+// open document shows) is warmed the same way, so opening a file never waits on its chunk.
+//
 // The two surfaces the shell reaches through a dynamic boundary (`pdf-ui/printing`,
 // `pdf-ui/palette`) are warmed the same way and for the same reason: they are lazy so
 // the entry chunk stays inside the ≤250 KiB budget, and prefetching them
@@ -41,6 +45,7 @@ loadLocale(getStoredLocale()).then(render, render);
 // first open failing after the network is back. It runs when the network returns instead.
 const warmChunks = () => {
   warmPdfjs();
+  void loadEditor().catch(() => undefined);
   void import('pdf-ui/printing').catch(() => undefined);
   void import('pdf-ui/palette').catch(() => undefined);
 };

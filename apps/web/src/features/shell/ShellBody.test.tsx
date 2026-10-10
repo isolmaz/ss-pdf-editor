@@ -14,7 +14,7 @@ import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import type { ViewerApi } from 'pdf-ui/viewer';
-import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { STANDALONE_COMMAND_IDS } from '../../commands';
 import { coreStore, initialCoreState, setBusy } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
@@ -23,6 +23,7 @@ import { exportStore, initialExportState } from '../export/export-store';
 import { hideStartScreen, initialOpenState, openStore, showStartScreen } from '../open/open-store';
 import { initialResultsState, resultsStore, setProgress } from '../results/results-store';
 import { initialSaveState, saveStore, viewerChanged, viewerRef } from '../save/save-store';
+import { type EditorSurfaces, editorStore, initialEditorState, loadEditor } from './editor-store';
 import { ShellBody, type ShellBodyProps } from './ShellBody';
 import { initialShellState, shellStore } from './shell-store';
 
@@ -181,6 +182,7 @@ vi.mock('./ViewerArea', async () => {
 const t = createTranslator('en');
 const handle = { id: 'handle' } as unknown as PdfDocumentHandle;
 const COMMANDS = [{ id: 'file.new' }, { id: 'file.open' }] as unknown as readonly Command[];
+let loadedEditor: EditorSurfaces;
 let session: SessionStore;
 let tabIds: string[];
 let props: {
@@ -221,7 +223,12 @@ function openTab(name = 'a.pdf') {
   return tab;
 }
 
+// The first import of the editor chunk loads the whole layout graph.
+beforeAll(async () => {
+  loadedEditor = await loadEditor();
+}, 60_000);
 beforeEach(() => {
+  editorStore.set({ surfaces: loadedEditor, loading: Promise.resolve(loadedEditor) });
   coreStore.set(initialCoreState());
   saveStore.set(initialSaveState());
   openStore.set(initialOpenState());
@@ -375,6 +382,54 @@ describe('ShellBody editor', () => {
     const allowed = fireEvent.contextMenu(canvas, { clientX: 12, clientY: 34 });
     expect(allowed).toBe(false);
     expect(exportStore.get().contextMenu).toMatchObject({ x: 12, y: 34, hasSelection: false });
+  });
+});
+
+describe('ShellBody editor chunk', () => {
+  it('keeps the home screen under the opening overlay until the editor chunk has arrived', () => {
+    editorStore.set({ surfaces: null, loading: new Promise(() => undefined) });
+    openTab('a.pdf');
+    renderBody();
+    expect(screen.getByLabelText('home screen').dataset.document).toBe('a.pdf');
+    expect(screen.queryByLabelText('document dock')).toBeNull();
+    expect(screen.getByLabelText('activity overlay').dataset.activity).toBe(t('open.progress'));
+    act(() => editorStore.set({ surfaces: loadedEditor }));
+    expect(screen.queryByLabelText('home screen')).toBeNull();
+    expect(screen.getByLabelText('document dock')).toBeTruthy();
+    expect(screen.getByLabelText('activity overlay').dataset.activity).toBe('null');
+  });
+
+  it('requests the editor chunk as soon as a file is opening, before any tab exists', async () => {
+    editorStore.set(initialEditorState());
+    renderBody();
+    expect(editorStore.get().loading).toBeNull();
+    act(() => openStore.set({ opening: true }));
+    expect(editorStore.get().loading).not.toBeNull();
+    await act(async () => {
+      await editorStore.get().loading;
+    });
+    expect(editorStore.get().surfaces).not.toBeNull();
+  });
+
+  it('requests nothing on the home screen with no file opening', () => {
+    editorStore.set(initialEditorState());
+    renderBody();
+    expect(editorStore.get().loading).toBeNull();
+  });
+
+  it('says so when the editor chunk cannot be fetched', async () => {
+    editorStore.set({
+      surfaces: null,
+      loading: Promise.reject(new TypeError('Failed to fetch dynamically imported module')),
+    });
+    openTab('a.pdf');
+    renderBody();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(coreStore.get().notice).toBe(
+      `${t('error.asset-offline.message')} ${t('error.asset-offline.hint')}`,
+    );
   });
 });
 
