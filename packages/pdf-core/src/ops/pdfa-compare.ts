@@ -37,14 +37,16 @@ export interface PageComparison {
   readonly shapeDiffers: boolean;
 }
 
-/** Up to `limit` page indices spread over the document, always including the first and the last. */
+/**
+ * Up to `limit` page indices spread over the document, always including the first and the last.
+ * `limit` is a whole number; a document of more pages than that is sampled at `limit` distinct pages.
+ */
 export function samplePageIndices(pageCount: number, limit: number): number[] {
   if (pageCount <= 0) return [];
   if (pageCount <= limit) return Array.from({ length: pageCount }, (_, index) => index);
   const picked = new Set<number>([0, pageCount - 1]);
   for (let step = 1; picked.size < limit; step += 1) {
     picked.add(Math.min(pageCount - 1, Math.round((step * (pageCount - 1)) / limit)));
-    if (step > limit * 2) break;
   }
   return [...picked].sort((left, right) => left - right);
 }
@@ -130,15 +132,16 @@ export function comparePage(
       let blockCount = 0;
       for (let y = top; y < Math.min(height, top + BLOCK); y += 1) {
         for (let x = leftEdge; x < Math.min(width, leftEdge + BLOCK); x += 1) {
+          // x and y are inside both renders (the loops stop at the smaller width and height).
           const difference = Math.abs(
-            (left.pixels[y * left.width + x] ?? 255) - (right.pixels[y * right.width + x] ?? 255),
+            (left.pixels[y * left.width + x] as number) - (right.pixels[y * right.width + x] as number),
           );
           blockTotal += difference;
           blockCount += 1;
         }
       }
       total += blockTotal;
-      if (blockCount > 0) worst = Math.max(worst, blockTotal / blockCount / 255);
+      worst = Math.max(worst, blockTotal / blockCount / 255);
     }
   }
   return {

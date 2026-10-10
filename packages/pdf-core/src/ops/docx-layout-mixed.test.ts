@@ -10,10 +10,11 @@
 import { DOMParser } from '@xmldom/xmldom';
 import JSZip from 'jszip';
 import type { PDFDocument } from 'mupdf';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import {
+  dropCovered,
   dropMasked,
   inkBoxes,
   isMixedPage,
@@ -30,7 +31,12 @@ import { line, officeDocument } from './export-office-fixtures';
 import type { PageScene } from './layout-scene';
 import { readPageScene } from './layout-scene-read';
 import type { RgbaImage } from './ocr-scene';
+import type { LayoutChar, LayoutLine } from './page-layout';
 import type { OperationContext } from './types';
+
+// Each case renders and reads whole pages with MuPDF: under a second alone, several under the
+// coverage run on a loaded core.
+vi.setConfig({ testTimeout: 30_000 });
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const run: OperationContext = { signal: new AbortController().signal };
@@ -1019,5 +1025,78 @@ describe('exact layout: cheap decisions about pictures', () => {
     expect(occurrences((await written(result.file.bytes)).replaceAll(' ', ''), 'aaaabbbbccccdddd')).toBe(6);
     const zip = await JSZip.loadAsync(result.file.bytes);
     expect(Object.keys(zip.files).filter((name) => /word\/media\/.*\.jpe?g$/.test(name))).not.toHaveLength(0);
+  });
+});
+
+describe('mixed page helpers on a hand-read scene', () => {
+  const char = (c: string, box: readonly [number, number, number, number]): LayoutChar => ({
+    c,
+    box,
+    baseline: box[3],
+    size: 10,
+    font: 'Helvetica',
+    bold: false,
+    italic: false,
+    mono: false,
+    serif: false,
+    color: 0,
+  });
+  const sceneWith = (blocks: PageScene['text']['blocks'], lines: readonly LayoutLine[] = []): PageScene => ({
+    width: 100,
+    height: 100,
+    items: [],
+    links: [],
+    text: {
+      width: 100,
+      height: 100,
+      blocks: [...blocks, { kind: 'text', box: [0, 0, 100, 100], lines }],
+      rulings: [],
+      marks: [],
+    },
+    appearances: { width: 100, height: 100, blocks: [], rulings: [], marks: [] },
+    unseenFields: 0,
+  });
+
+  it('reads the text of a scene that also has a picture block, and leaves the picture out of the visible boxes', () => {
+    const scene = sceneWith(
+      [{ kind: 'image', box: [0, 0, 100, 100], png: null }],
+      [
+        {
+          box: [10, 10, 30, 20],
+          dir: [1, 0],
+          chars: [char('a', [10, 10, 20, 20]), char('b', [20, 10, 30, 20])],
+        },
+      ],
+    );
+    expect(visibleBoxes(scene)).toEqual([[10, 10, 30, 20]]);
+  });
+
+  it('splits a line turned up the page into runs at a gap of more than two character sizes', () => {
+    const scene = sceneWith(
+      [],
+      [
+        {
+          box: [10, 0, 20, 90],
+          dir: [0, 1],
+          chars: [
+            char('c', [10, 60, 20, 70]),
+            char('a', [10, 0, 20, 10]),
+            char('b', [10, 10, 20, 20]),
+            char('d', [10, 70, 20, 80]),
+          ],
+        },
+      ],
+    );
+    expect(visibleBoxes(scene)).toEqual([
+      [10, 0, 20, 20],
+      [10, 60, 20, 80],
+    ]);
+  });
+
+  it('keeps a word whose box lies off the picture, and drops one over flat pixels', () => {
+    const flat: RgbaImage = { width: 40, height: 40, data: new Uint8Array(40 * 40 * 4).fill(255), scale: 1 };
+    const over = word('under', 5, 20, 5, 15);
+    const off = word('beyond', 100, 120, 100, 110);
+    expect(dropCovered([over, off], flat)).toEqual([off]);
   });
 });

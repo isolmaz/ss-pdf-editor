@@ -666,11 +666,12 @@ The limits are defined once, in
   JavaScript against the first one and fails when it is over. The other two are measured by
   hand; `pnpm assemble:dist` only prints the sizes of what it assembles.
   - ≤ 250 KiB gzip for the first-paint JavaScript: the entry chunk plus every
-    `<link rel="modulepreload">` script that `dist/editor/index.html` names, which is what the
+    `<link rel="modulepreload">` script that `apps/web/dist/index.html` names, which is what the
     browser fetches before the home screen renders. It is about 248 KiB: the entry chunk is about
     187 KiB (the React Compiler's memo caches for `App` and the status bar are about 5 KiB of
-    it; compiling the whole first paint would add 20 KiB and fail this budget, so
-    `apps/web/vite.config.ts` compiles only the editor chunk and those two) and the 11 preloaded
+    it; compiling the whole first paint would take it to 262.8 KiB and fail this budget, so
+    `apps/web/vite.config.ts` compiles the editor chunk and, of the first paint, `App`, the
+    status bar and the hosts that hand them props) and the 11 preloaded
     chunks (the React runtime, Kumo's shared dialog chunk, the
     `mupdf-write` vocabulary and a few `pdf-core` modules the shell and the editor share) the
     rest. The editor layout (docks, canvas, tool strip) is not part of it: it is its own chunk,
@@ -836,7 +837,7 @@ The limits are defined once, in
 | `pnpm lint` / `check` / `format` | Biome: lint / lint and format check / format write |
 | `pnpm unit` | Vitest, then the non-vacuity guard, then the source-level regressions; `VITEST_MAX_WORKERS=N` caps the unit workers |
 | `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`); `E2E_WORKERS=N` caps the browsers running at once |
-| `pnpm coverage [--skip-e2e] [--min-lines=N]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits); `--min-lines=N` fails the run when the total line coverage is under N % |
+| `pnpm coverage [--skip-e2e] [--min=N]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits); `--min=N` fails the run when the total lines, statements, branches or functions are under N %. CI splits the run over jobs with `--unit-only`, `--e2e-shard=N/M` and `--merge=<dir>[,<dir>...]` (see `tools/coverage/report.mjs`) |
 | `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
 | `pnpm fidelity [playwright args]` | PDF → Word export accuracy against LibreOffice (needs the assembled `dist/` and `LIBREOFFICE` set to the path of `soffice`); results in `test-results/fidelity/` |
 | `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
@@ -899,11 +900,18 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
   `e2e/fidelity/thresholds.json`; a `null` threshold is measured, not gated. Locally: `pnpm fidelity`
   with `LIBREOFFICE` set to the path of `soffice`. The report goes to the job summary and the
   `fidelity` artifact.
+- **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
+  (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each builds the unminified
+  editor, runs its quarter of the Playwright suite (the last shard also the service-worker tests)
+  and uploads the V8 coverage its pages wrote, so no runner holds the whole browser run.
+- **`coverage`** (after both) downloads what they uploaded and runs `pnpm coverage
+  --merge=coverage-parts --min=100`: unit and browser coverage added together must be 100 % on
+  lines, statements, branches and functions; the report is the `coverage-report` artifact.
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 
-`.github/workflows/nightly.yml` runs daily and on manual dispatch: `pnpm coverage
---min-lines=98`, which fails under 98 % total line coverage and uploads the report, and the
+`.github/workflows/nightly.yml` runs daily and on manual dispatch: the same three coverage jobs,
+whose `coverage` fails when any total is under 100 % and uploads the report, and the
 Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
 `.github/workflows/revert-proof.yml` runs on manual dispatch and on a pull request labelled
 `revert-proof`: for every fix on the list that `tools/review/revert-proof.mjs` reads, the
@@ -975,7 +983,7 @@ Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
 A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
-after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `fidelity` have passed. It runs `wrangler
+after `verify`, `e2e`, `e2e-service-worker`, `behavior`, `fidelity` and `coverage` have passed. It runs `wrangler
 deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
 `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
 runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.

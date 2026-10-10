@@ -20,15 +20,12 @@ const STORAGE_KEY = 'pdf-editor.locale';
  */
 export function getStoredLocale(): Locale {
   try {
-    if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored !== null && isLocale(stored)) return stored;
-      if (typeof navigator !== 'undefined') {
-        const languages = navigator.languages?.length ? navigator.languages : [navigator.language ?? ''];
-        const matched = matchLocale(languages);
-        if (matched !== null) return matched;
-      }
-    }
+    // Without a `window` (a server render) the reads below throw and the default applies.
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored !== null && isLocale(stored)) return stored;
+    const languages = navigator.languages.length > 0 ? navigator.languages : [navigator.language];
+    const matched = matchLocale(languages);
+    if (matched !== null) return matched;
   } catch {
     // Storage access may be restricted
   }
@@ -38,20 +35,19 @@ export function getStoredLocale(): Locale {
 /** `<html lang>` and `<html dir>` follow the interface language. */
 function markDocument(locale: Locale): void {
   document.documentElement.lang = locale;
-  document.documentElement.dir = localeInfo(locale)?.dir ?? 'ltr';
+  document.documentElement.dir = localeInfo(locale)?.dir === 'rtl' ? 'rtl' : 'ltr';
 }
 
 export function applyLocale(locale: Locale): void {
   try {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, locale);
-      markDocument(locale);
-      window.dispatchEvent(
-        new CustomEvent('pdf-locale-change', {
-          detail: { locale },
-        }),
-      );
-    }
+    // Without a `window` (a server render) the first line throws and nothing is applied.
+    window.localStorage.setItem(STORAGE_KEY, locale);
+    markDocument(locale);
+    window.dispatchEvent(
+      new CustomEvent('pdf-locale-change', {
+        detail: { locale },
+      }),
+    );
   } catch {
     // Storage access may be restricted
   }
@@ -97,10 +93,8 @@ export function useLocale(): {
 
   useEffect(() => {
     const onLocaleChange = (event: Event) => {
-      const custom = event as CustomEvent<{ locale: Locale }>;
-      if (custom.detail?.locale) {
-        setLocaleState(custom.detail.locale);
-      }
+      // `applyLocale` is the only dispatcher of this event and always sets `detail.locale`.
+      setLocaleState((event as CustomEvent<{ locale: Locale }>).detail.locale);
     };
 
     window.addEventListener('pdf-locale-change', onLocaleChange);
@@ -131,9 +125,8 @@ export function LanguageSelector({ t, className = '' }: LanguageSelectorProps) {
         <span className="sr-only">{label}</span>
         <select
           value={locale}
-          onChange={(event) => {
-            if (isLocale(event.target.value)) setLocale(event.target.value);
-          }}
+          // The options are the registry's own ids, so the value is always a `Locale`.
+          onChange={(event) => setLocale(event.target.value as Locale)}
           className="bg-transparent text-xs font-semibold text-kumo-strong outline-none"
         >
           {LOCALES.map((info) => (

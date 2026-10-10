@@ -269,6 +269,10 @@ function settled(box: Box): Box {
 /** The average scale of a matrix: `sqrt|det|`. */
 const averageScale = (m: Matrix): number => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
 
+/** The width a stroke is drawn with when the page is scaled by `scale` (a zero width is MuPDF's hairline). */
+const strokeWidth = (stroke: StrokeState, scale: number): number =>
+  Math.max(MIN_STROKE, stroke.getLineWidth() * scale);
+
 /** A colour space and a colour of it, in a form `drawColor` hands to the engine's binding. */
 type Drawable = readonly [ColorSpace, Color];
 
@@ -488,12 +492,21 @@ function renderWithoutText(
         clipPath(path, evenOdd, ctm) {
           if (skipping === 0) draw.clipPath(path, evenOdd, ctm);
         },
-        // MuPDF's PDF interpreter clips text of every render mode (4–7) with `clipText`, and a
-        // stroked path or stroked text never clips in PDF; layers are applied by the interpreter
-        // (a hidden one is not run), so `clipStrokePath`, `clipStrokeText`, `beginLayer` and
-        // `endLayer` are never called for a page and are not forwarded.
+        // Every call MuPDF's device base class counts on its container stack (a clip, mask, group
+        // or tile) is answered here as the `DrawDevice` must see it, or its end call throws
+        // "device calls unbalanced". The interpreter clips text of every render mode (4–7) with
+        // `clipText`, and a path or text stroked with a pattern or a shading with `clipStrokePath`
+        // or `clipStrokeText` (the stroke's outline is what the pattern is drawn through). Layers
+        // are applied by the interpreter (a hidden one is not run), so `beginLayer` and `endLayer`
+        // are never called for a page and are not forwarded.
+        clipStrokePath(path, stroke, ctm) {
+          if (skipping === 0) draw.clipStrokePath(path, stroke, ctm);
+        },
         clipText(text, ctm) {
           if (skipping === 0) draw.clipText(text, ctm);
+        },
+        clipStrokeText(text, stroke, ctm) {
+          if (skipping === 0) draw.clipStrokeText(text, stroke, ctm);
         },
         fillShade(shade, ctm, alpha) {
           borrowed(shade);
@@ -616,8 +629,13 @@ export function readPageScene(mupdf: Mupdf, page: Page, contentsOnly = false): P
       polygons: polygon === undefined ? parent.polygons : [...parent.polygons, polygon],
     });
   };
+  /**
+   * Ends the frame the matching begin call opened. MuPDF's device base class keeps a stack of
+   * what is open (clip, mask, group, tile) and throws "device calls unbalanced" before an end
+   * call reaches the device when nothing of its kind is open, so the base frame is never popped.
+   */
   const close = (): void => {
-    if (frames.length > 1) frames.pop();
+    frames.pop();
   };
 
   const slots: Slot[] = [];
@@ -720,7 +738,7 @@ export function readPageScene(mupdf: Mupdf, page: Page, contentsOnly = false): P
     return {
       color,
       alpha,
-      width: Math.max(MIN_STROKE, stroke.getLineWidth() * scale),
+      width: strokeWidth(stroke, scale),
       dash,
       cap: capOf(mupdf, stroke),
       join: joinOf(mupdf, stroke),
@@ -789,7 +807,17 @@ export function readPageScene(mupdf: Mupdf, page: Page, contentsOnly = false): P
       if (data.rect !== null || data.rings === null) open(data.box, { exact: data.rect !== null });
       else open(data.box, {}, { rings: data.rings, evenOdd });
     },
+    clipStrokePath(path, stroke, ctm) {
+      // A path stroked with a pattern or a shading: what is drawn lies on the stroke's outline.
+      const matrix = place(ctm);
+      const half = strokeWidth(stroke, averageScale(matrix)) / 2;
+      const [x0, y0, x1, y1] = readPath(path, matrix).box;
+      open([x0 - half, y0 - half, x1 + half, y1 + half], { exact: false });
+    },
     clipText() {
+      open(null, { exact: false });
+    },
+    clipStrokeText() {
       open(null, { exact: false });
     },
     clipImageMask(image, ctm) {
@@ -802,8 +830,9 @@ export function readPageScene(mupdf: Mupdf, page: Page, contentsOnly = false): P
     },
     endMask() {
       // The soft mask's own content is over; what follows is drawn under it, until `popClip`.
-      const mask = frames.pop();
-      if (mask !== undefined) frames.push({ ...mask, ignore: top().ignore });
+      // (MuPDF throws before this call unless `beginMask` opened the frame popped here.)
+      const mask = frames.pop() as Frame;
+      frames.push({ ...mask, ignore: top().ignore });
     },
     beginGroup(area, _colorspace, _isolated, _knockout, blendmode, alpha) {
       // MuPDF wraps a transparent fill+stroke in a knockout group; as vector shapes the two
@@ -859,12 +888,10 @@ export function readPageScene(mupdf: Mupdf, page: Page, contentsOnly = false): P
       }
       const picture = pictureOf(mupdf, image, matrix, full, shown, alpha * frame.alpha);
       if (picture !== null) {
+        // `visible` is part of `full`, so `full` has a width and a height: its longer side is positive.
         const side = Math.max(full[2] - full[0], full[3] - full[1]);
-        const nativeScale = side > 0 ? Math.max(image.getWidth(), image.getHeight()) / side : undefined;
-        emit(
-          { kind: 'image', box: shown, ...picture, ...(nativeScale === undefined ? {} : { nativeScale }) },
-          shown,
-        );
+        const nativeScale = Math.max(image.getWidth(), image.getHeight()) / side;
+        emit({ kind: 'image', box: shown, ...picture, nativeScale }, shown);
       }
     },
   });

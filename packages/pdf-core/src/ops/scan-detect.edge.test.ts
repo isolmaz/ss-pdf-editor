@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { detectPage } from './scan-detect';
+import { cornersOfSides, detectPage, type Side } from './scan-detect';
 import type { Point, RasterImage } from './scan-geometry';
 
 /** A picture of `desk` with an axis-aligned sheet; `shade` gives the sheet's grey at a column. */
@@ -61,16 +61,16 @@ describe('detectPage edge cases', () => {
   });
 });
 
-/** `paper` inside the convex polygon, `desk` outside; 2 x 2 coverage keeps the edges soft. */
-function polygon(
-  width: number,
-  height: number,
-  corners: readonly (readonly [number, number])[],
-  shade: (x: number, y: number) => number = () => 225,
-  desk = 30,
-): RasterImage {
+/** A sheet on the desk: its convex outline and the grey it is drawn in at a pixel. */
+interface Sheet {
+  readonly corners: readonly (readonly [number, number])[];
+  readonly shade: (x: number, y: number) => number;
+}
+
+/** `desk` with the sheets laid over it in order, the last on top; 2 x 2 coverage keeps the edges soft. */
+function picture(width: number, height: number, sheets: readonly Sheet[], desk = 30): RasterImage {
   const data = new Uint8ClampedArray(width * height * 4);
-  const contains = (x: number, y: number): boolean => {
+  const contains = (corners: Sheet['corners'], x: number, y: number): boolean => {
     let sign = 0;
     for (let index = 0; index < corners.length; index += 1) {
       const [ax, ay] = corners[index] as readonly [number, number];
@@ -85,16 +85,19 @@ function polygon(
   };
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      let covered = 0;
-      for (const [sx, sy] of [
-        [0.25, 0.25],
-        [0.75, 0.25],
-        [0.25, 0.75],
-        [0.75, 0.75],
-      ] as const) {
-        if (contains(x + sx, y + sy)) covered += 1;
+      let value = desk;
+      for (const sheet of sheets) {
+        let covered = 0;
+        for (const [sx, sy] of [
+          [0.25, 0.25],
+          [0.75, 0.25],
+          [0.25, 0.75],
+          [0.75, 0.75],
+        ] as const) {
+          if (contains(sheet.corners, x + sx, y + sy)) covered += 1;
+        }
+        value += ((sheet.shade(x, y) - value) * covered) / 4;
       }
-      const value = desk + ((shade(x, y) - desk) * covered) / 4;
       const at = (y * width + x) * 4;
       data[at] = value;
       data[at + 1] = value;
@@ -103,6 +106,17 @@ function polygon(
     }
   }
   return { width, height, data };
+}
+
+/** `paper` inside the convex polygon, `desk` outside. */
+function polygon(
+  width: number,
+  height: number,
+  corners: readonly (readonly [number, number])[],
+  shade: (x: number, y: number) => number = () => 225,
+  desk = 30,
+): RasterImage {
+  return picture(width, height, [{ corners, shade }], desk);
 }
 
 /** The detected corners, each within `tolerance` px of `wanted` in the same role. */
@@ -241,5 +255,103 @@ describe('detectPage on awkward outlines', () => {
       [370, 400],
       [18, 400],
     ]);
+  });
+});
+
+describe('detectPage on a sheet half hidden under another', () => {
+  it('leaves a side where the Hough line put it when fewer than 8 edge pixels lie along it to refit it with', () => {
+    // A mid-grey sheet lies over a lighter one on a dark desk. One side of the outline found has
+    // too few edge pixels between its two corners to fit a line through: refitted anyway, the
+    // first corner ends up 26 px from the sheet's own corner.
+    const found = detectPage(
+      picture(
+        85,
+        53,
+        [
+          {
+            corners: [
+              [48, 42],
+              [10, 30],
+              [53, 13],
+              [66, 27],
+            ],
+            shade: () => 180,
+          },
+          {
+            corners: [
+              [3, 6],
+              [32, 1],
+              [56, 13],
+              [18, 26],
+            ],
+            shade: () => 100,
+          },
+        ],
+        30,
+      ),
+    );
+    expectQuad(
+      found,
+      [
+        [3, 6],
+        [41.6, 0],
+        [53.7, 13.3],
+        [18.6, 26.8],
+      ],
+      0.25,
+    );
+  });
+});
+
+/** The line through two points, as the detector writes one: its normal's direction and its distance. */
+function through(from: Point, to: Point): Side {
+  let theta = Math.atan2(to.x - from.x, -(to.y - from.y));
+  if (theta < 0) theta += Math.PI;
+  return { theta, rho: from.x * Math.cos(theta) + from.y * Math.sin(theta) };
+}
+
+describe('cornersOfSides', () => {
+  const before: Point[] = [
+    { x: 1, y: 1 },
+    { x: 2, y: 1 },
+    { x: 2, y: 2 },
+    { x: 1, y: 2 },
+  ];
+  const at = (x: number, y: number): Point => ({ x, y });
+
+  it('closes four sides into the corners they cross at, in outline order', () => {
+    const top = through(at(0, 10), at(100, 12));
+    const right = through(at(100, 12), at(98, 90));
+    const bottom = through(at(98, 90), at(2, 88));
+    const left = through(at(2, 88), at(0, 10));
+    const corners = cornersOfSides([top, right, bottom, left], before);
+    expect(corners).toHaveLength(4);
+    for (const [index, [x, y]] of [
+      [0, 10],
+      [100, 12],
+      [98, 90],
+      [2, 88],
+    ].entries()) {
+      expect(corners[index]?.x, `corner ${index}`).toBeCloseTo(x as number, 6);
+      expect(corners[index]?.y, `corner ${index}`).toBeCloseTo(y as number, 6);
+    }
+  });
+
+  it('keeps the corners from before when two neighbouring sides came out parallel', () => {
+    const top = through(at(0, 10), at(100, 10));
+    const right = through(at(100, 10), at(100, 90));
+    const bottom = through(at(100, 90), at(0, 90));
+    // Parallel to the top: it never crosses it.
+    const left = through(at(0, 30), at(100, 30));
+    expect(cornersOfSides([top, right, bottom, left], before)).toEqual(before);
+  });
+
+  it('keeps the corners from before when the refit sides cross the outline over itself', () => {
+    // The top and the bottom lean towards each other and cross half way: a bow tie.
+    const top = through(at(0, 10), at(100, 50));
+    const right = through(at(100, 50), at(100, 10));
+    const bottom = through(at(100, 10), at(0, 50));
+    const left = through(at(0, 50), at(0, 10));
+    expect(cornersOfSides([top, right, bottom, left], before)).toEqual(before);
   });
 });

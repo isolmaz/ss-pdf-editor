@@ -604,6 +604,7 @@ export async function stubSpeech(page: Page, voices: readonly SpeechVoiceSpec[])
     };
     Object.defineProperty(window, 'speechSynthesis', { value: synthesis, configurable: true });
     Reflect.set(window, 'SpeechSynthesisUtterance', Utterance);
+    Reflect.set(window, 'engineSpeaking', () => current !== null);
     Reflect.set(window, 'finishSpeaking', () => {
       const done = current;
       current = null;
@@ -630,8 +631,24 @@ export function speechLog(
   });
 }
 
-/** The current utterance ends (`end`) or fails (`error`), as the engine would report it. */
+/**
+ * Resolves once the stubbed engine has started an utterance. The stub starts the queue on a timer
+ * after `speak`, as the platform engine does, so a click that queues a reading returns before
+ * anything is being spoken, and again after every restart that cancels the queue and queues it anew.
+ */
+export async function untilSpeaking(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const speaking: unknown = Reflect.get(window, 'engineSpeaking');
+    return typeof speaking === 'function' && speaking() === true;
+  });
+}
+
+/**
+ * The current utterance ends (`end`) or fails (`error`), as the engine would report it. An engine
+ * with nothing started has nothing to end, so this waits for the utterance first.
+ */
 export async function endUtterance(page: Page, how: 'end' | 'error' = 'end'): Promise<void> {
+  await untilSpeaking(page);
   await page.evaluate((outcome) => {
     const action: unknown = Reflect.get(window, outcome === 'end' ? 'finishSpeaking' : 'failSpeaking');
     if (typeof action === 'function') action();

@@ -34,5 +34,4 @@ export const comparePart = {
   'compare.reason.rasterCap': 'pixel raster cap',
   'compare.reason.pageTooLarge': 'page exceeds pixel limit',
   'compare.reason.pageSizeMismatch': 'different page sizes',
-  'compare.reason.unknown': 'unknown boundary limit',
 } as const;

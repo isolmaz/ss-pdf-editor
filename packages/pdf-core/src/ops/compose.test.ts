@@ -746,7 +746,7 @@ describe('mergeDocuments and form field names', () => {
 
 /** A bookmark to write: its title, the rest of its dictionary (`/Dest` or `/A`) and its children. */
 interface BookmarkSpec {
-  readonly title: string;
+  readonly title?: string;
   readonly entry: Record<string, unknown>;
   readonly children?: readonly BookmarkSpec[];
 }
@@ -754,7 +754,12 @@ interface BookmarkSpec {
 /** Write `specs` as the outline of `doc`, every sibling list linked through `/Parent`, `/Prev` and `/Next`. */
 function putOutline(doc: PDFDocument, specs: readonly BookmarkSpec[]): void {
   const link = (list: readonly BookmarkSpec[], parent: PDFObject): void => {
-    const items = list.map((spec) => doc.addObject({ Title: doc.newString(spec.title), ...spec.entry }));
+    const items = list.map((spec) =>
+      doc.addObject({
+        ...(spec.title === undefined ? {} : { Title: doc.newString(spec.title) }),
+        ...spec.entry,
+      }),
+    );
     let total = items.length;
     for (const [index, item] of items.entries()) {
       item.put('Parent', parent);
@@ -1028,6 +1033,18 @@ describe('composeDocument duplicates a page that holds links', () => {
     expect(out.report.notes.find((entry) => entry.key === 'op.note.compose.outlineCopies')?.params).toEqual({
       copies: 2,
     });
+  });
+
+  it('reads a bookmark without a title as one with an empty title, so a repeat of it goes', async () => {
+    const stub = await stubWithOutline((doc) => [
+      { entry: { Dest: [doc.findPage(0), doc.newName('Fit')] } },
+      { entry: { Dest: [doc.findPage(1), doc.newName('Fit')] } },
+    ]);
+    const out = await composeDocument({ sources: [{ pages: [0, 0] }], pageCount: 2 }, stub, run);
+    expect((await linkStructure(out.bytes)).outline.map((node) => [node.title, node.page])).toEqual([
+      [undefined, 0],
+    ]);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.compose.outlineCopies');
   });
 
   it('keeps a bookmark that only shares a title with an earlier one', async () => {

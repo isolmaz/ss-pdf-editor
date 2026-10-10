@@ -78,6 +78,30 @@ describe('commentThreads', () => {
     expect(thread?.records).toHaveLength(5);
   });
 
+  it('orders replies by their creation date when they have no modification date, undated ones first', () => {
+    const { threads } = commentThreads([
+      annotation('1R'),
+      annotation('2R', { inReplyTo: '1R', created: 'D:20261003100000Z' }),
+      annotation('3R', { inReplyTo: '1R', created: 'D:20261001100000Z' }),
+      annotation('4R', { inReplyTo: '1R' }),
+      annotation('5R', { inReplyTo: '1R', modified: 'D:20261002100000Z', created: 'D:20261009100000Z' }),
+    ]);
+    expect(threads.get('1R')?.replies.map((item) => item.annotation.id)).toEqual(['4R', '3R', '5R', '2R']);
+  });
+
+  it('reads a state record without a state model as a Review, dated by its creation date or by nothing', () => {
+    const { threads } = commentThreads([
+      annotation('1R'),
+      annotation('2R', { inReplyTo: '1R', state: 'Accepted', author: 'Bea', created: 'D:20261001100000Z' }),
+      annotation('3R'),
+      annotation('4R', { inReplyTo: '3R', state: 'Rejected', author: 'Cem' }),
+    ]);
+    expect(threads.get('1R')?.review).toEqual({ state: 'Accepted', author: 'Bea', at: 'D:20261001100000Z' });
+    expect(threads.get('1R')?.replies).toEqual([]);
+    expect(threads.get('3R')?.review).toEqual({ state: 'Rejected', author: 'Cem', at: null });
+    expect(threads.get('3R')?.marked).toBe(false);
+  });
+
   it('leaves /RT /Group annotations and orphaned records as rows of their own', () => {
     const { threads, records } = commentThreads([
       annotation('1R'),

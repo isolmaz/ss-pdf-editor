@@ -3,9 +3,10 @@
  *
  * Each export has the signature of the function it stands for, so a call site does not
  * change; the module behind it becomes its own chunk instead of part of the shell's first
- * paint (the entry chunk sits near its 250 KiB budget). Only modules that nothing else in
- * the entry graph imports by value are listed here — a module that is also imported
- * statically stays in the entry chunk whatever this file does.
+ * paint (the first-paint JavaScript, the entry plus its modulepreloads, sits near its 250 KiB
+ * budget). Only modules that nothing else in the entry graph imports by value are listed
+ * here — a module that is also imported statically stays in the entry chunk whatever this
+ * file does.
  *
  * A failed chunk load rejects that one call; the next call imports again (`import()` is
  * not memoised on failure).

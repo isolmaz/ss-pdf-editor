@@ -130,7 +130,6 @@ export function XfaFormDialog({ t, bytes, onClose, onSave, onExport }: XfaFormDi
   }, []);
 
   const save = async () => {
-    if (busy) return;
     setBusy(true);
     setStatus(null);
     try {
@@ -159,7 +158,6 @@ export function XfaFormDialog({ t, bytes, onClose, onSave, onExport }: XfaFormDi
   };
 
   const exportData = async () => {
-    if (busy) return;
     setBusy(true);
     setStatus(null);
     try {

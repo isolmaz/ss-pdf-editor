@@ -412,6 +412,23 @@ describe('flowing layout: hidden text', () => {
     });
   });
 
+  it('counts only the characters the reader would have seen, not the blanks of hidden text', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          line('helvetica', 12, 60, 400, 'VISIBLEWORD'),
+          'BT /F3 12 Tf 3 Tr 60 300 Td (HID DEN  ) Tj ET',
+        ].join('\n'),
+      },
+    ]);
+    const flow = await documentXml(bytes, 'flow');
+    expect(flow.text).toContain('VISIBLEWORD');
+    expect(flow.text).not.toContain('HID');
+    expect(flow.notes.find((entry) => entry.key === 'op.note.exportOffice.hiddenText')?.params).toEqual({
+      count: 'HIDDEN'.length,
+    });
+  });
+
   it('keeps the invisible layer of a scanned page, the only text it has', async () => {
     const mupdf = await loadMupdf();
     const scan = new mupdf.PDFDocument();

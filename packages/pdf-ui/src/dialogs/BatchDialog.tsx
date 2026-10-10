@@ -421,7 +421,7 @@ const RANGE_CEILING = 2000;
 
 /** A page field value (`''`, `all`, or typed range text) as a batch page selection. */
 function pageSelection(value: FieldValue | undefined, path: string): BatchPageSelection {
-  const raw = typeof value === 'string' ? value.trim() : '';
+  const raw = text(value).trim();
   if (raw === '' || raw === 'all') return 'all';
   const parsed = parsePageRange(raw, RANGE_CEILING);
   if (!parsed.ok) {
@@ -430,8 +430,9 @@ function pageSelection(value: FieldValue | undefined, path: string): BatchPageSe
   return parsed.pages.map((page) => page - 1);
 }
 
+/** A text, select or radio field's value: the field table seeds each with a string and only a string is ever written. */
 function text(value: FieldValue | undefined): string {
-  return typeof value === 'string' ? value : '';
+  return String(value);
 }
 
 function flag(value: FieldValue | undefined): boolean {
@@ -468,7 +469,8 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
     case 'ocr':
       return {
         pages: pageSelection(values.pages, 'ocr'),
-        languages: (Array.isArray(values.languages) ? values.languages : ['tur']) as readonly 'tur'[],
+        // A checkbox list always holds an array (the table seeds it with one).
+        languages: values.languages as readonly 'tur'[],
         quality: values.quality === 'best' ? 'best' : 'fast',
         dpi: number(values.dpi, 200),
         existingText: values.existingText === 'overwrite' ? 'overwrite' : 'skip',
@@ -532,7 +534,7 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
         baseName: 'batch',
       };
     case 'protect': {
-      const chosen = Array.isArray(values.permissions) ? values.permissions : [];
+      const chosen = values.permissions as readonly string[];
       const allowed = (permission: string) => chosen.includes(permission);
       return {
         userPassword: text(values.userPassword),
@@ -713,7 +715,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     } catch (error) {
       // A page field that does not parse is the one thing the field table cannot
       // refuse on its own (it is text, and the bound is the item's own count).
-      const detail = String((error as Error)?.message ?? error);
+      const detail = (error as Error).message;
       setFailure({ message: t('batch.error.queue'), hint: detail });
       setStatus('error');
       return;
@@ -775,16 +777,18 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     }
   }, [name, onDownload, ruleSet, t]);
 
-  const download = useCallback(() => {
-    if (report === null) return;
-    const produced: OutputFile[] = [];
-    for (const result of report.results) {
-      if (result.status !== 'done') continue;
-      produced.push({ name: result.name, bytes: result.bytes, mime: 'application/pdf' });
-      produced.push(...result.extras);
-    }
-    onDownload(produced);
-  }, [onDownload, report]);
+  const download = useCallback(
+    (finished: BatchReport) => {
+      const produced: OutputFile[] = [];
+      for (const result of finished.results) {
+        if (result.status !== 'done') continue;
+        produced.push({ name: result.name, bytes: result.bytes, mime: 'application/pdf' });
+        produced.push(...result.extras);
+      }
+      onDownload(produced);
+    },
+    [onDownload],
+  );
 
   const loadTemplate = useCallback(
     async (file: File) => {
@@ -797,7 +801,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
         const mapped = toToolError(error, 'ui');
         setFailure({
           message: t(mapped.messageKey),
-          hint: `${t(mapped.hintKey)} ${mapped.details.engineMessage ?? ''}`,
+          hint: [t(mapped.hintKey), mapped.details.engineMessage].filter(Boolean).join(' '),
         });
       }
     },
@@ -881,7 +885,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
               multiple
               className="hidden"
               onChange={(event) => {
-                const picked = Array.from(event.target.files ?? []);
+                const picked = Array.from(event.target.files as FileList);
                 if (picked.length > 0) setFiles(picked);
                 event.target.value = '';
               }}
@@ -996,7 +1000,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
             {running ? t('batch.cancel') : t('batch.close')}
           </Button>
           {report === null || running ? null : (
-            <Button variant="outline" onClick={download}>
+            <Button variant="outline" onClick={() => download(report)}>
               {t('batch.download')}
             </Button>
           )}
@@ -1036,7 +1040,7 @@ function BatchReportList({ t, report }: { readonly t: Translator; readonly repor
         {report.results.map((result) => (
           <li key={result.name} className="flex flex-col gap-1">
             <p className="text-xs text-kumo-default">
-              {result.name} — {t(STEP_LABEL_KEYS[report.order[0] ?? 'metadata'])}
+              {result.name} — {t(STEP_LABEL_KEYS[report.order[0] as BatchStepKind])}
               {result.status === 'done'
                 ? ` · ${t('batch.report.completed', {
                     before: result.inputBytes,

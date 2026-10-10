@@ -48,7 +48,8 @@ export interface ReadingPaneProps {
  */
 function languageName(lang: string, locale: string): string {
   try {
-    return new Intl.DisplayNames([locale], { type: 'language' }).of(lang) ?? lang;
+    // `fallback` defaults to "code", so a well-formed tag the platform cannot name comes back as itself.
+    return new Intl.DisplayNames([locale], { type: 'language' }).of(lang) as string;
   } catch {
     return lang;
   }

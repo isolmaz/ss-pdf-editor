@@ -83,8 +83,8 @@ const KAPPA = 0.5523;
  * The PDF content-stream operators a shape appearance uses, spelled out.
  *
  * Spelled out as data rather than taken from an engine module: a value import from an
- * engine package would drag it into the first-paint chunk (the entry once measured
- * 440 KiB gzip against a 250 KiB budget); engines load lazily.
+ * engine package would pull the engine into the first paint, far over its 250 KiB gzip
+ * budget; engines load lazily.
  *
  * PDF 32000-1 Table A.1 is the source for each mnemonic.
  */

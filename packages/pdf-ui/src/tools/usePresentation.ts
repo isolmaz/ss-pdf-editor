@@ -6,9 +6,9 @@ import './tools.css';
 /**
  * Presentation mode: the document alone, page by page.
  *
- * Full screen is the **browser's** state, not React state — `apps/web/src/App.tsx`
- * owns its full-screen toggle through `document.fullscreenElement` and has no
- * state field for it — so the hook requests full screen on the viewer's own scroll
+ * Full screen is the **browser's** state, not React state —
+ * `apps/web/src/features/shell/use-shell-commands.ts` (`toggleFullscreen`) owns its
+ * full-screen toggle through `document.fullscreenElement` and has no state field for it — so the hook requests full screen on the viewer's own scroll
  * container. That is what makes "no chrome" true without touching the shell: the
  * toolbar, tab strip, dock and status bar are outside that element. Leaving full
  * screen by any route (Escape, F11, another window taking over) is treated as
@@ -172,26 +172,31 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
 
   useEffect(() => {
     if (!active) return undefined;
-    const container =
-      viewerRef.current === null ? null : (findViewerDom(viewerRef.current)?.container ?? null);
+    const container = findViewerDom(viewerRef.current)?.container ?? null;
 
     /**
      * Entering full screen resizes the container, and pdf.js re-applies a
      * `page-width` fit only when the value is set again (its own resize observer
      * just updates the container height). Re-apply the fit — unless the reader
-     * zoomed away from it in the meantime, whose scale is theirs to keep.
+     * zoomed away from it in the meantime, whose scale is theirs to keep — and
+     * keep the page on screen aligned either way.
      */
     let fitted = viewerRef.current?.getZoom() ?? null;
     const refit = () => {
       const current = viewerRef.current;
       if (current === null || fitted === null) return;
-      if (Math.abs(current.getZoom() - fitted) > 1e-6) return;
       const dom = findViewerDom(current);
       const shown = dom === null ? 0 : pageIndexAtTop(dom);
-      current.setZoom('page-width');
-      fitted = current.getZoom();
+      if (Math.abs(current.getZoom() - fitted) <= 1e-6) {
+        current.setZoom('page-width');
+        fitted = current.getZoom();
+      }
       // pdf.js keeps the old scroll fraction through a rescale, which leaves the
       // page cut off at the top; "the page fills the screen" needs it aligned.
+      // The page is aligned whoever rescaled: the pane re-applies a width fit on
+      // its own when the container's width changes, and when entering full screen
+      // lands before this observer's first run, that rescale (which only keeps the
+      // old scroll fraction) is what changed the zoom — leaving the page cut off.
       current.goToPage(shown);
     };
     const sizes = new ResizeObserver(refit);
@@ -199,7 +204,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
 
     const move = (kind: MoveKind) => {
       const current = viewerRef.current;
-      const dom = current === null ? null : findViewerDom(current);
+      const dom = findViewerDom(current);
       if (current === null || dom === null || dom.pages.length === 0) return;
       const last = dom.pages.length - 1;
       const from = kind === 'next' || kind === 'previous' ? pageIndexAtTop(dom) : 0;
@@ -233,7 +238,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
 
     const onScroll = () => {
       const current = viewerRef.current;
-      const dom = current === null ? null : findViewerDom(current);
+      const dom = findViewerDom(current);
       if (dom === null) return;
       setPage(pageIndexAtTop(dom));
     };

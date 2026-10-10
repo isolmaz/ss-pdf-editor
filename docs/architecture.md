@@ -121,14 +121,14 @@ concrete consequences are recorded in the code:
 
 - `packages/pdf-ui/src/shell/ShellSurface.tsx` is the `./ui` entry and is **only a re-export
   barrel** — it is the deliberate first-paint import surface, not a component. There is
-  no `ShellSurface` component; the shell is `apps/web/src/App.tsx`.
+  no `ShellSurface` component; the shell is `apps/web/src/App.tsx`, the composition root, and
+  the layout components in `apps/web/src/features/shell/`.
 - `packages/pdf-core/src/ops/index.ts` re-exports only some of the operation modules; the
   others (sanitize, PDF/A, structure, XFA, scan, conversion and more) are imported by
   subpath, as `pdf-core/ops/<name>`, which `pdf-core`'s `./ops/*` export allows. The one
-  omission its code explains is `./sign`: routing signing through the barrel pulled `pkijs`
-  + `asn1js` into the entry chunk (measured: 302.66 KiB gzip against a locked ≤ 250 KiB
-  budget); the sign dialog imports `pdf-core/ops/sign` directly so the ASN.1 stack keeps
-  its own chunk.
+  omission its code explains is `./sign`: routing signing through the barrel would pull `pkijs`
+  + `asn1js` into the first paint, over its locked ≤ 250 KiB gzip budget; the sign dialog
+  imports `pdf-core/ops/sign` directly so the ASN.1 stack keeps its own chunk.
 
 Everything heavy is a dynamic `import()`: the pdf.js core, the viewer stack, the dialogs,
 the dock panels, the editor layout, the print surface and the palette are all loaded on demand, and
@@ -144,7 +144,9 @@ image list, form read and fill, composition and the session-annotation writer. O
 module that nothing else in the entry graph imports by value can be listed there; one that is
 also imported statically stays in the entry chunk. The comment data formats
 (`annotation-data`, `annotation-xfdf`), form-field detection, `unlockDocument` and the review
-writer are dynamic `import()`s at their call sites in `App.tsx`. `fieldValueText`, which the
+writer are dynamic `import()`s at their call sites in the feature modules
+(`features/annotations/annotation-data.ts`, `features/forms/form-actions.ts`,
+`features/dialogs/dialog-actions.ts`, `features/comments/review.ts`). `fieldValueText`, which the
 form panel needs on every render, lives in `ops/form-value.ts` so the form writer behind
 `lazy-ops.ts` stays out of the entry.
 
@@ -155,12 +157,13 @@ which nothing draws (the editor uses `regular`, `bold`, `fill` and `duotone`; Ku
 `bold` and `fill`). **Catalogues**: each interface language is a chunk of its own
 (`LocaleInfo.load`), because only one is ever shown, and `main.tsx` awaits the interface
 language's catalogue before the first render. `main.tsx` imports from `pdf-ui/ui`, not the
-`pdf-ui` barrel, which `App.tsx` loads lazily.
+`pdf-ui` barrel, which the editor's measure layer (`features/measure/MeasureOverlay.tsx`) loads
+lazily.
 
 **The editor is its own chunk.** The home screen is all the first paint needs, so what only an
 open document shows leaves the entry graph: `features/shell/editor.ts` re-exports `EditorSurface`
 (the document dock, the tool rail, the canvas with its mark layers, the right dock, the reading
-layers and the print host, moved out of `ShellBody`) and `ToolStrip`, and everything those import
+layers and the print host) and `ToolStrip`, and everything those import
 (the viewer, the panels, the operation forms, the Phosphor icons only they draw) goes with them.
 `features/shell/editor-store.ts` reaches the module through one dynamic `import()` and publishes
 it to a store. The shell never renders it through `React.lazy`, because a lazy boundary commits
@@ -2257,8 +2260,8 @@ picked, in the product's words rather than the browser's "Choose File".
 **One host.** `OperationForm` (`dialogs/OperationForm.tsx`) is the whole of an operation's
 surface — title, the two numbered steps (`DialogSteps`: settings, then review/result), the
 fields, progress with a working cancel, the destructive second confirmation, the error with
-its diagnostic, the report — and `App.tsx` shows it in the right dock's tools panel for
-**every** operation, so there is one runner with one destructive confirmation and one meaning
+its diagnostic, the report — and the right dock (`features/shell/RightDock.tsx`) shows it in
+its tools panel for **every** operation, so there is one runner with one destructive confirmation and one meaning
 of "Close". The first-step button reads *Preview* (`op.apply`) because it
 runs the operation and shows the report; only the result's own action
 (`RESULT_ACTIONS[resultKind]`: apply to the document / open in a new tab / download) changes
@@ -2271,8 +2274,8 @@ so a panel that did so right after handing over its result would abort every res
 it reached the document (`e2e/editor-stability.spec.ts` guards this).
 
 `packages/pdf-ui/src/ops/index.ts` registers **37** dialog ids against lazy `import()` loaders, so a
-capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
-opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
+capability's field tables and page-scope logic stay out of the first paint.
+`features/dialogs/dialog-actions.ts` opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
 
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
@@ -2495,7 +2498,7 @@ on the page on screen when nothing is selected.
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant A as App.tsx
+    participant A as features/save
     participant O as operations.ts
     participant C as pdf-core
     participant V as verifyForWrite
@@ -2956,14 +2959,14 @@ Versioning is the interesting half:
   styles `index.html` names, and the interface catalogues: each language is a run-time
   chunk the HTML never names, so `tools/assemble-dist.mjs` finds them by their source maps
   and lists them as `shell` in `offline-manifest.json` (the build fails if a registered
-  language has no chunk). Without them an offline reload painted raw message keys.
+  language has no chunk). Without them an offline reload would paint raw message keys.
 - Readiness is a **set-containment** test over the exact paths in
   `apps/web/src/offline-packages.json` — the single list, read by the app *and* by the
   build. A capability is ready only when every path it needs is cached, with the missing
   ones named; a substring check would report a half-downloaded language pack as ready.
   The shell asks only about the capabilities the preparation fetches
   (`incompleteCapabilities(readiness, requiredCapabilities({ ocr: false }))`): `tesseract`
-  is cached on first use, and counting it made every finished preparation read as
+  is cached on first use, so counting it would make every finished preparation read as
   incomplete.
 - The editor's own code is a capability too, `app`: every file of the editor build (all of
   `dist/editor/` but the source maps and the start page, which `core` lists). Its names are
@@ -3090,7 +3093,12 @@ merges are merge commits.
   LibreOffice 26.2.6 (official `.deb` tarball pinned by version and sha256) and compared, SSIM at
   100 dpi per page and word accuracy in reading order per document, against
   `e2e/fidelity/thresholds.json` (`null` = measured, not gated); locally `pnpm fidelity` with
-  `LIBREOFFICE` set. The report goes to the job summary and the `fidelity` artifact.
+  `LIBREOFFICE` set. The report goes to the job summary and the `fidelity` artifact. Coverage runs
+  as three kinds of job, so that no runner holds the whole browser run: `coverage-unit` (needs
+  `verify`) runs `pnpm coverage --unit-only`; `coverage-e2e` (needs `verify`) runs `pnpm coverage
+  --e2e-shard=N/4` in four shards; and `coverage` needs both, downloads what they uploaded and runs
+  `pnpm coverage --merge=coverage-parts --min=100` (every total at 100 %, the report uploaded as
+  `coverage-report`).
 - `deploy` runs only on a push to `main` and needs every job above: `wrangler deploy` with the
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
   <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
@@ -3101,9 +3109,10 @@ merges are merge commits.
   the previous version and the job fails. One deploy runs at a time (a concurrency
   group; a running deploy is never cancelled), and a commit that is no longer `main`'s head when
   its deploy starts deploys nothing. `pnpm run worker:deploy` is the same publish by hand.
-- `.github/workflows/nightly.yml` (daily and on demand) has two jobs: `coverage` runs
-  `pnpm coverage --min-lines=98`, which fails under 98 % total lines and uploads the report
-  (14 days), and `flaky` runs the `chromium` project in four shards with `--repeat-each=2
+- `.github/workflows/nightly.yml` (daily and on demand) runs the same three coverage jobs as
+  `ci.yml` (`coverage-unit`, `coverage-e2e` in four shards, and `coverage`, whose `pnpm coverage
+  --merge=coverage-parts --min=100` fails when any total is under 100 % and uploads the report for
+  14 days) and `flaky`, which runs the `chromium` project in four shards with `--repeat-each=2
   --retries=0 --fail-on-flaky-tests`.
 - `.github/workflows/revert-proof.yml` (on demand, and on a pull request labelled
   `revert-proof`; six shards) takes every fix a pull request lists in the manifest
@@ -3131,10 +3140,10 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Built application | Playwright against assembled `dist/` under production headers (`playwright.config.ts`, served by `tools/preview-dist.mjs`), Chromium only, no launch flags. Every spec goes through `e2e/test.ts`, whose automatic fixture fails a test on any console error or uncaught exception in any page of its browser context unless the test names it (`allowedErrors`; `referee.spec.ts` checks the referee itself on a second page) and which, when `E2E_COVERAGE` is set, records every page's V8 coverage (the Coverage row). Two projects: `chromium` runs everything except tests tagged `@service-worker` (the worker's install, update and offline reload: `offline.spec.ts`, `app-flows.spec.ts`, `app15-update.spec.ts`, `flows-modes.spec.ts`), and `service-worker` runs those once the first has passed (`dependencies`), because their timing depends on an idle machine; a targeted run of one of them takes `--no-deps`. `E2E_WORKERS` caps the browsers on a machine someone is using; CI runs with one retry. What is asserted is what the user sees and the file the export writes, re-read with MuPDF or pdf.js (`readProducedEntry` in `tool-fixture.ts`; fixtures are generated in the test, the OCR scan included: known printed lines rasterised by MuPDF into an image-only PDF, recognised words asserted in reading order). The suite comes in families. **Shell and document:** `smoke`, `document`, `web-shell`, `ui-shell` (menu bar, palette, settings), `editor-stability` (a mark scrolls with its page, arming a tool or posting a notice leaves the viewer where it is), `ocr`, `offline`, `two-window` (two windows on one vault) and `ui-recovery-race` (a document opened while draft recovery waits keeps the front; `recent-handles-gate.ts` holds the handle store). **`flows-*`:** document, pages, modes (undo queueing, reading and presentation mode, the update banner against a second origin, signing and the save warning), commands (one test per menu command) and parity (comment threads, field detection, sanitize, PDF/A, PDF/UA, right-to-left). **`app-*`:** files (pickers and write-back), flows (other formats opened as PDFs, history, tab lifecycle), home and shortcuts (every chord, and the widgets that keep their keys). **`app15-*`:** work that arrives while the shell is busy, commands on a selection, navigation, refusals, the start page when part of it cannot be fetched, the update banner's dismissal and a damaged vault. **`ui-*`:** one family per surface, each checked in the produced file: marks (`ui-marks-*`, `ui-layers-*`, `tool-interaction`), panels (`ui-panels*`, `ui-tags`, `ui-accessibility`, `ui-comments`, `ui-compare`, `ui-outline`, `ui-pages`, `ui-properties`, `ui-attachments`, `ui-search`), the viewer, print, presentation, read-aloud and snapshot (`ui-viewer15*`, `ui-rest16*`, `ui-print`, `ui-presentation`, `ui-read-aloud`, `ui-snapshots`), scan, signatures and stamps (`ui-scan*`, `ui-signature*`, `ui-stamp-image`), XFA and batch (`ui-xfa*`, `ui-batch`), Office export (`ui-office-*`), dialogs and badges (`ui-small`, `ui-password`). **`faults16*`:** engine failures injected in the running app through `e2e/engine-faults.ts` (Engine and hostile-input guards row). `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes |
 | Landing and legal pages | `e2e/site.spec.ts`, Playwright against the same assembled `dist/`, covers the six pages of `apps/site` in Turkish and English: each is well-formed (one `h1` and one `main`, language, description, canonical, three `hreflang` links and a sitemap entry, resolving links and anchors), the language switch leads to the translation and back, the English pages contain no Turkish letters, the header call to action opens `/editor/` from both languages, section anchors scroll and the FAQ expands, an unknown path gets the styled 404 page with working exits (the English one under `/en/`, whose exits stay in English), the stored theme is applied by a synchronous `theme-boot.js` before first paint and survives a reload, fonts and images load with no CSP violation, and the skip link is the first tab stop with no sideways scroll at phone width |
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
-| Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build without the React Compiler (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`) and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. `--skip-e2e` reports the unit suite alone; `--min-lines=<percent>` fails the run under that total (the nightly workflow passes 98). `E2E_WORKERS` caps the browsers and Vitest's own `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
+| Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the Playwright suite against an unminified build without the React Compiler (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` and writes it to its own gzipped file when the page is collected (`e2e/test.ts`), a worker keeping nothing between tests; the records are merged a batch at a time, mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. With no mode flag one process does all of this; the hosted workflows split it: `--unit-only` runs the unit suite and leaves `coverage/unit/coverage-final.json`, `--e2e-shard=N/M` builds, runs the chromium project's shard N of M (shard M also the service-worker tests) and leaves its records in `coverage/e2e-v8/`, and `--merge=<dir>[,<dir>...]` takes those files from the directories, builds the editor again for its source maps (the build is deterministic), restores the production build and writes the report. `--skip-e2e` reports the unit suite alone; `--min=<percent>` fails a run that prints a report when the total lines, statements, branches or functions are under it, and names the files that miss (the CI and nightly `coverage` jobs pass `--merge=coverage-parts --min=100`). `E2E_WORKERS` caps the browsers and Vitest's own `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
 | Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
-| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `fidelity` (`pnpm fidelity`: DOCX export round trip through LibreOffice, SSIM and word accuracy against `e2e/fidelity/thresholds.json`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
-| Nightly | `.github/workflows/nightly.yml`: `pnpm coverage --min-lines=98` (fails under 98 % total lines, uploads the report) and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
+| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `fidelity` (`pnpm fidelity`: DOCX export round trip through LibreOffice, SSIM and word accuracy against `e2e/fidelity/thresholds.json`); `coverage-unit` (`pnpm coverage --unit-only`), `coverage-e2e` in 4 shards (`pnpm coverage --e2e-shard=N/4`, each building the unminified editor and uploading its pages' V8 records) and `coverage`, which needs both and runs `pnpm coverage --merge=coverage-parts --min=100` on the artifacts they uploaded; then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
+| Nightly | `.github/workflows/nightly.yml`: the three coverage jobs of `ci.yml`, whose `coverage` runs `pnpm coverage --merge=coverage-parts --min=100` (fails when any total is under 100 %, uploads the report), and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
 | Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix a pull request lists in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
 | Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |

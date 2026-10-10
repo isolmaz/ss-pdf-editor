@@ -137,14 +137,14 @@ export function PrintDialog({ t, viewer, open, onClose, onNotice, onProduced }: 
     printing.start(request(pages));
   };
 
-  const startProduce = async () => {
+  const startProduce = async (deliver: (file: PrintProducedFile) => void) => {
     const pages = selectedPages();
-    if (pages === null || onProduced === undefined) return;
+    if (pages === null) return;
     setProduceError(null);
     try {
       const bytes = await printing.produce(request(pages));
       if (bytes === null) return;
-      onProduced({ name: t('print.fileName'), bytes });
+      deliver({ name: t('print.fileName'), bytes });
       onNotice?.(t('print.produced', { name: t('print.fileName') }));
     } catch (error) {
       // The engine's own sentence and hint (`pdf-shared/errors.ts`): a refused
@@ -252,7 +252,8 @@ export function PrintDialog({ t, viewer, open, onClose, onNotice, onProduced }: 
                     : 'print.duplex.simplex',
               )
             }
-            onValueChange={(next) => setDuplex((next ?? 'simplex') as PrintDuplex)}
+            // A single-choice select reports the option chosen, never an empty value.
+            onValueChange={(next) => setDuplex(next as PrintDuplex)}
           >
             <Select.Option value="simplex">{t('print.duplex.simplex')}</Select.Option>
             <Select.Option value="long-edge">{t('print.duplex.longEdge')}</Select.Option>
@@ -305,7 +306,7 @@ export function PrintDialog({ t, viewer, open, onClose, onNotice, onProduced }: 
               // Without the engine document there are no bytes to impose, and a
               // job already in flight must not be started twice.
               disabled={busy || source === null}
-              onClick={() => void startProduce()}
+              onClick={() => void startProduce(onProduced)}
             >
               {t('print.produce')}
             </Button>

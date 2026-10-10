@@ -3,7 +3,7 @@
  * skew found, the page turned on the same canvas, and a level page left alone.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import { line, officeDocument } from './export-office-fixtures';
 import type { TextBox, TextParagraph, TextRun } from './layout-scene';
@@ -19,6 +19,10 @@ import {
   uprightScan,
 } from './ocr-preprocess';
 import type { RgbaImage } from './ocr-scene';
+
+// Each case renders whole pages with MuPDF at 150 or 300 dpi: under a second alone, several
+// under the coverage run on a loaded core.
+vi.setConfig({ testTimeout: 30_000 });
 
 const SENTENCES = [
   'The quick brown fox jumps over the lazy dog',
@@ -146,17 +150,20 @@ describe('skew', () => {
     }
   });
 
-  it('leaves a sheet whose text runs up the page alone, level or a little crooked, in small and large type', async () => {
-    const large = SENTENCES.map((text, at) => line('helvetica', 28, -160, 170 - at * 78, text)).join('\n');
-    for (const operators of [textLines(), large]) {
-      for (const degrees of [0, 1.4, 4.5, -1.5]) {
-        for (const quarter of [90, 270]) {
-          const found = detectSkew(toGrey(await render(turned(quarter + degrees, operators), 150)));
-          expect(isSkewed(found), `${quarter}+${degrees}°: ${JSON.stringify(found)}`).toBe(false);
-        }
-      }
-    }
-  });
+  const sideways = (['small', 'large'] as const).flatMap((type) =>
+    [0, 1.4, 4.5, -1.5].flatMap((degrees) => [90, 270].map((quarter) => [type, quarter, degrees] as const)),
+  );
+  it.each(sideways)(
+    'leaves a sheet whose %s text runs up the page alone, turned %i° and %d° crooked',
+    async (type, quarter, degrees) => {
+      const operators =
+        type === 'small'
+          ? textLines()
+          : SENTENCES.map((text, at) => line('helvetica', 28, -160, 170 - at * 78, text)).join('\n');
+      const found = detectSkew(toGrey(await render(turned(quarter + degrees, operators), 150)));
+      expect(isSkewed(found), JSON.stringify(found)).toBe(false);
+    },
+  );
 
   it('asks for a clear peak: a skew that stands only a little above the rest is not turned', () => {
     expect(isSkewed({ angle: 3, confidence: 2.4 })).toBe(false);

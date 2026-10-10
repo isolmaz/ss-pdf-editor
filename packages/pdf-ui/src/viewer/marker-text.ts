@@ -17,18 +17,17 @@ const MARKER = 'pdf-editor-ann:';
 
 /** Strip the marker from every text node under `node` that carries one. */
 function cleanTree(node: Node): void {
-  if (node.nodeType === Node.TEXT_NODE) {
-    const text = node.textContent ?? '';
-    if (text.includes(MARKER)) node.textContent = commentText(text);
+  if (node instanceof Text) {
+    if (node.data.includes(MARKER)) node.data = commentText(node.data);
     return;
   }
-  if (!(node instanceof Element) || !node.textContent?.includes(MARKER)) return;
+  if (!(node instanceof Element) || !node.textContent.includes(MARKER)) return;
   const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
   const hits: Text[] = [];
   for (let current = walker.nextNode(); current !== null; current = walker.nextNode()) {
-    if ((current.textContent ?? '').includes(MARKER)) hits.push(current as Text);
+    if ((current as Text).data.includes(MARKER)) hits.push(current as Text);
   }
-  for (const text of hits) text.textContent = commentText(text.textContent ?? '');
+  for (const text of hits) text.data = commentText(text.data);
 }
 
 /** Watch `root` for popups and clean each one as it appears; returns the disconnect. */

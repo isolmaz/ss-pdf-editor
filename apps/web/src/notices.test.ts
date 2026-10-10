@@ -2,12 +2,12 @@
  * The notice line as data: what the shell says when a draft restore
  * ends, when a promise it cannot await rejects, and what a verification table reads as.
  *
- * These are the cases the previous shell got wrong in ways only a person could see: a
- * restore that applied **nothing** said nothing, a rejected `applyEngineValues` had no
- * `catch` at all, and a picker's failure sentence replaced the message of the document
- * that failed to open. Each of those is a *choice of sentence plus its count*, which is
- * what the descriptors below are — asserting them asserts the behaviour, not the
- * wording, so a translation change does not break the test and a dropped count does.
+ * These are cases a person would only see in the product: a restore that applied
+ * **nothing** must say so, a rejected `applyEngineValues` must be caught, and a picker's
+ * failure sentence must not replace the message of the document that failed to open. Each
+ * of those is a *choice of sentence plus its count*, which is what the descriptors below
+ * are — asserting them asserts the behaviour, not the wording, so a translation change does
+ * not break the test and a dropped count does.
  */
 
 import type { Translator } from 'pdf-shared';

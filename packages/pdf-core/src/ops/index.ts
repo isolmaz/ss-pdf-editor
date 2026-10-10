@@ -31,8 +31,8 @@ export * from './security';
 /**
  * **Not** `export * from './sign'`: that module brings `signature-cms` and through it pkijs
  * and asn1js (~900 kB of source). The barrel is imported for value by several panels, so
- * anything listed here lands on the first paint — measured: signing through the barrel put
- * the entry chunk at 302.66 KiB gzip against a locked ≤ 250 KiB budget. The sign dialog
+ * anything listed here lands on the first paint — signing through the barrel would pull
+ * `pkijs` + `asn1js` in, over its locked ≤ 250 KiB gzip budget. The sign dialog
  * imports `pdf-core/ops/sign` directly, which keeps the ASN.1 stack in its own chunk.
  */
 export * from './signature-status';

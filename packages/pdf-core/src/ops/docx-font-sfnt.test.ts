@@ -538,6 +538,54 @@ describe('trueTypeForWord', () => {
   });
 });
 
+describe('trueTypeForWord: odd inputs', () => {
+  const tinyTables = {
+    head: new Uint8Array(54),
+    maxp: new Uint8Array([0, 1, 0, 0, 0, 40]),
+    glyf: new Uint8Array(4),
+    loca: new Uint8Array(4),
+  };
+
+  it('keeps the first of two directory entries with the same tag', () => {
+    const dup = buildSfnt(0x00010000, {
+      ...tinyTables,
+      xxxA: new Uint8Array([1, 2, 3, 4]),
+      xxxB: new Uint8Array([9, 9, 9, 9]),
+    });
+    const second = directory(dup).tables.findIndex((entry) => entry.tag === 'xxxB');
+    for (let at = 0; at < 4; at += 1) dup[12 + 16 * second + at] = 'xxxA'.charCodeAt(at);
+    const out = trueTypeForWord(dup, [{ unicode: 0x41, gid: 3 }], NAMES) as Uint8Array;
+    expectValidSfnt(out, 0x00010000);
+    expect(directory(out).tables.filter((entry) => entry.tag === 'xxxA')).toHaveLength(1);
+    expect([...table(out, 'xxxA')]).toEqual([1, 2, 3, 4]);
+  });
+
+  it('spans the OS/2 character range from the first to the last mapped code point, and none for an empty map', () => {
+    const range = (map: GlyphMapping[]) => {
+      const os2 = table(trueTypeForWord(buildSfnt(0x00010000, tinyTables), map, NAMES) as Uint8Array, 'OS/2');
+      const dv = new DataView(os2.buffer, os2.byteOffset);
+      return [dv.getUint16(64), dv.getUint16(66)];
+    };
+    expect(range([])).toEqual([0, 0]);
+    expect(
+      range([
+        { unicode: 0x1f600, gid: 2 },
+        { unicode: 0x41, gid: 3 },
+      ]),
+    ).toEqual([0x41, 0xffff]);
+  });
+
+  it('writes the Macintosh name records in ASCII, with a question mark for anything else', () => {
+    const out = trueTypeForWord(buildSfnt(0x00010000, tinyTables), [{ unicode: 0x41, gid: 3 }], {
+      family: 'Café Ünï',
+      style: 'Regular',
+    }) as Uint8Array;
+    const names = nameRecords(table(out, 'name'));
+    expect(names.get('3/1')).toBe('Café Ünï');
+    expect(names.get('1/1')).toBe('Caf? ?n?');
+  });
+});
+
 // ---------------------------------------------------------------------------------------------
 // CFF
 
@@ -612,6 +660,67 @@ describe('cffForWord', () => {
     expect(nameRecords(table(bytes, 'name')).get('3/1')).toBe('Carlito Test');
     expect(nameRecords(table(bytes, 'name')).get('3/4')).toBe('Carlito Test Bold');
     expect(nameRecords(table(bytes, 'name')).get('3/6')).toBe('CarlitoTest-Bold');
+  });
+
+  it('marks an italic face in the head macStyle and measures a map with no glyphs as zero wide', () => {
+    const italic = cffForWord(
+      buildCff(),
+      CFF_MAP,
+      new Map(),
+      { family: 'Carlito Test', style: 'Bold Italic' },
+      METRICS,
+    ) as Uint8Array;
+    expect(new DataView(table(italic, 'head').buffer, table(italic, 'head').byteOffset).getUint16(44)).toBe(
+      3,
+    );
+    const empty = cffForWord(buildCff(), [], new Map(), CFF_NAMES, METRICS) as Uint8Array;
+    expectValidSfnt(empty, 0x4f54544f);
+    const os2 = table(empty, 'OS/2');
+    const dv = new DataView(os2.buffer, os2.byteOffset);
+    expect([dv.getInt16(2), dv.getUint16(64), dv.getUint16(66)]).toEqual([0, 0, 0]);
+  });
+
+  it('reads a CID-keyed font whose Font DICT INDEX is empty as one without a Private DICT', () => {
+    const top = (charStrings: number, fdArray: number, priv: number) => [
+      ...encodeOffset(charStrings),
+      17,
+      ...encodeOffset(fdArray),
+      12,
+      36,
+      139,
+      139,
+      139,
+      12,
+      30, // ROS: the font is CID-keyed
+      ...encodeOffset(3),
+      ...encodeOffset(priv),
+      18,
+    ];
+    const header = [1, 0, 4, 1];
+    const names = index([[65]]);
+    const tops = index([top(0, 0, 0)]).length;
+    const charStringsAt = header.length + names.length + tops + 4;
+    const charStrings = index([[14], [14], [14]]);
+    const fdArrayAt = charStringsAt + charStrings.length;
+    const privateAt = fdArrayAt + 2;
+    const cff = new Uint8Array([
+      ...header,
+      ...names,
+      ...index([top(charStringsAt, fdArrayAt, privateAt)]),
+      0,
+      0,
+      0,
+      0,
+      ...charStrings,
+      0,
+      0, // the empty Font DICT INDEX
+      248,
+      136,
+      20, // the Private DICT the top level points at: defaultWidthX 500
+    ]);
+    const hmtx = table(cffForWord(cff, CFF_MAP, new Map(), CFF_NAMES, METRICS) as Uint8Array, 'hmtx');
+    const dv = new DataView(hmtx.buffer, hmtx.byteOffset);
+    expect([dv.getUint16(0), dv.getUint16(4), dv.getUint16(8)]).toEqual([0, 0, 0]);
   });
 
   it('takes unitsPerEm from the FontMatrix, from the first Font DICT of a CID-keyed font, or defaults to 1000', () => {
@@ -728,6 +837,10 @@ describe('cffForWord', () => {
     expect(call(topWith([28, 0]))).toBeNull();
     expect(call(topWith([247]))).toBeNull();
     expect(call(topWith([251]))).toBeNull();
+    // an operator or operand cut off by the end of the file, with the Top DICT the last thing in it
+    const topLast = (dict: number[]) => new Uint8Array([1, 0, 4, 1, ...index([[65]]), ...index([dict])]);
+    for (const dict of [[12], [28], [29], [29, 0, 0], [247], [251]])
+      expect(call(topLast(dict)), String(dict)).toBeNull();
     // a CharStrings INDEX with no glyphs (offset 18 holds the empty INDEX of the string section)
     const emptyGlyphs = new Uint8Array([
       1,

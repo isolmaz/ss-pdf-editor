@@ -289,12 +289,12 @@ export function estimatePageAspect(quad: Quad, width: number, height: number): n
         product * u0 * u0 +
         (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + product * v0 * v0)
       ) / product;
-    // A real lens is between a wide angle and a long tele: 0.3 to 6 times the long side.
-    if (Number.isFinite(focalSquared) && focalSquared > 0) {
-      const implied = Math.sqrt(focalSquared);
-      const long = Math.max(width, height);
-      if (implied > 0.3 * long && implied < 6 * long) focal = implied;
-    }
+    // A real lens is between a wide angle and a long tele: 0.3 to 6 times the long side. A
+    // square that is negative or not a number has no root in that range (its root is NaN, which
+    // compares false), so it keeps the typical lens like any other implausible one.
+    const implied = Math.sqrt(focalSquared);
+    const long = Math.max(width, height);
+    if (implied > 0.3 * long && implied < 6 * long) focal = implied;
   }
 
   const back = (vector: Vector3): Vector3 => [

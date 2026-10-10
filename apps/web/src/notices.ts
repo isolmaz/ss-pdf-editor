@@ -1,13 +1,14 @@
 /**
  * The sentences the shell puts on its notice line, as data.
  *
- * Three failure paths in `App.tsx` must not end in silence or in a sentence that is not
- * about what happened: a restored draft whose engine values were all dropped must say
+ * Three failure paths in the shell's features must not end in silence or in a sentence that
+ * is not about what happened: a restored draft whose engine values were all dropped must say
  * so, a rejected `applyEngineValues` must be caught (an unhandled rejection is invisible
- * in the product and noisy in the console), and a cancelled picker's error handler must
- * not replace the real open failure with `open.pickerFailed`. Each of them is a
- * *sentence* problem — which words, with which numbers — and sentences built inline in
- * a 3 600-line component cannot be tested without a DOM.
+ * in the product and noisy in the console) — both in `features/save/viewer-actions.ts` —
+ * and a cancelled picker's error handler (`features/open/open-actions.ts`) must not replace
+ * the real open failure with `open.pickerFailed`. Each of them is a *sentence* problem —
+ * which words, with which numbers — and sentences built inline in a component cannot be
+ * tested without a DOM.
  *
  * So the choice of words is a pure function here, and the component only renders the
  * result. A descriptor carries the dictionary key plus the numbers that key

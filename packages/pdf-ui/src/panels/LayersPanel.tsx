@@ -26,7 +26,7 @@ import { PanelLoading, PanelMessage } from './PanelParts';
 export interface LayersPanelProps {
   readonly document: PdfDocumentHandle;
   readonly t: Translator;
-  /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
+  /** The shell's notice line (`features/core/core-store.ts`) — receives already-translated text. */
   readonly onNotice?: (message: string) => void;
   /**
    * Fired after the engine accepted a visibility change. The engine alone does not

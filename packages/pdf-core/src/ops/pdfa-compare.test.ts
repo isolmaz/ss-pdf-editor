@@ -8,7 +8,7 @@ import { loadMupdf, openPdf } from '../engines/mupdf';
 import { annotationCounts, comparePage, pageWords, samplePageIndices, wordRecall } from './pdfa-compare';
 
 /** One 200 x 200 page per content string, drawn in Helvetica, with optional annotations on page 1. */
-async function build(contents: readonly string[], annotations: readonly object[] = []): Promise<Uint8Array> {
+async function build(contents: readonly string[], annotations: readonly unknown[] = []): Promise<Uint8Array> {
   const mupdf = await import('mupdf');
   const doc = new mupdf.PDFDocument();
   const font = doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' });
@@ -73,6 +73,24 @@ describe('pdfa-compare', () => {
     }
   });
 
+  it('reports a page too wide to leave a single pixel row as entirely different, never as identical', async () => {
+    const mupdf = await loadMupdf();
+    // 1,000,000 x 1 pt: at the 360 px render width its one point of height is far under a pixel.
+    const strip = new mupdf.PDFDocument();
+    strip.insertPage(0, strip.addPage([0, 0, 1_000_000, 1], 0, {}, ''));
+    const stripBytes = new Uint8Array(strip.saveToBuffer('').asUint8Array());
+    strip.destroy();
+    const wide = openPdf(mupdf, stripBytes);
+    const normal = openPdf(mupdf, await build(['0 g 20 20 60 60 re f']));
+    try {
+      const result = comparePage(mupdf, wide, normal, 0);
+      expect(result).toEqual({ pageIndex: 0, mean: 1, worstBlock: 0, shapeDiffers: true });
+    } finally {
+      wide.destroy();
+      normal.destroy();
+    }
+  });
+
   it('counts annotations by subtype and leaves popups out', async () => {
     const mupdf = await loadMupdf();
     const doc = openPdf(
@@ -84,11 +102,14 @@ describe('pdfa-compare', () => {
           { Type: 'Annot', Subtype: 'Text', Rect: [40, 10, 60, 30] },
           { Type: 'Annot', Subtype: 'Link', Rect: [10, 50, 90, 70] },
           { Type: 'Annot', Subtype: 'Popup', Rect: [100, 10, 150, 60] },
+          // An entry that is not a dictionary is no annotation; one without a subtype is counted as "?".
+          7,
+          { Type: 'Annot', Rect: [10, 90, 30, 110] },
         ],
       ),
     );
     try {
-      expect(Object.fromEntries(annotationCounts(doc))).toEqual({ Text: 2, Link: 1 });
+      expect(Object.fromEntries(annotationCounts(doc))).toEqual({ Text: 2, Link: 1, '?': 1 });
     } finally {
       doc.destroy();
     }

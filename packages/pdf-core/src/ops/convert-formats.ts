@@ -59,7 +59,7 @@ export const CONVERT_PICKER_ACCEPT: Readonly<Record<`${string}/${string}`, `.${s
 
 /** The file name a converted document gets: the source's name with `.pdf`. */
 export function pdfNameFor(name: string): string {
-  const base = name.split(/[/]/).pop() ?? name;
+  const base = name.slice(name.lastIndexOf('/') + 1);
   const dot = base.lastIndexOf('.');
   return `${dot > 0 ? base.slice(0, dot) : base}.pdf`;
 }

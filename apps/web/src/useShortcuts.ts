@@ -52,8 +52,9 @@ import { useEffect } from 'react';
  * pdf.js's own keyboard manager listens on `window` and acts on `Ctrl+Z`, `Ctrl+A`
  * and the delete keys whenever it has an editor tool armed, so an un-consumed key
  * would run the engine's action as well. The shell's own callbacks also fold that
- * pending native gesture into the session first (`App.tsx` `stepHistoryNow`,
- * `deleteMarkSelection`), which is what leaves the *journal* as the only history —
+ * pending native gesture into the session first (`stepHistoryNow` in
+ * `features/pages/page-actions.ts`, `deleteMarkSelection` in `features/selection/`), which
+ * is what leaves the *journal* as the only history —
  * and a field that is being edited still wins outright, because those bindings are
  * not `fromAnywhere` and are skipped while the focus is in a field.
  */

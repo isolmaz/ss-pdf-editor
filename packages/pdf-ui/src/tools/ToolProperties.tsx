@@ -303,11 +303,10 @@ export function ToolProperties({
               value={fontSize}
               aria-label={t('ann.tool.fontSize')}
               onChange={(event) => {
+                // A number field's value is empty or a finite number; empty is half-typed.
                 if (event.target.value === '') return;
                 const next = Number(event.target.value);
-                if (Number.isFinite(next)) {
-                  onFontSize?.(Math.min(Math.max(Math.round(next), FONT_SIZE_MIN), FONT_SIZE_MAX));
-                }
+                onFontSize?.(Math.min(Math.max(Math.round(next), FONT_SIZE_MIN), FONT_SIZE_MAX));
               }}
               className={`${FIELD_CLASS} w-12`}
             />
@@ -381,9 +380,7 @@ export function ToolProperties({
               // thickness stays in force rather than snapping the mark to 1 pt.
               if (event.target.value === '') return;
               const next = Number(event.target.value);
-              if (Number.isFinite(next)) {
-                onThickness(Math.min(Math.max(Math.round(next), THICKNESS_MIN), THICKNESS_MAX));
-              }
+              onThickness(Math.min(Math.max(Math.round(next), THICKNESS_MIN), THICKNESS_MAX));
             }}
             className={`${FIELD_CLASS} w-12`}
           />
@@ -397,10 +394,8 @@ export function ToolProperties({
           <select
             value={shape}
             aria-label={t('ann.tool.shape')}
-            onChange={(event) => {
-              const next = event.target.value;
-              if (next === 'square' || next === 'circle' || next === 'line') onShape(next);
-            }}
+            // The select offers exactly the `SHAPE_ORDER` options, so its value is one of them.
+            onChange={(event) => onShape(event.target.value as CanvasShapeKind)}
             className={FIELD_CLASS}
           >
             {SHAPE_ORDER.map((value) => (

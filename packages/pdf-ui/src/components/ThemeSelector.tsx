@@ -53,8 +53,8 @@ export function useTheme(): {
 
   useEffect(() => {
     const onThemeChange = (e: Event) => {
-      const custom = e as CustomEvent<{ theme: ThemeMode; resolved: 'light' | 'dark' }>;
-      if (custom.detail) setThemeState(custom.detail.theme);
+      // `applyTheme` is the only dispatcher of this event and always sets `detail`.
+      setThemeState((e as CustomEvent<{ theme: ThemeMode; resolved: 'light' | 'dark' }>).detail.theme);
     };
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');

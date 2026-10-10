@@ -24,7 +24,7 @@ import { PanelLoading, PanelMessage } from './PanelParts';
 export interface AttachmentsPanelProps {
   readonly document: PdfDocumentHandle;
   readonly t: Translator;
-  /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
+  /** The shell's notice line (`features/core/core-store.ts`) — receives already-translated text. */
   readonly onNotice?: (message: string) => void;
   /** Files to embed (`ops/attachments-write.ts`). The shell does the write; the panel has no bytes. */
   readonly onAdd: (files: readonly File[]) => void;
@@ -192,7 +192,8 @@ export function AttachmentsPanel({
         className="hidden"
         data-attachment-picker=""
         onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
+          // `files` is only `null` on inputs that are not `type="file"`; this one is.
+          const files = Array.from(event.target.files as FileList);
           // The same file picked twice in a row has to fire again, so the input is
           // cleared the moment its value has been read.
           event.target.value = '';

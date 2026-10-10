@@ -961,6 +961,21 @@ describe('ocrTextBoxes: tables read by row', () => {
     expect(order).toHaveLength(18);
   });
 
+  it('reads a table in full before the single lines that stand beside it', () => {
+    const words = [
+      ...invoice(),
+      fake('Notes', 320, 100, 380, 112, 10),
+      fake('Terms', 320, 204, 380, 216, 11),
+    ];
+    const order = ocrTextBoxes(words, blank(400), 0.9).boxes.flatMap(textOf);
+    expect(order).toEqual([
+      ...['No', 'Aciklama', 'Adet', 'Tutar', '1', 'Web', '2', '500,00'],
+      ...['2', 'Alan adi', '1', '40,00', '3', 'Bakim', '6', '900,00'],
+      'Notes',
+      'Terms',
+    ]);
+  });
+
   it('reads label and value rows of two cells by row when the rows are loosely spaced', () => {
     const words = [
       ...row(
@@ -2015,5 +2030,45 @@ describe('weight and slant of a line', () => {
         }
       }
     }
+  });
+});
+
+describe('weight and slant of a line: the word between', () => {
+  it('leaves a word too small to judge regular when a bold word stands before it and a regular one after it', async () => {
+    const page = new Page(400, 150, WHITE);
+    const regular = 'The quick brown fox jumps over';
+    for (const row of [0, 1, 2]) page.text('helvetica', 12, 10, 24 + row * 24, BLACK, regular);
+    page.text('helveticaBold', 12, 10, 96, BLACK, 'Backend');
+    page.text('helvetica', 12, 66, 96, BLACK, '&');
+    page.text('helvetica', 12, 80, 96, BLACK, 'lazy dogs jump over the quick brown');
+    const image = await page.render(3);
+    const words = [
+      ...[0, 1, 2].map((row) =>
+        wordAt(image, regular, [2, row * 24 + 10, 398, row * 24 + 30], { line: row, paragraph: 0 }),
+      ),
+      wordAt(image, 'Backend', [2, 80, 62, 110], { line: 3, paragraph: 0 }),
+      wordAt(image, '&', [63, 80, 78, 110], { line: 3, paragraph: 0 }),
+      wordAt(image, 'lazy dogs jump over the quick brown', [79, 80, 398, 110], { line: 3, paragraph: 0 }),
+    ];
+    const lines = ocrTextBoxes(words, image, 0.9).boxes.flatMap((box) =>
+      box.paragraphs.flatMap((paragraph) => paragraph.lines.map((line) => line.runs)),
+    );
+    expect((lines[lines.length - 1] ?? []).map((run) => [run.text.trim(), run.bold])).toEqual([
+      ['Backend', true],
+      ['& lazy dogs jump over the quick brown', false],
+    ]);
+  });
+});
+
+describe('underlines: a word that reaches below the page', () => {
+  it('does not take a row of ink for the rule of a word whose bottom edge lies beyond the image', () => {
+    const width = 200;
+    const height = 100;
+    const data = new Uint8Array(width * height * 4).fill(255);
+    // a one-pixel row of ink at y 90, wider than the word, with plain rows around it
+    for (let x = 10; x < 170; x += 1) data.fill(0, (90 * width + x) * 4, (90 * width + x) * 4 + 3);
+    const image: RgbaImage = { width, height, data, scale: 1 };
+    // the word's box runs to y 110, so its own bottom edge is 20 pt below the image's: the row is not under it
+    expect(findUnderlines(image, [fake('ab', 20, 60, 100, 110, 0)])).toEqual([]);
   });
 });

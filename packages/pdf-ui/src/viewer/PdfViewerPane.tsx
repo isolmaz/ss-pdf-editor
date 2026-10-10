@@ -1,4 +1,6 @@
-import { PDFJS_ASSETS, type PdfDocumentHandle, pdfOptionalContentConfig } from 'pdf-core';
+import { PDFJS_ASSETS } from 'pdf-core/assets';
+import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
+import { pdfOptionalContentConfig } from 'pdf-core/layers';
 import { decodeEngineValues, type EngineValuesDraft, encodeEngineValues } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import type { EventBus, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
@@ -228,6 +230,14 @@ interface EngineAnnotationStorage {
   [Symbol.iterator](): Iterator<[string, unknown]>;
 }
 
+/** A page box as pdf.js reports it: `[x0, y0, x1, y1]`, always four numbers. */
+type ViewBox = readonly [number, number, number, number];
+
+function viewBoxOf(box: readonly number[]): ViewBox {
+  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = box;
+  return [x0, y0, x1, y1];
+}
+
 /**
  * Where the reader left a document: the page, the zoom **as pdf.js's own scale
  * value** (`'page-width'` survives as `'page-width'`, a numeric zoom as its number)
@@ -364,10 +374,12 @@ export function PdfViewerPane({
    * to be re-rendered for (zoom, fit-width on a resize, a spread change, a rewrite).
    */
   useEffect(() => {
-    const container = containerRef.current;
-    const host = overlayRef.current;
-    const slots = [viewerRef.current, spareViewerRef.current];
-    if (container === null || host === null) return undefined;
+    // The refs of the mounted pane: effects run after the commit that attached them.
+    const container = containerRef.current as HTMLDivElement;
+    const host = overlayRef.current as HTMLDivElement;
+    const primary = viewerRef.current as HTMLDivElement;
+    const spare = spareViewerRef.current as HTMLDivElement;
+    const slots: readonly [HTMLDivElement, HTMLDivElement] = [primary, spare];
     let frame = 0;
     let last = '';
     let containerWidth = container.clientWidth;
@@ -379,20 +391,19 @@ export function PdfViewerPane({
       if (container.clientWidth !== containerWidth) {
         containerWidth = container.clientWidth;
         const viewer = viewerHandleRef.current;
-        const preset = viewer?.currentScaleValue;
-        if (viewer !== null && viewer !== undefined && viewer.pagesCount > 0) {
+        if (viewer !== null && viewer.pagesCount > 0) {
+          const preset = viewer.currentScaleValue;
           if (preset === 'page-width' || preset === 'page-fit' || preset === 'auto') {
             viewer.currentScaleValue = preset;
           }
         }
       }
-      const active =
-        slots.find((slot) => slot?.hasAttribute('data-active-viewer') === true) ?? slots[0] ?? null;
-      const width = Math.max(container.clientWidth, active?.scrollWidth ?? 0);
-      const height = Math.max(container.clientHeight, (active?.offsetTop ?? 0) + (active?.offsetHeight ?? 0));
+      const active = slots.find((slot) => slot.hasAttribute('data-active-viewer')) ?? primary;
+      const width = Math.max(container.clientWidth, active.scrollWidth);
+      const height = Math.max(container.clientHeight, active.offsetTop + active.offsetHeight);
       host.style.width = `${width}px`;
       host.style.height = `${height}px`;
-      const signature = `${width}x${height}:${active?.firstElementChild?.getBoundingClientRect().width ?? 0}`;
+      const signature = `${width}x${height}:${active.firstElementChild?.getBoundingClientRect().width ?? 0}`;
       if (signature === last) return;
       last = signature;
       callbacksRef.current.onLayoutChange?.();
@@ -404,7 +415,7 @@ export function PdfViewerPane({
     observer.observe(container);
     // A zoom, a spread change or a new document changes the slot's own box, so
     // observing the two slots and the container covers every layout change.
-    for (const slot of slots) if (slot !== null) observer.observe(slot);
+    for (const slot of slots) observer.observe(slot);
     schedule();
     return () => {
       observer.disconnect();
@@ -464,14 +475,13 @@ export function PdfViewerPane({
   );
 
   // The popups pdf.js builds show `/Contents`; our identity marker stays in the file only.
-  useEffect(() => {
-    const container = containerRef.current;
-    return container === null ? undefined : hideEditorMarkers(container);
-  }, []);
+  useEffect(() => hideEditorMarkers(containerRef.current as HTMLDivElement), []);
 
   useEffect(() => {
     if (!isPanning) return undefined;
     const onMouseMove = (event: MouseEvent) => {
+      // React detaches the container's ref when the pane is removed, before this effect's cleanup
+      // removes the listener, so a move can land with no container.
       const container = containerRef.current;
       const start = panStartRef.current;
       if (container === null || start === null) return;
@@ -493,10 +503,10 @@ export function PdfViewerPane({
   }, [isPanning]);
 
   useEffect(() => {
-    const container = containerRef.current;
-    const primary = viewerRef.current;
-    const spare = spareViewerRef.current;
-    if (container === null || primary === null || spare === null) return undefined;
+    // The refs of the mounted pane: effects run after the commit that attached them.
+    const container = containerRef.current as HTMLDivElement;
+    const primary = viewerRef.current as HTMLDivElement;
+    const spare = spareViewerRef.current as HTMLDivElement;
     const slots: readonly [HTMLDivElement, HTMLDivElement] = [primary, spare];
 
     let disposed = false;
@@ -603,7 +613,10 @@ export function PdfViewerPane({
         if (frozenReleased) return;
         frozenReleased = true;
         eventBus.off('pagerendered', releaseWhenPainted);
-        if (frozenStackRef.current === frozen) frozenStackRef.current = null;
+        // Every run records the stack it freezes here, and a stack that is disposed while a
+        // later run froze another one never releases (`dispose(true)`), so this is always
+        // the stack being released.
+        frozenStackRef.current = null;
         frozen?.dispose();
       };
       const paintedPages = new Set<number>();
@@ -651,7 +664,9 @@ export function PdfViewerPane({
       const markPainted = (): void => {
         if (stack.painted) return;
         stack.painted = true;
-        if (!disposed) setPainted(true);
+        // Once a run is superseded its stack is either painted (frozen) or has had these
+        // listeners removed, so a first paint can only come from the current run.
+        setPainted(true);
       };
 
       const stack: LiveStack = {
@@ -767,11 +782,12 @@ export function PdfViewerPane({
         matchesCount?: { total: number; current: number };
       }) => {
         setFindState(payload.state);
-        if (payload.matchesCount !== undefined) {
+        const { matchesCount } = payload;
+        if (matchesCount !== undefined) {
           setFind((previous) => ({
             ...previous,
-            matches: payload.matchesCount?.total ?? 0,
-            current: payload.matchesCount?.current ?? 0,
+            matches: matchesCount.total,
+            current: matchesCount.current,
           }));
         }
       };
@@ -846,13 +862,11 @@ export function PdfViewerPane({
         // `serializable` getter is the one projection that is safe to clone — editor
         // instances become plain objects there, bitmaps included.
         captureEngineValues: async () => {
-          const serializable = document.raw.annotationStorage?.serializable;
-          const map = serializable?.map;
+          const { map } = document.raw.annotationStorage.serializable;
           return encodeEngineValues(map instanceof Map ? map.entries() : []);
         },
         applyEngineValues: async (values) => {
           const storage = document.raw.annotationStorage;
-          if (storage === undefined) return 0;
           let applied = 0;
           for (const [key, value] of decodeEngineValues(values)) {
             storage.setValue(key, value);
@@ -875,10 +889,7 @@ export function PdfViewerPane({
           // what the `serializable` getter calls — `build/pdf.mjs`). Reading the
           // live objects produced empty captures and a highlight that never
           // reached the file.
-          const serializable = document.raw.annotationStorage?.serializable as unknown as
-            | { map?: unknown }
-            | undefined;
-          const map = serializable?.map;
+          const { map } = document.raw.annotationStorage.serializable as unknown as { map?: unknown };
           if (!(map instanceof Map)) return [];
           const entries: { id: string; value: Record<string, unknown> }[] = [];
           for (const [key, value] of map) {
@@ -897,7 +908,7 @@ export function PdfViewerPane({
           // otherwise be written to the file a second time by `saveDocument()`. Nothing
           // engine-side has to be disposed with it — the engine's editors never existed
           // here — and no React-owned `[data-ann]` node is ever touched.
-          document.raw.annotationStorage?.remove(id);
+          document.raw.annotationStorage.remove(id);
         },
         containerRect: () => {
           // The scrolled content's origin: the padding box moved by the scroll offset.
@@ -932,11 +943,7 @@ export function PdfViewerPane({
         pageGeometry: (pageIndex) => {
           const pageView = viewer.getPageView(pageIndex);
           if (pageView === undefined) return null;
-          const viewBox = pageView.viewport.viewBox;
-          const x0 = viewBox[0] ?? 0;
-          const y0 = viewBox[1] ?? 0;
-          const x1 = viewBox[2] ?? 0;
-          const y1 = viewBox[3] ?? 0;
+          const [x0, y0, x1, y1] = viewBoxOf(pageView.viewport.viewBox);
           const rotation = pageView.viewport.rotation;
           return {
             x: Math.min(x0, x1),
@@ -964,13 +971,14 @@ export function PdfViewerPane({
             ) {
               continue;
             }
-            const [pdfX, pdfY] = pageView.viewport.convertToPdfPoint(clientX - left, clientY - top);
-            if (pdfX === undefined || pdfY === undefined) continue;
+            const [pdfX, pdfY] = pageView.viewport.convertToPdfPoint(clientX - left, clientY - top) as [
+              number,
+              number,
+            ];
             // PDF user space has its origin at the bottom-left and a y axis that
             // grows upward; MuPDF's page space (and therefore every redaction
             // mark) starts at the top-left corner of the page box.
-            const viewBox = pageView.viewport.viewBox;
-            const pdfTop = viewBox[3] ?? pageView.div.clientHeight;
+            const pdfTop = viewBoxOf(pageView.viewport.viewBox)[3];
             return { pageIndex: index, x: pdfX, y: pdfTop - pdfY };
           }
           return null;
@@ -999,19 +1007,17 @@ export function PdfViewerPane({
       // and the only signal pdf.js offers is the storage's own callbacks
       // (`AnnotationStorage.onSetModified` / `onAnnotationEditor`, `build/pdf.mjs`) —
       // without them a freshly drawn highlight left the tab clean and the mark uncaptured.
-      const storage = document.raw.annotationStorage as unknown as EngineAnnotationStorage | undefined;
-      const previousSetModified = storage?.onSetModified ?? null;
-      const previousEditor = storage?.onAnnotationEditor ?? null;
-      if (storage !== undefined) {
-        storage.onSetModified = () => {
-          previousSetModified?.();
-          onEngineEdit();
-        };
-        storage.onAnnotationEditor = (type: string | null) => {
-          previousEditor?.(type);
-          onEngineEdit();
-        };
-      }
+      const storage = document.raw.annotationStorage as unknown as EngineAnnotationStorage;
+      const previousSetModified = storage.onSetModified;
+      const previousEditor = storage.onAnnotationEditor;
+      storage.onSetModified = () => {
+        previousSetModified?.();
+        onEngineEdit();
+      };
+      storage.onAnnotationEditor = (type: string | null) => {
+        previousEditor?.(type);
+        onEngineEdit();
+      };
 
       /**
        * Everything this stack owns, given back: its listeners, its storage hooks and the
@@ -1028,10 +1034,8 @@ export function PdfViewerPane({
         eventBus.off('pagerendered', markPainted);
         container.removeEventListener('input', onEngineEdit, true);
         container.removeEventListener('change', onEngineEdit, true);
-        if (storage !== undefined) {
-          storage.onSetModified = previousSetModified;
-          storage.onAnnotationEditor = previousEditor;
-        }
+        storage.onSetModified = previousSetModified;
+        storage.onAnnotationEditor = previousEditor;
         viewer.setDocument(null);
         linkService.setDocument(null);
         viewer.cleanup();
@@ -1042,7 +1046,8 @@ export function PdfViewerPane({
         if (viewerHandleRef.current === viewer) viewerHandleRef.current = null;
         eventBus.off('pagerendered', releaseWhenPainted);
       };
-      if (!disposed) liveStackRef.current = stack;
+      // Nothing above awaits, so this run cannot have been superseded since the check after the import.
+      liveStackRef.current = stack;
       callbacksRef.current.onReady?.(api);
       setReady(true);
     })();

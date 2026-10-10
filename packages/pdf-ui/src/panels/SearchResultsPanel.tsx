@@ -27,7 +27,7 @@ export interface SearchResultsPanelProps {
    * highlights every match the viewer has rendered.
    */
   readonly onHighlightQuery?: (query: string) => void;
-  /** The shell's notice line (`App.tsx` state) — receives already-translated text. */
+  /** The shell's notice line (`features/core/core-store.ts`) — receives already-translated text. */
   readonly onNotice?: (message: string) => void;
 }
 
@@ -93,8 +93,8 @@ export function SearchResultsPanel({
         if (controller.signal.aborted) return;
         memo.current.set(submitted, matches);
         if (memo.current.size > MEMO_LIMIT) {
-          const oldest = memo.current.keys().next().value;
-          if (oldest !== undefined) memo.current.delete(oldest);
+          // Over the limit the map is not empty, and its keys are the non-empty queries.
+          memo.current.delete(memo.current.keys().next().value as string);
         }
         setState({ running: false, matches, failure: null });
       } catch (error) {

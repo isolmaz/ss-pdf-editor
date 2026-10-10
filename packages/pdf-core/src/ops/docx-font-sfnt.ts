@@ -91,18 +91,12 @@ function uint16(value: number): number {
 
 /** The 32-bit checksum of a table (zero-padded to a multiple of four bytes). */
 function checksum(data: Uint8Array): number {
+  const dv = view(data);
   let sum = 0;
   const whole = data.length - (data.length % 4);
-  for (let at = 0; at < whole; at += 4) {
-    const word =
-      ((data[at] ?? 0) << 24) |
-      ((data[at + 1] ?? 0) << 16) |
-      ((data[at + 2] ?? 0) << 8) |
-      (data[at + 3] ?? 0);
-    sum = (sum + (word >>> 0)) >>> 0;
-  }
+  for (let at = 0; at < whole; at += 4) sum = (sum + dv.getUint32(at)) >>> 0;
   let tail = 0;
-  for (let at = whole; at < data.length; at += 1) tail |= (data[at] ?? 0) << (24 - 8 * (at - whole));
+  for (let at = whole; at < data.length; at += 1) tail |= dv.getUint8(at) << (24 - 8 * (at - whole));
   return (sum + (tail >>> 0)) >>> 0;
 }
 
@@ -111,15 +105,10 @@ function checksum(data: Uint8Array): number {
  * checksums computed, and `head.checkSumAdjustment` set for the whole file.
  */
 function assemble(sfntVersion: number, tables: ReadonlyMap<string, Uint8Array>): Uint8Array {
-  const tags = [...tables.keys()].sort();
-  const count = tags.length;
+  const entries = [...tables].sort(([a], [b]) => (a < b ? -1 : 1));
+  const count = entries.length;
   const directorySize = 12 + 16 * count;
-  const offsets: number[] = [];
-  let total = directorySize;
-  for (const name of tags) {
-    offsets.push(total);
-    total += ((tables.get(name)?.length ?? 0) + 3) & ~3;
-  }
+  const total = entries.reduce((sum, [, data]) => sum + ((data.length + 3) & ~3), directorySize);
   const out = new Uint8Array(total);
   const dv = view(out);
   const entrySelector = Math.floor(Math.log2(count));
@@ -129,10 +118,10 @@ function assemble(sfntVersion: number, tables: ReadonlyMap<string, Uint8Array>):
   dv.setUint16(6, searchRange);
   dv.setUint16(8, entrySelector);
   dv.setUint16(10, 16 * count - searchRange);
-  let headAt = -1;
-  tags.forEach((name, index) => {
-    const data = tables.get(name) ?? new Uint8Array(0);
-    const offset = offsets[index] ?? 0;
+  // Both callers carry a `head` table, so `headAt` is always set before the file is summed.
+  let headAt = 0;
+  let offset = directorySize;
+  entries.forEach(([name, data], index) => {
     out.set(data, offset);
     if (name === 'head') {
       headAt = offset;
@@ -143,8 +132,9 @@ function assemble(sfntVersion: number, tables: ReadonlyMap<string, Uint8Array>):
     dv.setUint32(record + 4, checksum(out.subarray(offset, offset + data.length)));
     dv.setUint32(record + 8, offset);
     dv.setUint32(record + 12, data.length);
+    offset += (data.length + 3) & ~3;
   });
-  if (headAt >= 0) dv.setUint32(headAt + 8, (CHECKSUM_MAGIC - checksum(out)) >>> 0);
+  dv.setUint32(headAt + 8, (CHECKSUM_MAGIC - checksum(out)) >>> 0);
   return out;
 }
 
@@ -171,6 +161,8 @@ interface Segment {
   readonly ids: readonly number[] | null;
 }
 
+type Pair = readonly [number, number];
+
 /** A format 4 subtable for the BMP pairs, or null when it does not fit its 16-bit length. */
 function cmapFormat4(pairs: readonly [number, number][]): Uint8Array | null {
   const segments: Segment[] = [];
@@ -178,8 +170,8 @@ function cmapFormat4(pairs: readonly [number, number][]): Uint8Array | null {
   let at = 0;
   while (at < bmp.length) {
     let last = at;
-    while (last + 1 < bmp.length && (bmp[last + 1]?.[0] ?? 0) === (bmp[last]?.[0] ?? 0) + 1) last += 1;
-    const [start, firstGid] = bmp[at] ?? [0, 0];
+    while (last + 1 < bmp.length && (bmp[last + 1] as Pair)[0] === (bmp[last] as Pair)[0] + 1) last += 1;
+    const [start, firstGid] = bmp[at] as Pair;
     const run = bmp.slice(at, last + 1);
     const contiguous = run.every(([, gid], index) => gid === firstGid + index);
     segments.push({
@@ -455,8 +447,8 @@ function buildOs2(spec: Os2Spec, pairs: readonly [number, number][]): Uint8Array
   dv.setUint32(42, ranges >>> 0);
   out.set(textEncoder.encode('NONE'), 58);
   dv.setUint16(62, fsSelectionOf(spec.bold, spec.italic));
-  dv.setUint16(64, pairs.length === 0 ? 0 : Math.min(pairs[0]?.[0] ?? 0, 0xffff));
-  dv.setUint16(66, pairs.length === 0 ? 0 : Math.min(pairs[pairs.length - 1]?.[0] ?? 0, 0xffff));
+  dv.setUint16(64, Math.min(pairs[0]?.[0] ?? 0, 0xffff));
+  dv.setUint16(66, Math.min(pairs[pairs.length - 1]?.[0] ?? 0, 0xffff));
   dv.setInt16(68, int16(spec.typoAscender));
   dv.setInt16(70, int16(spec.typoDescender));
   dv.setUint16(74, uint16(spec.winAscent));
@@ -597,12 +589,12 @@ function readIndex(bytes: Uint8Array, at: number): CffIndex | null {
   for (let index = 0; index <= count; index += 1) {
     let value = 0;
     for (let byte = 0; byte < offSize; byte += 1)
-      value = value * 256 + (bytes[table + index * offSize + byte] ?? 0);
+      value = value * 256 + (bytes[table + index * offSize + byte] as number);
     if (value < previous || base + value > bytes.length) return null;
     previous = value;
     offsets.push(base + value);
   }
-  return { count, offsets, end: offsets[count] ?? base };
+  return { count, offsets, end: offsets[count] as number };
 }
 
 /** A DICT as operator → operands; two-byte operators (12 n) are keyed `1200 + n`. Null when malformed. */
@@ -611,7 +603,7 @@ function readDict(bytes: Uint8Array, start: number, end: number): Map<number, nu
   let operands: number[] = [];
   let at = start;
   while (at < end) {
-    const b0 = bytes[at] ?? 0;
+    const b0 = bytes[at] as number;
     at += 1;
     if (b0 <= 21) {
       let operator = b0;
@@ -636,7 +628,7 @@ function readDict(bytes: Uint8Array, start: number, end: number): Map<number, nu
       let text = '';
       let done = false;
       while (!done && at < end) {
-        const byte = bytes[at] ?? 0;
+        const byte = bytes[at] as number;
         at += 1;
         for (const nibble of [byte >> 4, byte & 15]) {
           if (done) break;
@@ -682,12 +674,12 @@ function privateDefaultWidth(bytes: Uint8Array, dict: Map<number, number[]>): nu
 /** What the OpenType wrapper needs from a bare CFF program; null when it cannot be parsed. */
 function readCff(bytes: Uint8Array): CffFacts | null {
   if (bytes.length < 4 || bytes[0] !== 1) return null;
-  const hdrSize = bytes[2] ?? 0;
+  const hdrSize = bytes[2] as number;
   const names = readIndex(bytes, hdrSize);
   if (names === null) return null;
   const tops = readIndex(bytes, names.end);
   if (tops === null || tops.count < 1) return null;
-  const top = readDict(bytes, tops.offsets[0] ?? 0, tops.offsets[1] ?? 0);
+  const top = readDict(bytes, tops.offsets[0] as number, tops.offsets[1] as number);
   if (top === null) return null;
 
   const charStringsAt = top.get(17)?.[0];

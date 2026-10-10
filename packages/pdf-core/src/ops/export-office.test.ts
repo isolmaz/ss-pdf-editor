@@ -1157,6 +1157,28 @@ describe('exportOffice → DOCX text on drawings and pictures', () => {
     expect(title?.[0]).toContain('w:before="0"');
   });
 
+  it('hangs two pictures behind the text, one after the other, from the line that stands on both', async () => {
+    const bytes = await officeDocument([
+      {
+        images: { Im1: red, Im2: red },
+        content: [
+          picture('Im1', 0, 0, 400, 500),
+          picture('Im2', 50, 390, 200, 100),
+          courier(100, 440, 'Baslik'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    expect(await paragraphs(file.bytes)).toEqual(['Baslik']);
+    const { pictures, texts } = flowOf(await documentXml(file.bytes));
+    const page = pictures.find((entry) => entry.width === 400);
+    const card = pictures.find((entry) => entry.width === 200);
+    expect(pictures).toHaveLength(2);
+    // The line is as far under each picture's top as the PDF has it: 60 pt less the ascent under the page's, 10 pt less under the card's.
+    near((texts.get('Baslik') ?? 0) - (page?.top ?? 0), 60 - ASCENT);
+    near((texts.get('Baslik') ?? 0) - (card?.top ?? 0), 50 - ASCENT);
+  });
+
   it('carries a page break and a section on the paragraph that holds a picture behind the text', async () => {
     const bytes = await officeDocument([
       { content: courier(50, 470, 'first') },

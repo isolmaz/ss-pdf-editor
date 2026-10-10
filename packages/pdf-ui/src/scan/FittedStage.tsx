@@ -22,8 +22,8 @@ export function FittedStage({ aspect, className, children }: FittedStageProps) {
   });
 
   useEffect(() => {
-    const element = holder.current;
-    if (element === null) return;
+    // Refs are attached before effects run, and the box is always rendered.
+    const element = holder.current as HTMLDivElement;
     const measure = () => {
       const { clientWidth, clientHeight } = element;
       const width = Math.min(clientWidth, clientHeight * aspect);

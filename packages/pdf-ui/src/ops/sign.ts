@@ -17,7 +17,7 @@
  *    further change will do to it.
  */
 
-import { readPageBoxes } from 'pdf-core/ops/page-boxes';
+import { type PageBoxReport, readPageBoxes } from 'pdf-core/ops/page-boxes';
 import { signPdf } from 'pdf-core/ops/sign';
 import { describeCertificate, importPkcs12 } from 'pdf-core/signature-pkcs12';
 import { ToolError } from 'pdf-shared';
@@ -41,14 +41,9 @@ const STAMP = { width: 200, height: 60, margin: 24 };
  * ignored.
  */
 async function pageBox(bytes: Uint8Array, pageIndex: number, signal: AbortSignal) {
-  const [report] = await readPageBoxes(bytes, [pageIndex], signal);
-  if (report === undefined) {
-    throw new ToolError('range-invalid', {
-      engine: 'mupdf',
-      pageIndex,
-      engineMessage: 'the page has no readable /MediaBox',
-    });
-  }
+  const reports = await readPageBoxes(bytes, [pageIndex], signal);
+  // One page was asked for: the reader answers with its report or refuses the index.
+  const report = reports[0] as PageBoxReport;
   const [left, bottom, right, top] = report.media;
   return { x: left, y: bottom, width: right - left, height: top - bottom };
 }
@@ -221,7 +216,7 @@ export const signDialog: OperationDialogSpec = {
       files: [{ name: context.name, bytes: outcome.bytes, mime: 'application/pdf' }],
       report: outcome.report,
       noticeKey: 'sign.done',
-      noticeParams: { signer: described.commonName ?? '', expires: described.notAfter ?? '' },
+      noticeParams: { signer: described.commonName ?? '', expires: described.notAfter },
     };
   },
 };

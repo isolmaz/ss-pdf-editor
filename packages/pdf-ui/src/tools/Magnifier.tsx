@@ -42,20 +42,22 @@ export interface MagnifierProps {
   readonly onZoomChange: (zoom: number) => void;
 }
 
+/** The crop of the page canvas the lens blits from (origin canvas + its position). */
+interface LensWindow {
+  readonly origin: HTMLCanvasElement;
+  readonly canvas: HTMLCanvasElement;
+  readonly x: number;
+  readonly y: number;
+  readonly size: number;
+}
+
 function clampZoom(value: number): number {
   return Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value)) * 10) / 10;
 }
 
 export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierProps) {
   const lensRef = useRef<HTMLCanvasElement | null>(null);
-  /** The crop of the page canvas the lens blits from (origin canvas + its position). */
-  const windowRef = useRef<{
-    origin: HTMLCanvasElement;
-    canvas: HTMLCanvasElement;
-    x: number;
-    y: number;
-    size: number;
-  } | null>(null);
+  const windowRef = useRef<LensWindow | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const frameRef = useRef(0);
   /** `Escape` hides the lens until the pointer leaves the pages. */
@@ -70,8 +72,8 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
 
   useEffect(() => {
     if (!active || viewer === null) return undefined;
-    const lens = lensRef.current;
-    if (lens === null) return undefined;
+    // `active && viewer` is what renders the lens canvas, and effects run after the commit.
+    const lens = lensRef.current as HTMLCanvasElement;
 
     const stop = () => {
       if (frameRef.current === 0) return;
@@ -99,18 +101,18 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
       sy: number,
       sw: number,
       sh: number,
-    ): HTMLCanvasElement | null => {
+    ): LensWindow | null => {
       const current = windowRef.current;
-      const inside =
+      if (
         current !== null &&
         current.origin === image.canvas &&
-        current.origin.width === image.canvas.width &&
-        current.origin.height === image.canvas.height &&
         sx >= current.x &&
         sy >= current.y &&
         sx + sw <= current.x + current.size &&
-        sy + sh <= current.y + current.size;
-      if (inside && current !== null) return current.canvas;
+        sy + sh <= current.y + current.size
+      ) {
+        return current;
+      }
 
       const size = Math.max(64, Math.ceil(Math.max(sw, sh) * WINDOW_MARGIN));
       const x = Math.min(
@@ -127,17 +129,16 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
       const context = copy.getContext('2d');
       if (context === null) return null;
       context.drawImage(image.canvas, x, y, copy.width, copy.height, 0, 0, copy.width, copy.height);
-      windowRef.current = { origin: image.canvas, canvas: copy, x, y, size: copy.width };
-      return copy;
+      const created = { origin: image.canvas, canvas: copy, x, y, size: copy.width };
+      windowRef.current = created;
+      return created;
     };
 
     const frame = () => {
       frameRef.current = 0;
-      const pointer = pointerRef.current;
-      if (hiddenRef.current || pointer === null) {
-        lens.style.visibility = 'hidden';
-        return;
-      }
+      // A frame is only pending while a pointer is on a page: `Escape`, leaving the pages and
+      // every other path that clears the pointer also cancel the frame (`hide`, `stop`).
+      const pointer = pointerRef.current as { x: number; y: number };
       const image = pageImageAt(pointer.x, pointer.y);
       const context = lens.getContext('2d');
       if (image === null || context === null) {
@@ -158,7 +159,7 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
         zoom: zoomRef.current,
       });
       const crop = ensureWindow(image, sx, sy, sw, sh);
-      if (crop === null || windowRef.current === null) {
+      if (crop === null) {
         lens.style.visibility = 'hidden';
         return;
       }
@@ -173,7 +174,7 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
       // moves with it; a magnified lens shows a small crop, where nearest-neighbour
       // stays legible.
       context.imageSmoothingEnabled = zoomRef.current <= 3;
-      context.drawImage(crop, sx - windowRef.current.x, sy - windowRef.current.y, sw, sh, dx, dy, dw, dh);
+      context.drawImage(crop.canvas, sx - crop.x, sy - crop.y, sw, sh, dx, dy, dw, dh);
       context.restore();
       frameRef.current = requestAnimationFrame(frame);
     };
@@ -192,12 +193,6 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
       }
       // `Escape` keeps the lens out of the way while the pointer stays on a page.
       if (hiddenRef.current) return;
-      // A page whose canvas has not been painted yet has nothing to magnify.
-      if (image.canvas.width === 0 || image.canvas.height === 0) {
-        pointerRef.current = null;
-        hide();
-        return;
-      }
       pointerRef.current = { x: event.clientX, y: event.clientY };
       if (frameRef.current === 0) frameRef.current = requestAnimationFrame(frame);
     };

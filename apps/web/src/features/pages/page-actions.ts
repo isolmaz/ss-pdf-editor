@@ -248,7 +248,7 @@ export function stepHistoryNow(host: PressHost, direction: 'undo' | 'redo'): boo
 
 /**
  * The handlers bound to the shell's host. Their identities follow the host's own, so the
- * command list and the shortcut layer that take them rebuild exactly when they used to.
+ * command list and the shortcut layer that take them rebuild only when the host changes.
  */
 export function usePageActions(host: PressHost & ActionHost) {
   const {

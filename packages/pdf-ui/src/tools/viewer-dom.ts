@@ -64,15 +64,16 @@ function liveViewerElement(viewer: ViewerApi | null): HTMLElement | null {
  * caller that only needs the container (a per-key-press check must not walk every page).
  */
 export function findViewerContainer(viewer: ViewerApi | null): HTMLElement | null {
-  return liveViewerElement(viewer)?.parentElement ?? null;
+  const element = liveViewerElement(viewer);
+  // A node `document.querySelector` returns sits under the document, so only `<html>` has no parent.
+  return element === null ? null : (element.parentElement as HTMLElement);
 }
 
 /** The live viewer, or `null` when there is no document / no viewer on screen. */
 export function findViewerDom(viewer: ViewerApi | null): ViewerDom | null {
   const element = liveViewerElement(viewer);
   if (element === null) return null;
-  const container = element.parentElement;
-  if (container === null) return null;
+  const container = element.parentElement as HTMLElement;
   const pages: ViewerPage[] = [];
   for (const page of element.querySelectorAll<HTMLElement>('.page[data-page-number]')) {
     const number = Number(page.dataset.pageNumber);
@@ -98,8 +99,8 @@ export function pageIndexAtTop(dom: ViewerDom): number {
   let found = 0;
   while (low <= high) {
     const index = (low + high) >> 1;
-    const page = dom.pages[index];
-    if (page === undefined) break;
+    // `low <= high` keeps `index` inside the page list.
+    const page = dom.pages[index] as ViewerPage;
     if (page.element.getBoundingClientRect().top <= middle) {
       found = index;
       low = index + 1;

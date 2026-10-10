@@ -103,6 +103,20 @@ describe('matchFamily', () => {
     expect(match.family).toBe('Courier New');
   });
 
+  it('scores a family by the middle word when an odd number of words is compared', () => {
+    const { image, words } = renderScan(mupdf, faces.get('Arial') as Font, {
+      dpi: 150,
+      size: 11,
+      amplitude: 30,
+    });
+    const arial = [CANDIDATES[0] as FaceCandidate];
+    const three = words.filter((word) => word.text.length >= 6).slice(0, 3);
+    expect(three).toHaveLength(3);
+    const alone = three.map((word) => matchFamily(mupdf, image, [word], arial).score).sort((a, b) => a - b);
+    expect(new Set(alone).size).toBe(3);
+    expect(matchFamily(mupdf, image, three, arial).score).toBe(alone[1]);
+  });
+
   it('reads light text on a dark ground', () => {
     const { image, words } = renderScan(mupdf, faces.get('Times New Roman') as Font, {
       dpi: 150,
@@ -238,6 +252,28 @@ describe('chooseReadings', () => {
     // no ink to judge by
     const blank = { ...image, data: new Uint8Array(image.data.length).fill(255) };
     expect(read('wor1d', ['world'], blank)).toBe('wor1d');
+  });
+
+  it('never takes a reading that draws nothing, such as a space, for a word with ink', () => {
+    const font = faces.get('Arial') as Font;
+    const { image, box } = renderWord(mupdf, font, 'world', { dpi: 200, size: 11 });
+    const read = (text: string, alternatives: readonly string[]) =>
+      chooseReadings(mupdf, image, [{ text, alternatives, box, size: 11 }], font)[0];
+    expect(read('wor1d', [' ', 'world'])).toBe('world');
+    expect(read('world', [' ', 'wor1d'])).toBe('world');
+  });
+
+  it('judges a word whose ink is a single pixel wide, without a box of no width', () => {
+    const font = faces.get('Arial') as Font;
+    // A black vertical stroke one pixel wide on white paper, as the stem of an l or an I.
+    const width = 80;
+    const data = new Uint8Array(width * width * 4).fill(255);
+    for (let y = 30; y < 50; y++) data.set([0, 0, 0, 255], (y * width + 40) * 4);
+    const image = { width, height: width, data, scale: 2 };
+    const box: [number, number, number, number] = [18, 12, 22, 28];
+    const [reading] = chooseReadings(mupdf, image, [{ text: 'l', alternatives: ['I'], box, size: 11 }], font);
+    // The stem fits both readings alike, so the settled one stays.
+    expect(reading).toBe('l');
   });
 
   it('answers for each word in turn', () => {

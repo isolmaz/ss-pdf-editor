@@ -82,6 +82,15 @@ describe('scan geometry: corners', () => {
     const [p0, p1, p2, p3] = turnedPage(0);
     expect(isConvexQuad([p0, p2, p1, p3])).toBe(false);
     expect(isConvexQuad([p0, p1, p2])).toBe(false);
+    // Three corners on one line: no turn at the first, so not a page outline.
+    expect(
+      isConvexQuad([
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 20, y: 0 },
+        { x: 10, y: 10 },
+      ]),
+    ).toBe(false);
     expect(clampPoint({ x: -5, y: 900 }, 640, 480)).toEqual({ x: 0, y: 480 });
     const inset = insetQuad(1000, 500, 0.1);
     expect(inset[0]).toEqual({ x: 100, y: 50 });
@@ -190,6 +199,50 @@ describe('scan geometry: page proportions', () => {
       const snapped = estimatePageAspect(rounded(quad), size[0], size[1]) as number;
       expect(Math.abs(snapped / a4 - 1)).toBeLessThan(0.02);
     }
+  });
+
+  it('reads a photograph with the typical lens when its rounded corners imply no real focal length', () => {
+    // An A4 sheet photographed with a 1200 px lens on a 1600 x 1200 picture, its corners rounded to
+    // the pixel and a pixel off here and there. The first quad's corners imply a negative squared
+    // focal length; the second and the third imply a lens of 0.28 and 0.17 times the long side,
+    // wider than any real one. 1200 px is three quarters of the long side, the lens assumed then,
+    // so the ratio still comes out as A4's. Taking the implied focal length at face value would
+    // give 0.7147 for the second quad and 0.7230 for the third: 1 to 2 % off.
+    const a4 = 210 / 297;
+    const quads: readonly Quad[] = [
+      [
+        { x: 405, y: 46 },
+        { x: 1200, y: 41 },
+        { x: 1153, y: 1096 },
+        { x: 449, y: 1091 },
+      ],
+      [
+        { x: 537, y: 233 },
+        { x: 1060, y: 236 },
+        { x: 1038, y: 931 },
+        { x: 561, y: 935 },
+      ],
+      [
+        { x: 470, y: 144 },
+        { x: 1128, y: 147 },
+        { x: 1082, y: 990 },
+        { x: 516, y: 992 },
+      ],
+    ];
+    for (const quad of quads) {
+      const aspect = estimatePageAspect(quad, 1600, 1200) as number;
+      expect(Math.abs(aspect / a4 - 1)).toBeLessThan(0.002);
+    }
+  });
+
+  it('answers nothing for a quad with a corner that is not a number', () => {
+    const quad: Quad = [
+      { x: Number.NaN, y: 10 },
+      { x: 300, y: 12 },
+      { x: 310, y: 400 },
+      { x: 20, y: 390 },
+    ];
+    expect(estimatePageAspect(quad, 400, 500)).toBeNull();
   });
 
   it('answers a straight-on page and a degenerate one', () => {

@@ -509,6 +509,22 @@ describe('sceneItemXml: even-odd fills', () => {
     expect((inner as [number, number][])[0]).toEqual([25 * EMU, 25 * EMU]);
   });
 
+  it('does not take a subpath for a hole of a neighbour whose box holds its start but whose outline does not', () => {
+    // a triangle and a square beside its hypotenuse: the square starts inside the triangle's box, not inside the triangle
+    const segments: PathSegment[] = [
+      { kind: 'move', to: [0, 0] },
+      { kind: 'line', to: [100, 0] },
+      { kind: 'line', to: [0, 100] },
+      { kind: 'close' },
+      ...rectSegments(60, 60, 90, 90),
+    ];
+    const root = render(shape({ box: [0, 0, 100, 100], segments, fill: evenOdd }));
+    const [triangle, square] = subpathPoints(one(root, 'a:path'));
+    expect(Math.sign(area(triangle as [number, number][]))).toBe(1);
+    expect(Math.sign(area(square as [number, number][]))).toBe(1);
+    expect((square as [number, number][])[0]).toEqual([60 * EMU, 60 * EMU]);
+  });
+
   it('does not touch the direction of a nonzero fill', () => {
     const root = render(
       shape({ box: [0, 0, 100, 100], segments: frame(true), fill: { ...evenOdd, evenOdd: false } }),
@@ -615,6 +631,19 @@ describe('sceneItemXml: a path that draws before it moves', () => {
       [[e(100), e(50)]],
       [[e(50), e(80)]],
     ]);
+  });
+});
+
+describe('sceneItemXml: a close with nothing to close', () => {
+  it('ignores a close before the first move: the path is the one without it', () => {
+    const box: [number, number, number, number] = [0, 0, 100, 50];
+    const plain = sceneItemXml(rectShape(box), 1, new DocxRegistry());
+    const stray = sceneItemXml(
+      shape({ box, segments: [{ kind: 'close' }, ...rectSegments(...box)] }),
+      1,
+      new DocxRegistry(),
+    );
+    expect(stray).toBe(plain);
   });
 });
 

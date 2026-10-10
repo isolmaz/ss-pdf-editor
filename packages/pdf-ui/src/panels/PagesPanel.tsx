@@ -362,7 +362,7 @@ export function PagesPanel({
     const dragging = dragPages;
     setDragPages(null);
     setDropGap(null);
-    if (dragging === null || dragging.length === 0) return;
+    if (dragging === null) return;
     // The gap counts pages in the current order; the action counts positions in the
     // order that remains, so the dragged pages before the gap are subtracted.
     const before = dragging.filter((page) => page < gap).length;
@@ -656,9 +656,7 @@ function PageThumbnail({
    * page drawn upside down.
    */
   const draw = useCallback(
-    async (signal: AbortSignal) => {
-      const holder = holderRef.current;
-      if (holder === null) return;
+    async (holder: HTMLElement, signal: AbortSignal) => {
       const page = await document.getPageSize(pageIndex, 1);
       const scale = THUMBNAIL_WIDTH / page.width;
       const shown = { x: 0, y: 0, width: THUMBNAIL_WIDTH, height: Math.round(page.height * scale) };
@@ -689,8 +687,8 @@ function PageThumbnail({
   );
 
   useEffect(() => {
-    const holder = holderRef.current;
-    if (holder === null) return undefined;
+    // The holder is rendered unconditionally, so the ref is set by the time an effect runs.
+    const holder = holderRef.current as HTMLDivElement;
     // `draw` changes exactly when the handle or the page does, so what is painted is
     // stale from here on. The item keeps its key across a document swap of the same
     // length (two freshly opened files are both state `source`) and across a write
@@ -705,7 +703,7 @@ function PageThumbnail({
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting) || paintedRef.current) return;
-        void draw(controller.signal).catch(() => undefined);
+        void draw(holder, controller.signal).catch(() => undefined);
       },
       { rootMargin: '120px' },
     );

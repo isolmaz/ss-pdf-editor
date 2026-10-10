@@ -161,14 +161,15 @@ export function CommentsPanel({
       marked: false,
     }));
     const { threads, records } = commentThreads(existing ?? []);
-    const saved: CommentRow[] = (existing ?? [])
-      .filter((annotation) => annotation.kind !== null && !records.has(annotation.id))
-      .map((annotation) => {
-        const thread = threads.get(annotation.id);
-        return {
+    const saved: CommentRow[] = (existing ?? []).flatMap((annotation) => {
+      const { kind } = annotation;
+      if (kind === null || records.has(annotation.id)) return [];
+      const thread = threads.get(annotation.id);
+      return [
+        {
           id: annotation.id,
           pageIndex: annotation.pageIndex,
-          kind: annotation.kind ?? 'note',
+          kind,
           color: null,
           contents: annotation.contents,
           author: annotation.author,
@@ -185,8 +186,9 @@ export function CommentsPanel({
               ? null
               : { state: thread.review.state, author: thread.review.author },
           marked: thread?.marked === true,
-        };
-      });
+        },
+      ];
+    });
     return [...pending, ...saved].sort((a, b) => a.pageIndex - b.pageIndex);
   }, [existing, marks]);
 
@@ -203,13 +205,6 @@ export function CommentsPanel({
 
   const visible = filter === 'all' ? rows : rows.filter((row) => row.kind === filter);
   const fileComments = rows.length - marks.length;
-
-  const commitEdit = useCallback(() => {
-    if (editing === null) return;
-    onEdit?.(editing, draft);
-    setEditing(null);
-    setDraft('');
-  }, [draft, editing, onEdit]);
 
   // `existing === null` means the engine has not answered yet; with marks in hand
   // the panel still shows them, because the user's own work must never wait on a
@@ -540,7 +535,11 @@ export function CommentsPanel({
                       value={draft}
                       rows={2}
                       onChange={(event) => setDraft(event.target.value)}
-                      onBlur={commitEdit}
+                      onBlur={() => {
+                        onEdit?.(row.id, draft);
+                        setEditing(null);
+                        setDraft('');
+                      }}
                       className="w-full rounded-sm border border-kumo-line bg-kumo-base p-1 text-xs text-kumo-default outline-none focus:ring-1 focus:ring-kumo-focus"
                     />
                   </div>

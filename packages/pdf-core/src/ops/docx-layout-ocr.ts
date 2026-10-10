@@ -105,7 +105,9 @@ export function layerWords(scene: PageScene): OcrWord[] {
   let block = 0;
   let line = 0;
   // The scene reads the page's text without pictures, so its blocks are text.
-  for (const textBlock of scene.text.blocks.flatMap((entry) => (entry.kind === 'text' ? [entry] : []))) {
+  for (const textBlock of scene.text.blocks.filter(
+    (entry): entry is Extract<typeof entry, { kind: 'text' }> => entry.kind === 'text',
+  )) {
     block += 1;
     for (const textLine of textBlock.lines) {
       line += 1;
@@ -168,6 +170,7 @@ function renderScan(
   try {
     const width = pixmap.getWidth();
     const height = pixmap.getHeight();
+    // DeviceRGB without alpha, as asked above: every pixel is the three channels r, g, b.
     const channels = pixmap.getNumberOfComponents();
     const stride = pixmap.getStride();
     const from = pixmap.getPixels();
@@ -177,8 +180,8 @@ function renderScan(
         const source = y * stride + x * channels;
         const target = (y * width + x) * 4;
         data[target] = from[source] as number;
-        data[target + 1] = from[source + (channels > 1 ? 1 : 0)] as number;
-        data[target + 2] = from[source + (channels > 2 ? 2 : 0)] as number;
+        data[target + 1] = from[source + 1] as number;
+        data[target + 2] = from[source + 2] as number;
         data[target + 3] = 255;
       }
     }

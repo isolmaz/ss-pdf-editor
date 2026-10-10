@@ -63,21 +63,33 @@ export interface ScannedDocument {
   readonly offerOcr: boolean;
 }
 
-export interface ScanDialogProps {
+interface ScanDialogBase {
   readonly t: Translator;
-  /** `document`: make a PDF. `pages`: hand back the straightened pages as JPEG files. */
-  readonly mode: 'document' | 'pages';
   readonly onClose: () => void;
-  /**
-   * Hand the PDF to the shell. Resolving with a sentence means the shell did not open it:
-   * the dialog shows that sentence and stays open, because the shell's own notice sits
-   * behind this modal and the user would otherwise see "Create PDF" do nothing.
-   */
-  readonly onDocument?: (result: ScannedDocument) => Promise<string | undefined> | undefined;
-  readonly onPages?: (files: readonly File[]) => void;
 }
 
+/** `document`: make a PDF. `pages`: hand back the straightened pages as JPEG files. */
+export type ScanDialogProps = ScanDialogBase &
+  (
+    | {
+        readonly mode: 'document';
+        /**
+         * Hand the PDF to the shell. Resolving with a sentence means the shell did not open it:
+         * the dialog shows that sentence and stays open, because the shell's own notice sits
+         * behind this modal and the user would otherwise see "Create PDF" do nothing.
+         */
+        readonly onDocument: (result: ScannedDocument) => Promise<string | undefined> | undefined;
+      }
+    | { readonly mode: 'pages'; readonly onPages: (files: readonly File[]) => void }
+  );
+
 type View = 'camera' | 'crop' | 'pages';
+
+/** A photograph waiting to be opened on the crop screen. */
+interface Photo {
+  readonly blob: Blob;
+  readonly name: string;
+}
 
 /** What the crop screen is doing for the draft: a new page, replacing one, or fixing one. */
 type Target =
@@ -92,17 +104,19 @@ const FILTERS: readonly { readonly id: ScanFilter; readonly key: MessageKey }[] 
   { id: 'enhanced', key: 'scan.filter.enhanced' },
 ];
 
-const SIZE_OPTIONS: readonly { readonly id: ScanPageSize; readonly key: MessageKey }[] = [
-  { id: 'a4', key: 'scan.output.size.a4' },
-  { id: 'letter', key: 'scan.output.size.letter' },
-  { id: 'fit', key: 'scan.output.size.fit' },
-];
+const SIZE_KEYS: Readonly<Record<ScanPageSize, MessageKey>> = {
+  a4: 'scan.output.size.a4',
+  letter: 'scan.output.size.letter',
+  fit: 'scan.output.size.fit',
+};
+const SIZES = Object.keys(SIZE_KEYS) as readonly ScanPageSize[];
 
-const QUALITY_OPTIONS: readonly { readonly id: QualityPreset; readonly key: MessageKey }[] = [
-  { id: 'low', key: 'scan.output.quality.low' },
-  { id: 'medium', key: 'scan.output.quality.medium' },
-  { id: 'high', key: 'scan.output.quality.high' },
-];
+const QUALITY_KEYS: Readonly<Record<QualityPreset, MessageKey>> = {
+  low: 'scan.output.quality.low',
+  medium: 'scan.output.quality.medium',
+  high: 'scan.output.quality.high',
+};
+const QUALITIES = Object.keys(QUALITY_KEYS) as readonly QualityPreset[];
 
 /** Paint `raster` into a canvas that scales to its box (`object-contain`). */
 function RasterCanvas({
@@ -157,11 +171,12 @@ function PageThumb({
   );
 }
 
-export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialogProps) {
+export function ScanDialog(props: ScanDialogProps) {
+  const { t, mode, onClose } = props;
   const [view, setView] = useState<View>('camera');
   const [pages, setPages] = useState<readonly ScanPageState[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [queue, setQueue] = useState<readonly { readonly blob: Blob; readonly name: string }[]>([]);
+  const [queue, setQueue] = useState<readonly Photo[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftQuad, setDraftQuad] = useState<Quad | null>(null);
   const [draftUrl, setDraftUrl] = useState<string | null>(null);
@@ -198,21 +213,15 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
   // Whatever is running stops with the dialog.
   useEffect(() => () => abort.current?.abort(), []);
 
-  /** Take the next photograph from the queue to the crop screen. */
+  /** Take a photograph, and those that wait behind it, to the crop screen. */
   const openNext = useCallback(
     async (
-      waiting: readonly { readonly blob: Blob; readonly name: string }[],
+      next: Photo,
+      rest: readonly Photo[],
       into: Target,
-      /** A photograph before these could not be opened: its notice stays on screen. */
+      /** The notice on screen (a photograph before these could not be opened, or some were left out) stays. */
       carryNotice = false,
     ) => {
-      const [next, ...rest] = waiting;
-      if (next === undefined) {
-        setDraft(null);
-        setDraftQuad(null);
-        setView('pages');
-        return;
-      }
       setDecoding(true);
       if (!carryNotice) setNotice(null);
       try {
@@ -226,7 +235,8 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
         setNotice(t('scan.page.decodeFailed', { name: next.name }));
         setQueue(rest);
         // Carry on with the rest of the photographs; a damaged one must not stop the batch.
-        if (rest.length > 0) await openNext(rest, into, true);
+        const [following, ...others] = rest;
+        if (following !== undefined) await openNext(following, others, into, true);
         else setView(pages.length > 0 ? 'pages' : 'camera');
       } finally {
         setDecoding(false);
@@ -236,18 +246,22 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
   );
 
   const onPhotos = useCallback(
-    (photos: readonly { readonly blob: Blob; readonly name: string }[]) => {
+    (photos: readonly Photo[]) => {
       const room = MAX_SCAN_PAGES - pages.length + (target.kind === 'retake' ? 1 : 0);
-      const accepted = photos.slice(0, Math.max(0, room));
-      if (accepted.length < photos.length) setNotice(t('scan.page.limit', { max: MAX_SCAN_PAGES }));
-      if (accepted.length === 0) return;
-      void openNext(accepted, target.kind === 'retake' ? target : { kind: 'new' });
+      // The camera screen hands over at least one photograph, and the pages already made never
+      // fill the list while a new one can be taken (Add page is disabled at the limit; a retake
+      // has its own page's place), so there is room for one.
+      const accepted = photos.slice(0, room);
+      const leftOut = accepted.length < photos.length;
+      if (leftOut) setNotice(t('scan.page.limit', { max: MAX_SCAN_PAGES }));
+      const [first, ...others] = accepted as [Photo, ...Photo[]];
+      void openNext(first, others, target.kind === 'retake' ? target : { kind: 'new' }, leftOut);
     },
     [openNext, pages.length, t, target],
   );
 
-  const acceptDraft = () => {
-    if (draft === null || draftQuad === null || !isConvexQuad(draftQuad)) return;
+  /** Take the page the crop screen shows. Its button is disabled while the outline folds over itself. */
+  const acceptDraft = (draft: Draft, draftQuad: Quad) => {
     if (target.kind === 'edit') {
       const id = target.id;
       setPages((all) => all.map((page) => (page.id === id ? { ...page, quad: draftQuad } : page)));
@@ -270,7 +284,8 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
       setSelectedId(page.id);
     }
     // Photographs still waiting come next; otherwise the pages.
-    if (queue.length > 0) void openNext(queue, { kind: 'new' });
+    const [following, ...others] = queue;
+    if (following !== undefined) void openNext(following, others, { kind: 'new' });
     else {
       setDraft(null);
       setDraftQuad(null);
@@ -280,7 +295,9 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
   };
 
   const skipDraft = () => {
-    if (queue.length > 0) void openNext(queue, target.kind === 'retake' ? { kind: 'new' } : target);
+    const [following, ...others] = queue;
+    if (following !== undefined)
+      void openNext(following, others, target.kind === 'retake' ? { kind: 'new' } : target);
     else {
       setDraft(null);
       setDraftQuad(null);
@@ -295,17 +312,16 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
   const chooseFilter = (next: ScanFilter) => {
     setFilter(next);
     if (applyAll) setPages((all) => all.map((page) => ({ ...page, filter: next })));
-    else if (selected !== null) update(selected.id, { filter: next });
+    // Only the pages screen offers a look, and it always has a page selected.
+    else update((selected as ScanPageState).id, { filter: next });
   };
 
   const move = (id: number, by: -1 | 1) =>
     setPages((all) => {
+      // The move buttons are disabled at either end of the list, so the page and its new place exist.
       const from = all.findIndex((page) => page.id === id);
-      const to = from + by;
-      if (from < 0 || to < 0 || to >= all.length) return all;
       const next = [...all];
-      const [item] = next.splice(from, 1);
-      if (item !== undefined) next.splice(to, 0, item);
+      next.splice(from + by, 0, ...next.splice(from, 1));
       return next;
     });
 
@@ -326,7 +342,6 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
   };
 
   const build = async () => {
-    if (pages.length === 0 || building !== null) return;
     const controller = new AbortController();
     abort.current = controller;
     setError(null);
@@ -340,8 +355,8 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
         exported.push(await exportPage(page, QUALITY_PRESETS[quality], index));
         if (controller.signal.aborted) return;
       }
-      if (mode === 'pages') {
-        onPages?.(
+      if (props.mode === 'pages') {
+        props.onPages(
           exported.map((page) => new File([page.bytes as BlobPart], page.name, { type: 'image/jpeg' })),
         );
         return;
@@ -353,7 +368,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
       const now = new Date();
       const pad = (value: number) => String(value).padStart(2, '0');
       const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}.${pad(now.getMinutes())}`;
-      const refusal = await onDocument?.({
+      const refusal = await props.onDocument({
         name: t('scan.fileName', { stamp }),
         bytes: outcome.bytes,
         pageCount: outcome.report.pageCount,
@@ -397,10 +412,9 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
     [draft, draftQuad, filter],
   );
   const croppedPreview = useRendered(draftPage, 420);
-  const sizeLabel = (id: ScanPageSize) =>
-    t(SIZE_OPTIONS.find((option) => option.id === id)?.key ?? 'scan.output.size.a4');
-  const qualityLabel = (id: QualityPreset) =>
-    t(QUALITY_OPTIONS.find((option) => option.id === id)?.key ?? 'scan.output.quality.medium');
+  // The pages screen is only shown with at least one page (deleting the last one returns to
+  // the camera), so a page is selected wherever this is read.
+  const shown = selected as ScanPageState;
 
   return (
     <Dialog.Root
@@ -521,7 +535,11 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                 <Button variant="outline" onClick={skipDraft}>
                   {target.kind === 'edit' || queue.length === 0 ? t('op.cancel') : t('scan.crop.skip')}
                 </Button>
-                <Button variant="primary" disabled={!isConvexQuad(draftQuad)} onClick={acceptDraft}>
+                <Button
+                  variant="primary"
+                  disabled={!isConvexQuad(draftQuad)}
+                  onClick={() => acceptDraft(draft, draftQuad)}
+                >
                   {target.kind === 'edit' ? t('scan.crop.apply') : t('scan.crop.done')}
                 </Button>
               </div>
@@ -533,11 +551,7 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto sm:overflow-hidden">
             <div className="flex min-h-[260px] flex-1 flex-col gap-2 sm:min-h-0 sm:flex-row">
               <div className="min-h-[240px] flex-1 rounded-md bg-kumo-recessed p-2">
-                {selected === null ? (
-                  <p className="p-4 text-center text-xs text-kumo-subtle">{t('scan.page.empty')}</p>
-                ) : (
-                  <PagePreview page={selected} t={t} index={selectedIndex} />
-                )}
+                <PagePreview page={shown} t={t} index={selectedIndex} />
               </div>
 
               <div className="flex shrink-0 flex-col gap-2 sm:w-60 sm:overflow-y-auto">
@@ -550,10 +564,10 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                       <button
                         key={item.id}
                         type="button"
-                        aria-pressed={(selected?.filter ?? filter) === item.id}
+                        aria-pressed={shown.filter === item.id}
                         onClick={() => chooseFilter(item.id)}
                         className={`rounded-md border px-2 py-1.5 text-xs ${
-                          (selected?.filter ?? filter) === item.id
+                          shown.filter === item.id
                             ? 'border-pdf-accent bg-kumo-tint font-semibold text-kumo-strong'
                             : 'border-kumo-line text-kumo-default hover:bg-kumo-tint'
                         }`}
@@ -570,12 +584,13 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                     size="sm"
                     label={t('scan.output.size')}
                     value={size}
-                    renderValue={(value) => sizeLabel(value)}
-                    onValueChange={(next) => setSize(next ?? 'a4')}
+                    renderValue={(value) => t(SIZE_KEYS[value])}
+                    // A single-choice select reports the option chosen, never an empty value.
+                    onValueChange={(next) => setSize(next as ScanPageSize)}
                   >
-                    {SIZE_OPTIONS.map((option) => (
-                      <Select.Option key={option.id} value={option.id}>
-                        {t(option.key)}
+                    {SIZES.map((id) => (
+                      <Select.Option key={id} value={id}>
+                        {t(SIZE_KEYS[id])}
                       </Select.Option>
                     ))}
                   </Select>
@@ -584,12 +599,12 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                   size="sm"
                   label={t('scan.output.quality')}
                   value={quality}
-                  renderValue={(value) => qualityLabel(value)}
-                  onValueChange={(next) => setQuality(next ?? 'medium')}
+                  renderValue={(value) => t(QUALITY_KEYS[value])}
+                  onValueChange={(next) => setQuality(next as QualityPreset)}
                 >
-                  {QUALITY_OPTIONS.map((option) => (
-                    <Select.Option key={option.id} value={option.id}>
-                      {t(option.key)}
+                  {QUALITIES.map((id) => (
+                    <Select.Option key={id} value={id}>
+                      {t(QUALITY_KEYS[id])}
                     </Select.Option>
                   ))}
                 </Select>
@@ -599,62 +614,60 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
               </div>
             </div>
 
-            {selected === null ? null : (
-              <div
-                className="flex flex-wrap items-center gap-1"
-                role="toolbar"
-                aria-label={t('scan.page.label', { n: selectedIndex + 1 })}
+            <div
+              className="flex flex-wrap items-center gap-1"
+              role="toolbar"
+              aria-label={t('scan.page.label', { n: selectedIndex + 1 })}
+            >
+              <Button
+                variant="outline"
+                aria-label={t('scan.page.moveEarlier', { n: selectedIndex + 1 })}
+                disabled={selectedIndex <= 0}
+                onClick={() => move(shown.id, -1)}
               >
-                <Button
-                  variant="outline"
-                  aria-label={t('scan.page.moveEarlier', { n: selectedIndex + 1 })}
-                  disabled={selectedIndex <= 0}
-                  onClick={() => move(selected.id, -1)}
-                >
-                  <ArrowLeft size={15} className="rtl:-scale-x-100" aria-hidden="true" />
-                </Button>
-                <Button
-                  variant="outline"
-                  aria-label={t('scan.page.moveLater', { n: selectedIndex + 1 })}
-                  disabled={selectedIndex >= pages.length - 1}
-                  onClick={() => move(selected.id, 1)}
-                >
-                  <ArrowRight size={15} className="rtl:-scale-x-100" aria-hidden="true" />
-                </Button>
-                <Button
-                  variant="outline"
-                  aria-label={t('scan.page.rotateLeft')}
-                  onClick={() => rotate(selected, 3)}
-                >
-                  <ArrowCounterClockwise size={15} aria-hidden="true" />
-                </Button>
-                <Button
-                  variant="outline"
-                  aria-label={t('scan.page.rotateRight')}
-                  onClick={() => rotate(selected, 1)}
-                >
-                  <ArrowClockwise size={15} aria-hidden="true" />
-                </Button>
-                <Button variant="outline" onClick={() => editCorners(selected)}>
-                  <Crop size={15} aria-hidden="true" />
-                  {t('scan.page.corners')}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setTarget({ kind: 'retake', id: selected.id });
-                    setView('camera');
-                  }}
-                >
-                  <Camera size={15} aria-hidden="true" />
-                  {t('scan.page.retake')}
-                </Button>
-                <Button variant="secondary-destructive" onClick={() => remove(selected.id)}>
-                  <Trash size={15} aria-hidden="true" />
-                  {t('scan.page.delete')}
-                </Button>
-              </div>
-            )}
+                <ArrowLeft size={15} className="rtl:-scale-x-100" aria-hidden="true" />
+              </Button>
+              <Button
+                variant="outline"
+                aria-label={t('scan.page.moveLater', { n: selectedIndex + 1 })}
+                disabled={selectedIndex >= pages.length - 1}
+                onClick={() => move(shown.id, 1)}
+              >
+                <ArrowRight size={15} className="rtl:-scale-x-100" aria-hidden="true" />
+              </Button>
+              <Button
+                variant="outline"
+                aria-label={t('scan.page.rotateLeft')}
+                onClick={() => rotate(shown, 3)}
+              >
+                <ArrowCounterClockwise size={15} aria-hidden="true" />
+              </Button>
+              <Button
+                variant="outline"
+                aria-label={t('scan.page.rotateRight')}
+                onClick={() => rotate(shown, 1)}
+              >
+                <ArrowClockwise size={15} aria-hidden="true" />
+              </Button>
+              <Button variant="outline" onClick={() => editCorners(shown)}>
+                <Crop size={15} aria-hidden="true" />
+                {t('scan.page.corners')}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setTarget({ kind: 'retake', id: shown.id });
+                  setView('camera');
+                }}
+              >
+                <Camera size={15} aria-hidden="true" />
+                {t('scan.page.retake')}
+              </Button>
+              <Button variant="secondary-destructive" onClick={() => remove(shown.id)}>
+                <Trash size={15} aria-hidden="true" />
+                {t('scan.page.delete')}
+              </Button>
+            </div>
 
             <ul aria-label={t('scan.page.list')} className="flex shrink-0 gap-2 overflow-x-auto pb-1">
               {pages.map((page, index) => (
@@ -662,9 +675,9 @@ export function ScanDialog({ t, mode, onClose, onDocument, onPages }: ScanDialog
                   <button
                     type="button"
                     aria-label={t('scan.page.select', { n: index + 1 })}
-                    aria-current={page.id === selected?.id}
+                    aria-current={page.id === shown.id}
                     onClick={() => setSelectedId(page.id)}
-                    className={`relative rounded-md border-2 p-0.5 ${page.id === selected?.id ? 'border-pdf-accent' : 'border-kumo-line'}`}
+                    className={`relative rounded-md border-2 p-0.5 ${page.id === shown.id ? 'border-pdf-accent' : 'border-kumo-line'}`}
                   >
                     <PageThumb page={page} t={t} index={index} />
                     <span className="absolute bottom-1 start-1 rounded bg-black/65 px-1 text-[10px] text-white">

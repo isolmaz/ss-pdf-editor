@@ -5,7 +5,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { convertFormatOf, isImageName, pdfNameFor, unsupportedDocumentKind } from './convert-formats';
+import {
+  convertFormatOf,
+  formatLabel,
+  isImageName,
+  pdfNameFor,
+  unsupportedDocumentKind,
+} from './convert-formats';
 
 describe('convert formats', () => {
   it('maps extensions to formats case-insensitively and rejects unknown ones', () => {
@@ -23,10 +29,17 @@ describe('convert formats', () => {
     expect(isImageName('photo.JPEG')).toBe(true);
     expect(isImageName('scan.tiff')).toBe(true);
     expect(isImageName('report.docx')).toBe(false);
+    expect(isImageName('photo')).toBe(false);
     expect(unsupportedDocumentKind('old.XLS')).toBe('XLS');
     expect(unsupportedDocumentKind('letter.rtf')).toBe('RTF');
     expect(unsupportedDocumentKind('new.docx')).toBeNull();
     expect(unsupportedDocumentKind('x.png')).toBeNull();
+    expect(unsupportedDocumentKind('letter')).toBeNull();
+  });
+
+  it('labels a format in capitals, as the notices spell it', () => {
+    expect(formatLabel('docx')).toBe('DOCX');
+    expect(formatLabel('txt')).toBe('TXT');
   });
 
   it('swaps only the last extension and drops any folder', () => {

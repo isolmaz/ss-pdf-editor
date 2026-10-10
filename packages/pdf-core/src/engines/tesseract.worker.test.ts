@@ -518,6 +518,39 @@ describe('a pool of workers', () => {
     expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 0]);
   });
 
+  it('sends a waiter away that is cancelled after it was woken but before it could take the freed place, which a newcomer took', async () => {
+    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    const { releases } = reads(2);
+    const owner = new AbortController();
+    const reading = engine.recognizePage(input({ signal: owner.signal }));
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    const waiterSignal = new AbortController();
+    const waiter = engine.recognizePage(input({ signal: waiterSignal.signal }));
+    // The owner's cancel frees its place and wakes the waiter; before the waiter runs on, it is
+    // cancelled itself and a newcomer starts a worker in the freed place.
+    owner.abort();
+    waiterSignal.abort();
+    const newcomer = engine.recognizePage(input());
+    await expect(reading).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(waiter).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    releases[1]?.();
+    await newcomer;
+    expect(state.created).toHaveLength(2);
+  });
+
+  it('terminates the worker of a read cancelled after the pools were dropped, without a pool to leave', async () => {
+    const controller = new AbortController();
+    state.recognize = () => new Promise(() => undefined);
+    const running = engine.recognizePage(input({ signal: controller.signal }));
+    await vi.waitFor(() => expect(state.workers[0]?.recognize).toHaveLength(1));
+    await engine.terminateOcrWorkers();
+    expect(state.workers[0]?.terminated).toBe(1);
+    controller.abort();
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(state.workers[0]?.terminated).toBe(2));
+  });
+
   it('stops a page waiting for a worker when it is cancelled, without touching the workers', async () => {
     engine.allowOcrWorkers(1, ['tur'], 'fast');
     const { releases } = reads(1);

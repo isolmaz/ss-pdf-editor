@@ -64,7 +64,7 @@ import { PdfUaView, type WrittenOutcome } from './PdfUaView';
 import { type AccessibilityView, readingOrderStore, useReadingOrder } from './reading-order-store';
 import { TagsView } from './TagsView';
 
-/** See the header: the seam that stands in for `parts/a11y.ts` until it is merged. */
+/** See the header: turns a key string into a `MessageKey`. */
 const key = (value: string): MessageKey => value as MessageKey;
 
 export interface AccessibilityPanelProps {
@@ -371,8 +371,8 @@ export function AccessibilityPanel(props: AccessibilityPanelProps) {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
     if (step === 0) return;
     event.preventDefault();
-    const next = VIEWS[(index + step + VIEWS.length) % VIEWS.length];
-    if (next === undefined) return;
+    // In range: the index is taken modulo the length, and the strip is never empty.
+    const next = VIEWS[(index + step + VIEWS.length) % VIEWS.length] as (typeof VIEWS)[number];
     readingOrderStore.setView(next.id);
     tabs.current[next.id]?.focus();
   };

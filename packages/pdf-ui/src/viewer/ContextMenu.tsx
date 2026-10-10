@@ -99,9 +99,8 @@ export function ContextMenu({
   // Kept inside the viewport by its **measured** size: a fixed guess let the longer
   // menu (with the selection block) run past the bottom edge.
   useLayoutEffect(() => {
-    const menu = menuRef.current;
-    if (menu === null) return;
-    const { width, height } = menu.getBoundingClientRect();
+    // A layout effect runs after the `div` is attached, and the menu always renders it.
+    const { width, height } = (menuRef.current as HTMLDivElement).getBoundingClientRect();
     setPosition({
       left: Math.max(EDGE, Math.min(x, window.innerWidth - width - EDGE)),
       top: Math.max(EDGE, Math.min(y, window.innerHeight - height - EDGE)),

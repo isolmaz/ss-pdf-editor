@@ -3,9 +3,9 @@
  *
  * It lives beside the panel that offers the action, not in the shell: reading a certificate
  * needs `pkijs` (through `pdf-core/signature-pkcs12`), and the shell is the one place the
- * ASN.1 stack must not be (measured — the entry chunk went from 210.22 to 302.66 KiB gzip
- * against a locked ≤ 250 KiB budget). Everything here is therefore inside the dock-panels
- * chunk, which loads when the properties panel opens.
+ * ASN.1 stack must not be (it would put the first paint over its locked ≤ 250 KiB gzip
+ * budget). Everything here is therefore inside the dock-panels chunk, which loads when the
+ * properties panel opens.
  *
  * A `.pem`/`.crt` is base64 with headers; a `.der`/`.cer` is the DER itself. A file that
  * carries no certificate is refused by name — never added as an empty entry.
@@ -28,7 +28,8 @@ export async function importTrustRoots(
     const bytes = new Uint8Array(await file.arrayBuffer());
     const text = new TextDecoder().decode(bytes);
     const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(text);
-    const der = pem === null ? bytes : fromBase64(pem[1] ?? '');
+    // The pattern has one group, which always takes part in a match.
+    const der = pem === null ? bytes : fromBase64(pem[1] as string);
     if (der.length === 0 || der[0] !== 0x30) {
       refused += 1;
       continue;
