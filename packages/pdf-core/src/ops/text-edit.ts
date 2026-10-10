@@ -4,15 +4,14 @@
  * One operation performs the whole manoeuvre, in the order the save pipeline
  * requires:
  *
- *   1. **erase** (4c) — MuPDF redaction annotations over the given rectangles,
+ *   1. **erase** — MuPDF redaction annotations over the given rectangles,
  *      then `applyRedactions`. The glyph runs inside those boxes leave the
  *      content stream; nothing is painted over them. `black_boxes = false` is the
  *      measured difference between "the content is gone" and "the content is
- *      covered by a bar that advertises the edit and cannot be lifted"
- *     .
- *   2. **insert** (4e) — MuPDF embeds the fonts, draws the replacement lines at
+ *      covered by a bar that advertises the edit and cannot be lifted".
+ *   2. **insert** — MuPDF embeds the fonts, draws the replacement lines at
  *      their baselines in one new content stream per page and rewrites the file.
- *   3. **verify** (4f) — the produced bytes are re-opened with **pdf.js**, the
+ *   3. **verify** — the produced bytes are re-opened with **pdf.js**, the
  *      independent reader, and three claims are measured: the erased text is gone
  *      from that page's text content, the new text is present and searchable, and
  *      the page count did not move. Any mismatch throws `verification-failed` and
@@ -29,19 +28,18 @@
  *
  * MuPDF does **not** speak that space for annotations: `setRect` takes *page
  * space*, which is the displayed page, its origin at the page box's top-left
- * corner **after `/Rotate`**, `y` growing downward. The spike measured what
- * confusing the two costs: the annotation is accepted, consumed, and removes
- * nothing at all. The conversion is therefore explicit per quarter turn
+ * corner **after `/Rotate`**, `y` growing downward. Confusing the two is silent:
+ * the annotation is accepted, consumed, and removes nothing at all. The conversion is therefore explicit per quarter turn
  * (`userToPageSpace`, derivation in its comment) and never assumes rotation 0.
  *
  * The drawn lines are written in plain user space (bottom-left origin), so a baseline
  * point is flipped **once**, in `topLeftToUserPoint`; the flip appears nowhere else.
  *
- * ## Fonts (4e)
+ * ## Fonts
  *
  * Every drawn line is set in a font this operation embeds itself. A font read back
  * out of the document must never be reused: a subset has no usable cmap left
- * (`encodeCharacter` answers glyph id 0 for every character — spike #3, variant A),
+ * (`encodeCharacter` answers glyph id 0 for every character),
  * so each edit round embeds a fresh subset, and the report states that the block
  * was re-rendered with an embedded font. The default face is Noto Sans (OFL,
  * pinned asset): the standard 14 are WinAnsi and WinAnsi cannot spell `ğ ş ı İ`, so
@@ -232,8 +230,9 @@ export async function applyTextEdit(
     notes.push(note('warning', 'op.note.textEdit.nothingErased'));
   }
   if (written.lineCount > 0) {
-    // The block is re-drawn, never patched: the spike's subset finding is why a
-    // second round needs a fresh embed, and the user is told which face carries it.
+    // The block is re-drawn, never patched: a subset font read back from the file cannot
+    // be reused, so a second round needs a fresh embed, and the user is told which face
+    // carries it.
     notes.push(note('changed', 'op.note.textEdit.rendered', { font: written.fonts.join(', ') }));
   }
   if (written.embeddedFonts.length > 0) {
@@ -241,7 +240,7 @@ export async function applyTextEdit(
   }
   if (written.justifiedLines > 0) {
     // The gaps are position-only, so the verification compares characters, not
-    // spacing, and the report says which of the two it did (`4f` honesty rule).
+    // spacing, and the report says which of the two it did.
     notes.push(note('changed', 'op.note.textEdit.justified', { count: written.justifiedLines }));
   }
   for (const requested of written.substitutions) {
@@ -383,7 +382,7 @@ function hexColour(value: string): readonly [number, number, number] {
 }
 
 /**
- * Erase stage (`4c`): one MuPDF pass that reads every touched page's box and
+ * Erase stage: one MuPDF pass that reads every touched page's box and
  * rotation, records what the rectangles cover, then applies the redactions and
  * writes the file once.
  *
@@ -438,11 +437,11 @@ async function eraseStage(
 
         for (const rect of rects) {
           // `setRect` only, like the proven path in `ops/redact.ts`. Setting
-          // `/QuadPoints` as well looked harmless and was not: it gave the
+          // `/QuadPoints` as well looks harmless and is not: it gives the
           // annotation a second geometry for `applyRedactions` to prefer, and the
-          // erase then removed nothing while the file kept every original glyph
-          // (measured: page 1 still carried the old paragraph after an "erased"
-          // run). One geometry, the one the working path uses.
+          // erase then removes nothing while the file keeps every original glyph
+          // (measured: page 1 still carried the original paragraph after an "erased"
+          // run). One geometry, the one the redaction path uses.
           const annotation = page.createAnnotation('Redact');
           annotation.setRect(rect);
           annotation.update();
@@ -462,10 +461,9 @@ async function eraseStage(
         const kept = keptFonts(page.getObject(), work.lines);
 
         // `black_boxes = false`: the erase is a content operation, not a painted
-        // rectangle. Images stay (`REDACT_IMAGE_NONE` — spike case d kept a
-        // 460 x 200 image pixel-identical) and so does line art
-        // (`REDACT_LINE_ART_NONE`: spike case c survived its table rules, while
-        // `REMOVE_IF_TOUCHED` destroyed 4,538 rule pixels of the same cell).
+        // rectangle. Images stay (`REDACT_IMAGE_NONE` keeps an image under the box
+        // pixel-identical) and so does line art (`REDACT_LINE_ART_NONE` leaves a table's
+        // rules intact, where `REMOVE_IF_TOUCHED` destroys the rule pixels of the cell).
         page.applyRedactions(
           false,
           mupdf.PDFPage.REDACT_IMAGE_NONE,
@@ -679,7 +677,7 @@ function keptFonts(page: PDFObject, lines: readonly TextEditInsertLine[]): reado
 }
 
 /**
- * Insert stage (`4e`): embed, draw, write.
+ * Insert stage: embed, draw, write.
  *
  * The produced bytes depend on the erased ones, never on the working document —
  * the erase step is what makes the block's old text unreachable, and re-saving the
@@ -794,7 +792,7 @@ async function writeStage(
 
 /**
  * The font one line is drawn with — **always one this operation embedded**, never
- * one read back from the document (a subset has no cmap: spike #3 variant A).
+ * one read back from the document (a subset has no cmap).
  *
  * Resolution order, and the report carries whatever the fallback cost:
  *   0. the id is `doc:<name>` → the page's own font of that name, when it has a code
@@ -883,7 +881,7 @@ async function notoFace(
 }
 
 /**
- * Verification (`4f`): re-open the **produced** bytes with pdf.js and measure the
+ * Verification: re-open the **produced** bytes with pdf.js and measure the
  * three claims. pdf.js is a different engine with a different text pipeline, so a
  * pass here is evidence the file is readable elsewhere, not just inside the writer
  * that produced it. A failure throws — a file that fails its own check is never
@@ -924,8 +922,8 @@ async function verifyPages(
        * excludes the text this operation itself drew, and it identifies that text
        * by its own content and baseline rather than by "anything in the rect":
        * anything else inside the rect is leftover glyphs, which is exactly the
-       * defect `4c` exists to prevent. Without this the operation failed its own
-       * verification on every successful edit (measured: the dialog reported
+       * defect the erase stage exists to prevent. Without this the operation would fail
+       * its own verification on every successful edit (the dialog would report
        * `page 0: text still starts inside an erased rectangle: “ÜSKÜDAR şubesi …”`).
        */
       // A justified line is drawn word by word, and a reader may report each word as

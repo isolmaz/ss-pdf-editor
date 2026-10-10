@@ -162,7 +162,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # `pnpm ci:behavior` (see package.json): the phase 3 and 4 harnesses drive the assembled dist/
+  # `pnpm ci:behavior` (see package.json): the editor-flow and text-edit harnesses drive the assembled dist/
   # in Chromium through `tools/preview-dist.mjs`; the signing check runs under `tsx` and calls the
   # `openssl` binary, which ubuntu-latest ships.
   behavior:

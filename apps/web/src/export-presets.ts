@@ -1,9 +1,8 @@
 /**
  * What the export dialog's "Compressed PDF" level means for the Optimize form.
  *
- * The dialog used to read the level and drop it, so HIGH, MEDIUM and LOW all opened the
- * same form. The level now fills the form's own fields, which the user can still change
- * before running it:
+ * The level fills the form's own fields (so HIGH, MEDIUM and LOW do not all open the
+ * same form); the user can still change them before running it:
  *
  *  - LOW — lossless structure rewrite; the document's text, links and metadata stay.
  *  - MEDIUM — the same rewrite, and the Info metadata is cleared too.

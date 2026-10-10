@@ -502,16 +502,13 @@ export function downloadFiles(files: readonly OutputFile[]): void {
 /**
  * What an operation is allowed to change, and what verification therefore promises.
  *
- * The previous shape asked three questions — page count, "is the text still there" on
- * three sampled pages, and a set of form/outline/label presence checks — and decided
- * which of them to *suppress* by matching the operation's change kinds against
- * `/delete|clear|blank|flatten/i`. That regex never matched a single id this app
- * produces (`pdfjs.extractPages`, `form.flatten`, `applyRedactions`, …): the
- * suppression it was written for could only ever fire by accident, and "verified" then
- * meant "the checks I happened to run passed", with nothing recorded about what was
- * never run at all.
+ * Guessing which checks to suppress from the shape of an operation's name (a pattern
+ * like `/delete|clear|blank|flatten/i` against ids such as `pdfjs.extractPages`,
+ * `form.flatten`, `applyRedactions`) would only ever fire by accident, and "verified"
+ * would then mean "the checks I happened to run passed", with nothing recorded about
+ * what was never run at all.
  *
- * `OPERATION_TABLE` below is that guess replaced by data. Every step id the app's
+ * `OPERATION_TABLE` below is data instead. Every step id the app's
  * writers report has one entry saying which of the twelve document facts that step is
  * **allowed** to change and why; a step id the table does not know makes the whole
  * verification `unverified`, named, rather than silently treated as "nothing may

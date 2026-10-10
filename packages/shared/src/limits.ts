@@ -3,8 +3,8 @@
  *
  * Desktop: warn at 1500 pages, hard ceiling 2000 pages / 300 MB.
  * Mobile: above ~300 pages / 64 MB the app switches to viewing mode.
- * The 300 MB desktop target is a *measured* number: spike #5 confirms it or
- * the limits are revised explicitly — never silently.
+ * The 300 MB desktop ceiling is a *measured* number: revise the limits explicitly,
+ * never silently.
  */
 
 export type DeviceTier = 'desktop' | 'mobile';

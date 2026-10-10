@@ -1,12 +1,12 @@
 /**
  * `pdf-text-engine` — the text model and block-local reflow engine.
  *
- *   - `4a` text model — `buildTextPage`, `lineOrientation`, `blockOrientation`;
- *   - `4b` editability — `measureEditability`;
- *   - `4d-1` block-local reflow — `reflowBlock`, `measureLineWidth`;
- *   - `4e` font engine — `createFontCatalog`, `matchFont`, `metricsFor`, `readFontHeader`,
+ *   - text model — `buildTextPage`, `lineOrientation`, `blockOrientation`;
+ *   - editability — `measureEditability`;
+ *   - block-local reflow — `reflowBlock`, `measureLineWidth`;
+ *   - font engine — `createFontCatalog`, `matchFont`, `metricsFor`, `readFontHeader`,
  *     `describeFontName`, `DEFAULT_FONT_CANDIDATES`;
- *   - `4c` the writer's request — `planTextEdit`.
+ *   - the writer's request — `planTextEdit`.
  *
  * Pure by construction: plain data in, plain data out. No pdf.js, MuPDF or
  * React import, no file or network access, no DOM. Font metrics take the glyph lookups

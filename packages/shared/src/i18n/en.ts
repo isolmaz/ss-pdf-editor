@@ -5,6 +5,7 @@ import { batchPart } from './en-parts/batch';
 import { boxesPart } from './en-parts/boxes';
 import { commonPart } from './en-parts/common';
 import { comparePart } from './en-parts/compare';
+import { contentWritersPart } from './en-parts/contentwriters';
 import { convertPart } from './en-parts/convert';
 import { dialogsPart } from './en-parts/dialogs';
 import { docopsPart } from './en-parts/docops';
@@ -24,7 +25,6 @@ import { pageeditPart } from './en-parts/pageedit';
 import { pageopsPart } from './en-parts/pageops';
 import { pagesPart } from './en-parts/pages';
 import { pdfaPart } from './en-parts/pdfa';
-import { phase4Part } from './en-parts/phase4';
 import { propertiesPart } from './en-parts/properties';
 import { propsPart } from './en-parts/props';
 import { redactPart } from './en-parts/redact';
@@ -50,7 +50,7 @@ export const en: Record<MessageKey, string> = {
   ...annotationsPart,
   ...dialogsPart,
   ...pageeditPart,
-  ...phase4Part,
+  ...contentWritersPart,
   ...batchPart,
   ...a11yPart,
   ...comparePart,

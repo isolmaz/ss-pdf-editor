@@ -44,10 +44,9 @@ function addPage(pages: number[], seen: Set<number>, pageNumber: number, segment
 /**
  * Parse a page-range expression against a document.
  *
- * Rules (each one closes a source-project defect):
+ * Rules:
  *  - 1-based input, 0-based output;
- *  - out-of-range pages are an error, never silently clamped (the old parser
- *    accepted `1,1` and clamped);
+ *  - out-of-range pages are an error, never silently clamped;
  *  - duplicates are an error, because a duplicated range in a split produces
  *    two identical parts;
  *  - `pageCount` of 0 rejects everything;
@@ -132,9 +131,8 @@ export function chunkPages(pages: readonly number[], size: number): number[][] {
 }
 
 /**
- * Part file name for a split. The source project broke
- * past 999 pages by string-padding into the extension; the width grows with the
- * part count instead.
+ * Part file name for a split. The width grows with the part count, so past 999 parts
+ * the number never pads into the extension.
  */
 export function partFileName(baseName: string, index: number, total: number, suffix = ''): string {
   const stem = baseName.replace(/\.pdf$/i, '');

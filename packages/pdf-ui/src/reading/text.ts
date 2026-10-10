@@ -7,12 +7,12 @@
  * in PDF user space (`y` grows upwards, so the result does not depend on page
  * rotation) and blocks are separated by vertical gaps. There is no page-flow or
  * overflow handling and no column detection: a multi-column page therefore reads its
- * columns line by line, left to right — that is the out-of-scope research line
- * (4d-2), not a defect here.
+ * columns line by line, left to right — a known limit of block-local shaping, not a
+ * defect.
  *
  * This module is DOM-free and engine-free (plain numbers in, blocks out), so it can
- * move to `packages/pdf-core` with its caller without a rewrite; it lives in
- * `packages/pdf-ui/src/reading/` only because this slice may not touch `pdf-core`.
+ * move to `packages/pdf-core` with its caller without a rewrite; it lives next to
+ * the reading pane that uses it.
  */
 
 /** How the reading column presents a block. */

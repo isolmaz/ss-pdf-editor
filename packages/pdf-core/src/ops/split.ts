@@ -1,6 +1,5 @@
 /**
- * Splitting (defects 17: English errors, duplicate ranges,
- * names past 999).
+ * Splitting.
  *
  * Four modes: ranges, every N pages, by approximate size, and booklet
  * signatures. Range parsing and part naming come from `page-ranges.ts`, so the
@@ -10,8 +9,7 @@
  * Every part is produced through the composition path (`composeDocument`) on a
  * pdf.js document opened from the bytes being split — the document that owns the
  * annotation storage — so annotations and form values travel into the parts
- * instead of being rebuilt away. The source project's
- * split was a `copyPages` rebuild, which is exactly the defect this replaces.
+ * instead of being rebuilt away.
  */
 
 import { ToolError } from 'pdf-shared';
@@ -139,7 +137,7 @@ export async function splitDocument(
 
     // Names are built once the part count is known — in `size` mode that is only
     // after the last part was measured — and `partFileName` widens the number
-    // instead of running into the extension past 999 (defect 17).
+    // instead of running into the extension past 999.
     const files: OutputFile[] = blobs.map((partBytes, index) => ({
       name: partFileName(options.baseName, index, blobs.length),
       bytes: partBytes,

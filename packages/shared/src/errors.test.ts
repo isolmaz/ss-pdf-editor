@@ -3,8 +3,7 @@ import { isToolError, TOOL_ERROR_CODES, ToolError, toToolError } from './errors'
 import { tr } from './i18n/tr';
 
 /**
- * The error contract. The defect this guards against is the one found in the
- * source project: an engine code outside the
+ * The error contract. The defect this guards against is an engine code outside the
  * contract reaching the UI as `[object Object]`. So the test asserts the thing
  * the user actually depends on — every code has Turkish user text and a hint,
  * and unknown failures are wrapped rather than leaked.

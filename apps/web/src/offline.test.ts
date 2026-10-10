@@ -1,7 +1,7 @@
 /**
  * Offline readiness and preparation, against the failures that make it lie.
  *
- * The cases worth testing are the ones the previous implementation got wrong: a partially
+ * The cases worth testing are the ones that make readiness lie: a partially
  * cached capability reported as ready, and a cache from another release counted as
  * evidence for this one. Both are silent — the user only finds out when the feature fails
  * with no network to fall back on.
@@ -67,7 +67,7 @@ describe('capabilityReadiness', () => {
   it('is ready only when every required path is present', () => {
     const cached = new Set(['/engines/mupdf/mupdf-wasm.wasm', '/engines/mupdf/mupdf.js']);
     expect(capabilityReadiness(manifest(), 'mupdf', cached)).toEqual({ ready: true, missing: [] });
-    // The old check would have called this ready: one file whose URL contains "mupdf".
+    // One file whose URL merely contains "mupdf" is not ready: every required path must be cached.
     expect(capabilityReadiness(manifest(), 'mupdf', new Set(['/engines/mupdf/mupdf-wasm.wasm']))).toEqual({
       ready: false,
       missing: ['/engines/mupdf/mupdf.js'],

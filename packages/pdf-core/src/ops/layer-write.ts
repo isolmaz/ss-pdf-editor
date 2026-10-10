@@ -35,8 +35,7 @@
  * Text (group names) goes through `text()` from `engines/mupdf-write.ts` (the engine's
  * `newString`: PDFDocEncoding when it fits, UTF-16BE otherwise) — the one encoder every
  * MuPDF writer uses, so Turkish names cannot be broken by a second one.
- * The file is edited through MuPDF's object model; group identity is the object number,
- * as it was the reference under pdf-lib.
+ * The file is edited through MuPDF's object model; group identity is the object number.
  */
 
 import type { PDFDocument, PDFObject } from 'mupdf';
@@ -551,7 +550,7 @@ export async function applyLayerWrite(
 
     if (edit.toggled.length === 0 && edit.appliedOrder === null && edit.appliedRename === null) {
       // Nothing changed: the input goes back untouched and the warnings are the answer —
-      // including `nameMissing`, which the pdf-lib writer computed only after this return.
+      // including `nameMissing`, which is computed before this return.
       const untouched = nothingToDo(bytes, pageCount);
       return {
         ...untouched,

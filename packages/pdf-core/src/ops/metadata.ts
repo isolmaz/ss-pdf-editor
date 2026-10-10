@@ -12,8 +12,7 @@
  * Facts this file depends on:
  *  - Info values are written with `doc.newString` (PDFDocEncoding when it fits,
  *    UTF-16BE otherwise), which is why Turkish titles survive; keywords are
- *    joined with a **space** — the form pdf-lib's `setKeywords` wrote before the
- *    consolidation — so the reader accepts both comma and space separated lists.
+ *    joined with a **space**, so the reader accepts both comma and space separated lists.
  *  - Nothing here writes an XMP packet unless asked, so `/Metadata` is ours end
  *    to end and a document without one stays without one. The packet is added
  *    as a raw stream and MuPDF's `compress` leaves XML metadata uncompressed;
@@ -615,7 +614,7 @@ function writeXmp(doc: PDFDocument, packet: string | null): void {
 
 /**
  * Keyword lists arrive comma separated from our own dialog and space separated
- * from Info (`writeMetadata` joins with a space, as pdf-lib did); both are read back.
+ * from Info (`writeMetadata` joins with a space); both are read back.
  */
 function splitKeywords(value: string | undefined): readonly string[] | undefined {
   if (value === undefined) return undefined;

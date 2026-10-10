@@ -2,12 +2,10 @@
  * The common mark surface: selection, the marquee and the move, for every family
  * of mark the session can hold.
  *
- * It exists because there used to be three partial answers to "delete a mark".
- * `AnnotationLayer` hit-tested only its own session marks, from a hardcoded 8-point
- * pad, with a per-mark button that the layer's own gesture overlay shadowed in the
- * DOM; `MeasureLayer` accepted `selectedId`/`onSelect` that nothing ever passed;
- * redaction marks were drawn nowhere at all, so an intent to erase a page area was
- * invisible until it was applied. One layer, one hit test, one selection — and the
+ * It is the one answer to "select, move or delete a mark" for every family: per-family
+ * hit tests would leave some families unselectable, and a redaction mark that is drawn
+ * nowhere makes an intent to erase a page area invisible until it is applied. One
+ * layer, one hit test, one selection — and the
  * document itself is never touched here: the shell owns the write, its journal and
  * its undo.
  *

@@ -2,7 +2,7 @@
  * `signature-timestamp.ts` against real RFC 3161 tokens.
  *
  * Tokens are built with pkijs (`signature-revocation.fixtures.ts`) over certificates issued in
- * the test. These tests protect the documented checks (architecture.md §5.3.2): the imprint
+ * the test. These tests protect the documented checks (docs/architecture.md §5.3.2): the imprint
  * must be the hash of the covered bytes, the CMS signature must verify with the TSA
  * certificate, that certificate must be allowed to stamp and valid at `genTime`, and a token
  * from a TSA nobody imported verifies but is never `trusted`.

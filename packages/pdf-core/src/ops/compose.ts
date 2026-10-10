@@ -263,8 +263,7 @@ export async function composeDocument(
  * stay byte sources and are never touched.
  *
  * Metadata comes from the base document only: the added documents' Info and XMP
- * are dropped, and the report says so (the source project
- * took `sources[0]` without ever telling the user).
+ * are dropped, and the report says so.
  */
 export async function mergeDocuments(
   base: { readonly bytes: Uint8Array; readonly pageCount: number },

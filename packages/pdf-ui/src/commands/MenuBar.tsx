@@ -262,10 +262,9 @@ export function MenuBar({ t, commands }: MenuBarProps) {
                         const at = enabled.indexOf(command);
                         if (at >= 0) setHighlight(at);
                       }}
-                      // The old disabled class named a text token Kumo does not
-                      // declare, so a disabled row rendered exactly like an
-                      // enabled one. `subtle` is Kumo's own disabled text and
-                      // stays legible.
+                      // A disabled class naming a text token Kumo does not declare would
+                      // render a disabled row exactly like an enabled one. `subtle` is
+                      // Kumo's own disabled text and stays legible.
                       className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-start text-xs hover:bg-kumo-tint disabled:text-kumo-subtle disabled:hover:bg-transparent ${
                         command.danger === true ? 'text-kumo-danger' : 'text-kumo-default'
                       }`}

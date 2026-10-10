@@ -1,19 +1,17 @@
 /**
  * Stamping: header/footer, page numbers, Bates numbering and watermarks.
  *
- * A9's source defect was `/Rotate` blindness — page numbering landed sideways on
- * rotated pages. Placement here is computed in **displayed page space** (the page
+ * Placement is computed in **displayed page space** (the page
  * as the user sees it, after `/Rotate`) and mapped back into unrotated user space
  * through the inverse page rotation, with the drawn glyphs rotated by `+rotation`
  * so they read horizontally on screen. `displayToUserPoint` is pure and exported,
  * which is what makes the mapping checkable without rendering a page.
  *
- * A10 gains the image watermark, the page range and a real print-exclusion flag
- * (an optional-content group whose print state is off — see `createPrintOcg`).
+ * A watermark can be an image, can cover a page range and carries a real print-exclusion
+ * flag (an optional-content group whose print state is off — see `createPrintOcg`).
  *
  * Fonts: the stamp face is embedded (OFL Noto Sans), because the standard 14
- * cannot represent Turkish characters (`ş ğ ı İ`) — the source project's
- * WinAnsi assumption is why its stamps broke on Turkish text.
+ * cannot represent Turkish characters (`ş ğ ı İ`): WinAnsi text would break on them.
  *
  * How a stamp reaches the page (the MuPDF writer vocabulary, `engines/mupdf-write.ts`):
  *  - one page's stamp is **one** operator string in **one** new content stream —

@@ -7,7 +7,7 @@
  * ## Why Ghostscript
  *
  * Producing PDF/A means rewriting colour, fonts and structure, not stamping a flag. The
- * options were measured, not assumed (`architecture.md` §5.9):
+ * options were measured, not assumed (`docs/architecture.md` §5.9):
  *
  *  - Ghostscript 10.06 (AGPL-3.0, the licence of this project) does it as a mode of its PDF
  *    writer: `-dPDFA=1|2|3` converts every colour to the output intent's space, embeds every

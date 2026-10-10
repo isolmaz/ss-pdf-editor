@@ -4,8 +4,7 @@
  * Both capabilities draw on the page rather than changing its content, and both
  * go through the same `stampDocument` writer: one text block per page for
  * numbering, one text or image block for a watermark. The placement work — the
- * `/Rotate`-aware anchor arithmetic (the source project's "placement can be wrong
- * on a rotated page") and the `{page}`/`{total}`/`{date}`/`{file}` substitution —
+ * `/Rotate`-aware anchor arithmetic (so placement is right on a rotated page) and the `{page}`/`{total}`/`{date}`/`{file}` substitution —
  * lives in the operation; the dialog only collects what the operation offers.
  */
 
@@ -15,7 +14,7 @@ import type { OperationDialogSpec } from '../dialogs/types';
 import { resolveScope } from './scope';
 
 /**
- * A9 — header/footer and page numbers.
+ * Header/footer and page numbers.
  *
  * `startAt` counts *stamped* pages, not document pages ("the first stamped page
  * shows `startAt`"), which is why `skipFirst` and a start value are both here
@@ -140,7 +139,7 @@ export const pageNumbersDialog: OperationDialogSpec = {
 };
 
 /**
- * A10 — text or image watermark.
+ * Text or image watermark.
  *
  * One kind at a time, because `stampDocument` rejects both at once (drawing one
  * and dropping the other would be a silent loss): the two value fields are gated

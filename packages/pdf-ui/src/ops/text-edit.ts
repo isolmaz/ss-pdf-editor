@@ -2,9 +2,9 @@
  * The text-edit dialog.
  *
  * The whole manoeuvre is three calls, and the order is the plan's: the model block
- * is reflowed **inside its own box** (`4d-1`), the layout is turned into the
+ * is reflowed **inside its own box**, the layout is turned into the
  * writer's serializable request (`planTextEdit`), and the writer erases the old
- * glyphs for real and draws the new ones with a freshly embedded font (`4c`, `4e`).
+ * glyphs for real and draws the new ones with a freshly embedded font.
  * The dialog owns none of that logic — it owns the fields, the dictionary text and
  * the one thing only the UI knows: which block the user pointed at.
  *

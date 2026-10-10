@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Records the README's feature GIFs (`docs/media/*.gif`) from the built app.
+ * Records the README's feature clips (`docs/media/*.webp`, animated WebP) from the built app.
  *
  * Each scene drives the assembled `dist/` (served by `tools/preview-dist.mjs`) in Chromium
  * with a visible cursor drawn into the page — headless video has none — records it, and
- * turns the recording into a palette-optimised GIF with ffmpeg.
+ * turns the recording into an animated WebP with ffmpeg (`libwebp_anim`).
  *
  * Usage: pnpm build && pnpm assemble:dist && node tools/preview-dist.mjs &
- *        node tools/spikes/readme-media.mjs [scene …]
+ *        node tools/behavior/readme-media.mjs [scene …]
  * Needs `ffmpeg` and `openssl` on PATH (openssl makes the signing identity).
  */
 import { execFileSync } from 'node:child_process';
@@ -513,7 +513,7 @@ async function record(name) {
   }
   const video = await page.video().path();
   mkdirSync(OUT, { recursive: true });
-  const gif = join(OUT, `${name}.gif`);
+  const clip = join(OUT, `${name}.webp`);
   execFileSync('ffmpeg', [
     '-y',
     '-loglevel',
@@ -523,10 +523,20 @@ async function record(name) {
     '-i',
     video,
     '-vf',
-    `${drop(cuts, start)}fps=10,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
-    gif,
+    `${drop(cuts, start)}fps=10,scale=960:-1:flags=lanczos`,
+    '-c:v',
+    'libwebp_anim',
+    '-lossless',
+    '0',
+    '-q:v',
+    '75',
+    '-compression_level',
+    '6',
+    '-loop',
+    '0',
+    clip,
   ]);
-  console.log(`${name}: ${gif}`);
+  console.log(`${name}: ${clip}`);
 }
 
 const chosen = process.argv.slice(2);

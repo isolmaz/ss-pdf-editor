@@ -7,18 +7,18 @@ import { encryptedPdf, encryptedToolFixturePdf, readProducedPdf, toolFixturePdf 
 import { cmsBy, fromNow, signedDocument, signingPki } from './ui-panels9-helpers';
 
 /**
- * The document stays where the reader put it (2026-09-28 audit).
+ * The document stays where the reader put it.
  *
- * Each case is a defect that was measured in the built application before it was fixed:
+ * Each case guards a defect measured in the built application:
  *
- *  - a mark drawn on the page stayed where it was on screen while the page scrolled away
- *    under it (the overlays lived outside the scroll container);
- *  - arming a tool moved the whole document by up to 24 px, and every operation's notice
- *    and progress row pushed it down again (they were rows in the page's flow);
- *  - the status-bar rotate did nothing without a page-panel selection, and said so in a
- *    sentence with a raw `{count}` in it;
- *  - there was no way to type text onto a page, and a protected PDF could not be opened
- *    at all (the shell never supplied a password).
+ *  - a mark drawn on the page must scroll with the page instead of staying where it was
+ *    on screen (the overlays live inside the scroll container);
+ *  - arming a tool must not move the document, and an operation's notice and progress
+ *    must not push it (they float instead of being rows in the page's flow);
+ *  - the status-bar rotate must act on the page on screen without a page-panel
+ *    selection, not answer with a sentence carrying a raw `{count}`;
+ *  - text can be typed onto a page, and a protected PDF opens (the shell supplies a
+ *    password).
  */
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -230,9 +230,9 @@ test('unlocking a signed protected PDF says its signature no longer validates', 
 });
 
 test('an operation applied from the tools panel reaches the document', async ({ page }) => {
-  // The panel's runner used to go "back" right after handing over its result, and going
-  // back cancels the operation in flight — the apply that had just started. Every result
-  // applied from the panel was dropped; the notice said nothing and the page stayed as it was.
+  // The panel's runner must not go "back" right after handing over its result: going
+  // back cancels the operation in flight — the apply that has just started — and the result
+  // would be dropped with no notice and the page left as it was.
   await open(page, 'watermark.pdf', toolFixturePdf());
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Watermark');

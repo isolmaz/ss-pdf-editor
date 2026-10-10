@@ -1,5 +1,5 @@
 /**
- * Save as PDF/A (`architecture.md` §5.9): prepare, convert with Ghostscript, then check what
+ * Save as PDF/A (`docs/architecture.md` §5.9): prepare, convert with Ghostscript, then check what
  * came out before saying anything about it.
  *
  *  1. `prepareForPdfA` removes what the engine would drop or carry over wrongly (forms,

@@ -23,10 +23,9 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
  * The editor's header: identity, menus, the four task shortcuts, the document switcher
  * and the file actions.
  *
- * The task shortcuts used to be five "modes" (Tools, Read, Edit, Convert, Sign) with a
- * highlighted one — but nothing in the app had modes: "Edit" was highlighted on open
- * while the select tool was armed, and "Read" stayed highlighted after the reading pane
- * was closed. They are now what they always did: **toggles that show the real state**
+ * The task shortcuts are not "modes" with one highlighted: the app has no modes, and a
+ * highlighted "Edit" while the select tool is armed, or "Read" after the reading pane
+ * is closed, would say something untrue. They are **toggles that show the real state**
  * (the tools panel, the reading pane, the text-edit tool) and one-shot actions that
  * show none (convert, sign).
  */
@@ -148,8 +147,8 @@ export function ModernEditorHeader({
   const cancelled = useRef(false);
   const switcherRef = useRef<HTMLDivElement | null>(null);
 
-  // The switcher is a popover: a press outside it or Escape closes it. It used to stay
-  // open until its own button was pressed again.
+  // The switcher is a popover: a press outside it or Escape closes it, not only its own
+  // button.
   useEffect(() => {
     if (!showTabMenu) return undefined;
     const onPointer = (event: PointerEvent) => {

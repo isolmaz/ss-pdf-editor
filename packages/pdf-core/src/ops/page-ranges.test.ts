@@ -13,8 +13,8 @@ import {
  * The page-range parser is one of the critical modules: every
  * printing, OCR, redaction, extraction, split and imposition surface feeds user
  * text through it, and its failure mode is silent data loss (the wrong pages
- * exported) rather than a crash. These cases are the source project's defects
- * restated as behaviour.
+ * exported) rather than a crash. These cases pin the parser's behaviour on
+ * the inputs that go wrong.
  */
 describe('parsePageRanges', () => {
   it('reads single pages, lists and ranges into ascending 0-based indices', () => {
@@ -144,7 +144,7 @@ describe('partFileName', () => {
   });
 
   it('keeps the extension and numeric order past 999 parts', () => {
-    // The source project's name builder broke here.
+    // The width grows with the part count instead of padding into the extension.
     expect(partFileName('buyuk.pdf', 999, 1000)).toBe('buyuk-1000.pdf');
     expect(partFileName('buyuk.pdf', 1233, 2000)).toBe('buyuk-1234.pdf');
   });

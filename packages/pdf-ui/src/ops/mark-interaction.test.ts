@@ -15,18 +15,17 @@ import {
 } from './mark-interaction';
 
 /**
- * The geometry every mark tool shares, and the defects the old overlays shipped
- * restated as behaviour.
+ * The geometry every mark tool shares, with the defects it guards stated as behaviour.
  *
- * Each case here is a failure that was reachable in the product, not a fixture
+ * Each case here is a failure that is reachable in the product, not a fixture
  * exercising the code:
  *
  *  - a stroke is stored as **sparse vertices**, so a hit test that read only the
  *    stored vertices met nothing until it reached a corner of a long line;
  *  - a mark's own stroke width is part of what it covers, so a hairline and a
  *    20 pt line are not equally easy to click; the reach adds half the stroke;
- *  - the projection's 270° row subtracted the container offset twice, which put
- *    every mark on a `/Rotate 270` page one dock-width to the left;
+ *  - the projection's 270° row must subtract the container offset once, not twice,
+ *    or every mark on a `/Rotate 270` page lands one dock-width to the left;
  *  - and a mark's box was placed as if the page box started at 0, so a cropped
  *    page (`/CropBox [20 30 620 830]`) drew its marks 20 pt off.
  *

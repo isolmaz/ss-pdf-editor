@@ -11,7 +11,7 @@
  * has to break the verdict. A writer whose output is "valid" no matter what is not a
  * signature.
  *
- * Usage: npx tsx tools/spikes/sign-check.mts
+ * Usage: npx tsx tools/behavior/sign-check.mts
  */
 
 import { spawnSync } from 'node:child_process';

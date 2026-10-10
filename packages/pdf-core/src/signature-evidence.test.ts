@@ -3,7 +3,7 @@
  *
  * The CMS is a real `detachedCmsSignature`, with a real RFC 3161 token, CRLs and an Adobe
  * revocation archive added to it. These tests protect where each thing is looked for
- * (architecture.md §5.3.1/§5.3.2): the timestamp in the unsigned attributes, CRLs in
+ * (docs/architecture.md §5.3.1/§5.3.2): the timestamp in the unsigned attributes, CRLs in
  * `SignedData.crls` and in the archive attribute, the signing time in the signed attributes,
  * and that bytes which are not a CMS answer `null` instead of an invented empty result.
  */

@@ -1,9 +1,10 @@
 name: Revert proof
 
-# For every fix in tools/review/revert-proof.json, the fix's own test must fail on the fix commit's
-# parent (on an assertion) and pass on the fix commit. Slow: each entry checks out two commits and
-# the browser ones build `dist/` twice. It runs on demand, and on a pull request labelled
-# `revert-proof` (see REVIEW.md).
+# A pull request that wants the proof lists its fix commits in tools/review/revert-proof.json
+# (the manifest is empty otherwise, and the run then passes at once). For every listed fix, the
+# fix's own test must fail on the fix commit's parent (on an assertion) and pass on the fix
+# commit. Slow: each entry checks out two commits and the browser ones build `dist/` twice. It
+# runs on demand, and on a pull request labelled `revert-proof`.
 on:
   workflow_dispatch:
   pull_request:

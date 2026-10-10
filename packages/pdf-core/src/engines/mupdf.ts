@@ -130,9 +130,9 @@ export function topLeftRectToUserSpace(box: UserBox, rect: readonly [number, num
  *
  * The same statement in words: the page is turned clockwise by `/Rotate`, so under
  * 90° the box's bottom-left corner `(cx, cy)` lands at page-space `(0, 0)` and the
- * top of the page becomes its right edge. Skipping this step is the spike's silent
- * failure — an annotation built from unrotated coordinates is accepted, consumed,
- * and removes nothing.
+ * top of the page becomes its right edge. Skipping this step fails silently — an
+ * annotation built from unrotated coordinates is accepted, consumed, and removes
+ * nothing.
  */
 function userToPageSpace(
   rotation: 0 | 90 | 180 | 270,
@@ -190,12 +190,11 @@ export function rectToPageSpace(
 /**
  * The full-rewrite save option string.
  *
- * `garbage=compact,compress,clean` is the string measured in
- * an early engine spike: it is the only option set that leaves a
+ * `garbage=compact,compress,clean` is the option set that leaves a
  * **single revision** in the output (`/Prev` 0, one `startxref`), drops the object
  * that held the erased content stream, and renumbers the survivors (page-1 content
  * object 6 → 10 in a 2-page fixture). `incremental` is never an option here: after
- * `applyRedactions()` the same spike measured `canBeSavedIncrementally()` turning
+ * `applyRedactions()`, `canBeSavedIncrementally()` turns
  * `false`, and the incremental write still succeeds *silently*, keeping the
  * pre-redaction revision alive behind a `/Prev` chain — the erased revision would
  * travel with the file.
@@ -275,7 +274,7 @@ export function openPdf(mupdf: Mupdf, bytes: Uint8Array): PDFDocument {
 /**
  * `saveToBuffer` hands back a **wasm-owned** buffer: copy the bytes out and free
  * the buffer, otherwise the emscripten heap keeps the whole output until the
- * document is destroyed (the pattern an early engine spike settled).
+ * document is destroyed.
  *
  * The option argument is a string (`'encrypt=…,permissions=…'`,
  * `MUPDF_FULL_SAVE_OPTIONS`, `'incremental'`); the object form exists only because

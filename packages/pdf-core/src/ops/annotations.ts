@@ -58,7 +58,7 @@
  * `writeAnnotationsToFile` then hands the new annotations to
  * `transformPdfAnnotations`, which turns the geometry keys and the appearance
  * together. Turning only the fields would leave a note's text upright, an
- * underline's bar flat and a `/Line`'s diagonal pointing the old way, because
+ * underline's bar flat and a `/Line`'s diagonal pointing the unturned way, because
  * those boxes map onto themselves at 90°.
  */
 
@@ -1371,7 +1371,7 @@ function quadsFromCorners(value: unknown, pageTop: number): readonly MarkBox[] {
   if (!Array.isArray(value)) return [];
   // A drawn path is not a quad list. Its placeholder `NaN`s are dropped below, so
   // what is left looks like a run of coordinates and boxes up into the
-  // disconnected rows the marker used to be drawn as — refuse it here, where the
+  // disconnected rows a marker stroke would be drawn as — refuse it here, where the
   // two shapes are still tellable apart.
   if (isDrawnPath(value as number[])) return [];
   const numbers = value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
@@ -1420,8 +1420,8 @@ function outlinePoints(value: unknown, pageTop: number): readonly (readonly numb
  * NaN, x, y]`), then one six-number group per following point: `[NaN, NaN, NaN,
  * NaN, x, y]` for a straight run, `[c1x, c1y, c2x, c2y, x, y]` for a curve. A quad
  * list starts with finite ordinates, so the first four entries tell the two apart —
- * and reading the path as quads is exactly what used to turn a marker stroke into
- * a row of disconnected boxes.
+ * and reading the path as quads would turn a marker stroke into a row of
+ * disconnected boxes.
  */
 function isDrawnPath(run: readonly number[]): boolean {
   if (run.length < 6) return false;

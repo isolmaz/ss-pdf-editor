@@ -38,8 +38,8 @@
  * would end the incremental fast path for nothing.
  *
  * Key order: a new pair goes before the first key that sorts after it (keys compared
- * as decoded text), so a sorted tree stays sorted. pdf-lib, the previous writer,
- * appended at the end; readers that binary-search a name tree could miss such entries.
+ * as decoded text), so a sorted tree stays sorted. Appending at the end
+ * would let readers that binary-search a name tree miss such entries.
  */
 
 import type { PDFDocument, PDFObject } from 'mupdf';

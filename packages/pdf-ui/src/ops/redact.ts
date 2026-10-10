@@ -24,8 +24,8 @@ import { ToolError } from 'pdf-shared';
 import type { OperationDialogSpec } from '../dialogs/types';
 
 /**
- * The `imageMethod` values are MuPDF's own redaction constants, measured in spike
- * #4 (`applyRedactions(..., REDACT_IMAGE_*)`):
+ * The `imageMethod` values are MuPDF's own redaction constants
+ * (`applyRedactions(..., REDACT_IMAGE_*)`):
  * `0` leaves images alone, `1` removes a whole image the mark touches, `2` clears
  * only the pixels inside the box.
  */
@@ -36,7 +36,7 @@ const IMAGE_METHOD: Record<string, 0 | 1 | 2> = {
 };
 
 /**
- * `textMethod: 0` is `REDACT_TEXT_REMOVE` in the same engine (`spike #4`), and the
+ * `textMethod: 0` is `REDACT_TEXT_REMOVE` in the same engine, and the
  * only value that means "redact": the other one leaves the text under the mark in
  * the file. Redaction with text left in place is not a capability the product
  * offers, so this is a constant rather than a field.

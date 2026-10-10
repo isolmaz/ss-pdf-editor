@@ -1,8 +1,8 @@
 /**
- * MuPDF as the **writer** (the pdf-lib → MuPDF consolidation, 2026-09-28).
+ * MuPDF as the **writer**.
  *
- * Every operation that used to load a document with pdf-lib, edit its object graph and
- * save it now does the same through MuPDF's own object model. One engine then parses,
+ * Every operation that loads a document, edits its object graph and saves it does so
+ * through MuPDF's own object model. One engine then parses,
  * edits, verifies and serialises: the document a writer reads back is the document the
  * engine wrote, with no second parser's idea of the file in between.
  *
@@ -22,9 +22,8 @@
  * - **Nothing is written until {@link saveRewrite}**, and every document opened here is
  *   destroyed by the caller: wasm memory is not garbage-collected.
  *
- * The save is a full rewrite with unused objects collected and streams compressed —
- * the shape pdf-lib's save had — but **object numbers are kept** (`garbage` without
- * `compact`): a writer that resolves an annotation by reference and a second step that
+ * The save is a full rewrite with unused objects collected and streams compressed,
+ * but **object numbers are kept** (`garbage` without `compact`): a writer that resolves an annotation by reference and a second step that
  * acts on it must see the same numbers.
  */
 
@@ -167,7 +166,7 @@ export function readNumbers(object: PDFObject | null | undefined): number[] {
   return out;
 }
 
-/** A PDF date string (`D:YYYYMMDDHHmmSSZ`) in UTC — the form pdf-lib's `fromDate` wrote. */
+/** A PDF date string (`D:YYYYMMDDHHmmSSZ`) in UTC. */
 export function pdfDate(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   const day = `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}`;

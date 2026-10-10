@@ -1,11 +1,11 @@
 /**
  * The sentences the shell puts on its notice line, as data.
  *
- * Three failure paths in `App.tsx` used to end in either silence or a sentence that was
- * not about what happened: a restored draft whose engine values were all dropped said
- * nothing at all, a rejected `applyEngineValues` had no `catch` (an unhandled rejection,
- * invisible in the product and noisy in the console), and a cancelled picker's error
- * handler replaced the real open failure with `open.pickerFailed`. Each of them is a
+ * Three failure paths in `App.tsx` must not end in silence or in a sentence that is not
+ * about what happened: a restored draft whose engine values were all dropped must say
+ * so, a rejected `applyEngineValues` must be caught (an unhandled rejection is invisible
+ * in the product and noisy in the console), and a cancelled picker's error handler must
+ * not replace the real open failure with `open.pickerFailed`. Each of them is a
  * *sentence* problem — which words, with which numbers — and sentences built inline in
  * a 3 600-line component cannot be tested without a DOM.
  *

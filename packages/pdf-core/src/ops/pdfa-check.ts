@@ -8,7 +8,7 @@
  * decided from the object graph and the content streams, names each one, and returns the
  * list it did **not** run (`notChecked`) with every report, so a clean result is never
  * mistaken for a certificate. The rules were calibrated against veraPDF 1.30 on the fixtures
- * of the conversion (`architecture.md` §5.9): both agree on every one of them, and the cases
+ * of the conversion (`docs/architecture.md` §5.9): both agree on every one of them, and the cases
  * where this checker is stricter or looser than the standard are named below.
  *
  * ## What is checked

@@ -197,8 +197,8 @@ describe('createOpfsDraftStorage', () => {
     await storage.writeDraft(MANIFEST('bad'));
     failures.read.add('bad.json');
     const inventory = await storage.readDraftInventory?.();
-    // The read failure used to escape the per-file boundary and abort the whole listing,
-    // which made every *other* draft look absent — the exact input a cleanup pass must not
+    // A read failure stays inside the per-file boundary: letting it abort the whole listing
+    // would make every *other* draft look absent — the exact input a cleanup pass must not
     // mistake for “nothing is referenced”.
     expect(inventory?.drafts.map((draft) => draft.id)).toEqual(['good']);
     expect(inventory?.unreadable).toEqual(['bad.json']);

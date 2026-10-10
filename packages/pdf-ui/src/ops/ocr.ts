@@ -1,12 +1,11 @@
 /**
  * OCR.
  *
- * The dialog's job is small and exact, because both of A15's defects were places
- * where the UI and the core disagreed:
+ * The dialog's job is small and exact, because the failure modes are places
+ * where the UI and the core could disagree:
  *  - the DPI field offers 150–300 and rejects anything else in the field itself
  *    (`FieldSpec.number`'s range, the same rule `OcrOptions.dpi` enforces), so the
- *    value the user sees is the value tesseract gets (the old UI
- *    offered 120–400 while the core rejected >300);
+ *    value the user sees is the value tesseract gets;
  *  - the "existing text" mode is explicit, and in `skip` mode the dialog asks the
  *    engine which pages actually carry text (`detectScannedPages`) so the report can
  *    say how many pages were left alone instead of the user wondering.

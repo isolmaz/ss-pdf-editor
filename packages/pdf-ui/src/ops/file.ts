@@ -59,7 +59,7 @@ function exportReport(
 }
 
 /**
- * A1 — add/import another PDF into the current one.
+ * Add/import another PDF into the current one.
  *
  * The inserted document is merged as **bytes** (`mergeDocuments`), which is the
  * byte-based sibling of `composeDocument`: the base is the document the caller
@@ -146,7 +146,7 @@ export const addDocumentDialog: OperationDialogSpec = {
 };
 
 /**
- * A17 — build a document from images, one page per image.
+ * Build a document from images, one page per image.
  *
  * Result kind `new-tab`: the images are not a revision of the open document, so
  * replacing it would lose it. `imagesToPdf` reports unsupported and unreadable
@@ -251,7 +251,7 @@ export const imagesToPdfDialog: OperationDialogSpec = {
 };
 
 /**
- * A7 — export pages as image files.
+ * Export pages as image files.
  *
  * The page set, the DPI and the name stem reach `exportImages` unchanged; the
  * megapixel ceiling is a product budget, not a user choice, so
@@ -326,7 +326,7 @@ export const exportImagesDialog: OperationDialogSpec = {
 };
 
 /**
- * A8 — export the text layer.
+ * Export the text layer.
  *
  * Text export asks for a transparent engine choice, and the honest half of
  * that is what this dialog does **not** offer: the source selection "text layer /

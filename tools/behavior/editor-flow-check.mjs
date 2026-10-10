@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Phase 3 acceptance harness — throwaway driver, not the e2e suite.
+ * Editor acceptance-flow harness — a browser driver, not the e2e suite.
  *
- *   node tools/spikes/phase3-check.mjs [--port 4198] [--keep]
+ *   node tools/behavior/editor-flow-check.mjs [--port 4198] [--keep]
  *
- * What the phase promised:
+ * The flow it proves:
  *
  *   > open → search → highlight → comment → fill a form → delete 2 pages, add 1 →
  *   > apply header/footer → save → reopen: everything in place
@@ -22,7 +22,7 @@
  *  - page boxes, page labels, page insertion and a page replace through their dialogs;
  *  - the object-level redaction audit and the four-state signature verdict.
  *
- * Every check is bounded (`PHASE3_CHECK_TIMEOUT`, default 180 s) and prints as it lands,
+ * Every check is bounded (`EDITOR_FLOW_CHECK_TIMEOUT`, default 180 s) and prints as it lands,
  * because an unbounded harness cannot be evidence.
  */
 import { spawn } from 'node:child_process';
@@ -48,7 +48,7 @@ const FIXTURE_PAGES = 4;
 
 if (!existsSync(join(ROOT, 'dist', 'editor', 'index.html'))) {
   console.error(
-    'phase3-check: dist/editor/index.html is missing — run `pnpm build && pnpm assemble:dist` first',
+    'editor-flow-check: dist/editor/index.html is missing — run `pnpm build && pnpm assemble:dist` first',
   );
   process.exit(1);
 }
@@ -63,7 +63,7 @@ function buildFixture(dir) {
   const pdf = createFixture(mupdf);
   for (let index = 1; index <= FIXTURE_PAGES; index += 1) {
     const page = pdf.addPage(595.28, 841.89);
-    page.text(`Phase 3 fixture - page ${index} of ${FIXTURE_PAGES}`, {
+    page.text(`Editor-flow fixture - page ${index} of ${FIXTURE_PAGES}`, {
       x: 56,
       y: 760,
       size: 18,
@@ -86,15 +86,14 @@ function buildFixture(dir) {
     if (index === 1) page.textField('musteri', [56, 90, 276, 114], 'Ada Lovelace');
   }
   mkdirSync(dir, { recursive: true });
-  const path = join(dir, 'phase3-fixture-4p.pdf');
+  const path = join(dir, 'editor-flow-fixture-4p.pdf');
   writeFileSync(path, pdf.save());
   return path;
 }
 
 /**
- * `--only <regex>` runs a subset, in the file's order. Added for bisecting a press-loss
- * defect: which earlier check leaves the session in a state
- * where a real press is lost. A subset run still needs the checks a step depends on — the
+ * `--only <regex>` runs a subset, in the file's order, for bisecting which earlier check
+ * leaves the session in a state where a real press is lost. A subset run still needs the checks a step depends on — the
  * point test is a comment on a mark, and every page check needs the interface-mode step
  * that leaves the simple mode, for instance — so the filter is inclusive by name.
  */
@@ -108,7 +107,7 @@ const checks = [];
 /** Names `--only` left out: a subset run must never report itself as a full one. */
 const skipped = [];
 const consoleErrors = [];
-const CHECK_TIMEOUT_MS = Number.parseInt(process.env.PHASE3_CHECK_TIMEOUT ?? '180000', 10);
+const CHECK_TIMEOUT_MS = Number.parseInt(process.env.EDITOR_FLOW_CHECK_TIMEOUT ?? '180000', 10);
 
 /**
  * Waits until `url` answers. `child` is our own preview server when there is one, and a
@@ -297,7 +296,7 @@ async function confirmDialog() {
     .waitFor({ state: 'hidden', timeout: 30_000 });
 }
 
-const fixtureDir = join(tmpdir(), `pdf-editor-phase3-${process.pid}`);
+const fixtureDir = join(tmpdir(), `pdf-editor-editor-flow-${process.pid}`);
 const fixture = buildFixture(fixtureDir);
 
 let server = null;

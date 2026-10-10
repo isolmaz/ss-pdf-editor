@@ -29,9 +29,9 @@
  *    same object.
  *
  * Written through MuPDF's object model (`engines/mupdf-write.ts`); titles go through
- * its `text()`. Two defects of the pdf-lib writer this replaced are fixed here, both of
- * which its own read-back turned into a refused save: nested items were never chained
- * onto their parent, and a removal kept the removed item in the recount.
+ * its `text()`. Nested items are chained onto their parent and a removal drops the
+ * removed item from the recount; omitting either makes the writer's own read-back refuse
+ * the save.
  *
  * ## Coordinates
  *
@@ -451,8 +451,8 @@ function destinationArray(doc: PDFDocument, destination: PageDestination, write:
  * Write one item and its subtree: `/Parent` is set here, the item's own children are
  * chained onto it here, and the item itself is chained by the caller.
  *
- * The pdf-lib writer this replaced wrote the children but never chained them onto their
- * parent (`/First`/`/Last`), so any nested tree failed its own read-back.
+ * Chaining the children onto their parent (`/First`/`/Last`) is required: without it any
+ * nested tree fails its own read-back.
  */
 function writeItem(
   doc: PDFDocument,
@@ -786,9 +786,9 @@ function applyRequest(
   const removed = place.node as OutlineNode;
   unlinkItem(place.container, removed);
   const count = deleteSubtree(doc, [removed]);
-  // Out of the level that listed it — the pdf-lib writer searched the item's own
-  // children here, kept it in the model, and every removal failed its read-back.
-  // `siblings` is the list `removed` was found in.
+  // Out of the level that listed it, not out of the item's own children — otherwise the
+  // item stays in the model and every removal fails its read-back. `siblings` is the
+  // list `removed` was found in.
   place.siblings.splice(place.siblings.indexOf(removed), 1);
   steps.push('outline.remove');
   notes.push(note('changed', 'op.note.outline.removed', { title: removed.title, count }));

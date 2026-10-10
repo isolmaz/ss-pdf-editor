@@ -3,7 +3,7 @@
  *
  * Every certificate and CRL is generated and signed here with WebCrypto/pkijs
  * (`signature-revocation.fixtures.ts`), so the real parser and verifier run over real
- * signatures. These tests protect the documented answers (architecture.md §5.3.1): a verified
+ * signatures. These tests protect the documented answers (docs/architecture.md §5.3.1): a verified
  * list names a certificate (`revoked`, with the date compared against the validation time) or
  * clears it (`good`); a list that did not issue the certificate, or that a PDF forged under a
  * real CA's name, can never clear or hide anything; and the CRL forms this build does not

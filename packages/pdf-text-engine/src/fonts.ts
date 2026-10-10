@@ -63,14 +63,13 @@ export const DEFAULT_FONT_CANDIDATES: readonly FontCandidate[] = [NOTO_SANS_REGU
 /**
  * The face every fallback lands on. `FontMatch.font` and a plan's insert lines are
  * non-optional, so a match must be able to name a face even for an empty catalogue;
- * Noto Sans regular is the honest choice (`4e`): it is the face the product already
+ * Noto Sans regular is the honest choice: it is the face the product already
  * embeds for stamps and header/footer text, and it covers Turkish.
  */
 export const FALLBACK_FONT_CANDIDATE: FontCandidate = NOTO_SANS_REGULAR;
 
 /** `ABCDEF+NotoSans` — the six-uppercase-letter prefix of an embedded subset
- *  (measured in an early engine spike: the fixture's `Arial` becomes
- *  `SPMIZR+Arial`, 560,660 B → 27,518 B). */
+ *  (an `Arial` subset is named like `SPMIZR+Arial`). */
 const SUBSET_PREFIX = /^[A-Z]{6}\+/;
 
 /** Family keywords, matched against the lower-cased alphanumeric name. Checked
@@ -123,7 +122,7 @@ const SERIF_KEYWORDS = [
   'charis',
 ];
 
-/** Weights ≥ 600 collapse to `bold` (the model is a boolean, `4e` needs a face
+/** Weights ≥ 600 collapse to `bold` (the model is a boolean, a match needs a face
  *  choice, and the catalogue has exactly one bold face). `medium` (500) does not. */
 const BOLD_KEYWORDS = ['bold', 'black', 'heavy', 'demi'];
 
@@ -169,7 +168,7 @@ function normalizeName(value: string): string {
  *     the edit path does not change.
  *   - Type3 is only recognised when the name carries the marker. MuPDF reports the
  *     glyph outlines of Type3 text like any other font, so a name without the marker
- *     cannot be told apart from a TrueType face — a documented limit of 4b, not a
+ *     cannot be told apart from a TrueType face — a documented limit, not a
  *     silent assumption.
  */
 export function describeFontName(fontName: string): FontNameInfo {
@@ -258,8 +257,8 @@ function missingGlyphsOf(text: string, metrics: FontMetrics): readonly string[] 
  * Best face for this text: the highest-ranked candidate that covers every code point
  * when the catalogue can answer coverage, else the best-ranked one (its gaps are
  * reported in `missingGlyphs`). A face with a complete coverage beats a better
- * family/weight match that cannot render a Turkish character — `4e`'s "automatic
- * fallback for missing glyphs".
+ * family/weight match that cannot render a Turkish character: an automatic
+ * fallback for missing glyphs.
  */
 function pickCandidate(
   ranked: readonly FontCandidate[],
@@ -285,7 +284,7 @@ function pickCandidate(
  * `exact` is about the face (family, weight, italic), exactly as the contract says;
  * it is deliberately **not** a promise that the programme is the original one — a
  * re-render always embeds a fresh programme, because a font read back from the file
- * has no usable cmap (`NOTES.md`, variant A). `substituted` is `!exact`.
+ * has no usable cmap. `substituted` is `!exact`.
  *
  * `missingGlyphs` is empty when the catalogue carries no `metrics` provider: without
  * a parsed programme the coverage of a face simply is not knowable offline, and an
@@ -323,8 +322,8 @@ const SFNT_VERSIONS = new Set([0x00010000, 0x74727565, 0x4f54544f]);
  * bounds-checked. Everything per glyph (the cmap, the advances) is the font engine's
  * job (`GlyphSource`); this is only what MuPDF's font object does not expose.
  *
- * The `hhea` values are the ones fontkit reported as `ascent`/`descent`/`lineGap`, the
- * figures the line layout was measured with. A collection (`ttcf`) or a web wrapper
+ * The `hhea` values are the font's `ascent`/`descent`/`lineGap`, the figures the line
+ * layout is measured with. A collection (`ttcf`) or a web wrapper
  * (WOFF/WOFF2) is refused rather than guessed at: every face the product embeds is a
  * served `.ttf`.
  */
@@ -376,9 +375,9 @@ export function readFontHeader(bytes: Uint8Array): FontHeader {
  * font object.
  *
  * Advances come back in font units, rounded: MuPDF reports them in em, and a programme's
- * `hmtx` stores integers — measured against fontkit over every code point of both Noto
- * faces, the rounded values and the coverage are identical (largest float residue
- * 0.00009 units).
+ * `hmtx` stores integers — checked against an independent font parser over every code
+ * point of both Noto faces, the rounded values and the coverage are identical (largest
+ * float residue 0.00009 units).
  *
  * `text` is optional and only feeds `missing`; coverage is always available through
  * `hasGlyph`, so a caller that reuses one table for several paragraphs can leave it

@@ -7,10 +7,10 @@
  * ## Why the answer is a name test and not a font inspection
  *
  * The extractor reports a font *name*, not an embedding flag, and no font programme
- * is readable in a useful way anyway: the spike measured that a font read back from a
- * saved file answers glyph id 0 for **every** character, so the original programme is
- * never reused and every edit round embeds a fresh one. Editability therefore asks the only question that has an
- * answer: *can we reproduce this block's face, or does the block need a substitute?*
+ * is readable in a useful way anyway: a font read back from a saved file answers
+ * glyph id 0 for **every** character, so the original programme is never reused and
+ * every edit round embeds a fresh one. Editability therefore asks the only question
+ * that has an answer: *can we reproduce this block's face, or does the block need a substitute?*
  *
  * The verdict ladder (`verdictOf`), first match wins — the order is the order the
  * facts matter, most fundamental first:
@@ -18,9 +18,7 @@
  *   1. `no-glyphs` → **not-editable**. Nothing to edit.
  *   2. `rotated` → **not-editable** (`vertical`/`reversed` lines). The write path
  *      draws horizontal lines only, so a rotated block would be re-written at the
- *      wrong angle — and the spike solved rotation by carrying a direction vector,
- *      which the writer's request type does not have
- *     .
+ *      wrong angle; the writer's request type carries no direction vector.
  *   3. `skewed` → **not-editable**. A slightly rotated baseline cannot be reproduced
  *      horizontally, and a "small" skew is exactly what a user notices as damage.
  *   4. `type3` → **not-editable**. Type3 text is vector artwork with a font-like
@@ -30,7 +28,7 @@
  *      (`tools/fetch-engines.mjs:122-126`).
  *   6. `embedded-font` → **substituted**. An embedded programme we do not ship —
  *      subset or not, it cannot be extended, and its glyphs for new characters
- *      simply are not in the file (`4e`'s expectation-setting).
+ *      simply are not in the file, which the report says up front.
  *   7. `ok` → **editable**. The block's face is one this package ships
  *      (`DEFAULT_FONT_CANDIDATES`), so re-rendering reproduces family, weight and
  *      italic exactly.

@@ -1,15 +1,11 @@
 /**
  * Encryption and unlocking.
  *
- * Engine decision (decided 2026-09-15): **MuPDF is the crypto
- * engine.** The plan's first option — vendoring our own emscripten build of qpdf
- * — needs a toolchain this project does not have, and the available npm package
- * is a single-maintainer MEMFS CLI wrapper with no API surface, which is exactly
- * the dependency the plan refuses to audit. MuPDF already writes AES-256 with a
- * permission bitmask and was proven end-to-end in an early engine spike
- * (`encrypt=aes-256,user-password=…`).
+ * **MuPDF is the crypto engine.** It writes AES-256 with a permission bitmask
+ * (`encrypt=aes-256,user-password=…`), so no separate qpdf build or npm wrapper is
+ * needed.
  *
- * The protection rule still holds and is enforced here: output protection
+ * The protection rule is enforced here: output protection
  * is never silently downgraded — a re-protected document must open with the same
  * password and report its permissions, or the operation fails.
  *

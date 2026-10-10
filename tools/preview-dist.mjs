@@ -54,8 +54,8 @@ function resolveFile(pathname) {
     decoded = decodeURIComponent(pathname);
   } catch {
     // A malformed escape (`/%E0%A4%A`) is a request for something this server does not
-    // have, not a reason to end the process: `URIError` used to escape the request
-    // handler, close the connection and exit with code 1.
+    // have, not a reason to end the process: a `URIError` escaping the request
+    // handler would close the connection and exit with code 1.
     return null;
   }
   const relativePath = normalize(decoded).replace(/^([/\\])+/, '');

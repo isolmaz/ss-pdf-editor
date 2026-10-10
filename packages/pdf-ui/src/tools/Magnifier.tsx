@@ -85,10 +85,10 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
 
     /**
      * Every frame blits from a **small window** of the page canvas, not from a copy of
-     * the whole thing. The first version copied the entire canvas whenever pdf.js
-     * replaced or rescaled it — on a 130-page image-heavy document that is a ~20 MB copy
-     * per page change, i.e. exactly the hitch that made the magnifier feel unstable
-     * magnifier. The window is re-copied only when the pointer (or the lens zoom) needs
+     * the whole thing. Copying the entire canvas whenever pdf.js
+     * replaced or rescaled it would be a ~20 MB copy per page change on a 130-page
+     * image-heavy document — exactly the hitch that makes a magnifier feel unstable.
+     * The window is re-copied only when the pointer (or the lens zoom) needs
      * pixels outside it, which keeps a frame's work proportional to the lens, not to the
      * document.
      */

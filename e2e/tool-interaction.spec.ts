@@ -1183,8 +1183,8 @@ test.describe('a note written by the note tool', () => {
     await expect(commentRows(page).filter({ hasText: 'Note that must survive the file' })).toHaveCount(1);
 
     // The note reaches the file as a sticky note (`/Text`) whose comment is the body the
-    // user typed, and another reader paints it: it used to be an empty `/FreeText` whose
-    // appearance drew nothing, so the note vanished everywhere but in this session.
+    // user typed, and another reader paints it: an empty `/FreeText` whose appearance
+    // drew nothing would make the note vanish everywhere but in this session.
     const produced = await exportPdf(page, 'note.pdf');
     const written = await readProducedPdf(produced);
     const writtenNote = written.annotations.find(

@@ -11,9 +11,9 @@
  *    `ops/measure.ts`'s `appToDisplayPoint` × the page's own CSS scale, exactly
  *    the pair `MeasureLayer` draws with, so a mark, a measurement and a link
  *    rectangle land on the same pixels at every zoom and for all four rotations.
- *    It used to be a second, hand-written rotation table inside
- *    `AnnotationLayer`, whose 270° row subtracted the container offset twice and
- *    put every mark on a `/Rotate 270` page one dock-width to the left.
+ *    There is no second, hand-written rotation table: one whose 270° row subtracted
+ *    the container offset twice would put every mark on a `/Rotate 270` page one
+ *    dock-width to the left.
  *  - **the hit tests**: page points only, and *segments*, not vertices. A stroke
  *    is stored as sparse vertices, so a point-to-vertex test misses the middle of
  *    a long stroke; every distance below is measured to the segment that carries

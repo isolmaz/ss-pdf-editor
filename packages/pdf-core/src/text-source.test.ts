@@ -2,10 +2,9 @@
  * Font metric tables for the text engine (`text-source.ts > readFontMetrics`), read with
  * the engine that embeds the same bytes (MuPDF) plus the font header.
  *
- * The expected numbers are what `@pdf-lib/fontkit` 1.1.1 — the parser these tables came
- * from before — reported for the same files (measured 2026-10-04, before it was
- * removed): an independent reader, so a change in how advances are scaled or rounded,
- * or in which header table the vertical metrics come from, shows up here as a number.
+ * The expected numbers were taken from an independent font parser reading the
+ * same files, so a change in how advances are scaled or rounded, or
+ * in which header table the vertical metrics come from, shows up here as a number.
  * The wrong answers that matter: an advance in em instead of font units, a rounding that
  * moves one glyph by a unit (and with it every line break after it), a covered Turkish
  * letter reported missing, and an unreadable programme let through as an empty table.

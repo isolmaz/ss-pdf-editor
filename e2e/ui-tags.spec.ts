@@ -437,8 +437,9 @@ test('an element that is a direct object is listed but cannot be changed or drag
   await expect(page.getByTestId('tags-up')).toBeDisabled();
   await expect(page.getByTestId('tags-down')).toBeDisabled();
   await expect(page.getByTestId('tags-indent')).toBeDisabled();
-  // Nothing can be dropped into it either: its /K cannot be rewritten. Before, the drop was
-  // taken into the draft and Apply then failed with an unrelated "Select pages first.".
+  // Nothing can be dropped into it either: its /K cannot be rewritten. The drop must be
+  // refused up front, not taken into the draft for Apply to fail with an unrelated
+  // "Select pages first.".
   await rowOf(page, 'H1').dragTo(direct, { targetPosition: { x: 40, y: 10 } });
   await expect(notice(page, 'That element cannot be changed here.')).toBeVisible();
   expect(await draftCount(page)).toBe(0);

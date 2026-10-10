@@ -1,5 +1,5 @@
 /**
- * Optimisation (defects 3 and 16).
+ * Optimisation.
  *
  * Two modes, and the report says plainly which one ran:
  *  - `structure` — a MuPDF rewrite that drops unused and duplicate objects, compresses
@@ -8,13 +8,11 @@
  *  - `raster` — every selected page is rendered and replaced by an image of itself,
  *    which is lossy and therefore carries explicit `lost` notes.
  *
- * The source project reported `gained: false` while writing a **larger** file;
- * here the size delta is measured and a growth is stated as
- * such — never presented as a win.
+ * The size delta is measured and a growth is stated as such — never presented as a win.
  *
  * Engine facts this file depends on:
  *  - the structure rewrite leaves form-field appearances as they are: MuPDF does not
- *    regenerate them on save (the pdf-lib writer did, and warned about it);
+ *    regenerate them on save;
  *  - a rasterised page is replaced **in place** (`assembleRaster`): the page object
  *    keeps its place in the page tree, so the pages that were not selected, the
  *    outline and every other catalog entry stay exactly as they were. The page's own
@@ -62,7 +60,7 @@ export interface RasterCompressOptions {
 
 export type CompressOptions = StructureCompressOptions | RasterCompressOptions;
 
-/** The source project's raster range, kept because it is what the dialog offered. */
+/** The raster range the dialog offers. */
 const RASTER_DPI = { min: 72, max: 300 };
 const RASTER_QUALITY = { min: 0.3, max: 0.95 };
 

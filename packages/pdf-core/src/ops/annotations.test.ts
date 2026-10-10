@@ -91,9 +91,9 @@ describe('marksFromEngineEntries', () => {
     // `build/pdf.mjs`): the drawn path is a moveto group of four placeholders plus
     // the point, then one six-number group per following point — `[NaN x4, x, y]`
     // for a straight run — and `points` carries the same samples as plain ordinates.
-    // Reading the *path* as 8-number quads (the shape a text selection uses) is what
-    // painted a marker stroke as disconnected boxes, so this fails the old code: it
-    // produced no `strokes` at all, and only some of the sampled points survived.
+    // Reading the *path* as 8-number quads (the shape a text selection uses) paints a
+    // marker stroke as disconnected boxes; it yields no `strokes` at all, and only some
+    // of the sampled points survive. This test guards against that.
     const path = [
       Number.NaN,
       Number.NaN,

@@ -4,12 +4,11 @@
  * The block model comes from **MuPDF's structured text** (`pdf-core/text-source`),
  * which is the engine that already answers block → line → character with quads and
  * already knows the page's `/Rotate`; segmenting pdf.js's flat text items into
- * blocks would mean inventing the gap thresholds the spike deliberately did not
- * need. The model is then built by the pure
+ * blocks would mean inventing gap thresholds the engine already answers. The model is then built by the pure
  * `pdf-text-engine` package, so what this layer paints and what the writer erases
  * come from one source of truth.
  *
- * Two honesty rules from `4b` are implemented here rather than left to the writer:
+ * Two honesty rules are implemented here rather than left to the writer:
  * a block that cannot be re-rendered is **marked with a red frame** (never skipped
  * silently), and a block that will need a substituted face says so — the product
  * copy is explicit that a subset font does not carry the glyphs for new characters.
@@ -189,10 +188,10 @@ export function TextLayer({ t, viewer, bytes, pageIndex, onSelect, onClose }: Te
   );
 
   /**
-   * The blocks are placed **at render**, against the page as it is laid out now. They
-   * used to be placed once, when the page's text arrived: a zoom, a resize or a scroll
-   * afterwards left every box where the page had been, so a click on a paragraph
-   * opened the one that used to be there. The model is the *unrotated* page
+   * The blocks are placed **at render**, against the page as it is laid out now. Placed
+   * once, when the page's text arrived, a zoom, a resize or a scroll
+   * afterwards would leave every box where the page had been, so a click on a paragraph
+   * would open whichever one had stood under that spot when the text arrived. The model is the *unrotated* page
    * (`text-source.ts`); the page on screen is turned by its `/Rotate`, so each box is
    * turned the same way (`displayedBox`) before it is scaled onto the page rect —
    * scaled straight across, the boxes of a turned page sat where its text would be

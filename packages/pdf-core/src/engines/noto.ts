@@ -3,8 +3,7 @@
  * this app draws into a document is written with.
  *
  * Why it matters: the standard 14 fonts use WinAnsi encoding, which has no `ş ğ ı İ`;
- * the source project stamped and watermarked with a standard font and silently produced
- * broken Turkish.
+ * stamping or watermarking with a standard font would silently produce broken Turkish.
  *
  * The bytes are engine-neutral, so they live here rather than in one engine's adapter:
  * the MuPDF writers (`engines/mupdf-write.ts`) embed them and the text model measures

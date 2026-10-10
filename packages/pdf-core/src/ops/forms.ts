@@ -991,9 +991,7 @@ export async function fillFormFields(
  * Create fields ("creation").
  *
  * Every widget gets a black border on white and an appearance drawn with the embedded
- * Noto Sans, so a Turkish default value is legible and encodable. (The pdf-lib writer
- * refused every text field it was asked to create: its font-size setter needs a `/DA`
- * the new field did not have yet.)
+ * Noto Sans, so a Turkish default value is legible and encodable.
  */
 export async function createFormFields(
   bytes: Uint8Array,

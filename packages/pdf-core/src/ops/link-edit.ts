@@ -40,8 +40,7 @@
  * `mailto:`, and a control character in it is a refusal too. Everything else in a
  * URI is normalised the way RFC 3986 requires — non-ASCII, spaces and the ASCII the
  * standard excludes are percent-encoded. The result is plain ASCII and is written as
- * a literal string, which MuPDF escapes (`(`, `)`, `\`) as it serialises; pdf-lib,
- * the previous writer, did not, which is why this file used to write a hex string.
+ * a literal string, which MuPDF escapes (`(`, `)`, `\`) as it serialises.
  *
  * ## Removal
  *

@@ -1149,8 +1149,8 @@ describe('the signature value itself', () => {
   it('verifies the product-signed P-521 signature whose r or s starts with two zero octets', async () => {
     // r and s < 2^521 sit in 66 octets each, so a half's first octet is 0 or 1 and about one
     // half in a thousand also has a zero second octet: the integer is then 64 octets, not 65.
-    // The product signer used to write it with a redundant 0x00 — not DER — and this verifier
-    // rightly read the file as invalid. WebCrypto cannot be told which signature to pick, so
+    // The product signer must write the minimal integer: a redundant 0x00 is not DER, and this
+    // verifier rightly reads such a file as invalid. WebCrypto cannot be told which signature to pick, so
     // the signing is repeated until one half has that shape: about 1 in 512 signatures, so
     // 20 000 attempts miss with odds near e^-39, and the cap fails the test with its own
     // message well inside the timeout even on a slow machine.

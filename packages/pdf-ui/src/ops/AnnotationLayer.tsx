@@ -12,15 +12,13 @@
  *    on top of the page, in the same space the writer converts from, so what the
  *    user sees before saving is what the file will contain afterwards.
  *
- * **Every kind is created here.** The engine's own annotation editors are not used
- * at all any more; the engine-editor half of the annotation writer is retired, and with it the ink editor
- * that made the user's stroke come out dotted: pdf.js's `InkEditor` produced the
- * mark, and the hand-off that converted its engine record read the sampled path as
- * one stroke **per point**, so a continuous pen stroke reached the screen (and then
- * the file) as a trail of round dots. Arming an editor also switched the whole viewer
- * into an editing mode: the editor layer was rebuilt and the base canvas repainted
- * per mark. Creating every kind here removes all of it — one flat, sampled path per
- * gesture, no editor layers, no mode switches. The engine still *displays* the file's
+ * **Every kind is created here.** The engine's own annotation editors are not used.
+ * A hand-off from an engine editor (pdf.js's `InkEditor`) that read the sampled path as
+ * one stroke **per point** would turn a continuous pen stroke into a trail of round
+ * dots on screen and in the file, and arming an editor switches the whole viewer into
+ * an editing mode: the editor layer is rebuilt and the base canvas repainted per mark.
+ * Creating every kind here means one flat, sampled path per gesture, no editor layers,
+ * no mode switches. The engine still *displays* the file's
  * annotations, forms and widgets; its editing modes are simply never entered
  * (`PdfViewerPane` builds the stack with `annotationEditorMode: DISABLE`). So the
  * four text tools measure the browser's own selection in the text layer, ink and the
@@ -541,10 +539,9 @@ export function AnnotationLayer({
           maxY = Math.max(maxY, y);
         }
         // One stroke, **flat**: `strokes` is a list of strokes, each a flat
-        // `[x, y, …]` run. The old gesture pushed one two-number array per point and
-        // the writer read every one as a separate single-point stroke, so a continuous
-        // pen stroke reached the screen and the file as a trail of dots — the bug this
-        // branch exists to keep closed. The bbox quad is the mark's fallback geometry
+        // `[x, y, …]` run. One two-number array per point would be read by the writer as
+        // a separate single-point stroke, and a continuous pen stroke would reach the
+        // screen and the file as a trail of dots. The bbox quad is the mark's fallback geometry
         // for every consumer that reads quads alone (a `highlight` is a `/Highlight`
         // with an `/InkList`, `annotation-shapes.ts`).
         const strokeKind = tool === 'highlight' ? 'highlight' : 'ink';
@@ -617,8 +614,8 @@ export function AnnotationLayer({
 
   /**
    * Text selected **before** a text-markup tool was armed — from the context menu, the
-   * menu bar, the palette or the rail — is marked at once. The tool used to wait for a
-   * new selection, so "select, right-click, Highlight" armed the tool and marked nothing.
+   * menu bar, the palette or the rail — is marked at once. The tool does not wait for a
+   * new selection: otherwise "select, right-click, Highlight" would arm the tool and mark nothing.
    * Read through refs: this runs on arming only, not on every style change.
    */
   const armingRef = useRef({ viewer, finishMark });

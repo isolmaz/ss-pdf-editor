@@ -5,8 +5,8 @@
  * Input is the extractor's plain data (`PageTextInput`), output is plain data
  * (`TextPage`). The extractor is anything that can walk a page's structured text —
  * MuPDF's `StructuredText.walk` gives exactly the fields `CharInput` carries
- * (an early engine spike walked block → line → char and kept
- * the quad, which is what makes rotated text solvable without a second code path).
+ * (the walk goes block → line → char and keeps the quad, which is what makes rotated
+ * text solvable without a second code path).
  *
  * ## What this module infers, and from what
  *
@@ -14,9 +14,8 @@
  *   - **lines** — from the extractor's line grouping, with the words' ink box as the
  *     line box and the extractor's baseline kept;
  *   - **blocks** — lines ordered top-to-bottom **only when the block is horizontal**
- *     (the spike ordered lines by their projection on the line's `down` vector,
- *     an early engine spike; sorting a rotated block by the y
- *     scalar would scramble it, so a non-horizontal block keeps the extractor's order);
+ *     (sorting a rotated block by the y scalar would scramble it, so a
+ *     non-horizontal block keeps the extractor's order);
  *   - **style** — font name (mode), family/weight/italic from the name
  *     (`describeFontName`), size (median glyph size), leading (median baseline
  *     distance), colour (given per block index).
@@ -58,9 +57,7 @@ const WORD_GAP_EM = 0.15;
 
 /**
  * Deviation tolerance for the alignment inference, in points. The model has no
- * alignment flag to read, so it compares the block's line edges. 1 pt sits between
- * the spike's two containment tolerances — it padded a target box by 2 pt and then
- * allowed 0.01 pt of slack — and it is well
+ * alignment flag to read, so it compares the block's line edges. 1 pt is well
  * under one space at body sizes (2.75 pt at 11 pt), so a ragged edge cannot pass as
  * a flush one.
  */
@@ -70,9 +67,8 @@ const ALIGN_TOLERANCE_PT = 1;
  * Orientation test: how much of the first→last glyph centre vector has to lie on one
  * axis. 0.98 is cos(11.5°): a line whose centres drift more than that off an axis is
  * neither horizontal nor vertical, and 11.5° of drift over a body block already puts
- * the baseline well outside its own leading. The spike carried a per-line direction
- * vector to solve rotation (`textmodel.ts:88-101`, used by `replace.ts:74-95`); this
- * model recovers the same information from the boxes it was given.
+ * the baseline well outside its own leading. The model recovers the direction from the
+ * glyph boxes it was given rather than carrying a per-line direction vector.
  */
 const ORIENTATION_COS_LIMIT = 0.98;
 
@@ -434,15 +430,12 @@ function styleFor(source: BlockInput): StyleFacts | null {
 
 /**
  * Leading of a block: the median baseline distance between consecutive lines, which
- * is what a paragraph's rhythm actually is. The spike took the distance between the
- * first two baselines instead because
- * it only had the lines it was about to erase; a median over the whole block ignores
- * the one wide gap a paragraph break puts in a MuPDF block.
+ * is what a paragraph's rhythm actually is. The distance between the first two
+ * baselines would be skewed by the one wide gap a paragraph break puts in a MuPDF
+ * block; a median over the whole block ignores it.
  *
  * A single-line block has no such distance, so it falls back to
- * `DEFAULT_LEADING_RATIO` × size — the same role the spike's `fallbackLeading`
- * played (`replace.ts:83-91`), where the harness passed the fixture's own leading
- * (18 pt at the 11 pt body size, an early engine spike).
+ * `DEFAULT_LEADING_RATIO` × size.
  */
 function leadingOf(lines: readonly TextLine[], fontSize: number): number {
   // `lines[index]` is the line before `current`, which the slice started one later.

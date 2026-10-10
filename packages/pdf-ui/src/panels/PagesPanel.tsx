@@ -9,23 +9,22 @@
  * (`selectedPages` is a controlled prop), so the list and the commands that act
  * on it cannot disagree about what is selected.
  *
- * Four behaviours are deliberate, each closing a defect the source project had:
+ * Four behaviours are deliberate:
  *
  * 1. **Laziness** — a 2000-page document must not start 2000 render tasks when
  *    the dock opens; each item observes itself and only then asks the engine for
  *    its page.
  * 2. **A fresh canvas per attempt, and an observer that stays attached** — a
- *    superseded render task writing into a reused node showed pages upside down,
- *    and disconnecting the observer after its first hit left aborted thumbnails
+ *    superseded render task writing into a reused node shows pages upside down,
+ *    and disconnecting the observer after its first hit leaves aborted thumbnails
  *    black forever.
- * 3. **No hover-only affordance** — the source project's per-card toolbar was
- *    `group-hover:flex`, so it was unreachable on touch, and drag reordering had
- *    no keyboard equivalent. Here the selection toolbar is
- *    always in flow when something is selected, and every reorder has two
- *    non-drag equivalents: `Alt`/`Ctrl` + arrows, and the "move to page" field.
+ * 3. **No hover-only affordance** — a per-card toolbar shown by `group-hover:flex` is
+ *    unreachable on touch, and drag reordering needs a keyboard equivalent. The
+ *    selection toolbar is always in flow when something is selected, and every reorder
+ *    has two non-drag equivalents: `Alt`/`Ctrl` + arrows, and the "move to page" field.
  * 4. **One announcement** — the live region reports the selection only; the
- *    action's own sentence is announced by the app when the action lands
- *   , so a click that both selects and moves cannot be
+ *    action's own sentence is announced by the app when the action lands,
+ *    so a click that both selects and moves cannot be
  *    announced twice.
  */
 

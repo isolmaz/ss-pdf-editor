@@ -14,7 +14,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 <img alt="no account" src="https://img.shields.io/badge/account-none-2ea44f">
 <img alt="offline PWA" src="https://img.shields.io/badge/offline-PWA-5a3fc0">
 <img alt="languages" src="https://img.shields.io/badge/languages-TR%20%7C%20EN-555">
-<img alt="engines" src="https://img.shields.io/badge/engines-MuPDF%20%7C%20pdf.js%20%7C%20Tesseract-555">
+<img alt="engines: MuPDF, pdf.js, Tesseract, Ghostscript" src="https://img.shields.io/badge/engines-MuPDF%20%7C%20pdf.js%20%7C%20Tesseract%20%7C%20Ghostscript-555">
 </p>
 
 <p><a href="https://pdf.isolmaz.com/editor/"><b>Open the editor</b></a> · <a href="https://pdf.isolmaz.com/">Website</a> · <a href="#quick-start">Run locally</a> · <a href="https://github.com/isolmaz/ss-pdf-editor/issues/new/choose">Report a bug</a></p>
@@ -27,14 +27,14 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 
 | | |
 | :---: | :---: |
-| **Open, navigate, zoom** — thumbnails, outline, tabs<br>![Opening a PDF and moving through its pages](docs/media/open-and-navigate.gif) | **Search** — every match, across pages<br>![Searching the document](docs/media/search.gif) |
-| **Mark up** — highlight, shapes, ink, typed text<br>![Highlighting, drawing and adding text](docs/media/annotate.gif) | **Edit text** — retype a paragraph in place<br>![Editing a paragraph in place](docs/media/edit-text.gif) |
-| **Organise pages** — rotate, reorder, undo<br>![Rotating and reordering pages](docs/media/pages.gif) | **Watermark** — stamp every page<br>![Adding a watermark](docs/media/watermark.gif) |
-| **Fill and sign** — forms and PAdES signatures<br>![Filling a field and signing the document](docs/media/fill-and-sign.gif) | **Protect** — AES-256 password and permissions<br>![Encrypting the document](docs/media/protect.gif) |
-| **Redact for real** — content removed, then verified gone<br>![Redacting a line of text](docs/media/redact.gif) | **OCR** — make a scan searchable<br>![Recognising a scanned document](docs/media/ocr.gif) |
-| **Measure** — distance, perimeter, area<br>![Measuring on the page](docs/media/measure.gif) | **Compare** — what changed between two versions<br>![Comparing two documents](docs/media/compare.gif) |
-| **Reading mode** — the page as clean text, read aloud<br>![Reading mode](docs/media/reading-mode.gif) | **Dark theme, Turkish and English**<br>![Switching to the dark theme and Turkish](docs/media/theme-and-language.gif) |
-| **Command palette and export** — `Ctrl+K` finds any tool<br>![The command palette and the export dialog](docs/media/palette-and-export.gif) | **And more** — see the full list below ⬇️ |
+| **Open, navigate, zoom** — thumbnails, outline, tabs<br>![Opening a PDF and moving through its pages](docs/media/open-and-navigate.webp) | **Search** — every match, across pages<br>![Searching the document](docs/media/search.webp) |
+| **Mark up** — highlight, shapes, ink, typed text<br>![Highlighting, drawing and adding text](docs/media/annotate.webp) | **Edit text** — retype a paragraph in place<br>![Editing a paragraph in place](docs/media/edit-text.webp) |
+| **Organise pages** — rotate, reorder, undo<br>![Rotating and reordering pages](docs/media/pages.webp) | **Watermark** — stamp every page<br>![Adding a watermark](docs/media/watermark.webp) |
+| **Fill and sign** — forms and PAdES signatures<br>![Filling a field and signing the document](docs/media/fill-and-sign.webp) | **Protect** — AES-256 password and permissions<br>![Encrypting the document](docs/media/protect.webp) |
+| **Redact for real** — content removed, then verified gone<br>![Redacting a line of text](docs/media/redact.webp) | **OCR** — make a scan searchable<br>![Recognising a scanned document](docs/media/ocr.webp) |
+| **Measure** — distance, perimeter, area<br>![Measuring on the page](docs/media/measure.webp) | **Compare** — what changed between two versions<br>![Comparing two documents](docs/media/compare.webp) |
+| **Reading mode** — the page as clean text, read aloud<br>![Reading mode](docs/media/reading-mode.webp) | **Dark theme, Turkish and English**<br>![Switching to the dark theme and Turkish](docs/media/theme-and-language.webp) |
+| **Command palette and export** — `Ctrl+K` finds any tool<br>![The command palette and the export dialog](docs/media/palette-and-export.webp) | **And more** — see the full list below ⬇️ |
 
 ### Everything it can do
 
@@ -47,7 +47,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing · compression · PDF/A conversion and check |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes (chosen in Settings) · offline |
 
@@ -247,8 +247,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     and the report names the font.
   - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
     readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`.
-- **Export and import.** Export text as plain text or Markdown. Export pages as images, or
-  build a PDF from images.
+- **Export and import.** Export text as plain text or Markdown. Export pages as PNG, JPEG or
+  WebP images, or build a PDF from images.
 - **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are
   converted in the browser by MuPDF's layout engine. The result is real text you can select
   and search.
@@ -573,16 +573,16 @@ nothing leaving the browser.
     page and the thing at fault, and the ISO clause) or unchecked, and lists what it never
     looks at. For PDF/A-2 and 3 it reports a page that uses transparency without an output
     intent or a `/Group /CS`, and every use of an image is read, on every page it appears.
-    **It is not a full veraPDF validation.** Its rules were calibrated against veraPDF
-    1.30 while developing it (same pass or fail verdict on every fixture used).
+    **It is not a full veraPDF validation.** Its rules are calibrated against veraPDF
+    1.30: the same pass or fail verdict on every fixture in the test suite.
   - The report compares sampled pages before and after: the share of words still extractable
     and a grey render, so a conversion that changed the look or the text says so.
 - **Comparison.** Compare two documents by text or by pixels; the report always says which
   method it used. Text changes are listed in document order, and the line list is capped
   (the report says when it is).
-- **Batch.** Run one ordered set of steps over many files, with a report for each file. The
-  steps are extract pages, compress, OCR, page labels, header/footer and page numbering,
-  document properties, text export and security (password and permissions).
+- **Batch.** Run one ordered set of steps over up to 256 files at a time, with a report for
+  each file. The steps are extract pages, compress, OCR, page labels, header/footer and page
+  numbering, document properties, text export and security (password and permissions).
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
     it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;
     choosing files afterwards does not discard it.
@@ -631,8 +631,8 @@ These describe how the build works; they are not promises.
   - Cleanup refuses to delete anything when it cannot fully read which drafts are in use.
     Every open window of the editor holds a Web Lock while it is open, and a cleanup waits
     until each of them has said which documents it holds; a window that stays silent for
-    10 seconds makes the cleanup refuse, and a window that closed meanwhile is no longer
-    waited for.
+    10 seconds makes the cleanup refuse, while a window that closes during the wait drops out
+    of it.
   - When drafts are restored at start-up, the document you opened meanwhile stays in front;
     a draft whose document you already opened is skipped, and the others are restored.
   - If the browser's storage refuses the recovery copy of a document you open (storage
@@ -665,10 +665,12 @@ The limits are defined once, in
   measures the built output against them; `BUILD_BUDGETS` in `packages/shared/src/limits.ts`
   only holds the numbers, and `pnpm assemble:dist` only prints the sizes of what it
   assembles.
-  - ≤ 250 KiB gzip for the first-paint JavaScript. Not met yet: measured 2026-10-06 the
-    entry chunk is 219 KiB, but with the UI chunks it preloads the first paint is 313 KiB,
-    because the editor shell still loads with the home screen (`architecture.md` §2).
-  - ≤ 60 KiB for the landing page.
+  - ≤ 250 KiB gzip for the first-paint JavaScript. The entry chunk is about 224 KiB; with the
+    11 UI chunks that `dist/editor/index.html` preloads, the first paint is about 319 KiB,
+    because the editor shell loads with the home screen (`docs/architecture.md` §2). The
+    target therefore holds for the entry chunk, not for the first paint as a whole. (Sizes:
+    the gzip size of each script a production build names in `dist/editor/index.html`.)
+  - ≤ 60 KiB for the landing page: about 15 KiB of HTML and 11 KiB of CSS, gzipped.
   - ≤ 25 MiB per asset.
 
 ---
@@ -750,7 +752,7 @@ The limits are defined once, in
   - A font that is not embedded in the source is replaced by a similar one; the letter shapes
     can differ and the report counts them.
   - PDF/A-1b forbids transparency, so pages that use it are turned into pictures: their text
-    can no longer be selected, their links are lost and the file can grow many times over.
+    cannot be selected, their links are lost and the file can grow many times over.
     PDF/A-2b and 3b keep such pages as they are.
   - Attachments survive only in PDF/A-3b. A password-protected file is refused.
   - Text can come out different where a font has ligatures or a custom encoding and no
@@ -777,9 +779,8 @@ The limits are defined once, in
   - Unlabelled lines, a select that shows only a placeholder and private-use checkbox
     glyphs (such as Wingdings) are missed, and a signature caption on a document that is
     not a form can be proposed.
-  - Measured only on generated fixtures, where it scored full precision and 92 % to 100 %
-    recall on forms; those fixtures were written alongside the rules, so expect less on
-    real forms.
+  - Tested only on generated fixtures, never on real-world forms, so expect less on real
+    forms.
 - **Find and replace.**
   - Matches in scanned, rotated, skewed or Type3 text are left alone and counted in the
     report; run OCR first to make a scan searchable.
@@ -806,13 +807,10 @@ The limits are defined once, in
   - The XFA renderer is pdf.js's: a form that relies on features it does not implement
     (scripts, some layouts, barcodes) draws incompletely.
   - Only two hand-built XFA 3.3 files were tested, no real-world form; see
-    `architecture.md` §5.10.
+    `docs/architecture.md` §5.10.
 - **Drafts.** Drafts carry a schema version. A draft from an older schema is skipped, and a
   malformed journal makes the whole draft unreadable on purpose. A draft whose stored file
-  is gone is reported as damaged and not restored; the other drafts still are.
-- **Early engine spikes.** Some code comments mention a measurement from an *early engine
-  spike*. That prototype was removed before the public release, and each comment states
-  what was measured.
+  is missing is reported as damaged and not restored; the other drafts still are.
 
 ---
 
@@ -823,7 +821,7 @@ The limits are defined once, in
 | Command | What it does |
 |---|---|
 | `pnpm prepare` | Sets `core.hooksPath` to `.githooks` so the git hooks run; it runs by itself after `pnpm install` |
-| `pnpm dev` | Vite dev server for the editor (`pnpm --filter site dev` for the landing, port 5175) |
+| `pnpm dev` | Vite dev server for the editor (port 5173; `pnpm --filter site dev` for the landing, port 5175) |
 | `pnpm build` | Builds the landing (`apps/site/dist`), then the editor (`apps/web/dist`) |
 | `pnpm assemble:dist` | Composes the deployable `dist/` |
 | `pnpm preview` | Serves `dist/` under the production headers (port 4178, or `--port N`; Playwright passes `E2E_PORT`) |
@@ -833,12 +831,13 @@ The limits are defined once, in
 | `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`); `E2E_WORKERS=N` caps the browsers running at once |
 | `pnpm coverage [--skip-e2e] [--min-lines=N]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits); `--min-lines=N` fails the run when the total line coverage is under N % |
 | `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
+| `pnpm fidelity [playwright args]` | PDF → Word export accuracy against LibreOffice (needs the assembled `dist/` and `LIBREOFFICE` set to the path of `soffice`); results in `test-results/fidelity/` |
 | `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
-| `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist |
+| `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist, and that each Turkish site page has the same structure as its English page |
 | `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
-| `pnpm ci:behavior` | The behaviour harnesses in `tools/spikes/`: the phase 3 and phase 4 browser drivers against the assembled `dist/`, then the signing check (needs `openssl`) |
+| `pnpm ci:behavior` | The behaviour checks in `tools/behavior/` against the assembled `dist/`: the editor flow (`editor-flow-check.mjs`), the text-edit round trip (`text-edit-check.mjs`), then the signing check (`sign-check.mts`, needs `openssl`) |
 | `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
 | `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
 
@@ -859,14 +858,16 @@ packages/
   pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
 public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
                     manifest, robots/sitemap
-tools/              dist assembly, engine pins, licence audit, regression and docs checks,
-                    coverage report, deploy smoke check, revert-proof, git hooks,
-                    behaviour checks (spikes/), README clip recorder
-e2e/                Playwright specs for the editor flows and the site, and the engine
-                    fault injection (engine-faults.ts)
-docs/               integration-plan.md; media/ holds the README clips
-REVIEW.md           the review guide of PR #28: its commits by risk, each fix with its test
+tools/              dist assembly and preview, engine pins, licence audit, regression and docs
+                    checks (audit/), coverage report, fidelity runner, deploy smoke check,
+                    revert-proof, git hook guard (hooks/), Vite hosting plugins (vite/),
+                    behaviour checks and README clip recorder (behavior/), measurement
+                    scripts (measure/)
+e2e/                Playwright specs for the editor flows and the site, the engine fault
+                    injection (engine-faults.ts) and the Word export fidelity harness (fidelity/)
+docs/               architecture.md and ocr-evaluation.md; media/ holds the README clips
 .github/            workflows (CI, nightly, revert-proof), issue and pull request templates
+.githooks/          pre-commit and pre-push hooks (they run tools/hooks/guard.mjs)
 ```
 
 ---
@@ -882,7 +883,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
   `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`. The HTML report and
   the traces of a failure are uploaded for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
-- **`behavior`** (after `verify`) runs `pnpm ci:behavior`, the OpenSSL signing round trip.
+- **`behavior`** (after `verify`) runs `pnpm ci:behavior`: the browser behaviour checks and the OpenSSL signing round trip.
 - **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test: every
   sample is exported through the UI in each Word layout (`flow`, `page-images`, `layout`), converted
   back with LibreOffice 26.2.6 and compared (SSIM at 100 dpi (rendered at 200 dpi and averaged) per
@@ -901,9 +902,9 @@ Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flak
 fix's own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker`, `behavior` and `fidelity` must pass, and force-pushes are blocked. Pull requests
-are merged with a merge commit. [`REVIEW.md`](REVIEW.md), the review guide of pull request #28, lists
-its commits by risk, each fix with the test that proves it; [`docs/integration-plan.md`](docs/integration-plan.md) describes
+`e2e-service-worker`, `behavior` and `fidelity` must pass, the branch must be up to date with `main`, review
+conversations must be resolved, and force-pushes and deletion are blocked. Pull requests
+are merged with a merge commit. [`CONTRIBUTING.md`](CONTRIBUTING.md#how-a-change-lands) describes
 how changes land.
 
 - **`pnpm ci:verify`** runs the checks of the `verify` job on your machine, in order (the job
@@ -921,12 +922,12 @@ how changes land.
   10. `check:licenses`
   11. `assemble:dist`
 - **`pnpm ci:full`** adds `ci:behavior`:
-  - `tools/spikes/phase3-check.mjs` runs the acceptance sentence end to end in a real
-    browser. That sentence is: open, search, highlight, comment, fill a form, delete two
-    pages and add one, add a header and footer, save, reopen.
-  - `tools/spikes/phase4-check.mjs` runs a text-edit round trip and reads the produced
+  - `tools/behavior/editor-flow-check.mjs` drives a real browser through one editing session
+    end to end: open, search, highlight, comment, fill a form, delete two pages and add one,
+    add a header and footer, save, reopen.
+  - `tools/behavior/text-edit-check.mjs` runs a text-edit round trip and reads the produced
     bytes back.
-  - `tools/spikes/sign-check.mts` signs with an OpenSSL identity, including a one-byte
+  - `tools/behavior/sign-check.mts` signs with an OpenSSL identity, including a one-byte
     tamper case that must break the verdict.
 - **`pnpm unit`** is a gate, not a report:
   - [`require-tests.mjs`](tools/audit/require-tests.mjs) fails the run if no tests were
@@ -969,7 +970,7 @@ after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `fidelity` have pass
 deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
 `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
 runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.
-Only one deploy runs at a time and a running one is never cancelled; a commit that is no longer
+Only one deploy runs at a time and a running one is never cancelled; a commit that is not
 `main`'s head when its deploy starts deploys nothing.
 
 To build and deploy by hand:
@@ -1006,7 +1007,7 @@ pnpm worker:deploy:dry      # same, with --dry-run
 - **After an app update.** The cache name follows the pinned assets, not the app, so an app
   deploy keeps the same cache while its hashed scripts change. The new build's readiness then
   reports the new scripts as `missing` and asks you to Prepare again; Prepare fetches them and
-  deletes the editor scripts and styles the new build no longer ships, so superseded ones do
+  deletes the editor scripts and styles that the new build does not ship, so superseded ones do
   not accumulate.
 
 ---
@@ -1016,7 +1017,7 @@ pnpm worker:deploy:dry      # same, with --dry-run
 Issues and pull requests are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as described
 in [`SECURITY.md`](SECURITY.md). For the internal design, see
-[`architecture.md`](architecture.md).
+[`docs/architecture.md`](docs/architecture.md).
 
 ---
 
@@ -1047,6 +1048,5 @@ License 1.1 (the licence texts are copied to `dist/licenses/`):
 - **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
   Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
-  Each covers the Turkish letters. Lato was left out because
-  its faces lack Ğ/ğ, İ and Ş/ş.
+  Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.
 - **Interface and signatures:** Space Grotesk, DM Sans, Dancing Script and Great Vibes.

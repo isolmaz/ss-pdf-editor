@@ -40,11 +40,10 @@ import { resolveScope, scopeRangeText } from './scope';
 const MAX_SPLIT_PARTS = 200;
 
 /**
- * A4 — extract the selected pages as a new document.
+ * Extract the selected pages as a new document.
  *
  * `new-tab`, never `replace`: the pages are produced *beside* the document, which
- * is what makes the capability non-destructive (the source project could only
- * download them).
+ * is what makes the capability non-destructive.
  */
 export const extractPagesDialog: OperationDialogSpec = {
   id: 'extract-pages',
@@ -85,11 +84,11 @@ export const extractPagesDialog: OperationDialogSpec = {
 };
 
 /**
- * A5 — split the document.
+ * Split the document.
  *
  * Four modes, one operation. Only the fields the chosen mode reads are visible,
  * and the ranges mode takes its text through the shared page-range parser, so a
- * duplicate (`'1,1'`, the source project's second defect) is refused here rather
+ * duplicate (`'1,1'`) is refused here rather
  * than producing two identical parts.
  */
 export const splitDialog: OperationDialogSpec = {

@@ -1,6 +1,6 @@
 # Architecture
 
-Internal design of SsPdfEditor. [`README.md`](README.md) describes what the product does
+Internal design of SsPdfEditor. [`README.md`](../README.md) describes what the product does
 and how to run it; this document describes how it is built, which invariants hold it
 together, and which parts are honest approximations.
 
@@ -51,7 +51,7 @@ Five rules explain most of the decisions in this codebase:
 
 ## 2. Workspace and dependency graph
 
-pnpm workspace (`pnpm-workspace.yaml`): `apps/*`, `packages/*`, `tools/spikes`.
+pnpm workspace (`pnpm-workspace.yaml`): `apps/*`, `packages/*`, `tools/behavior`.
 
 ```mermaid
 graph TD
@@ -110,32 +110,36 @@ the dock panels, the print surface and the palette are all loaded on demand, and
 `main.tsx` warms the engine, printer and palette chunks on idle so the first user action
 does not pay for the download — but only online: Chromium keeps a failed dynamic import for
 the page's lifetime, so a warm-up run offline waits for the `online` event instead.
-The writers the shell reaches only from a user action and imports nowhere else —
-annotation removal, layer writes, attachments, the redaction audit and the font inventory
-— go through `apps/web/src/lazy-ops.ts`: same signatures, loaded on the first call.
-That took the entry chunk from 250.6 to 244.9 kB gzip (2026-10-04).
+The readers and writers the shell calls only from a user action go through
+`apps/web/src/lazy-ops.ts`: each has the signature of the function it stands for and loads
+its module on the first call. They are annotation removal, layer writes, attachments, the
+redaction audit, the font inventory, placed pictures, conversion of other formats and of
+images to PDF, XFA inspection and sync, signature verification, the protection check, the
+image list, form read and fill, composition and the session-annotation writer. Only a
+module that nothing else in the entry graph imports by value can be listed there; one that is
+also imported statically stays in the entry chunk. The comment data formats
+(`annotation-data`, `annotation-xfdf`), form-field detection, `unlockDocument` and the review
+writer are dynamic `import()`s at their call sites in `App.tsx`. `fieldValueText`, which the
+form panel needs on every render, lives in `ops/form-value.ts` so the form writer behind
+`lazy-ops.ts` stays out of the entry.
 
-Two more things kept growing it. **Icon weights**: every Phosphor icon carries its
-drawing in six weights, and the `weight` prop picks one at render time, so the bundler
-keeps all six. `tools/vite/phosphor-weights.mjs` drops `thin` and `light`, which nothing
-draws (the editor uses `regular`, `bold`, `fill` and `duotone`; Kumo `regular`, `bold`
-and `fill`). **Catalogues**: both language catalogues were in the entry, and only one is
-ever shown. Each is now a chunk of its own (`LocaleInfo.load`), and `main.tsx` awaits the
-interface language's catalogue before the first render. `main.tsx` imports from
-`pdf-ui/ui`, not the `pdf-ui` barrel, which `App.tsx` loads lazily. Together these took the
-entry chunk from 366.7 to 280.9 KiB (gzip level 9, 2026-10-06), after the parity work had
-grown it past the budget.
+Two build-level rules keep the entry chunk small as well. **Icon weights**: every Phosphor
+icon carries its drawing in six weights, and the `weight` prop picks one at render time, so
+the bundler would keep all six. `tools/vite/phosphor-weights.mjs` drops `thin` and `light`,
+which nothing draws (the editor uses `regular`, `bold`, `fill` and `duotone`; Kumo `regular`,
+`bold` and `fill`). **Catalogues**: each interface language is a chunk of its own
+(`LocaleInfo.load`), because only one is ever shown, and `main.tsx` awaits the interface
+language's catalogue before the first render. `main.tsx` imports from `pdf-ui/ui`, not the
+`pdf-ui` barrel, which `App.tsx` loads lazily.
 
 The entry chunk is not all of the first paint: the `modulepreload` links the build adds for
-it (Kumo's and base-ui's shared chunks, the MuPDF glue) download with it. Measured as the
-entry plus every preload, gzip level 9: `main` 392.2 KiB, this branch 337.7 KiB before the
-next step and 313.3 KiB after it. That step moved the readers and writers the shell calls
-only on an action — form read and fill (`fieldValueText`, which the panel needs on every
-render, moved to `ops/form-value.ts`), signature verification, the protection check, the
-image list, composition, the session-annotation writer and the comment data formats —
-behind `lazy-ops.ts` or a dynamic `import()`, taking the entry chunk from 243.7 to 219.2
-KiB. The rest is the editor shell, which loads with the home screen, and the shared UI
-chunks; it is still over the 250 KiB budget the README states.
+it (Kumo's and base-ui's shared chunks, the React runtime, the `mupdf-write` vocabulary)
+download with it. Measured as gzip (default level) of the built files, the entry chunk is
+about 224 KiB and the entry plus every preload about 319 KiB. The rest is the editor shell, which
+loads with the home screen, and the shared UI chunks. The 250 KiB target
+(`BUILD_BUDGETS.firstPaintJsGzipBytes`, measured by hand; no gate checks it) therefore holds
+for the entry chunk and not for the first paint as a whole, which is what the README's
+build-budget note says.
 
 ---
 
@@ -188,16 +192,17 @@ Guarantees the class actually provides:
 - `append()` truncates the redo tail and **returns** the discarded entries, so the caller
   can release the snapshots they pointed at.
 - The entry array is replaced with a new array on append, never truncated in place.
-  `entries` is handed out by reference and read across `await`; mutating it in place
-  rewrote history callers already held.
+  `entries` is handed out by reference and read across `await`, so mutating it in place
+  would rewrite history a caller already holds.
 - `fromJSON()` rejects an out-of-range cursor instead of clamping it — clamping would
   silently restore a different state than the user left.
 - `#stepFor` in `session.ts` materialises one of three step kinds: `document` (swap the
   produced snapshot, or the source master when `before`/`after` is `null`), `overlays`
-  (canvas-only edits), or `unavailable` when the bytes the step names are no longer held. A history restored from storage
-is untrusted: `parseDraft` does not validate journal payloads, so a payload that is not an object or has no
-`after`, an unknown op kind and a snapshot the store no longer holds are each refused here (the step is
-`unavailable`), not applied.
+  (canvas-only edits), or `unavailable` when the bytes the step names are not held. A
+  history restored from storage is untrusted: `parseDraft` does not validate journal
+  payloads, so a payload that is not an object or has no `after`, an unknown op kind and a
+  snapshot the store does not hold are each refused here (the step is `unavailable`), not
+  applied.
 
 `DOCUMENT_CHANGE_KIND = 'document.change'` is the single op kind document capabilities write:
 
@@ -221,8 +226,8 @@ data therefore cannot be wired in at all.
   evicted reachable history to pay for them;
 - release is precise: only snapshots that no entry *before the cursor* and no working
   version still names are dropped, so a branch that re-lands on an earlier state keeps its
-  bytes. There is exactly one `keepNewest` constant in the tree; a second copy in
-  `session.ts` had drifted to a different value.
+  bytes. There is exactly one `keepNewest` constant in the tree (`SNAPSHOT_BUDGET` in
+  `packages/pdf-model/src/operations.ts`); `session.ts` reads it from there.
 
 ### 4.4 Save routing
 
@@ -244,11 +249,11 @@ flowchart TD
     G --> H
     H -->|"overlays, boxes, layers, widgets"| I["writer-steps (MuPDF)"]
     H -->|no| J
-    I --> J{"metadata change or rewrite?"}
+    I --> J{"metadata change or redaction?"}
     J -->|yes| K["metadata-write — after the final MuPDF write"]
     J -->|no| L
     K --> L{"encryption requested, or input was protected?"}
-    L -->|yes| M["qpdf-encrypt path — AES-256 + permissions, or re-apply input protection"]
+    L -->|yes| M["qpdf-encrypt — AES-256 + permissions, or re-apply input protection"]
     L -->|no| N
     M --> N{"signature requested?"}
     N -->|yes| O["signature-finalize — after content and encryption"]
@@ -256,10 +261,14 @@ flowchart TD
     O --> P
 ```
 
+The path ids (`SavePathId`) are stable names: `decrypt-input` and `qpdf-encrypt` carry the
+engine tag `qpdf`, but the work behind them is MuPDF's (§5.6), the only encryption engine in
+the build. With no change at all the plan is the single path `no-op`.
+
 Contract points the router returns and the report shows:
 
-- `incremental` is true **only** for the single pdf.js `saveDocument` path on an
-  unencrypted input, including the steps MuPDF appends to it as one more revision
+- `incremental` is true **only** for `no-op` and for the single pdf.js `saveDocument` path
+  on an unencrypted input, including the steps MuPDF appends to it as one more revision
   (`saveIncremental`): the static-XFA datasets sync, and the annotation settle step and
   sticky notes (`writeAnnotationsToFile`). Any other writer ends the fast path and says
   `incremental: false`; so does an append MuPDF cannot make and turns into a rewrite.
@@ -319,6 +328,9 @@ the same certificate twice is one entry.
 
 ## 5. `pdf-core` — engines and operations
 
+From here on, a path that starts with `ops/` or `engines/` is relative to
+`packages/pdf-core/src/`; `pdf-ui` and `apps/web` files are written out in full.
+
 ### 5.1 Engine adapters
 
 | Adapter | Upstream | Threading | Used for |
@@ -330,42 +342,39 @@ the same certificate twice is one entry.
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 | `engines/ghostscript.ts` (+ `ghostscript-worker.ts`, `ghostscript-run.ts`) | `@bentopdf/gs-wasm` 0.1.1 (Ghostscript 10.06.0, wasm ~14.8 MiB) | one module Web Worker per conversion, terminated after it | PDF/A conversion only (§5.13) |
 
-**Every writer runs on MuPDF.** They were consolidated from pdf-lib one operation at a time
-(2026-09-28/29): each move first got a behaviour test that passed against the pdf-lib writer
-(where that writer could run the case at all), then the writer was ported and the same test
-had to stay green. The moves, and the defects they fixed on the way:
+Two helper modules sit beside the adapters: `engines/doc-fonts.ts` reads a document's own
+fonts (§5.8) and `engines/glyphless-font.ts` builds the glyph-less font the OCR text layer
+uses for text Noto Sans cannot spell.
+
+**Every writer runs on MuPDF**, through the vocabulary in `engines/mupdf-write.ts`. What each
+writer does, and the steps it reports:
 
 - document properties (`ops/metadata.ts`);
-- attachments (`ops/attachments-write.ts`), which now also keeps the embedded-file name tree
-  sorted;
+- attachments (`ops/attachments-write.ts`), which keeps the embedded-file name tree sorted;
 - the font inventory the Document information panel reads (`ops/pdf-fonts.ts`);
-- layer writes (`ops/layer-write.ts`), which now also report a layer name that matched
-  nothing — the pdf-lib writer returned before adding that warning — and, for a request that
-  renames a layer and also sets its state or order, verify the file under the new name;
+- layer writes (`ops/layer-write.ts`), which report a layer name that matched nothing as a
+  warning and, for a request that renames a layer and also sets its state or order, verify
+  the file under the new name;
 - link edits (`ops/link-edit.ts`);
-- outline edits (`ops/outline-edit.ts`), where two pdf-lib defects are fixed: nested items
-  were never chained onto their parent, and a removal kept the removed item in the recount,
-  so every bookmark delete was refused by the read-back;
-- removing persisted annotations (`ops/annotation-remove.ts`), whose steps are now
-  `load` / `annotations.remove` / `save` / `verify` — step ids no longer name an engine;
+- outline edits (`ops/outline-edit.ts`): nested items are chained onto their parent, and a
+  removal leaves the removed item out of the recount the read-back compares;
+- removing persisted annotations (`ops/annotation-remove.ts`), whose steps are
+  `load` / `annotations.remove` / `save` / `verify` (a step id names the work, not an engine);
 - moving and turning persisted annotations (`ops/annotation-transform.ts`), steps
   `load` / `annotations.transform` / `save` / `verify`;
 - the session annotation writers the engine cannot finish: underline/strikeout/squiggly
   settle step (marker into `/NM`, subtype retag) and marker resolution (`ops/annotations.ts`), shapes and marker strokes
   (`ops/annotation-shapes.ts`) and typed text (`ops/annotation-freetext.ts`). They append
-  to `/Annots` only; pdf-lib's `addAnnot` also rewrapped the page's content in `q`/`Q`;
-- measurement annotations (`ops/measure.ts`), whose `/M` is now a PDF date (the pdf-lib
-  writer stored the ISO string);
-- stamps, Bates numbers and watermarks (`ops/stamp.ts`), where the no-print group now carries
-  its print state in `/Usage /Print`, the place the `/D /AS` print event reads — the pdf-lib
-  writer put `/Print` directly on the group, where no reader looks;
+  to `/Annots` only and leave the page's content stream alone;
+- measurement annotations (`ops/measure.ts`), whose `/M` is a PDF date;
+- stamps, Bates numbers and watermarks (`ops/stamp.ts`), where the no-print group carries
+  its print state in `/Usage /Print`, the place the `/D /AS` print event reads;
 - image opacity (`ops/image-opacity.ts`) and image replacement (`ops/image-edit.ts`), where the
   replacement is written into the object the page already names (`writeObject` +
-  `writeRawStream`), and an ICC-based grey or RGB image now reads as grey or RGB samples —
-  MuPDF tags device RGB with an sRGB profile, so without that an image replaced once could not
+  `writeRawStream`), and an ICC-based grey or RGB image is read as grey or RGB samples —
+  MuPDF tags device RGB with an sRGB profile, so an image it had written could otherwise not
   be cropped or rotated again. A replacement picture with alpha keeps it as the `/SMask` MuPDF
-  produced for it; only the old picture's mask is dropped (it used to drop both, so a
-  transparent PNG came out on a black ground), and the report says so
+  produced for it; only the old picture's mask is dropped, and the report says so
   (`op.note.image.maskDropped`);
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
@@ -380,8 +389,8 @@ had to stay green. The moves, and the defects they fixed on the way:
   lives in more keys than the rectangle;
 - other documents → PDF (`ops/convert.ts`, steps `convert.read` / `convert.layout` /
   `convert.write` / `save` / `convert.outline` / `convert.links` / `verify`). MuPDF 1.28.1
-  opens DOCX/XLSX/PPTX itself, but only as reflowed text: a sheet lost its labels and grid, a
-  slide became one paragraph and a Word table a list of cells. So each format is first read
+  opens DOCX/XLSX/PPTX itself, but only as reflowed text: a sheet loses its labels and grid, a
+  slide becomes one paragraph and a Word table a list of cells. So each format is first read
   into HTML — DOCX through mammoth (BSD-2-Clause, `externalFileAccess` off), XLSX and PPTX by
   `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom` (a part xmldom cannot read, or that is empty, is
   `corrupt-document`; an attribute is read through `attribute()`, which answers `null` when it is
@@ -399,11 +408,11 @@ had to stay green. The moves, and the defects they fixed on the way:
   The ideas are pdf2docx's (MIT; none of its code), the table modes Tabula's.
   `ops/page-layout.ts` reads a page as layout. Characters with font, size, weight and colour come from the
   structured-text walker. Pictures are drawn through their own transform into a transparent
-  pixmap: `Image.toPixmap()` gave raw samples, so an `/SMask` picture became a grey box with
-  black corners, and the draw device did not apply the mask either, so `softMasked` folds it
-  into the alpha. Ruling lines and drawn marks come from one pass of a JS `Device`.
-  - **Tables.** MuPDF's own `table-hunt` was measured first: it took a page of Word
-    paragraphs for a two-column table and found nothing in a ruled spreadsheet grid. So
+  pixmap: `Image.toPixmap()` returns raw samples (an `/SMask` picture would be a grey box
+  with black corners) and the draw device does not apply the mask either, so `softMasked`
+  folds it into the alpha. Ruling lines and drawn marks come from one pass of a JS `Device`.
+  - **Tables.** MuPDF's own `table-hunt` is not used: measured, it takes a page of Word
+    paragraphs for a two-column table and finds nothing in a ruled spreadsheet grid. So
     ruled tables are found from merged horizontal and vertical rules ("lattice"; a missing
     rule between two cells merges them, unless that would make a region that runs into
     a cell already placed, which then stays single). A rule group whose outer border is not
@@ -418,7 +427,7 @@ had to stay green. The moves, and the defects they fixed on the way:
     every row ("stream"). Prose set in columns is told apart by its long pieces, and by its
     blocks: two columns that each hold a text block of three or more lines with a median line
     of 20 characters or more are two columns of text whose lines share baselines, not a table
-    (read row by row across them, a reader would take the columns in turn no more), provided
+    (read row by row across them, a reader would not take the columns in turn), provided
     the block is the column's own (it holds no piece of the other column) or its lines wrap
     (each but the last holds words and fills the column's width): a table of 20-to-30-character
     cells is often one block of both columns, with cells of every length, and stays a table. A line is cut
@@ -888,28 +897,27 @@ had to stay green. The moves, and the defects they fixed on the way:
     render failed (`Unexpected mesh type 0`). `borrowed()` takes those wrappers off the
     finalizer. Paths, stroke states and text are kept by the binding and need nothing, and
     the walker's fonts and images were measured sound;
-- images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`), where two
-  pdf-lib-era defects are fixed: EXIF orientations 6 and 8 were turned the wrong way (an
-  upright phone photo came out upside down) and `contain`/`cover` squashed a turned photo into
-  the unturned aspect ratio. Every orientation is now one unit-square matrix, and the embedded
-  JPEG's own tag is set to 1, because MuPDF-based readers apply it and would turn the picture
-  a second time;
+- images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`): every EXIF
+  orientation is one unit-square matrix, so an upright phone photo stays upright and
+  `contain`/`cover` use the turned photo's aspect ratio, and the embedded JPEG's own tag is
+  set to 1, because MuPDF-based readers apply it and would turn the picture a second time;
 - page boxes, resize, scale, shift, content rotation and auto-crop (`ops/page-boxes.ts`), where
-  a content transform wraps the page's streams through `wrapPageContent` and auto-crop now
-  measures on the document it edits instead of opening a second copy, and a page that needed no change is counted once in the unchanged-pages note (it used to be counted twice);
+  a content transform wraps the page's streams through `wrapPageContent`, auto-crop measures
+  on the document it edits instead of opening a second copy, and a page that needs no change
+  is counted once in the unchanged-pages note;
 - the rotation pass, the repeated-page repair and the merge's metadata step after pdf.js
-  `extractPages` (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`; `compose.rotate` is now
-  declared to the save verification (it may change `rotation`), where `pdf-lib.setRotation`
-  was an unknown step. A page repeated in a composition needs one pdf.js entry per copy level,
+  `extractPages` (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`;
+  `compose.rotate` is declared to the save verification (it may change `rotation`).
+  A page repeated in a composition needs one pdf.js entry per copy level,
   and each entry is its own document to the engine: it merges the outline once per entry and keeps a
-  GoTo link only when the target is inside the entry, so a copy lost its links and every bookmark
-  came back appended once per copy. The same MuPDF pass that turns pages therefore copies the
+  GoTo link only when the target is inside the entry, so a copy would lose its links and every
+  bookmark would come back appended once per copy. The same MuPDF pass that turns pages therefore copies the
   original's `/Link` annotations onto each copy (same rectangles, same targets) and deletes the
   top-level bookmark subtrees the copy entries appended. Which items an entry repeats depends
   on how the bookmark names its page: an explicit page array is valid only in the entry that
   holds the page, but a named destination (`/Names /Dests` and a string `/Dest`, what hyperref,
   Word and InDesign write), a URL or an action is valid in every entry, so pruning by "points
-  only at copies" left those repeated. A heading and its child that name their pages by
+  only at copies" would leave those repeated. A heading and its child that name their pages by
   different mechanisms are left half-repeated: the entry keeps the heading without its array
   destination for a named child, or the named heading without the child whose array points
   elsewhere. The appended block is therefore found by what it says: each top-level subtree is
@@ -923,7 +931,7 @@ had to stay green. The moves, and the defects they fixed on the way:
   bound, is never removed, and only then does the report say the outline may still be
   repeated (`op.note.compose.outlineCopies`); a document's own top-level bookmarks with the
   same title and target, one a reduced copy of the other, collapse to one when a page is
-  repeated. A composition that repeats no page and turns none is still never rewritten; the merge opens the base and every added document with MuPDF once
+  repeated. A composition that repeats no page and turns none is never rewritten; the merge opens the base and every added document with MuPDF once
   (`readMergeInputs`) and takes the label ranges, the encryption and the form field names from
   that one parse, checking the abort signal between documents. It reports
   `op.note.merge.encryptionDropped` when a document had `/Encrypt`, because the merged file is
@@ -932,34 +940,32 @@ had to stay green. The moves, and the defects they fixed on the way:
   it) as `op.note.merge.sharedFields`, because fields with one name share one value;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
-  written, plus the planned page labels) and matched image pages drawn as form XObjects. One defect is fixed: inserting chosen
-  pages of another document inserted its *first* pages instead (the plan's slot index was
-  handed to the engine as the page number), so "insert pages 3-4 of this file" put in 1-2;
+  written, plus the planned page labels) and matched image pages drawn as form XObjects. The
+  page numbers handed to the engine are the source document's own, not the plan's slot index,
+  so "insert pages 3-4 of this file" inserts pages 3-4;
 - imposition and the print layout (`ops/impose.ts`), where each source page is a form XObject
-  (`pageAsForm`, resources grafted once per document). Two poster defects are fixed: every row
-  of tiles but the last came out blank (the vertical offset had its sign reversed, so the top of
-  a poster was never printed), and the enlargement took the larger of the two scales, which cut
-  the page's right or bottom edge off the grid — it now fits the whole page. A poster also refuses a fractional tile count (1.5 columns or rows) as `range-invalid`, (the range check alone let 1.5 through);
+  (`pageAsForm`, resources grafted once per document). A poster's rows count from the top of
+  the enlarged page, so every row of tiles prints, and the enlargement is the smaller of the
+  two scales, so the whole page fits the grid. A poster refuses a fractional tile count (1.5
+  columns or rows) as `range-invalid`;
 - compression (`ops/compress.ts`): the structure mode is a MuPDF rewrite with deduplication,
-  lossless font/image compression and object streams, and no longer regenerates form-field
-  appearances (pdf-lib did, and warned); the raster mode replaces the selected pages **in
-  place** (`assembleRaster`) instead of rebuilding the file, so the other pages, the outline
-  and the rest of the catalog are kept. Its `assemble` step now declares what it really
-  changes on those pages (`rotation`, `cropBox`, `annotations` besides the content);
+  lossless font/image compression and object streams, and does not regenerate form-field
+  appearances; the raster mode replaces the selected pages **in place** (`assembleRaster`)
+  instead of rebuilding the file, so the other pages, the outline and the rest of the catalog
+  are kept. Its `assemble` step declares what it changes on those pages (`rotation`,
+  `cropBox`, `annotations` besides the content);
 - forms (`ops/forms.ts`): the field tree is walked by the writer itself (inherited `/FT`, `/Ff`,
   `/V`, `/DA`), and every text, choice, check and radio appearance it writes is drawn with the
-  embedded Noto Sans (`/NotoForm` in `/AcroForm /DR`). MuPDF's own appearance synthesis was
-  measured and not used: it places the baseline outside the widget box. Two defects are
-  fixed: a field whose dictionary is also its widget reported no page (`pageIndex: null` for
-  most real forms), and creating a text field always failed ("No /DA"). A calculation's numbers follow the
+  embedded Noto Sans (`/NotoForm` in `/AcroForm /DR`). MuPDF's own appearance synthesis is
+  not used: measured, it places the baseline outside the widget box. A field whose dictionary
+  is also its widget reports its page, and a created text field gets a `/DA`. A calculation's numbers follow the
   documented grammar (`[0-9]+('.'[0-9]+)?`) and a malformed one (`1.2.3`, `1..2`) is refused, not read as a
   shorter number;
 - the OCR text layer (`ops/ocr.ts` `writeOcrLayer`, step `ocr.layer`), one content stream per
-  page where the pdf-lib writer opened one per word. A word Noto Sans can spell uses it; any
-  other uses Tesseract's glyph-less design rebuilt in `engines/glyphless-font.ts` (Type 0
-  over Identity-H, every CID drawing one empty glyph, `/ToUnicode` CID *n* → UTF-16 unit *n*).
-  Tesseract's own copy of that font sits in its wasm data, which the build split at zero runs,
-  so it could not be lifted out whole;
+  page. A word Noto Sans can spell uses it; any other uses Tesseract's glyph-less design
+  rebuilt in `engines/glyphless-font.ts` (Type 0 over Identity-H, every CID drawing one empty
+  glyph, `/ToUnicode` CID *n* → UTF-16 unit *n*). Tesseract's own copy of that font sits in
+  its wasm data, split at zero runs, so the font is rebuilt rather than lifted out whole;
 - the text-edit insert half (`ops/text-edit.ts`), steps `load` / `text.font` / `text.draw` /
   `save` after MuPDF's erase: a file font or Noto is embedded (`embedFontFile`) and cut to
   the glyphs drawn before the save (`subsetEmbeddedFaces`, below), a
@@ -969,7 +975,7 @@ had to stay green. The moves, and the defects they fixed on the way:
 - the batch runner's page count (`ops/batch.ts`), measured through `openForWrite`, so a
   password-locked item fails on its own with `encrypted-unsupported`;
 - signing and signature verification (`ops/sign.ts`, `ops/signature-status.ts`); the Node
-  gate `tools/spikes/sign-check.mts` loads the engine through `node-mupdf-hook.mjs`, which
+  gate `tools/behavior/sign-check.mts` loads the engine through `node-mupdf-hook.mjs`, which
   resolves the served engine URL to the installed package;
 - accessibility (`ops/accessibility.ts`): the check, the tagger (marked content spliced into
   the page's own decoded bytes, the structure tree written with MuPDF) and the alt-text
@@ -977,31 +983,28 @@ had to stay green. The moves, and the defects they fixed on the way:
   (`ops/structure*.ts`) and the PDF/UA check and fixes (`ops/pdfua.ts`) read and write the
   same way and re-open their own output.
 
-`openForWrite` refuses a document that needs a password (`encrypted-unsupported`), as pdf-lib
-did; one encrypted with an owner password only now opens and keeps its encryption on save.
+`openForWrite` refuses a document that needs a password (`encrypted-unsupported`); one
+encrypted with an owner password only opens and keeps its encryption on save.
 
-pdf-lib is gone from the product: `engines/pdflib.ts` is deleted, no workspace the build
-bundles declares it, and its licence texts left `dist/licenses/`. The unit tests write their
-fixtures with MuPDF's object model, and so do the behaviour checks and the README recorder, through
-`tools/spikes/mupdf-fixture.mjs` (text, images, links, outline, fields, metadata, XMP,
-attachments; plus a reader for what an exported file carries) — no workspace declares
-pdf-lib any more, and the lockfile has none. `@pdf-lib/fontkit`, the font parser the text
-model measured with, is gone too (2026-10-04): glyph lookups and advances come from MuPDF's
-`Font` over the same bytes, and the four header numbers from `readFontHeader` (§6).
+The text model takes glyph lookups and advances from MuPDF's `Font` over the font's own
+bytes, and the four header numbers from `readFontHeader` (§6). The unit tests write their
+fixtures with MuPDF's object model, and so do the behaviour checks and the README recorder,
+through `tools/behavior/mupdf-fixture.mjs` (text, images, links, outline, fields, metadata,
+XMP, attachments; plus a reader for what an exported file carries).
 
 **Font subsets.** `embedFontFile` embeds a whole program (Noto Sans is 629 KB) and records
 every glyph id its `encode` hands out. Before saving, the typed-text, stamp, OCR and text-edit
 writers call `subsetEmbeddedFaces`, which replaces each face's `/FontFile2` with a subset of
 those glyphs and gives the face a tagged name (`ABCDEF+NotoSans`). MuPDF's `subsetFonts`
-subsets a whole document, and run on the real one it also cut and renamed the fonts the
-document came with. A form's `/DR` font would then lose the glyphs a reader types a new
+subsets a whole document, and on the real one it also cuts and renames the fonts the
+document came with, so a form's `/DR` font would lose the glyphs a reader types a new
 value with. So the face is grafted into a scratch document whose one page draws exactly the
 recorded glyphs, that document is subset, and the program is copied back. Glyph ids are
-kept (Identity-H draws by id), so nothing already drawn changes. This was checked by
-rendering each writer's output against the same file with the whole program put back: no
-pixel differed, and pdf.js extracted the same text. The form writer's `/NotoForm` stays
-whole on purpose. A face that cannot be subset keeps its whole program, because the subset
-is a saving, never a condition of the write.
+kept (Identity-H draws by id), so nothing already drawn changes. Rendering each writer's
+output against the same file with the whole program put back differs in no pixel, and pdf.js
+extracts the same text. The form writer's `/NotoForm` stays whole on purpose. A face that
+cannot be subset keeps its whole program, because the subset is a saving, never a condition
+of the write.
 
 Two binding rules every MuPDF writer relies on are written down in `engines/mupdf-write.ts`:
 a plain JS string becomes a PDF *name* (text goes through `newString`), and a missing key is
@@ -1029,16 +1032,15 @@ edit.
 
 `openWithPdfjs()` settles when its `signal` aborts, whenever that happens: before or during
 the chunk load, or during the document load. pdf.js does not settle `loadingTask.promise` when
-the task is destroyed after its setup (only a pending password request is rejected), so an
-open cancelled mid-load used to leave its caller waiting for ever. The load now races an
-abort promise; the abort rejects with `aborted` (`ToolError`) and still destroys the loading
-task, which owns the worker and the transport.
+the task is destroyed after its setup (only a pending password request is rejected), so the
+load races an abort promise: the abort rejects with `aborted` (`ToolError`) and still
+destroys the loading task, which owns the worker and the transport. An open cancelled
+mid-load therefore never leaves its caller waiting.
 
 **Notes** (`writeNoteAnnotations`, `ops/annotation-shapes.ts`) are `/Text` sticky notes:
 the comment is their `/Contents`, and their `/AP` is a folded-sheet icon in the mark's colour
-(never fainter than 60 %), with the alpha in the appearance's `/ExtGState` as well as on `/CA`.
-They went through the engine before as empty `/FreeText` shells, whose appearance typed `()`:
-the note drew nothing in any other reader, nor in the app once the file was reopened. Shapes
+(never fainter than 60 %), with the alpha in the appearance's `/ExtGState` as well as on `/CA`,
+so every reader draws the note and the app draws it once the file is reopened. Shapes
 carry their alpha the same way, since pdf.js and PDFium paint the `/AP` and ignore `/CA`, and their
 stroke width is the annotation's own `/BS /W` (and `/Border`), not only a number inside the
 appearance stream: a reader that rebuilds the appearance draws the border, and reopening the
@@ -1116,9 +1118,9 @@ signature. What a save does to signatures is decided per file that can carry the
 version it produced (e.g. by signing), each against its own bytes. Output identical to a
 file → nothing to say about it; output that extends it → "a revision follows" (still
 valid); anything else → "the signature will break"; the worst fate wins, and an unsigned
-file is never warned about. Judging only the opened file warned on every export of a
-document signed in the session; judging only the produced version missed an edit that had
-already broken the opened file's signature.
+file is never warned about. Both files are judged because the opened file alone would warn
+on every export of a document signed in the session, and the produced version alone would
+miss an edit that had already broken the opened file's signature.
 
 **CMS (`signature-cms.ts`).** `pkijs` + `asn1js` for structure, WebCrypto for crypto — no
 network. Signed attributes are `contentType`, `signingTime`, `messageDigest` and
@@ -1183,7 +1185,7 @@ With no roots imported the answer is `not-checked` with reason
 `signature-revocation.ts` (loaded lazily, like `signature-trust.ts`; `pkijs` + WebCrypto, no new
 dependency). There is **no network**: a "not revoked" answer can only come from a list somebody
 handed the app — a CRL the user imported (stored beside the trust roots in the app's OPFS
-settings directory, `pdf-model/revocation-lists.ts`, `revocation-lists.json`, versioned, with the
+settings directory, `packages/pdf-model/src/revocation-lists.ts`, file `revocation-lists.json`, versioned, with the
 dates shown in the panel), a CRL or OCSP response in the signature's CMS (the Adobe
 `adbe-revocationInfoArchival` attribute, read from the signed *and* unsigned attributes, and
 `SignedData.crls`) or in the document's `/DSS` (`Certs`, `CRLs`, `OCSPs`, read by reference and
@@ -1233,8 +1235,11 @@ may be used: valid, chained to an imported root, nothing revoked.
 (`timestamp` > `timestamp-untrusted` > claimed `signing-time` > `clock`), then trust (validated at the
 trusted timestamp's time, so a certificate that expired later reads as valid — the panel says
 so) and revocation. The helper shared by every signed structure (`verifyDataSignature`) lives in
-`signature-trust.ts`. Probes with a real OpenSSL PKI (CA, intermediate, signers, TSAs, an OCSP
-responder, CRLs) and tokens built with pkijs where OpenSSL refuses to make them were run end to end.
+`signature-trust.ts`. The tests run the real parsers over certificates, CRLs, OCSP responses and
+tokens built at run time with WebCrypto and `pkijs` (`signature-trust.fixtures.ts`,
+`signature-revocation.fixtures.ts`; nothing is committed as bytes). The same code is
+cross-checked by hand against a real OpenSSL PKI (CA, intermediate, signers, TSAs, an OCSP
+responder, CRLs), with tokens built with pkijs where OpenSSL refuses to make them.
 
 ### 5.4 Redaction
 
@@ -1262,17 +1267,18 @@ Details that matter:
 
 - Marks travel in **app space** (unrotated user space, top-left origin, Y down from the
   unrotated CropBox top) and are converted through the verified four-rotation table. A
-  rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing* —
-  this is the single most expensive discovery recorded in the spikes.
+  rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing*, so
+  the space of every mark is stated once and converted in one place (§9).
 - `black_boxes: false` is deliberate: a black bar would advertise the redaction and could
   be lifted. The erase is a content-stream operation.
 - Line art touched by a mark is removed, because a rule that runs through the box would
   reveal where the covered text started and ended. (Text replacement uses the opposite
   setting — a different operation with a different contract.)
-- `applyRedactions` erases page content and deletes the links it touches — nothing else. Measured
-  in the built app: a text field under a mark kept its `/V` and appearance, a sticky note kept its
-  `/Contents`, both stayed on the page and in `/AcroForm /Fields`, and the report still said the
-  content was gone. `ops/redact-annots.ts` therefore sweeps each marked page after the erase, in
+- `applyRedactions` erases page content and deletes the links it touches — nothing else.
+  Measured in the built app: a text field under a mark keeps its `/V` and appearance, a sticky
+  note keeps its `/Contents`, and both stay on the page and in `/AcroForm /Fields`, so the
+  content would still be in the file while the report said it was gone.
+  `ops/redact-annots.ts` therefore sweeps each marked page after the erase, in
   PDF user space (the mark is flipped into the page box once; an annotation's `/Rect` is already
   there whatever `/Rotate` says). Every annotation except `/Redact` whose `/Rect` shares area
   with a mark — touching along an edge is not sharing — is removed whole: widgets, comments,
@@ -1317,12 +1323,12 @@ range it fails rather than clamping) → Tesseract recognises it in a worker cac
 one content stream per page, positioned through the page's unit viewport so the page's
 rotation cancels exactly once. The font is embedded as the **complete** programme,
 Identity-H with a `/ToUnicode` CMap — which is what makes the words selectable and
-searchable at all. Noto Sans has no Arabic, Hebrew or CJK glyphs: such a word encoded as
-glyph 0 and came back as nothing, so those words use the glyph-less font, whose codes are the
+searchable at all. Noto Sans has no Arabic, Hebrew or CJK glyphs: such a word would encode as
+glyph 0 and come back as nothing, so those words use the glyph-less font, whose codes are the
 text's UTF-16 units. A right-to-left word is written in visual order (grapheme clusters
-reversed), the order extractors undo with the bidi algorithm; written logically it came back
-reversed. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less font get a space
-beside them, because MuPDF found no gap between them and joined `नमस्ते दुनिया` into one
+reversed), the order extractors undo with the bidi algorithm; written logically it would come
+back reversed. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less font get a space
+beside them, because MuPDF finds no gap between them and would join `नमस्ते दुनिया` into one
 word. All of this is measured through both MuPDF and pdf.js extraction.
 
 There are 27 languages (`OCR_LANGUAGE_CODES_ALL`). Turkish and English ship both models and
@@ -1409,7 +1415,7 @@ the types the user chose; every drawing of an image is a figure.
   `apps/web/src/operations.ts`; `tags` and `tags.*` likewise).
 
 The panel (`panels/AccessibilityPanel.tsx`) has three views behind one tab strip — Report
-(the older check, tag button and alt list), PDF/UA (`PdfUaView.tsx`) and Tags
+(the check, the tag button and the alt list), PDF/UA (`PdfUaView.tsx`) and Tags
 (`TagsView.tsx`). The open view and the selection live in `panels/reading-order-store.ts`,
 an external store (`useSyncExternalStore`), because the panel is re-mounted for every
 revision of the document and the overlay lives three components away. The overlay
@@ -1557,8 +1563,8 @@ from `/Widths` or `/W`/`/DW`, and a word gap the font has no space glyph for is 
 `/BaseFont /Nimbus#20Sans#20Bold`), so names are compared without case, spaces or
 punctuation, and the subset tags must agree. The writer finds the font again by name in the
 page it draws on; the erase stage re-attaches a used font to the page's `/Resources` after
-the redaction (`TEKeep`), because the redaction drops resources nothing draws with any more
-and the compacting save would then drop the font itself.
+the redaction (`TEKeep`), because the redaction drops the resources nothing on the page
+draws with and the compacting save would then drop the font itself.
 
 **A MuPDF hazard this works around.** Resolving an image XObject of a page and then applying
 redactions to that page made MuPDF 1.28.1 save the image as a dictionary without its stream:
@@ -1569,14 +1575,14 @@ only (`pageFonts(page, { forms: false })`).
 **Colours** come from the glyphs themselves: `readPageText` and `readDocumentText` take each
 character's fill colour from MuPDF's text walk, and a block's colour is the one most of its
 glyphs use. pdf.js's page-dominant colour is the fallback for a block MuPDF reported none
-for; reading that one colour for every block turned a red heading black when it was edited.
+for, so an edited red heading stays red instead of taking the page's one dominant colour.
 
 **Reading order.** The writer draws each line where it stands in the content stream, not
 after it (`drawInReadingOrder` in `ops/text-edit.ts`): a drawn run that shares a baseline
 with a run the page keeps **of the same line** is spliced in right after that run's text
 object (before it, when nothing stands to its left), inside `q … Q` with the inverse of the
 matrix in force there and a reset text state. Extractors, search and screen readers follow
-the stream, and a shorter word used to come back as every line's head first and all the
+the stream, so a shorter word does not come back as every line's head first and all the
 moved rests at the end of the page. The line is the one the drawn text continues
 (`TextEditInsertLine.lineSpan`, its left and right edge): a run of the column or table cell
 beside it shares the baseline but not the span, and splicing after it read the two columns
@@ -1587,7 +1593,7 @@ the anchor's text object, so a producer that writes several lines in one `BT …
 does) still reads that object's line heads before the rests drawn after it. A line that only
 closed the gap a shorter word left is not counted as "did not fit in place".
 
-**Verification.** The writer's checks apply, with two corrections this operation needed: a
+**Verification.** The writer's checks apply, with two corrections: a
 replacement that contains the old text (`2024` → `2024–2025`) is not "erased text still
 present" — the lines the operation drew are subtracted before the count — and text drawn word
 by word is recognised as the operation's own at each word's position, not only at the line's
@@ -1638,8 +1644,8 @@ them into the first paint.
   the surroundings of a red stamp cyan.
 
 **The operation** (`ops/scan.ts`, `scanPagesToPdf`). The straightened JPEGs are composed by
-`imagesToPdf`, which gained one option, `fitLongSidePt`, so a `fit` page is A4-sized on its
-long side instead of the picture's pixel size in points. The scan contract on top: a picture
+`imagesToPdf`, whose option `fitLongSidePt` makes a `fit` page A4-sized on its long side
+instead of the picture's pixel size in points. The scan contract on top: a picture
 the embedder skipped (`imagesToPdf` reports it as a warning and carries on) fails here, because
 a missing page is a lost scan, and the output is read back with pdf.js: the page count must
 match and every page must have the proportions asked for. Steps: `scan.compose` (declared in
@@ -1666,11 +1672,11 @@ other standalone operations use; when the shell does not open the PDF (another o
 running, a limit, a failure), `onDocument` resolves with the reason and the dialog shows it and
 stays open with its pages, because the shell's notice would sit behind the modal; with the
 "offer OCR" box ticked the existing OCR dialog opens
-on the new tab afterwards (not a second recogniser). `pages` serves the new `scan` field kind
+on the new tab afterwards (not a second recogniser). `pages` serves the `scan` field kind
 of `OperationDialogSpec`: the Insert pages dialog's source "Scan with camera" holds the JPEG
 files the scanner returns and feeds them to the existing image path of `insertPages`.
 
-**Permission.** `public/_headers` sets `Permissions-Policy: camera=(self)` (it was `camera=()`):
+**Permission.** `public/_headers` sets `Permissions-Policy: camera=(self)`:
 the camera is allowed for the app's own origin only; microphone and the rest stay off.
 
 **Verified** with Chromium's fake camera (`--use-fake-device-for-media-stream
@@ -1687,11 +1693,11 @@ data. An XFA-aware reader draws the **data**, not the AcroForm widgets, so the t
 kept in step. Neither engine runs XFA: MuPDF ignores it, and pdf.js can lay a template out
 (`enableXfa`, `page.getXfa()`, `XfaLayer`) but runs no scripts.
 
-**What was found out first** (probes against two hand-built files, one static and one
-dynamic, and a real browser):
+**How the engines treat XFA** (probed with two hand-built files, one static and one
+dynamic, in a real browser):
 
-- Before this part the editor opened both silently: a static form showed its AcroForm, a
-  dynamic one showed the "Please wait…" page, and `flattenForm` refused any XFA document.
+- A viewer that ignores XFA shows a static form's AcroForm and a dynamic form's
+  "Please wait…" page; the editor handles both explicitly (below).
 - pdf.js decides the kind exactly as `describeXfa` does: XFA plus AcroForm fields is static
   (not `isPureXfa`, drawn from the PDF), XFA with no fields is dynamic (`isPureXfa`, its page
   list is the template's). Its own save patches static datasets by field *name*
@@ -1733,7 +1739,7 @@ chosen button decides. Three writers keep the data current, all through the same
    widgets from it, then writes the imported datasets back when the fill spelled a value its own way (a form with no template packet), so
    the read-back holds what was imported.
 
-`flattenForm` now accepts a static form (the XFA is removed because it would redraw every
+`flattenForm` accepts a static form (the XFA is removed because it would redraw every
 field from its data) and refuses a dynamic one with `xfa-dynamic`.
 
 **Dynamic forms.** The main viewer is untouched: it never opens a document with `enableXfa`,
@@ -1810,8 +1816,8 @@ run.
 rewritten with the accessibility tokenizer (`readContentInstructions`): inside a hidden
 `/OC … BDC … EMC` region only ink is dropped; graphics-state operators, `q/Q`, `BT/ET` and
 clipping stay, and a region is cut only if it is closed, its text objects are balanced and no
-path is left open. Anything else stays and is reported (`layersLeft`). Resource names no longer
-used are pruned and OCGs nothing refers to are dropped.
+path is left open. Anything else stays and is reported (`layersLeft`). Resource names that
+nothing uses after the cut are pruned and OCGs nothing refers to are dropped.
 
 **The MuPDF hazard.** Calling `.resolve()` on the reference of some stream objects (a tiling
 Pattern's content stream) makes the save lose that stream. The graph helpers therefore operate
@@ -1900,7 +1906,7 @@ an invoice.
 
 `ops/pdfa.ts` (`convertToPdfA`) converts to PDF/A-1b, 2b or 3b; `ops/pdfa-check.ts`
 (`checkPdfA`) says whether a file claims PDF/A and which rules it breaks. The dialog `pdfa`
-(`pdf-ui/ops/pdfa.ts`, result opens in a new tab announced by its own `pdfa.done` /
+(`packages/pdf-ui/src/ops/pdfa.ts`, result opens in a new tab announced by its own `pdfa.done` /
 `pdfa.doneAlready` notice) and the dock panel `PdfAPanel` use them.
 
 **Why Ghostscript.** Producing PDF/A rewrites colour, fonts and structure; it is not a flag.
@@ -1964,8 +1970,8 @@ rewriting a property with its own value so the annotation is dirty: `setRect(get
 move it, since the argument is in page space); it loses the character mapping of a MacRoman
 TrueType font without `/ToUnicode` (one is built from the encoding). The `/ToUnicode` pass reads
 the fonts in a **second document**: reading a page's fonts resolves its images and MuPDF 1.28.1
-then saves them without their streams (the hazard of §5.8), which broke every picture of a page
-until the read was moved out of the document that is written. Attachments are removed for parts
+then saves them without their streams (the hazard of §5.8), so the read happens in a document
+that is not the one written. Attachments are removed for parts
 1 and 2 and kept for part 3 with `/AFRelationship` and a media type; owner-password encryption
 is dropped (a file that needs a password is refused).
 
@@ -2013,9 +2019,9 @@ as an argument — `GlyphSource`, the shape of MuPDF's `Font` (`encodeCharacter`
 `readFontHeader` reads the rest from the bytes: `unitsPerEm` (`head`) and
 ascender/descender/line gap (`hhea`), every offset bounds-checked, WOFF/WOFF2 and
 collections refused. Advances are scaled from em to font units and rounded. Over every
-code point of both Noto faces this matches what `@pdf-lib/fontkit`, the parser it
-replaced, reported: same coverage, same advances, same header numbers
-(`text-source.test.ts` keeps fontkit's figures as the expected values).
+code point of both Noto faces the coverage, the advances and the header numbers equal the
+figures `@pdf-lib/fontkit` 1.1.1 reported for them, which `text-source.test.ts` keeps as the
+expected values.
 
 The pieces, in the order the text-edit pipeline uses them:
 
@@ -2105,10 +2111,10 @@ pdf.js; hand-tool panning writes `scrollLeft`/`scrollTop` directly.
 
 The overlays render **inside the viewer's scroll container**, through the pane's `overlay`
 slot: a host at the scrolled content's origin, sized from the active slot by a
-`ResizeObserver`, so the compositor scrolls them with the pages. They used to be absolute
-siblings of the pane, placed from `getBoundingClientRect()` once per React render; nothing
-re-rendered on scroll, and a drawn mark stayed where it was on screen while the page scrolled
-away (measured: a 150 px wheel scroll moved the page and not the rectangle). The host has no
+`ResizeObserver`, so the compositor scrolls them with the pages. They are not absolute
+siblings of the pane placed from `getBoundingClientRect()` once per React render: nothing
+re-renders on scroll, so a drawn mark would stay where it is on screen while the page
+scrolls away (measured: a 150 px wheel scroll moved the page and not the rectangle). The host has no
 z-index of its own (the highlight root multiplies against the page canvas and a stacking
 context would isolate it); the scroll container is `isolate`d instead, which keeps every
 mark layer below the find bar and the shell chrome. A zoom, spread change, resize or rewrite
@@ -2154,8 +2160,8 @@ names back through MuPDF (pdf.js does not report `/NM`) into `ExistingAnnotation
 file that needs a password gives no names: the bytes pdf.js holds stay encrypted and MuPDF
 refuses them, and the file opens read-only, so its comments are listed from pdf.js alone
 rather than failing the read.
-Files written before the name carried it still have the marker in `/Contents`: `markerOf` and
-`commentText` read that too, and `viewer/marker-text.ts` watches the scroll container with a
+A marker at the head of `/Contents` (the form an engine-written mark has until it is settled) is read too by `markerOf` and
+`commentText`, and `viewer/marker-text.ts` watches the scroll container with a
 `MutationObserver` and rewrites such popup text through `commentText`, so the page never shows it.
 
 New annotation gestures are controlled by `AnnotationLayer`; pdf.js editor creation is
@@ -2202,9 +2208,8 @@ picked, in the product's words rather than the browser's "Choose File".
 surface — title, the two numbered steps (`DialogSteps`: settings, then review/result), the
 fields, progress with a working cancel, the destructive second confirmation, the error with
 its diagnostic, the report — and `App.tsx` shows it in the right dock's tools panel for
-**every** operation. It replaced a modal `OperationDialog` and a separate inline runner that
-had drifted: the runner had no destructive confirmation, and its "Close" applied the result
-while the modal's discarded it. The first-step button reads *Preview* (`op.apply`) because it
+**every** operation, so there is one runner with one destructive confirmation and one meaning
+of "Close". The first-step button reads *Preview* (`op.apply`) because it
 runs the operation and shows the report; only the result's own action
 (`RESULT_ACTIONS[resultKind]`: apply to the document / open in a new tab / download) changes
 anything, and "Close" discards. Modals remain for decisions that block: password, unsaved
@@ -2212,37 +2217,37 @@ changes, signature warning, export choice, print, settings and the shortcut list
 
 The host (`handleDialogResult`) applies a result and closes the form itself once the result
 has landed; the panel must not also go "back". Going back cancels the operation in flight,
-and the panel used to do exactly that right after handing over its result, so every result
-applied from the panel was aborted before it reached the document
-(`e2e/editor-stability.spec.ts` fails with that call reinstated).
+so a panel that did so right after handing over its result would abort every result before
+it reached the document (`e2e/editor-stability.spec.ts` guards this).
 
-`ops/index.ts` registers **37** dialog ids against lazy `import()` loaders, so a
+`packages/pdf-ui/src/ops/index.ts` registers **37** dialog ids against lazy `import()` loaders, so a
 capability's field tables and page-scope logic stay out of the first paint. `App.tsx`
 opens a dialog by id, and an id the registry does not know is a silent no-op — so the id
 passed from a surface has to be the id the registry declares.
 
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
 synchronously through `isStandaloneDialog`): a blank document (`new-document`,
-`pdf-core/ops/create.ts`), a PDF from images (`images-to-pdf`), several PDFs merged into a
+`ops/create.ts`), a PDF from images (`images-to-pdf`), several PDFs merged into a
 new one (`merge-files`, the first file as the base of `mergeDocuments`) and other documents
 converted to PDF (`convert-to-pdf`, several files converted one by one and merged in order). They run with no
 document open, their context carries no bytes, and their one result opens in a new tab. A
 tab's tools panel is frozen against that tab and dismissed when it changes, so these get a
 modal host instead (`dialogs/StartDialog.tsx`, the same `OperationForm` body) and their own
-result path (`handleStartResult`). Before, `images-to-pdf` went through `openDialog`, which
-returns without a tab — the command was enabled with no document and silently did nothing.
+result path (`handleStartResult`); `openDialog` returns without a tab, so routing a
+standalone operation through it would leave a command that is enabled with no document and
+does nothing.
 
 A multiple `files` field is an ordered list: a new pick appends, and each entry can be moved
 up or down or removed, so the order of a merge or of the pages built from images is the
 user's.
 
 The command palette runs **one command per opening**: Enter reaches both the input's own
-handler and the list's item activation, and a keyboard-chosen command used to run twice — a
-tool toggle armed and disarmed itself, and an operation's second run was refused as
-"another operation is running". Enter runs the highlighted command only while it is still in
+handler and the list's item activation, so the keyboard path runs the command once (twice, a
+tool toggle would arm and disarm itself and an operation's second run would be refused as
+"another operation is running"). Enter runs the highlighted command only while it is still in
 the filtered list (matched by id): the primitive does not clear its highlight when a query
-filters every item out, and Enter on "No matching commands" used to run whatever had been
-highlighted before — the first command, "Create a blank document". The empty state's
+filters every item out, so Enter on "No matching commands" would otherwise run whatever had
+been highlighted before. The empty state's
 "Advanced mode" button hands focus back to the input, since the button disappears with it.
 
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
@@ -2266,11 +2271,10 @@ everything a canvas gesture can be — `select`, `hand`, `highlight`, `underline
 (the signature dialog or the image picker) and any other tool drops that picture. The tool rail (`apps/web/src/components/ToolRail.tsx`) is a
 column **in the layout** beside the document and shows every one of them; the four
 text-markup looks share one button that is pressed for any of them and arms the look used
-last. It floated over the sheet before, covered page text below 1024 px, and offered seven
-tools, so a tool armed from a menu had no pressed button anywhere. It replaced five parallel flags
-(`annotationTool`/`textTool`/`redactionActive`/`measureMode`/`leftTool`), which could
-disagree: the rail's pressed button, the menu's check mark, the palette's check mark and the
-layer that actually owns the pointer now read the same value. Each command's `checked` field
+last. Because the rail shows every tool, a tool armed from a menu always has a pressed button.
+The tool is one value rather than several parallel flags that could disagree: the rail's
+pressed button, the menu's check mark, the palette's check mark and the layer that actually
+owns the pointer all read the same value. Each command's `checked` field
 carries it to the menu (rendered as a `menuitemcheckbox` with `aria-checked`) and to the
 palette, and arming the armed tool again puts it away — so one command is both start and stop
 and `checked` is never a lie. Sub-choices that are not a second tool stay separate: the
@@ -2286,8 +2290,7 @@ Selection offers delete, quarter-turn rotation, drag movement, 5 pt directional 
 clear. Redaction shows the staged area count and Apply; the measure tool's own settings
 render in the same row. A protected document shows the read-only notice and "create
 unlocked copy" there instead. The row is 36 px whatever it holds and scrolls sideways rather
-than wrapping: its height used to follow the armed tool and moved the document by up to
-24 px on every tool change. Notices and progress float over the document
+than wrapping, so a tool change never moves the document. Notices and progress float over the document
 (`apps/web/src/components/ActivityOverlay.tsx`) for the same reason: as rows in the flow
 they pushed the page down on every operation. A notice closes itself after 9 s unless the
 pointer rests on it.
@@ -2320,6 +2323,9 @@ path in and out of the document, and the wiring between `pdf-model`, `pdf-core` 
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
 | `notices.ts` | Turns notice descriptors, verification results and failures into sentences (i18n keys and params only, no English literals) |
+| `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App`, then warms the engine, printer and palette chunks on idle (§2) |
+| `lazy-ops.ts` | Same-signature wrappers that load the writers and readers the shell runs only on an action (§2) |
+| `export-presets.ts`, `signature-store.ts` | What the export dialog's "Compressed PDF" level fills into the Optimize form, and the remembered simple signature (§8.7) |
 | `drafts.ts` | The OPFS half of draft storage |
 | `vault-channel.ts` | Cross-window vault coordination |
 | `offline.ts` | Capability manifests and readiness |
@@ -2387,8 +2393,8 @@ Save over its file rather than only Export. A handle read back this way holds no
 (`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
 up the gesture; a refusal is `permission-denied`, and nothing is written. Handles whose entry
 has left the list are pruned after the startup restore, which is the one reader that needs
-them. A reopened file keeps its star: `addRecentDocument` used to drop it when the entry it
-replaced was starred.
+them. A reopened file keeps its star: `addRecentDocument` carries it over from the entry it
+replaces.
 
 Playwright's bundled Chromium (153) kills an off-the-record page that deserialises a file
 handle from IndexedDB; Chrome 154 and Edge 154 in the same off-the-record context do not
@@ -2396,8 +2402,7 @@ handle from IndexedDB; Chrome 154 and Edge 154 in the same off-the-record contex
 files through the input, never the picker), so it never reaches that read.
 
 Page actions from the status bar and the context menu act on the page panel's selection, or
-on the page on screen when nothing is selected; before, they required a selection and
-reported the refusal with an unfilled `{count}`.
+on the page on screen when nothing is selected.
 
 ### 8.2 The write pipeline
 
@@ -2425,7 +2430,7 @@ sequenceDiagram
     A->>U: notice naming the facts that were and were not established
 ```
 
-Ordering rules encoded here, each of which was a defect once:
+Ordering rules encoded here, each of which prevents a specific defect:
 
 - **Ownership is taken before anything can await.** The save lock is set before
   `showSaveFilePicker`, because that promise can stay open for minutes and a second Save
@@ -2569,13 +2574,12 @@ model that owns it — the session's annotations, its measurements, its staged r
 intents and the annotations the file already carries — and they become one list of
 `MarkTarget`s: key, family, id, page, painted boxes, flattened polylines, stroke width and a
 translated label. Selection, marquee, movement, rotation, `Ctrl+A`, `Delete`/Backspace and
-both panels' rows therefore name the same objects, which is what replaced three partial
-answers to "delete a mark".
+both panels' rows therefore name the same objects, so "delete a mark" has one answer.
 
 **No edit before the inventory.** The list is only built once the file's own annotations
 have been read for the bytes on screen, and selection, movement and deletion stay off until
 then: an unread inventory is not an empty one, and editing against a stale one could remove
-or move the wrong object after a rewrite. The wait was measured on 2026-09-28 (tool strip
+or move the wrong object after a rewrite. The wait is measured (tool strip
 locked, from the click on a page rotation until editable): 0.29–0.37 s on a 4-page text
 document, 0.47–0.59 s on a larger one, 0.70–0.73 s on the 139-page scan — most of it the
 operation itself, during which editing is off anyway. That is short enough that the guard
@@ -2597,9 +2601,8 @@ annotated with (`ops/annotation-data.ts`), which is not unique across documents,
 already in use becomes a fresh UUID. The import result also states its geometry space:
 this app's own JSON and FDF records are in app space, while Acrobat's comment FDF is PDF user
 space and is mirrored into app space with each page's top edge (`toAppSpace`) — read as
-app space, every Acrobat comment landed mirrored about the page's middle. The records carry
-`rect` and `fontSize` as well, because a note's place is its `rect` alone and a note used to
-come back from its own export with no place on the page. The comments panel shows a saved
+app space, every Acrobat comment would land mirrored about the page's middle. The records carry
+`rect` and `fontSize` as well, because a note's place is its `rect` alone. The comments panel shows a saved
 mark's words through `commentText()`, never the `pdf-editor-ann:<id>` marker itself. Duplicate ids would break React keys and make one deletion
 remove several marks. New drawing gestures already use session UUIDs. Recovered engine
 records are converted through their original storage keys and reminted; engine-local keys
@@ -2639,9 +2642,9 @@ none (Node); an attribute is read with `hasAttribute` first, because that packag
 
 **FDF strings.** Octal escapes of one to three digits are read (`\1`, `\12`), and the FDF reader
 uses the shared PDF tokenizer. A value with any character outside ASCII is written whole as UTF-16BE
-behind the `\376\377` BOM (`form-data.ts`). The writer used to escape only the non-ASCII
-characters as two-byte units inside a single-byte string, so `gö` came back as `g\0ö`.
-That broke Turkish form values and comments in every reader.
+behind the `\376\377` BOM (`form-data.ts`): escaping only the non-ASCII characters as two-byte
+units inside a single-byte string would read back `gö` as `g\0ö`, which breaks Turkish form
+values and comments in every reader.
 
 `planMarkRemoval(targets, keys)` turns a selection into the two paths it needs, and
 `removeTargets()` is **the one removal intent** for Delete, the strip and both panels:
@@ -2675,7 +2678,7 @@ Placing and resizing a picture go through `writeFileAnnotation()`, which shares 
 boundary: engine values checkpointed, the version re-checked after every `await`, pending
 marks kept out of the base and handed back as the remaining overlays, and one journal step
 that undo takes back whole. A placed stamp is selected as soon as the re-read inventory lists
-it, so its handles are there at once. The simple-signature dialog (`pdf-ui/dialogs/SignatureDialog.tsx`)
+it, so its handles are there at once. The simple-signature dialog (`packages/pdf-ui/src/dialogs/SignatureDialog.tsx`)
 draws on a canvas with speed-weighted quadratic strokes, renders a typed name in one of two
 pinned handwriting faces (Dancing Script and Great Vibes, latin and latin-ext), or turns a
 photo's paper transparent by luminance (`ops/stamp-source.ts`); everything is trimmed to its
@@ -2712,8 +2715,7 @@ PDF editor, so each one is stated once:
 | **MuPDF page space** | top-left, Y down, rotation included | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table |
 | **Client pixels** | viewport | overlays; `pointToPage()` and each layer's projection handle zoom, rotation and offset |
 
-Two facts are worth holding on to, both measured during the spikes and recorded in the
-code:
+Three facts are worth holding on to, all measured and recorded in the code:
 
 - MuPDF **annotation** geometry lives in **rotated** page space, while content streams live
   in unrotated user space. Mixing them fails silently: the rectangle is accepted and
@@ -2810,7 +2812,7 @@ shows.
 - **Accessibility.** The PDF/UA check is automated and modelled on the Matterhorn Protocol;
   it cannot prove conformance. Reading order, alt-text quality and changes of language are
   left to a person, colour contrast is not measured, and `pdfuaid:part` is written only when
-  every automated rule passes. `tagDocument` still refuses a file that already has a
+  every automated rule passes. `tagDocument` refuses a file that already has a
   structure tree (the Tags view edits one), orders an untagged page's content as it is
   drawn and guesses headings from font size. The tags editor cannot artifact an element
   that holds a link, field or annotation or whose content is inside a form XObject, does
@@ -2883,8 +2885,8 @@ Versioning is the interesting half:
   non-empty list — and `tools/assemble-dist.mjs` writes the real one into
   `offline-manifest.json` from the build. The page loads its entry before the worker controls
   it and imports each tool's chunk only when the tool opens, so nothing else caches them: a
-  first-visit user used to be told "ready" and then met a 503 on `pdf-<hash>.js` when opening
-  a PDF offline. Prepare fetches `app` and readiness requires it (`requiredCapabilities`);
+  first-visit user would be told "ready" and then meet a 503 on `pdf-<hash>.js` when opening
+  a PDF offline without `app`. Prepare fetches `app` and readiness requires it (`requiredCapabilities`);
   install still holds only the shell above, so a first visit stays light.
 - A cache written under a different identity is not evidence for this build:
   `matchesBuild` is false and nothing may be called ready.
@@ -2939,15 +2941,14 @@ engine assets, every file of the editor build as `app`, and the catalogues as `s
 `sw.js`, copies `LICENSE`, and copies every bundled licence text out of the installed
 packages into `dist/licenses/`. Each of those steps is a **hard failure** when its input is missing:
 a missing `LICENSE`, a missing licence text, a missing `__CACHE_VERSION__` placeholder, or a
-missing `dist/index.html` / `dist/editor/index.html` / `dist/engines` aborts the run. The
+missing `dist/index.html` / `dist/en/index.html` / `dist/editor/index.html` / `dist/engines` aborts the run. The
 final check is a list of paths that must exist, so a half-built distribution cannot be
 deployed by accident.
 
 Third-party obligations are carried by that licence directory rather than by a hand-written
 inventory: `dist/licenses/INDEX.json` names the package every text came from, and the
 assemble step checks the list against the packages the editor's source maps name, so a
-new transitive dependency cannot ship without its text (`@noble/hashes`, under `pkijs`,
-did until 2026-10-04).
+new transitive dependency (`@noble/hashes` under `pkijs`, for one) cannot ship without its text.
 `public/engines/pdfjs/**` carries its own `LICENSE_*` files for
 the pinned CMaps, standard fonts and wasm. `pnpm check:licenses` prints copyleft
 dependencies separately so the set that needs those texts stays visible.
@@ -2966,8 +2967,8 @@ exists in the build. The one dev-only relaxation appends `'unsafe-inline'` to `s
 because `@vitejs/plugin-react`'s refresh preamble needs it — and says so in the log. Preview
 and production stay strict. The same plugin serves `public/` at the root in dev, and also
 under `/editor/`: the dev server rewrites `index.html`'s root-absolute URLs to the base, and
-`/editor/theme-boot.js` used to get the SPA's HTML back, so the theme bootstrap never ran in
-dev (the build leaves those URLs alone).
+`/editor/theme-boot.js` is served as the script it is rather than answered with the SPA's HTML,
+so the theme bootstrap runs in dev (the build leaves those URLs alone).
 
 `tools/preview-dist.mjs` serves the assembled `dist/` under the same parsed policy, which
 is what both the browser harnesses and the Playwright suite run against.
@@ -2995,8 +2996,8 @@ merges are merge commits.
   `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`,
   `pnpm assemble:dist` and `wrangler deploy --dry-run`. `e2e` needs `verify`: four shards,
   each builds `dist/` itself, installs Playwright Chromium (cached) and runs
-  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading the HTML report
-  and, on failure, the traces (7 days). `e2e-service-worker` needs `e2e` and runs
+  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading, on failure,
+  the HTML report and the traces (7 days). `e2e-service-worker` needs `e2e` and runs
   `playwright test --project=service-worker --no-deps`. `behavior` needs `verify` and runs
   `pnpm ci:behavior` (the OpenSSL signing round trip). `fidelity` needs `verify` and runs
   `pnpm fidelity`: every sample is exported to DOCX through the UI, converted back with
@@ -3014,12 +3015,14 @@ merges are merge commits.
   the previous version and the job fails. One deploy runs at a time (a concurrency
   group; a running deploy is never cancelled), and a commit that is no longer `main`'s head when
   its deploy starts deploys nothing. `pnpm run worker:deploy` is the same publish by hand.
-- `.github/workflows/nightly.yml` (daily and on demand) runs `pnpm coverage --min-lines=98`,
-  which fails under 98 % total lines and uploads the report, and the Playwright suite in four
-  shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
+- `.github/workflows/nightly.yml` (daily and on demand) has two jobs: `coverage` runs
+  `pnpm coverage --min-lines=98`, which fails under 98 % total lines and uploads the report
+  (14 days), and `flaky` runs the `chromium` project in four shards with `--repeat-each=2
+  --retries=0 --fail-on-flaky-tests`.
 - `.github/workflows/revert-proof.yml` (on demand, and on a pull request labelled
-  `revert-proof`) takes every fix in `tools/review/revert-proof.json` and checks that the fix's own
-  test fails on the fix commit's parent and passes on the fix commit.
+  `revert-proof`; six shards) takes every fix a pull request lists in the manifest
+  `tools/review/revert-proof.json` (empty by default) and checks that the fix's own test fails
+  on the fix commit's parent and passes on the fix commit.
 
 The `dist/_headers` file is part of the upload, so the CSP and the COOP/COEP pair are
 host-enforced rather than dashboard settings. A green pipeline is not evidence that the deployed
@@ -3039,21 +3042,20 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Parity features | One `*.test.ts` beside each module, against bytes re-read by MuPDF or pdf.js: comment replies and review states (`annotation-review`, `annotation-threads`), XFDF/FDF/JSON round trips with Turkish text, font subsets (`mupdf-write`), the locale registry and the Phosphor weight plugin; find and replace, the glyph-less font, Office and text conversion (a damaged part becomes a loss note), Office export and page layout; CRLs, RFC 3161 timestamps and the signature evidence (`signature-revocation.fixtures.ts` builds the PKI); form-field detection and XFA (`xfa-data`, `xfa-form`, `xfa-flatten`); the scan geometry, detector (every turn, antialiased and hard-edged), warp and filters; sanitize per category; one real Ghostscript PDF/A-2b run checked by `checkPdfA`, the PDF/UA rules and the structure editor (`ua.fixtures.ts`); and `useShortcuts.test.ts`, which refuses a chord two rows share |
 | Source-level behaviour | `tools/audit/regressions.cjs` — browser-free checks (it prints its own count) that transpile the **real** sources and run them against doubles (OPFS, service worker, pdf.js handle), plus selected React callbacks extracted from `App.tsx` by AST. Subjects: Save/Save As semantics, draft validation and encoding, journal snapshot stability, branch release, service-worker offline behaviour and cache isolation, OPFS persistence and recovery, pdf.js loading paths, OCR worker cleanup, the redaction save guard, failed writes and dirtiness, and a final unhandled-rejection sweep |
 | Gate integrity | `tools/audit/require-tests.mjs` fails the build when the unit run discovered zero test files, so an empty run cannot pass as a green gate |
-| Built application | Playwright against assembled `dist/` under production headers (`playwright.config.ts`, served by `tools/preview-dist.mjs`), Chromium only, no launch flags. Every spec goes through `e2e/test.ts`, whose automatic fixture fails a test on any console error or uncaught exception in any page of its browser context unless the test names it (`allowedErrors`; `referee.spec.ts` checks the referee itself on a second page) and which, when `E2E_COVERAGE` is set, records every page's V8 coverage (the Coverage row). Two projects: `chromium` runs everything except tests tagged `@service-worker` (the worker's install, update and offline reload: `offline.spec.ts`, `app-flows.spec.ts`, `app15-update.spec.ts`, `flows-modes.spec.ts`), and `service-worker` runs those once the first has passed (`dependencies`), because their timing depends on an idle machine; a targeted run of one of them takes `--no-deps`. `E2E_WORKERS` caps the browsers on a machine someone is using; CI runs with one retry. What is asserted is what the user sees and the file the export writes, re-read with MuPDF or pdf.js (`readProducedEntry` in `tool-fixture.ts`; fixtures are generated in the test, the OCR scan included: known printed lines rasterised by MuPDF into an image-only PDF, recognised words asserted in reading order). The suite comes in families. **Shell and document:** `smoke`, `document`, `web-shell`, `ui-shell` (menu bar, palette, settings), `editor-stability` (a mark scrolls with its page, arming a tool or posting a notice leaves the viewer where it is), `ocr`, `offline`, `two-window` (two windows on one vault) and `ui-recovery-race` (a document opened while draft recovery waits keeps the front; `recent-handles-gate.ts` holds the handle store). **`flows-*`:** document, pages, modes (undo queueing, reading and presentation mode, the update banner against a second origin, signing and the save warning), commands (one test per menu command) and parity (comment threads, field detection, sanitize, PDF/A, PDF/UA, right-to-left). **`app-*`:** files (pickers and write-back), flows (other formats opened as PDFs, history, tab lifecycle), home and shortcuts (every chord, and the widgets that keep their keys). **`app15-*`:** work that arrives while the shell is busy, commands on a selection, navigation, refusals, the start page when part of it cannot be fetched, the update banner's dismissal and a damaged vault. **`ui-*`:** one family per surface, each checked in the produced file: marks (`ui-marks-*`, `ui-layers-*`, `tool-interaction`), panels (`ui-panels*`, `ui-tags`, `ui-accessibility`, `ui-comments`, `ui-compare`, `ui-outline`, `ui-pages`, `ui-properties`, `ui-attachments`, `ui-search`), the viewer, print, presentation, read-aloud and snapshot (`ui-viewer15*`, `ui-rest16*`, `ui-print`, `ui-presentation`, `ui-read-aloud`, `ui-snapshots`), scan, signatures and stamps (`ui-scan*`, `ui-signature*`, `ui-stamp-image`), XFA and batch (`ui-xfa*`, `ui-batch`), dialogs and badges (`ui-small`, `ui-password`). **`faults16*`:** engine failures injected in the running app through `e2e/engine-faults.ts` (Engine and hostile-input guards row). `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes |
+| Built application | Playwright against assembled `dist/` under production headers (`playwright.config.ts`, served by `tools/preview-dist.mjs`), Chromium only, no launch flags. Every spec goes through `e2e/test.ts`, whose automatic fixture fails a test on any console error or uncaught exception in any page of its browser context unless the test names it (`allowedErrors`; `referee.spec.ts` checks the referee itself on a second page) and which, when `E2E_COVERAGE` is set, records every page's V8 coverage (the Coverage row). Two projects: `chromium` runs everything except tests tagged `@service-worker` (the worker's install, update and offline reload: `offline.spec.ts`, `app-flows.spec.ts`, `app15-update.spec.ts`, `flows-modes.spec.ts`), and `service-worker` runs those once the first has passed (`dependencies`), because their timing depends on an idle machine; a targeted run of one of them takes `--no-deps`. `E2E_WORKERS` caps the browsers on a machine someone is using; CI runs with one retry. What is asserted is what the user sees and the file the export writes, re-read with MuPDF or pdf.js (`readProducedEntry` in `tool-fixture.ts`; fixtures are generated in the test, the OCR scan included: known printed lines rasterised by MuPDF into an image-only PDF, recognised words asserted in reading order). The suite comes in families. **Shell and document:** `smoke`, `document`, `web-shell`, `ui-shell` (menu bar, palette, settings), `editor-stability` (a mark scrolls with its page, arming a tool or posting a notice leaves the viewer where it is), `ocr`, `offline`, `two-window` (two windows on one vault) and `ui-recovery-race` (a document opened while draft recovery waits keeps the front; `recent-handles-gate.ts` holds the handle store). **`flows-*`:** document, pages, modes (undo queueing, reading and presentation mode, the update banner against a second origin, signing and the save warning), commands (one test per menu command) and parity (comment threads, field detection, sanitize, PDF/A, PDF/UA, right-to-left). **`app-*`:** files (pickers and write-back), flows (other formats opened as PDFs, history, tab lifecycle), home and shortcuts (every chord, and the widgets that keep their keys). **`app15-*`:** work that arrives while the shell is busy, commands on a selection, navigation, refusals, the start page when part of it cannot be fetched, the update banner's dismissal and a damaged vault. **`ui-*`:** one family per surface, each checked in the produced file: marks (`ui-marks-*`, `ui-layers-*`, `tool-interaction`), panels (`ui-panels*`, `ui-tags`, `ui-accessibility`, `ui-comments`, `ui-compare`, `ui-outline`, `ui-pages`, `ui-properties`, `ui-attachments`, `ui-search`), the viewer, print, presentation, read-aloud and snapshot (`ui-viewer15*`, `ui-rest16*`, `ui-print`, `ui-presentation`, `ui-read-aloud`, `ui-snapshots`), scan, signatures and stamps (`ui-scan*`, `ui-signature*`, `ui-stamp-image`), XFA and batch (`ui-xfa*`, `ui-batch`), Office export (`ui-office-*`), dialogs and badges (`ui-small`, `ui-password`). **`faults16*`:** engine failures injected in the running app through `e2e/engine-faults.ts` (Engine and hostile-input guards row). `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes |
 | Landing and legal pages | `e2e/site.spec.ts`, Playwright against the same assembled `dist/`, covers the six pages of `apps/site` in Turkish and English: each is well-formed (one `h1` and one `main`, language, description, canonical, three `hreflang` links and a sitemap entry, resolving links and anchors), the language switch leads to the translation and back, the English pages contain no Turkish letters, the header call to action opens `/editor/` from both languages, section anchors scroll and the FAQ expands, an unknown path gets the styled 404 page with working exits (the English one under `/en/`, whose exits stay in English), the stored theme is applied by a synchronous `theme-boot.js` before first paint and survives a reload, fonts and images load with no CSP violation, and the skip link is the first tab stop with no sideways scroll at phone width |
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
-| Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`) and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. `--skip-e2e` reports the unit suite alone; `--min-lines=<percent>` fails the run under that total (the nightly workflow passes 98). `E2E_WORKERS` caps the browsers and `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
+| Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the whole Playwright suite against an unminified build (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` (`e2e/test.ts`) and every worker writes its merged record; the records are mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. `--skip-e2e` reports the unit suite alone; `--min-lines=<percent>` fails the run under that total (the nightly workflow passes 98). `E2E_WORKERS` caps the browsers and Vitest's own `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
 | Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
 | Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `fidelity` (`pnpm fidelity`: DOCX export round trip through LibreOffice, SSIM and word accuracy against `e2e/fidelity/thresholds.json`); then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
 | Nightly | `.github/workflows/nightly.yml`: `pnpm coverage --min-lines=98` (fails under 98 % total lines, uploads the report) and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
-| Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
+| Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix a pull request lists in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
 | Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
-`tools/spikes/` keeps only what still runs: the three `ci:behavior` checks
-(`phase3-check.mjs`, `phase4-check.mjs`, `sign-check.mts`), the fixture builders they use
-(`mupdf-fixture.mjs`, `make-phase4-fixture.mjs`, `node-mupdf-hook.mjs`) and the README clip
-recorder (`readme-media.mjs`, `readme-demo-pdf.mjs`). Nothing there ships. The early
-prototype apps and one-off probes were removed before the public release; a source comment
-that says a behaviour was measured in an **early engine spike** refers to one of them, and
-the comment itself states what was measured.
+`tools/behavior/` holds the three `ci:behavior` checks
+(`editor-flow-check.mjs`: the annotate–fill–save acceptance flow in a real browser;
+`text-edit-check.mjs`: the text-edit round trip, read back from the produced bytes;
+`sign-check.mts`), the fixture builders they use (`mupdf-fixture.mjs`,
+`make-text-edit-fixture.mjs`, `node-mupdf-hook.mjs`) and the README clip recorder
+(`readme-media.mjs`, `readme-demo-pdf.mjs`). Nothing there ships.

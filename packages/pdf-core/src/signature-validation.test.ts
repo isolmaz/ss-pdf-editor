@@ -2,7 +2,7 @@
  * `signature-validation.ts`: the order the offline evidence is put together in.
  *
  * Real CMS, timestamp tokens and CRLs (`signature-revocation.fixtures.ts`). These tests
- * protect architecture.md §5.3.2: the validation time is `timestamp` > `timestamp-untrusted` >
+ * protect docs/architecture.md §5.3.2: the validation time is `timestamp` > `timestamp-untrusted` >
  * claimed `signing-time` > `clock`, a revocation after the signature is excused only by a
  * trusted timestamp (a back-dated claimed time never earns it), and a document timestamp is
  * judged at its own time.
