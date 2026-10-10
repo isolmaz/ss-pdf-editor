@@ -13,7 +13,8 @@
  */
 
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import { bumpHandleVersion, useCore } from './core-store';
+import type { Translator } from 'pdf-shared';
+import { bumpHandleVersion, showNotice, useCore } from './core-store';
 
 const handles = new Map<string, PdfDocumentHandle>();
 const retired = new Set<PdfDocumentHandle>();
@@ -60,6 +61,19 @@ export function replaceHandle(tabId: string, handle: PdfDocumentHandle, onDestro
     retired.add(previous);
     if (released.has(previous)) handleReleased(previous, onDestroyFailed);
   }
+}
+
+/**
+ * An operation produced `handle` for `tabId`: swap it in. A previous handle that would not
+ * shut down says so on the status line, in the language of `t`.
+ */
+export function swapHandle(t: Translator, tabId: string, handle: PdfDocumentHandle): void {
+  replaceHandle(tabId, handle, () => showNotice(t('notice.engineReleaseFailed')));
+}
+
+/** The viewer let `handle` go; a handle that would not shut down says so, in the language of `t`. */
+export function releaseHandle(t: Translator, handle: PdfDocumentHandle): void {
+  handleReleased(handle, () => showNotice(t('notice.engineReleaseFailed')));
 }
 
 /** The handle of `tabId` (`null` for no tab or no handle yet), re-read whenever one is swapped. */

@@ -71,10 +71,14 @@ export interface ShellShortcuts {
   readonly zoomOut: () => void;
   readonly zoomReset: () => void;
   readonly fitWidth: () => void;
-  readonly nextPage: () => void;
-  readonly previousPage: () => void;
-  readonly firstPage: () => void;
-  readonly lastPage: () => void;
+  /**
+   * Page navigation declines (`false`) while a presentation is on: the presentation turns the
+   * page keys itself, and a key both answered would turn two pages.
+   */
+  readonly nextPage: ShellAction;
+  readonly previousPage: ShellAction;
+  readonly firstPage: ShellAction;
+  readonly lastPage: ShellAction;
   /** Editing, palette and docks. */
   readonly undo: ShellAction;
   readonly redo: ShellAction;

@@ -8,7 +8,7 @@ import { SessionStore, type SessionTab } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
-import { adoptHandle, dropHandle } from '../core/handles';
+import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import { createAttachmentActions, measuredAttachments } from './attachments';
 
 const mocks = vi.hoisted(() => ({
@@ -50,21 +50,12 @@ function file(name: string, content: string, type: string): File {
 
 let session: SessionStore;
 let tab: SessionTab;
-const contextFor = vi.fn((forTab: SessionTab, forHandle: PdfDocumentHandle) => ({
-  store: session,
-  t,
-  tab: forTab,
-  handle: forHandle,
-}));
-const setHandle = vi.fn();
 const applyWriterOutcome = vi.fn(() => Promise.resolve());
 
 function actions() {
   return createAttachmentActions({
     session,
     t,
-    contextFor: contextFor as never,
-    setHandle,
     applyWriterOutcome,
   });
 }
@@ -141,7 +132,7 @@ describe('adding files from the properties panel', () => {
       'mupdf',
       ['step'],
     );
-    expect(setHandle).toHaveBeenCalledWith(tab.id, produced);
+    expect(handleFor(tab.id)).toBe(produced);
     expect(notice()).toBe('props.attach.added {"count":2}');
     expect(coreStore.get().busy).toBe(false);
   });
@@ -187,7 +178,7 @@ describe('adding files from the properties panel', () => {
     await actions().addToDocument([file('a.txt', 'x', 'text/plain')]);
 
     expect(notice()).toBe(`${failure.messageKey} ${failure.hintKey}`);
-    expect(setHandle).not.toHaveBeenCalled();
+    expect(handleFor(tab.id)).not.toBe(produced);
     expect(coreStore.get().busy).toBe(false);
   });
 
@@ -224,7 +215,7 @@ describe('removing a file from the properties panel', () => {
       'mupdf',
       ['step'],
     );
-    expect(setHandle).toHaveBeenCalledWith(tab.id, produced);
+    expect(handleFor(tab.id)).toBe(produced);
     expect(notice()).toBe('props.attach.removed {"count":1}');
     expect(coreStore.get().busy).toBe(false);
   });

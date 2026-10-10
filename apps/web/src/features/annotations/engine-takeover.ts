@@ -38,9 +38,8 @@ export function takeEngineAnnotations(
   const boxes: { x: number; y: number; width: number; height: number }[] = [];
   for (let index = 0; index < api.document.pageCount; index += 1) {
     // PDF **user space**, not CSS pixels: the engine's own records and this model both express
-    // geometry in points from the page's top-left. Mixing the two mapped every captured mark
-    // onto the wrong part of the page — a 1527 px page box against 841.89 pt of geometry
-    // (2026-09-16).
+    // geometry in points from the page's top-left. Mixing the two would map every captured mark
+    // onto the wrong part of the page — a 1527 px page box against 841.89 pt of geometry.
     const geometry = api.pageGeometry(index);
     if (geometry === null) continue;
     boxes[index] = { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height };

@@ -6,15 +6,19 @@
  */
 
 import { act, cleanup, render, screen } from '@testing-library/react';
+import { createTranslator } from 'pdf-shared';
 import type { StampSource } from 'pdf-ui/dialog';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readStoredMode } from '../../interface-mode';
 import {
   armStampTool,
+  beginOperation,
   bumpHandleVersion,
+  cancelOperation,
   clearNotice,
   compactViewportChanged,
   coreStore,
+  endOperation,
   hideLeftDock,
   hideRightDock,
   initialCoreState,
@@ -22,7 +26,9 @@ import {
   isCompactViewport,
   openLeftPanel,
   openRightPanel,
+  operationRunning,
   pickTool,
+  refuseBusy,
   selectLeftTab,
   selectRightTab,
   selectShape,
@@ -131,6 +137,43 @@ describe('the busy gate', () => {
     bumpHandleVersion();
     bumpHandleVersion();
     expect(coreStore.get().handleVersion).toBe(2);
+  });
+});
+
+describe('refusing a gesture the busy gate closed', () => {
+  it('says the document is busy, in the language it is given', () => {
+    refuseBusy(createTranslator('en'));
+    expect(coreStore.get().notice).toBe(createTranslator('en')('op.busy'));
+  });
+});
+
+describe('the running operation', () => {
+  it('registers the controller of the operation that began, and runs nothing otherwise', () => {
+    expect(operationRunning()).toBe(false);
+    const controller = beginOperation();
+    expect(operationRunning()).toBe(true);
+    expect(coreStore.get().operation).toBe(controller);
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it('aborts the running operation on Cancel, and does nothing when none runs', () => {
+    expect(() => cancelOperation()).not.toThrow();
+    const controller = beginOperation();
+    cancelOperation();
+    expect(controller.signal.aborted).toBe(true);
+    expect(operationRunning()).toBe(true);
+  });
+
+  it('releases only the operation that owns the document', () => {
+    const first = beginOperation();
+    expect(endOperation(first)).toBe(true);
+    expect(operationRunning()).toBe(false);
+    expect(endOperation(first)).toBe(false);
+    const older = beginOperation();
+    const newer = beginOperation();
+    expect(endOperation(older)).toBe(false);
+    expect(coreStore.get().operation).toBe(newer);
+    expect(endOperation(newer)).toBe(true);
   });
 });
 

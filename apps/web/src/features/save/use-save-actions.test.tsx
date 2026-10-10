@@ -42,8 +42,6 @@ beforeEach(() => {
   deps = {
     session,
     t,
-    cancelRef: { current: null },
-    refuseBusy: vi.fn(),
     prepareOutput,
     discardTab,
     takeEngineAnnotations,

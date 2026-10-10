@@ -10,7 +10,6 @@ import { type SessionStore, type SessionTab, sha256Hex, workingPageCount } from 
 import type { Translator } from 'pdf-shared';
 import { inspectProtection, verifySignatures } from '../../lazy-ops';
 import {
-  type DocumentContext,
   hasEngineEdits,
   materializeBase,
   pendingOverlays,
@@ -25,6 +24,7 @@ import {
   type SaveStepDescription,
 } from '../../save-plan';
 import { showNotice } from '../core/core-store';
+import { documentContext } from '../core/document';
 import { handleFor } from '../core/handles';
 import { currentFacts, currentFactsError } from '../facts/facts-store';
 import { confirmSignature } from '../facts/signature-prompt';
@@ -36,8 +36,6 @@ import { editableOverlays } from '../marks/overlays';
 export interface PrepareHost {
   readonly session: SessionStore;
   readonly t: Translator;
-  /** The context an operation on `tab` runs in. */
-  readonly contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext;
 }
 
 /** The checked bytes of a version, with everything a save records about them. */
@@ -63,7 +61,7 @@ export async function prepareOutput(
   controller: AbortController,
   executedSteps: SaveStepDescription[] = [],
 ): Promise<PreparedOutput | null> {
-  const { session, t, contextFor } = host;
+  const { session, t } = host;
   const tab = session.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   if (tab === null || handle === null) return null;
@@ -90,7 +88,7 @@ export async function prepareOutput(
   }
 
   const base = await materializeBase(
-    contextFor(tab, handle),
+    documentContext(session, t, tab, handle),
     { signal: controller.signal },
     executedSteps,
     editableOverlays(tab),

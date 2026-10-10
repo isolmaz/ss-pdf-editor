@@ -10,8 +10,15 @@ import { SessionStore, type SessionTab } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import type { OperationDialogSpec, OpRunResult } from 'pdf-ui/ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearNotice, coreStore, initialCoreState, setBusy } from '../core/core-store';
-import { adoptHandle, dropHandle } from '../core/handles';
+import {
+  cancelOperation,
+  clearNotice,
+  coreStore,
+  initialCoreState,
+  operationRunning,
+  setBusy,
+} from '../core/core-store';
+import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import {
   erasedWordsOf,
   initialRedactionState,
@@ -67,16 +74,7 @@ const internal = new ToolError('internal', { engine: 'model' });
 
 let session: SessionStore;
 let tab: SessionTab;
-let cancelRef: { current: AbortController | null };
-const contextFor = vi.fn((forTab: SessionTab, forHandle: PdfDocumentHandle) => ({
-  store: session,
-  t,
-  tab: forTab,
-  handle: forHandle,
-}));
-const setHandle = vi.fn();
 const setImages = vi.fn();
-const refuseBusy = vi.fn();
 const openProducedTab =
   vi.fn<(name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>>();
 
@@ -88,9 +86,6 @@ function openers() {
   return createDialogOpeners({
     session,
     t,
-    contextFor: contextFor as never,
-    cancelRef,
-    refuseBusy,
     setImages,
   });
 }
@@ -99,11 +94,7 @@ function runs(over: { dialogContext?: never; lockedTabs?: ReadonlyMap<string, st
   return createDialogRuns({
     session,
     t,
-    contextFor: contextFor as never,
-    setHandle,
-    cancelRef,
     openProducedTab,
-    refuseBusy,
     dialogContext: over.dialogContext ?? null,
     lockedTabs: over.lockedTabs ?? new Map(),
   });
@@ -139,7 +130,6 @@ beforeEach(() => {
   coreStore.set(initialCoreState());
   resultsStore.set(initialResultsState());
   dialogsStore.set(initialDialogsState());
-  cancelRef = { current: null };
   redactionStore.set(initialRedactionState());
   session = new SessionStore();
   session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1, 2, 3]), sha256: 'hash', pageCount: 4 });
@@ -204,7 +194,7 @@ describe('openDialog', () => {
   it('refuses a standalone operation while another operation holds the gate', () => {
     setBusy(true);
     openers().openStart('merge');
-    expect(refuseBusy).toHaveBeenCalledTimes(1);
+    expect(notice()).toBe(t('op.busy'));
     expect(mocks.dialogById).not.toHaveBeenCalled();
   });
 
@@ -215,16 +205,18 @@ describe('openDialog', () => {
     openers().openDialog('compress');
     expect(mocks.materializeBase).not.toHaveBeenCalled();
     expect(busy()).toBe(false);
-    expect(refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).toBeNull();
   });
 
   it('refuses while another operation holds the gate, whether it is the flag or a run in flight', () => {
     setBusy(true);
     openers().openDialog('compress');
+    expect(notice()).toBe(t('op.busy'));
+    clearNotice();
     setBusy(false);
-    cancelRef.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     openers().openDialog('compress');
-    expect(refuseBusy).toHaveBeenCalledTimes(2);
+    expect(notice()).toBe(t('op.busy'));
     expect(mocks.materializeBase).not.toHaveBeenCalled();
   });
 
@@ -233,14 +225,15 @@ describe('openDialog', () => {
     openers().openDialog('compress');
 
     expect(busy()).toBe(true);
-    expect(cancelRef.current).not.toBeNull();
+    expect(operationRunning()).toBe(true);
     expect(notice()).toBeNull();
     await settled();
-
-    expect(contextFor).toHaveBeenCalledWith(tab, handle);
-    expect(mocks.materializeBase).toHaveBeenCalledWith(contextFor.mock.results[0]?.value, {
-      signal: expect.any(AbortSignal),
-    });
+    expect(mocks.materializeBase).toHaveBeenCalledWith(
+      { store: session, t, tab, handle },
+      {
+        signal: expect.any(AbortSignal),
+      },
+    );
     expect(dialogsStore.get().dialogSpec).toBe(specs.get('compress'));
     expect(dialogsStore.get().dialogInput).toEqual({
       tabId: tab.id,
@@ -253,7 +246,7 @@ describe('openDialog', () => {
     expect(setImages).toHaveBeenCalledWith(null);
     expect(mocks.listPdfImages).not.toHaveBeenCalled();
     expect(coreStore.get()).toMatchObject({ rightDock: true, rightTab: 'tools' });
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('carries the opener’s presets into the frozen input', async () => {
@@ -282,7 +275,7 @@ describe('openDialog', () => {
     await settled();
     expect(mocks.dialogById).not.toHaveBeenCalled();
     expect(dialogsStore.get().dialogSpec).toBeNull();
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('opens nothing when the tab was closed while the bytes were being frozen', async () => {
@@ -371,7 +364,7 @@ describe('openDialog', () => {
 
   it('stays silent about a failure that came after the user cancelled', async () => {
     mocks.materializeBase.mockImplementation(async () => {
-      cancelRef.current?.abort();
+      cancelOperation();
       throw new Error('aborted');
     });
     openers().openDialog('compress');
@@ -385,10 +378,10 @@ describe('openDialog', () => {
     mocks.materializeBase.mockReturnValue(frozen.promise);
     openers().openDialog('compress');
     const other = new AbortController();
-    cancelRef.current = other;
+    coreStore.set({ operation: other });
     frozen.resolve(bytes);
     await vi.waitFor(() => expect(dialogsStore.get().dialogSpec).not.toBeNull());
-    expect(cancelRef.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(busy()).toBe(true);
   });
 });
@@ -499,7 +492,7 @@ describe('dialogResult', () => {
     await runs().dialogResult(result());
     expect(dialogsStore.get()).toMatchObject({ dialogSpec: null, dialogInput: null });
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
-    expect(setHandle).not.toHaveBeenCalled();
+    expect(handleFor(tab.id)).not.toBe(produced);
     expect(busy()).toBe(false);
   });
 
@@ -507,10 +500,12 @@ describe('dialogResult', () => {
     openFrozen();
     setBusy(true);
     await runs().dialogResult(result());
-    cancelRef.current = new AbortController();
+    expect(notice()).toBe(t('op.busy'));
+    clearNotice();
+    coreStore.set({ operation: new AbortController() });
     setBusy(false);
     await runs().dialogResult(result());
-    expect(refuseBusy).toHaveBeenCalledTimes(2);
+    expect(notice()).toBe(t('op.busy'));
     expect(dialogsStore.get().dialogSpec).not.toBeNull();
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
   });
@@ -520,7 +515,7 @@ describe('dialogResult', () => {
     await runs().dialogResult(result());
 
     expect(mocks.applyProducedBytes).toHaveBeenCalledWith(
-      contextFor.mock.results[0]?.value,
+      { store: session, t, tab, handle },
       new Uint8Array([7, 8]),
       2,
       { key: 'op.compress.title' },
@@ -529,11 +524,11 @@ describe('dialogResult', () => {
       { signal: expect.any(AbortSignal) },
       undefined,
     );
-    expect(setHandle).toHaveBeenCalledWith(tab.id, produced);
+    expect(handleFor(tab.id)).toBe(produced);
     expect(notice()).toBe('op.result.applied {"label":"op.compress.title"}');
     expect(dialogsStore.get().dialogSpec).toBeNull();
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('says what the dialog asked it to say when it is a replace result', async () => {
@@ -656,7 +651,7 @@ describe('dialogResult', () => {
       openFrozen(redact());
       await runs({ dialogContext: context }).dialogResult(result());
       await Promise.resolve();
-      expect(setHandle).toHaveBeenCalledWith(tab.id, produced);
+      expect(handleFor(tab.id)).toBe(produced);
       expect(erasedWordsOf(tab.id)).toEqual([]);
       expect(notice()).toBe('op.result.applied {"label":"op.redact.title"}');
     });
@@ -670,7 +665,7 @@ describe('dialogResult', () => {
     expect(notice()).toBe(failure(error));
     expect(dialogsStore.get().dialogSpec).not.toBeNull();
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('says an unexpected failure was internal', async () => {
@@ -682,7 +677,7 @@ describe('dialogResult', () => {
 
   it('stays silent about a failure after the user cancelled', async () => {
     mocks.applyProducedBytes.mockImplementation(async () => {
-      cancelRef.current?.abort();
+      cancelOperation();
       throw new Error('aborted');
     });
     openFrozen();
@@ -694,12 +689,12 @@ describe('dialogResult', () => {
   it('leaves the gate to the run that took it over', async () => {
     const other = new AbortController();
     mocks.applyProducedBytes.mockImplementation(async () => {
-      cancelRef.current = other;
+      coreStore.set({ operation: other });
       return produced;
     });
     openFrozen();
     await runs().dialogResult(result());
-    expect(cancelRef.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(busy()).toBe(true);
   });
 });
@@ -742,10 +737,12 @@ describe('startResult', () => {
     startDialogOpened(spec({ resultKind: 'new-tab' }));
     setBusy(true);
     await runs().startResult(result());
+    expect(notice()).toBe(t('op.busy'));
+    clearNotice();
     setBusy(false);
-    cancelRef.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     await runs().startResult(result());
-    expect(refuseBusy).toHaveBeenCalledTimes(2);
+    expect(notice()).toBe(t('op.busy'));
     expect(openProducedTab).not.toHaveBeenCalled();
     expect(dialogsStore.get().startSpec).not.toBeNull();
   });
@@ -758,7 +755,7 @@ describe('startResult', () => {
     expect(dialogsStore.get().startSpec).toBeNull();
     expect(notice()).toBe('op.result.opened {"name":"new.pdf"} copy not stored');
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('says what failed and keeps the modal', async () => {
@@ -773,7 +770,7 @@ describe('startResult', () => {
   it('stays silent about a failure after the user cancelled', async () => {
     startDialogOpened(spec({ resultKind: 'new-tab' }));
     openProducedTab.mockImplementation(async () => {
-      cancelRef.current?.abort();
+      cancelOperation();
       throw new Error('aborted');
     });
     await runs().startResult(result());
@@ -785,11 +782,11 @@ describe('startResult', () => {
     startDialogOpened(spec({ resultKind: 'new-tab' }));
     const other = new AbortController();
     openProducedTab.mockImplementation(async () => {
-      cancelRef.current = other;
+      coreStore.set({ operation: other });
       return null;
     });
     await runs().startResult(result());
-    expect(cancelRef.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(busy()).toBe(true);
   });
 });
@@ -823,7 +820,7 @@ describe('unlockActiveCopy', () => {
       options.onProgress({ phase: 'pages', labelKey: 'op.step.pages', total: 2, done: 1 });
       expect(resultsStore.get().progress).toMatchObject({ done: 1 });
       expect(busy()).toBe(true);
-      expect(cancelRef.current).not.toBeNull();
+      expect(operationRunning()).toBe(true);
       return outcome();
     });
     await runs({ lockedTabs: locked() }).unlockActiveCopy();
@@ -836,7 +833,7 @@ describe('unlockActiveCopy', () => {
     expect(notice()).toBe('locked.done');
     expect(resultsStore.get().progress).toBeNull();
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('adds what unlocking cost the file and the stored-copy warning', async () => {
@@ -870,10 +867,10 @@ describe('unlockActiveCopy', () => {
   it('leaves the gate registration to the run that took it over', async () => {
     const other = new AbortController();
     mocks.unlockDocument.mockImplementation(async () => {
-      cancelRef.current = other;
+      coreStore.set({ operation: other });
       return outcome();
     });
     await runs({ lockedTabs: locked() }).unlockActiveCopy();
-    expect(cancelRef.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
   });
 });

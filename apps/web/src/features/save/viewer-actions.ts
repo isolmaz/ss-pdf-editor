@@ -75,8 +75,7 @@ export function viewerReady(host: ViewerHost, api: ViewerApi | null): void {
       if (currentViewer() !== api) return;
       // The staged copy goes only once the engine has taken it: a rejection
       // must leave the entries where a retry can still reach them, and a restore
-      // that applied **nothing** is reported with its own count instead of the
-      // silence the previous version kept for exactly that case.
+      // that applied **nothing** is reported with its own count, never in silence.
       releaseEngineValues(id);
       takeEngineAnnotations(api);
       const restoration = noticeLine(

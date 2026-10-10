@@ -35,6 +35,7 @@ import {
   toggleXfaDetails,
   useCurrentDetect,
   useCurrentForms,
+  useCurrentXfa,
   useExistingAnnotations,
   useForms,
   xfaFormClosed,
@@ -165,6 +166,30 @@ describe('the form inventory', () => {
     expect(view.result.current?.fields).toBe(fields);
     view.rerender({ shown: produce(store, tab) });
     expect(view.result.current).toBeNull();
+  });
+
+  it('reads the XFA description alone: the inventory starting or ending to be read renders nothing', () => {
+    const tab = openTab();
+    const xfa = {
+      kind: 'static',
+      layout: 'array',
+      packets: [],
+      hasTemplate: true,
+      hasDatasets: false,
+      fieldCount: 0,
+    };
+    let renders = 0;
+    const view = renderHook(() => {
+      renders += 1;
+      return useCurrentXfa(tab);
+    });
+    expect(view.result.current).toBeNull();
+    const before = renders;
+    act(() => formInventoryReading(tab));
+    act(() => formInventoryRead({ tabId: tab.id, version: tab.working.id, fields }));
+    expect(renders).toBe(before);
+    act(() => formInventoryRead({ tabId: tab.id, version: tab.working.id, fields, xfa } as never));
+    expect(view.result.current).toBe(xfa);
   });
 
   it('counts the retries', () => {

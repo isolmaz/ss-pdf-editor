@@ -13,19 +13,31 @@ import { SessionStore } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type * as Operations from '../../operations';
-import { applyHistoryStep, applyPageAction, type DocumentContext } from '../../operations';
-import { coreStore, initialCoreState, isBusy, setBusy } from '../core/core-store';
-import { adoptHandle, dropHandle } from '../core/handles';
+import { applyHistoryStep, applyPageAction } from '../../operations';
+import {
+  cancelOperation,
+  coreStore,
+  initialCoreState,
+  isBusy,
+  operationRunning,
+  setBusy,
+} from '../core/core-store';
+import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import {
   type ActionHost,
-  cancelOperation,
   type PressHost,
+  requestCancel,
   runPageAction,
   stepHistory,
   stepHistoryNow,
   usePageActions,
 } from './page-actions';
 
+const editing = vi.hoisted(() => ({ canEdit: vi.fn(() => true) }));
+vi.mock('../core/document', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../core/document')>()),
+  canEdit: editing.canEdit,
+}));
 vi.mock('../../operations', async (importOriginal) => ({
   ...(await importOriginal<typeof Operations>()),
   applyPageAction: vi.fn(),
@@ -55,21 +67,16 @@ function deferred<T = void>() {
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /**
- * Wait for the history chain to drain. A press on a document that is already held by another
- * operation is refused when nothing is pending and queued (and then declined by its own gate)
- * when something is, so `false` means the chain is idle.
+ * Wait for the history chain to drain: every step the tests queue settles on mocked promises,
+ * so a few macrotasks run every link of the chain.
  */
 async function settle(): Promise<void> {
-  await vi.waitFor(() => {
-    const probe = pressHost(probeSession, { cancel: { current: new AbortController() } });
-    expect(stepHistoryNow(probe, 'undo')).toBe(false);
-  });
+  for (let turn = 0; turn < 5; turn += 1) await tick();
 }
 
 let session: SessionStore;
 let tabId: string;
 let handle: PdfDocumentHandle;
-let probeSession: SessionStore;
 const opened: string[] = [];
 
 function openTab(name = 'doc.pdf', pageCount = 3): { id: string; handle: PdfDocumentHandle } {
@@ -82,21 +89,14 @@ function openTab(name = 'doc.pdf', pageCount = 3): { id: string; handle: PdfDocu
 
 type ActionMocks = ActionHost & {
   readonly setProgress: Mock;
-  readonly setHandle: Mock;
-  readonly refuseBusy: Mock;
 };
 
 function actionHost(overrides: Partial<ActionHost> = {}): ActionMocks {
   return {
     session,
     t,
-    cancel: { current: null },
-    canEdit: { current: true },
     selectedPages: { current: [] },
     currentPage: { current: 0 },
-    contextFor: (tab, live): DocumentContext => ({ store: session, t, tab, handle: live }),
-    setHandle: vi.fn(),
-    refuseBusy: vi.fn(),
     setProgress: vi.fn(),
     ...overrides,
   } as ActionMocks;
@@ -111,8 +111,7 @@ function pressHost(
     cancel?: { current: AbortController | null };
   } = {},
 ) {
-  const refuseBusy = vi.fn();
-  const setHandle = vi.fn();
+  if (options.cancel?.current) coreStore.set({ operation: options.cancel.current });
   const setCurrentPage = vi.fn();
   const sweepOrphanAnnotations = vi.fn(async () => undefined);
   const settleNativeEditors = vi.fn(() => options.settle ?? false);
@@ -121,15 +120,11 @@ function pressHost(
   const host: PressHost = {
     session: target,
     t,
-    cancel: options.cancel ?? { current: null },
     holdEngineValues: (tabId, values) => {
       if (values === undefined) held.delete(tabId);
       else held.set(tabId, values);
     },
     orphanSweepInFlight: () => options.sweep ?? null,
-    contextFor: (tab, live) => ({ store: target, t, tab, handle: live }),
-    setHandle,
-    refuseBusy,
     setCurrentPage,
     settleNativeEditors,
     sweepOrphanAnnotations,
@@ -137,23 +132,16 @@ function pressHost(
   };
   return Object.assign(host, {
     held,
-    mocks: { refuseBusy, setHandle, setCurrentPage, sweepOrphanAnnotations },
+    mocks: { setCurrentPage, sweepOrphanAnnotations },
   });
 }
 
 beforeEach(() => {
+  editing.canEdit.mockReset();
+  editing.canEdit.mockReturnValue(true);
   coreStore.set(initialCoreState());
   session = new SessionStore();
   ({ id: tabId, handle } = openTab());
-  probeSession = new SessionStore();
-  const probe = probeSession.openDocument({
-    name: 'probe.pdf',
-    bytes: new Uint8Array([1]),
-    sha256: 'probe',
-    pageCount: 1,
-  });
-  adoptHandle(probe.id, fakeHandle(1));
-  opened.push(probe.id);
   pageAction.mockReset();
   historyStep.mockReset();
 });
@@ -173,7 +161,7 @@ describe('runPageAction', () => {
     runPageAction(host, { kind: 'rotate', direction: 'right' });
 
     expect(isBusy()).toBe(true);
-    expect(host.cancel.current).toBeInstanceOf(AbortController);
+    expect(coreStore.get().operation).toBeInstanceOf(AbortController);
     expect(host.setProgress).toHaveBeenNthCalledWith(1, {
       phase: 'pages',
       labelKey: 'op.step.pages',
@@ -188,12 +176,12 @@ describe('runPageAction', () => {
     expect(action).toEqual({ kind: 'rotate', direction: 'right' });
     expect(operation?.signal.aborted).toBe(false);
     expect(operation?.onProgress).toBe(host.setProgress);
-    expect(host.setHandle).toHaveBeenCalledWith(tabId, next);
+    expect(handleFor(tabId)).toBe(next);
     expect(coreStore.get().notice).toBe(
       t('op.result.applied', { label: t('pages.rotate.done', { count: 1 }) }),
     );
     expect(host.setProgress).toHaveBeenLastCalledWith(null);
-    expect(host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('acts on the page panel’s selection, and a control that names its pages wins over it', async () => {
@@ -220,7 +208,7 @@ describe('runPageAction', () => {
     await vi.waitFor(() => expect(isBusy()).toBe(false));
 
     expect(coreStore.get().notice).toBe(t('op.result.noChangePages'));
-    expect(host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(tabId)).toBe(handle);
   });
 
   it('reports a tool error in the tool’s own words and releases the document', async () => {
@@ -232,7 +220,7 @@ describe('runPageAction', () => {
     await vi.waitFor(() => expect(isBusy()).toBe(false));
 
     expect(coreStore.get().notice).toBe(`${t(error.messageKey)} ${t(error.hintKey)}`);
-    expect(host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(host.setProgress).toHaveBeenLastCalledWith(null);
   });
 
@@ -254,11 +242,11 @@ describe('runPageAction', () => {
 
     runPageAction(host, { kind: 'delete' });
     const newer = new AbortController();
-    host.cancel.current = newer;
+    coreStore.set({ operation: newer });
     running.resolve(null);
     await vi.waitFor(() => expect(coreStore.get().notice).toBe(t('op.result.noChangePages')));
 
-    expect(host.cancel.current).toBe(newer);
+    expect(coreStore.get().operation).toBe(newer);
     expect(isBusy()).toBe(true);
     expect(host.setProgress).not.toHaveBeenCalledWith(null);
   });
@@ -272,23 +260,25 @@ describe('runPageAction', () => {
     runPageAction(noHandle, { kind: 'delete' });
     adoptHandle(tabId, handle);
 
-    const readOnly = actionHost({ canEdit: { current: false } });
+    const readOnly = actionHost();
+    editing.canEdit.mockReturnValue(false);
     setBusy(true);
     runPageAction(readOnly, { kind: 'delete' });
 
     for (const host of [closed, noHandle, readOnly]) {
-      expect(host.refuseBusy).not.toHaveBeenCalled();
+      expect(coreStore.get().notice).not.toBe(t('op.busy'));
       expect(host.setProgress).not.toHaveBeenCalled();
     }
     expect(pageAction).not.toHaveBeenCalled();
   });
 
   it('ignores a press while an operation already holds a controller', () => {
-    const host = actionHost({ cancel: { current: new AbortController() } });
+    coreStore.set({ operation: new AbortController() });
+    const host = actionHost();
 
     runPageAction(host, { kind: 'delete' });
 
-    expect(host.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
     expect(pageAction).not.toHaveBeenCalled();
   });
 
@@ -298,24 +288,25 @@ describe('runPageAction', () => {
 
     runPageAction(host, { kind: 'delete' });
 
-    expect(host.refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(pageAction).not.toHaveBeenCalled();
-    expect(host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 });
 
-describe('cancelOperation', () => {
+describe('requestCancel', () => {
   it('aborts what holds the document and says the request was heard', () => {
     const controller = new AbortController();
 
-    cancelOperation({ t, cancel: { current: controller } });
+    coreStore.set({ operation: controller });
+    requestCancel({ t });
 
     expect(controller.signal.aborted).toBe(true);
     expect(coreStore.get().notice).toBe(t('op.cancelRequested'));
   });
 
   it('still says it when nothing was running', () => {
-    cancelOperation({ t, cancel: { current: null } });
+    requestCancel({ t });
 
     expect(coreStore.get().notice).toBe(t('op.cancelRequested'));
   });
@@ -334,10 +325,10 @@ describe('stepHistory', () => {
     expect(context).toMatchObject({ store: session, handle });
     expect(direction).toBe('undo');
     expect(operation?.signal.aborted).toBe(false);
-    expect(host.mocks.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(tabId)).toBe(handle);
     expect(coreStore.get().notice).toBe(t('op.undo.done', { label: t('pages.rotate.done', { count: 1 }) }));
     expect(isBusy()).toBe(false);
-    expect(host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('mounts the bytes a byte step restored: new handle, carried engine values, clamped page', async () => {
@@ -354,7 +345,7 @@ describe('stepHistory', () => {
     await stepHistory(host, 'redo');
 
     expect(host.held.get(tabId)).toEqual(values);
-    expect(host.mocks.setHandle).toHaveBeenCalledWith(tabId, restored);
+    expect(handleFor(tabId)).toBe(restored);
     const update = host.mocks.setCurrentPage.mock.calls[0]?.[0] as (page: number) => number;
     expect([update(0), update(1), update(5)]).toEqual([0, 1, 1]);
     expect(coreStore.get().notice).toBe(t('op.redo.done', { label: t('pages.rotate.done', { count: 1 }) }));
@@ -399,7 +390,7 @@ describe('stepHistory', () => {
 
     expect(coreStore.get().notice).toBe(`${t(error.messageKey)} ${t(error.hintKey)}`);
     expect(isBusy()).toBe(false);
-    expect(host.cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('says nothing for a failure on a tab the user left, or one the user cancelled', async () => {
@@ -416,7 +407,7 @@ describe('stepHistory', () => {
     historyStep.mockReturnValueOnce(cancelled.promise);
     const host = pressHost(session);
     const cancelling = stepHistory(host, 'undo');
-    host.cancel.current?.abort();
+    cancelOperation();
     cancelled.reject(new ToolError('aborted', { engine: 'model' }));
     await cancelling;
     expect(coreStore.get().notice).toBeNull();
@@ -428,11 +419,11 @@ describe('stepHistory', () => {
     const host = pressHost(session);
     const run = stepHistory(host, 'undo');
     const newer = new AbortController();
-    host.cancel.current = newer;
+    coreStore.set({ operation: newer });
     answer.resolve(null);
     await run;
 
-    expect(host.cancel.current).toBe(newer);
+    expect(coreStore.get().operation).toBe(newer);
     expect(isBusy()).toBe(true);
   });
 
@@ -445,7 +436,7 @@ describe('stepHistory', () => {
     await stepHistory(held, 'undo');
 
     expect(historyStep).not.toHaveBeenCalled();
-    expect(held.mocks.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
   });
 
   it('refuses out loud while the document is busy', async () => {
@@ -454,7 +445,7 @@ describe('stepHistory', () => {
 
     await stepHistory(host, 'undo');
 
-    expect(host.mocks.refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(historyStep).not.toHaveBeenCalled();
   });
 });
@@ -470,7 +461,7 @@ describe('stepHistoryNow', () => {
     expect(stepHistoryNow(pressHost(session), 'undo')).toBe(false);
     adoptHandle(tabId, handle);
 
-    expect(host.mocks.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
     expect(coreStore.get().notice).toBeNull();
   });
 
@@ -479,7 +470,7 @@ describe('stepHistoryNow', () => {
     const host = pressHost(session);
 
     expect(stepHistoryNow(host, 'undo')).toBe(false);
-    expect(host.mocks.refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(host.checkpointEngineValues).not.toHaveBeenCalled();
   });
 
@@ -540,7 +531,7 @@ describe('stepHistoryNow', () => {
     stepHistoryNow(host, 'undo');
     setBusy(true);
     sweep.resolve();
-    await vi.waitFor(() => expect(host.mocks.refuseBusy).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(coreStore.get().notice).toBe(t('op.busy')));
     setBusy(false);
     await settle();
 
@@ -550,15 +541,14 @@ describe('stepHistoryNow', () => {
 
   it('refuses when a controller was registered while the sweep was settling', async () => {
     const sweep = deferred();
-    const cancel = { current: null as AbortController | null };
-    const host = pressHost(session, { sweep: sweep.promise, cancel });
+    const host = pressHost(session, { sweep: sweep.promise });
 
     stepHistoryNow(host, 'undo');
-    cancel.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     sweep.resolve();
     await settle();
 
-    expect(host.mocks.refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(historyStep).not.toHaveBeenCalled();
   });
 
@@ -615,7 +605,7 @@ describe('stepHistoryNow', () => {
     setBusy(true);
     expect(stepHistoryNow(host, 'redo')).toBe(true);
     setBusy(false);
-    expect(host.mocks.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
     first.resolve(true);
     await settle();
 
@@ -653,7 +643,6 @@ describe('usePageActions', () => {
     const actions = actionHost();
     const input = {
       ...host,
-      canEdit: actions.canEdit,
       selectedPages: actions.selectedPages,
       currentPage: { current: 1 },
       setProgress: actions.setProgress,
@@ -664,21 +653,15 @@ describe('usePageActions', () => {
     return { host, actions, input, rendered };
   }
 
-  it('runs a page action over the shell’s refs, and Cancel stops it', async () => {
+  it('runs a page action over the shell’s refs', async () => {
     pageAction.mockResolvedValue(fakeHandle());
-    const { host, actions, rendered } = bound();
+    const { actions, rendered } = bound();
 
     act(() => rendered.result.current.runPageAction({ kind: 'delete' }));
     await vi.waitFor(() => expect(isBusy()).toBe(false));
 
     expect(pageAction.mock.calls[0]?.[1]).toEqual([1]);
     expect(actions.setProgress).toHaveBeenCalledWith(null);
-
-    host.cancel.current = new AbortController();
-    const controller = host.cancel.current;
-    act(() => rendered.result.current.cancelOperation());
-    expect(controller.signal.aborted).toBe(true);
-    expect(coreStore.get().notice).toBe(t('op.cancelRequested'));
   });
 
   it('steps history, now and queued, through the same host', async () => {
@@ -705,7 +688,6 @@ describe('usePageActions', () => {
 
     rendered.rerender({ ...input });
     expect(rendered.result.current.runPageAction).toBe(first.runPageAction);
-    expect(rendered.result.current.cancelOperation).toBe(first.cancelOperation);
     expect(rendered.result.current.stepHistory).toBe(first.stepHistory);
     expect(rendered.result.current.stepHistoryNow).toBe(first.stepHistoryNow);
 

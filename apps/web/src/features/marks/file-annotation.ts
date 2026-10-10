@@ -10,8 +10,17 @@ import { ToolError } from 'pdf-shared';
 import { markTargetKey } from 'pdf-ui/tools';
 import { applyProducedBytes, materializeBase } from '../../operations';
 import type { SaveStepDescription } from '../../save-plan';
-import { isBusy, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import {
+  beginOperation,
+  endOperation,
+  isBusy,
+  operationRunning,
+  refuseBusy,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
+import { canEdit, documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 import { selectAfterWrite } from '../selection/selection-store';
 import type { MarksHost, WriteFileAnnotation } from './host';
 import { editableOverlays } from './overlays';
@@ -24,16 +33,15 @@ export function writeFileAnnotation(
   done: string,
   selectOnPage?: number,
 ): boolean {
-  const { session, t, cancel } = host;
+  const { session, t } = host;
   const tab = session.active;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   if (tab === null || handle === null) return false;
-  if (isBusy() || cancel.current !== null || !host.canEdit.current) {
-    host.refuseBusy();
+  if (isBusy() || operationRunning() || !canEdit(session)) {
+    refuseBusy(t);
     return false;
   }
-  const controller = new AbortController();
-  cancel.current = controller;
+  const controller = beginOperation();
   setBusy(true);
   void (async () => {
     try {
@@ -46,7 +54,7 @@ export function writeFileAnnotation(
       )
         return;
       const before = editableOverlays(fresh);
-      const context = host.contextFor(fresh, handle);
+      const context = documentContext(session, t, fresh, handle);
       const executedSteps: SaveStepDescription[] = [];
       const base = await materializeBase(context, { signal: controller.signal }, executedSteps, {
         ...before,
@@ -64,7 +72,7 @@ export function writeFileAnnotation(
         { signal: controller.signal },
         before,
       );
-      host.setHandle(fresh.id, next);
+      swapHandle(t, fresh.id, next);
       if (outcome.annotationId !== undefined && selectOnPage !== undefined) {
         selectAfterWrite(markTargetKey('existing', outcome.annotationId, selectOnPage));
       }
@@ -74,10 +82,7 @@ export function writeFileAnnotation(
       const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
       showNotice(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
     } finally {
-      if (cancel.current === controller) {
-        cancel.current = null;
-        setBusy(false);
-      }
+      if (endOperation(controller)) setBusy(false);
     }
   })();
   return true;

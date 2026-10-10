@@ -16,8 +16,9 @@ import type { SessionTab } from 'pdf-model';
 import { type MessageKey, ToolError } from 'pdf-shared';
 import { applyLayerWrite } from '../../lazy-ops';
 import { applyProducedBytes, materializeBase } from '../../operations';
-import { isBusy, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import { isBusy, refuseBusy, setBusy, showNotice } from '../core/core-store';
+import { documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 import type { WriterHost } from './host';
 
 /**
@@ -38,14 +39,14 @@ export async function applyWriterOutcome(
     return;
   }
   const next = await applyProducedBytes(
-    host.contextFor(tab, handle),
+    documentContext(host.session, t, tab, handle),
     outcome.bytes,
     outcome.report.pageCount,
     { key: labelKey },
     outcome.report.engine,
     outcome.report.steps,
   );
-  host.setHandle(tab.id, next);
+  swapHandle(t, tab.id, next);
   const spoken = outcome.report.notes
     .filter((entry) => entry.kind !== 'preserved')
     .map((entry) => t(entry.key, entry.params ?? {}));
@@ -68,12 +69,12 @@ export async function writeLayers(host: WriterHost, request: LayerWriteRequest):
   // Read at call time, like every other control that replaces the handle: a panel
   // rendered one commit earlier holds that commit's closure.
   if (isBusy()) {
-    host.refuseBusy();
+    refuseBusy(host.t);
     return;
   }
   setBusy(true);
   try {
-    const bytes = await materializeBase(host.contextFor(tab, handle), {
+    const bytes = await materializeBase(documentContext(host.session, host.t, tab, handle), {
       signal: new AbortController().signal,
     });
     const outcome = await applyLayerWrite(bytes, request, { signal: new AbortController().signal });

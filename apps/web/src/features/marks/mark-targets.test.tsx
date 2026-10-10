@@ -63,6 +63,51 @@ describe('useMarkTargets', () => {
     expect(unknown.result.current[0]?.boxes).toEqual([]);
   });
 
+  it('hands back the published list when a new derivation finds the same targets, and wakes nobody', () => {
+    const { result, rerender } = renderHook((props: MarkTargetsInput) => useMarkTargets(props), {
+      initialProps: input({ redactions: [redactionMark('r1')] }),
+    });
+    const first = result.current;
+    expect(currentMarkTargets()).toBe(first);
+    const woken = vi.fn();
+    const stop = marksStore.subscribe(woken);
+    rerender(input({ redactions: [redactionMark('r1')] }));
+    expect(result.current).toBe(first);
+    expect(currentMarkTargets()).toBe(first);
+    expect(woken).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('keeps the empty list an empty document derives again, so the first publish wakes nobody', () => {
+    const initial = currentMarkTargets();
+    const woken = vi.fn();
+    const stop = marksStore.subscribe(woken);
+    const { result, rerender } = renderHook((props: MarkTargetsInput) => useMarkTargets(props), {
+      initialProps: input({ existing: null }),
+    });
+    rerender(input({ existing: [] }));
+    expect(result.current).toBe(initial);
+    expect(woken).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it.each([
+    ['another mark', [redactionMark('r2')]],
+    [
+      'the same mark somewhere else',
+      [{ id: 'r1', mark: { pageIndex: 0, space: 'app-v1' as const, rect: [0, 0, 5, 5] as const } }],
+    ],
+    ['one mark more', [redactionMark('r1'), redactionMark('r2')]],
+  ])('derives and publishes a new list for %s', (_what, redactions) => {
+    const { result, rerender } = renderHook((props: MarkTargetsInput) => useMarkTargets(props), {
+      initialProps: input({ redactions: [redactionMark('r1')] }),
+    });
+    const first = result.current;
+    rerender(input({ redactions }));
+    expect(result.current).not.toBe(first);
+    expect(currentMarkTargets()).toBe(result.current);
+  });
+
   it('keeps the same list while what it is derived from is unchanged', () => {
     const props = input({ redactions: [redactionMark('r1')] });
     const { result, rerender } = renderHook(() => useMarkTargets(props));

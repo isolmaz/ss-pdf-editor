@@ -11,8 +11,16 @@ import { workingPageCount } from 'pdf-model';
 import { ToolError } from 'pdf-shared';
 import { applyProducedBytes, materializeBase } from '../../operations';
 import type { SaveStepDescription } from '../../save-plan';
-import { isBusy, setBusy, showNotice } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import {
+  beginOperation,
+  endOperation,
+  isBusy,
+  operationRunning,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
+import { documentContext } from '../core/document';
+import { handleFor, swapHandle } from '../core/handles';
 import { orphanSweepSettled, orphanSweepStarted } from './annotations-store';
 import { takeEngineAnnotations } from './engine-takeover';
 import type { AnnotationHost } from './host';
@@ -44,18 +52,17 @@ export function settleNativeEditors(host: Pick<AnnotationHost, 'session' | 't' |
  * the same pass and the pending lists are then cleared, exactly as a save clears them.
  */
 async function materializeOrphanAnnotations(host: AnnotationHost): Promise<void> {
-  const { session, t, cancel } = host;
-  if (isBusy() || cancel.current !== null) return;
+  const { session, t } = host;
+  if (isBusy() || operationRunning()) return;
   const tab = session.getSnapshot().tabs.find((item) => item.id === session.active?.id) ?? null;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   if (tab === null || handle === null) return;
-  const controller = new AbortController();
-  cancel.current = controller;
+  const controller = beginOperation();
   setBusy(true);
   try {
     const executed: SaveStepDescription[] = [];
     const bytes = await materializeBase(
-      host.contextFor(tab, handle),
+      documentContext(session, t, tab, handle),
       { signal: controller.signal },
       executed,
     );
@@ -66,7 +73,7 @@ async function materializeOrphanAnnotations(host: AnnotationHost): Promise<void>
     )
       return;
     const next = await applyProducedBytes(
-      host.contextFor(tab, handle),
+      documentContext(session, t, tab, handle),
       bytes,
       workingPageCount(tab),
       { key: 'ann.engineEdit' },
@@ -74,14 +81,13 @@ async function materializeOrphanAnnotations(host: AnnotationHost): Promise<void>
       executed.map((step) => step.id),
       { signal: controller.signal },
     );
-    host.setHandle(tab.id, next);
+    swapHandle(t, tab.id, next);
   } catch (error) {
     if (controller.signal.aborted) return;
     const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
     showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
   } finally {
-    if (cancel.current === controller) {
-      cancel.current = null;
+    if (endOperation(controller)) {
       setBusy(false);
     }
   }

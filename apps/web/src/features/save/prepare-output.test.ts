@@ -7,9 +7,9 @@
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { SessionStore, type SessionTab, sha256Hex } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
-import { type PrepareHost, prepareOutput } from './prepare-output';
+import { prepareOutput } from './prepare-output';
 
 const mocks = vi.hoisted(() => ({
   handleFor: vi.fn(),
@@ -58,10 +58,6 @@ const handle = { raw: 'handle' } as unknown as PdfDocumentHandle;
 const base = new Uint8Array([9, 8, 7]);
 const verification = { state: 'verified', checks: [], declared: [] };
 const execution = { plan: { incremental: false }, steps: [], appliedSteps: [] };
-const contextFor = vi.fn((tab: SessionTab, forHandle: PdfDocumentHandle) => ({
-  tab,
-  handle: forHandle,
-})) as unknown as PrepareHost['contextFor'] & Mock;
 
 let session: SessionStore;
 let tab: SessionTab;
@@ -100,11 +96,11 @@ beforeEach(() => {
 });
 
 const prepare = (controller = new AbortController(), steps?: { id: string }[]) =>
-  prepareOutput({ session, t, contextFor }, tab.id, controller, steps as never);
+  prepareOutput({ session, t }, tab.id, controller, steps as never);
 
 describe('prepareOutput: what stops it', () => {
   it('prepares nothing for a tab that is gone or has no engine handle', async () => {
-    expect(await prepareOutput({ session, t, contextFor }, 'gone', new AbortController())).toBeNull();
+    expect(await prepareOutput({ session, t }, 'gone', new AbortController())).toBeNull();
     mocks.handleFor.mockReturnValue(undefined);
     expect(await prepare()).toBeNull();
     expect(mocks.materializeBase).not.toHaveBeenCalled();
@@ -190,9 +186,8 @@ describe('prepareOutput: the checked output', () => {
       verification,
     });
     expect(steps).toEqual([{ id: 'pdfjs.saveDocument' }]);
-    expect(contextFor).toHaveBeenCalledWith(session.active, handle);
     expect(mocks.materializeBase).toHaveBeenCalledWith(
-      { tab: session.active, handle },
+      { store: session, t, tab: session.active, handle },
       { signal: controller.signal },
       steps,
       { annotations: ['mark'] },

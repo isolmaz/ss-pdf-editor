@@ -23,7 +23,16 @@ import { convertToPdf, imagesToPdf } from '../../lazy-ops';
 import { appendWarning, failureNotices, noticeLine, storedCopyWarning } from '../../notices';
 import { addRecentDocument, type RecentDocumentItem } from '../../recent';
 import { getRecentHandle, putRecentHandle, reopenFromHandle } from '../../recent-handles';
-import { clearNotice, isBusy, setBusy, showNotice } from '../core/core-store';
+import {
+  beginOperation,
+  clearNotice,
+  endOperation,
+  isBusy,
+  operationRunning,
+  refuseBusy,
+  setBusy,
+  showNotice,
+} from '../core/core-store';
 import { adoptHandle } from '../core/handles';
 import { draftStorage } from '../persistence/persistence-store';
 import {
@@ -41,10 +50,6 @@ export interface OpenDeps {
   readonly session: SessionStore;
   readonly t: Translator;
   readonly tier: DeviceTier;
-  /** Holds the abort controller of the run that owns the busy gate. */
-  readonly cancelRef: { current: AbortController | null };
-  /** Say the busy notice: a gesture the gate refused. */
-  readonly refuseBusy: () => void;
   /** The viewer goes back to the first page of the document that just opened. */
   readonly setCurrentPage: (pageIndex: number) => void;
   /** The redaction marks drawn on the previous document do not carry over. */
@@ -100,7 +105,7 @@ export interface OpenActions {
 }
 
 export function createOpenActions(deps: OpenDeps): OpenActions {
-  const { session, t, tier, cancelRef, refuseBusy, setCurrentPage, setRedactionMarks } = deps;
+  const { session, t, tier, setCurrentPage, setRedactionMarks } = deps;
 
   async function openFile(file: File, fileHandle?: FileSystemFileHandle, password?: string): Promise<void> {
     clearNotice();
@@ -108,7 +113,7 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       // A tool picked on the home screen waits for this document; an open refused never
       // brings it, so the tool must not run on whatever is opened next.
       dropHomeCommand();
-      refuseBusy();
+      refuseBusy(t);
       return;
     }
     const earlyVerdict = checkDocumentLimits(tier, 0, file.size);
@@ -282,13 +287,12 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
     const format = convertFormatOf(file.name);
     if (format === null && !isImageName(file.name)) return;
     clearNotice();
-    if (isBusy() || cancelRef.current !== null) {
+    if (isBusy() || operationRunning()) {
       dropHomeCommand();
-      refuseBusy();
+      refuseBusy(t);
       return;
     }
-    const controller = new AbortController();
-    cancelRef.current = controller;
+    const controller = beginOperation();
     setBusy(true);
     beginOpening();
     try {
@@ -334,10 +338,7 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       showNotice(noticeLine(failureNotices(error, 'error.unsupported-format.message'), t));
     } finally {
       endOpening();
-      if (cancelRef.current === controller) {
-        cancelRef.current = null;
-        setBusy(false);
-      }
+      if (endOperation(controller)) setBusy(false);
     }
   }
 

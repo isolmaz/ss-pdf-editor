@@ -6,12 +6,12 @@
  *
  * **Components** read it with `useCore(selector)`. **Handlers** read it with
  * `coreStore.get()` or `isBusy()` at the moment they run — never from a value captured at
- * render, which is what the `busyRef` / `canvasToolRef` mirrors this replaces were for — and
- * write it through the actions below, which are named for what the user did, not for the field
+ * render, so no `busyRef` / `canvasToolRef` mirror is needed — and write it through the actions below, which are named for what the user did, not for the field
  * they happen to touch. A write that is one intent but several fields (opening a dock *on* a
  * tab, arming the stamp tool *with* its picture) is one action and one notification.
  */
 
+import type { Translator } from 'pdf-shared';
 import type { StampSource } from 'pdf-ui/dialog';
 import type { CanvasShapeKind, CanvasToolId } from 'pdf-ui/tools';
 import type { DocumentPanelTab } from 'pdf-ui/ui';
@@ -28,6 +28,11 @@ export interface CoreState {
   readonly notice: string | null;
   /** An operation holds the document: every other gesture is refused until it settles. */
   readonly busy: boolean;
+  /**
+   * The controller of the operation holding the document (the progress overlay's Cancel aborts
+   * it); `null` when none runs. An identity, not a value: nothing renders from it.
+   */
+  readonly operation: AbortController | null;
   /** Counts engine-handle swaps, so a component that reads a tab's handle re-renders on one. */
   readonly handleVersion: number;
   /**
@@ -68,6 +73,7 @@ export function initialCoreState(): CoreState {
   return {
     notice: null,
     busy: false,
+    operation: null,
     handleVersion: 0,
     canvasTool: 'select',
     markupTool: 'highlight',
@@ -124,6 +130,44 @@ export function setBusy(busy: boolean): void {
 /** Whether an operation holds the document **now** — the synchronous half of the gate. */
 export function isBusy(): boolean {
   return coreStore.get().busy;
+}
+
+/**
+ * A gesture the synchronous gate refuses says so. The gate itself stays synchronous — this
+ * only speaks when it closes, because an inert control and a refused action must not look the
+ * same.
+ */
+export function refuseBusy(t: Translator): void {
+  showNotice(t('op.busy'));
+}
+
+// ── The running operation ───────────────────────────────────────────────────────────────────
+
+/** An operation takes the document: the controller its Cancel aborts, registered as the running one. */
+export function beginOperation(): AbortController {
+  const controller = new AbortController();
+  coreStore.set({ operation: controller });
+  return controller;
+}
+
+/**
+ * The operation `controller` belongs to settled. `false` means it no longer owns the document
+ * (another began, or it was already ended), so the caller must not release the busy gate.
+ */
+export function endOperation(controller: AbortController): boolean {
+  if (coreStore.get().operation !== controller) return false;
+  coreStore.set({ operation: null });
+  return true;
+}
+
+/** Whether a cancellable operation (open, save, a tool run) is in flight **now**. */
+export function operationRunning(): boolean {
+  return coreStore.get().operation !== null;
+}
+
+/** The user pressed Cancel: abort the operation holding the document, if one runs. */
+export function cancelOperation(): void {
+  coreStore.get().operation?.abort();
 }
 
 /** An engine handle was swapped (`handles.ts`): components that read it render again. */

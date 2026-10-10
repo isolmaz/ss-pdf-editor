@@ -5,11 +5,13 @@
  * document before anything opens.
  */
 
+import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { StampSource } from 'pdf-ui/dialog';
 import type { MarkTarget, StampPlacement } from 'pdf-ui/tools';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { coreStore, initialCoreState, setBusy } from '../core/core-store';
+import { clearNotice, coreStore, initialCoreState, setBusy } from '../core/core-store';
+import type { WriteFileAnnotation } from '../marks/host';
 import {
   type AddGate,
   armStamp,
@@ -21,7 +23,6 @@ import {
   placeStamp,
   resizeStamp,
   stampKind,
-  type WriteFileAnnotation,
 } from './stamp-actions';
 import { initialStampsState, stampsStore } from './stamps-store';
 
@@ -35,6 +36,11 @@ vi.mock('../../lazy-ops', () => ({
   resizeImageStamp: pdfCore.resizeImageStamp,
 }));
 vi.mock('pdf-ui/dialog', () => ({ imageFromFile: pdfCore.imageFromFile }));
+const editing = vi.hoisted(() => ({ canEdit: vi.fn(() => true) }));
+vi.mock('../core/document', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../core/document')>()),
+  canEdit: editing.canEdit,
+}));
 
 const t = createTranslator('en');
 
@@ -55,6 +61,7 @@ beforeEach(() => {
   stampsStore.set(initialStampsState());
   imageInputRef.current = null;
   vi.clearAllMocks();
+  editing.canEdit.mockReturnValue(true);
 });
 
 describe('stampKind', () => {
@@ -163,8 +170,11 @@ describe('resizeStamp', () => {
 });
 
 describe('the gate in front of the signature dialog and the image picker', () => {
-  function gate(over: Partial<AddGate> = {}): AddGate {
-    return { hasDocument: true, canEdit: true, refuseBusy: vi.fn(), ...over };
+  function gate(withDocument = true): AddGate {
+    const session = new SessionStore();
+    if (withDocument)
+      session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'hash', pageCount: 1 });
+    return { session, t };
   }
 
   it('opens the dialog and clicks the picker for an editable, idle document', () => {
@@ -177,29 +187,29 @@ describe('the gate in front of the signature dialog and the image picker', () =>
   });
 
   it('does nothing, and says nothing, with no document open', () => {
-    const refuseBusy = vi.fn();
-    openSignature(gate({ hasDocument: false, refuseBusy }));
-    pickImage(gate({ hasDocument: false, refuseBusy }));
+    openSignature(gate(false));
+    pickImage(gate(false));
     expect(stampsStore.get().signatureOpen).toBe(false);
-    expect(refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).toBeNull();
   });
 
   it('refuses while an operation holds the document', () => {
     const click = vi.fn();
     imageInputRef.current = { click } as unknown as HTMLInputElement;
     setBusy(true);
-    const refuseBusy = vi.fn();
-    openSignature(gate({ refuseBusy }));
-    pickImage(gate({ refuseBusy }));
-    expect(refuseBusy).toHaveBeenCalledTimes(2);
+    openSignature(gate());
+    expect(coreStore.get().notice).toBe(t('op.busy'));
+    clearNotice();
+    pickImage(gate());
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(stampsStore.get().signatureOpen).toBe(false);
     expect(click).not.toHaveBeenCalled();
   });
 
   it('refuses a read-only document', () => {
-    const refuseBusy = vi.fn();
-    openSignature(gate({ canEdit: false, refuseBusy }));
-    expect(refuseBusy).toHaveBeenCalledTimes(1);
+    editing.canEdit.mockReturnValue(false);
+    openSignature(gate());
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(stampsStore.get().signatureOpen).toBe(false);
   });
 

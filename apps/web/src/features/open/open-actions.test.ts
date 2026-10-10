@@ -8,7 +8,7 @@ import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { SessionStore } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { coreStore, initialCoreState, setBusy } from '../core/core-store';
+import { cancelOperation, coreStore, initialCoreState, operationRunning, setBusy } from '../core/core-store';
 import { dropHandle, handleFor } from '../core/handles';
 import { persistenceStore } from '../persistence/persistence-store';
 import { type MemoryStorage, manifest, memoryStorage } from '../persistence/vault.fixtures';
@@ -71,13 +71,11 @@ function sizedFile(name: string, size: number, readBytes: number): File {
 
 let session: SessionStore;
 let storage: MemoryStorage;
-let cancelRef: { current: AbortController | null };
-const refuseBusy = vi.fn();
 const setCurrentPage = vi.fn();
 const setRedactionMarks = vi.fn();
 
 function actions(tier: 'desktop' | 'mobile' = 'desktop') {
-  return createOpenActions({ session, t, tier, cancelRef, refuseBusy, setCurrentPage, setRedactionMarks });
+  return createOpenActions({ session, t, tier, setCurrentPage, setRedactionMarks });
 }
 
 beforeEach(() => {
@@ -86,7 +84,6 @@ beforeEach(() => {
   coreStore.set(initialCoreState());
   openStore.set(initialOpenState());
   fileInput.current = null;
-  cancelRef = { current: null };
   session = new SessionStore();
   storage = memoryStorage();
   persistenceStore.set({ draftStorage: storage });
@@ -331,7 +328,7 @@ describe('openFile', () => {
 
     await actions().openFile(pdfFile());
 
-    expect(refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(openStore.get().pendingHomeCommand).toBeNull();
     expect(outside.openWithPdfjs).not.toHaveBeenCalled();
     expect(busy()).toBe(true);
@@ -458,7 +455,7 @@ describe('convertAndOpen', () => {
       'convert.opened {"format":"DOCX"} op.note.convert.csvTruncated {"rows":5,"total":9}',
     );
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(openStore.get().opening).toBe(false);
   });
 
@@ -524,19 +521,19 @@ describe('convertAndOpen', () => {
 
     await actions().convertAndOpen(pdfFile('a.docx'));
 
-    expect(refuseBusy).toHaveBeenCalledOnce();
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(openStore.get().pendingHomeCommand).toBeNull();
     expect(outside.convertToPdf).not.toHaveBeenCalled();
   });
 
   it('refuses while an operation holds the abort controller, leaving it in place', async () => {
     const running = new AbortController();
-    cancelRef.current = running;
+    coreStore.set({ operation: running });
 
     await actions().convertAndOpen(pdfFile('a.docx'));
 
-    expect(refuseBusy).toHaveBeenCalledOnce();
-    expect(cancelRef.current).toBe(running);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
+    expect(coreStore.get().operation).toBe(running);
     expect(busy()).toBe(false);
   });
 
@@ -561,7 +558,7 @@ describe('convertAndOpen', () => {
 
   it('says nothing when the user cancelled the conversion', async () => {
     outside.convertToPdf.mockImplementation(async () => {
-      cancelRef.current?.abort();
+      cancelOperation();
       throw new ToolError('aborted', { engine: 'model' });
     });
 
@@ -569,19 +566,19 @@ describe('convertAndOpen', () => {
 
     expect(notice()).toBeNull();
     expect(busy()).toBe(false);
-    expect(cancelRef.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('leaves the gate to the run that replaced it', async () => {
     const other = new AbortController();
     outside.convertToPdf.mockImplementation(async () => {
-      cancelRef.current = other;
+      coreStore.set({ operation: other });
       return converted();
     });
 
     await actions().convertAndOpen(pdfFile('a.docx'));
 
-    expect(cancelRef.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(busy()).toBe(true);
   });
 });

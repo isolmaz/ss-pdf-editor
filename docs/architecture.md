@@ -2257,7 +2257,11 @@ the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.
 dispatches keyboard actions, keeping the displayed bindings and their behavior together. The page keys (`PageUp`, `PageDown`,
 `Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
 tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
-list), which owns them.
+list), which owns them. They stand aside for a full-screen presentation too: its own key
+handler and the shell's are capture-phase listeners on the same `window`, so `stopPropagation`
+does not order them, and with both answering one key press turned two pages. The shell's page
+actions (`use-shell-bindings.ts`) therefore decline while `isPresenting` (the layout class
+`usePresentation` puts on the viewer's container) is true, and the key is the presentation's alone.
 
 `useOperationRun()` owns the run state machine
 (`idle → running → done | error | cancelled`), the `AbortController`, and the mapping from
@@ -2314,8 +2318,12 @@ them once rather than twice.
 
 ## 8. `apps/web` — the shell
 
-`apps/web/src/App.tsx` is the composition root: every path in and out of the document and
-the wiring between `pdf-model`, `pdf-core` and `pdf-ui`. UI state that several surfaces share
+`apps/web/src/App.tsx` is the composition root: the wiring between the feature modules,
+`pdf-model`, `pdf-core` and `pdf-ui`, the link-region and image-list state its hosts share,
+the six audit-pinned callbacks
+(`saveActive`, `persistTabDraft`, `opfsSave`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
+thin wrappers over the feature functions that `tools/audit/regressions.cjs` exercises), the
+drop target, and the feature hosts. UI state that several surfaces share
 lives in feature stores under `apps/web/src/features/`, each made with `createStore` from
 `features/store.ts` (module state read through `useSyncExternalStore`, the same convention as
 `SessionStore` and `reading-order-store.ts`). A component subscribes with a selector and
@@ -2328,7 +2336,7 @@ testable logic lives:
 | Module | Responsibility |
 |---|---|
 | `features/store.ts` | `createStore()` and `useStore(store, selector, equality?)`, the one store helper |
-| `features/core/` | The state every feature shares: notice line, busy gate, the armed canvas tool, docks and tabs, interface mode (`core-store.ts`), engine handles (`handles.ts`), the pending-overlay writer (`overlays.ts`), the markup tool set (`tools.ts`) and the compact-viewport watcher (`viewport.ts`) |
+| `features/core/` | The state every feature shares: notice line, busy gate, the running operation's controller (`beginOperation` / `endOperation` / `cancelOperation`) and the busy refusal (`refuseBusy(t)`), the armed canvas tool, docks and tabs, interface mode (`core-store.ts`), engine handles and their swap (`handles.ts`: `swapHandle`, `releaseHandle`), the operation context and the edit rule read at call time (`document.ts`: `documentContext`, `canEdit`, `deviceTier`), the pending-overlay writer (`overlays.ts`), the markup tool set (`tools.ts`) and the compact-viewport watcher (`viewport.ts`) |
 | `features/reading/` | Reading mode, snapshot, magnifier and lens zoom, the document language, and the reading-order layer |
 | `features/facts/` | The facts read for the active document (protection, signatures, fonts, attachments) and its failure, the imported trust roots and revocation lists, the signature-warning prompt before a write, the redaction audit, and the properties panel host |
 | `features/attachments/` | The embedded files: the measured list the properties panel shows, and adding, removing, reading out and writing them (`createAttachmentActions`) |
@@ -2346,6 +2354,8 @@ testable logic lives:
 | `features/selection/` | Mark selection and the text tool: the selected marks and the mark to select after a write (`selection-store.ts`), deleting and selecting all marks and opening a note (`selection-actions.ts`), the selection effects (`use-selection.ts`), the text tool's picked block and frozen bytes (`text-tool-store.ts`, `use-text-tool-bytes.ts`) and the text layer host (`TextToolSurface.tsx`) |
 | `features/open/` | Opening and producing documents: the home screen, opening state, password prompt, locked tabs, page selection and pending home command (`open-store.ts`), opening a file, a produced tab, a conversion, a recent entry or the picker (`open-actions.ts`, `use-open-actions.ts`), and the home header, password prompt and file input hosts (`OpenSurfaces.tsx`) |
 | `features/save/` | Saving, closing and the viewer handle: the save lock, viewer, zoom, current page, layout revision and close request (`save-store.ts`), preparing the output (`prepare-output.ts`), saving and exporting (`save-actions.ts`), closing and discarding a tab (`close-actions.ts`), the viewer-ready handler and engine-value checkpoints (`viewer-actions.ts`), and the close-document host (`SaveSurfaces.tsx`) |
+| `features/shell/` | The shell: the palette, settings and rename state (`shell-store.ts`, `shell-actions.ts`), the command list (`use-shell-commands.ts`), the shortcut wiring (`use-shell-bindings.ts`), the document effects in their fixed order (`use-document-effects.ts`), the edit state (`use-edit-state.ts`), and the layout: header, tool strip, document and right docks, viewer area, body, status bar and the palette and settings overlays, each reading the stores it shows |
+| `features/diagnostics/` | The memory sampler (`memory-store.ts`): a sample every 2.5 s, kept only when it changed, read by the status bar alone |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |

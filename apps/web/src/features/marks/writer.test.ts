@@ -10,7 +10,7 @@ import { ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Operations from '../../operations';
 import { coreStore, isBusy, setBusy } from '../core/core-store';
-import { dropHandle } from '../core/handles';
+import { dropHandle, handleFor } from '../core/handles';
 import { type MarksWorld, marksWorld, t } from './marks-fixtures';
 import { applyWriterOutcome, writeLayers } from './writer';
 
@@ -61,7 +61,7 @@ describe('applyWriterOutcome', () => {
     await applyWriterOutcome(world.host, world.tab, world.handle, outcome([], true), 'panel.layers');
     expect(notice()).toBe(t('panel.layers'));
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
-    expect(world.host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(world.tab.id)).toBe(world.handle);
   });
 
   it('says the first note that is not merely preserved when the writer changed nothing', async () => {
@@ -96,7 +96,7 @@ describe('applyWriterOutcome', () => {
       'mupdf',
       ['layers'],
     );
-    expect(world.host.setHandle).toHaveBeenCalledWith(world.tab.id, produced);
+    expect(handleFor(world.tab.id)).toBe(produced);
     expect(notice()).toBe(t('panel.layers'));
   });
 
@@ -131,7 +131,7 @@ describe('writeLayers', () => {
       'mupdf',
       ['layers'],
     );
-    expect(world.host.setHandle).toHaveBeenCalledWith(world.tab.id, produced);
+    expect(handleFor(world.tab.id)).toBe(produced);
     expect(notice()).toBe(t('panel.layers'));
     expect(isBusy()).toBe(false);
   });
@@ -142,13 +142,13 @@ describe('writeLayers', () => {
     world.session.closeTab(world.tab.id);
     await writeLayers(world.host, request);
     expect(mocks.materializeBase).not.toHaveBeenCalled();
-    expect(world.host.refuseBusy).not.toHaveBeenCalled();
+    expect(coreStore.get().notice).not.toBe(t('op.busy'));
   });
 
   it('refuses while another operation holds the document', async () => {
     setBusy(true);
     await writeLayers(world.host, request);
-    expect(world.host.refuseBusy).toHaveBeenCalledTimes(1);
+    expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(mocks.materializeBase).not.toHaveBeenCalled();
     expect(isBusy()).toBe(true);
   });
@@ -159,7 +159,7 @@ describe('writeLayers', () => {
     const failure = new ToolError('write-failed', { engine: 'mupdf' });
     expect(notice()).toBe(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
     expect(isBusy()).toBe(false);
-    expect(world.host.setHandle).not.toHaveBeenCalled();
+    expect(handleFor(world.tab.id)).toBe(world.handle);
   });
 
   it('reports an unexpected failure as an internal error', async () => {

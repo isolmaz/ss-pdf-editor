@@ -1,11 +1,12 @@
 /** Freezing the working bytes the text tool reads its page model from. */
 
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import type { SessionTab } from 'pdf-model';
+import type { SessionStore, SessionTab } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import { useEffect } from 'react';
-import { type DocumentContext, materializeBase } from '../../operations';
+import { materializeBase } from '../../operations';
 import { selectTool, showNotice, useCore } from '../core/core-store';
+import { documentContext } from '../core/document';
 import { textToolBytesFrozen } from './text-tool-store';
 
 /**
@@ -15,9 +16,9 @@ import { textToolBytesFrozen } from './text-tool-store';
  * the status line and returns the user to the select tool.
  */
 export function useTextToolBytes(
+  session: SessionStore,
   tab: SessionTab | null,
   handle: PdfDocumentHandle | null,
-  contextFor: (tab: SessionTab, handle: PdfDocumentHandle) => DocumentContext,
   t: Translator,
 ): void {
   const armed = useCore((state) => state.canvasTool === 'text');
@@ -29,7 +30,7 @@ export function useTextToolBytes(
     let cancelled = false;
     void (async () => {
       try {
-        const bytes = await materializeBase(contextFor(tab, handle), {
+        const bytes = await materializeBase(documentContext(session, t, tab, handle), {
           signal: new AbortController().signal,
         });
         if (!cancelled) textToolBytesFrozen(bytes);
@@ -44,5 +45,5 @@ export function useTextToolBytes(
     return () => {
       cancelled = true;
     };
-  }, [tab, handle, contextFor, t, armed]);
+  }, [session, tab, handle, t, armed]);
 }

@@ -4,7 +4,7 @@
  * were read from sees them.
  */
 
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { SessionStore, type SessionTab } from 'pdf-model';
 import { ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -18,6 +18,7 @@ import {
   factsStore,
   useCurrentFacts,
   useCurrentFactsError,
+  useCurrentSignatures,
 } from './facts-store';
 
 function openTab(): SessionTab {
@@ -102,5 +103,24 @@ describe('document facts in a component', () => {
 
     view.rerender(<Reader tab={null} />);
     expect(view.container.textContent).toBe('no facts / no failure');
+  });
+});
+
+describe('the signature verdicts in a component', () => {
+  it('render it again only when the verdicts change, not for facts that carry the same ones', () => {
+    const tab = openTab();
+    let renders = 0;
+    const view = renderHook(() => {
+      renders += 1;
+      return useCurrentSignatures(tab);
+    });
+    expect(view.result.current).toEqual([]);
+    const before = renders;
+    act(() => factsRead(factsFor(tab)));
+    act(() => factsRead({ ...factsFor(tab), fonts: [] }));
+    expect(renders).toBe(before);
+    const signed = [{ status: 'valid' }] as never;
+    act(() => factsRead({ ...factsFor(tab), signatures: signed }));
+    expect(view.result.current).toBe(signed);
   });
 });

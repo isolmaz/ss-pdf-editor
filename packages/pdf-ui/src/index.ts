@@ -71,6 +71,6 @@ export { Dock, type DockProps, type DockTab } from './shell/Dock';
 export { StatusBar, type StatusBarProps } from './shell/StatusBar';
 export { Magnifier, type MagnifierProps } from './tools/Magnifier';
 export { SnapshotMenu, type SnapshotMenuProps } from './tools/SnapshotMenu';
-export { usePresentation } from './tools/usePresentation';
+export { isPresenting, usePresentation } from './tools/usePresentation';
 export { ContextMenu, type ContextMenuProps } from './viewer/ContextMenu';
 export { PdfViewerPane, type PdfViewerPaneProps, type ViewerApi } from './viewer/PdfViewerPane';

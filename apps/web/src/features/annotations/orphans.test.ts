@@ -9,8 +9,15 @@ import { SessionStore, type SessionTab } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { coreStore, initialCoreState, isBusy, setBusy } from '../core/core-store';
-import { adoptHandle, dropHandle } from '../core/handles';
+import {
+  cancelOperation,
+  coreStore,
+  initialCoreState,
+  isBusy,
+  operationRunning,
+  setBusy,
+} from '../core/core-store';
+import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import { annotationsStore, initialAnnotationsState, orphanSweepInFlight } from './annotations-store';
 import type { AnnotationHost } from './host';
 import { settleNativeEditors, sweepOrphanAnnotations } from './orphans';
@@ -30,14 +37,6 @@ let session: SessionStore;
 let tab: SessionTab;
 let handle: PdfDocumentHandle;
 const produced = { name: 'produced' } as unknown as PdfDocumentHandle;
-const setHandle = vi.fn();
-const contextFor = vi.fn((forTab: SessionTab, forHandle: PdfDocumentHandle) => ({
-  store: session,
-  t,
-  tab: forTab,
-  handle: forHandle,
-}));
-let cancel: { current: AbortController | null };
 let entries: { id: string; value: Record<string, unknown> }[];
 
 const viewerFor = (document: PdfDocumentHandle): ViewerApi =>
@@ -52,9 +51,6 @@ const host = (api: ViewerApi | null = null): AnnotationHost => ({
   session,
   t,
   viewer: { current: api },
-  cancel,
-  contextFor: contextFor as never,
-  setHandle,
 });
 
 beforeEach(() => {
@@ -66,7 +62,6 @@ beforeEach(() => {
   tab = session.active as SessionTab;
   handle = { pageCount: 2 } as unknown as PdfDocumentHandle;
   adoptHandle(tab.id, handle);
-  cancel = { current: null };
   entries = [];
   mocks.materializeBase.mockImplementation(async (_context, _options, executed: unknown[]) => {
     executed.push({ id: 'step-1', engine: 'mupdf' });
@@ -115,7 +110,7 @@ describe('sweepOrphanAnnotations', () => {
       await Promise.resolve();
       lockDuring = {
         busy: isBusy(),
-        controller: cancel.current !== null,
+        controller: operationRunning(),
         inFlight: orphanSweepInFlight() !== null,
       };
       return bytes;
@@ -137,9 +132,9 @@ describe('sweepOrphanAnnotations', () => {
       ['step-1', 'step-2'],
       { signal: expect.any(AbortSignal) },
     );
-    expect(setHandle).toHaveBeenCalledWith(tab.id, produced);
+    expect(handleFor(tab.id)).toBe(produced);
     expect(isBusy()).toBe(false);
-    expect(cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
     expect(orphanSweepInFlight()).toBeNull();
   });
 
@@ -159,11 +154,11 @@ describe('sweepOrphanAnnotations', () => {
   it('does nothing while another operation holds the document', async () => {
     setBusy(true);
     await sweepOrphanAnnotations(host());
-    cancel.current = new AbortController();
+    coreStore.set({ operation: new AbortController() });
     setBusy(false);
     await sweepOrphanAnnotations(host());
     expect(mocks.materializeBase).not.toHaveBeenCalled();
-    expect(cancel.current).not.toBeNull();
+    expect(operationRunning()).toBe(true);
   });
 
   it('does nothing without an active tab or without its engine handle', async () => {
@@ -182,7 +177,7 @@ describe('sweepOrphanAnnotations', () => {
     });
     await sweepOrphanAnnotations(host());
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
-    expect(setHandle).not.toHaveBeenCalled();
+    expect(handleFor(tab.id)).toBe(handle);
     expect(isBusy()).toBe(false);
   });
 
@@ -205,7 +200,7 @@ describe('sweepOrphanAnnotations', () => {
 
   it('mounts nothing and says nothing when the user cancelled', async () => {
     mocks.materializeBase.mockImplementation(async () => {
-      cancel.current?.abort();
+      cancelOperation();
       return bytes;
     });
     await sweepOrphanAnnotations(host());
@@ -216,7 +211,7 @@ describe('sweepOrphanAnnotations', () => {
 
   it('stays silent about a failure that came from a cancel', async () => {
     mocks.materializeBase.mockImplementation(async () => {
-      cancel.current?.abort();
+      cancelOperation();
       throw new Error('aborted');
     });
     await sweepOrphanAnnotations(host());
@@ -229,7 +224,7 @@ describe('sweepOrphanAnnotations', () => {
     await sweepOrphanAnnotations(host());
     expect(notice()).toBe(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
     expect(isBusy()).toBe(false);
-    expect(cancel.current).toBeNull();
+    expect(operationRunning()).toBe(false);
   });
 
   it('reports anything unexpected as an internal error', async () => {
@@ -242,11 +237,11 @@ describe('sweepOrphanAnnotations', () => {
   it('leaves the lock to whoever took it if the controller was replaced', async () => {
     const other = new AbortController();
     mocks.materializeBase.mockImplementation(async () => {
-      cancel.current = other;
+      coreStore.set({ operation: other });
       return bytes;
     });
     await sweepOrphanAnnotations(host());
-    expect(cancel.current).toBe(other);
+    expect(coreStore.get().operation).toBe(other);
     expect(isBusy()).toBe(true);
   });
 });

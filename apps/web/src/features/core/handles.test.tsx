@@ -7,6 +7,7 @@
 
 import { act, cleanup, render, screen } from '@testing-library/react';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
+import { createTranslator } from 'pdf-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { coreStore } from './core-store';
 import {
@@ -15,7 +16,9 @@ import {
   handleFor,
   handleInUse,
   handleReleased,
+  releaseHandle,
   replaceHandle,
+  swapHandle,
   useDocumentHandle,
 } from './handles';
 
@@ -128,5 +131,30 @@ describe('useDocumentHandle', () => {
     expect(screen.getByRole('status').textContent).toBe('none');
     rerender(<Reader tabId={tab('unknown')} />);
     expect(screen.getByRole('status').textContent).toBe('none');
+  });
+});
+
+describe('swapping and releasing in the language of the translator', () => {
+  const t = createTranslator('en');
+
+  it('swaps a produced handle in, and says so when the replaced one will not shut down', async () => {
+    const id = tab('swap');
+    const old = fakeHandle('old', () => Promise.reject(new Error('stuck')));
+    const next = fakeHandle('next');
+    adoptHandle(id, old);
+    handleReleased(old, () => undefined);
+    swapHandle(t, id, next);
+    expect(handleFor(id)).toBe(next);
+    await vi.waitFor(() => expect(coreStore.get().notice).toBe(t('notice.engineReleaseFailed')));
+  });
+
+  it('says so when a handle the viewer let go would not shut down', async () => {
+    const id = tab('release');
+    const old = fakeHandle('old', () => Promise.reject(new Error('stuck')));
+    adoptHandle(id, old);
+    swapHandle(t, id, fakeHandle('next'));
+    coreStore.set({ notice: null });
+    releaseHandle(t, old);
+    await vi.waitFor(() => expect(coreStore.get().notice).toBe(t('notice.engineReleaseFailed')));
   });
 });

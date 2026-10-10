@@ -23,8 +23,6 @@ const CloseDocumentDialog = lazy(async () => {
 export interface CloseDocumentHostProps {
   readonly t: Translator;
   readonly session: SessionStore;
-  /** The running operation's controller; Cancel stops what is running for the question. */
-  readonly cancelRef: { current: AbortController | null };
   /** Drop a tab and everything kept for it (`discardTab`). */
   readonly discardTab: (id: string) => void;
   /** Save a tab (`saveActive`); whether it was written. */
@@ -40,7 +38,6 @@ export interface CloseDocumentHostProps {
 export function CloseDocumentHost({
   t,
   session,
-  cancelRef,
   discardTab,
   saveActive,
   exportActive,
@@ -60,10 +57,10 @@ export function CloseDocumentHost({
         canSave={tab?.source.handle !== undefined}
         busy={busy}
         notice={notice}
-        onCancel={() => keepOpen({ cancelRef })}
+        onCancel={() => keepOpen()}
         onDiscard={() => discardAndClose({ discardTab }, closeRequest)}
         onExport={() => void exportActive(closeRequest)}
-        onSave={() => void saveAndClose({ session, cancelRef, discardTab, saveActive }, closeRequest)}
+        onSave={() => void saveAndClose({ session, discardTab, saveActive }, closeRequest)}
       />
     </Suspense>
   );

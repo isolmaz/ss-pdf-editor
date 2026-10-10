@@ -25,7 +25,6 @@ function host(overrides: Partial<CommandHost> = {}): CommandHost {
   return {
     t: ((key: string) => key) as CommandHost['t'],
     mode: 'advanced',
-    useAdvancedMode: noop,
     hasDocument: true,
     canEdit: true,
     canUndo: true,
@@ -33,7 +32,7 @@ function host(overrides: Partial<CommandHost> = {}): CommandHost {
     canSave: true,
     canExport: true,
     selectedPages: [0],
-    zoom: 1,
+    zoom: () => 1,
     magnifier: false,
     reading: false,
     leftDock: true,

@@ -34,8 +34,8 @@ export function HomeHeader({ t, title, activeDocumentName, onSettings, onPalette
       <div className="flex min-w-0 items-center gap-2.5">
         {/* `bg-pdf-accent`/`text-pdf-on-accent` are the product's own contrast
             pair: `bg-kumo-strong` is not a token Kumo declares, which left this
-            mark a transparent chip with white glyph on white (found by the
-            compiled-CSS audit). Same pair as the editor header's mark. */}
+            mark a transparent chip with white glyph on white. Same pair as the
+            editor header's mark. */}
         <div className="flex size-7 shrink-0 items-center justify-center rounded bg-pdf-accent text-pdf-on-accent">
           <FilePdf size={18} weight="fill" />
         </div>

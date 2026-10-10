@@ -13,8 +13,8 @@ export interface RecoveryHost {
   readonly store: SessionStore;
   /**
    * The translator, read when a notice is worded and deliberately not a dependency of the
-   * recovery effect: switching the interface language used to replay recovery over tabs that
-   * were already open, restoring every draft a second time.
+   * recovery effect: a dependency on it would replay recovery over tabs that are already open
+   * when the interface language changes, restoring every draft a second time.
    */
   readonly translator: { readonly current: Translator };
   /** Open bytes with the engine and fingerprint them side by side (the shell's open path). */

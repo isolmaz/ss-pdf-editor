@@ -7,7 +7,14 @@ import type { SessionStore } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import { hasEngineEdits } from '../../operations';
 import { releaseEngineValues } from '../annotations/annotations-store';
-import { clearNotice, isBusy, showNotice } from '../core/core-store';
+import {
+  cancelOperation,
+  clearNotice,
+  isBusy,
+  operationRunning,
+  refuseBusy,
+  showNotice,
+} from '../core/core-store';
 import { dropHandle, handleFor } from '../core/handles';
 import { dialogsStore } from '../dialogs/dialogs-store';
 import { redactedWordsForgotten } from '../marks/redaction-store';
@@ -17,8 +24,6 @@ import { closeDismissed, closeRequested, saveStore } from './save-store';
 /** What the shell still holds that closing a tab runs on. */
 export interface CloseHost {
   readonly session: SessionStore;
-  /** The running operation's controller. */
-  readonly cancelRef: { current: AbortController | null };
   /** The translator, read when a notice is worded so a language change in between is honoured. */
   readonly translator: { readonly current: Translator };
   /** Delete what the vault keeps for `tabId`; `null` means the inventory was incomplete and nothing was deleted. */
@@ -27,8 +32,8 @@ export interface CloseHost {
 
 /** Drop `id` from the session and everything the shell keeps for it, whatever it holds unsaved. */
 export function discardDocument(host: CloseHost, id: string): void {
-  const { session, cancelRef, translator, forgetTabDraft } = host;
-  if (session.active?.id === id) cancelRef.current?.abort();
+  const { session, translator, forgetTabDraft } = host;
+  if (session.active?.id === id) cancelOperation();
   const abandoned = dropHandle(id);
   if (abandoned !== undefined) {
     // Closing a tab is not a place where a failure may be swallowed, and it
@@ -41,8 +46,8 @@ export function discardDocument(host: CloseHost, id: string): void {
   redactedWordsForgotten(id);
   draftWrites.current = draftWrites.current
     .then(async () => {
-      // The reference graph is read fresh and *whole*: the previous version derived it
-      // from `readDrafts()`, which reports an unreadable or unlistable vault as “no
+      // The reference graph is read fresh and *whole*, not derived from
+      // `readDrafts()`, which reports an unreadable or unlistable vault as “no
       // drafts” — the exact input that makes a shared source blob look unreferenced.
       // An incomplete inventory deletes nothing and says so.
       const removed = await forgetTabDraft(id);
@@ -56,15 +61,15 @@ export function discardDocument(host: CloseHost, id: string): void {
  * remembers what had the focus so closing it can give the focus back.
  */
 export function closeTab(
-  host: Pick<CloseHost, 'session' | 'cancelRef'> & {
-    readonly refuseBusy: () => void;
+  host: Pick<CloseHost, 'session'> & {
+    readonly t: Translator;
     readonly discardTab: (id: string) => void;
   },
   id: string,
 ): void {
-  const { session, cancelRef, refuseBusy, discardTab } = host;
-  if (isBusy() || cancelRef.current !== null || dialogsStore.get().dialogSpec !== null) {
-    refuseBusy();
+  const { session, t, discardTab } = host;
+  if (isBusy() || operationRunning() || dialogsStore.get().dialogSpec !== null) {
+    refuseBusy(t);
     return;
   }
   const tab = session.getSnapshot().tabs.find((item) => item.id === id);
@@ -94,14 +99,13 @@ export function cancelClose(): void {
 /** What the close question's buttons run on. */
 export interface CloseAnswerHost {
   readonly session: SessionStore;
-  readonly cancelRef: { current: AbortController | null };
   readonly discardTab: (id: string) => void;
   readonly saveActive: (tabId: string) => Promise<boolean>;
 }
 
 /** "Cancel": stop what is running for the question and keep the document open. */
-export function keepOpen(host: Pick<CloseAnswerHost, 'cancelRef'>): void {
-  host.cancelRef.current?.abort();
+export function keepOpen(): void {
+  cancelOperation();
   cancelClose();
 }
 

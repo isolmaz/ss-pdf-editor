@@ -10,7 +10,7 @@ import type { PdfFontInfo, SignatureVerification } from 'pdf-core';
 import type { SessionTab } from 'pdf-model';
 import type { ToolError } from 'pdf-shared';
 import type { AttachmentRow } from 'pdf-ui';
-import { createStore, useStore } from '../store';
+import { createStore, shallowEqual, useStore } from '../store';
 
 export interface DocumentFacts {
   readonly tabId: string;
@@ -76,6 +76,21 @@ export function useCurrentFacts(tab: SessionTab | null): DocumentFacts | null {
   return factsOf(
     useStore(factsStore, (state) => state.facts),
     tab,
+  );
+}
+
+/** No signature: one list, so a reader of it is not woken by facts that carry none. */
+const NO_SIGNATURES: readonly SignatureVerification[] = [];
+
+/**
+ * The signature verdicts of `tab`'s current facts (none while they are unread), read by a component
+ * that needs nothing else of them: facts arriving with the same verdicts do not render it again.
+ */
+export function useCurrentSignatures(tab: SessionTab | null): readonly SignatureVerification[] {
+  return useStore(
+    factsStore,
+    (state) => factsOf(state.facts, tab)?.signatures ?? NO_SIGNATURES,
+    shallowEqual,
   );
 }
 

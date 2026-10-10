@@ -25,15 +25,15 @@ export interface WriterActions {
 
 /** The writer pipeline, rebuilt only when what it runs on changes. */
 export function useWriterActions(host: WriterHost): WriterActions {
-  const { session, t, contextFor, setHandle, refuseBusy } = host;
+  const { session, t } = host;
   return useMemo(() => {
-    const bound: WriterHost = { session, t, contextFor, setHandle, refuseBusy };
+    const bound: WriterHost = { session, t };
     return {
       applyWriterOutcome: (tab, handle, outcome, labelKey) =>
         applyWriterOutcome(bound, tab, handle, outcome, labelKey),
       writeLayers: (request) => writeLayers(bound, request),
     };
-  }, [session, t, contextFor, setHandle, refuseBusy]);
+  }, [session, t]);
 }
 
 export interface MarkActions {
@@ -46,23 +46,14 @@ export interface MarkActions {
 
 /** The mark handlers, rebuilt only when what they run on changes. */
 export function useMarkActions(host: MarksHost): MarkActions {
-  const { session, t, contextFor, setHandle, refuseBusy, cancel, canEdit, checkpointEngineValues } = host;
+  const { session, t, checkpointEngineValues } = host;
   return useMemo(() => {
-    const bound: MarksHost = {
-      session,
-      t,
-      contextFor,
-      setHandle,
-      refuseBusy,
-      cancel,
-      canEdit,
-      checkpointEngineValues,
-    };
+    const bound: MarksHost = { session, t, checkpointEngineValues };
     return {
       removeTargets: (keys) => removeTargets(bound, keys),
       transformTargets: (keys, transform) => transformTargets(bound, keys, transform),
       writeFileAnnotation: (label, write, done, selectOnPage) =>
         writeFileAnnotation(bound, label, write, done, selectOnPage),
     };
-  }, [session, t, contextFor, setHandle, refuseBusy, cancel, canEdit, checkpointEngineValues]);
+  }, [session, t, checkpointEngineValues]);
 }

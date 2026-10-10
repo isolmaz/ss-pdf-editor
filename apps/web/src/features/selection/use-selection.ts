@@ -16,22 +16,15 @@ export interface SelectionActions {
 
 /** The handlers, rebuilt only when what they run on changes. */
 export function useSelectionActions(host: SelectionHost): SelectionActions {
-  const { session, cancel, refuseBusy, settleNativeEditors, sweepOrphanAnnotations, removeTargets } = host;
+  const { session, t, settleNativeEditors, sweepOrphanAnnotations, removeTargets } = host;
   return useMemo(() => {
-    const bound: SelectionHost = {
-      session,
-      cancel,
-      refuseBusy,
-      settleNativeEditors,
-      sweepOrphanAnnotations,
-      removeTargets,
-    };
+    const bound: SelectionHost = { session, t, settleNativeEditors, sweepOrphanAnnotations, removeTargets };
     return {
       deleteMarkSelection: () => deleteMarkSelection(bound),
       selectAllMarks: () => selectAllMarks(session),
       openNote,
     };
-  }, [session, cancel, refuseBusy, settleNativeEditors, sweepOrphanAnnotations, removeTargets]);
+  }, [session, t, settleNativeEditors, sweepOrphanAnnotations, removeTargets]);
 }
 
 /**

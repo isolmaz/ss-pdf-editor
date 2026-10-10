@@ -21,6 +21,7 @@ import {
   toggleXfaDetails,
   useCurrentDetect,
   useCurrentForms,
+  useCurrentXfa,
   useForms,
   xfaFormClosed,
 } from './forms-store';
@@ -61,7 +62,7 @@ export function XfaBanner({
   readonly onFill: () => void;
   readonly onOpenDialog: (id: XfaDialogId) => void;
 }) {
-  const xfaInfo = useCurrentForms(tab)?.xfa ?? null;
+  const xfaInfo = useCurrentXfa(tab);
   const detailsOpen = useForms((state) => state.xfaDetailsOpen);
   const busy = useCore((state) => state.busy);
   if (xfaInfo === null) return null;
