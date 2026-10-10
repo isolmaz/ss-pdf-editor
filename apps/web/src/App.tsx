@@ -1,4 +1,4 @@
-import type { AnnotationMark, ExistingAnnotation, FormFieldInfo } from 'pdf-core';
+import type { AnnotationMark } from 'pdf-core';
 import { openWithPdfjs, type PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 // The annotation and form ops are imported by **module**, not through the
 // package barrel: a barrel re-export keeps every operation module in the graph the
@@ -17,12 +17,10 @@ import {
   pdfNameFor,
   unsupportedDocumentKind,
 } from 'pdf-core/ops/convert-formats';
-import type { FormDetection } from 'pdf-core/ops/form-detect';
 import { fieldValueText } from 'pdf-core/ops/form-value';
 import type { RedactRect } from 'pdf-core/ops/redact';
 import type { ProtectionState } from 'pdf-core/ops/security';
 import type { OperationContext } from 'pdf-core/ops/types';
-import type { XfaInfo } from 'pdf-core/ops/xfa';
 import {
   copyForEngine,
   type Draft,
@@ -86,7 +84,6 @@ import type { MessageKey } from 'pdf-shared';
 import type { FieldValue } from 'pdf-ui';
 import {
   type CanvasToolId,
-  FieldCandidateLayer,
   MarkInteractionLayer,
   type MarkTarget,
   markTargetKey,
@@ -207,6 +204,24 @@ import { SignatureWarningPrompt } from './features/facts/SignatureWarningPrompt'
 import { confirmSignature, useSignaturePending } from './features/facts/signature-prompt';
 import { trustStore, useStoredTrust } from './features/facts/trust-store';
 import { useDocumentFacts } from './features/facts/use-document-facts';
+import { FieldCandidateHost, FormsPanel, XfaBanner, XfaFormDialogHost } from './features/forms/FormsSurface';
+import {
+  applyFormDetect as applyFormDetectFor,
+  fillField as fillFieldFor,
+  openXfaForm as openXfaFormFor,
+  saveXfaForm as saveXfaFormFor,
+  startFormDetect as startFormDetectFor,
+} from './features/forms/form-actions';
+import {
+  existingAnnotationsOf,
+  existingInventoryRead,
+  existingInventoryUnknown,
+  retryInspection,
+  useCurrentForms,
+  useExistingAnnotations,
+  useForms,
+} from './features/forms/forms-store';
+import { useFormInventory } from './features/forms/use-form-inventory';
 import { MeasureOverlay } from './features/measure/MeasureOverlay';
 import { MeasureSettingsStrip } from './features/measure/MeasureSettingsStrip';
 import { armMeasure, useMeasureMode } from './features/measure/measure-store';
@@ -233,12 +248,9 @@ import {
 import {
   applyLayerWrite,
   convertToPdf,
-  fillFormFields,
   imagesToPdf,
   inspectProtection,
-  inspectXfa,
   listPdfImages,
-  readFormFields,
   verifySignatures,
 } from './lazy-ops';
 import {
@@ -357,17 +369,6 @@ interface DialogInput {
 }
 
 /**
- * Dock panels that own a capability's *writer* are loaded when the tab is opened.
- */
-const FormPanel = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.FormPanel };
-});
-const FormDetectPanel = lazy(async () => {
-  const module = await import('pdf-ui/panels');
-  return { default: module.FormDetectPanel };
-});
-/**
  * The command palette is the only consumer of Kumo's command palette, which held the entry
  * chunk over the budget. It is reached by a gesture, so it loads on demand — and `main.tsx`
  * prefetches it while the browser is idle, so the first `Ctrl+K` is not a visible wait.
@@ -391,11 +392,6 @@ const BatchDialog = lazy(async () => {
 const StartDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.StartDialog };
-});
-/** Fills a dynamic XFA form in pdf.js's XFA renderer (`XfaFormDialog`). */
-const XfaFormDialog = lazy(async () => {
-  const module = await import('pdf-ui/dialog');
-  return { default: module.XfaFormDialog };
 });
 /**
  * The comparison panel reads the working bytes, so it rides the dock panels' own boundary
@@ -657,54 +653,10 @@ export function App({ store }: AppProps) {
   } = useAnnotationStyle();
   /** The measurements the session holds (the measure tool's own state is `features/measure`). */
   const measureMarks = pendingOverlays(store.active).measures;
-  /**
-   * The file's own annotations, **keyed to the bytes they were read from**.
-   *
-   * `readAnnotations` is async, so an inventory that has not arrived yet must not look
-   * like a document with no annotations: the common layer's targets — and with them
-   * selection and editing — stay unavailable until the inventory describing the
-   * version on screen has been read, and a read that lands after a byte operation
-   * replaced that version is discarded rather than mixed into the new one.
-   *
-   * The key is the produced version's own id (or the source master), **not**
-   * `working.id`: drawing, erasing or undoing a mark journals an overlay step and
-   * mints a new working id without touching a byte, and keying on that would throw
-   * away a perfectly good inventory every time the user drew something.
-   */
-  const [existingInventory, setExistingInventory] = useState<{
-    readonly tabId: string;
-    readonly bytesKey: string;
-    readonly annotations: readonly ExistingAnnotation[];
-  } | null>(null);
-  /**
-   * The form inventory of the active tab. Read from the **working bytes** rather
-   * than from the viewer: a field list is a document fact, and re-reading it after
-   * every operation keeps it true (a page delete can remove widgets).
-   */
-  const [formInventory, setFormInventory] = useState<{
-    tabId: string;
-    version: string;
-    fields?: readonly FormFieldInfo[];
-    /** What the version's XFA is (`null`: none); read with the fields, from the same bytes. */
-    xfa?: XfaInfo | null;
-    error?: ToolError;
-  } | null>(null);
-  const [inspectionRevision, setInspectionRevision] = useState(0);
-  const [selectedField, setSelectedField] = useState<string | null>(null);
-  /**
-   * Prepare form: the detector's candidates for **one version of one document**, under
-   * review. They describe the bytes they were read from, so a version change (the user's
-   * edit, or the fields' own creation) ends the review: `currentDetect` reads `null` for
-   * any other version, which is also how a landed write closes it.
-   */
-  const [formDetect, setFormDetect] = useState<{
-    readonly tabId: string;
-    readonly version: string;
-    readonly phase: 'scanning' | 'review';
-    readonly detection: FormDetection | null;
-    readonly removed: ReadonlySet<string>;
-    readonly selectedId: string | null;
-  } | null>(null);
+  // The file's own annotations and form fields, each keyed to the bytes it was read from
+  // (`features/forms`); the forms store owns them.
+  const existingInventory = useForms((state) => state.existingInventory);
+  const inspectionRevision = useForms((state) => state.inspectionRevision);
 
   /**
    * The tools slices need a render when the viewer API arrives, and a ref does not
@@ -738,42 +690,21 @@ export function App({ store }: AppProps) {
   }, [refuseUnappliedRedactions]);
   const activeHandle = useDocumentHandle(activeTab?.id ?? null);
   const pageCount = activeTab === null ? 0 : workingPageCount(activeTab);
-  const currentForms =
-    activeTab !== null &&
-    formInventory?.tabId === activeTab.id &&
-    formInventory.version === activeTab.working.id
-      ? formInventory
-      : null;
+  const currentForms = useCurrentForms(activeTab);
   const formFields = currentForms?.fields ?? null;
-  const xfaInfo = currentForms?.xfa ?? null;
-  const [xfaDetailsOpen, setXfaDetailsOpen] = useState(false);
-  const currentDetect =
-    activeTab !== null && formDetect?.tabId === activeTab.id && formDetect.version === activeTab.working.id
-      ? formDetect
-      : null;
 
   /**
    * The file's annotations for the bytes on screen — `null` while the read is still in
    * flight, or when it describes a version that is no longer current.
    */
-  const existingBytesKey = activeTab === null ? null : (activeTab.working.produced?.id ?? 'source');
-  const existingAnnotations =
-    existingInventory !== null &&
-    activeTab !== null &&
-    existingInventory.tabId === activeTab.id &&
-    existingInventory.bytesKey === existingBytesKey
-      ? existingInventory.annotations
-      : null;
+  const existingAnnotations = useExistingAnnotations(activeTab);
   usePublishExistingAnnotations(existingAnnotations);
   const editableOverlays = useCallback(
     (tab: SessionTab) => {
       const stored = pendingOverlays(tab);
-      if (
-        existingInventory?.tabId !== tab.id ||
-        existingInventory.bytesKey !== (tab.working.produced?.id ?? 'source')
-      )
-        return stored;
-      const normalized = normalizePendingMarks(stored, existingInventory.annotations);
+      const existing = existingAnnotationsOf(existingInventory, tab);
+      if (existing === null) return stored;
+      const normalized = normalizePendingMarks(stored, existing);
       return normalized === stored ? stored : { ...stored, ...normalized };
     },
     [existingInventory],
@@ -1232,44 +1163,7 @@ export function App({ store }: AppProps) {
     [store, t],
   );
 
-  /**
-   * The form inventory follows the working version: `working.id` changes when an
-   * operation lands, and a stale list would offer to fill a field that no longer
-   * exists. `readFormFields` is a read, so the cost is one parse of the bytes the
-   * viewer already holds.
-   */
-  useEffect(() => {
-    void inspectionRevision;
-    const tab = activeTab;
-    const handle = activeHandle;
-    if (tab === null || handle === null) {
-      setFormInventory(null);
-      return undefined;
-    }
-    const controller = new AbortController();
-    setFormInventory({ tabId: tab.id, version: tab.working.id });
-    void (async () => {
-      try {
-        const bytes = await materializeBase(contextFor(tab, handle), { signal: controller.signal });
-        const fields = await readFormFields(bytes, controller.signal);
-        // A failed XFA read must not hide the form list: the notice is an extra.
-        const xfa = await inspectXfa(bytes).catch(() => null);
-        if (!controller.signal.aborted) {
-          setFormInventory({ tabId: tab.id, version: tab.working.id, fields, xfa });
-        }
-      } catch (error) {
-        if (!controller.signal.aborted)
-          setFormInventory({
-            tabId: tab.id,
-            version: tab.working.id,
-            error: error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' }),
-          });
-      }
-    })();
-    return () => controller.abort();
-    // `activeTab` carries `working.id`: the effect re-runs when an operation lands,
-    // which is exactly when the inventory can have changed.
-  }, [activeTab, activeHandle, contextFor, inspectionRevision]);
+  useFormInventory({ store, t, tab: activeTab, handle: activeHandle });
 
   useStoredTrust();
   const documentFacts = useCurrentFacts(activeTab);
@@ -1277,151 +1171,28 @@ export function App({ store }: AppProps) {
   useDocumentFacts({ store, t, tab: activeTab, handle: activeHandle, revision: inspectionRevision });
   const signaturePending = useSignaturePending();
 
-  /**
-   * The dynamic XFA form being filled: the tab it belongs to and the bytes frozen when the
-   * dialog opened, so what is saved back is a change to exactly the version that was shown.
-   */
-  const [xfaForm, setXfaForm] = useState<{ readonly tab: SessionTab; readonly bytes: Uint8Array } | null>(
-    null,
+  /** What the forms handlers need from the shell. */
+  const formsHost = useMemo(
+    () => ({
+      store,
+      t,
+      contextFor,
+      refuseBusy,
+      setHandle,
+      operationRunning: () => cancelRef.current !== null,
+    }),
+    [contextFor, refuseBusy, setHandle, store, t],
   );
-  const openXfaForm = useCallback(() => {
-    const tab = store.active;
-    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-    if (tab === null || handle === null) return;
-    if (isBusy() || cancelRef.current !== null) {
-      refuseBusy();
-      return;
-    }
-    clearNotice();
-    setBusy(true);
-    void (async () => {
-      try {
-        const bytes = await materializeBase(contextFor(tab, handle));
-        const info = await inspectXfa(bytes);
-        if (info === null) throw new ToolError('no-xfa', { engine: 'mupdf' });
-        if (info.kind === 'static') throw new ToolError('xfa-static', { engine: 'mupdf' });
-        if (store.active?.id === tab.id && store.active.working.id === tab.working.id) {
-          setXfaForm({ tab, bytes });
-        }
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        setBusy(false);
-      }
-    })();
-  }, [contextFor, refuseBusy, store, t]);
-
-  /** The XFA dialog's verified bytes become the tab's next working version. */
+  const openXfaForm = useCallback(() => void openXfaFormFor(formsHost), [formsHost]);
   const saveXfaForm = useCallback(
-    async (outcome: OperationOutcome & { readonly changed: number }) => {
-      const form = xfaForm;
-      const handle = form === null ? null : (handleFor(form.tab.id) ?? null);
-      if (form === null || handle === null) return;
-      const next = await applyProducedBytes(
-        contextFor(form.tab, handle),
-        outcome.bytes,
-        workingPageCount(form.tab),
-        { key: 'xfa.note.dataSaved', params: { count: outcome.changed } },
-        outcome.report.engine,
-        outcome.report.steps,
-      );
-      setHandle(form.tab.id, next);
-      setXfaForm(null);
-      showNotice(t('xfa.fill.saved', { count: outcome.changed }));
-    },
-    [contextFor, setHandle, t, xfaForm],
+    (outcome: OperationOutcome & { readonly changed: number }) => saveXfaFormFor(outcome, formsHost),
+    [formsHost],
   );
-
-  /**
-   * One field filled from the panel: the value goes through the same operation the
-   * dialog uses, then the produced bytes become the tab's working version — so the
-   * change is journaled, undoable and visible in the viewer like every other edit.
-   *
-   * A write that would repeat the value the document already holds is dropped here, at the
-   * single point every fill goes through. The inline control commits on blur as well as on
-   * submit, so one edit arrived as **six identical writes** — six working versions, six
-   * journal entries and six inventory reloads — and that churn is what a real press cannot
-   * survive: measured, the same click that deletes two pages on a quiet panel does nothing
-   * after a fill. The operation is
-   * the same one the dialog uses; only a no-op is skipped.
-   */
   const fillField = useCallback(
-    async (name: string, value: string | boolean) => {
-      const tab = store.active;
-      const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-      if (tab === null || handle === null) return;
-      const current = formFields?.find((field) => field.name === name);
-      if (current !== undefined && fieldValueText(current.value) === String(value)) return;
-      if (isBusy()) {
-        refuseBusy();
-        return;
-      }
-      setBusy(true);
-      try {
-        const base = await materializeBase(contextFor(tab, handle));
-        const outcome = await fillFormFields(base, [{ name, value }], {
-          signal: new AbortController().signal,
-        });
-        const next = await applyProducedBytes(
-          contextFor(tab, handle),
-          outcome.bytes,
-          workingPageCount(tab),
-          { key: 'form.note.filled', params: { count: 1 } },
-          outcome.report.engine,
-          outcome.report.steps,
-        );
-        setHandle(tab.id, next);
-        showNotice(t('op.result.applied', { label: t('panel.forms') }));
-      } catch (error) {
-        const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-        showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [contextFor, formFields, setHandle, store, t, refuseBusy],
+    (name: string, value: string | boolean) => fillFieldFor(name, value, formsHost),
+    [formsHost],
   );
-
-  /**
-   * Detect fields: a read of the working bytes (`pdf-core/ops/form-detect.ts`), so nothing
-   * is journaled and nothing can be lost. The result is only kept while it still describes
-   * the version it was read from; a version that landed in the meantime drops it.
-   */
-  const startFormDetect = useCallback(async () => {
-    const tab = store.active;
-    const handle = tab === null ? null : (handleFor(tab.id) ?? null);
-    if (tab === null || handle === null) return;
-    if (isBusy()) {
-      refuseBusy();
-      return;
-    }
-    const version = tab.working.id;
-    openRightPanel('forms');
-    setFormDetect({
-      tabId: tab.id,
-      version,
-      phase: 'scanning',
-      detection: null,
-      removed: new Set(),
-      selectedId: null,
-    });
-    try {
-      const base = await materializeBase(contextFor(tab, handle));
-      const { detectFormFields } = await import('pdf-core/ops/form-detect');
-      const detection = await detectFormFields(base, { signal: new AbortController().signal });
-      setFormDetect((current) =>
-        current?.tabId === tab.id && current.version === version && current.phase === 'scanning'
-          ? { ...current, phase: 'review', detection }
-          : current,
-      );
-      if (detection.candidates.length === 0) showNotice(t('formDetect.panel.none'));
-    } catch (error) {
-      setFormDetect(null);
-      const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-    }
-  }, [contextFor, refuseBusy, store, t]);
+  const startFormDetect = useCallback(() => startFormDetectFor(formsHost), [formsHost]);
 
   /**
    * Drafts: the model data of every open tab — never the source
@@ -2280,7 +2051,7 @@ export function App({ store }: AppProps) {
       viewerApi.current = api;
       setViewer(api);
       if (api === null) {
-        setExistingInventory(null);
+        existingInventoryUnknown();
         return;
       }
       handleInUse(api.document);
@@ -2297,13 +2068,13 @@ export function App({ store }: AppProps) {
           // operation replaced that version describes a document nobody is looking at,
           // and it is dropped rather than shown.
           if (viewerApi.current !== api || tab === null || bytesKey === null) return;
-          setExistingInventory({ tabId: tab.id, bytesKey, annotations: found });
+          existingInventoryRead({ tabId: tab.id, bytesKey, annotations: found });
         })
         .catch((error) => {
           if (viewerApi.current !== api) return;
           // A failed read is unknown, not an empty document. Keep saved-mark edits
           // unavailable rather than normalizing against an invented empty inventory.
-          setExistingInventory(null);
+          existingInventoryUnknown();
           const failure = error instanceof ToolError ? error : new ToolError('internal', { engine: 'pdfjs' });
           showNotice(t(failure.messageKey));
         });
@@ -3385,26 +3156,10 @@ export function App({ store }: AppProps) {
     removeTargets,
   });
 
-  /**
-   * Add the candidates the user kept as real form fields: one journal step that undo takes
-   * back whole, written through the same boundary as a placed stamp. The operation reads the
-   * result back (name, type, page, rectangle) before it returns.
-   */
-  const applyFormDetect = useCallback(() => {
-    const review = currentDetect;
-    if (review?.detection == null || review.phase !== 'review') return;
-    const kept = review.detection.candidates.filter((candidate) => !review.removed.has(candidate.id));
-    if (kept.length === 0) return;
-    selectRightTab('forms');
-    writeFileAnnotation(
-      { key: 'formDetect.note.created', params: { count: kept.length } },
-      async (base, signal) => {
-        const { createDetectedFields } = await import('pdf-core/ops/form-detect');
-        return await createDetectedFields(base, kept, { signal });
-      },
-      t('formDetect.done', { count: kept.length }),
-    );
-  }, [currentDetect, t, writeFileAnnotation]);
+  const applyFormDetect = useCallback(
+    () => applyFormDetectFor({ store, t, writeFileAnnotation }),
+    [store, t, writeFileAnnotation],
+  );
 
   /** The click that places the armed picture: one `/Stamp`, one journal step, then selected. */
   const placeStamp = useCallback(
@@ -3943,46 +3698,8 @@ export function App({ store }: AppProps) {
           )}
         </div>
       ) : null}
-      {!isHome && xfaInfo !== null ? (
-        // A form with XFA: said once, plainly, with what can be done. Its own row, shown
-        // when the document opens, so arming a tool never moves the pages.
-        <div
-          role="status"
-          data-testid="xfa-banner"
-          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-kumo-line bg-kumo-tint px-3 py-1 text-[11px] text-kumo-default"
-        >
-          <span className="min-w-0 flex-1">
-            {t(xfaInfo.kind === 'dynamic' ? 'xfa.banner.dynamic' : 'xfa.banner.static')}{' '}
-            <button
-              type="button"
-              aria-expanded={xfaDetailsOpen}
-              className="underline underline-offset-2 hover:text-kumo-strong"
-              onClick={() => setXfaDetailsOpen((open) => !open)}
-            >
-              {t('xfa.banner.more')}
-            </button>
-          </span>
-          {xfaInfo.kind === 'dynamic' ? (
-            <>
-              <Button size="sm" shape="base" disabled={busy} onClick={openXfaForm}>
-                {t('xfa.banner.fill')}
-              </Button>
-              <Button size="sm" shape="base" disabled={!canEdit} onClick={() => openDialog('xfa-flatten')}>
-                {t('xfa.banner.flatten')}
-              </Button>
-            </>
-          ) : (
-            <Button size="sm" shape="base" disabled={!canEdit} onClick={() => openDialog('xfa-remove')}>
-              {t('xfa.banner.remove')}
-            </Button>
-          )}
-          <Button size="sm" shape="base" disabled={!canEdit} onClick={() => openDialog('xfa-data')}>
-            {t('xfa.banner.data')}
-          </Button>
-          {xfaDetailsOpen ? (
-            <p className="basis-full text-[11px] text-kumo-subtle">{t('xfa.banner.supported')}</p>
-          ) : null}
-        </div>
+      {!isHome ? (
+        <XfaBanner t={t} tab={activeTab} canEdit={canEdit} onFill={openXfaForm} onOpenDialog={openDialog} />
       ) : null}
       <main className="relative min-h-0 flex-1">
         {isHome ? (
@@ -4231,31 +3948,7 @@ export function App({ store }: AppProps) {
                         />
                       ) : null}
                       <StampPlacementHost viewer={viewer} canEdit={canEdit} t={t} onPlace={placeStamp} />
-                      {viewer !== null &&
-                      canEdit &&
-                      currentDetect?.phase === 'review' &&
-                      currentDetect.detection !== null ? (
-                        <FieldCandidateLayer
-                          t={t}
-                          viewer={viewer}
-                          candidates={currentDetect.detection.candidates.filter(
-                            (candidate) => !currentDetect.removed.has(candidate.id),
-                          )}
-                          selectedId={currentDetect.selectedId}
-                          onSelect={(id) =>
-                            setFormDetect((current) =>
-                              current === null ? current : { ...current, selectedId: id },
-                            )
-                          }
-                          onRemove={(id) =>
-                            setFormDetect((current) =>
-                              current === null
-                                ? current
-                                : { ...current, removed: new Set(current.removed).add(id) },
-                            )
-                          }
-                        />
-                      ) : null}
+                      <FieldCandidateHost t={t} tab={activeTab} viewer={viewer} canEdit={canEdit} />
                       {/*
                 The text tool wears its own layer rather than sharing the annotation
                 one: it reads the page's structured text (an engine call) and paints
@@ -4419,7 +4112,7 @@ export function App({ store }: AppProps) {
                       t={t}
                       tab={activeTab}
                       disabled={!canEdit}
-                      onRetry={() => setInspectionRevision((value) => value + 1)}
+                      onRetry={retryInspection}
                       onAddAttachments={(files) => void attachmentActions.addToDocument(files)}
                       onRemoveAttachment={(name) => void attachmentActions.removeFromDocument(name)}
                       onReadAttachment={(name) => void attachmentActions.readOut(name)}
@@ -4468,74 +4161,15 @@ export function App({ store }: AppProps) {
                       onConvert={() => openDialog('pdfa')}
                     />
                   ) : rightTab === 'forms' ? (
-                    <Suspense
-                      fallback={
-                        <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
-                          {t('panel.forms')}
-                        </p>
-                      }
-                    >
-                      <FormDetectPanel
-                        t={t}
-                        phase={currentDetect?.phase ?? 'idle'}
-                        detection={currentDetect?.detection ?? null}
-                        removed={currentDetect?.removed ?? new Set<string>()}
-                        selectedId={currentDetect?.selectedId ?? null}
-                        disabled={!canEdit}
-                        onDetect={() => void startFormDetect()}
-                        onCancel={() => setFormDetect(null)}
-                        onApply={applyFormDetect}
-                        onRemove={(id) =>
-                          setFormDetect((current) =>
-                            current === null
-                              ? current
-                              : { ...current, removed: new Set(current.removed).add(id) },
-                          )
-                        }
-                        onRestore={() =>
-                          setFormDetect((current) =>
-                            current === null ? current : { ...current, removed: new Set() },
-                          )
-                        }
-                        onSelect={(id) => {
-                          setFormDetect((current) =>
-                            current === null ? current : { ...current, selectedId: id },
-                          );
-                          const candidate = currentDetect?.detection?.candidates.find(
-                            (entry) => entry.id === id,
-                          );
-                          if (candidate !== undefined) viewerApi.current?.goToPage(candidate.pageIndex);
-                        }}
-                      />
-                      {currentForms?.error !== undefined ? (
-                        <div role="alert" className="flex flex-col gap-2 p-2 text-xs text-kumo-danger">
-                          <p>
-                            {t(currentForms.error.messageKey)} {t(currentForms.error.hintKey)}
-                          </p>
-                          <Button
-                            variant="outline"
-                            onClick={() => setInspectionRevision((value) => value + 1)}
-                          >
-                            {t('inspection.retry')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <FormPanel
-                          key={activeTab.id}
-                          t={t}
-                          fields={formFields ?? []}
-                          loading={formFields === null}
-                          selectedName={selectedField}
-                          onSelect={(name) => {
-                            setSelectedField(name);
-                            const field = formFields?.find((entry) => entry.name === name);
-                            if (field?.pageIndex != null) viewerApi.current?.goToPage(field.pageIndex);
-                          }}
-                          onFill={(name, value) => void fillField(name, value)}
-                          disabled={!canEdit}
-                        />
-                      )}
-                    </Suspense>
+                    <FormsPanel
+                      t={t}
+                      tab={activeTab}
+                      canEdit={canEdit}
+                      goToPage={(pageIndex) => viewerApi.current?.goToPage(pageIndex)}
+                      onDetect={() => void startFormDetect()}
+                      onApply={applyFormDetect}
+                      onFill={(name, value) => void fillField(name, value)}
+                    />
                   ) : (
                     <RedactionPanel
                       t={t}
@@ -4749,19 +4383,7 @@ export function App({ store }: AppProps) {
           />
         </Suspense>
       ) : null}
-      {xfaForm === null ? null : (
-        <Suspense fallback={null}>
-          <XfaFormDialog
-            t={t}
-            bytes={xfaForm.bytes}
-            onClose={() => setXfaForm(null)}
-            onSave={saveXfaForm}
-            onExport={(file) => {
-              downloadFiles([{ name: file.name, bytes: file.bytes, mime: file.mime }]);
-            }}
-          />
-        </Suspense>
-      )}
+      <XfaFormDialogHost t={t} onSave={saveXfaForm} />
       <SignatureDialogHost t={t} canRemember={activeTab?.sensitive !== true} />
       <ImagePickerInput t={t} />
       <SignatureWarningPrompt t={t} />
