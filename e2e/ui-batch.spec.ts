@@ -382,7 +382,7 @@ test('watching a folder queues its PDFs, picks up a new one, and stops on reques
     { name: 'b.PDF', bytes: labelledPdf('B', 1) },
     { name: 'notes.txt', bytes: new TextEncoder().encode('not a pdf') },
   ]);
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   await expect(dialog.getByText('Watching folder: watched')).toBeVisible();
   const list = dialog.getByRole('list').first();
   await expect(list.getByText('a.pdf', { exact: true })).toBeVisible();
@@ -397,9 +397,9 @@ test('watching a folder queues its PDFs, picks up a new one, and stops on reques
   await expect(dialog.getByText(/^3\/\d+$/)).toBeVisible();
   await expect(page.getByText('3 PDF files queued from folder.')).toBeVisible();
 
-  await dialog.getByRole('button', { name: 'Stop Watching' }).click();
+  await dialog.getByRole('button', { name: 'Stop watching' }).click();
   await expect(dialog.getByText('Watching folder')).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Watch Folder' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Watch folder' })).toBeVisible();
 });
 
 test('a refused folder picker changes nothing', async ({ page }) => {
@@ -412,9 +412,9 @@ test('a refused folder picker changes nothing', async ({ page }) => {
       },
     });
   });
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   await expect(dialog.getByText('Watching folder')).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Watch Folder' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Watch folder' })).toBeVisible();
   await expect(dialog.getByText(/^0\/\d+$/)).toBeVisible();
 });
 
@@ -596,7 +596,7 @@ test('closing the dialog while watching a folder stops the folder timer', async 
   const dialog = await openBatch(page);
   const before = await timers();
   await stageFolder(page, [{ name: 'a.pdf', bytes: labelledPdf('A', 1) }]);
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   await expect(dialog.getByText('Watching folder: watched')).toBeVisible();
   await expect.poll(timers).toBe(before + 1);
   await dialog.getByRole('button', { name: 'Close' }).click();

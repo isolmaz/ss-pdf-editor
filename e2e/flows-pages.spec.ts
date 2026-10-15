@@ -222,9 +222,9 @@ test('export options: the image format chosen in the export dialog is the one th
   await open(page, 'choice.pdf', labelledPdf('Pic', 1));
   await page.getByRole('button', { name: 'Export options' }).click();
   const dialog = page.getByRole('dialog', { name: 'Export options' });
-  await dialog.getByRole('radio', { name: 'Image Format' }).check();
+  await dialog.getByRole('radio', { name: 'Image format' }).check();
   await dialog.getByRole('combobox').nth(1).selectOption('jpg');
-  await dialog.getByRole('button', { name: 'Download Images' }).click();
+  await dialog.getByRole('button', { name: 'Download images' }).click();
   const form = page.getByRole('region', { name: 'Export pages as images' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('spinbutton', { name: 'Resolution (DPI)' }).fill('72');

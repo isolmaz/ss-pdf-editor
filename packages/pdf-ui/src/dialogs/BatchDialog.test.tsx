@@ -865,7 +865,7 @@ describe('BatchDialog watching a folder', () => {
     return picker;
   }
 
-  const watch = () => fireEvent.click(screen.getByRole('button', { name: 'Watch Folder' }));
+  const watch = () => fireEvent.click(screen.getByRole('button', { name: 'Watch folder' }));
   const tick = () =>
     act(async () => {
       await vi.advanceTimersByTimeAsync(4000);
@@ -877,7 +877,7 @@ describe('BatchDialog watching a folder', () => {
 
   it('offers no folder watching where the browser cannot pick a directory', () => {
     show();
-    expect(screen.queryByRole('button', { name: 'Watch Folder' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Watch folder' })).toBeNull();
   });
 
   it('queues the PDFs of the folder, follows changes every four seconds, and stops on request', async () => {
@@ -904,9 +904,9 @@ describe('BatchDialog watching a folder', () => {
     expect(screen.getByText('d.pdf')).toBeTruthy();
     expect(screen.queryByText('c.pdf')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stop Watching' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop watching' }));
     expect(screen.queryByText('Watching folder: Inbox')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Watch Folder' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Watch folder' })).toBeTruthy();
     onNotice.mockClear();
     dir.contents.current = [pdf('z.pdf')];
     await tick();
@@ -920,14 +920,14 @@ describe('BatchDialog watching a folder', () => {
     watch();
     await screen.findByText('Watching folder: Empty');
     expect(onNotice).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Stop Watching' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop watching' }));
 
     watch();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });
     expect(screen.queryByText(/Watching folder/)).toBeNull();
-    expect(screen.getByRole('button', { name: 'Watch Folder' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Watch folder' })).toBeTruthy();
   });
 
   it('keeps watching through a listing that fails', async () => {
@@ -955,7 +955,7 @@ describe('BatchDialog watching a folder', () => {
     const { onNotice } = show();
     watch();
     await screen.findByText('Watching folder: Slow');
-    fireEvent.click(screen.getByRole('button', { name: 'Stop Watching' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop watching' }));
     await act(async () => open());
     onNotice.mockClear();
     dir.contents.current = [pdf('a.pdf'), pdf('b.pdf')];
@@ -983,7 +983,7 @@ describe('BatchDialog watching a folder', () => {
     offerPicker(dir.handle);
     const { onNotice } = show();
     watch();
-    await screen.findByRole('button', { name: 'Stop Watching' });
+    await screen.findByRole('button', { name: 'Stop watching' });
     expect(screen.queryByText(/Watching folder/)).toBeNull();
     cleanup();
     onNotice.mockClear();
@@ -1033,7 +1033,7 @@ describe('BatchDialog watching a folder', () => {
     dir.contents.current = [pdf('a.pdf'), pdf('b.pdf')];
     // The timer's listing starts and waits; Stop comes before it ends.
     await tick();
-    fireEvent.click(screen.getByRole('button', { name: 'Stop Watching' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop watching' }));
     await act(async () => listed.resolve());
     expect(onNotice).not.toHaveBeenCalled();
     expect(screen.queryByText('b.pdf')).toBeNull();

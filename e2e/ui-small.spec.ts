@@ -173,7 +173,7 @@ test('the export dialog shows the file and its size, and its close button leaves
   await expect(dialog.getByRole('radio', { name: /^This PDF \(\d+\.\d KB\)/ })).toBeChecked();
   await expect(dialog.getByText('sized.pdf', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Download PDF' })).toBeVisible();
-  for (const other of ['Compressed PDF', 'Image Format', 'Text Format', 'Word, Excel or CSV']) {
+  for (const other of ['Compressed PDF', 'Image format', 'Text format', 'Word, Excel or CSV']) {
     await expect(dialog.getByRole('radio', { name: other })).not.toBeChecked();
   }
   // Only the chosen option's list is enabled.
@@ -191,9 +191,9 @@ test('the export dialog shows the file and its size, and its close button leaves
 test('the text choice opens the Export Text form', async ({ page }) => {
   await openPdf(page, 'words.pdf', toolFixturePdf());
   const dialog = await openExportDialog(page);
-  await dialog.getByRole('radio', { name: 'Text Format' }).check();
+  await dialog.getByRole('radio', { name: 'Text format' }).check();
   await expect(dialog.getByRole('radio', { name: /^This PDF/ })).not.toBeChecked();
-  await dialog.getByRole('button', { name: 'Download Text File' }).click();
+  await dialog.getByRole('button', { name: 'Download text file' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('region', { name: 'Export text' })).toBeVisible({ timeout: 30_000 });
 });
@@ -254,10 +254,10 @@ test('clicking the compression and image lists does not switch the chosen option
   await dialog.getByRole('radio', { name: 'Compressed PDF' }).check();
   await dialog.getByRole('combobox').first().click();
   await expect(dialog.getByRole('radio', { name: 'Compressed PDF' })).toBeChecked();
-  await dialog.getByRole('radio', { name: 'Image Format' }).check();
+  await dialog.getByRole('radio', { name: 'Image format' }).check();
   await dialog.getByRole('combobox').nth(1).click();
-  await expect(dialog.getByRole('radio', { name: 'Image Format' })).toBeChecked();
-  await expect(dialog.getByRole('button', { name: 'Download Images' })).toBeVisible();
+  await expect(dialog.getByRole('radio', { name: 'Image format' })).toBeChecked();
+  await expect(dialog.getByRole('button', { name: 'Download images' })).toBeVisible();
 });
 
 /* ------------------------------------------------------------------ *

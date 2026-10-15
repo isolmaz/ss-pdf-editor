@@ -82,7 +82,7 @@ test('the export dialog offers the document or its compressed copy and the butto
 
   await compressed.check();
   await expect(compressed).toBeChecked();
-  await expect(dialog.getByRole('button', { name: 'Download Compressed PDF', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Download compressed PDF', exact: true })).toBeVisible();
 
   await pdf.check();
   await expect(pdf).toBeChecked();

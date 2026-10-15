@@ -3,7 +3,7 @@
  * scale, and what comes out. The browser's own print dialog cannot be driven, so the page's
  * `window.print` stands in and records the sheets the editor laid out when it was called —
  * their number, order (told apart by the pages' shapes) and sizes. The imposed file
- * ("Generate Printable PDF") opens as a new tab and is exported and read back.
+ * ("Generate printable PDF") opens as a new tab and is exported and read back.
  */
 
 import type { Locator, Page } from 'playwright/test';
@@ -229,9 +229,9 @@ test('Generate Printable PDF: N-up puts several pages on a sheet and opens the f
 }) => {
   await openPdf(page, 'print.pdf', labelledPdf('Print', 3));
   const panel = await openPrint(page);
-  await expect(panel.getByRole('button', { name: 'Generate Printable PDF' })).toBeEnabled();
+  await expect(panel.getByRole('button', { name: 'Generate printable PDF' })).toBeEnabled();
   await panel.getByRole('radio', { name: '2', exact: true }).check();
-  await panel.getByRole('button', { name: 'Generate Printable PDF' }).click();
+  await panel.getByRole('button', { name: 'Generate printable PDF' }).click();
   await expect(notice(page, 'Print file ready: print.pdf')).toBeVisible({ timeout: 60_000 });
   await expect(dialog(page)).toBeHidden();
   const texts = (await readProducedPageTexts(await exportBytes(page, 'two-up.pdf'))).map((text) =>
@@ -249,7 +249,7 @@ test('Generate Printable PDF: the file is a new A4 tab beside the source, which 
   await openPdf(page, 'source.pdf', labelledPdf('Source', 3));
   const panel = await openPrint(page);
   await panel.getByRole('radio', { name: '2', exact: true }).check();
-  await panel.getByRole('button', { name: 'Generate Printable PDF' }).click();
+  await panel.getByRole('button', { name: 'Generate printable PDF' }).click();
   await expect(notice(page, 'Print file ready: print.pdf')).toBeVisible({ timeout: 60_000 });
   await expect(dialog(page)).toBeHidden();
 
@@ -291,7 +291,7 @@ test('Generate Printable PDF: the file is a new A4 tab beside the source, which 
 
   // Nothing is left running: the dialog opens again on the source and offers the file again.
   await openPrint(page);
-  await expect(dialog(page).getByRole('button', { name: 'Generate Printable PDF' })).toBeEnabled();
+  await expect(dialog(page).getByRole('button', { name: 'Generate printable PDF' })).toBeEnabled();
 });
 
 test('Generate Printable PDF: a booklet is a signature — four pages to a sheet, ordered front and back', async ({
@@ -303,14 +303,14 @@ test('Generate Printable PDF: a booklet is a signature — four pages to a sheet
   // A signature replaces the grid choice.
   await expect(panel.getByRole('radio', { name: '2', exact: true })).toHaveCount(0);
   // A signature is printed on both sides of the sheet: one-sided is refused and says so.
-  await panel.getByRole('button', { name: 'Generate Printable PDF' }).click();
+  await panel.getByRole('button', { name: 'Generate printable PDF' }).click();
   await expect(panel.getByRole('alert')).toContainText('This feature is not available for this document.');
   await expect(dialog(page)).toBeVisible();
   await expect(notice(page, 'Print file ready: print.pdf')).toHaveCount(0);
 
   await panel.getByRole('combobox', { name: 'Two-sided (duplex)' }).click();
   await page.getByRole('option', { name: 'Flip on long edge' }).click();
-  await panel.getByRole('button', { name: 'Generate Printable PDF' }).click();
+  await panel.getByRole('button', { name: 'Generate printable PDF' }).click();
   await expect(notice(page, 'Print file ready: print.pdf')).toBeVisible({ timeout: 60_000 });
   const texts = (await readProducedPageTexts(await exportBytes(page, 'booklet.pdf'))).map((text) =>
     text.trim(),
@@ -370,7 +370,7 @@ test('Generate Printable PDF carries a mark that has not been saved, and leaves 
   await page.keyboard.press('Control+Enter');
 
   const panel = await openPrint(page);
-  await panel.getByRole('button', { name: 'Generate Printable PDF' }).click();
+  await panel.getByRole('button', { name: 'Generate printable PDF' }).click();
   await expect(notice(page, 'Print file ready: print.pdf')).toBeVisible({ timeout: 60_000 });
   // The sheet is page content now (a form XObject carries no annotations), so pdf.js reads the
   // mark's words as the page's own text; a file that only carries the mark as an annotation has none.

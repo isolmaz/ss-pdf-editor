@@ -69,7 +69,7 @@ export const pageeditPart = {
     'Reverse sides are placed on sheets in the produced file; choose the matching flip axis on your printer.',
   'print.margin': 'Margins (mm)',
   'print.marginHint': 'Padding at sheet edge; cells are arranged inside this padding.',
-  'print.produce': 'Generate Printable PDF',
+  'print.produce': 'Generate printable PDF',
   'print.fileName': 'print.pdf',
   'print.imposeHint':
     'Pages per sheet, booklet, duplex and margin settings are applied to the generated PDF; “Print” sends pages as-is.',

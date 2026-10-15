@@ -43,22 +43,22 @@ describe('ExportDialog', () => {
   it('downloads a compressed PDF at the chosen level', async () => {
     const { onExport, user } = show();
     await user.click(screen.getByRole('radio', { name: /Compressed PDF/ }));
-    await user.selectOptions(screen.getByDisplayValue('MEDIUM'), 'high');
-    await user.click(screen.getByRole('button', { name: 'Download Compressed PDF' }));
+    await user.selectOptions(screen.getByDisplayValue('Medium'), 'high');
+    await user.click(screen.getByRole('button', { name: 'Download compressed PDF' }));
     expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'compressed', compressionLevel: 'high' });
   });
 
   it('downloads the pages as images in the chosen format', async () => {
     const { onExport, user } = show();
-    await user.click(screen.getByRole('radio', { name: /Image Format/ }));
+    await user.click(screen.getByRole('radio', { name: /Image format/ }));
     await user.selectOptions(screen.getByDisplayValue('PNG'), 'jpg');
-    await user.click(screen.getByRole('button', { name: 'Download Images' }));
+    await user.click(screen.getByRole('button', { name: 'Download images' }));
     expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'images', imageFormat: 'jpg' });
   });
 
   it('goes back to the PDF after another kind was chosen', async () => {
     const { onExport, user } = show();
-    await user.click(screen.getByRole('radio', { name: /Text Format/ }));
+    await user.click(screen.getByRole('radio', { name: /Text format/ }));
     await user.click(screen.getByRole('radio', { name: /This PDF/ }));
     await user.click(screen.getByRole('button', { name: 'Download PDF' }));
     expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'pdf' });
@@ -66,8 +66,8 @@ describe('ExportDialog', () => {
 
   it('downloads the text', async () => {
     const { onExport, user } = show();
-    await user.click(screen.getByRole('radio', { name: /Text Format/ }));
-    await user.click(screen.getByRole('button', { name: 'Download Text File' }));
+    await user.click(screen.getByRole('radio', { name: /Text format/ }));
+    await user.click(screen.getByRole('button', { name: 'Download text file' }));
     expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'text' });
   });
 

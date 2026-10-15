@@ -98,7 +98,7 @@ test('a watched folder where one file was swapped for another keeps the count bu
   const dialog = await openBatch(page);
   const scansDone = await countFolderScans(page);
   await stageFolder(page, [{ name: 'old.pdf', bytes: labelledPdf('Old', 1) }]);
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   const list = dialog.getByRole('list').first();
   await expect(list.getByText('old.pdf', { exact: true })).toBeVisible();
   await expect(page.getByText('1 PDF files queued from folder.')).toBeVisible();

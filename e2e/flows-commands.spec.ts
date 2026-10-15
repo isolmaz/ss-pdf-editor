@@ -664,7 +664,7 @@ test('export options: the compression level chosen in the dialog fills the Optim
     const dialog = page.getByRole('dialog', { name: 'Export options' });
     await dialog.getByRole('radio', { name: 'Compressed PDF' }).check();
     await dialog.getByRole('combobox').first().selectOption(level);
-    await dialog.getByRole('button', { name: 'Download Compressed PDF' }).click();
+    await dialog.getByRole('button', { name: 'Download compressed PDF' }).click();
     const form = page.getByRole('region', { name: 'Reduce file size' });
     await expect(form).toBeVisible({ timeout: 30_000 });
     return form;

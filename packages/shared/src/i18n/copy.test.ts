@@ -105,3 +105,74 @@ describe('tool names', () => {
     expect(tr['toolbar.measure']).toBe('Ölç');
   });
 });
+
+/**
+ * Keys another change is rewriting at the same time (the settings dialog and the tool strips);
+ * their casing is theirs to fix, so the sentence-case check leaves them out until that lands.
+ */
+const IN_FLIGHT = [/^setting\./, /^theme\./, /^toolbar\.select$/];
+
+/** Capitalised words that are names, not title case: products, keyboard keys, PDF terms, languages. */
+const NAMES = new Set([
+  'Word',
+  'Excel',
+  'Markdown',
+  'Noto',
+  'Sans',
+  'Info',
+  'Unicode',
+  'Crypt',
+  'Launch',
+  'Sound',
+  'Movie',
+  'Enter',
+  'Esc',
+  'Ctrl+K',
+  'Türkçesi',
+  'Kurmancî',
+  'Kurmanji',
+  'Simplified',
+  'Traditional',
+  'Tags',
+  'Etiketler',
+]);
+
+/** A label is a short string that is not a sentence: no sentence punctuation inside. */
+function isLabel(text: string): boolean {
+  return text.length <= 70 && !/[.!?:;]/.test(text.replace(/\d\.\d/g, ''));
+}
+
+/** The words after the first that start with a capital and are neither a name nor an identifier. */
+function titleCased(text: string): string[] {
+  const words = text
+    .replace(/\{[^}]*\}/g, '')
+    .replace(/\/[A-Za-z]+/g, '')
+    .split(/[\s/()·,–—-]+/)
+    .map((word) => word.split('’')[0] ?? '')
+    .filter((word) => /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(word));
+  return words
+    .slice(1)
+    .filter(
+      (word) => /^[A-ZÇĞİÖŞÜ][a-zçğıöşüâîû]/.test(word) && !/[a-z][A-Z]/.test(word) && !NAMES.has(word),
+    );
+}
+
+describe.each([
+  ['Turkish', tr],
+  ['English', en],
+] as const)('%s labels', (_name, catalogue) => {
+  const labels = (Object.entries(catalogue) as [Key, string][]).filter(
+    ([key, text]) => isLabel(text) && !IN_FLIGHT.some((skip) => skip.test(key)),
+  );
+
+  it('are written in sentence case, not Title Case', () => {
+    expect(
+      labels.filter(([, text]) => titleCased(text).length > 0).map(([key, text]) => `${key}: ${text}`),
+    ).toEqual([]);
+  });
+
+  it('are not shouted in capitals', () => {
+    const shouted = labels.filter(([, text]) => /^[A-ZÇĞİÖŞÜ\s]{5,}$/.test(text)).map(([key]) => key);
+    expect(shouted).toEqual(['watermark.defaultText']);
+  });
+});
