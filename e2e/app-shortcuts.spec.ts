@@ -152,16 +152,16 @@ test('the tool letters arm the rail tools and put them away again, the rail name
   const pressed = (name: string) => rail(page, name).and(page.locator('[aria-pressed="true"]'));
   const select = 'Selection tool';
   const letters: readonly (readonly [string, string])[] = [
-    ['h', 'Hand / Pan Tool'],
-    ['e', 'Edit Text'],
-    ['t', 'Add Text'],
-    ['u', 'Mark Up Text (highlight, underline, strike)'],
+    ['h', 'Hand tool'],
+    ['e', 'Edit text'],
+    ['t', 'Add text'],
+    ['u', 'Mark up text'],
     ['d', 'Freehand drawing'],
-    ['r', 'Draw Shape (Rectangle)'],
-    ['n', 'Add comment / Note'],
+    ['r', 'Draw shape'],
+    ['n', 'Add note'],
     ['k', 'Add link'],
     ['m', 'Measure'],
-    ['x', 'Redact (permanent removal)'],
+    ['x', 'Permanent redaction'],
   ];
   for (const [letter, name] of letters) {
     await page.keyboard.press(letter);

@@ -740,10 +740,10 @@ test('each tool keeps its own style, a new shape starts solid, and the styles ar
   await rail(page, 'Freehand drawing').click();
   await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('1');
   await strip.getByLabel('Color').fill('#00aa00');
-  await rail(page, 'Draw Shape (Rectangle)').click();
+  await rail(page, 'Draw shape').click();
   await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('1');
   await expect(strip.getByLabel('Color')).not.toHaveValue('#00aa00');
-  await rail(page, 'Mark Up Text (highlight, underline, strike)').click();
+  await rail(page, 'Mark up text').click();
   await expect(strip.getByLabel('Color')).toHaveValue('#ffd400');
   await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('0.4');
 
