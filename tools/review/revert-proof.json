@@ -1,1 +1,134 @@
-[]
+[
+  {
+    "commit": "3260f87cc6382eee3df565425392d652d70e0363",
+    "title": "Give the three View zoom commands their own labels instead of three entries named Zoom",
+    "kind": "unit",
+    "tests": ["apps/web/src/commands.test.ts"],
+    "run": ["apps/web/src/commands.test.ts"],
+    "filter": "gives no two commands of a menu the same|names the three zoom entries"
+  },
+  {
+    "commit": "3f7ecafd7492da57c3706bd4bf12356d7b952dcc",
+    "title": "Let the Page menu act on the current page when no page is selected",
+    "kind": "unit",
+    "tests": ["apps/web/src/commands.test.ts", "packages/pdf-ui/src/dialogs/OperationForm.test.tsx"],
+    "run": ["apps/web/src/commands.test.ts", "packages/pdf-ui/src/dialogs/OperationForm.test.tsx"],
+    "filter": "keeps the page commands available with no page selected|opens a selection scope on the current page"
+  },
+  {
+    "commit": "4a408c53677dc3f54dd4d910693f216a1af33714",
+    "title": "Keep the editor header inside the viewport at every width and give Convert its own icon",
+    "kind": "unit",
+    "tests": ["apps/web/src/components/ModernEditorHeader.test.tsx"],
+    "run": ["apps/web/src/components/ModernEditorHeader.test.tsx"],
+    "filter": "draws Convert with an icon of its own"
+  },
+  {
+    "commit": "845e38c6b6f76c2783f6dcf892cbd104ab661855",
+    "title": "Offer Open and Close in the simple mode's File menu and palette",
+    "kind": "unit",
+    "tests": ["apps/web/src/commands.simple-mode.test.ts"],
+    "run": ["apps/web/src/commands.simple-mode.test.ts"],
+    "filter": "lists the File menu with Open straight after New"
+  },
+  {
+    "commit": "73151efe9208b6e082a18f395ffb7e9d8faee743",
+    "title": "Print the palette shortcut once in the Help menu by dropping it from the command's label",
+    "kind": "unit",
+    "tests": ["apps/web/src/commands.test.ts"],
+    "run": ["apps/web/src/commands.test.ts"],
+    "filter": "never prints a command shortcut inside its"
+  },
+  {
+    "commit": "9823e2ad7dfa293a06c33fa2578db58af73ce52c",
+    "title": "Show no page or zoom readout in the status bar on the home screen",
+    "kind": "unit",
+    "tests": [
+      "apps/web/src/features/shell/ShellStatusBar.test.tsx",
+      "packages/pdf-ui/src/shell/StatusBar.dom.test.tsx"
+    ],
+    "run": [
+      "apps/web/src/features/shell/ShellStatusBar.test.tsx",
+      "packages/pdf-ui/src/shell/StatusBar.dom.test.tsx"
+    ],
+    "filter": "hides the page controls and the page|reads neither page nor zoom"
+  },
+  {
+    "commit": "165bf062cbce27aea46b356c61714b4fc0c84c0d",
+    "title": "Show a loading status on the All tools tab and fetch its chunk when the tab is hovered or focused",
+    "kind": "unit",
+    "tests": ["apps/web/src/components/HomeScreen.test.tsx"],
+    "run": ["apps/web/src/components/HomeScreen.test.tsx"],
+    "filter": "asks for the tool grid when the tab is reached"
+  },
+  {
+    "commit": "99d39c001a7e6ef681d72442ece397154be7c358",
+    "title": "Say that earlier steps cannot be undone when a restored draft carries no history",
+    "kind": "unit",
+    "tests": [
+      "apps/web/src/features/persistence/use-draft-recovery.test.tsx",
+      "packages/pdf-model/src/drafts.test.ts"
+    ],
+    "run": [
+      "apps/web/src/features/persistence/use-draft-recovery.test.tsx",
+      "packages/pdf-model/src/drafts.test.ts"
+    ],
+    "filter": "restores the journal of a draft|says that earlier steps cannot be undone|counts the drafts without a history|lacksHistory is a draft"
+  },
+  {
+    "commit": "3be0c962b17ec12f442a7f668e96c92241e9f773",
+    "title": "Do nothing on Ctrl+Z or Ctrl+Y when there is no step to take",
+    "kind": "unit",
+    "tests": ["apps/web/src/features/pages/page-actions.test.ts"],
+    "run": ["apps/web/src/features/pages/page-actions.test.ts"],
+    "filter": "does nothing, and says nothing, when there is no step left"
+  },
+  {
+    "commit": "cb9417e773b87beb0442d48d3b03d58d3d4e570c",
+    "title": "Fold Turkish letters in palette search, limit group-name matches, and hint at hidden simple-mode matches beside visible results",
+    "kind": "unit",
+    "tests": ["packages/pdf-ui/src/commands/CommandPalette.dom.test.tsx"],
+    "run": ["packages/pdf-ui/src/commands/CommandPalette.dom.test.tsx"],
+    "filter": "lists a group for its whole name|lists a group named by two letters|finds Turkish letters|counts only the hidden commands|offers the same way out beside visible results"
+  },
+  {
+    "commit": "01a7039b57fa4f2d78dbef480928633b38858742",
+    "title": "Write percentages and byte sizes in the interface language: %140 and 1,5 KB in Turkish",
+    "kind": "unit",
+    "tests": [
+      "apps/web/src/components/PageNavigation.test.tsx",
+      "packages/shared/src/i18n/index.test.ts",
+      "packages/pdf-ui/src/shell/StatusBar.dom.test.tsx"
+    ],
+    "run": [
+      "apps/web/src/components/PageNavigation.test.tsx",
+      "packages/shared/src/i18n/index.test.ts",
+      "packages/pdf-ui/src/shell/StatusBar.dom.test.tsx"
+    ],
+    "filter": "writes the zoom the way the interface language does|writes the zoom with the percent sign first|writes sizes with a decimal comma|writes a {name:bytes} param"
+  },
+  {
+    "commit": "5af2d7bb42b5d2f52dbd8abc02b842f3e1adf07e",
+    "title": "Describe the shapes tile with the shapes the tool draws: no arrow is offered",
+    "kind": "unit",
+    "tests": ["apps/web/src/components/HomeToolGrid.test.tsx"],
+    "run": ["apps/web/src/components/HomeToolGrid.test.tsx"],
+    "filter": "describes the rectangle, ellipse and line"
+  },
+  {
+    "commit": "fb568f4d0358a42fd16418ad11eeaca8315a5b46",
+    "title": "Show the restored document at start-up instead of the start screen",
+    "kind": "unit",
+    "tests": ["apps/web/src/features/persistence/use-draft-recovery.test.tsx"],
+    "run": ["apps/web/src/features/persistence/use-draft-recovery.test.tsx"],
+    "filter": "shows the restored document directly|puts the newest of several restored drafts"
+  },
+  {
+    "commit": "de2873904b67b892b43ea829f0c49e13e6cefa67",
+    "title": "Hide the measure and redact rail buttons and the advanced right-dock tabs in the simple mode",
+    "kind": "unit",
+    "tests": ["apps/web/src/components/ToolRail.test.tsx", "apps/web/src/features/shell/RightDock.test.tsx"],
+    "run": ["apps/web/src/components/ToolRail.test.tsx", "apps/web/src/features/shell/RightDock.test.tsx"],
+    "filter": "leaves measurement and redaction off the rail|offers no redaction, audit|shows the tools tab instead of a tab the simple mode hides"
+  }
+]
