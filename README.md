@@ -488,6 +488,18 @@ nothing leaving the browser.
   - **Remember on this device** is off by default. When ticked, the picture stays in this
     browser's local storage only, and every saved entry can be deleted from the dialog.
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
+  - Signing a file that already carries a signature appends the new one as a revision, so
+    the earlier signatures keep validating. Only a file the engine cannot append to (one it
+    had to repair when opening) is rewritten, and the report then says the earlier
+    signatures are lost.
+  - With a field name, only the empty signature field of that name is filled, and a new
+    field is created under the name when there is none (a name another field uses is
+    refused). Without one, the first empty signature field is filled where it sits. Either
+    way the field gets a drawn appearance; the stamp position you pick applies to a new
+    field, or to an existing one that has no area of its own.
+  - The signer is the certificate that matches the private key in the PKCS#12 file, not the
+    first one it lists. The signature carries no `signingTime` attribute (PAdES B-B forbids
+    it); its time is the signature dictionary's `/M`.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - Signatures of files larger than 16 MiB are checked against the exact byte ranges stored
     in the file (MuPDF reports them rounded above that size); a range that cannot be paired

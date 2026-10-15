@@ -11,9 +11,17 @@
  *  1. the signature field, its appearance and the `/Sig` dictionary are built with
  *     `/Contents` and `/ByteRange` as zero-padded placeholders of fixed size;
  *  2. the document is serialised, and the placeholder is located in the produced bytes;
- *  3. the ByteRange is computed from those offsets and written over the same digits;
+ *  3. the ByteRange is computed from those offsets and written over the same digits (a
+ *     value that is not exactly as wide as the placeholder is refused);
  *  4. the range is hashed and signed (`signature-cms.ts`), and the CMS goes into the
  *     `/Contents` placeholder as hex.
+ *
+ * **A file that already carries a signature is extended, never rewritten.** A rewrite moves
+ * every byte an earlier signature's `/ByteRange` covers, so step 2 then *appends* the new
+ * field, appearance and signature as an incremental update (every byte of the input stays,
+ * which is also what makes a counter-signature possible). Only a file MuPDF cannot append to
+ * (one it had to repair on open) is rewritten, and the report then says in a `lost` note
+ * that the earlier signatures no longer validate — the way `protectDocument` does.
  *
  * A 16 KiB `/Contents` reservation is the one number worth explaining: a 2048-bit RSA
  * PAdES B-B signature measures roughly 3–4 KB of DER with its certificate chain, and the
@@ -36,12 +44,15 @@ import {
   openForWrite,
   pageObjects,
   readName,
+  readNumbers,
   readText,
   resolved,
+  saveIncremental,
   saveRewrite,
   text,
 } from '../engines/mupdf-write';
 import { detachedCmsSignature, type SignatureDigest, type SignatureIdentity } from '../signature-cms';
+import { countSignedFields, verifySignatures } from './signature-status';
 import {
   note,
   type OperationContext,
@@ -61,14 +72,24 @@ const CONTENTS_RESERVATION = 16 * 1024;
 const RANGE_DIGITS = 10;
 
 export interface SignatureFieldRequest {
-  /** The field to fill; a new one is created under this name when the document has none. */
+  /**
+   * The field to fill, by its full name. With a name, only an *empty* signature field of that
+   * name is filled; when the document has none, a new field is created under the name (a
+   * name another field already uses is refused). Without a name, the first empty signature
+   * field the document has is filled, and a new one is created when it has none.
+   */
   readonly name?: string;
   /**
    * Where the visible signature goes, in PDF user space (bottom-left origin). Absent
-   * leaves the field invisible, which is what a machine-checked signature usually is.
+   * leaves a new field invisible, which is what a machine-checked signature usually is.
+   * An existing field that already has an area keeps the place its form gave it (the
+   * report says so); one without an area is moved here, to `pageIndex`.
    */
   readonly rect?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
-  /** Page for a new field; defaults to the first page. */
+  /**
+   * Page for a new field, or for an existing field with no area of its own. Defaults to the
+   * first page for a new field and to the field's own page for an existing one.
+   */
   readonly pageIndex?: number;
   /** Lines drawn into the appearance, top to bottom (signer, date, reason). */
   readonly lines?: readonly string[];
@@ -147,31 +168,97 @@ function appearance(
   });
 }
 
-/** The first existing empty signature field, if the document has one. */
-function existingSignatureField(
-  doc: PDFDocument,
-): { readonly dict: PDFObject; readonly pageIndex: number } | null {
-  for (const [pageIndex, page] of pageObjects(doc).entries()) {
+/** How deep a field tree is followed; a deeper one is a loop or an attack, not a form. */
+const MAX_FIELD_DEPTH = 32;
+
+/** A signature field the operation writes into, and the page it sits on. */
+interface SignatureTarget {
+  readonly dict: PDFObject;
+  readonly pageIndex: number;
+}
+
+/** An empty field the document already had, with its place in the page's `/Annots`. */
+interface ExistingField extends SignatureTarget {
+  readonly annots: PDFObject;
+  readonly annotIndex: number;
+}
+
+/**
+ * A field's full name (§12.7.4.2): its own `/T` after those of its `/Parent`s, outermost
+ * first, joined by periods — the name the verifier reports the signature under. An empty
+ * `/T` counts as no name, as it does there.
+ */
+function qualifiedName(dict: PDFObject): string {
+  const parts: string[] = [];
+  let node: PDFObject | null = dict;
+  for (let depth = 0; node?.isDictionary() === true && depth < MAX_FIELD_DEPTH; depth += 1) {
+    const own = readText(node.get('T'));
+    if (own !== null && own !== '') parts.unshift(own);
+    node = resolved(node.get('Parent'));
+  }
+  return parts.join('.');
+}
+
+/** Every full field name the document uses: the `/AcroForm` tree and the widgets the pages carry. */
+function usedFieldNames(doc: PDFDocument): ReadonlySet<string> {
+  const names = new Set<string>();
+  const seen = new Set<number>();
+  const walk = (entry: PDFObject, prefix: string, depth: number): void => {
+    const dict = resolved(entry);
+    if (dict === null || !dict.isDictionary() || depth > MAX_FIELD_DEPTH) return;
+    if (entry.isIndirect()) {
+      if (seen.has(entry.asIndirect())) return;
+      seen.add(entry.asIndirect());
+    }
+    const own = readText(dict.get('T'));
+    const name = own === null || own === '' ? prefix : prefix === '' ? own : `${prefix}.${own}`;
+    if (name !== '') names.add(name);
+    const kids = resolved(dict.get('Kids'));
+    if (kids?.isArray() !== true) return;
+    for (let index = 0; index < kids.length; index += 1) walk(kids.get(index), name, depth + 1);
+  };
+  // Every PDF the engine opens has a catalog: a file without one is refused at open.
+  const form = resolved(doc.getTrailer().get('Root').get('AcroForm'));
+  const fields = resolved(form?.get('Fields'));
+  if (fields?.isArray() === true) {
+    for (let index = 0; index < fields.length; index += 1) walk(fields.get(index), '', 0);
+  }
+  for (const page of pageObjects(doc)) {
     const annots = annotsOf(doc, page);
     if (annots === null) continue;
     for (let index = 0; index < annots.length; index += 1) {
       const dict = resolved(annots.get(index));
+      if (dict === null || !dict.isDictionary() || readName(dict.get('Subtype')) !== 'Widget') continue;
+      const name = qualifiedName(dict);
+      if (name !== '') names.add(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * The empty signature field to fill: the one with the full name `name` when the caller named
+ * one — and no other, a field of another name is not the caller's to fill — else the first
+ * the document has. `null` when there is none.
+ */
+function existingSignatureField(doc: PDFDocument, name: string | undefined): ExistingField | null {
+  for (const [pageIndex, page] of pageObjects(doc).entries()) {
+    const annots = annotsOf(doc, page);
+    if (annots === null) continue;
+    for (let annotIndex = 0; annotIndex < annots.length; annotIndex += 1) {
+      const dict = resolved(annots.get(annotIndex));
       if (dict === null || !dict.isDictionary()) continue;
       const isWidget = readName(dict.get('Subtype')) === 'Widget';
       const isSignature = readName(dict.get('FT')) === 'Sig';
-      if (isWidget && isSignature && dict.get('V').isNull()) return { dict, pageIndex };
+      if (!isWidget || !isSignature || !dict.get('V').isNull()) continue;
+      if (name === undefined || qualifiedName(dict) === name) return { dict, pageIndex, annots, annotIndex };
     }
   }
   return null;
 }
 
-/** A fresh `/Widget` + `/FT /Sig` field, wired into the page and the `/AcroForm`. */
-function createSignatureField(
-  doc: PDFDocument,
-  request: SignatureFieldRequest,
-  lines: readonly string[],
-): { readonly dict: PDFObject; readonly pageIndex: number } {
-  const pageIndex = request.pageIndex ?? 0;
+/** The page `pageIndex` names, or `value-out-of-range` when the document has no such page. */
+function pageAt(doc: PDFDocument, pageIndex: number): PDFObject {
   const pages = pageObjects(doc);
   const page = pages[pageIndex];
   if (!Number.isInteger(pageIndex) || page === undefined) {
@@ -181,10 +268,88 @@ function createSignatureField(
       engineMessage: `page ${pageIndex} is outside 0…${pages.length - 1}`,
     });
   }
+  return page;
+}
+
+/**
+ * The name a new field takes: the one asked for, which no field may already use (two fields
+ * of one name are one field to a reader), or a fresh `Signature<n>` when none was asked for.
+ */
+function newFieldName(used: ReadonlySet<string>, wanted: string | undefined): string {
+  if (wanted !== undefined) {
+    if (used.has(wanted)) {
+      throw new ToolError('value-out-of-range', {
+        engine: 'mupdf',
+        path: 'request.field.name',
+        engineMessage: `a field named ${wanted} already exists and is not an empty signature field`,
+      });
+    }
+    return wanted;
+  }
+  let number = Math.floor(Date.now() / 1000);
+  while (used.has(`Signature${number}`)) number += 1;
+  return `Signature${number}`;
+}
+
+/** The area a widget's `/Rect` encloses, or `null` for a widget with none (a hidden signature field). */
+function areaOf(dict: PDFObject): { x: number; y: number; width: number; height: number } | null {
+  const [x0, y0, x1, y1] = readNumbers(dict.get('Rect'));
+  if (x0 === undefined || y0 === undefined || x1 === undefined || y1 === undefined) return null;
+  const width = Math.abs(x1 - x0);
+  const height = Math.abs(y1 - y0);
+  return width > 0 && height > 0 ? { x: Math.min(x0, x1), y: Math.min(y0, y1), width, height } : null;
+}
+
+/**
+ * Give a field the document already had the look of the signature that fills it: an
+ * appearance (`/AP`) drawn from `lines`, at the area the field has.
+ *
+ * The field keeps the page and the place its form gave it: someone laid the form out for the
+ * signature to go there, and a stamp corner picked in a dialog does not know that. A field
+ * with no area at all (a hidden one) is the exception — the caller's rectangle is the only
+ * way to make it visible, so the field moves to it, onto the caller's page when that differs.
+ * Returns `true` when the field kept its own place over a rectangle the caller gave, so the
+ * report can say that this one was not used.
+ */
+function dressExistingField(
+  doc: PDFDocument,
+  field: ExistingField,
+  request: SignatureFieldRequest,
+  lines: readonly string[],
+): boolean {
+  const own = areaOf(field.dict);
+  const asked = request.rect;
+  if (own !== null) {
+    field.dict.put('AP', { N: appearance(doc, own, lines) });
+    return asked !== undefined;
+  }
+  if (asked === undefined) return false;
+
+  const pageIndex = request.pageIndex ?? field.pageIndex;
+  const page = pageAt(doc, pageIndex);
+  if (pageIndex !== field.pageIndex) {
+    const entry = field.annots.get(field.annotIndex);
+    field.annots.delete(field.annotIndex);
+    annotsOf(doc, page, true)?.push(entry);
+    field.dict.put('P', page);
+  }
+  field.dict.put('Rect', [asked.x, asked.y, asked.x + asked.width, asked.y + asked.height]);
+  field.dict.put('AP', { N: appearance(doc, asked, lines) });
+  return false;
+}
+
+/** A fresh `/Widget` + `/FT /Sig` field, wired into the page and the `/AcroForm`. */
+function createSignatureField(
+  doc: PDFDocument,
+  request: SignatureFieldRequest,
+  name: string,
+  lines: readonly string[],
+): SignatureTarget {
+  const pageIndex = request.pageIndex ?? 0;
+  const page = pageAt(doc, pageIndex);
   const rect = request.rect;
   const box: [number, number, number, number] =
     rect === undefined ? [0, 0, 0, 0] : [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height];
-  const name = request.name ?? `Signature${Math.floor(Date.now() / 1000)}`;
 
   const dict = doc.addObject({
     Type: 'Annot',
@@ -245,6 +410,28 @@ function ascii(text: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * The `/ByteRange` text that goes over the placeholder: four numbers zero-padded to
+ * `RANGE_DIGITS`. It has to be **exactly** as wide as the placeholder (`placeholderLength`
+ * characters) — writing it must not move a single byte, or every offset in it is wrong — so a
+ * number too large for the width (padding never truncates) is refused instead of written.
+ */
+export function byteRangeText(
+  range: readonly [number, number, number, number],
+  placeholderLength: number,
+): string {
+  const written = `[${range.map((value) => String(value).padStart(RANGE_DIGITS, '0')).join(' ')}]`;
+  if (written.length !== placeholderLength) {
+    throw new ToolError('internal', {
+      engine: 'mupdf',
+      engineMessage:
+        `the /ByteRange ${written} is ${written.length} characters wide but the placeholder it ` +
+        `overwrites is ${placeholderLength}`,
+    });
+  }
+  return written;
+}
+
 export async function signPdf(
   bytes: Uint8Array,
   request: SignRequest,
@@ -257,6 +444,10 @@ export async function signPdf(
   const notes: OperationNote[] = [];
   let produced: Uint8Array;
   let pageCount: number;
+  /** Whether the new signature is appended after signatures the input already carries. */
+  let appended = false;
+  /** The full name of the field written, which is how the produced file's verdicts tell it from the rest. */
+  let fieldName = '';
   /**
    * The two placeholders, both **fixed width**, so writing the real numbers later cannot
    * move a single byte:
@@ -287,15 +478,38 @@ export async function signPdf(
       context.onProgress?.({ phase: 'sign', labelKey: 'op.progress.sign.prepare', done: 0, total: 1 });
     }
 
+    // A rewrite would move every byte an earlier signature covers, so a signed file is
+    // appended to whenever MuPDF can; when it cannot, the rewrite goes ahead and says so.
+    const earlier = countSignedFields(doc);
+    appended = earlier > 0 && doc.canBeSavedIncrementally();
+
     const lines = appearanceLines(request, date);
-    const existing = existingSignatureField(doc);
-    const target = existing ?? createSignatureField(doc, request.field ?? {}, lines);
+    const asked = request.field ?? {};
+    const wanted = asked.name === '' ? undefined : asked.name;
+    const existing = existingSignatureField(doc, wanted);
+    let target: SignatureTarget;
+    let keptOwnPlace = false;
+    if (existing === null) {
+      target = createSignatureField(doc, asked, newFieldName(usedFieldNames(doc), wanted), lines);
+    } else {
+      keptOwnPlace = dressExistingField(doc, existing, asked, lines);
+      target = existing;
+    }
+    fieldName = qualifiedName(target.dict);
     steps.push(existing === null ? 'field.create' : 'field.reuse');
     notes.push(
       note('changed', existing === null ? 'op.note.sign.fieldCreated' : 'op.note.sign.fieldFilled', {
-        name: readText(target.dict.get('T')) ?? '',
+        name: fieldName,
       }),
     );
+    if (keptOwnPlace) notes.push(note('preserved', 'op.note.sign.fieldPlaceKept', { name: fieldName }));
+    if (earlier > 0) {
+      notes.push(
+        appended
+          ? note('preserved', 'op.note.sign.earlierKept', { count: earlier })
+          : note('lost', 'op.note.sign.earlierLost', { count: earlier }),
+      );
+    }
 
     context.onProgress?.({ phase: 'sign', labelKey: 'op.progress.sign.digest', done: 0, total: 1 });
 
@@ -316,7 +530,7 @@ export async function signPdf(
     steps.push('producer');
 
     throwIfAborted(context.signal);
-    produced = saveRewrite(doc, 'sign');
+    produced = appended ? saveIncremental(doc, 'sign') : saveRewrite(doc, 'sign');
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapMupdfError(error, 'sign');
@@ -325,12 +539,28 @@ export async function signPdf(
   }
   steps.push('save');
 
+  // An append keeps every input byte in place — that is the whole reason it was chosen, and
+  // what keeps the earlier signatures valid. An engine that answered with anything else is
+  // not trusted with a file somebody already signed.
+  if (appended) {
+    let kept = produced.length > bytes.length;
+    for (let index = 0; kept && index < bytes.length; index += 1) kept = produced[index] === bytes[index];
+    if (!kept) {
+      throw new ToolError('internal', {
+        engine: 'mupdf',
+        engineMessage: 'the incremental update did not keep the bytes the earlier signatures cover',
+      });
+    }
+  }
+
   /**
    * The zero `/Contents` marker is what identifies *this* dictionary: 32 768 zeros cannot
    * plausibly appear twice, and the `/ByteRange` placeholder is then looked for just
-   * before it rather than anywhere in the file.
+   * before it rather than anywhere in the file. An append only looks at what it appended —
+   * the revisions before it are the earlier signatures' and are not searched.
    */
-  const contentsAt = indexOfBytes(produced, ascii(contentsMarkerText));
+  const searchFrom = appended ? bytes.length : 0;
+  const contentsAt = indexOfBytes(produced, ascii(contentsMarkerText), searchFrom);
   if (contentsAt === -1 || indexOfBytes(produced, ascii(contentsMarkerText), contentsAt + 1) !== -1) {
     throw new ToolError('internal', {
       engine: 'mupdf',
@@ -360,19 +590,17 @@ export async function signPdf(
   const gapStart = contentsAt;
   const gapEnd = contentsAt + contentsMarkerText.length;
   const range: readonly [number, number, number, number] = [0, gapStart, gapEnd, produced.length - gapEnd];
-  const rangeText =
-    `[${String(range[0]).padStart(RANGE_DIGITS, '0')} ${String(range[1]).padStart(RANGE_DIGITS, '0')} ` +
-    `${String(range[2]).padStart(RANGE_DIGITS, '0')} ${String(range[3]).padStart(RANGE_DIGITS, '0')}]`;
-  produced.set(ascii(rangeText), rangeAt);
+  produced.set(ascii(byteRangeText(range, rangePlaceholderText.length)), rangeAt);
 
   // The signed content: the two segments the range names, concatenated.
   const signed = new Uint8Array(range[1] + range[3]);
   signed.set(produced.subarray(0, range[1]), 0);
   signed.set(produced.subarray(range[2]), range[1]);
 
+  // No `signingTime` attribute: PAdES B-B forbids it (EN 319 142-1 §6.3) and the moment the
+  // signature claims is the `/M` written above.
   const cms = await detachedCmsSignature(signed, request.identity, {
     ...(request.digest === undefined ? {} : { digest: request.digest }),
-    signedAt: date,
   });
   const hex = [...cms.der]
     .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -391,13 +619,20 @@ export async function signPdf(
   // with the same reader the properties panel uses, and the signature has to come out with
   // its integrity intact. A signature that does not verify must never reach a user as a
   // "signed" file.
-  const { verifySignatures } = await import('./signature-status');
+  //
+  // The verdict is picked by the full name of the field that was written — never by its
+  // position, which depends on how a file orders its fields. Two fields of one name cannot be
+  // told apart by name, so then any of them that fails fails the signature (fail closed).
   const verdicts = await verifySignatures(produced, context.signal);
-  const ours = verdicts.at(-1);
+  const named = verdicts.filter((entry) => entry.fieldName === fieldName);
+  const ours = named.find((entry) => entry.integrity !== 'valid') ?? named[0];
   if (ours === undefined) {
     throw new ToolError('verification-failed', {
       engine: 'mupdf',
-      engineMessage: 'the produced file carries no signature field to verify',
+      engineMessage:
+        verdicts.length === 0
+          ? 'the produced file carries no signature field to verify'
+          : `the produced file carries no signature in a field named ${JSON.stringify(fieldName)}`,
     });
   }
   if (ours.integrity !== 'valid') {
@@ -432,8 +667,9 @@ export async function signPdf(
     inputBytes: bytes.byteLength,
     outputBytes: produced.byteLength,
     pageCount,
-    // The file is a signed revision: nothing may rewrite it afterwards.
-    incremental: false,
+    // An append kept the input's bytes; a rewrite did not. Either way the file is now a signed
+    // revision, and nothing may rewrite it afterwards.
+    incremental: appended,
   };
   return { bytes: produced, report };
 }

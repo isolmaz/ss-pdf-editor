@@ -157,10 +157,9 @@ describe('detachedCmsSignature', () => {
     }
   });
 
-  it('defaults to SHA-256 and the current time, and carries the chain along', async () => {
+  it('defaults to SHA-256, carries the chain along, and writes no signingTime attribute', async () => {
     const { certificate, privateKey } = await identity({ kind: 'EC', curve: 'P-256' });
     const issuer = await identity({ kind: 'EC', curve: 'P-256' });
-    const before = Date.now();
     const cms = await detachedCmsSignature(CONTENT, {
       certificate: certificate.der,
       chain: [issuer.certificate.der],
@@ -171,11 +170,28 @@ describe('detachedCmsSignature', () => {
     expect(signedData?.certificates).toHaveLength(2);
     const second = signedData?.certificates?.[1] as Certificate | undefined;
     expect(second?.subject.typesAndValues[0]?.value.valueBlock.value).toBe('İmzacı');
-    const time = signedData?.signerInfos[0]?.signedAttrs?.attributes.find(
+    const attributes = signedData?.signerInfos[0]?.signedAttrs?.attributes ?? [];
+    const types = attributes.map((attribute) => attribute.type);
+    expect(types.sort()).toEqual([
+      '1.2.840.113549.1.9.16.2.47', // signingCertificateV2
+      '1.2.840.113549.1.9.3', // contentType
+      '1.2.840.113549.1.9.4', // messageDigest
+    ]);
+    expect(types).not.toContain('1.2.840.113549.1.9.5');
+  });
+
+  it('adds a signingTime signed attribute with exactly the time it is given, for a classic CMS', async () => {
+    const { certificate, privateKey } = await identity({ kind: 'EC', curve: 'P-256' });
+    const signedAt = new Date(Date.UTC(2026, 5, 1, 12, 30, 15));
+    const cms = await detachedCmsSignature(
+      CONTENT,
+      { certificate: certificate.der, privateKey },
+      { signedAt },
+    );
+    const time = readSignedData(cms.der)?.signerInfos[0]?.signedAttrs?.attributes.find(
       (attribute) => attribute.type === '1.2.840.113549.1.9.5',
     )?.values[0] as { toDate(): Date } | undefined;
-    expect(time?.toDate().getTime()).toBeGreaterThanOrEqual(Math.floor(before / 1000) * 1000 - 1000);
-    expect(time?.toDate().getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+    expect(time?.toDate().toISOString()).toBe('2026-06-01T12:30:15.000Z');
   });
 
   it('writes the signed attributes in DER set order', async () => {
@@ -186,7 +202,7 @@ describe('detachedCmsSignature', () => {
       { digest: 'SHA-384' },
     );
     const attributes = readSignedData(cms.der)?.signerInfos[0]?.signedAttrs?.attributes ?? [];
-    expect(attributes).toHaveLength(4);
+    expect(attributes).toHaveLength(3);
     const encoded = attributes.map((attribute) => new Uint8Array(attribute.toSchema().toBER(false)));
     const asText = (bytes: Uint8Array): string => String.fromCharCode(...bytes);
     expect(encoded.map(asText)).toEqual([...encoded.map(asText)].sort());
