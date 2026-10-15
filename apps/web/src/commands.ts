@@ -172,6 +172,7 @@ export interface CommandHost {
 const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   // File: the verbs every reader has.
   'file.new',
+  'file.open',
   'file.merge',
   'file.convert',
   'file.create-images',
@@ -180,6 +181,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'file.export',
   'file.print',
   'file.add',
+  'file.close',
   // Edit: undo/redo and selection are table stakes.
   'edit.undo',
   'edit.redo',

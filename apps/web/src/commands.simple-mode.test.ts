@@ -94,6 +94,8 @@ function ids(mode: InterfaceMode): readonly string[] {
 
 describe('the simple mode keeps what a free reader carries', () => {
   it.each([
+    'file.open',
+    'file.close',
     'file.save',
     'file.export',
     'file.print',
@@ -112,6 +114,14 @@ describe('the simple mode keeps what a free reader carries', () => {
     'help.source',
   ])('offers %s', (id) => {
     expect(ids('simple')).toContain(id);
+  });
+
+  it('lists the File menu with Open straight after New and Close last', () => {
+    const file = visibleCommands(ALL, 'simple')
+      .filter((command) => command.group === 'file')
+      .map((command) => command.id);
+    expect(file.slice(0, 2)).toEqual(['file.new', 'file.open']);
+    expect(file.at(-1)).toBe('file.close');
   });
 
   it('does not offer the capabilities the reference readers put behind a paid tier', () => {
