@@ -3,7 +3,7 @@
  */
 
 export const redactPart = {
-  'redact.title': 'Karartma (kalıcı silme)',
+  'redact.title': 'Kalıcı karartma',
   'redact.intro': 'İşaretlenen alanlardaki metin ve grafikler belgeden kalıcı olarak silinir.',
   'redact.mode.box': 'Kutu çiz',
   'redact.tool.start': 'Karartma aracını aç',

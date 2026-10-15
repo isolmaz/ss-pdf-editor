@@ -1,5 +1,5 @@
 export const filePart = {
-  'file.add.title': 'Add / Import Document',
+  'file.add.title': 'Add document',
   'file.add.intro':
     'The added document is appended to the current document and the result replaces the current document. Metadata (Info/XMP) from the added document is not carried over; the result retains metadata from the current document.',
   'file.add.insertAt': 'Insert position',
@@ -10,7 +10,7 @@ export const filePart = {
   'file.add.sourceHint': 'Pages will be inserted at the selected position.',
   'file.add.done': '{count} page(s) added.',
 
-  'file.createImages.title': 'Create PDF from Images',
+  'file.createImages.title': 'Create PDF from images',
   'file.createImages.intro':
     'Each image becomes a page. Unsupported files are skipped and reported; a new document without a text layer is produced.',
   'file.createImages.name': 'Images',
@@ -28,7 +28,7 @@ export const filePart = {
   'file.createImages.orientation.auto': 'Auto apply',
   'file.createImages.orientation.ignore': 'Ignore',
 
-  'export.images.title': 'Export Pages as Images',
+  'export.images.title': 'Export pages as images',
   'export.images.intro':
     'Each page is rendered as an individual image file; text layers, links and annotations are not included.',
   'export.images.format': 'Format',
@@ -43,7 +43,7 @@ export const filePart = {
   'export.images.namePatternHint': 'Number and extension are added automatically; defaults to document name.',
   'export.images.done': '{count} image(s) exported.',
 
-  'export.text.title': 'Export Text',
+  'export.text.title': 'Export text',
   'export.text.intro':
     'Text is extracted from the document text layer. Scanned pages have no text layer; these remain blank and are reported.',
   'export.text.format': 'Format',

@@ -1657,7 +1657,7 @@ signature widgets only a page's `/Annots` reach, once the password has opened th
 `lost` note in the report: `op.note.security.signatureInvalidated` for protect,
 `op.note.security.signatureInvalidatedUnlock` for unlock. The download path never reaches the
 save plan's signature warning.
-The Security dialog's `resultKind` is `download`: the encrypted copy is handed over, never
+The Protect with password dialog's `resultKind` is `download`: the encrypted copy is handed over, never
 applied to the open document (a protected file is read-only in the editor, so applying it
 ended in a password prompt). A run may also overrule its dialog's `resultKind` for one result
 with `OpRunResult.deliver` — the form-data **export** uses it to download its data file from a
@@ -1808,7 +1808,7 @@ moved rests at the end of the page. The line is the one the drawn text continues
 (`TextEditInsertLine.lineSpan`, its left and right edge): a run of the column or table cell
 beside it shares the baseline but not the span, and splicing after it read the two columns
 interleaved, line by line. Text with no run of its own line to follow (a match that starts
-its line with nothing kept after it, a paragraph Edit Text redraws), or a page whose content
+its line with nothing kept after it, a paragraph Edit text redraws), or a page whose content
 cannot be read, is drawn in one stream after the page's own. The splice point is the end of
 the anchor's text object, so a producer that writes several lines in one `BT … ET` (LaTeX
 does) still reads that object's line heads before the rests drawn after it. A line that only

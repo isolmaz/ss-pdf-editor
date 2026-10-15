@@ -71,9 +71,9 @@ test('a token button inserts its placeholder at the caret and the stamp carries 
   await openPdf(page, 'doc.pdf', labelledPdf('Doc', 2));
   const form = await openTool(
     page,
-    'Numbering & Watermark',
-    'Add Page Numbers',
-    'Header / Footer & Page Numbering',
+    'Numbering and watermark',
+    'Page numbers and headers/footers',
+    'Page numbers and headers/footers',
   );
   const format = form.getByRole('textbox', { name: 'Format' });
   await format.fill('Page ');
@@ -104,7 +104,7 @@ test('a page range that cannot be read is explained under the field and keeps th
   page,
 }) => {
   await openPdf(page, 'doc.pdf', labelledPdf('Doc', 2));
-  const form = await openTool(page, 'Organize Pages', 'Extract Pages', 'Extract Pages');
+  const form = await openTool(page, 'Organize pages', 'Extract pages', 'Extract pages');
   await form.getByRole('radio', { name: 'Custom range' }).check();
   const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
   await range.fill('abc');
@@ -122,7 +122,12 @@ test('a page range that cannot be read is explained under the field and keeps th
 
 test('the passwords typed into the protect form are what encrypts the file', async ({ page }) => {
   await openPdf(page, 'doc.pdf', labelledPdf('Doc', 1));
-  const form = await openTool(page, 'Security & Redaction', 'Protect with Password', 'Security');
+  const form = await openTool(
+    page,
+    'Security and redaction',
+    'Protect with password',
+    'Protect with password',
+  );
   const open = form.getByLabel('Open password');
   await expect(open).toHaveAttribute('type', 'password');
   await open.fill('open-sesame');

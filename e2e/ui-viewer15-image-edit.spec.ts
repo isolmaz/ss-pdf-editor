@@ -45,8 +45,8 @@ const NOT_A_JPEG: FixtureImage = {
 
 async function openWith(page: Page, images: readonly FixtureImage[]): Promise<Locator> {
   await openPdf(page, 'pictures.pdf', pdfWithImages(images));
-  await runCommand(page, 'Replace Image');
-  const form = page.getByRole('region', { name: 'Replace Image' });
+  await runCommand(page, 'Replace image');
+  const form = page.getByRole('region', { name: 'Replace image' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   return form;
 }
@@ -156,8 +156,8 @@ test('a JPEG image is decoded by the browser, cropped and written back at the cr
     data: new Uint8Array(jpeg),
   };
   await openPdf(page, 'pictures.pdf', pdfWithImages([photo]), { navigate: false });
-  await runCommand(page, 'Replace Image');
-  const form = page.getByRole('region', { name: 'Replace Image' });
+  await runCommand(page, 'Replace image');
+  const form = page.getByRole('region', { name: 'Replace image' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await pick(page, form, 'Photo');
   await action(form, 'Crop (percent)');

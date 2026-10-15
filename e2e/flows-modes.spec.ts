@@ -267,7 +267,7 @@ test('editing after signing warns before the save, and saving anyway breaks the 
   const dir = test.info().outputPath('signer');
   await open(page, 'resign.pdf', toolFixturePdf());
   await signOpenDocument(page, dir);
-  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await page.getByRole('button', { name: 'Rotate right' }).click();
   await expect(notice(page, '1 page(s) rotated')).toBeVisible();
 
   await page.getByRole('button', { name: 'Export', exact: true }).click();

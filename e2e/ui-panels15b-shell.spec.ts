@@ -84,12 +84,12 @@ test('the editor header fits every width from a phone to a wide screen and keeps
   page,
 }) => {
   await openPdf(page, 'a-long-document-name-that-has-to-be-cut-short.pdf');
-  const english = { exportName: 'Export', options: 'Export Options', settings: 'Settings' };
+  const english = { exportName: 'Export', options: 'Export options', settings: 'Settings' };
   for (const width of [320, 375, 768, 900, 1024, 1280, 1536]) await expectHeaderFits(page, width, english);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await useLanguage(page, 'Türkçe');
-  const turkish = { exportName: 'Dışa aktar', options: 'Dışa Aktarma Seçenekleri', settings: 'Ayarlar' };
+  const turkish = { exportName: 'Dışa aktar', options: 'Dışa aktarma seçenekleri', settings: 'Ayarlar' };
   for (const width of [320, 768, 1024, 1280, 1536]) await expectHeaderFits(page, width, turkish);
 });
 

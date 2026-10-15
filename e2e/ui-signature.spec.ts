@@ -14,8 +14,8 @@ test.use({ viewport: { width: 1440, height: 900 } });
 const SAVED_KEY = 'pdf-editor.signatures.v1';
 
 async function openSignatureDialog(page: Page) {
-  await menuItem(page, 'Tools', 'Add a signature (draw, type, picture)');
-  const dialog = page.getByRole('dialog', { name: 'Add a signature' });
+  await menuItem(page, 'Tools', 'Add signature');
+  const dialog = page.getByRole('dialog', { name: 'Add signature' });
   await expect(dialog).toBeVisible();
   return dialog;
 }

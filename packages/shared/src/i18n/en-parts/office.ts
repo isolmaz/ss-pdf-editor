@@ -30,7 +30,7 @@ export const officePart = {
   'export.office.sheet.page': 'Page {n}',
   'export.office.option': 'Word, Excel or CSV',
   'export.office.download': 'Download as Word, Excel or CSV',
-  'tools.exportOffice': 'Export as Word, Excel or CSV',
+  'tools.exportOffice': 'Export to Word, Excel or CSV',
   'tools.exportOfficeDesc': 'Export the PDF to Word, Excel or CSV',
   'home.tool.exportOffice': 'Turn the PDF into an editable Word document, or its tables into Excel or CSV.',
 

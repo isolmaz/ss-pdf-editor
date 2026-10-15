@@ -22,7 +22,7 @@ export const sanitizePart = {
   'sanitize.forms.flatten': 'Sayfaya işle',
   'sanitize.forms.remove': 'Kaldır',
   'sanitize.done': 'Belge temizlendi: {count} öğe kaldırıldı.',
-  'tools.sanitize': 'Belgeyi Temizle',
+  'tools.sanitize': 'Belgeyi temizle',
   'tools.sanitizeDesc': 'Betik, ek dosya, üst veri ve gizli içeriği tek adımda kaldırın',
   'home.tool.sanitize':
     'Betikleri, ekli dosyaları, üst veriyi ve gizli katmanları kaldırın; çıktı doğrulanır.',

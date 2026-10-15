@@ -43,7 +43,7 @@ export const signaturePart = {
   'sig.cancel': 'Vazgeç',
   'sig.placing': 'Yerleştirmek için sayfada bir yere tıklayın. Esc ile vazgeçin.',
   'sig.placed': '{kind} sayfaya eklendi. Taşımak, döndürmek ya da köşesinden boyutlandırmak için seçin.',
-  'sig.command': 'İmza ekle (çiz, yaz, görsel)',
+  'sig.command': 'İmza ekle',
 
   'img.add.title': 'Görsel ekle',
   'img.add.failed': 'Görsel okunamadı: {name}. PNG, JPEG, WebP, GIF ya da BMP seçin.',

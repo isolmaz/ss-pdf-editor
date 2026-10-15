@@ -1,5 +1,5 @@
 export const redactPart = {
-  'redact.title': 'Redaction (Permanent Erase)',
+  'redact.title': 'Permanent redaction',
   'redact.intro': 'Text and graphics in marked areas are permanently deleted from the document.',
   'redact.mode.box': 'Draw rectangle',
   'redact.tool.start': 'Open redaction tool',

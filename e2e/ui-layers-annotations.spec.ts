@@ -11,10 +11,10 @@ import { clickAt, expectNear, ofSubtype, readAnnotations } from './ui-layers-hel
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
-const FREETEXT_TOOL = 'Add Text';
-const SHAPE_TOOL = 'Draw Shape (Rectangle)';
+const FREETEXT_TOOL = 'Add text';
+const SHAPE_TOOL = 'Draw shape';
 const INK_TOOL = 'Freehand drawing';
-const MARKUP_TOOL = 'Mark Up Text (highlight, underline, strike)';
+const MARKUP_TOOL = 'Mark up text';
 
 test('typed text is committed by Ctrl+Enter or by a press elsewhere; Escape and an empty box add nothing', async ({
   page,
@@ -77,9 +77,9 @@ test('typed text is committed by Ctrl+Enter or by a press elsewhere; Escape and 
 
 test('a note is placed at the press and kept inside the page near an edge', async ({ page }) => {
   await openPdf(page);
-  await rail(page, 'Add comment / Note').click();
+  await rail(page, 'Add note').click();
   await clickAt(page, 594, 300);
-  await expect(rail(page, 'Add comment / Note')).toHaveAttribute('aria-pressed', 'false');
+  await expect(rail(page, 'Add note')).toHaveAttribute('aria-pressed', 'false');
   const notes = ofSubtype(await readAnnotations(await exportBytes(page, 'note.pdf')), 'Text');
   expect(notes).toHaveLength(1);
   const [note] = notes;

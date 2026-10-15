@@ -167,7 +167,7 @@ describe('the armed tool is announced', () => {
   it.each<[AnnotationTool, string]>([
     ['highlight', 'Highlight'],
     ['underline', 'Underline'],
-    ['strikeout', 'Strikeout'],
+    ['strikeout', 'Strikethrough'],
     ['squiggly', 'Squiggly'],
     ['ink', 'Freehand drawing'],
     ['shapes', 'Shape'],

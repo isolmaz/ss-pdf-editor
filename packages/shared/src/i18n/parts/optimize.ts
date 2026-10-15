@@ -3,7 +3,7 @@
  */
 
 export const optimizePart = {
-  'optimize.title': 'Optimize et / küçült',
+  'optimize.title': 'Dosyayı küçült',
   'optimize.intro':
     'Görüntüye çevirme, seçilen sayfalarda metin katmanını, bağlantıları, açıklamaları ve içindekileri kaybeder; arama çalışmaz. Yapıyı koru içeriği değiştirmez. Sonuç dosya özgün dosyadan büyük çıkabilir.',
   'optimize.mode': 'Yöntem',

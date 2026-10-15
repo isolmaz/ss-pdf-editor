@@ -32,7 +32,7 @@ async function expectRefused(form: Locator, message: string, diagnostic: string)
 
 test('signing without a certificate container is refused, naming the missing file', async ({ page }) => {
   await openPdf(page, 'contract.pdf', labelledPdf('Contract', 1));
-  const form = await openForm(page, 'Sign document', 'Sign Document (PAdES B-B)');
+  const form = await openForm(page, 'Sign document', 'Sign document');
   await expectRefused(form, 'This operation has nothing to work with yet.', 'no PKCS#12 file was chosen');
 });
 

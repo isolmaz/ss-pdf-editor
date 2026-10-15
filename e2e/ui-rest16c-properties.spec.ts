@@ -23,8 +23,8 @@ test('undoing a watermark takes its font off the list and the panel announces th
     .getByRole('listitem');
   await expect(fonts).toHaveCount(1);
 
-  await runCommand(page, 'Watermark');
-  const form = page.getByRole('region', { name: 'Watermark' });
+  await runCommand(page, 'Add watermark');
+  const form = page.getByRole('region', { name: 'Add watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await applyOperation(form);
 

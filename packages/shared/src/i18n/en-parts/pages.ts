@@ -14,11 +14,11 @@ export const pagesPart = {
   'pages.delete.done': '{count} page(s) deleted.',
   'pages.duplicate': 'Duplicate pages',
   'pages.duplicate.done': '{count} page(s) duplicated.',
-  'pages.extract.title': 'Extract Pages',
+  'pages.extract.title': 'Extract pages',
   'pages.extract.intro':
     'Selected pages form a new document; current document is unchanged. Output writes a new catalog: viewer preferences, language and layer configuration are not carried over.',
 
-  'split.title': 'Split Document',
+  'split.title': 'Split document',
   'split.intro':
     'The document is split into separate PDF files according to the chosen rule. Part counts and filenames are calculated upon execution. Each part writes a new catalog: viewer preferences, language and layer configuration are not carried over.',
   'split.mode': 'Split method',

@@ -3,7 +3,7 @@
  */
 
 export const securityPart = {
-  'security.title': 'Güvenlik',
+  'security.title': 'Parola ile koru',
   'security.intro':
     'Belge AES-256 ile şifrelenir ve parola olmadan açılamaz. Parola kurtarılamaz, bu yüzden saklayın. Çıktı yeniden açılıp izinleri doğrulandıktan sonra teslim edilir.',
   'security.oldPassword': 'Mevcut parola',

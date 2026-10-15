@@ -362,7 +362,7 @@ test('Generate Printable PDF carries a mark that has not been saved, and leaves 
   await openPdf(page, 'marks.pdf', toolFixturePdf());
   await framed(page);
 
-  await rail(page, 'Add Text').click();
+  await rail(page, 'Add text').click();
   await page.getByLabel('Color', { exact: true }).first().fill('#ff0000');
   await page.getByLabel('Size', { exact: true }).fill('24');
   await clickAt(page, 100, 300);

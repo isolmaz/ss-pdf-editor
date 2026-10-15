@@ -65,14 +65,14 @@ async function previewForm(form: ReturnType<Page['getByRole']>, confirm = 'Previ
 test('insert pages: a blank page and a page range of another file land where asked', async ({ page }) => {
   await open(page, 'base.pdf', labelledPdf('Base', 3));
   await useAdvancedMode(page);
-  let form = await openForm(page, 'Insert page', 'Insert Pages');
+  let form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('1');
   await previewForm(form);
   await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
   await expect(form).toBeHidden({ timeout: 30_000 });
   await expect(thumbs(page)).toHaveCount(4);
 
-  form = await openForm(page, 'Insert page', 'Insert Pages');
+  form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From another PDF' }).check();
   await form.locator('input[type="file"]').setInputFiles(pdfFile('donor.pdf', labelledPdf('Donor', 4)));
   await form.getByRole('textbox', { name: 'Source page range' }).fill('3-4');
@@ -92,7 +92,7 @@ test('merge: another file added at the start and at the end keeps every page in 
     ['At start of document', labelledPdf('Front', 2)],
     ['At end of document', labelledPdf('Back', 1)],
   ] as const) {
-    const form = await openForm(page, 'Add / Import Document', 'Add / Import Document');
+    const form = await openForm(page, 'Add document', 'Add document');
     await form.locator('input[type="file"]').setInputFiles(pdfFile('donor.pdf', donor));
     await form.getByRole('radio', { name: position }).check();
     await previewForm(form);
@@ -109,7 +109,7 @@ test('extract: the selected page opens as its own document and the source keeps 
 }) => {
   await open(page, 'source.pdf', labelledPdf('Page', 3));
   await thumbs(page).nth(1).click();
-  const form = await openForm(page, 'Extract Pages', 'Extract Pages');
+  const form = await openForm(page, 'Extract pages', 'Extract pages');
   await previewForm(form, 'Open in new tab');
   await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
   // Named for the page it holds, not for a part counter.
@@ -129,7 +129,7 @@ test('extract: the selected page opens as its own document and the source keeps 
 test('extract: a custom range typed key by key is the range extracted', async ({ page }) => {
   await open(page, 'ranged.pdf', labelledPdf('Page', 4));
   await thumbs(page).nth(1).click();
-  const form = await openForm(page, 'Extract Pages', 'Extract Pages');
+  const form = await openForm(page, 'Extract pages', 'Extract pages');
   await form.getByRole('radio', { name: 'Custom range' }).check();
   const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
   // Switching from the selection does not put the word "selection" in the box.
@@ -165,7 +165,7 @@ async function collectDownloads(
 test('split: page ranges become separate files with the right pages in the right order', async ({ page }) => {
   await open(page, 'big.pdf', labelledPdf('Sheet', 4));
   await useAdvancedMode(page);
-  const form = await openForm(page, 'Split Document', 'Split Document');
+  const form = await openForm(page, 'Split document', 'Split document');
   await form.getByRole('radio', { name: 'By page ranges' }).check();
   await form.getByRole('textbox', { name: 'Page ranges' }).fill('3-4, 1');
   await previewForm(form, 'Download');
@@ -183,7 +183,7 @@ test('split: page ranges become separate files with the right pages in the right
 test('export as images: one PNG per page at the requested resolution', async ({ page }) => {
   await open(page, 'img.pdf', labelledPdf('Pic', 2));
   await useAdvancedMode(page);
-  const form = await openForm(page, 'Export Pages as Images', 'Export Pages as Images');
+  const form = await openForm(page, 'Export pages as images', 'Export pages as images');
   await form.getByRole('spinbutton', { name: 'Resolution (DPI)' }).fill('144');
   await previewForm(form, 'Download');
   const files = await collectDownloads(page, 2, () =>
@@ -203,7 +203,7 @@ test('export as images: one PNG per page at the requested resolution', async ({ 
 test('export as text: the text file holds every page in order', async ({ page }) => {
   await open(page, 'words.pdf', labelledPdf('Word', 3));
   await useAdvancedMode(page);
-  const form = await openForm(page, 'Export Text', 'Export Text');
+  const form = await openForm(page, 'Export text', 'Export text');
   await previewForm(form, 'Download');
   const [file] = await collectDownloads(page, 1, () =>
     form.getByRole('button', { name: 'Download', exact: true }).click(),
@@ -220,12 +220,12 @@ test('export options: the image format chosen in the export dialog is the one th
 }) => {
   // The choice was read and then dropped: choosing JPG opened the form on PNG.
   await open(page, 'choice.pdf', labelledPdf('Pic', 1));
-  await page.getByRole('button', { name: 'Export Options' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Download / Export' });
+  await page.getByRole('button', { name: 'Export options' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export options' });
   await dialog.getByRole('radio', { name: 'Image Format' }).check();
   await dialog.getByRole('combobox').nth(1).selectOption('jpg');
   await dialog.getByRole('button', { name: 'Download Images' }).click();
-  const form = page.getByRole('region', { name: 'Export Pages as Images' });
+  const form = page.getByRole('region', { name: 'Export pages as images' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('spinbutton', { name: 'Resolution (DPI)' }).fill('72');
   await previewForm(form, 'Download');
@@ -442,13 +442,13 @@ test('thumbnails follow the page: a turn of an already-turned page, an insert, a
   await open(page, 'turned.pdf', labelledPdf('Turned', 4, { rotations: [0, 90, 180, 270] }));
   for (const index of [1, 2]) {
     await thumbs(page).nth(index).click();
-    await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+    await page.getByRole('button', { name: 'Rotate right' }).click();
     await expect(notice(page, '1 page(s) rotated')).toBeVisible();
     await expectThumbnailMatchesPage(page, index);
   }
 
   await useAdvancedMode(page);
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('2');
   await form.getByRole('spinbutton', { name: 'Page count to insert' }).fill('2');
   await previewForm(form);
@@ -512,7 +512,7 @@ test('a drawn mark shows on its thumbnail where the main view draws it, and Hist
 }) => {
   // A page the file turns: the thumbnail has to project the mark through the same turn.
   await open(page, 'marked.pdf', labelledPdf('Marked', 2, { rotations: [90, 0] }));
-  await page.getByRole('button', { name: 'Draw Shape (Rectangle)', exact: true }).click();
+  await page.getByRole('button', { name: 'Draw shape', exact: true }).click();
   const sheet = page.locator('.pdfViewer[data-active-viewer] .page').first();
   const box = await sheet.boundingBox();
   if (box === null) throw new Error('no page box');

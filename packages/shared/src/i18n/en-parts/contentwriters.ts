@@ -61,7 +61,7 @@ export const contentWritersPart = {
   'op.note.sign.signed': 'PAdES B-B signature applied ({digest}, {bytes} byte CMS).',
   'op.note.sign.byteRange':
     'Signed byte range: {start}–{end} and {tail} byte tail; intervening bytes are the signature itself.',
-  'sign.title': 'Sign Document (PAdES B-B)',
+  'sign.title': 'Sign document',
   'sign.intro':
     'Select your PKCS#12 (.p12/.pfx) file and password. Signature is generated 100% locally on this device; nothing is sent over the network. Timestamping (B-T) is not present in this release.',
   'sign.field.file': 'PKCS#12 certificate file',
@@ -103,7 +103,7 @@ export const contentWritersPart = {
   'panel.attachments.add': 'Add file',
   'panel.attachments.remove': 'Remove attachment',
   'dialog.field.choiceEmpty': 'No items to select in this document.',
-  'image.title': 'Replace Image',
+  'image.title': 'Replace image',
   'image.intro':
     'Select an image object in the document and replace it with a new PNG/JPEG file. Placement, crop and scale remain unchanged: only pixel stream is updated.',
   'image.field.target': 'Image',
@@ -145,7 +145,7 @@ export const contentWritersPart = {
   'link.field.uriPlaceholder': 'https://example.com',
   'link.field.page': 'Destination page',
   'link.done': 'Link added.',
-  'outline.title': 'Edit outline (bookmarks)',
+  'outline.title': 'Edit outline',
   'panel.outline.edit': 'Edit outline',
   'outline.intro':
     'Rewrite bookmarks, add items, rename or delete. Changes are written into document and verified by re-reading output.',

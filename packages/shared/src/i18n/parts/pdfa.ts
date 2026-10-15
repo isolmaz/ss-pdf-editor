@@ -23,7 +23,7 @@ export const pdfaPart = {
   'pdfa.level.3bHint': 'PDF/A-2b gibi, ayrıca gömülü dosyaları (ekleri) korur.',
   'pdfa.done': 'PDF/A dosyası hazır: {name}',
   'pdfa.doneAlready': 'Dosya zaten {level} olarak işaretli ve denetimden geçti; olduğu gibi bırakıldı.',
-  'tools.pdfa': 'PDF/A Olarak Kaydet',
+  'tools.pdfa': 'PDF/A olarak kaydet',
   'tools.pdfaDesc': 'Belgeyi PDF/A arşiv biçimine çevirin ve denetleyin',
   'home.tool.pdfa': 'Belgeyi PDF/A-1b, 2b veya 3b arşiv biçimine çevirin; çıktı kurallara karşı denetlenir.',
   'pdfa.command.check': 'PDF/A denetimi',

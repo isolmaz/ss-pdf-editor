@@ -1,5 +1,5 @@
 export const pageeditPart = {
-  'insert.title': 'Insert Pages',
+  'insert.title': 'Insert pages',
   'insert.intro':
     'Pages from the chosen source are inserted into the current document. Composition writes via the engine document: annotations and form values are preserved. Catalog is rewritten — viewer preferences, language, output intents and layer config are not carried over.',
   'insert.source': 'Source',
@@ -41,7 +41,7 @@ export const pageeditPart = {
   'insert.note.inserted': '{count} page(s) inserted; first page at position {position}.',
   'insert.note.skipped': '{count} image(s) could not be inserted and were skipped.',
 
-  'replace.title': 'Replace Pages',
+  'replace.title': 'Replace pages',
   'replace.intro':
     'Selected pages are replaced in-place by pages produced from source; total page count does not change. Composition writes a new catalog: viewer preferences, language and layer configuration are not carried over.',
   'replace.source': 'Source for replacement pages',

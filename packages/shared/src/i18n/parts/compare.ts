@@ -21,7 +21,7 @@
  */
 
 export const comparePart = {
-  'compare.title': 'Belge karşılaştırma',
+  'compare.title': 'Belgeleri karşılaştır',
   'compare.pick': 'İkinci belgeyi seç',
   'compare.picked': 'Seçilen: {name}',
   'compare.runText': 'Metni karşılaştır',

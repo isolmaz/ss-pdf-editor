@@ -131,7 +131,7 @@ test('Save is held back while a redaction mark is unapplied, and the file on dis
   await useAdvancedMode(page);
   await rotateCurrentPage(page);
 
-  await page.getByRole('button', { name: 'Redact (permanent removal)' }).click();
+  await page.getByRole('button', { name: 'Permanent redaction' }).click();
   await dragOnPage(page, [60, 700], [330, 660]);
   // The inspection of the new version has to land before the save reaches the marks, so the
   // press is repeated until the refusal that names them shows.
@@ -148,11 +148,11 @@ test('Word and text export, Print and Snapshot are held back while a redaction m
   page,
 }) => {
   await openApp(page, 'marked.pdf', labelledPdf('Marked', 1));
-  await page.getByRole('button', { name: 'Redact (permanent removal)' }).click();
+  await page.getByRole('button', { name: 'Permanent redaction' }).click();
   await dragOnPage(page, [60, 700], [330, 660]);
   await expect(page.locator('[data-mark-family="redaction"]')).toHaveCount(1);
 
-  for (const tool of ['Export to Word, Excel or CSV', 'Export Text']) {
+  for (const tool of ['Export to Word, Excel or CSV', 'Export text']) {
     await palette(page, tool);
     await expect(notice(page, PENDING)).toBeVisible({
       timeout: 30_000,

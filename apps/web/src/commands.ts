@@ -903,7 +903,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'tools.measure-distance',
-      labelKey: 'tools.measure.distance',
+      labelKey: 'cmd.measureDistance.label',
       group: 'tools',
       disabled: noEdit,
       checked: host.measureMode === 'distance',
@@ -912,7 +912,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'tools.measure-perimeter',
-      labelKey: 'tools.measure.perimeter',
+      labelKey: 'cmd.measurePerimeter.label',
       group: 'tools',
       disabled: noEdit,
       checked: host.measureMode === 'perimeter',
@@ -921,7 +921,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'tools.measure-area',
-      labelKey: 'tools.measure.area',
+      labelKey: 'cmd.measureArea.label',
       group: 'tools',
       disabled: noEdit,
       checked: host.measureMode === 'area',

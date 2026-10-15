@@ -125,7 +125,7 @@ test('with the hand tool a drag pans the page area by the distance travelled; th
   await page.mouse.up();
   expect(await top()).toBe(start);
 
-  await rail(page, 'Hand / Pan Tool').click();
+  await rail(page, 'Hand tool').click();
   await page.mouse.move(700, 600);
   await page.mouse.down();
   await expect(scroller).toHaveClass(/cursor-grabbing/);

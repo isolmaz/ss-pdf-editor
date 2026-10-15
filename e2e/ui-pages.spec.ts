@@ -230,8 +230,8 @@ test('the toolbar rotates, duplicates, deletes and extracts the selection', asyn
 test('Extract Pages in the selection toolbar opens the extract form', async ({ page }) => {
   await openPdf(page, 'two.pdf', labelledPdf('Doc', 2));
   await options(page).nth(1).click();
-  await toolbar(page).getByRole('button', { name: 'Extract Pages' }).click();
-  await expect(page.getByRole('region', { name: 'Extract Pages' })).toBeVisible({ timeout: 30_000 });
+  await toolbar(page).getByRole('button', { name: 'Extract pages' }).click();
+  await expect(page.getByRole('region', { name: 'Extract pages' })).toBeVisible({ timeout: 30_000 });
 });
 
 test('dragging a page to a gap moves it; a drag that never lands changes nothing', async ({ page }) => {
@@ -305,7 +305,7 @@ test('a mark the file does not hold yet is drawn on its page’s thumbnail', asy
   await openPdf(page, 'two.pdf', labelledPdf('Doc', 2));
   await expect(options(page).nth(0).locator('canvas')).toBeAttached();
   await expect(page.locator('[data-thumbnail-marks]')).toHaveCount(0);
-  await rail(page, 'Add comment / Note').click();
+  await rail(page, 'Add note').click();
   await clickPage(page, 300, 400);
   await expect(options(page).nth(0).locator('[data-thumbnail-marks]')).toBeAttached();
   await expect(options(page).nth(1).locator('[data-thumbnail-marks]')).toHaveCount(0);
@@ -322,7 +322,7 @@ test.describe('a document that is only viewed', () => {
     await openDockTab(page, 'Pages');
     await options(page).first().click();
     await expect(options(page).first()).toHaveAttribute('aria-selected', 'true');
-    for (const name of ['Rotate left', 'Rotate right', 'Duplicate pages', 'Delete pages', 'Extract Pages']) {
+    for (const name of ['Rotate left', 'Rotate right', 'Duplicate pages', 'Delete pages', 'Extract pages']) {
       await expect(toolbar(page).getByRole('button', { name })).toBeDisabled();
     }
     await expect(toolbar(page).getByRole('spinbutton', { name: 'Move to…' })).toBeDisabled();

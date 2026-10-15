@@ -171,7 +171,7 @@ async function recoverFromFailure() {
     }
     // An operation left open in the tools panel is closed the same way a user would; its way
     // back disappearing is the proof the panel closed.
-    const back = page.getByRole('button', { name: 'Tüm Araçlara Dön', exact: true }).first();
+    const back = page.getByRole('button', { name: 'Tüm araçlara dön', exact: true }).first();
     if ((await back.count()) > 0 && (await back.isVisible())) {
       await back.click();
       await back.waitFor({ state: 'hidden', timeout: 10_000 });
@@ -354,7 +354,7 @@ async function confirmDialog() {
   // survives the form turning into its report.
   const form = page
     .getByRole('region')
-    .filter({ has: page.getByRole('button', { name: 'Tüm Araçlara Dön' }) });
+    .filter({ has: page.getByRole('button', { name: 'Tüm araçlara dön' }) });
   await form.getByRole('button', { name: 'Önizle', exact: true }).click();
   try {
     await form.getByRole('heading', { name: 'İşlem raporu', exact: true }).waitFor({ timeout: 60_000 });
@@ -613,7 +613,7 @@ try {
       undefined,
       { timeout: 10_000 },
     );
-    await runMenuCommand('Araçlar', 'Dikdörtgen');
+    await runMenuCommand('Araçlar', 'Şekil çiz');
     // The layer takes the gesture itself, so the page is the only surface to wait for.
     const pageEl = page.locator('.pdfViewer .page').first();
     await pageEl.waitFor({ state: 'visible', timeout: 10_000 });
@@ -813,7 +813,7 @@ try {
   });
 
   await check('header/footer: the stamp dialog writes page numbers', async () => {
-    await runMenuCommand('Araçlar', 'Üst bilgi / alt bilgi ve sayfa numarası');
+    await runMenuCommand('Araçlar', 'Sayfa numarası ve üst/alt bilgi');
     await waitForOperationForm(15_000);
     const format = page.getByLabel('Biçim', { exact: true }).first();
     await format.fill('Sayfa {page} / {total}');
@@ -842,7 +842,7 @@ try {
     // the written file — first label "1", last label the document's last page.
     const form = page
       .getByRole('region')
-      .filter({ has: page.getByRole('button', { name: 'Tüm Araçlara Dön' }) });
+      .filter({ has: page.getByRole('button', { name: 'Tüm araçlara dön' }) });
     await form.getByRole('button', { name: 'Önizle', exact: true }).click();
     await form.getByRole('heading', { name: 'İşlem raporu', exact: true }).waitFor({ timeout: 90_000 });
     const verified = `Etiketler geri okunarak doğrulandı: ilk “1”, son “${FIXTURE_PAGES - 1}”.`;

@@ -16,7 +16,7 @@ test('bookmarks typed into the outline editor’s box become the outline of the 
   await openPdf(page, 'plain.pdf', labelledPdf('Doc', 3));
   await openDockTab(page, 'Outline');
   await page.getByRole('button', { name: 'Edit outline' }).click();
-  const form = page.getByRole('region', { name: 'Edit outline (bookmarks)' });
+  const form = page.getByRole('region', { name: 'Edit outline' });
   await expect(form).toBeVisible({ timeout: 30_000 });
 
   // The mode starts on "add child"; the multi-line box only exists once "Rewrite all" is chosen.
@@ -44,7 +44,7 @@ test('a number outside its range, or none, blocks the run with the range; a vali
   await openPdf(page, 'plain.pdf', labelledPdf('Doc', 3));
   await openDockTab(page, 'Outline');
   await page.getByRole('button', { name: 'Edit outline' }).click();
-  const form = page.getByRole('region', { name: 'Edit outline (bookmarks)' });
+  const form = page.getByRole('region', { name: 'Edit outline' });
   const pageNumber = form.getByRole('spinbutton', { name: 'Destination page' });
   const run = form.locator('button').last();
 

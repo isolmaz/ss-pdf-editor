@@ -421,7 +421,7 @@ nothing leaving the browser.
   it goes on the page.
   - It is written into the file at once as a `/Stamp` annotation with an image
     appearance, as one step that undo takes back. It stays upright on turned pages.
-  - **Add an image** places a PNG, JPEG, WebP, GIF or BMP the same way; transparency is
+  - **Add image** places a PNG, JPEG, WebP, GIF or BMP the same way; transparency is
     kept, and a JPEG that needs no turn or shrink keeps its own bytes.
   - Select a placed picture to move or turn it, or resize it from a corner handle (or the
     arrow keys on a focused handle). Resizing changes only `/Rect`; the image is not

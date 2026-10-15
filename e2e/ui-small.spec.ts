@@ -111,7 +111,7 @@ test('Cancel and Escape on the revision warning export nothing; the next export 
 
 test('Escape on the invalidation warning exports nothing', async ({ page }) => {
   await openPdf(page, 'signed.pdf', await signedBytes());
-  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await page.getByRole('button', { name: 'Rotate right' }).click();
   expect(await exportStarts(page)).toBe(false);
   const warning = page.getByRole('dialog', { name: BREAKS });
   await expect(warning).toContainText('This save rewrites the entire file');
@@ -156,10 +156,10 @@ test('the blank-document dialog marks its steps, reports a grown size, and Escap
  * The export dialog
  * ------------------------------------------------------------------ */
 
-const EXPORT_TITLE = 'Download / Export';
+const EXPORT_TITLE = 'Export options';
 
 async function openExportDialog(page: Page) {
-  await page.getByRole('button', { name: 'Export Options', exact: true }).click();
+  await page.getByRole('button', { name: 'Export options', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: EXPORT_TITLE });
   await expect(dialog).toBeVisible();
   return dialog;
@@ -195,7 +195,7 @@ test('the text choice opens the Export Text form', async ({ page }) => {
   await expect(dialog.getByRole('radio', { name: /^This PDF/ })).not.toBeChecked();
   await dialog.getByRole('button', { name: 'Download Text File' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('region', { name: 'Export Text' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('region', { name: 'Export text' })).toBeVisible({ timeout: 30_000 });
 });
 
 test('the Word, Excel or CSV choice starts the office form on the format picked in the dialog', async ({
@@ -268,8 +268,8 @@ test('a replace-kind form names its second step "Review and apply" and reports t
   page,
 }) => {
   await openPdf(page, 'mark.pdf', toolFixturePdf());
-  await runCommand(page, 'Watermark');
-  const form = page.getByRole('region', { name: 'Watermark' });
+  await runCommand(page, 'Add watermark');
+  const form = page.getByRole('region', { name: 'Add watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   const steps = form.getByRole('listitem').filter({ hasText: /Settings|Review and apply|Result/ });
   await expect(steps).toHaveCount(2);
@@ -458,7 +458,7 @@ test('the numbered box of the heading follows the page through every quarter tur
     { name: 'three quarter turns', right: false, bottom: true },
   ] as const;
   for (const corner of corners) {
-    await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+    await page.getByRole('button', { name: 'Rotate right' }).click();
     await expect
       .poll(async () => {
         at = await where();
@@ -641,7 +641,7 @@ test('an image is placed at 96 dpi, shrunk to 60 % of the page when larger, and 
 
 test('on a page turned a quarter the picture keeps the size it shows on screen', async ({ page }) => {
   await openPdf(page);
-  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await page.getByRole('button', { name: 'Rotate right' }).click();
   await expect
     .poll(async () => {
       const box = await page.locator(CANVAS).first().boundingBox();
@@ -676,7 +676,7 @@ test('Add Text settings: the size is kept between 6 and 72 pt, an empty field ke
   page,
 }) => {
   await openPdf(page);
-  await rail(page, 'Add Text').click();
+  await rail(page, 'Add text').click();
   const strip = settingsStrip(page);
   const size = strip.getByRole('spinbutton', { name: 'Size' });
   await size.fill('500');
@@ -702,7 +702,7 @@ test('shape settings: thickness stays between 1 and 20, opacity is read out, and
   page,
 }) => {
   await openPdf(page);
-  await rail(page, 'Draw Shape (Rectangle)').click();
+  await rail(page, 'Draw shape').click();
   const strip = settingsStrip(page);
   const thickness = strip.getByRole('spinbutton', { name: 'Thickness' });
   await thickness.fill('99');

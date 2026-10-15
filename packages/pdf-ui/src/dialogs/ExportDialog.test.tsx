@@ -26,7 +26,7 @@ afterEach(cleanup);
 describe('ExportDialog', () => {
   it('offers the document with its size and name and downloads it as a PDF by default', async () => {
     const { onClose, onExport, user } = show();
-    expect(screen.getByRole('heading', { name: 'Download / Export' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Export options' })).toBeTruthy();
     expect(screen.getByText('This PDF (2.0 KB)')).toBeTruthy();
     expect(screen.getByText('report.pdf')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Download PDF' }));

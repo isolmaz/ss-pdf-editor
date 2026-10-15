@@ -74,7 +74,7 @@ test('a document with no bookmarks says so, and Edit outline opens the editor on
   await expect(page.getByText('This document has no outline.')).toBeVisible();
   await expect(outline(page)).toHaveCount(0);
   await page.getByRole('button', { name: 'Edit outline' }).click();
-  await expect(page.getByRole('region', { name: 'Edit outline (bookmarks)' })).toBeVisible({
+  await expect(page.getByRole('region', { name: 'Edit outline' })).toBeVisible({
     timeout: 30_000,
   });
 });

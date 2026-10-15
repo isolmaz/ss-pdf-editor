@@ -99,7 +99,7 @@ export const contentWritersPart = {
   'op.note.sign.signed': 'PAdES B-B imzası yazıldı ({digest}, {bytes} bayt CMS).',
   'op.note.sign.byteRange':
     'İmzalanan aralık: {start}–{end} ve {tail} baytlık kuyruk; aradaki baytlar imzanın kendisi.',
-  'sign.title': 'Belgeyi imzala (PAdES B-B)',
+  'sign.title': 'Belgeyi imzala',
   'sign.intro':
     'PKCS#12 (.p12/.pfx) dosyanızı ve parolasını seçin. İmza tamamen bu cihazda üretilir; hiçbir şey gönderilmez. Zaman damgası (B-T) bu sürümde yoktur.',
   'sign.field.file': 'PKCS#12 dosyası',

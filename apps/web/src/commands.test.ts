@@ -398,6 +398,15 @@ describe('buildCommands', () => {
     expect(calls).toEqual([['pageAction', { kind: 'rotate', direction: 'left' }]]);
   });
 
+  it('labels the three measurements as commands that say they measure', () => {
+    const commands = buildCommands(recordingHost().host);
+    expect(
+      ['tools.measure-distance', 'tools.measure-perimeter', 'tools.measure-area'].map(
+        (id) => byId(commands, id).labelKey,
+      ),
+    ).toEqual(['cmd.measureDistance.label', 'cmd.measurePerimeter.label', 'cmd.measureArea.label']);
+  });
+
   it('checks the measure, theme and tool entries from the host state', () => {
     const commands = buildCommands(
       recordingHost({ measureMode: 'area', theme: 'dark', activeTool: 'ink' }).host,

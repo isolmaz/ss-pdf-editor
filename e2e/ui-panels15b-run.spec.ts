@@ -29,9 +29,9 @@ test('a tool that replaces the document names its second step Review and apply, 
   await openPdf(page);
   const form = await openTool(
     page,
-    'Numbering & Watermark',
-    'Add Page Numbers',
-    'Header / Footer & Page Numbering',
+    'Numbering and watermark',
+    'Page numbers and headers/footers',
+    'Page numbers and headers/footers',
   );
   await expect(steps(form)).toHaveText(['1Settings', '2Review and apply']);
   await expect(steps(form).first()).toHaveAttribute('aria-current', 'step');
@@ -46,7 +46,12 @@ test('a tool that replaces the document names its second step Review and apply, 
 
 test('a tool whose result is a download names its second step Result', async ({ page }) => {
   await openPdf(page);
-  const form = await openTool(page, 'Security & Redaction', 'Protect with Password', 'Security');
+  const form = await openTool(
+    page,
+    'Security and redaction',
+    'Protect with password',
+    'Protect with password',
+  );
   await expect(steps(form)).toHaveText(['1Settings', '2Result']);
 });
 
@@ -54,12 +59,7 @@ test('Cancel while an operation runs stops it, says so, and leaves the settings 
   page,
 }) => {
   await openPdf(page, 'long.pdf', await viewingOnlyFixture());
-  const form = await openTool(
-    page,
-    'Convert & Export PDF',
-    'Export Pages as Images',
-    'Export Pages as Images',
-  );
+  const form = await openTool(page, 'Convert and export', 'Export pages as images', 'Export pages as images');
   await form.locator('button').last().click();
   // While it runs the footer holds two Cancel buttons: the form's own, then the run's.
   await form.getByRole('button', { name: 'Cancel', exact: true }).last().click();
@@ -73,8 +73,8 @@ test('the export dialog offers the document or its compressed copy and the butto
 }) => {
   await openPdf(page);
   await openDockTab(page, 'Tools');
-  await tool(page, 'Export Options').click();
-  const dialog = page.getByRole('dialog', { name: /Download \/ Export/ });
+  await tool(page, 'Export options').click();
+  const dialog = page.getByRole('dialog', { name: /Export options/ });
   const pdf = dialog.getByRole('radio', { name: /This PDF/ });
   const compressed = dialog.getByRole('radio', { name: /Compressed PDF/ });
   await expect(pdf).toBeChecked();

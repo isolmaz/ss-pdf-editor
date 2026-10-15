@@ -9,7 +9,7 @@ import { expectNear } from './ui-layers-helpers';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
-const REDACT_TOOL = 'Redact (permanent removal)';
+const REDACT_TOOL = 'Permanent redaction';
 
 test('a drag marks a pending area where it was drawn and the tool is left; a click or a right-button drag marks nothing', async ({
   page,

@@ -16,7 +16,7 @@
  */
 
 export const boxesPart = {
-  'boxes.title': 'Sayfa kutuları ve boyutu',
+  'boxes.title': 'Sayfa kutuları ve boyut',
   /* progress: the unit is a page, never a synthetic percentage */
   'op.progress.boxes': 'Sayfa kutuları yazılıyor',
   'op.progress.labels': 'Sayfa etiketleri yazılıyor',

@@ -14,7 +14,7 @@ test('the header search button opens the find bar with its field focused; Replac
   page,
 }) => {
   await openPdf(page, 'find.pdf', labelledPdf('Alpha', 1));
-  await page.getByRole('button', { name: 'Search document', exact: true }).click();
+  await page.getByRole('button', { name: 'Find in document', exact: true }).click();
   const bar = page.getByRole('search');
   const box = bar.getByRole('textbox', { name: 'Find in document' });
   await expect(box).toBeFocused();
@@ -23,7 +23,7 @@ test('the header search button opens the find bar with its field focused; Replac
   await expect(bar.locator('span').first()).toHaveText('1 of 1 matches');
 
   // Opened again with a query in it, the field is selected so typing replaces it.
-  await page.getByRole('button', { name: 'Search document', exact: true }).click();
+  await page.getByRole('button', { name: 'Find in document', exact: true }).click();
   await expect(box).toBeFocused();
   expect(
     await box.evaluate((input: HTMLInputElement) =>

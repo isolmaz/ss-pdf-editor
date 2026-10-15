@@ -155,13 +155,13 @@ describe('DocumentPanel: pages', () => {
   it('opens the extract dialog from the selection toolbar when the shell has one', async () => {
     const onExtract = vi.fn();
     const { user } = show({ selectedPages: [0], onExtract });
-    await user.click(screen.getByRole('button', { name: 'Extract Pages' }));
+    await user.click(screen.getByRole('button', { name: 'Extract pages' }));
     expect(onExtract).toHaveBeenCalledOnce();
   });
 
   it('leaves extracting disabled when the shell has no extract dialog', () => {
     show({ selectedPages: [0] });
-    expect((screen.getByRole('button', { name: 'Extract Pages' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Extract pages' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('sends page actions to the shell while editing, and not in viewing mode', async () => {

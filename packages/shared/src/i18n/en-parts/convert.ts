@@ -1,5 +1,5 @@
 export const convertPart = {
-  'convert.title': 'Convert a document to PDF',
+  'convert.title': 'Convert document to PDF',
   'convert.intro':
     'Convert a Word, Excel, PowerPoint, HTML, text, CSV, EPUB or FB2 file to PDF in this browser. Several files become one PDF in the order of the list.',
   'convert.files': 'Files',
@@ -7,7 +7,7 @@ export const convertPart = {
     'DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. The old DOC, XLS and PPT formats are not supported.',
   'convert.pageSize': 'Page size',
   'convert.margin': 'Margin (mm)',
-  'convert.command': 'Convert a document to PDF (Word, Excel, PowerPoint…)',
+  'convert.command': 'Convert document to PDF',
   'convert.opened': 'The {format} file was converted to PDF and opened in a new tab.',
   'convert.unsupported':
     '{kind} files cannot be converted. Supported formats: DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. Save the file in one of them and try again.',

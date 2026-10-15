@@ -92,14 +92,14 @@ function show() {
 }
 
 const STEPS = {
-  pages: 'Extract Pages',
-  compress: 'Optimize / Compress',
+  pages: 'Extract pages',
+  compress: 'Reduce file size',
   ocr: 'Text recognition (OCR)',
   labels: 'Page labels',
-  stamp: 'Header / Footer & Page Numbering',
+  stamp: 'Page numbers and headers/footers',
   metadata: 'Document properties',
-  textExport: 'Export Text',
-  protect: 'Security',
+  textExport: 'Export text',
+  protect: 'Protect with password',
 } as const;
 
 const step = (label: string) => screen.getByRole('checkbox', { name: label }) as HTMLInputElement;
@@ -439,12 +439,12 @@ describe('BatchDialog running', () => {
     expect(screen.queryByText('Processing')).toBeNull();
     expect(screen.queryByText('2/2')).toBeNull();
     const rows = screen.getAllByRole('listitem').map((node) => node.textContent ?? '');
-    expect(
-      rows.some((row) => /^a\.pdf — Optimize \/ Compress · \d+ → \d+ bytes, 1 page\(s\)/.test(row)),
-    ).toBe(true);
-    expect(
-      rows.some((row) => /^b\.pdf — Optimize \/ Compress · \d+ → \d+ bytes, 2 page\(s\)/.test(row)),
-    ).toBe(true);
+    expect(rows.some((row) => /^a\.pdf — Reduce file size · \d+ → \d+ bytes, 1 page\(s\)/.test(row))).toBe(
+      true,
+    );
+    expect(rows.some((row) => /^b\.pdf — Reduce file size · \d+ → \d+ bytes, 2 page\(s\)/.test(row))).toBe(
+      true,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Download finished files' }));
     const files = onDownload.mock.calls[0]?.[0] as { name: string; bytes: Uint8Array; mime: string }[];
@@ -470,7 +470,7 @@ describe('BatchDialog running', () => {
     await runQueue([brokenFile('broken.pdf'), await pdfFile('good.pdf')]);
     expect(summary()).toContain('1 completed, 1 failed, 0 skipped');
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Failed at step Optimize / Compress:');
+    expect(alert.textContent).toContain('Failed at step Reduce file size:');
 
     await user.click(screen.getByRole('button', { name: 'Download finished files' }));
     expect((must(onDownload.mock.calls[0])[0] as { name: string }[]).map((file) => file.name)).toEqual([
@@ -493,8 +493,8 @@ describe('BatchDialog running', () => {
     doc.destroy();
     await runQueue([locked, brokenFile('broken.pdf')]);
     expect(screen.getAllByRole('alert').map((node) => node.textContent)).toEqual([
-      'Failed at step Optimize / Compress: Encrypted documents cannot be opened for this operation.Remove the password first and try again.the document needs a password to be read',
-      'Failed at step Optimize / Compress: The document looks damaged.Try opening the file in another reader.open: no objects found',
+      'Failed at step Reduce file size: Encrypted documents cannot be opened for this operation.Remove the password first and try again.the document needs a password to be read',
+      'Failed at step Reduce file size: The document looks damaged.Try opening the file in another reader.open: no objects found',
     ]);
   });
 
@@ -504,7 +504,7 @@ describe('BatchDialog running', () => {
     await runQueue([await pdfFile('a.pdf')]);
     const alert = screen.getByRole('alert');
     expect(Array.from(alert.querySelectorAll('p')).map((line) => line.textContent)).toEqual([
-      'Failed at step Optimize / Compress: Page range could not be parsed.',
+      'Failed at step Reduce file size: Page range could not be parsed.',
       'Enter a range like 1-3, 5 or 8-10.',
     ]);
   });
@@ -708,7 +708,7 @@ describe('BatchDialog running', () => {
     await user.upload(pdfInput(), [await pdfFile('a.pdf'), await pdfFile('b.pdf')]);
     await user.click(screen.getByRole('button', { name: 'Run batch' }));
     await screen.findByText('b.pdf', { selector: 'p' });
-    expect(screen.getByText('Optimize / Compress', { selector: 'p' })).toBeTruthy();
+    expect(screen.getByText('Reduce file size', { selector: 'p' })).toBeTruthy();
     expect(screen.getByText('1/2')).toBeTruthy();
   });
 
@@ -811,7 +811,7 @@ describe('BatchDialog rulesets from a file', () => {
     // The hint is the range error's own sentence from the dictionary, then where the text was typed.
     expect(Array.from(alert.querySelectorAll('p')).map((line) => line.textContent)).toEqual([
       'Could not read step settings.',
-      'Enter a range like 1-3, 5 or 8-10. Step “Extract Pages”, page range “zzz”.',
+      'Enter a range like 1-3, 5 or 8-10. Step “Extract pages”, page range “zzz”.',
     ]);
     expect(alert.textContent).not.toContain('Error');
   });
@@ -822,7 +822,7 @@ describe('BatchDialog rulesets from a file', () => {
     replace(field('Page range'), 'q');
     await user.upload(pdfInput(), await pdfFile('a.pdf'));
     await user.click(screen.getByRole('button', { name: 'Run batch' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('Step “Export Text”, page range “q”.');
+    expect((await screen.findByRole('alert')).textContent).toContain('Step “Export text”, page range “q”.');
   });
 });
 

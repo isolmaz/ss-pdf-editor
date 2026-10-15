@@ -22,7 +22,7 @@ export const sanitizePart = {
   'sanitize.forms.flatten': 'Flatten into the page',
   'sanitize.forms.remove': 'Remove',
   'sanitize.done': 'Document sanitized: {count} items removed.',
-  'tools.sanitize': 'Sanitize Document',
+  'tools.sanitize': 'Sanitize document',
   'tools.sanitizeDesc': 'Remove scripts, attachments, metadata and hidden content in one step',
   'home.tool.sanitize': 'Remove scripts, attached files, metadata and hidden layers; the output is verified.',
 

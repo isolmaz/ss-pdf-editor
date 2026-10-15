@@ -205,15 +205,15 @@ test('the page number box takes a valid page, and an unusable or out-of-range en
   await pageBox(page).fill('3');
   await pageBox(page).press('Enter');
   await expect(pageBox(page)).toHaveValue('3');
-  await expect(page.getByRole('button', { name: 'Next Page' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Next page' })).toBeDisabled();
 });
 
 test('Fit Width puts the zoom back to the page width after zooming out', async ({ page }) => {
   await openApp(page, 'zoom.pdf', labelledPdf('Zoom', 1), { advanced: false });
-  const fit = page.getByRole('button', { name: /^Fit Width \(\d+%\)$/ });
+  const fit = page.getByRole('button', { name: /^Fit width \(\d+%\)$/ });
   const fitted = await fit.getAttribute('aria-label');
-  await page.getByRole('button', { name: 'Zoom Out (-)' }).click();
-  await page.getByRole('button', { name: 'Zoom Out (-)' }).click();
+  await page.getByRole('button', { name: 'Zoom out (-)' }).click();
+  await page.getByRole('button', { name: 'Zoom out (-)' }).click();
   await expect(fit).not.toHaveAttribute('aria-label', fitted ?? '');
   await fit.click();
   await expect(fit).toHaveAttribute('aria-label', fitted ?? '');
@@ -253,7 +253,7 @@ test('pressing the armed tool on the rail a second time puts the pointer back in
   page,
 }) => {
   await openApp(page, 'rail.pdf', labelledPdf('Rail', 1), { advanced: false });
-  const rectangle = page.getByRole('button', { name: 'Draw Shape (Rectangle)', exact: true });
+  const rectangle = page.getByRole('button', { name: 'Draw shape', exact: true });
   const select = page.getByRole('button', { name: 'Selection Tool', exact: true });
   await expect(select).toHaveAttribute('aria-pressed', 'true');
   await rectangle.click();
@@ -302,7 +302,7 @@ test('a key that reaches the window from the document itself still runs its shor
 
 test('Export Options in the header opens the export dialog and Escape closes it', async ({ page }) => {
   await openApp(page, 'export.pdf', labelledPdf('Export', 1), { advanced: false });
-  await page.getByRole('button', { name: 'Export Options' }).click();
+  await page.getByRole('button', { name: 'Export options' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText(/Export/i);
@@ -344,8 +344,8 @@ test('the export dialog gives the size of the document as it stands, not of the 
   await openPdf(page, 'sized.pdf', original);
   /** The export dialog offers the document under its current size, then closes again. */
   const expectSize = async (bytes: number): Promise<void> => {
-    await page.getByRole('button', { name: 'Export Options', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Download / Export' });
+    await page.getByRole('button', { name: 'Export options', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export options' });
     await expect(dialog.getByRole('radio', { name: `This PDF (${formatBytes(bytes, 'en')})` })).toBeChecked();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();

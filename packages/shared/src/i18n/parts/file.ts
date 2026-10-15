@@ -3,7 +3,7 @@
  */
 
 export const filePart = {
-  'file.add.title': 'Belge ekle / içe aktar',
+  'file.add.title': 'Belge ekle',
   'file.add.intro':
     'Eklenen belge geçerli belgeye katılır ve sonuç geçerli belgenin yerini alır. Eklenen belgenin üst verisi (Info/XMP) taşınmaz; sonuç, üst verisini geçerli belgeden alır.',
   'file.add.insertAt': 'Ekleme yeri',
@@ -32,7 +32,7 @@ export const filePart = {
   'file.createImages.orientation.auto': 'Otomatik uygula',
   'file.createImages.orientation.ignore': 'Yoksay',
 
-  'export.images.title': 'Sayfaları görüntü olarak dışa aktar',
+  'export.images.title': 'Sayfaları görsel olarak dışa aktar',
   'export.images.intro':
     'Her sayfa ayrı bir görüntü dosyası olarak üretilir; görüntüde metin katmanı, bağlantı ve açıklama bulunmaz.',
   'export.images.format': 'Biçim',

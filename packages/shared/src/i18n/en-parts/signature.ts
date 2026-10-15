@@ -1,5 +1,5 @@
 export const signaturePart = {
-  'sig.dialog.title': 'Add a signature',
+  'sig.dialog.title': 'Add signature',
   'sig.dialog.intro': 'Draw, type or photograph your signature, then click where it goes on the page.',
   'sig.notCertified':
     'This is a picture placed on the page, not a certified digital signature. To prove the document has not changed since it was signed, use “Sign with a certificate”.',
@@ -36,9 +36,9 @@ export const signaturePart = {
   'sig.cancel': 'Cancel',
   'sig.placing': 'Click on the page where it goes. Press Esc to cancel.',
   'sig.placed': '{kind} added to the page. Select it to move, turn or resize it from a corner.',
-  'sig.command': 'Add a signature (draw, type, picture)',
+  'sig.command': 'Add signature',
 
-  'img.add.title': 'Add an image',
+  'img.add.title': 'Add image',
   'img.add.failed': 'The image could not be read: {name}. Choose a PNG, JPEG, WebP, GIF or BMP.',
   'img.add.label': 'Image',
 

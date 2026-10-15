@@ -21,7 +21,7 @@ const status = (row: Locator): Locator => row.getByLabel('Review status');
 
 /** Put a note on an empty spot of the page and give it a comment. */
 async function addNote(page: Page, comment: string, at: readonly [number, number] = [300, 400]) {
-  await rail(page, 'Add comment / Note').click();
+  await rail(page, 'Add note').click();
   await clickPage(page, at[0], at[1]);
   const row = rows(page).filter({ hasText: 'unsaved' }).filter({ hasText: 'No comment' }).first();
   await expect(row).toBeVisible();

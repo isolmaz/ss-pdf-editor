@@ -1,9 +1,9 @@
 export const boxesPart = {
-  'boxes.title': 'Page boxes & size',
+  'boxes.title': 'Page boxes and size',
   'op.progress.boxes': 'Writing page boxes',
   'op.progress.labels': 'Writing page labels',
   'op.progress.boxes.measure': 'Measuring content boundaries',
-  'boxes.dialog.title': 'Page boxes & dimensions',
+  'boxes.dialog.title': 'Page boxes and size',
   'boxes.dialog.intro':
     'Page boxes define PDF geometry: MediaBox defines physical paper, CropBox defines visible viewing area, while Trim/Bleed/Art define print, bleed and content boundaries. Auto-crop scans the page and measures actually printed content, trimming white margins. Box edits do not shift existing annotations; content shift/scale operations use the page engine mechanism and report which was used.',
   'boxes.dialog.done': '{count} page(s) updated.',

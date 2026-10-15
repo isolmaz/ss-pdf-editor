@@ -196,7 +196,7 @@ export async function readFile(page: Page, name: string): Promise<Uint8Array> {
 
 /** Rotate the page on screen from the status bar (a real, journaled page action). */
 export async function rotateCurrentPage(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Rotate Page (90°)', exact: true }).click();
+  await page.getByRole('button', { name: 'Rotate right', exact: true }).click();
   await expect(notice(page, 'Applied')).toBeVisible({ timeout: 30_000 });
 }
 

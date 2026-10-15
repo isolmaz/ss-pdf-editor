@@ -56,7 +56,7 @@ export const annotationsPart = {
   'ann.tool.strikeout': 'Üstü çizili',
   'ann.tool.squiggly': 'Dalgalı çizgi',
   'ann.tool.ink': 'Serbest çizim',
-  'ann.tool.shapes': 'Dikdörtgen',
+  'ann.tool.shapes': 'Şekil çiz',
   'ann.tool.note': 'Not ekle',
   'ann.tool.color': 'Renk',
   'ann.tool.opacity': 'Saydamlık',

@@ -19,7 +19,7 @@ test('a tilted line is marked not editable and a click on it opens nothing; a pl
   page,
 }) => {
   await openPdf(page, 'tilted.pdf', PDF);
-  await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit text', exact: true }).click();
   const tilted = page.locator('[data-text-block][data-block-text="Tilted words"]');
   const plain = page.locator('[data-text-block][data-block-text="Plain words"]');
   await expect(plain).toHaveCount(1, { timeout: 30_000 });

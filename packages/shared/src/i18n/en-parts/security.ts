@@ -1,5 +1,5 @@
 export const securityPart = {
-  'security.title': 'Security',
+  'security.title': 'Protect with password',
   'security.intro':
     'Document is encrypted with AES-256 and cannot be opened without a password. Passwords cannot be recovered, so keep it safe. Output is reopened and permissions verified before delivery.',
   'security.oldPassword': 'Current password',

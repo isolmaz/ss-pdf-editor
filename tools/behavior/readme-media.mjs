@@ -167,23 +167,20 @@ const SCENES = {
     await page.locator('input[type="file"][accept*="application/pdf"]').first().setInputFiles(demo);
     await page.locator('.pdfViewer canvas').first().waitFor({ timeout: 30_000 });
     await pace(1200);
-    await press(page, page.getByRole('button', { name: 'Next Page' }), 900);
-    await press(page, page.getByRole('button', { name: 'Next Page' }), 900);
+    await press(page, page.getByRole('button', { name: 'Next page' }), 900);
+    await press(page, page.getByRole('button', { name: 'Next page' }), 900);
     await press(page, page.getByRole('option').first(), 900);
-    await press(page, page.getByRole('button', { name: 'Zoom In (+)' }), 600);
-    await press(page, page.getByRole('button', { name: 'Zoom In (+)' }), 900);
-    await press(page, page.getByRole('button', { name: /^Fit Width/ }), 1200);
+    await press(page, page.getByRole('button', { name: 'Zoom in (+)' }), 600);
+    await press(page, page.getByRole('button', { name: 'Zoom in (+)' }), 900);
+    await press(page, page.getByRole('button', { name: /^Fit width/ }), 1200);
   },
 
   async annotate(page, mark) {
     await openDemo(page);
     mark();
-    await press(
-      page,
-      page.getByRole('button', { name: 'Mark Up Text (highlight, underline, strike)', exact: true }),
-    );
+    await press(page, page.getByRole('button', { name: 'Mark up text', exact: true }));
     await drag(page, await onPage(page, 0, 56, 640), await onPage(page, 0, 470, 640));
-    await press(page, page.getByRole('button', { name: 'Draw Shape (Rectangle)', exact: true }));
+    await press(page, page.getByRole('button', { name: 'Draw shape', exact: true }));
     await drag(page, await onPage(page, 0, 48, 556), await onPage(page, 0, 150, 528));
     await press(page, page.getByRole('button', { name: 'Freehand drawing', exact: true }));
     const a = await onPage(page, 0, 60, 486);
@@ -195,7 +192,7 @@ const SCENES = {
     }
     await page.mouse.up();
     await pace(500);
-    await press(page, page.getByRole('button', { name: 'Add Text', exact: true }));
+    await press(page, page.getByRole('button', { name: 'Add text', exact: true }));
     const spot = await onPage(page, 0, 380, 700);
     await glide(page, spot.x, spot.y);
     await page.mouse.click(spot.x, spot.y);
@@ -287,11 +284,11 @@ const SCENES = {
     await openDemo(page);
     mark();
     await press(page, page.getByRole('option').nth(1), 900);
-    await press(page, page.getByRole('button', { name: 'Redact (permanent removal)' }));
+    await press(page, page.getByRole('button', { name: 'Permanent redaction' }));
     await drag(page, await onPage(page, 1, 52, 690), await onPage(page, 1, 520, 670));
     await press(page, page.getByRole('tab', { name: 'Redaction', exact: true }), 500);
-    await press(page, page.getByRole('button', { name: 'Redaction (Permanent Erase)', exact: true }), 600);
-    const form = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
+    await press(page, page.getByRole('button', { name: 'Permanent redaction', exact: true }), 600);
+    const form = page.getByRole('region', { name: 'Permanent redaction' });
     await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 900);
     await press(page, form.getByRole('button', { name: 'Continue', exact: true }), 300);
     await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
@@ -347,8 +344,8 @@ const SCENES = {
     await openDemo(page);
     await useAdvanced(page);
     mark();
-    await palette(page, 'Watermark');
-    const form = page.getByRole('region', { name: 'Watermark' });
+    await palette(page, 'Add watermark');
+    const form = page.getByRole('region', { name: 'Add watermark' });
     await press(page, form.getByRole('textbox', { name: 'Text', exact: true }), 200);
     await page.keyboard.press('Control+a');
     await page.keyboard.type('CONFIDENTIAL', { delay: 90 });
@@ -421,8 +418,8 @@ const SCENES = {
     await openDemo(page);
     await useAdvanced(page);
     mark();
-    await palette(page, 'Security');
-    const form = page.getByRole('region', { name: 'Security' });
+    await palette(page, 'Protect with password');
+    const form = page.getByRole('region', { name: 'Protect with password' });
     await press(page, form.getByLabel('Open password'), 200);
     await page.keyboard.type('northwind', { delay: 90 });
     await press(page, form.getByLabel('Owner password'), 200);
@@ -438,7 +435,7 @@ const SCENES = {
     await openDemo(page);
     await useAdvanced(page);
     mark();
-    await palette(page, 'Document comparison');
+    await palette(page, 'Compare documents');
     await page.locator('input[data-compare-picker]').setInputFiles(revised);
     await page.getByText('Selected: service-agreement-v2.pdf').waitFor();
     await pace(700);
@@ -478,7 +475,7 @@ const SCENES = {
     await pace(1300);
     await page.keyboard.press('Escape');
     await pace(400);
-    await press(page, page.getByRole('button', { name: 'Export Options', exact: true }), 1800);
+    await press(page, page.getByRole('button', { name: 'Export options', exact: true }), 1800);
     await page.keyboard.press('Escape');
     await pace(600);
   },

@@ -13,7 +13,7 @@ test.describe.configure({ timeout: 120_000 });
 
 test('a colour picked in the Edit Text form colours the rewritten line in the file', async ({ page }) => {
   await openPdf(page, 'colour.pdf', labelledPdf('Plain', 1));
-  await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit text', exact: true }).click();
   const block = page.locator('[data-text-block][data-block-text="Plain 1"]');
   await expect(block).toHaveCount(1, { timeout: 30_000 });
   await block.click();
