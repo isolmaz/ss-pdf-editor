@@ -101,6 +101,8 @@ export const en: Record<MessageKey, string> = {
   'panel.outline.empty': 'This document has no outline.',
   'panel.goToPage': 'Go to page {page}',
   'draft.restored': '{count} draft(s) restored; the document and its change journal are ready.',
+  'draft.restoredNoHistory':
+    '{count} draft(s) restored with their unsaved changes; earlier steps cannot be undone for {withoutHistory} of them.',
   'draft.corrupt': '{count} draft file(s) corrupted and could not be read.',
   'draft.openElsewhere':
     '“{name}” is open in another window of the editor. Switch to that window to keep working on it.',

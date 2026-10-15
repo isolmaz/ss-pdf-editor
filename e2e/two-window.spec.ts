@@ -1,5 +1,5 @@
 import type { Page } from 'playwright/test';
-import { notice, openApp, rotateCurrentPage } from './app-helpers';
+import { CANVAS, notice, openApp, rotateCurrentPage } from './app-helpers';
 import { fixturePdf } from './fixture-pdf';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
@@ -295,8 +295,9 @@ test.describe('two windows on one vault', () => {
     const third = await context.newPage();
     await third.goto('/editor/');
     await expect(notice(third, 'draft(s) restored')).toBeVisible({ timeout: 30_000 });
-    // The start screen is up: a "Back to document" entry exists only for a tab that is open.
-    await expect(third.getByRole('button', { name: 'Back to document (owned.pdf)' })).toBeVisible();
+    // The restored document is on screen, not behind the start screen.
+    await expect(third.locator(CANVAS).first()).toBeVisible();
+    await expect(third.getByRole('button', { name: 'Back to document (owned.pdf)' })).toHaveCount(0);
     await third.close();
   });
 });

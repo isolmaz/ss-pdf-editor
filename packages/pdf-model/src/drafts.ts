@@ -270,6 +270,15 @@ export function isRestorable(draft: Draft): boolean {
   return draft.dirty || draft.journal.length > 0;
 }
 
+/**
+ * Whether a draft holds edits that no journal entry describes. The smaller device tier writes the
+ * working version and no journal (`persistDraft`), so such a draft restores the document with its
+ * unsaved changes and nothing to undo: the restore says so instead of promising a history.
+ */
+export function lacksHistory(draft: Draft): boolean {
+  return draft.journal.length === 0 && (draft.workingId !== undefined || draft.overlays !== undefined);
+}
+
 /** A safe count: a page or byte total has to be a non-negative whole number. */
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;

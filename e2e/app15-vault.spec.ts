@@ -125,7 +125,7 @@ test('an unreadable manifest is counted, the readable draft still returns, and a
   await expect(notice(page, '1 draft file(s) corrupted and could not be read.')).toBeVisible({
     timeout: 30_000,
   });
-  await page.getByRole('button', { name: 'Open kept.pdf', exact: true }).click();
+  // The draft that came back is the document on screen: no start screen to click through.
   await expect(page.locator(CANVAS).first()).toBeVisible();
 
   // A reference graph with an unreadable member is incomplete: the purge refuses to guess.

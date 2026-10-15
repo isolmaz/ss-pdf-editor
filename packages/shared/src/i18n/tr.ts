@@ -117,6 +117,8 @@ export const tr = {
   'panel.outline.empty': 'Bu belgede içindekiler yok.',
   'panel.goToPage': '{page}. sayfaya git',
   'draft.restored': '{count} taslak geri yüklendi; belge ve değişiklik günlüğü hazır.',
+  'draft.restoredNoHistory':
+    '{count} taslak kaydedilmemiş değişiklikleriyle geri yüklendi; {withoutHistory} tanesinde önceki adımlar geri alınamaz.',
   'draft.corrupt': '{count} taslak dosyası bozulmuş ve okunamadı.',
   'draft.openElsewhere':
     '“{name}” düzenleyicinin başka bir penceresinde açık. Üzerinde çalışmaya devam etmek için o pencereye geçin.',
