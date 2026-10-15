@@ -173,10 +173,10 @@ describe('PrintDialog shell', () => {
   it('cannot print or produce without an engine document, and has no produce action without a place for it', () => {
     show({ viewer: null, onProduced: vi.fn() });
     expect(button('Print').disabled).toBe(true);
-    expect(button('Generate Printable PDF').disabled).toBe(true);
+    expect(button('Generate printable PDF').disabled).toBe(true);
     cleanup();
     show();
-    expect(screen.queryByRole('button', { name: 'Generate Printable PDF' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Generate printable PDF' })).toBeNull();
   });
 
   it('closes from Cancel and from Escape', async () => {
@@ -372,7 +372,7 @@ describe('PrintDialog producing', () => {
     const onProduced = vi.fn();
     const onNotice = vi.fn();
     show({ onProduced, onNotice });
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(onProduced).toHaveBeenCalledTimes(1));
     expect(onProduced).toHaveBeenCalledWith({ name: 'print.pdf', bytes: new Uint8Array([1, 2, 3]) });
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Print file ready: print.pdf');
@@ -395,7 +395,7 @@ describe('PrintDialog producing', () => {
   it('produces without a notice channel', async () => {
     const onProduced = vi.fn();
     show({ onProduced });
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(onProduced).toHaveBeenCalledTimes(1));
   });
 
@@ -420,7 +420,7 @@ describe('PrintDialog producing', () => {
       'Flip on short edge',
     );
 
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(onProduced).toHaveBeenCalledTimes(1));
     expect(impose.calls[0]?.options).toMatchObject({
       perSheet: 9,
@@ -440,7 +440,7 @@ describe('PrintDialog producing', () => {
     expect(screen.queryByRole('radio', { name: '16' })).toBeNull();
     expect(screen.queryByText(t('print.duplexHint'))).toBeNull();
     expect(screen.getByText(t('print.bookletHint'))).toBeTruthy();
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(onProduced).toHaveBeenCalledTimes(1));
     expect(impose.calls[0]?.options).toMatchObject({ perSheet: 4, booklet: true });
   });
@@ -450,14 +450,14 @@ describe('PrintDialog producing', () => {
     show({ onProduced });
     await user.click(screen.getByRole('radio', { name: 'Range' }));
     await user.type(screen.getByRole('textbox', { name: 'Page range' }), 'q');
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     expect((await screen.findByRole('alert')).textContent).toBe('Could not read the range: q');
     expect(impose.calls).toEqual([]);
     expect(onProduced).not.toHaveBeenCalled();
 
     await user.clear(screen.getByRole('textbox', { name: 'Page range' }));
     await user.type(screen.getByRole('textbox', { name: 'Page range' }), '2-3');
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(onProduced).toHaveBeenCalledTimes(1));
     expect(impose.calls[0]?.options).toMatchObject({ pages: [1, 2] });
   });
@@ -468,9 +468,9 @@ describe('PrintDialog producing', () => {
     impose.progress = [{ done: 1, total: 3 }];
     const onProduced = vi.fn();
     const { given } = show({ onProduced });
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Preparing sheets: 1/3'));
-    expect(button('Generate Printable PDF').disabled).toBe(true);
+    expect(button('Generate printable PDF').disabled).toBe(true);
     expect(button('Print').disabled).toBe(true);
     await user.keyboard('{Escape}');
     expect(given.onClose).not.toHaveBeenCalled();
@@ -487,7 +487,7 @@ describe('PrintDialog producing', () => {
     const onProduced = vi.fn();
     const onNotice = vi.fn();
     const { given } = show({ onProduced, onNotice, read });
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     await user.click(button('Cancel'));
     expect(given.onClose).toHaveBeenCalledTimes(1);
@@ -504,7 +504,7 @@ describe('PrintDialog producing', () => {
     const onProduced = vi.fn();
     const onNotice = vi.fn();
     show({ onProduced, onNotice });
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     const expected = `${t('error.value-out-of-range.message')} ${t('error.value-out-of-range.hint')}`;
     expect((await screen.findByRole('alert')).textContent).toBe(expected);
     expect(onNotice).toHaveBeenCalledExactlyOnceWith(expected);
@@ -512,7 +512,7 @@ describe('PrintDialog producing', () => {
 
     // The next attempt starts clean.
     impose.failure = null;
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     await waitFor(() => expect(onProduced).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -520,7 +520,7 @@ describe('PrintDialog producing', () => {
   it('reports an unexpected failure with the internal error sentence', async () => {
     impose.failure = new Error('boom');
     show({ onProduced: vi.fn() });
-    await user.click(button('Generate Printable PDF'));
+    await user.click(button('Generate printable PDF'));
     expect((await screen.findByRole('alert')).textContent).toBe(
       `${t('error.internal.message')} ${t('error.internal.hint')}`,
     );

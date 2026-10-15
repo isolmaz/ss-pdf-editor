@@ -14,7 +14,7 @@ test('clicking a paragraph box opens its text; the rewritten line is what the fi
   page,
 }) => {
   await openPdf(page, 'edit.pdf', labelledPdf('Original', 1));
-  await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit text', exact: true }).click();
   const block = page.locator('[data-text-block][data-block-text="Original 1"]');
   await expect(block).toHaveCount(1, { timeout: 30_000 });
   await block.click();

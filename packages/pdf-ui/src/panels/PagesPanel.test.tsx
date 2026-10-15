@@ -466,7 +466,7 @@ describe('PagesPanel selection toolbar', () => {
     await user.click(bar.getByRole('button', { name: 'Rotate right' }));
     await user.click(bar.getByRole('button', { name: 'Duplicate pages' }));
     await user.click(bar.getByRole('button', { name: 'Delete pages' }));
-    await user.click(bar.getByRole('button', { name: 'Extract Pages' }));
+    await user.click(bar.getByRole('button', { name: 'Extract pages' }));
     expect(onPageAction.mock.calls).toEqual([
       [{ kind: 'rotate', direction: 'left' }],
       [{ kind: 'rotate', direction: 'right' }],
@@ -513,7 +513,7 @@ describe('PagesPanel selection toolbar', () => {
       'Rotate right',
       'Duplicate pages',
       'Delete pages',
-      'Extract Pages',
+      'Extract pages',
       'Move up',
       'Move down',
     ]) {
@@ -523,15 +523,15 @@ describe('PagesPanel selection toolbar', () => {
     viewing.unmount();
 
     show({ initial: [1] });
-    expect(within(toolbar(1)).getByRole('button', { name: 'Extract Pages' }).hasAttribute('disabled')).toBe(
+    expect(within(toolbar(1)).getByRole('button', { name: 'Extract pages' }).hasAttribute('disabled')).toBe(
       true,
     );
   });
 });
 
 describe('PagesPanel "move to"', () => {
-  const field = () => within(toolbar(1)).getByRole('spinbutton', { name: 'Move to…' }) as HTMLInputElement;
-  const submit = () => within(toolbar(1)).getByRole('button', { name: 'Move to…' });
+  const field = () => within(toolbar(1)).getByRole('spinbutton', { name: 'Move to' }) as HTMLInputElement;
+  const submit = () => within(toolbar(1)).getByRole('button', { name: 'Move to' });
 
   it('bounds the field by the places that remain', () => {
     show({ initial: [0, 1] });

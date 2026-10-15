@@ -26,7 +26,7 @@ afterEach(cleanup);
 describe('ExportDialog', () => {
   it('offers the document with its size and name and downloads it as a PDF by default', async () => {
     const { onClose, onExport, user } = show();
-    expect(screen.getByRole('heading', { name: 'Download / Export' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Export options' })).toBeTruthy();
     expect(screen.getByText('This PDF (2.0 KB)')).toBeTruthy();
     expect(screen.getByText('report.pdf')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Download PDF' }));
@@ -34,6 +34,7 @@ describe('ExportDialog', () => {
       kind: 'pdf',
       compressionLevel: 'medium',
       imageFormat: 'png',
+      textFormat: 'text',
       officeFormat: 'docx',
       officeLayout: 'layout',
     });
@@ -43,32 +44,53 @@ describe('ExportDialog', () => {
   it('downloads a compressed PDF at the chosen level', async () => {
     const { onExport, user } = show();
     await user.click(screen.getByRole('radio', { name: /Compressed PDF/ }));
-    await user.selectOptions(screen.getByDisplayValue('MEDIUM'), 'high');
-    await user.click(screen.getByRole('button', { name: 'Download Compressed PDF' }));
+    await user.selectOptions(screen.getByDisplayValue('Balanced'), 'high');
+    await user.click(screen.getByRole('button', { name: 'Download compressed PDF' }));
     expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'compressed', compressionLevel: 'high' });
   });
 
-  it('downloads the pages as images in the chosen format', async () => {
+  it('names the compression levels by what they give, smallest file first', () => {
+    show();
+    const level = screen.getByDisplayValue('Balanced') as HTMLSelectElement;
+    expect([...level.options].map((option) => [option.value, option.text])).toEqual([
+      ['high', 'Smaller file'],
+      ['medium', 'Balanced'],
+      ['low', 'Higher quality'],
+    ]);
+  });
+
+  it.each(['jpeg', 'webp'])('downloads the pages as images in the chosen %s format', async (format) => {
     const { onExport, user } = show();
-    await user.click(screen.getByRole('radio', { name: /Image Format/ }));
-    await user.selectOptions(screen.getByDisplayValue('PNG'), 'jpg');
-    await user.click(screen.getByRole('button', { name: 'Download Images' }));
-    expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'images', imageFormat: 'jpg' });
+    await user.click(screen.getByRole('radio', { name: /Image format/ }));
+    const select = screen.getByDisplayValue('PNG') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.text)).toEqual(['PNG', 'JPEG', 'WebP']);
+    await user.selectOptions(select, format);
+    await user.click(screen.getByRole('button', { name: 'Download images' }));
+    expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'images', imageFormat: format });
   });
 
   it('goes back to the PDF after another kind was chosen', async () => {
     const { onExport, user } = show();
-    await user.click(screen.getByRole('radio', { name: /Text Format/ }));
+    await user.click(screen.getByRole('radio', { name: /Text format/ }));
     await user.click(screen.getByRole('radio', { name: /This PDF/ }));
     await user.click(screen.getByRole('button', { name: 'Download PDF' }));
     expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'pdf' });
   });
 
-  it('downloads the text', async () => {
-    const { onExport, user } = show();
-    await user.click(screen.getByRole('radio', { name: /Text Format/ }));
-    await user.click(screen.getByRole('button', { name: 'Download Text File' }));
-    expect(onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'text' });
+  it('downloads the text as plain text unless Markdown is picked', async () => {
+    const first = show();
+    await first.user.click(screen.getByRole('radio', { name: /Text format/ }));
+    await first.user.click(screen.getByRole('button', { name: 'Download text file' }));
+    expect(first.onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'text', textFormat: 'text' });
+    cleanup();
+
+    const second = show();
+    await second.user.click(screen.getByRole('radio', { name: /Text format/ }));
+    const select = screen.getByRole('combobox', { name: 'Text format' }) as HTMLSelectElement;
+    expect([...select.options].map((option) => option.text)).toEqual(['Plain text', 'Markdown']);
+    await second.user.selectOptions(select, 'markdown');
+    await second.user.click(screen.getByRole('button', { name: 'Download text file' }));
+    expect(second.onExport.mock.calls[0]?.[0]).toMatchObject({ kind: 'text', textFormat: 'markdown' });
   });
 
   it('asks for the Word layout only while Word is chosen and sends the one picked', async () => {

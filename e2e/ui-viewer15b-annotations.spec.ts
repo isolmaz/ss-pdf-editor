@@ -8,7 +8,7 @@ import { drag, openPdf, pageFrame, rail, toClient } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
-const SHAPE_TOOL = 'Draw Shape (Rectangle)';
+const SHAPE_TOOL = 'Draw shape';
 
 test('a pointercancel in the middle of a shape drag discards the shape; the next drag still draws one', async ({
   page,

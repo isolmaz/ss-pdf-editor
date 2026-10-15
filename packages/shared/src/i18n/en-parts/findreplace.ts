@@ -3,7 +3,7 @@
 export const findReplacePart = {
   'findReplace.title': 'Find and replace',
   'findReplace.intro':
-    'Find a text in the document and replace it everywhere it occurs. The old text is really removed; the new one is written in its place, at the same size and colour.',
+    'Find a text in the document and replace it everywhere. The old text is really removed; the new one is written in its place at the same size and colour.',
   'findReplace.confirm': 'Replace all',
   'findReplace.find': 'Find',
   'findReplace.replace': 'Replace with',
@@ -13,7 +13,8 @@ export const findReplacePart = {
   'findReplace.done': '{count} matches replaced.',
   'findReplace.fromFindBar': 'Replace…',
   'cmd.findReplace.label': 'Find and replace…',
-  'home.tool.findReplace': 'Replace a text everywhere in the document.',
+  'home.tool.findReplace':
+    'The old text is removed and the new text is written in its place, at the same size and colour.',
   'op.progress.findReplace.read': 'Reading the pages',
   'op.note.findReplace.replaced': '{count} matches replaced (page {pages}).',
   'op.note.findReplace.shrunk':

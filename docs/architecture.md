@@ -1661,7 +1661,7 @@ signature widgets only a page's `/Annots` reach, once the password has opened th
 `lost` note in the report: `op.note.security.signatureInvalidated` for protect,
 `op.note.security.signatureInvalidatedUnlock` for unlock. The download path never reaches the
 save plan's signature warning.
-The Security dialog's `resultKind` is `download`: the encrypted copy is handed over, never
+The Protect with password dialog's `resultKind` is `download`: the encrypted copy is handed over, never
 applied to the open document (a protected file is read-only in the editor, so applying it
 ended in a password prompt). A run may also overrule its dialog's `resultKind` for one result
 with `OpRunResult.deliver` — the form-data **export** uses it to download its data file from a
@@ -1812,7 +1812,7 @@ moved rests at the end of the page. The line is the one the drawn text continues
 (`TextEditInsertLine.lineSpan`, its left and right edge): a run of the column or table cell
 beside it shares the baseline but not the span, and splicing after it read the two columns
 interleaved, line by line. Text with no run of its own line to follow (a match that starts
-its line with nothing kept after it, a paragraph Edit Text redraws), or a page whose content
+its line with nothing kept after it, a paragraph Edit text redraws), or a page whose content
 cannot be read, is drawn in one stream after the page's own. The splice point is the end of
 the anchor's text object, so a producer that writes several lines in one `BT … ET` (LaTeX
 does) still reads that object's line heads before the rests drawn after it. A line that only
@@ -2647,7 +2647,7 @@ testable logic lives:
 | `notices.ts` | Turns notice descriptors, verification results and failures into sentences (i18n keys and params only, no English literals) |
 | `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App` inside the root error boundary (`recovery.tsx`), then warms the engine, editor, printer and palette chunks on idle (§2) |
 | `lazy-ops.ts` | Same-signature wrappers that load the writers and readers the shell runs only on an action (§2) |
-| `export-presets.ts`, `signature-store.ts` | What the export dialog's "Compressed PDF" level fills into the Optimize form, and the remembered simple signature (§8.7) |
+| `export-presets.ts`, `signature-store.ts` | What the export dialog's compression level ("Smaller file", "Balanced", "Higher quality") fills into the Optimize form, and the remembered simple signature (§8.7) |
 | `drafts.ts` | The OPFS half of draft storage |
 | `vault-channel.ts` | Cross-window vault coordination |
 | `offline.ts` | Capability manifests and readiness |
@@ -2695,7 +2695,8 @@ inventory cannot be read completely). The privacy claim is made once on this scr
 stores (name, size, page count, last opened, star) sits behind an info button next to the list's tabs. *All tools*
 (`components/HomeToolGrid.tsx`, a chunk the tab fetches when the pointer or focus reaches it, with a "Loading tools…" status in the panel until it arrives) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
-command, so the grid cannot drift from the menus or the palette. It lists
+command, so the grid cannot drift from the menus or the palette. *Organize pages*
+(`page.organize`) opens the page panel, and merge and batch are tiles of their own. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never
 disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a

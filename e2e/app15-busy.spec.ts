@@ -39,7 +39,7 @@ test('a result that ends while a save waits on its picker is refused, falls back
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Optimize');
   await page.keyboard.press('Enter');
-  const form = page.getByRole('region', { name: 'Optimize / Compress' });
+  const form = page.getByRole('region', { name: 'Reduce file size' });
   await expect(form).toBeVisible({ timeout: 30_000 });
 
   await page.keyboard.press('Control+s');

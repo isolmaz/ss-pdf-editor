@@ -30,7 +30,7 @@ async function expectRefused(form: Locator, message: string, diagnostic: string)
 
 test('add / import without a file is refused, naming the missing source', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Add / Import Document', 'Add / Import Document');
+  const form = await openForm(page, 'Add document', 'Add document');
   await expectRefused(
     form,
     'This operation has nothing to work with yet.',
@@ -40,7 +40,7 @@ test('add / import without a file is refused, naming the missing source', async 
 
 test('create from images without a file is refused, naming the missing pictures', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Create PDF from Images', 'Create PDF from Images');
+  const form = await openForm(page, 'Create PDF from images', 'Create PDF from images');
   await expectRefused(
     form,
     'This operation has nothing to work with yet.',
@@ -52,7 +52,7 @@ test('create from images: two pictures open as a two-page Letter document, one p
   page,
 }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 1));
-  const form = await openForm(page, 'Create PDF from Images', 'Create PDF from Images');
+  const form = await openForm(page, 'Create PDF from images', 'Create PDF from images');
   await form.locator('input[type="file"]').setInputFiles([
     { name: 'ink.png', mimeType: 'image/png', buffer: inkPng(60, 30) },
     { name: 'dot.png', mimeType: 'image/png', buffer: encodePng(8, 8, () => [200, 30, 30]) },

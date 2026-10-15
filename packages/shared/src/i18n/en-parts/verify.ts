@@ -23,7 +23,7 @@ export const verifyPart = {
   'verify.reason.unverified': 'unrecognised operation: {steps}',
   'verify.reason.no-reference': 'nothing to compare against',
   'verify.reason.engine-cannot': 'the reader cannot answer this',
-  'verify.reason.pending-storage': "the engine's pending annotation storage overlaps the reference",
+  'verify.reason.pending-storage': 'the pending annotation storage overlaps the reference',
   'verify.reason.trust-policy':
     'signature validity needs the trust policy, which the save path checks separately',
 } as const;

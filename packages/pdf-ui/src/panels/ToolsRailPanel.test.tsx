@@ -39,34 +39,35 @@ describe('ToolsRailPanel: the rail', () => {
     show();
     const state = (title: string) =>
       screen.getByRole('button', { name: title }).getAttribute('aria-expanded');
-    expect(screen.getByRole('heading', { name: 'ALL TOOLS' })).toBeTruthy();
-    expect(state('Organize Pages')).toBe('true');
-    expect(state('Convert & Export PDF')).toBe('true');
-    expect(state('Fill & Sign')).toBe('true');
-    expect(state('Security & Redaction')).toBe('false');
-    expect(state('Numbering & Watermark')).toBe('false');
-    expect(screen.getByRole('button', { name: 'Rotate Pages' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Protect with Password' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Add Watermark' })).toBeNull();
+    // The dock tab above is already called Tools; a second heading would only repeat it.
+    expect(screen.queryByRole('heading', { name: 'All tools' })).toBeNull();
+    expect(state('Organize pages')).toBe('true');
+    expect(state('Convert and export')).toBe('true');
+    expect(state('Fill and sign')).toBe('true');
+    expect(state('Security and redaction')).toBe('false');
+    expect(state('Numbering and watermark')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Rotate pages' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Protect with password' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add watermark' })).toBeNull();
   });
 
   it('folds a group shut and a shut group open again', async () => {
     const { user } = show();
-    await user.click(group('Organize Pages'));
-    expect(group('Organize Pages').getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('button', { name: 'Rotate Pages' })).toBeNull();
+    await user.click(group('Organize pages'));
+    expect(group('Organize pages').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Rotate pages' })).toBeNull();
 
-    await user.click(group('Security & Redaction'));
-    expect(group('Security & Redaction').getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Protect with Password' })).toBeTruthy();
-    await user.click(group('Numbering & Watermark'));
-    expect(screen.getByRole('button', { name: 'Add Watermark' })).toBeTruthy();
+    await user.click(group('Security and redaction'));
+    expect(group('Security and redaction').getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Protect with password' })).toBeTruthy();
+    await user.click(group('Numbering and watermark'));
+    expect(screen.getByRole('button', { name: 'Add watermark' })).toBeTruthy();
   });
 
   it('lists the tools of each group, the export options marked as new', async () => {
     const { user } = show();
-    await user.click(group('Security & Redaction'));
-    await user.click(group('Numbering & Watermark'));
+    await user.click(group('Security and redaction'));
+    await user.click(group('Numbering and watermark'));
     const titles = (name: string) => {
       const section = screen.getByRole('button', { name }).parentElement as HTMLElement;
       return within(section)
@@ -74,75 +75,71 @@ describe('ToolsRailPanel: the rail', () => {
         .slice(1)
         .map((button) => button.textContent);
     };
-    expect(titles('Organize Pages')).toEqual([
-      'Rotate Pages',
-      'Delete Pages',
-      'Extract Pages',
-      'Split Document',
-      'Combine / Add Document',
+    expect(titles('Organize pages')).toEqual([
+      'Rotate pages',
+      'Delete pages',
+      'Extract pages',
+      'Split document',
+      'Add document',
     ]);
-    expect(titles('Convert & Export PDF')).toEqual([
-      'Export OptionsNEW',
-      'Compress PDF',
-      'Export Pages as Images',
-      'Export as Plain Text',
-      'Export as Word, Excel or CSV',
+    expect(titles('Convert and export')).toEqual([
+      'Export options',
+      'Reduce file size',
+      'Export pages as images',
+      'Export text',
+      'Export to Word, Excel or CSV',
       'Save as PDF/A',
     ]);
-    expect(titles('Fill & Sign')).toEqual([
-      'Digital Signature (PAdES)',
-      'Fill Form Fields',
-      'Add New Form Field',
+    expect(titles('Fill and sign')).toEqual(['Sign document', 'Fill form fields', 'Add form field']);
+    expect(titles('Security and redaction')).toEqual([
+      'Protect with password',
+      'Remove password',
+      'Sanitize document',
+      'Permanent redaction',
     ]);
-    expect(titles('Security & Redaction')).toEqual([
-      'Protect with Password',
-      'Remove Password',
-      'Sanitize Document',
-      'Permanent Redaction',
-    ]);
-    expect(titles('Numbering & Watermark')).toEqual(['Add Page Numbers', 'Add Watermark']);
+    expect(titles('Numbering and watermark')).toEqual(['Page numbers and headers/footers', 'Add watermark']);
   });
 
   it('sends page actions, the export modal and the palette to the shell', async () => {
     const { user, onPageAction, onExportModal, onOpenPalette, onSelectTool } = show();
-    await user.click(screen.getByRole('button', { name: 'Rotate Pages' }));
-    await user.click(screen.getByRole('button', { name: 'Delete Pages' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate pages' }));
+    await user.click(screen.getByRole('button', { name: 'Delete pages' }));
     expect(onPageAction.mock.calls).toEqual([[{ kind: 'rotate', direction: 'right' }], [{ kind: 'delete' }]]);
 
-    await user.click(screen.getByRole('button', { name: /Export Options/ }));
+    await user.click(screen.getByRole('button', { name: /Export options/ }));
     expect(onExportModal).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole('button', { name: 'Search All Commands (Ctrl+K)' }));
+    await user.click(screen.getByRole('button', { name: 'Search all commands (Ctrl+K)' }));
     expect(onOpenPalette).toHaveBeenCalledOnce();
     expect(onSelectTool).not.toHaveBeenCalled();
   });
 
   it('selects the tool a row names, arming the redaction tool first', async () => {
     const { user, onSelectTool, onArmTool, onOpenDialog } = show();
-    await user.click(group('Security & Redaction'));
-    await user.click(group('Numbering & Watermark'));
+    await user.click(group('Security and redaction'));
+    await user.click(group('Numbering and watermark'));
     const rows: [string, string][] = [
-      ['Extract Pages', 'extract-pages'],
-      ['Split Document', 'split'],
-      ['Combine / Add Document', 'add-document'],
-      ['Compress PDF', 'compress'],
-      ['Export Pages as Images', 'export-images'],
-      ['Export as Plain Text', 'export-text'],
-      ['Export as Word, Excel or CSV', 'export-office'],
+      ['Extract pages', 'extract-pages'],
+      ['Split document', 'split'],
+      ['Add document', 'add-document'],
+      ['Reduce file size', 'compress'],
+      ['Export pages as images', 'export-images'],
+      ['Export text', 'export-text'],
+      ['Export to Word, Excel or CSV', 'export-office'],
       ['Save as PDF/A', 'pdfa'],
-      ['Digital Signature (PAdES)', 'sign'],
-      ['Fill Form Fields', 'form-fields'],
-      ['Add New Form Field', 'form-create-field'],
-      ['Protect with Password', 'protect'],
-      ['Remove Password', 'unlock'],
-      ['Sanitize Document', 'sanitize'],
-      ['Add Page Numbers', 'page-numbers'],
-      ['Add Watermark', 'watermark'],
+      ['Sign document', 'sign'],
+      ['Fill form fields', 'form-fields'],
+      ['Add form field', 'form-create-field'],
+      ['Protect with password', 'protect'],
+      ['Remove password', 'unlock'],
+      ['Sanitize document', 'sanitize'],
+      ['Page numbers and headers/footers', 'page-numbers'],
+      ['Add watermark', 'watermark'],
     ];
     for (const [title] of rows) await user.click(screen.getByRole('button', { name: title }));
     expect(onSelectTool.mock.calls).toEqual(rows.map(([, id]) => [id]));
     expect(onArmTool).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Permanent Redaction' }));
+    await user.click(screen.getByRole('button', { name: 'Permanent redaction' }));
     expect(onArmTool).toHaveBeenCalledExactlyOnceWith('redact');
     expect(onSelectTool).toHaveBeenLastCalledWith('redact');
     expect(onOpenDialog).not.toHaveBeenCalled();
@@ -150,17 +147,17 @@ describe('ToolsRailPanel: the rail', () => {
 
   it('opens the tool as a dialog when the shell has no inline runner', async () => {
     const { user, onOpenDialog } = show({ onSelectTool: undefined });
-    await user.click(screen.getByRole('button', { name: 'Split Document' }));
+    await user.click(screen.getByRole('button', { name: 'Split document' }));
     expect(onOpenDialog).toHaveBeenCalledExactlyOnceWith('split');
   });
 
   it('offers only the groups the mode keeps', () => {
     show({ visibleGroups: ['pages', 'sign'] });
-    expect(screen.getByRole('button', { name: 'Organize Pages' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Fill & Sign' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Convert & Export PDF' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Security & Redaction' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Numbering & Watermark' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Organize pages' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Fill and sign' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Convert and export' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Security and redaction' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Numbering and watermark' })).toBeNull();
   });
 });
 
@@ -204,9 +201,9 @@ describe('ToolsRailPanel: the inline runner', () => {
         'Text and graphics in marked areas are permanently deleted from the document.',
       ),
     ).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'ALL TOOLS' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Organize pages' })).toBeNull();
 
-    await user.click(within(runner).getByRole('button', { name: 'Back to All Tools' }));
+    await user.click(within(runner).getByRole('button', { name: 'Back to all tools' }));
     expect(onBackToTools).toHaveBeenCalledOnce();
     await user.click(within(runner).getByRole('button', { name: 'Cancel' }));
     expect(onBackToTools).toHaveBeenCalledTimes(2);
@@ -223,9 +220,9 @@ describe('ToolsRailPanel: the inline runner', () => {
 
   it('shows the rail when there is a tool but no document to run it on, or a document but no tool', () => {
     const first = render(<ToolsRailPanel t={t} activeSpec={SPEC} context={null} />);
-    expect(screen.getByRole('heading', { name: 'ALL TOOLS' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Organize pages' })).toBeTruthy();
     first.unmount();
     render(<ToolsRailPanel t={t} activeSpec={null} context={CONTEXT} />);
-    expect(screen.getByRole('heading', { name: 'ALL TOOLS' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Organize pages' })).toBeTruthy();
   });
 });

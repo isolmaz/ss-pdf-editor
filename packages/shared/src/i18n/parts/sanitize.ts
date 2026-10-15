@@ -3,13 +3,14 @@
 export const sanitizePart = {
   'sanitize.title': 'Belgeyi temizle',
   'sanitize.intro':
-    'Sayfalarda görünmeyen ama dosyada duran içeriği tek adımda kaldırın: betikler, ekli dosyalar, üst veri, gizli katmanlar ve özel uygulama verisi. Her şey bu tarayıcıda yapılır. Çıktı yeniden okunur ve seçilen her kategorinin gerçekten gittiği doğrulanır. Hiçbir yerden başvurulmayan nesneler her zaman atılır. Dijital imzalar geçersiz olur.',
+    'Sayfalarda görünmeyen ama dosyada duran içeriği kaldırın: betikler, ekler, üst veri, gizli katmanlar. Sonuç doğrulanır; dijital imzalar geçersiz olur.',
   'sanitize.remove': 'Kaldırılacaklar',
   'sanitize.removeHint':
-    'JavaScript; program başlatma, dosya içe aktarma ve form gönderme eylemlerini de kapsar, belge içinde gezinen bağlantılar kalır. Üst veride üretici satırı kalır. Web bağlantıları ve yorumlar varsayılan olarak kapalıdır: içeriğin parçasıdır, kaldırmak sayfaların görünümünü değiştirir. Gizli katmanlar yalnızca sayfanın aynı görüneceği gösterilebilen yerlerde çıkarılır.',
-  'sanitize.opt.javascript': 'JavaScript ve kod çalıştıran eylemler',
+    'Web bağlantıları ve yorumlar içeriğin parçası olduğundan varsayılan olarak kapalıdır. Gizli katmanlar yalnızca sayfa aynı görünecekse çıkarılır.',
+  'sanitize.opt.javascript':
+    'JavaScript ve kod çalıştıran eylemler (program başlatma, dosya içe aktarma, form gönderme)',
   'sanitize.opt.files': 'Ekli dosyalar',
-  'sanitize.opt.metadata': 'Belge üst verisi',
+  'sanitize.opt.metadata': 'Belge üst verisi (üretici satırı kalır)',
   'sanitize.opt.private': 'Özel uygulama verisi',
   'sanitize.opt.thumbnails': 'Küçük resimler',
   'sanitize.opt.layers': 'Gizli katmanlar',
@@ -22,7 +23,7 @@ export const sanitizePart = {
   'sanitize.forms.flatten': 'Sayfaya işle',
   'sanitize.forms.remove': 'Kaldır',
   'sanitize.done': 'Belge temizlendi: {count} öğe kaldırıldı.',
-  'tools.sanitize': 'Belgeyi Temizle',
+  'tools.sanitize': 'Belgeyi temizle',
   'tools.sanitizeDesc': 'Betik, ek dosya, üst veri ve gizli içeriği tek adımda kaldırın',
   'home.tool.sanitize':
     'Betikleri, ekli dosyaları, üst veriyi ve gizli katmanları kaldırın; çıktı doğrulanır.',
@@ -62,7 +63,7 @@ export const sanitizePart = {
   'op.note.sanitize.formsLeft': '{count} form alanı (düğme ya da imza alanı) düzleştirilemediği için kaldı.',
   'op.note.sanitize.signatureBroken':
     'Belgede dijital imza var. Temizleme dosyayı yeniden yazdığı için imza artık geçerli olmayacak.',
-  'op.note.sanitize.xfaDropped': 'XFA form tanımı atıldı; AcroForm alanları ayrıca ele alındı.',
+  'op.note.sanitize.xfaDropped': 'XFA form tanımı atıldı; form alanları ayrıca ele alındı.',
   'op.note.sanitize.media':
     '{count} adet 3B ya da zengin ortam ek açıklaması var; bunların kendi betikleri okunmuyor ve değiştirilmedi.',
   'op.note.sanitize.unreadable': '{count} nesne okunamadığı için taranamadı.',

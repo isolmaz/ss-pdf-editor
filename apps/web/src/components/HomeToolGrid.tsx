@@ -39,6 +39,7 @@ import {
   Info,
   Link,
   ListBullets,
+  ListChecks,
   ListNumbers,
   Lock,
   LockOpen,
@@ -47,6 +48,7 @@ import {
   Note,
   PersonSimple,
   PlusSquare,
+  Rows,
   Ruler,
   Scan,
   Scissors,
@@ -55,6 +57,7 @@ import {
   ShieldCheck,
   Signature,
   SquaresFour,
+  Stack,
   Swap,
   Tag,
   Textbox,
@@ -96,8 +99,10 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'tools.image-add', category: 'edit', icon: ImageSquare, descriptionKey: 'home.tool.imageAdd' },
   { id: 'tools.image-edit', category: 'edit', icon: Image, descriptionKey: 'home.tool.imageEdit' },
   { id: 'tools.measure-distance', category: 'edit', icon: Ruler, descriptionKey: 'home.tool.measure' },
+  { id: 'page.organize', category: 'pages', icon: Rows, descriptionKey: 'home.tool.organize' },
   { id: 'page.insert', category: 'pages', icon: FilePlus, descriptionKey: 'home.tool.insert' },
   { id: 'file.add', category: 'pages', icon: Files, descriptionKey: 'home.tool.add' },
+  { id: 'file.merge', category: 'pages', icon: Stack, descriptionKey: 'home.tool.merge' },
   { id: 'page.split', category: 'pages', icon: Scissors, descriptionKey: 'home.tool.split' },
   { id: 'page.boxes', category: 'pages', icon: Crop, descriptionKey: 'home.tool.boxes' },
   { id: 'page.labels', category: 'pages', icon: Tag, descriptionKey: 'home.tool.labels' },
@@ -139,6 +144,7 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
     descriptionKey: 'home.tool.accessibility',
   },
   { id: 'tools.compare', category: 'document', icon: GitDiff, descriptionKey: 'home.tool.compare' },
+  { id: 'file.batch', category: 'document', icon: ListChecks, descriptionKey: 'home.tool.batch' },
 ];
 
 /** Case- and accent-insensitive search text (`İ`/`ı`/`ş` fold the way a Turkish user types them). */
@@ -173,7 +179,8 @@ export default function HomeToolGrid({
     tools: HOME_TOOLS.filter((tool) => tool.category === category).flatMap((tool) => {
       const command = byId.get(tool.id);
       if (command === undefined) return [];
-      const title = t(command.labelKey);
+      // A menu or palette label ends in "…" when it opens a dialog; a tile is not a menu item.
+      const title = t(command.labelKey).replace(/…$/, '');
       const description = t(tool.descriptionKey);
       if (needle.length > 0) {
         const haystack = fold([title, description, ...(command.keywords ?? [])].join(' '));

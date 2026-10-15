@@ -189,7 +189,7 @@ test('command palette: the simple mode names what it hides and offers the advanc
   await way.click();
   // Back on the input, with the hidden command now listed.
   await expect(input).toBeFocused();
-  await expect(page.getByRole('option', { name: /Optimize/ }).first()).toBeVisible();
+  await expect(page.getByRole('option', { name: /Reduce file size/ }).first()).toBeVisible();
 });
 
 test('settings: theme and language choices persist and change the page', async ({ page }) => {
@@ -282,9 +282,9 @@ test('simple mode: no measure or redact button on the rail, and no redaction, co
   page,
 }) => {
   await openPdf(page, 'doc.pdf', undefined, { advanced: false });
-  await expect(page.getByRole('button', { name: 'Add Text', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add text', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Measure', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Redact (permanent removal)' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Permanent redaction' })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'History' })).toBeVisible();
   for (const name of ['Redaction', 'Redaction audit', 'Comparison', 'Accessibility', 'PDF/A']) {
     await expect(page.getByRole('tab', { name, exact: true })).toHaveCount(0);

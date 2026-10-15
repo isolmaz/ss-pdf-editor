@@ -1,11 +1,11 @@
 export const boxesPart = {
-  'boxes.title': 'Page boxes & size',
+  'boxes.title': 'Page boxes and size',
   'op.progress.boxes': 'Writing page boxes',
   'op.progress.labels': 'Writing page labels',
   'op.progress.boxes.measure': 'Measuring content boundaries',
-  'boxes.dialog.title': 'Page boxes & dimensions',
+  'boxes.dialog.title': 'Page boxes and size',
   'boxes.dialog.intro':
-    'Page boxes define PDF geometry: MediaBox defines physical paper, CropBox defines visible viewing area, while Trim/Bleed/Art define print, bleed and content boundaries. Auto-crop scans the page and measures actually printed content, trimming white margins. Box edits do not shift existing annotations; content shift/scale operations use the page engine mechanism and report which was used.',
+    'MediaBox is the paper, CropBox the visible area. Auto-crop trims white margins around the printed content; box changes do not move existing annotations.',
   'boxes.dialog.done': '{count} page(s) updated.',
   'boxes.dialog.mode': 'Operation',
   'boxes.dialog.mode.set': 'Set box values',
@@ -67,7 +67,7 @@ export const boxesPart = {
   'boxes.note.boxChangeAnnots':
     'Existing annotations and links not shifted; elements outside new box may be hidden.',
   'boxes.note.contentMovedAnnots':
-    'Existing annotations and links not moved with content (engine does not translate them); marks may misalign.',
+    'Existing annotations and links were not moved with the content; marks may misalign.',
   'boxes.note.clamped': '{count} box(es) clamped to MediaBox boundary.',
   'boxes.note.minCrop':
     'Content was very small; crop expanded to minimum {points} points on {count} page(s).',
@@ -77,7 +77,7 @@ export const boxesPart = {
   'boxes.note.producer': 'Producer string and document metadata preserved.',
   'labels.dialog.title': 'Page labels',
   'labels.dialog.intro':
-    'Labels are text displayed in place of page numbers in reader bars and print windows (e.g. “Preface iii”, “App-A”). This dialog modifies the entire label plan: prior plan is removed, rule applies from starting page to document end, while earlier pages keep default numbers.',
+    'Labels replace page numbers in readers and print dialogs (“iii”, “App-A”). The old plan is removed; the rule runs from the start page to the end.',
   'labels.dialog.range': 'Starting page',
   'labels.dialog.rangeHint': '1-based page numbers; first page of range is rule start (e.g. 1-3,7 → page 1).',
   'labels.dialog.style': 'Numbering style',

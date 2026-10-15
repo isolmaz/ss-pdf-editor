@@ -136,7 +136,7 @@ test.describe('without the service worker', () => {
     const form = page.getByRole('region', { name: 'Flatten XFA form to a normal PDF' });
     await form.getByRole('radio').first().check();
     await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-    await expect(form.getByRole('alert')).toContainText('A required engine package is not downloaded.', {
+    await expect(form.getByRole('alert')).toContainText('A required package is not downloaded.', {
       timeout: 90_000,
     });
     await expect(reviewHeading(form)).toHaveCount(0);

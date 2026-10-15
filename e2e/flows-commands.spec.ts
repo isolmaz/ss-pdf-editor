@@ -88,7 +88,7 @@ async function choose(page: Page, form: ReturnType<Page['getByRole']>, label: st
 
 test('a number field keeps the decimal the reader types, key by key', async ({ page }) => {
   await open(page);
-  const form = await openForm(page, 'Optimize', 'Optimize / Compress');
+  const form = await openForm(page, 'Optimize', 'Reduce file size');
   await form.getByRole('radio', { name: 'Convert pages to image (lossy)' }).check();
   const quality = form.getByRole('spinbutton', { name: 'Image quality' });
   // Typed one key at a time, as a person types: `0.` is a half-typed number the input
@@ -112,7 +112,7 @@ test('optimize: lossless pass strips metadata, the image pass replaces the text 
   page,
 }) => {
   await open(page);
-  let form = await openForm(page, 'Optimize', 'Optimize / Compress');
+  let form = await openForm(page, 'Optimize', 'Reduce file size');
   await form.getByText('Advanced options').click();
   await form.getByRole('checkbox', { name: /Clear metadata/ }).check();
   await applyForm(form);
@@ -121,7 +121,7 @@ test('optimize: lossless pass strips metadata, the image pass replaces the text 
   expect(lossless.producer).not.toBeNull();
   expect((await readProducedPageTexts(await exported(page, 'lossless2.pdf')))[0]).toContain('Third line');
 
-  form = await openForm(page, 'Optimize', 'Optimize / Compress');
+  form = await openForm(page, 'Optimize', 'Reduce file size');
   await form.getByRole('radio', { name: 'Convert pages to image (lossy)' }).check();
   await form.getByRole('spinbutton', { name: /DPI|Resolution/ }).fill('72');
   await applyForm(form);
@@ -132,7 +132,7 @@ test('optimize: lossless pass strips metadata, the image pass replaces the text 
 
 test('page boxes and labels: a set CropBox and a Roman label range reach the file', async ({ page }) => {
   await open(page);
-  let form = await openForm(page, 'Page boxes', 'Page boxes & dimensions');
+  let form = await openForm(page, 'Page boxes', 'Page boxes and size');
   await form.getByRole('radio', { name: 'Set box values' }).check();
   await form.getByRole('spinbutton', { name: 'X (pt)', exact: true }).fill('10');
   await form.getByRole('spinbutton', { name: 'Y (pt)', exact: true }).fill('20');
@@ -160,7 +160,7 @@ test('new form field and form data: a created field exports, and an imported val
   page,
 }) => {
   await open(page);
-  let form = await openForm(page, 'New form field', 'New form field');
+  let form = await openForm(page, 'Add form field', 'Add form field');
   await form.getByRole('textbox', { name: 'Field name' }).fill('email');
   await form.getByRole('spinbutton', { name: 'Left (x) (pt)' }).fill('72');
   await form.getByRole('spinbutton', { name: 'Bottom (y) (pt)' }).fill('300');
@@ -198,7 +198,7 @@ test('replace pages: the selected page takes its content from another PDF and fr
 }) => {
   await open(page, 'base.pdf', labelledPdf('Base', 3));
   await thumbs(page).nth(1).click();
-  let form = await openForm(page, 'Replace Pages', 'Replace Pages');
+  let form = await openForm(page, 'Replace pages', 'Replace pages');
   await form.getByRole('radio', { name: 'Another PDF' }).check();
   await form.locator('input[type="file"]').setInputFiles(pdfFile('donor.pdf', labelledPdf('Donor', 2)));
   await form.getByRole('textbox', { name: 'Source page range' }).fill('2');
@@ -206,7 +206,7 @@ test('replace pages: the selected page takes its content from another PDF and fr
   await expect(thumbs(page)).toHaveCount(3);
 
   await thumbs(page).nth(2).click();
-  form = await openForm(page, 'Replace Pages', 'Replace Pages');
+  form = await openForm(page, 'Replace pages', 'Replace pages');
   await applyForm(form);
   const texts = await readProducedPageTexts(await exported(page, 'replaced.pdf'));
   expect(texts.map((text) => text.trim())).toEqual(['Base 1', 'Donor 2', '']);
@@ -223,7 +223,7 @@ test('compare, accessibility and redaction audit: each panel reports on the open
   page,
 }) => {
   await open(page, 'base.pdf', labelledPdf('Base', 3));
-  await runCommand(page, 'Document comparison');
+  await runCommand(page, 'Compare documents');
   await page
     .locator('input[data-compare-picker]')
     .setInputFiles(pdfFile('other.pdf', labelledPdf('Other', 2)));
@@ -254,7 +254,7 @@ test('compare, accessibility and redaction audit: each panel reports on the open
 
 test('page numbering: the template is stamped on every page but the skipped first one', async ({ page }) => {
   await open(page, 'bates.pdf', labelledPdf('Base', 3));
-  const form = await openForm(page, 'Header / Footer', 'Header / Footer & Page Numbering');
+  const form = await openForm(page, 'header', 'Page numbers and headers/footers');
   await form.getByRole('textbox', { name: 'Format' }).fill('BATES-{page}/{total}');
   await form.getByRole('checkbox', { name: 'Skip first page' }).check();
   // The count starts at the first stamped page, so the second page is the one that shows 2.
@@ -271,7 +271,7 @@ test('security and remove password: the downloaded copy carries the permissions 
   page,
 }) => {
   await open(page);
-  let form = await openForm(page, 'Security', 'Security');
+  let form = await openForm(page, 'Protect with password', 'Protect with password');
   await form.getByLabel('Open password').fill('s3cret');
   await form.getByLabel('Owner password').fill('own3r');
   await form.getByRole('checkbox', { name: 'Copying' }).uncheck();
@@ -360,7 +360,7 @@ function solidPng(): Buffer {
 
 test('replace image: the picture in the file is swapped for the chosen PNG', async ({ page }) => {
   await open(page, 'picture.pdf', pictureBearingPdf());
-  const form = await openForm(page, 'Replace Image', 'Replace Image');
+  const form = await openForm(page, 'Replace image', 'Replace image');
   await form.getByRole('combobox', { name: 'Image' }).click();
   await page.locator('[data-base-ui-portal]').getByRole('option').first().click();
   await form.locator('input[type="file"]').setInputFiles({
@@ -624,7 +624,7 @@ test('home "All tools" tile: a tool whose file cannot be opened does not run on 
   // once nothing is running, so the "Applied" line is the signal that a waiting tool would have
   // come up by now; the press is repeated while the shell still refuses it.
   await expect(async () => {
-    await page.getByRole('button', { name: 'Rotate Page (90°)', exact: true }).click();
+    await page.getByRole('button', { name: 'Rotate right', exact: true }).click();
     await expect(notice(page, 'Applied')).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await expect(page.getByRole('region', { name: 'Save as PDF/A' })).toHaveCount(0);
@@ -638,12 +638,13 @@ test('export options: the compression level chosen in the dialog fills the Optim
 }) => {
   await open(page);
   const viaExportDialog = async (level: string) => {
-    await page.getByRole('button', { name: 'Export Options', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Download / Export' });
+    // The header button comes first; the Tools panel has a row of the same name.
+    await page.getByRole('button', { name: 'Export options', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Export options' });
     await dialog.getByRole('radio', { name: 'Compressed PDF' }).check();
     await dialog.getByRole('combobox').first().selectOption(level);
-    await dialog.getByRole('button', { name: 'Download Compressed PDF' }).click();
-    const form = page.getByRole('region', { name: 'Optimize / Compress' });
+    await dialog.getByRole('button', { name: 'Download compressed PDF' }).click();
+    const form = page.getByRole('region', { name: 'Reduce file size' });
     await expect(form).toBeVisible({ timeout: 30_000 });
     return form;
   };
@@ -680,7 +681,7 @@ test('batch: Bates numbers run across a queue of files and every finished file d
       pdfFile('alpha.pdf', labelledPdf('Alpha', 2)),
       pdfFile('beta.pdf', labelledPdf('Beta', 1)),
     ]);
-  await dialog.getByRole('checkbox', { name: 'Header / Footer & Page Numbering' }).check();
+  await dialog.getByRole('checkbox', { name: 'Page numbers and headers/footers' }).check();
   await dialog.getByRole('radio', { name: 'Bates numbering' }).check();
   await dialog.getByRole('textbox', { name: 'Prefix' }).fill('CASE-');
   await dialog.getByRole('spinbutton', { name: 'Digits' }).fill('4');
@@ -715,23 +716,23 @@ test('every operation dialog speaks English in the English interface, defaults i
   // watermark's default text was the Turkish "TASLAK".
   await open(page);
   for (const [command, region] of [
-    ['Watermark', 'Watermark'],
-    ['Page layout', 'Page layout (N-up / Booklet)'],
-    ['Create PDF from Images', 'Create PDF from Images'],
-    ['Edit outline', 'Edit outline (bookmarks)'],
+    ['Add watermark', 'Add watermark'],
+    ['Page layout', 'Page layout (N-up / booklet)'],
+    ['Create PDF from images', 'Create PDF from images'],
+    ['Edit outline', 'Edit outline'],
     ['Fill form fields', 'Fill form fields'],
-    ['Split Document', 'Split Document'],
-    ['Insert Pages', 'Insert Pages'],
-    ['Export Text', 'Export Text'],
-    ['Export Pages as Images', 'Export Pages as Images'],
+    ['Split document', 'Split document'],
+    ['Insert pages', 'Insert pages'],
+    ['Export text', 'Export text'],
+    ['Export pages as images', 'Export pages as images'],
     ['Document properties', 'Document properties'],
-    ['Sign document', 'Sign Document (PAdES B-B)'],
+    ['Sign document', 'Sign document'],
     ['Text recognition', 'Text recognition (OCR)'],
   ] as const) {
     const form = await openForm(page, command, region);
     await form.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(form).toBeHidden();
   }
-  const watermark = await openForm(page, 'Watermark', 'Watermark');
+  const watermark = await openForm(page, 'Add watermark', 'Add watermark');
   await expect(watermark.getByRole('textbox', { name: 'Text' })).toHaveValue('DRAFT');
 });

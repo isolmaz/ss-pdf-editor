@@ -17,6 +17,7 @@ import {
   STANDALONE_COMMAND_IDS,
   visibleCommands,
 } from './commands';
+import { HOME_TOOLS } from './components/HomeToolGrid';
 
 type Call = readonly [string, ...unknown[]];
 
@@ -141,6 +142,7 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'page.rotate-right': ['pageAction', { kind: 'rotate', direction: 'right' }],
   'page.duplicate': ['pageAction', { kind: 'duplicate' }],
   'page.delete': ['pageAction', { kind: 'delete' }],
+  'page.organize': ['openLeftTab', 'pages'],
   'page.extract': dialog('extract-pages'),
   'page.insert': dialog('insert-pages'),
   'page.replace': dialog('replace-pages'),
@@ -264,6 +266,39 @@ describe('buildCommands', () => {
       );
     });
 
+    it.each(['tr', 'en'] as const)(
+      'tells more in a home tile description than its %s title says',
+      (locale) => {
+        const translate = createTranslator(locale);
+        const commands = buildCommands(recordingHost({ t: translate }).host);
+        // A description that only repeats its title says nothing: every long word of the title is
+        // in it, compared by its first four letters so that "çizim" and "çizin" count as one.
+        const stems = (text: string) =>
+          text
+            .toLocaleLowerCase(locale)
+            .split(/[^\p{L}\p{N}]+/u)
+            .filter((word) => word.length > 3)
+            .map((word) => word.slice(0, 4));
+        const repeated = HOME_TOOLS.filter((tool) => {
+          const title = stems(translate(byId(commands, tool.id).labelKey));
+          const description = new Set(stems(translate(tool.descriptionKey)));
+          return title.length > 0 && title.every((stem) => description.has(stem));
+        }).map((tool) => tool.id);
+        expect(repeated).toEqual([]);
+      },
+    );
+
+    it('lays out the page panel, merge and batch as home tiles that run their own command', () => {
+      const { host, calls } = recordingHost();
+      const commands = buildCommands(host);
+      const tiles = HOME_TOOLS.filter((tool) =>
+        ['page.organize', 'file.merge', 'file.batch'].includes(tool.id),
+      );
+      expect(tiles.map((tool) => tool.id)).toEqual(['page.organize', 'file.merge', 'file.batch']);
+      for (const tool of tiles) byId(commands, tool.id).run();
+      expect(calls).toEqual([['openLeftTab', 'pages'], ['openDialog', 'merge-files'], ['openBatch']]);
+    });
+
     it('names the three zoom entries by what each one does', () => {
       const labels = (locale: 'tr' | 'en') => {
         const translate = createTranslator(locale);
@@ -322,7 +357,14 @@ describe('buildCommands', () => {
 
   it('disables document commands without a document, and edits when editing is not allowed', () => {
     const none = buildCommands(recordingHost({ hasDocument: false, canEdit: false }).host);
-    for (const id of ['file.close', 'view.zoom-in', 'view.outline', 'tools.pdfa-check', 'tools.xfa-fill']) {
+    for (const id of [
+      'file.close',
+      'view.zoom-in',
+      'view.outline',
+      'page.organize',
+      'tools.pdfa-check',
+      'tools.xfa-fill',
+    ]) {
       expect(byId(none, id).disabled, id).toBe(true);
     }
     for (const id of ['page.split', 'tools.ocr', 'tools.impose', 'tools.measure-area']) {
@@ -396,6 +438,15 @@ describe('buildCommands', () => {
     const { host, calls } = recordingHost({ selectedPages: [] });
     byId(buildCommands(host), 'page.rotate-left').run();
     expect(calls).toEqual([['pageAction', { kind: 'rotate', direction: 'left' }]]);
+  });
+
+  it('labels the three measurements as commands that say they measure', () => {
+    const commands = buildCommands(recordingHost().host);
+    expect(
+      ['tools.measure-distance', 'tools.measure-perimeter', 'tools.measure-area'].map(
+        (id) => byId(commands, id).labelKey,
+      ),
+    ).toEqual(['cmd.measureDistance.label', 'cmd.measurePerimeter.label', 'cmd.measureArea.label']);
   });
 
   it('checks the measure, theme and tool entries from the host state', () => {

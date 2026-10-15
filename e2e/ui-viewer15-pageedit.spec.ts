@@ -48,7 +48,7 @@ test('insert from images: every picture becomes one page after the chosen page, 
   await page.goto('/editor/');
   const jpeg = await browserJpeg(page, 40, 20);
   await openPdf(page, 'base.pdf', labelledPdf('Base', 3), { navigate: false });
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From images' }).check();
   await form.locator('input[type="file"]').setInputFiles([
     { name: 'ink.png', mimeType: 'image/png', buffer: inkPng(60, 30) },
@@ -73,7 +73,7 @@ test('insert from images with the stretch placement still makes one picture page
   page,
 }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 1));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From images' }).check();
   await form.locator('input[type="file"]').setInputFiles({
     name: 'ink.png',
@@ -90,7 +90,7 @@ test('insert from images with the stretch placement still makes one picture page
 
 test('insert from another PDF with the range left blank brings in every page of it', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From another PDF' }).check();
   await form.locator('input[type="file"]').setInputFiles(pdfFile('donor.pdf', labelledPdf('Donor', 3)));
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('2');
@@ -102,7 +102,7 @@ test('insert from another PDF with the range left blank brings in every page of 
 
 test('insert from another PDF without a file is refused, naming the missing source', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From another PDF' }).check();
   await expectRefused(
     form,
@@ -113,7 +113,7 @@ test('insert from another PDF without a file is refused, naming the missing sour
 
 test('insert from images without a file is refused, naming the missing pictures', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From images' }).check();
   await expectRefused(form, 'This operation has nothing to work with yet.', 'pageedit: no image was picked');
 });
@@ -121,7 +121,7 @@ test('insert from images without a file is refused, naming the missing pictures'
 test('replace with a picture sized to the page it replaces keeps that page size', async ({ page }) => {
   await openPdf(page, 'small.pdf', labelledPdf('Small', 3, { size: [300, 400] }));
   await thumbs(page).nth(1).click();
-  const form = await openForm(page, 'Replace Pages', 'Replace Pages');
+  const form = await openForm(page, 'Replace pages', 'Replace pages');
   await form.getByRole('radio', { name: 'Image', exact: true }).check();
   await form.locator('input[type="file"]').setInputFiles({
     name: 'ink.png',
@@ -144,7 +144,7 @@ test('replacing two pages with one picture is refused and says how many were pre
   await thumbs(page)
     .nth(1)
     .click({ modifiers: ['Control'] });
-  const form = await openForm(page, 'Replace Pages', 'Replace Pages');
+  const form = await openForm(page, 'Replace pages', 'Replace pages');
   await form.getByRole('radio', { name: 'Image', exact: true }).check();
   await form.locator('input[type="file"]').setInputFiles({
     name: 'dot.png',

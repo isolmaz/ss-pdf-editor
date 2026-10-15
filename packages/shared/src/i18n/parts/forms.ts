@@ -65,7 +65,7 @@ export const formsPart = {
   'form.dialog.validateOnly': 'Yalnızca doğrula',
   'form.dialog.validateOnlyHint':
     'Açıkken belge değiştirilmez: kurallar ve zorunlu alanlar denetlenir, sonuç rapora yazılır.',
-  'form.dialog.create.title': 'Yeni form alanı',
+  'form.dialog.create.title': 'Form alanı ekle',
   'form.dialog.create.intro':
     'Alan sayfaya dikdörtgenle yerleştirilir (nokta cinsinden, sol alt köşe orijin).',
   'form.dialog.kind': 'Alan türü',

@@ -74,7 +74,7 @@ export const uatagsPart = {
   'ua.declared.yes': 'The file declares PDF/UA-{part}.',
   'ua.declared.no': 'The file does not declare PDF/UA conformance.',
   'ua.disclaimer':
-    'An automated check modelled on the Matterhorn Protocol. It cannot prove conformance: reading order, the quality of descriptions and language changes need a person, and colour contrast is not measured at all.',
+    'An automated check based on the Matterhorn Protocol; it cannot prove conformance. Reading order, description quality and language changes need a person, and colour contrast is not measured.',
   'ua.state.pass': 'Pass',
   'ua.state.fail': 'Fail',
   'ua.state.manual': 'Check by hand',
@@ -151,7 +151,7 @@ export const uatagsPart = {
   'ua.rule.lang.why':
     'A screen reader picks its pronunciation from the language. With a missing or invalid tag it guesses.',
   'ua.rule.lang.fix': 'Enter a language tag such as en-US or tr-TR below.',
-  'ua.rule.lang.detail.missing': 'The catalogue has no /Lang entry.',
+  'ua.rule.lang.detail.missing': 'The document has no language entry (/Lang).',
   'ua.rule.lang.detail.invalid': '"{lang}" is not a valid language tag.',
   'ua.rule.lang.ok': 'Language: {lang}.',
 
@@ -170,8 +170,8 @@ export const uatagsPart = {
 
   'ua.rule.xfa.name': 'No XFA form',
   'ua.rule.xfa.why': 'XFA forms are dynamic and cannot be made to conform to PDF/UA.',
-  'ua.rule.xfa.fix': 'Convert the form to a standard AcroForm.',
-  'ua.rule.xfa.detail': 'The AcroForm carries an XFA entry.',
+  'ua.rule.xfa.fix': 'Convert the form to a standard PDF form.',
+  'ua.rule.xfa.detail': 'The form also carries an XFA layer.',
 
   'ua.rule.struct-tree.name': 'Structure tree (/StructTreeRoot)',
   'ua.rule.struct-tree.why':

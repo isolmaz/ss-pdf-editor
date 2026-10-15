@@ -9,7 +9,7 @@ import { drag, openPdf, rail } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
-const REDACT_TOOL = 'Redact (permanent removal)';
+const REDACT_TOOL = 'Permanent redaction';
 
 test('a redaction drag from one page into the next marks nothing and keeps the tool armed', async ({
   page,

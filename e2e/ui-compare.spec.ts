@@ -20,7 +20,7 @@ const rowOf = (page: Page, method: 'text' | 'pixels', pageNumber: number): Locat
 
 async function openCompare(page: Page, bytes: Uint8Array, name = 'base.pdf'): Promise<void> {
   await openPdf(page, name, bytes);
-  await runCommand(page, 'Document comparison');
+  await runCommand(page, 'Compare documents');
   await expect(page.getByText('Select a second PDF to compare.')).toBeVisible();
 }
 

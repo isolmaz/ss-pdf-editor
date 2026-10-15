@@ -48,12 +48,7 @@ test('Cancel while an operation runs stops it, says so, and leaves the settings 
   page,
 }) => {
   await openPdf(page, 'long.pdf', await viewingOnlyFixture());
-  const form = await openTool(
-    page,
-    'Convert & Export PDF',
-    'Export Pages as Images',
-    'Export Pages as Images',
-  );
+  const form = await openTool(page, 'Convert and export', 'Export pages as images', 'Export pages as images');
   await form.locator('button').last().click();
   // While it runs the footer holds two Cancel buttons: the form's own, then the run's.
   await form.getByRole('button', { name: 'Cancel', exact: true }).last().click();
@@ -68,8 +63,8 @@ test('the export dialog offers the document or its compressed copy and the butto
 }) => {
   await openPdf(page);
   await openDockTab(page, 'Tools');
-  await tool(page, 'Export Options').click();
-  const dialog = page.getByRole('dialog', { name: /Download \/ Export/ });
+  await tool(page, 'Export options').click();
+  const dialog = page.getByRole('dialog', { name: /Export options/ });
   const pdf = dialog.getByRole('radio', { name: /This PDF/ });
   const compressed = dialog.getByRole('radio', { name: /Compressed PDF/ });
   await expect(pdf).toBeChecked();
@@ -77,7 +72,7 @@ test('the export dialog offers the document or its compressed copy and the butto
 
   await compressed.check();
   await expect(compressed).toBeChecked();
-  await expect(dialog.getByRole('button', { name: 'Download Compressed PDF', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Download compressed PDF', exact: true })).toBeVisible();
 
   await pdf.check();
   await expect(pdf).toBeChecked();

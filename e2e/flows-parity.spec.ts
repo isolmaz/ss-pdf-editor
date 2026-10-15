@@ -69,7 +69,7 @@ test('comments: a note with a reply and a status leaves as XFDF and comes back a
   await page.getByRole('tab', { name: 'Comments', exact: true }).click();
 
   // An empty spot on the page (the fixture's marks sit in other bands).
-  await page.getByRole('button', { name: 'Add comment / Note', exact: true }).click();
+  await page.getByRole('button', { name: 'Add note', exact: true }).click();
   const sheet = await page.locator('.pdfViewer[data-active-viewer] .page').first().boundingBox();
   if (sheet === null) throw new Error('no page box');
   await page.mouse.click(sheet.x + 300, sheet.y + 400);
@@ -355,7 +355,7 @@ test('insert pages from a scan with nothing scanned says the input is missing, n
   await page.keyboard.press('Control+k');
   await paletteInput(page).fill('Insert pages');
   await page.keyboard.press('Enter');
-  const form = page.getByRole('region', { name: 'Insert Pages' });
+  const form = page.getByRole('region', { name: 'Insert pages' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('radio', { name: 'Scan with camera', exact: true }).check();
   await form.getByRole('button', { name: 'Apply', exact: true }).click();

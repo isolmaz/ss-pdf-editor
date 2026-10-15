@@ -1,5 +1,5 @@
 export const comparePart = {
-  'compare.title': 'Document comparison',
+  'compare.title': 'Compare documents',
   'compare.pick': 'Select second document',
   'compare.picked': 'Selected: {name}',
   'compare.runText': 'Compare text',

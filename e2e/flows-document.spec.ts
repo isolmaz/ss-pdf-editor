@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
+import { statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import {
@@ -74,18 +75,18 @@ test('page stepper, page field and zoom move the view', async ({ page }) => {
   await open(page, 'nav.pdf', toolFixturePdf());
   const field = page.getByLabel('Page number');
   await expect(field).toHaveValue('1');
-  await page.getByRole('button', { name: 'Next Page' }).click();
+  await page.getByRole('button', { name: 'Next page' }).click();
   await expect(field).toHaveValue('2');
   await field.fill('1');
   await field.press('Enter');
   await expect(field).toHaveValue('1');
 
-  const level = page.getByRole('button', { name: /Fit Width/ });
+  const level = page.getByRole('button', { name: /Fit width/ });
   const percent = async () => Number.parseInt((await level.textContent()) ?? '0', 10);
   const before = await percent();
-  await page.getByRole('button', { name: 'Zoom In (+)' }).click();
+  await page.getByRole('button', { name: 'Zoom in (+)' }).click();
   await expect.poll(percent).toBeGreaterThan(before);
-  await page.getByRole('button', { name: 'Zoom Out (-)' }).click();
+  await page.getByRole('button', { name: 'Zoom out (-)' }).click();
   await expect.poll(percent).toBe(before);
 });
 
@@ -172,7 +173,7 @@ test('typing a value into a field on the page is one undo step, not one per keys
 test('a redaction box removes the text under it from the exported file', async ({ page }) => {
   await open(page, 'redact.pdf', toolFixturePdf());
   await useAdvancedMode(page);
-  await page.getByRole('button', { name: 'Redact (permanent removal)' }).click();
+  await page.getByRole('button', { name: 'Permanent redaction' }).click();
   const sheet = await page.locator('.pdfViewer[data-active-viewer] .page').first().boundingBox();
   if (sheet === null) throw new Error('no page box');
   const scale = sheet.width / 595;
@@ -183,8 +184,11 @@ test('a redaction box removes the text under it from the exported file', async (
   await page.mouse.up();
 
   await page.getByRole('tab', { name: 'Redaction', exact: true }).click();
-  await page.getByRole('button', { name: 'Redaction (Permanent Erase)', exact: true }).click();
-  const form = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
+  await page
+    .getByRole('tabpanel', { name: 'Redaction' })
+    .getByRole('button', { name: 'Permanent redaction', exact: true })
+    .click();
+  const form = page.getByRole('region', { name: 'Permanent redaction' });
   await applyForm(form);
   await expect(notice(page, 'no text remains in the marked areas')).toBeVisible({ timeout: 60_000 });
 
@@ -198,7 +202,7 @@ test('closing an edited document asks first, and the recent list names its contr
 }) => {
   await open(page, 'recent.pdf', toolFixturePdf());
   await useAdvancedMode(page);
-  await page.getByRole('button', { name: /Rotate page/i }).click();
+  await statusRotate(page).click();
   await expect(notice(page, '1 page(s) rotated')).toBeVisible();
 
   await page.keyboard.press('Control+k');
@@ -241,7 +245,7 @@ test('edit text: the paragraph boxes sit on the text of a page the file turns, a
   await open(page, 'turned-text.pdf', labelledPdf('Turned', 4, { rotations: [0, 90, 180, 270] }));
   for (const index of [0, 1, 2, 3]) {
     await page.getByRole('option').nth(index).click();
-    await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit text', exact: true }).click();
     await expect(page.locator(`[data-text-block][data-block-text="Turned ${index + 1}"]`)).toHaveCount(1, {
       timeout: 30_000,
     });

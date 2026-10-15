@@ -292,9 +292,9 @@ describe('PdfUaView: failing instances', () => {
       .getAllByRole('listitem')
       .map((li) => li.textContent);
     expect(items).toEqual([
-      'The catalogue has no /Lang entry.Page 2annotation 12 0 R',
+      'The document has no language entry (/Lang).Page 2annotation 12 0 R',
       '"xx" is not a valid language tag.',
-      'The catalogue has no /Lang entry.',
+      'The document has no language entry (/Lang).',
     ]);
   });
 

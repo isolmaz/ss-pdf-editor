@@ -141,7 +141,7 @@ describe('convertToPdfA when Ghostscript fails', () => {
     });
     const outcome = await convertToPdfA(plain({ text: SENTENCE }), { part: 2 }, run);
     const notes = new Map(outcome.report.notes.map((entry) => [entry.key, entry.params]));
-    expect(notes.get('op.note.pdfa.textLoss')).toEqual({ percent: '0 %', pages: '1' });
+    expect(notes.get('op.note.pdfa.textLoss')).toEqual({ recall: 0, pages: '1' });
     expect(notes.get('op.note.pdfa.pictureDiffers')).toEqual({ pages: '1' });
     expect(notes.has('op.note.pdfa.pictureKept')).toBe(false);
     expect(outcome.measures.pictureDiffers).toEqual([0]);

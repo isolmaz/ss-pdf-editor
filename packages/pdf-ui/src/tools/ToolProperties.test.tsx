@@ -95,7 +95,7 @@ describe('the four text-markup looks', () => {
     expect(buttons.map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
       ['Highlight', 'false'],
       ['Underline', 'true'],
-      ['Strikeout', 'false'],
+      ['Strikethrough', 'false'],
       ['Squiggly', 'false'],
     ]);
     await userEvent.setup().click(within(group).getByRole('button', { name: 'Squiggly' }));

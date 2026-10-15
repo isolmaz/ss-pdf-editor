@@ -1,5 +1,5 @@
 /**
- * An image added to the page (Tools → Add an image): what the browser makes of the file it
+ * An image added to the page (Tools → Add image): what the browser makes of the file it
  * is given decides what is embedded. An upright JPEG keeps its own bytes, a JPEG its EXIF tag
  * turns is re-encoded upright, a picture with transparency stays a PNG with its alpha, an
  * opaque PNG becomes a JPEG, an oversized picture is brought down to 3000 px on its long
@@ -70,7 +70,7 @@ function withOrientation(jpeg: Buffer, orientation: number): Buffer {
 }
 
 async function addImage(page: Page, name: string, mimeType: string, buffer: Buffer): Promise<void> {
-  await menuItem(page, 'Tools', 'Add an image');
+  await menuItem(page, 'Tools', 'Add image');
   // The picker is the shell's hidden input; the file chooser is what the menu opened.
   await page.locator('input[type="file"][accept*="image/png"]').setInputFiles({ name, mimeType, buffer });
 }

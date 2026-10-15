@@ -1,5 +1,5 @@
 export const signaturePart = {
-  'sig.dialog.title': 'Add a signature',
+  'sig.dialog.title': 'Add signature',
   'sig.dialog.intro': 'Draw, type or photograph your signature, then click where it goes on the page.',
   'sig.notCertified':
     'This is a picture placed on the page, not a certified digital signature. To prove the document has not changed since it was signed, use “Sign with a certificate”.',
@@ -36,9 +36,9 @@ export const signaturePart = {
   'sig.cancel': 'Cancel',
   'sig.placing': 'Click on the page where it goes. Press Esc to cancel.',
   'sig.placed': '{kind} added to the page. Select it to move, turn or resize it from a corner.',
-  'sig.command': 'Add a signature (draw, type, picture)',
+  'sig.command': 'Add signature',
 
-  'img.add.title': 'Add an image',
+  'img.add.title': 'Add image',
   'img.add.failed': 'The image could not be read: {name}. Choose a PNG, JPEG, WebP, GIF or BMP.',
   'img.add.label': 'Image',
 
@@ -49,6 +49,6 @@ export const signaturePart = {
   'op.note.stamp.added': '{kind} added as a stamp annotation.',
   'op.note.stamp.resized': 'The stamp annotation was resized; the image was not re-encoded.',
 
-  'home.tool.signature': 'Add a signature or initials by drawing, typing or from a photo.',
-  'home.tool.imageAdd': 'Add an image to the page; move, turn and resize it.',
+  'home.tool.signature': 'Draw, type or upload a picture of your handwriting; initials work too.',
+  'home.tool.imageAdd': 'Place a PNG or JPEG; move, turn and resize it.',
 } as const;

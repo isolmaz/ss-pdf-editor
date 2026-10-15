@@ -43,18 +43,18 @@ test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 change the zoom the status bar reports'
   // the viewer had already applied fit width.
   const fit = await drawn();
   expect(fit).not.toBe(100);
-  await expect(zoom(new RegExp(`^Fit Width \\(${fit}%\\)$`))).toBeVisible();
+  await expect(zoom(new RegExp(`^Fit width \\(${fit}%\\)$`))).toBeVisible();
   await page.keyboard.press('Control+1');
-  await expect(zoom(/^Fit Width \(100%\)$/)).toBeVisible();
+  await expect(zoom(/^Fit width \(100%\)$/)).toBeVisible();
   expect(await drawn()).toBe(100);
   await page.keyboard.press('Control+=');
-  await expect(zoom(/^Fit Width \(125%\)$/)).toBeVisible();
+  await expect(zoom(/^Fit width \(125%\)$/)).toBeVisible();
   await page.keyboard.press('Control+-');
   await page.keyboard.press('Control+-');
-  await expect(zoom(/^Fit Width \(75%\)$/)).toBeVisible();
+  await expect(zoom(/^Fit width \(75%\)$/)).toBeVisible();
   expect(await drawn()).toBe(75);
   await page.keyboard.press('Control+0');
-  await expect(zoom(new RegExp(`^Fit Width \\(${fit}%\\)$`))).toBeVisible();
+  await expect(zoom(new RegExp(`^Fit width \\(${fit}%\\)$`))).toBeVisible();
   expect(await drawn()).toBe(fit);
 });
 
@@ -79,7 +79,7 @@ test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, E
   await page.keyboard.press('F9');
   const reading = page
     .getByRole('group', { name: 'Page and view controls' })
-    .getByRole('button', { name: 'Reading Mode' });
+    .getByRole('button', { name: 'Reading mode' });
   await expect(reading).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('F9');
   await expect(reading).toHaveAttribute('aria-pressed', 'false');
@@ -194,7 +194,7 @@ test('with a mark drawn, select-all selects it and Delete removes it with one un
   page,
 }) => {
   await openApp(page, 'draw.pdf', labelledPdf('Draw', 1), { advanced: false });
-  await rail(page, 'Draw Shape (Rectangle)').click();
+  await rail(page, 'Draw shape').click();
   await dragOnPage(page, [100, 600], [260, 700]);
   // Back in the select tool the common layer is ready once the inventory is read.
   await expect(rail(page, 'Selection Tool')).toHaveAttribute('aria-pressed', 'true');

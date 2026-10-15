@@ -18,7 +18,7 @@ const rows = (page: Page) => page.locator('ul[aria-label="Comments"] > li');
 
 /** A note at a page point, with its comment text. */
 async function addNote(page: Page, comment: string, x: number, y: number) {
-  await rail(page, 'Add comment / Note').click();
+  await rail(page, 'Add note').click();
   await clickPage(page, x, y);
   const row = rows(page).filter({ hasText: 'unsaved' }).filter({ hasText: 'No comment' }).first();
   await row.getByRole('button', { name: 'Edit comment' }).click();

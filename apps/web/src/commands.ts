@@ -204,6 +204,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'view.left-dock',
   'view.right-dock',
   // Page: rotate, duplicate, delete and extract cover organising a document.
+  'page.organize',
   'page.rotate-left',
   'page.rotate-right',
   'page.duplicate',
@@ -627,6 +628,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
   // on screen (`pageSelection`), and the dialogs open on "current page" the same way.
   const page: Command[] = [
     {
+      id: 'page.organize',
+      labelKey: 'tools.group.pages',
+      group: 'page',
+      disabled: noDocument,
+      keywords: ['organize', 'reorder', 'thumbnails', 'duzenle', 'sirala', 'kucuk resim'],
+      run: () => host.openLeftTab('pages'),
+    },
+    {
       id: 'page.rotate-left',
       labelKey: 'pages.rotate.left',
       group: 'page',
@@ -705,6 +714,8 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'stamp.title',
       group: 'tools',
       disabled: noEdit,
+      // The names it had before the label said what it stamps: still how people search for it.
+      keywords: ['header', 'footer', 'page number', 'bates', 'ustbilgi', 'altbilgi', 'sayfa numarasi'],
       run: dialog('page-numbers'),
     },
     {
@@ -719,6 +730,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'optimize.title',
       group: 'tools',
       disabled: noEdit,
+      keywords: ['optimize', 'compress', 'shrink', 'optimize et', 'sikistir', 'kucult'],
       run: dialog('compress'),
     },
     { id: 'tools.impose', labelKey: 'impose.title', group: 'tools', disabled: noEdit, run: dialog('impose') },
@@ -859,6 +871,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       disabled: noEdit,
       checked: host.activeTool === 'strikeout',
+      keywords: ['strikeout', 'strike out', 'cross out', 'ustu cizili'],
       run: tool('strikeout'),
     },
     {
@@ -903,7 +916,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'tools.measure-distance',
-      labelKey: 'tools.measure.distance',
+      labelKey: 'cmd.measureDistance.label',
       group: 'tools',
       disabled: noEdit,
       checked: host.measureMode === 'distance',
@@ -912,7 +925,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'tools.measure-perimeter',
-      labelKey: 'tools.measure.perimeter',
+      labelKey: 'cmd.measurePerimeter.label',
       group: 'tools',
       disabled: noEdit,
       checked: host.measureMode === 'perimeter',
@@ -921,7 +934,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'tools.measure-area',
-      labelKey: 'tools.measure.area',
+      labelKey: 'cmd.measureArea.label',
       group: 'tools',
       disabled: noEdit,
       checked: host.measureMode === 'area',

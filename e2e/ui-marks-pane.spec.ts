@@ -78,7 +78,7 @@ test('turning the page in the view swaps its sides and the exported page is turn
   const before = await firstPage(page);
   expect(before.height).toBeGreaterThan(before.width);
 
-  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await page.getByRole('button', { name: 'Rotate right' }).click();
   await expect.poll(async () => (await firstPage(page)).width).toBeGreaterThan(before.width * 0.99);
   await expect
     .poll(async () => {
@@ -169,7 +169,7 @@ test('an external link opens in a new tab and leaves the editor on its document;
   await page.keyboard.press('Escape');
 
   // With the hand tool the link is the click's: a new tab opens on the address.
-  await rail(page, 'Hand / Pan Tool').click();
+  await rail(page, 'Hand tool').click();
   const opened = page.waitForEvent('popup');
   await page.mouse.click(link.x, link.y);
   const tab = await opened;

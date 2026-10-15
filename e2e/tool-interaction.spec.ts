@@ -40,12 +40,12 @@ test.use({ viewport: { width: 1440, height: 1000 } });
 /** The rail's own accessible names, from the shipped English catalogue. */
 const RAIL = {
   select: 'Selection Tool',
-  hand: 'Hand / Pan Tool',
+  hand: 'Hand tool',
   // One button for the four text-markup looks; the strip picks the look.
-  highlight: 'Mark Up Text (highlight, underline, strike)',
+  highlight: 'Mark up text',
   ink: 'Freehand drawing',
-  shapes: 'Draw Shape (Rectangle)',
-  note: 'Add comment / Note',
+  shapes: 'Draw shape',
+  note: 'Add note',
 } as const;
 
 /** The comments panel's own words, likewise. */
@@ -966,7 +966,7 @@ test.describe('the marks the tools create', () => {
     await rail(page, RAIL.hand).click();
     await clickPage(page, linkCentreX, linkCentreY);
     await statusPage(page, 'Page 2 of 2');
-    await page.getByRole('button', { name: 'Previous Page', exact: true }).click();
+    await page.getByRole('button', { name: 'Previous page', exact: true }).click();
     await statusPage(page, 'Page 1 of 2');
     await rail(page, RAIL.select).click();
     await clickPage(page, linkCentreX, linkCentreY);
@@ -1014,7 +1014,7 @@ test.describe('the marks the tools create', () => {
     // The ruler's commands are the advanced mode's (the simple mode keeps the markup
     // verbs), so the settings' mode choice is the user's way to them.
     await useAdvancedMode(page);
-    await runMenuCommand(page, 'Tools', 'Distance');
+    await runMenuCommand(page, 'Tools', 'Measure distance');
     await expect(page.getByRole('application', { name: 'Measure', exact: true })).toBeVisible();
     await clickPage(page, BAND.measure[0][0], BAND.measure[0][1]);
     await clickPage(page, BAND.measure[1][0], BAND.measure[1][1]);
@@ -1341,8 +1341,8 @@ test.describe('tooltips', () => {
 
     // The page and view controls sit in the status bar at the bottom edge; their tips have to
     // flip or shift rather than run off it.
-    await page.getByRole('button', { name: 'Zoom In (+)', exact: true }).hover();
-    await assertChip('Zoom In (+)');
+    await page.getByRole('button', { name: 'Zoom in (+)', exact: true }).hover();
+    await assertChip('Zoom in (+)');
 
     // Dark mode: the same chip, still opaque and legible.
     await useDarkTheme(page);
@@ -1357,8 +1357,8 @@ test.describe('tooltips', () => {
     await assertChip(RAIL.shapes);
     await page
       .getByRole('group', { name: 'Page and view controls', exact: true })
-      .getByRole('button', { name: 'Page Panel', exact: true })
+      .getByRole('button', { name: 'Page panel', exact: true })
       .hover();
-    await assertChip('Page Panel');
+    await assertChip('Page panel');
   });
 });

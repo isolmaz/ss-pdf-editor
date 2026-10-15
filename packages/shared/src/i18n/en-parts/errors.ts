@@ -2,7 +2,7 @@ export const errorsPart = {
   'error.pending-redactions.message':
     'Unapplied redaction marks; saving, exporting, printing and every tool that produces a file or moves pages are held.',
   'error.pending-redactions.hint':
-    'Nothing was written. Apply the redactions or clear the marks and try again; a file delivered with the marks unapplied still carries the content they were meant to remove.',
+    'Nothing was written. Apply the redactions or clear the marks and try again; a file delivered with unapplied marks still carries the content to be removed.',
   'error.range-invalid.message': 'Page range could not be parsed.',
   'error.range-invalid.hint': 'Enter a range like 1-3, 5 or 8-10.',
   'error.value-out-of-range.message': 'A field value is outside the allowed range.',
@@ -22,7 +22,8 @@ export const errorsPart = {
   'error.xfa-dynamic.message': 'This is a dynamic XFA form: its content exists only in the XFA template.',
   'error.xfa-dynamic.hint': 'Open it with “Fill XFA form”, or use “Flatten XFA form to a normal PDF”.',
   'error.xfa-static.message': 'This is a static XFA form: its pages are already in the PDF.',
-  'error.xfa-static.hint': 'Use “Flatten form fields”, or “Remove XFA” to keep only the AcroForm.',
+  'error.xfa-static.hint':
+    'Use “Flatten form fields”, or “Remove XFA” to keep only the standard form fields.',
   'error.glyph-missing.message': 'The text has characters that none of the available fonts contain: {chars}',
   'error.glyph-missing.hint':
     'Remove these characters from the text or replace them with ones the font has. Nothing was written; your document is unchanged.',

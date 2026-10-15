@@ -15,7 +15,7 @@ for (const rotation of [90, 270]) {
     page,
   }) => {
     await openPdf(page, 'turned.pdf', labelledPdf('Turned', 1, { rotations: [rotation] }));
-    await menuItem(page, 'Tools', 'Add an image');
+    await menuItem(page, 'Tools', 'Add image');
     await page.locator('input[type="file"][accept*="image/png"]').setInputFiles({
       name: 'wide.png',
       mimeType: 'image/png',

@@ -165,7 +165,7 @@ test('All tools: the search narrows the grid, and a tool picked with no document
   await stageFile(page, 'open', 'tool.pdf', labelledPdf('Tool', 2));
   await tiles.first().click();
   await settled(page);
-  await expect(page.getByRole('region', { name: /Watermark/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('region', { name: /watermark/i })).toBeVisible({ timeout: 30_000 });
 });
 
 test('All tools with a document open: its name is shown and a tool runs on it', async ({ page }) => {
@@ -200,6 +200,32 @@ test('the home screen has one way to pick a file besides the header and one comm
   await expect(page.getByRole('button', { name: /Command palette/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Search commands (Ctrl+K)' })).toHaveCount(1);
   await expect(page.getByText('Ctrl+K', { exact: true })).toBeVisible();
+});
+
+test('All tools lists the page panel, merge and batch, and each tile starts its tool', async ({ page }) => {
+  await openApp(page, 'grid.pdf', labelledPdf('Grid', 2));
+  await page.getByRole('tab', { name: 'Outline', exact: true }).click();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('tab', { name: 'All tools' }).click();
+  const tile = (name: string) => page.getByRole('list').getByRole('button', { name, exact: false });
+
+  await tile('Organize pages').click();
+  await expect(page.getByRole('tab', { name: 'Pages', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('tab', { name: 'All tools' }).click();
+  await tile('Merge PDFs').click();
+  const dialog = page.getByRole('dialog', { name: 'Merge PDFs' });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('tab', { name: 'All tools' }).click();
+  await tile('Batch operations').click();
+  await expect(page.getByRole('dialog', { name: 'Batch operations' })).toBeVisible();
 });
 
 test('the start cards: a blank document, a picked file and the command palette from the home header', async ({

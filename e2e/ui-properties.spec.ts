@@ -481,7 +481,7 @@ test('an authority that chains to no imported root has its time shown but not re
   );
   await expect(fact(row, 'Timestamp')).toHaveText('Valid');
   await expect(row).toContainText(
-    'The time-stamping authority does not chain to an imported root, one of its certificates is revoked, or no list on this device clears one of them: the time is shown but not relied on, since anyone can run a timestamp server.',
+    'The time-stamping authority does not chain to an imported root, or a certificate is revoked or not cleared: the time is shown but not relied on, since anyone can run a timestamp server.',
   );
   await expect(row).toContainText(`Judged at: ${utc(issued)} — untrusted timestamp.`);
 });
@@ -617,7 +617,7 @@ test('signing the open document adds a row that says self-signed', async ({ page
   const container = makeSignerContainer(test.info().outputPath('signer'));
   await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign document' }).click();
-  const form = page.getByRole('region', { name: /Sign Document/ });
+  const form = page.getByRole('region', { name: /Sign document/ });
   await form.locator('input[type="file"]').setInputFiles(container);
   await form.getByRole('textbox', { name: 'PKCS#12 password' }).fill(SIGNER.password);
   await applyForm(form, 'Sign');

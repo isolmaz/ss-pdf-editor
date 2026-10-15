@@ -98,7 +98,7 @@ test('a watched folder where one file was swapped for another keeps the count bu
   const dialog = await openBatch(page);
   const scansDone = await countFolderScans(page);
   await stageFolder(page, [{ name: 'old.pdf', bytes: labelledPdf('Old', 1) }]);
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   const list = dialog.getByRole('list').first();
   await expect(list.getByText('old.pdf', { exact: true })).toBeVisible();
   await expect(page.getByText('1 PDF files queued from folder.')).toBeVisible();
@@ -151,10 +151,8 @@ test('Escape does not close the dialog while a batch is running', async ({ page 
     .locator('input[type="file"][accept*="pdf"]')
     .first()
     .setInputFiles([pdfFile('big.pdf', labelledPdf('Big', 60))]);
-  for (const step of ['Optimize / Compress', 'Document properties']) {
-    await dialog
-      .getByRole('checkbox', { name: step, exact: true })
-      .setChecked(step === 'Optimize / Compress');
+  for (const step of ['Reduce file size', 'Document properties']) {
+    await dialog.getByRole('checkbox', { name: step, exact: true }).setChecked(step === 'Reduce file size');
   }
   await dialog.getByRole('radio', { name: 'Convert pages to image (lossy)' }).check();
   await dialog.getByRole('spinbutton', { name: /Resolution/ }).fill('300');

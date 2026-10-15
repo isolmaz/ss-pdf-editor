@@ -14,7 +14,7 @@
 export const batchPart = {
   'batch.title': 'Toplu işlem',
   'batch.intro':
-    'Birden çok PDF seçin, uygulanacak adımları işaretleyin ve kural kümesini her dosyaya sırayla uygulayın. Adımlar bağımlılık sırasına göre çalışır: sıkıştırma damgadan önce, üst veri son yazımdan sonra, şifreleme en sonda. Bir dosya başarısız olursa yalnızca o dosya raporlanır, kalanlar işlenmeye devam eder.',
+    'Birden çok PDF seçin, uygulanacak adımları işaretleyin. Adımlar uygun sırada çalışır (şifreleme en sonda); başarısız dosya raporlanır, diğerleri sürer.',
   'batch.queue': 'Dosya kuyruğu',
   'batch.queue.hint': 'Her dosya kendi başına işlenir; belge bu cihazdan ayrılmaz.',
   'batch.name': 'Kural kümesi adı',

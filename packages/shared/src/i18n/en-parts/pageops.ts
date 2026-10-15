@@ -7,10 +7,10 @@ export const pageopsPart = {
   'op.progress.images.render': 'Rendering pages to images',
   'op.note.compose.storage': 'Annotations and form values carried over from document storage.',
   'op.note.compose.catalog':
-    'Composition writes a new catalog: viewer preferences, language, output intents, layer (OCG) config and open action are not carried over.',
+    'Viewer preferences, language, output intents, layer settings and the open action are not carried over to the new file.',
   'op.note.compose.rotation': 'Rotation applied to {count} page(s) (source rotation + requested angle).',
   'op.note.compose.outlineCopies':
-    'Some bookmarks have a destination that could not be read, so the duplicated pages may have left them repeated up to {copies} times (extractPages behavior).',
+    'Some bookmarks have a destination that could not be read, so the duplicated pages may have left them repeated up to {copies} times.',
   'op.note.compose.verified': 'Composition verified: {pages} page(s).',
   'op.note.merge.metadata':
     'Metadata from added documents not carried over; Info and XMP taken from base document.',

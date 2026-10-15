@@ -23,11 +23,11 @@ export const pageeditPart = {
 
   'insert.title': 'Sayfa ekle',
   'insert.intro':
-    'Seçilen kaynaktan sayfalar geçerli belgeye eklenir. Bileşim belgenin kendi motor belgesi üzerinden yazılır: açıklamalar ve form değerleri korunur. Katalog yeniden yazılır — görünüm tercihleri, dil, çıktı amaçları ve katman yapılandırması yeni dosyaya taşınmaz.',
+    'Kaynaktaki sayfalar belgeye eklenir. Açıklamalar ve form değerleri korunur; görünüm tercihleri, dil, katman ayarları ve açılış eylemi taşınmaz.',
   'insert.source': 'Kaynak',
   'insert.source.blank': 'Boş sayfa',
   'insert.source.image': 'Görsellerden',
-  'insert.source.document': 'Başka bir PDF’ten',
+  'insert.source.document': 'Başka bir PDF’den',
   'insert.position': 'Konum (N. sayfanın ardına)',
   'insert.positionHint':
     'N, 1 tabanlı sayfa numarasıdır: 1 ilk sayfanın ardına ekler. Belgenin başına eklemek için 0, sonuna eklemek için sayfa sayısını yazın.',
@@ -56,7 +56,7 @@ export const pageeditPart = {
   'insert.progress.place': 'Sayfalar yerleştiriliyor',
   'insert.note.storage': 'Açıklamalar ve form değerleri belgenin kendi deposundan taşındı.',
   'insert.note.catalog':
-    'Bileşim yeni bir katalog yazar: görünüm tercihleri, dil, çıktı amaçları, katman (OCG) yapılandırması ve açılış eylemi taşınmaz.',
+    'Görünüm tercihleri, dil, çıktı amaçları, katman ayarları ve açılış eylemi yeni dosyaya taşınmaz.',
   'insert.note.info': 'Belge bilgisi (başlık, yazar, tarihler) taban belgeden kopyalandı.',
   'insert.note.labels':
     'Sayfa etiketleri: her sayfa kendi belgesinin verdiği etiketi korudu; sayfa etiketi olmayan bir belgeden gelen sayfa, o belgedeki sayfa numarasıyla etiketlendi (yeni boş sayfa 1 olur).',
@@ -67,7 +67,7 @@ export const pageeditPart = {
 
   'replace.title': 'Sayfaları değiştir',
   'replace.intro':
-    'Seçilen sayfalar, kaynaktan üretilen sayfalarla yerinde değiştirilir; sayfa sayısı değişmez. Bileşim yeni bir katalog yazar: görünüm tercihleri, dil ve katman yapılandırması yeni dosyaya taşınmaz.',
+    'Seçilen sayfalar kaynaktaki sayfalarla yerinde değiştirilir; sayfa sayısı değişmez. Görünüm tercihleri, dil ve katman ayarları taşınmaz.',
   'replace.source': 'Yeni sayfaların kaynağı',
   'replace.source.blank': 'Boş sayfa',
   'replace.source.image': 'Görsel',
@@ -96,10 +96,10 @@ export const pageeditPart = {
     'Arka yüzler üretilen dosyada yaprağa yerleştirilir; yazıcıda aynı çevirme eksenini seçin.',
   'print.margin': 'Kenar boşlukları (mm)',
   'print.marginHint': 'Yaprak kenarında bırakılan boşluk; hücreler bu boşluğun içine yerleşir.',
-  'print.produce': 'Yazdırılacak PDF’i üret',
+  'print.produce': 'Yazdırılacak PDF’yi üret',
   'print.fileName': 'yazdirma.pdf',
   'print.imposeHint':
-    'Sayfa başına, kitapçık, çift yönlü ve kenar boşluğu ayarları üretilen PDF’e uygulanır; “Yazdır” sayfaları olduğu gibi tarar.',
+    'Sayfa başına, kitapçık, çift yönlü ve kenar boşluğu ayarları üretilen PDF’ye uygulanır; “Yazdır” sayfaları olduğu gibi tarar.',
   'print.producing': 'Yapraklar hazırlanıyor: {done}/{total}',
   'print.produced': 'Yazdırma dosyası hazır: {name}',
   'print.pageFailed': '{page}. sayfa yazdırmaya hazırlanamadı.',

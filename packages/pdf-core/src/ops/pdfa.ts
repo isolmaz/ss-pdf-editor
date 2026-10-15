@@ -101,10 +101,6 @@ function pageList(indices: readonly number[]): string {
   return indices.map((index) => index + 1).join(', ');
 }
 
-function percent(value: number): string {
-  return `${Math.round(value * 100)} %`;
-}
-
 /** The read-back: page text and a grey render of sampled pages, source against output. */
 async function measure(
   mupdf: Awaited<ReturnType<typeof loadMupdf>>,
@@ -362,14 +358,14 @@ export async function convertToPdfA(
     if (measures.textDiffers.length > 0) {
       result.push(
         note('warning', 'op.note.pdfa.textLoss', {
-          percent: percent(measures.wordRecall),
+          recall: measures.wordRecall,
           pages: pageList(measures.textDiffers),
         }),
       );
     } else {
       result.push(
         note('preserved', 'op.note.pdfa.textKept', {
-          percent: percent(measures.wordRecall),
+          recall: measures.wordRecall,
           pages: measures.textPages.length,
         }),
       );
@@ -381,7 +377,7 @@ export async function convertToPdfA(
     result.push(
       note('preserved', 'op.note.pdfa.pictureKept', {
         pages: measures.picturePages.length,
-        difference: percent(measures.pictureMean),
+        difference: measures.pictureMean,
       }),
     );
   }

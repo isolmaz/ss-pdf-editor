@@ -116,6 +116,31 @@ describe('HomeToolGrid', () => {
   });
 });
 
+describe('HomeToolGrid tile titles', () => {
+  // "…" marks a menu or palette item that opens a dialog (`cmd.findReplace.label`); the tile
+  // shows the command's name, and a tile is not a menu item.
+  it.each([
+    ['tr', 'Bul ve değiştir…', 'Bul ve değiştir'],
+    ['en', 'Find and replace…', 'Find and replace'],
+  ] as const)(
+    'shows the name of a command whose label ends in an ellipsis without it (%s)',
+    (locale, label, shown) => {
+      const words = createTranslator(locale);
+      expect(words('cmd.findReplace.label')).toBe(label);
+      mount(
+        <HomeToolGrid
+          t={words}
+          commands={[{ ...command('edit.find-replace'), labelKey: 'cmd.findReplace.label' }]}
+          activeDocumentName={null}
+          standalone={new Set()}
+          onRun={() => undefined}
+        />,
+      );
+      expect(screen.getByRole('button').querySelector('span.block')?.textContent).toBe(shown);
+    },
+  );
+});
+
 describe('HomeToolGrid shapes tile', () => {
   // The shape tool draws a square, a circle and a line (`ann.tool.shape.*`); the tile must
   // not promise a shape it does not have.

@@ -26,7 +26,7 @@ function lines(prefix: string, count: number): Uint8Array {
 
 async function compare(page: Page, button: string): Promise<void> {
   await openPdf(page, 'left.pdf', lines('Left', 250));
-  await runCommand(page, 'Document comparison');
+  await runCommand(page, 'Compare documents');
   await page.locator('input[data-compare-picker]').setInputFiles(pdfFile('right.pdf', lines('Right', 250)));
   await expect(page.getByText('Selected: right.pdf')).toBeVisible();
   await page.getByRole('button', { name: button }).click();

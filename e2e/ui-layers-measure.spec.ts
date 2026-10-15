@@ -186,7 +186,7 @@ test('a grid denser than a few pixels is not drawn', async ({ page }) => {
   // 75 %: one page point is exactly one CSS pixel, so 5 pt lines are 5 px apart.
   await page.keyboard.press('Control+1');
   await page.keyboard.press('Control+-');
-  await expect(page.getByRole('button', { name: /^Fit Width \(75%\)$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Fit width \(75%\)$/ })).toBeVisible();
   await armMeasure(page, 'Distance');
   const bar = strip(page);
   await bar.getByRole('checkbox', { name: 'Grid', exact: true }).check();

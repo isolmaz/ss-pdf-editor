@@ -37,7 +37,7 @@ export const enginesPart = {
     'Karartılan sayfalardaki etiketlerin {count} alternatif ya da yerine geçen metni kaldırıldı; sayfa metnini yineliyorlardı.',
   'op.note.redact.fieldsRemoved': 'İşaretli alanların altındaki {count} form alanı kaldırıldı.',
   'op.note.redact.xfaDropped':
-    'XFA form tanımı ve verisi atıldı: kaldırılan alanların değerlerini hâlâ taşıyorlardı. Kalan AcroForm alanları değerlerini korur.',
+    'XFA form tanımı ve verisi atıldı: kaldırılan alanların değerlerini hâlâ taşıyorlardı. Kalan form alanları değerlerini korur.',
   'op.note.redact.annotationsRemoved':
     'İşaretli alanların altındaki {count} açıklama (yorum, işaretleme) kaldırıldı.',
 

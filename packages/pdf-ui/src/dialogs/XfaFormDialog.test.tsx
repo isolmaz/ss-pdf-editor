@@ -280,7 +280,7 @@ describe('XfaFormDialog when the form cannot be filled', () => {
     render(<XfaFormDialog {...props({ bytes: await pureXfaPdf({ needsRendering: false }) })} />);
     const alert = await screen.findByRole('alert', {}, { timeout: 20000 });
     expect(alert.textContent).toBe(
-      'This is a static XFA form: its pages are already in the PDF. Use “Flatten form fields”, or “Remove XFA” to keep only the AcroForm.',
+      'This is a static XFA form: its pages are already in the PDF. Use “Flatten form fields”, or “Remove XFA” to keep only the standard form fields.',
     );
     expect(button('Export data (XML)').disabled).toBe(true);
     expect(button('Save to document').disabled).toBe(true);
