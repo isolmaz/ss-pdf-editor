@@ -155,7 +155,7 @@ test('the passwords typed into the protect form are what encrypts the file', asy
   await open.fill('open-sesame');
   await form.getByLabel('Owner password').fill('owner-secret');
   const download = page.waitForEvent('download');
-  await applyForm(form);
+  expect(await applyForm(form)).toBe('closed');
   const path = test.info().outputPath('protected.pdf');
   await (await download).saveAs(path);
   const text = readFileSync(path).toString('latin1');

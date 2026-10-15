@@ -191,7 +191,7 @@ test('a redaction box removes the text under it from the exported file', async (
     .getByRole('button', { name: 'Permanent redaction', exact: true })
     .click();
   const form = page.getByRole('region', { name: 'Permanent redaction' });
-  await applyForm(form);
+  expect(await applyForm(form)).toBe('review');
   await expect(notice(page, 'no text remains in the marked areas')).toBeVisible({ timeout: 60_000 });
 
   const texts = await readProducedPageTexts(await exported(page, 'redacted.pdf'));

@@ -152,7 +152,7 @@ test.describe('OCR on a document that already has text', () => {
     await openOcrDialog(page);
     await scopeTo(page, '1-3');
     await runDialog(page);
-    await finishRun(page);
+    expect(await finishRun(page)).toBe('review');
     await detailsButton(page).click();
 
     // Pages 1-3 of this fixture carry text, so the run must report them as skipped. This is

@@ -790,7 +790,7 @@ test('redaction settings count the marked areas and Apply redaction removes the 
   await expect(form.getByRole('alert')).toHaveText(
     'This operation may permanently delete content. Continue?',
   );
-  await applyForm(form, 'Continue');
+  expect(await applyForm(form, 'Continue')).toBe('review');
   const texts = await readProducedPageTexts(await exportBytes(page, 'redacted.pdf'));
   expect(texts[0]).toContain('Third line stays untouched');
   expect(texts[0]).not.toContain('Fourth line for redaction marks');

@@ -136,7 +136,7 @@ test('extract: a custom range typed key by key is the range extracted', async ({
 async function collectDownloads(
   page: Page,
   count: number,
-  trigger: () => Promise<void>,
+  trigger: () => Promise<unknown>,
 ): Promise<{ name: string; bytes: Uint8Array }[]> {
   const started: Download[] = [];
   page.on('download', (download) => started.push(download));

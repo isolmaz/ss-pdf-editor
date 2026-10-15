@@ -227,7 +227,7 @@ test('sanitize: the preview report comes first, and applying it takes the author
 
   const form = await openForm(page, 'Sanitize document', 'Sanitize document');
   await expect(form.getByRole('checkbox', { name: 'Document metadata' })).toBeChecked();
-  await applyForm(form);
+  expect(await applyForm(form)).toBe('closed');
   // The notice that says it was applied keeps the report one press away.
   await page.getByRole('button', { name: 'Details', exact: true }).click();
   const report = page.getByRole('dialog', { name: 'Sanitize document' });

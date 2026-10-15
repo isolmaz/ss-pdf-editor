@@ -115,7 +115,7 @@ test('optimize: lossless pass strips metadata, the image pass replaces the text 
   let form = await openForm(page, 'Optimize', 'Reduce file size');
   await form.getByText('Advanced options').click();
   await form.getByRole('checkbox', { name: /Clear metadata/ }).check();
-  await applyForm(form);
+  expect(await applyForm(form)).toBe('review');
   const lossless = await readProducedPdf(await exported(page, 'lossless.pdf'));
   expect(lossless.title).toBeNull();
   expect(lossless.producer).not.toBeNull();
@@ -124,7 +124,7 @@ test('optimize: lossless pass strips metadata, the image pass replaces the text 
   form = await openForm(page, 'Optimize', 'Reduce file size');
   await form.getByRole('radio', { name: 'Convert pages to image (lossy)' }).check();
   await form.getByRole('spinbutton', { name: /DPI|Resolution/ }).fill('72');
-  await applyForm(form);
+  expect(await applyForm(form)).toBe('review');
   const raster = await exported(page, 'raster.pdf');
   expect((await readProducedPdf(raster)).pageCount).toBe(2);
   expect((await readProducedPageTexts(raster)).map((text) => text.trim())).toEqual(['', '']);
@@ -276,7 +276,7 @@ test('security and remove password: the downloaded copy carries the permissions 
   await form.getByLabel('Owner password').fill('own3r');
   await form.getByRole('checkbox', { name: 'Copying' }).uncheck();
   const download = page.waitForEvent('download', { timeout: 60_000 });
-  await applyForm(form);
+  expect(await applyForm(form)).toBe('closed');
   const encrypted = await saveDownload(await download, 'locked.pdf');
   const permissions = Number(await readProducedEntry(encrypted, 'trailer', 'Encrypt', 'P'));
   // Bit 5 (value 16) is "copy or extract text": cleared, while printing (bit 3, value 4) stays set.
@@ -295,7 +295,7 @@ test('security and remove password: the downloaded copy carries the permissions 
   await expect(page.getByRole('button', { name: 'owned.pdf', exact: true })).toBeVisible({ timeout: 30_000 });
   form = await openForm(page, 'Remove password', 'Remove password');
   await form.getByLabel('Password', { exact: true }).fill('own3r-owner');
-  await applyForm(form, 'Open in new tab');
+  expect(await applyForm(form, 'Open in new tab')).toBe('closed');
   await expect(page.getByRole('button', { name: /unprotected/ })).toBeVisible({ timeout: 60_000 });
   const unlocked = await exported(page, 'unlocked.pdf');
   expect(await readProducedEntry(unlocked, 'trailer', 'Encrypt')).toBe('');

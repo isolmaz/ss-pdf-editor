@@ -126,7 +126,7 @@ test('remove XFA on a static form drops the XFA entry and keeps the AcroForm fie
   await runCommand(page, 'Remove XFA');
   const form = page.getByRole('region', { name: 'Remove XFA' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await applyForm(form, 'Remove XFA');
+  expect(await applyForm(form, 'Remove XFA')).toBe('review');
   const bytes = await exportBytes(page, 'no-xfa.pdf');
   expect(await readProducedEntry(bytes, null, 'AcroForm', 'XFA')).toBe('');
   expect(await readProducedEntry(bytes, null, 'AcroForm', 'Fields', 0, 'T')).toBe('(Name)');

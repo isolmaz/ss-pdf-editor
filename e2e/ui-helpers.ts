@@ -83,11 +83,16 @@ export async function runForm(form: Locator, run: string | RegExp = 'Apply'): Pr
   return seen.outcome as 'closed' | 'review';
 }
 
-/** Run an operation form and, if the result asks to be read first, apply it; wait for the form to close. */
-export async function applyForm(form: Locator, run: string | RegExp = 'Apply'): Promise<void> {
-  if ((await runForm(form, run)) === 'review')
-    await form.getByRole('button', { name: REVIEW_ACTION }).click();
+/**
+ * Run an operation form and, if the result asks to be read first, apply it; wait for the form to
+ * close. Returns which way it went, so a spec whose result must be read (it lost or warned about
+ * something) or must not be can say so: `expect(await applyForm(form)).toBe('review')`.
+ */
+export async function applyForm(form: Locator, run: string | RegExp = 'Apply'): Promise<'closed' | 'review'> {
+  const outcome = await runForm(form, run);
+  if (outcome === 'review') await form.getByRole('button', { name: REVIEW_ACTION }).click();
   await expect(form).toBeHidden({ timeout: 90_000 });
+  return outcome;
 }
 
 /** Pick an option of the page-scope select of an operation form, in either interface language. */
@@ -104,13 +109,17 @@ export const detailsButton = (page: Page): Locator =>
  * Wait for the run of the operation form on the page to end and leave its result delivered: a
  * clean result is applied at once, one that asked to be read first is applied from its review.
  * The notice it ends in then offers {@link detailsButton}. Neutral about the interface language.
+ * Returns `'review'` when the result had to be applied from its review, `'closed'` when it was
+ * delivered at once.
  */
-export async function finishRun(page: Page, timeout = 120_000): Promise<void> {
+export async function finishRun(page: Page, timeout = 120_000): Promise<'closed' | 'review'> {
   const apply = page.getByRole('button', { name: /^(Belgeye uygula|Apply to document)$/ });
   const details = detailsButton(page);
   await expect(apply.or(details)).toBeVisible({ timeout });
-  if (await apply.isVisible()) await apply.click();
+  const outcome = (await apply.isVisible()) ? 'review' : 'closed';
+  if (outcome === 'review') await apply.click();
   await expect(details).toBeVisible({ timeout: 30_000 });
+  return outcome;
 }
 
 /** Open a menu-bar menu and click one of its items. */
