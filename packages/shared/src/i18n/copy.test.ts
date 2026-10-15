@@ -231,3 +231,12 @@ describe('the copy people read before they decide', () => {
     expect(named).toEqual([]);
   });
 });
+
+describe('what a deletion does not do', () => {
+  it('tells the user that deleting stored copies is not secure erasure', () => {
+    expect(en['vault.purged']).toContain('not secure erasure');
+    expect(en['vault.purged']).toContain('bytes already on disk are not overwritten');
+    expect(tr['vault.purged']).toContain('güvenli silme değildir');
+    expect(tr['vault.purged']).toContain('diske yazılmış baytların üzerine yazılmaz');
+  });
+});

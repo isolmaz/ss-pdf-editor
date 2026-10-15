@@ -155,7 +155,7 @@ export const tr = {
   'setting.sensitiveSession': 'Hassas oturum (taslak kaydetmeyi aç/kapat)',
   'setting.purgeDocument': 'Bu belgenin kayıtlı kopyalarını sil',
   'vault.purged':
-    'Bu belgenin bu tarayıcıda saklanan {count} öğesi silindi. İndirdiğiniz kopyalar, belgeyi açtığınız dosya ve tarayıcı yedekleri bu uygulamanın erişimi dışındadır, onlara dokunulmadı.',
+    'Bu belgenin bu tarayıcıda saklanan {count} öğesi silindi. Bu güvenli silme değildir: diske yazılmış baytların üzerine yazılmaz. İndirdiğiniz kopyalara, açtığınız dosyaya ve yedeklere dokunulmadı.',
   'vault.incomplete':
     'Saklanan kopyaların listesi eksiksiz okunamadı; hiçbir şey silinmedi. Yarım bir listeden silmek, başka bir belgenin tek kopyasını yok edebilir.',
   'vault.purgeNoChannel':

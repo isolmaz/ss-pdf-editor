@@ -140,7 +140,7 @@ export const en: Record<MessageKey, string> = {
   'setting.sensitiveSession': 'Sensitive session (disable persistent drafts)',
   'setting.purgeDocument': 'Delete stored copies of this document',
   'vault.purged':
-    '{count} stored item(s) of this document were deleted from this browser. Copies you downloaded, the file you opened it from and browser backups are outside this application’s reach and were left alone.',
+    '{count} stored item(s) of this document were deleted from this browser. This is not secure erasure: bytes already on disk are not overwritten. Downloads, the original file and backups are untouched.',
   'vault.incomplete':
     'The list of stored copies could not be read completely, so nothing was deleted. Deleting from a partial list could destroy another document’s only copy.',
   'vault.purgeNoChannel':
