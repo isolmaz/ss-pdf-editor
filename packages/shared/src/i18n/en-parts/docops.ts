@@ -22,7 +22,7 @@ export const docopsPart = {
   'op.note.stamp.overContent': 'Watermark drawn over page content.',
   'op.note.stamp.imageEmbedded': 'Watermark image embedded: {name}',
   'op.note.stamp.noPrint':
-    'Print restriction applied via PDF Optional Content Group (OCG, print state off); viewers ignoring OCG may still print.',
+    'The print restriction puts the stamp on a layer that is hidden when printing; viewers that ignore layers may still print it.',
 
   'op.note.impose.sheets': '{sheets} sheet(s) produced.',
   'op.note.impose.padded': 'Added {count} blank page(s) to complete signature booklet.',

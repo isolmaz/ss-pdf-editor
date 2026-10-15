@@ -57,7 +57,7 @@ export const sigValidatePart = {
   'props.sig.ts.trust.trusted':
     'Damga yetkilisi içe aktarılan bir köke bağlanıyor ve bu cihazdaki bir liste sertifikalarının hiçbirinin iptal edilmediğini gösteriyor: zamanı bu imzayı değerlendirmek için kullanıldı.',
   'props.sig.ts.trust.untrusted':
-    'Damga yetkilisi içe aktarılan bir köke bağlanmıyor, bir sertifikası iptal edilmiş ya da bu cihazdaki hiçbir liste sertifikalarından birini temize çıkarmıyor: zaman gösterilir ama güvenilmez; herkes kendi damga sunucusunu kurabilir.',
+    'Damga yetkilisi içe aktarılan bir köke bağlanmıyor ya da sertifikası iptal edilmiş veya temize çıkarılmamış: zaman gösterilir ama güvenilmez; herkes damga sunucusu kurabilir.',
   'props.sig.ts.reason.malformed': 'Belirteç bir RFC 3161 zaman damgası olarak okunamadı.',
   'props.sig.ts.reason.imprint-mismatch':
     'Belirteçteki özet, damgalanması gereken verinin özetiyle uyuşmuyor: veri damgadan sonra değişmiş olabilir.',

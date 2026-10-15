@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
-import { notice } from './app-helpers';
+import { notice, statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { encryptedPdf, encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { applyForm, reviewHeading, runForm } from './ui-helpers';
 import { cmsBy, fromNow, signedDocument, signingPki } from './ui-panels9-helpers';
 
 /**
@@ -40,7 +41,7 @@ async function open(page: Page, name: string, bytes: Uint8Array): Promise<void> 
 function rail(page: Page) {
   return page
     .locator('nav')
-    .filter({ has: page.getByRole('button', { name: 'Selection Tool', exact: true }) });
+    .filter({ has: page.getByRole('button', { name: 'Selection tool', exact: true }) });
 }
 
 /** The scroll container's top edge in the viewport, and its scroll offset. */
@@ -66,7 +67,7 @@ function markOffset(page: Page) {
 
 test('a mark moves with its page when the document scrolls', async ({ page }) => {
   await open(page, 'scroll.pdf', toolFixturePdf());
-  await rail(page).getByRole('button', { name: 'Draw Shape (Rectangle)', exact: true }).click();
+  await rail(page).getByRole('button', { name: 'Draw shape', exact: true }).click();
   const sheet = await page.locator('.pdfViewer[data-active-viewer] .page').first().boundingBox();
   if (sheet === null) throw new Error('no page box');
   await page.mouse.move(sheet.x + 200, sheet.y + 300);
@@ -96,10 +97,10 @@ test('arming any tool and posting a notice leave the document where it is', asyn
     expect((await viewerBox(page)).top).toBe(start.top);
   }
   await page.keyboard.press('Escape');
-  await rail(page).getByRole('button', { name: 'Selection Tool', exact: true }).click();
+  await rail(page).getByRole('button', { name: 'Selection tool', exact: true }).click();
 
   // A page operation raises progress and a notice: both float, neither moves the page.
-  await page.getByRole('button', { name: /Rotate page/i }).click();
+  await statusRotate(page).click();
   await expect(page.locator('[role="status"]').filter({ hasText: 'rotated' })).toBeVisible();
   expect((await viewerBox(page)).top).toBe(start.top);
 });
@@ -111,7 +112,7 @@ test('the status-bar rotate turns the page on screen when no page is selected', 
   if (portrait === null) throw new Error('no page box');
   expect(portrait.height).toBeGreaterThan(portrait.width);
 
-  await page.getByRole('button', { name: /Rotate page/i }).click();
+  await statusRotate(page).click();
   await expect(page.locator('[role="status"]').filter({ hasText: '1 page(s) rotated' })).toBeVisible();
   await expect
     .poll(async () => {
@@ -124,7 +125,7 @@ test('the status-bar rotate turns the page on screen when no page is selected', 
 
 test('typed text reaches the file as a /FreeText with the words the user typed', async ({ page }) => {
   await open(page, 'typed.pdf', toolFixturePdf());
-  await rail(page).getByRole('button', { name: 'Add Text', exact: true }).click();
+  await rail(page).getByRole('button', { name: 'Add text', exact: true }).click();
   const sheet = await page.locator('.pdfViewer[data-active-viewer] .page').first().boundingBox();
   if (sheet === null) throw new Error('no page box');
   await page.mouse.click(sheet.x + 150, sheet.y + 520);
@@ -169,13 +170,13 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   });
   // Read-only until the user makes an unlocked copy: the writing tools are off and the
   // strip offers the copy.
-  await expect(rail(page).getByRole('button', { name: 'Add Text', exact: true })).toBeDisabled();
+  await expect(rail(page).getByRole('button', { name: 'Add text', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Create unlocked copy' })).toBeVisible();
 
   // Permanent redaction is refused through every door, not only the toolbar. Nothing is
   // written to a protected tab, so neither its form nor its drawing layer may appear.
   await useAdvancedMode(page);
-  const redactForm = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
+  const redactForm = page.getByRole('region', { name: 'Permanent redaction' });
   const redactLayer = page.locator('[data-redaction-layer]');
   // The form is a lazy chunk behind an operation that holds the strip's button off while it
   // runs (opening the form is one). Selected by text, not role: a modal palette hides the
@@ -186,8 +187,8 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
 
   // (a) The command palette lists the command but disabled; choosing it opens nothing.
   await page.keyboard.press('Control+k');
-  await page.getByRole('combobox').fill('Redaction (Permanent Erase)');
-  await expect.soft(page.getByRole('option', { name: /Redaction \(Permanent Erase\)/ })).toBeDisabled();
+  await page.getByRole('combobox').fill('Permanent redaction');
+  await expect.soft(page.getByRole('option', { name: /Permanent redaction/ })).toBeDisabled();
   await page.keyboard.press('Enter');
   await expect(unlockCopy).toBeEnabled();
   await expect.soft(redactForm).toHaveCount(0);
@@ -196,12 +197,12 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   // (b) Tools tab → Security & Redaction → Permanent Redaction.
   await page.getByRole('tab', { name: 'Tools', exact: true }).click();
   const tools = page.getByRole('tabpanel', { name: 'Tools' });
-  const back = tools.getByRole('button', { name: 'Back to All Tools' });
+  const back = tools.getByRole('button', { name: 'Back to all tools' });
   if (await back.isVisible()) await back.click();
-  const security = tools.getByRole('button', { name: 'Security & Redaction', exact: true });
+  const security = tools.getByRole('button', { name: 'Security and redaction', exact: true });
   await expect(security).toBeVisible();
   if ((await security.getAttribute('aria-expanded')) !== 'true') await security.click();
-  const permanent = tools.getByRole('button', { name: /^Permanent Redaction/ });
+  const permanent = tools.getByRole('button', { name: /^Permanent redaction/ });
   await expect(permanent).toBeVisible();
   await permanent.click();
   await expect(unlockCopy).toBeEnabled();
@@ -236,7 +237,9 @@ test('unlocking a signed protected PDF says its signature no longer validates', 
   ).toBeVisible({ timeout: 60_000 });
 });
 
-test('an operation applied from the tools panel reaches the document', async ({ page }) => {
+test('a clean operation run from the tools panel reaches the document at once and Ctrl+Z takes it back', async ({
+  page,
+}) => {
   // The panel's runner must not go "back" right after handing over its result: going
   // back cancels the operation in flight — the apply that has just started — and the result
   // would be dropped with no notice and the page left as it was.
@@ -244,22 +247,21 @@ test('an operation applied from the tools panel reaches the document', async ({ 
   // Watermarks are an advanced-mode tool: the simple mode's palette does not offer them.
   await useAdvancedMode(page);
   await page.keyboard.press('Control+k');
-  await page.getByRole('combobox').fill('Watermark');
+  await page.getByRole('combobox').fill('Add watermark');
   await page.keyboard.press('Enter');
-  const form = page.getByRole('region', { name: 'Watermark' });
+  const form = page.getByRole('region', { name: 'Add watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('textbox', { name: 'Text', exact: true }).fill('PANEL APPLY');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => document.querySelector('.pdfViewer[data-active-viewer] .textLayer')?.textContent ?? '',
-      ),
-    )
-    .toContain('PANEL APPLY');
+  // A watermark loses nothing and warns of nothing: no report stands in front of the document.
+  expect(await runForm(form)).toBe('closed');
+  await expect(notice(page, 'Undo with Ctrl+Z.')).toBeVisible();
+  const pageText = () =>
+    page.evaluate(
+      () => document.querySelector('.pdfViewer[data-active-viewer] .textLayer')?.textContent ?? '',
+    );
+  await expect.poll(pageText).toContain('PANEL APPLY');
+  await page.keyboard.press('Control+z');
+  await expect.poll(pageText).not.toContain('PANEL APPLY');
 });
 
 test('document properties written in the browser reach the exported file', async ({ page }) => {
@@ -273,10 +275,7 @@ test('document properties written in the browser reach the exported file', async
   const form = page.getByRole('region', { name: 'Document properties' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('textbox', { name: 'Title', exact: true }).fill('Şişli Şubesi — Yıllık Rapor');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
 
   const download = page.waitForEvent('download', { timeout: 120_000 });
   await page.getByRole('button', { name: 'Export', exact: true }).click();
@@ -298,9 +297,9 @@ test('document properties with nothing changed say so and close, instead of stay
   await page.keyboard.press('Enter');
   const form = page.getByRole('region', { name: 'Document properties' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   // The report is still shown: the run found nothing to write and says so there too.
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await expect(reviewHeading(form)).toBeVisible({ timeout: 60_000 });
   await expect(form.getByText('No changes to write; document untouched.').first()).toBeVisible();
   await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
 
@@ -315,7 +314,7 @@ test('an attachment added and removed in the panel is in, then out of, the expor
   // Attachments are written by MuPDF in the browser; the file is the evidence.
   await open(page, 'attach.pdf', toolFixturePdf());
   const tab = page.getByRole('tab', { name: 'Document information' });
-  if (!(await tab.isVisible())) await page.getByRole('button', { name: 'ALL TOOLS', exact: true }).click();
+  if (!(await tab.isVisible())) await page.getByRole('button', { name: 'All tools', exact: true }).click();
   await page.getByRole('tab', { name: 'Document information' }).click();
   const section = page.getByRole('region', { name: 'Attachments' });
   await section.locator('input[type="file"]').setInputFiles({
@@ -345,17 +344,14 @@ test('bookmarks added and deleted in the outline form reach the exported file', 
   // stayed in the recount), so every delete from this form was refused.
   await open(page, 'outline.pdf', toolFixturePdf());
   await useAdvancedMode(page);
-  const form = page.getByRole('region', { name: 'Edit outline (bookmarks)' });
+  const form = page.getByRole('region', { name: 'Edit outline' });
   const run = async (fill: () => Promise<void>) => {
     await page.keyboard.press('Control+k');
-    await page.getByRole('combobox').fill('Edit outline (bookmarks)');
+    await page.getByRole('combobox').fill('Edit outline');
     await page.keyboard.press('Enter');
     await expect(form).toBeVisible({ timeout: 30_000 });
     await fill();
-    await form.getByRole('button', { name: 'Preview', exact: true }).click();
-    await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-    await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-    await expect(form).toBeHidden({ timeout: 30_000 });
+    await applyForm(form);
   };
   await run(() => form.getByRole('textbox', { name: 'Title', exact: true }).fill('Birinci bölüm'));
   await run(() => form.getByRole('textbox', { name: 'Title', exact: true }).fill('İkinci — Şişli'));

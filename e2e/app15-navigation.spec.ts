@@ -16,7 +16,12 @@ test('the page field takes a page that exists, and drops one that does not or is
   for (const refused of ['99', '0', 'abc']) {
     await field.fill(refused);
     await field.press('Enter');
-    // The view stays on page 1 and the field shows where the view is again.
+    // The field says so and keeps what was typed; the view stays on page 1, which the field
+    // shows again once the focus leaves it.
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('alert').filter({ hasText: 'Enter 1–3' })).toBeVisible();
+    await expect(field).toHaveValue(refused);
+    await field.blur();
     await expect(field).toHaveValue('1');
   }
 

@@ -162,5 +162,5 @@ test('a drag on the picture moves it, the strip nudges it, Delete removes it and
   await expect.poll(async () => (await exported(page, 'restored.pdf', 'Stamp')).length).toBe(2);
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(async () => (await exported(page, 'again.pdf', 'Stamp')).length).toBe(1);
-  await expect(rail(page, 'Selection Tool')).toBeVisible();
+  await expect(rail(page, 'Selection tool')).toBeVisible();
 });

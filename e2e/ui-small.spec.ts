@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
+import { useAuthor } from './settings';
 import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
 import {
+  applyForm,
   CANVAS,
+  detailsButton,
   dragPage,
   encodePng,
   exportBytes,
@@ -12,6 +15,7 @@ import {
   openPdf,
   pageFrame,
   rail,
+  reviewHeading,
   runCommand,
   sheetPhotoPng,
   toClient,
@@ -111,7 +115,7 @@ test('Cancel and Escape on the revision warning export nothing; the next export 
 
 test('Escape on the invalidation warning exports nothing', async ({ page }) => {
   await openPdf(page, 'signed.pdf', await signedBytes());
-  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await page.getByRole('button', { name: 'Rotate right' }).click();
   expect(await exportStarts(page)).toBe(false);
   const warning = page.getByRole('dialog', { name: BREAKS });
   await expect(warning).toContainText('This save rewrites the entire file');
@@ -121,32 +125,40 @@ test('Escape on the invalidation warning exports nothing', async ({ page }) => {
 });
 
 /* ------------------------------------------------------------------ *
- * The start dialog, its two steps and its report
+ * The start dialog and its report
  * ------------------------------------------------------------------ */
 
-test('the blank-document dialog marks its steps, reports a grown size, and Escape closes it', async ({
+test('the blank-document dialog opens the new document at once and keeps its report one press away', async ({
   page,
 }) => {
   await page.goto('/editor/');
   await page.getByRole('button', { name: 'Blank document' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible({ timeout: 30_000 });
-  const steps = dialog.getByRole('listitem').filter({ hasText: /Settings|Result/ });
-  await expect(steps).toHaveCount(2);
-  await expect(steps.filter({ hasText: 'Settings' })).toHaveAttribute('aria-current', 'step');
-  await expect(steps.filter({ hasText: 'Result' })).not.toHaveAttribute('aria-current', 'step');
 
   await dialog.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  const report = dialog.getByRole('region', { name: 'Operation report' });
-  await expect(report).toBeVisible({ timeout: 60_000 });
-  await expect(steps.filter({ hasText: 'Result' })).toHaveAttribute('aria-current', 'step');
-  await expect(steps.filter({ hasText: 'Settings' })).not.toHaveAttribute('aria-current', 'step');
+  await expect(dialog).toBeHidden({ timeout: 60_000 });
+  await expect(page.locator(CANVAS).first()).toBeVisible({ timeout: 30_000 });
+
+  await detailsButton(page).click();
+  const report = page.getByRole('dialog').getByRole('region', { name: 'Operation report' });
   await expect(report.getByText('1 page(s)', { exact: true })).toBeVisible();
   // A new file starts from nothing, so the size can only have grown.
   await expect(report.getByText(/^Size: 0 B → .+ \(increased\)$/)).toBeVisible();
+  // How the file was written is folded away until asked for.
+  await expect(report.getByText('Fully rewritten (not incremental)')).toBeHidden();
+  await report.getByText('Technical details', { exact: true }).click();
   await expect(report.getByText('Fully rewritten (not incremental)')).toBeVisible();
   await expect(report.getByText(/^Executed steps: \S+/)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+});
 
+test('Escape closes the blank-document dialog before it has run, and opens nothing', async ({ page }) => {
+  await page.goto('/editor/');
+  await page.getByRole('button', { name: 'Blank document' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(page.locator(CANVAS)).toHaveCount(0);
@@ -156,10 +168,10 @@ test('the blank-document dialog marks its steps, reports a grown size, and Escap
  * The export dialog
  * ------------------------------------------------------------------ */
 
-const EXPORT_TITLE = 'Download / Export';
+const EXPORT_TITLE = 'Export options';
 
 async function openExportDialog(page: Page) {
-  await page.getByRole('button', { name: 'Export Options', exact: true }).click();
+  await page.getByRole('button', { name: 'Export options', exact: true }).first().click();
   const dialog = page.getByRole('dialog', { name: EXPORT_TITLE });
   await expect(dialog).toBeVisible();
   return dialog;
@@ -173,7 +185,7 @@ test('the export dialog shows the file and its size, and its close button leaves
   await expect(dialog.getByRole('radio', { name: /^This PDF \(\d+\.\d KB\)/ })).toBeChecked();
   await expect(dialog.getByText('sized.pdf', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Download PDF' })).toBeVisible();
-  for (const other of ['Compressed PDF', 'Image Format', 'Text Format', 'Word, Excel or CSV']) {
+  for (const other of ['Compressed PDF', 'Image format', 'Text format', 'Word, Excel or CSV']) {
     await expect(dialog.getByRole('radio', { name: other })).not.toBeChecked();
   }
   // Only the chosen option's list is enabled.
@@ -191,11 +203,11 @@ test('the export dialog shows the file and its size, and its close button leaves
 test('the text choice opens the Export Text form', async ({ page }) => {
   await openPdf(page, 'words.pdf', toolFixturePdf());
   const dialog = await openExportDialog(page);
-  await dialog.getByRole('radio', { name: 'Text Format' }).check();
+  await dialog.getByRole('radio', { name: 'Text format' }).check();
   await expect(dialog.getByRole('radio', { name: /^This PDF/ })).not.toBeChecked();
-  await dialog.getByRole('button', { name: 'Download Text File' }).click();
+  await dialog.getByRole('button', { name: 'Download text file' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('region', { name: 'Export Text' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('region', { name: 'Export text' })).toBeVisible({ timeout: 30_000 });
 });
 
 test('the Word, Excel or CSV choice starts the office form on the format picked in the dialog', async ({
@@ -204,7 +216,7 @@ test('the Word, Excel or CSV choice starts the office form on the format picked 
   await openPdf(page, 'tables.pdf', toolFixturePdf());
   let dialog = await openExportDialog(page);
   await dialog.getByRole('radio', { name: 'Word, Excel or CSV' }).check();
-  const format = dialog.getByRole('combobox', { name: 'Format' });
+  const format = dialog.getByRole('combobox', { name: 'Format', exact: true });
   await expect(format).toBeEnabled();
   await expect(format).toHaveValue('docx');
   // The Word layout is offered while Word is the format, the exact layout first, and only then.
@@ -222,7 +234,7 @@ test('the Word, Excel or CSV choice starts the office form on the format picked 
 
   dialog = await openExportDialog(page);
   await dialog.getByRole('radio', { name: 'Word, Excel or CSV' }).check();
-  await dialog.getByRole('combobox', { name: 'Format' }).selectOption('csv');
+  await dialog.getByRole('combobox', { name: 'Format', exact: true }).selectOption('csv');
   await dialog.getByRole('button', { name: 'Download as Word, Excel or CSV' }).click();
   const csv = page.getByRole('region', { name: 'Export to Word, Excel or CSV' });
   await expect(csv.getByRole('radio', { name: /^CSV/ })).toBeChecked({ timeout: 30_000 });
@@ -254,32 +266,28 @@ test('clicking the compression and image lists does not switch the chosen option
   await dialog.getByRole('radio', { name: 'Compressed PDF' }).check();
   await dialog.getByRole('combobox').first().click();
   await expect(dialog.getByRole('radio', { name: 'Compressed PDF' })).toBeChecked();
-  await dialog.getByRole('radio', { name: 'Image Format' }).check();
+  await dialog.getByRole('radio', { name: 'Image format' }).check();
   await dialog.getByRole('combobox').nth(1).click();
-  await expect(dialog.getByRole('radio', { name: 'Image Format' })).toBeChecked();
-  await expect(dialog.getByRole('button', { name: 'Download Images' })).toBeVisible();
+  await expect(dialog.getByRole('radio', { name: 'Image format' })).toBeChecked();
+  await expect(dialog.getByRole('button', { name: 'Download images' })).toBeVisible();
 });
 
 /* ------------------------------------------------------------------ *
- * Steps of a form that changes the document
+ * A form that changes the document
  * ------------------------------------------------------------------ */
 
-test('a replace-kind form names its second step "Review and apply" and reports the grown size', async ({
+test('a replace-kind form has no step marker; the report of what it applied stays one press away', async ({
   page,
 }) => {
   await openPdf(page, 'mark.pdf', toolFixturePdf());
-  await runCommand(page, 'Watermark');
-  const form = page.getByRole('region', { name: 'Watermark' });
+  await runCommand(page, 'Add watermark');
+  const form = page.getByRole('region', { name: 'Add watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  const steps = form.getByRole('listitem').filter({ hasText: /Settings|Review and apply|Result/ });
-  await expect(steps).toHaveCount(2);
-  await expect(steps.nth(1)).toContainText('Review and apply');
+  await expect(form.locator('[aria-current="step"]')).toHaveCount(0);
   await form.getByRole('textbox', { name: 'Text', exact: true }).fill('STEPS');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  const report = form.getByRole('region', { name: 'Operation report' });
-  await expect(report).toBeVisible({ timeout: 60_000 });
-  await expect(steps.nth(1)).toHaveAttribute('aria-current', 'step');
-  await expect(steps.nth(0)).not.toHaveAttribute('aria-current', 'step');
+  await applyForm(form);
+  await detailsButton(page).click();
+  const report = page.getByRole('dialog').getByRole('region', { name: 'Operation report' });
   await expect(report.getByText(/^Size: .+ → .+ \(increased\)$/)).toBeVisible();
   await expect(report.getByText('2 page(s)', { exact: true })).toBeVisible();
 });
@@ -345,9 +353,9 @@ test('the sensitive session says so in the status bar until it is switched off',
   await openPdf(page, 'secret.pdf', toolFixturePdf());
   const flag = statusBar(page).getByText('Sensitive session: persistent draft disabled.');
   await expect(flag).toHaveCount(0);
-  await runCommand(page, 'Sensitive Session');
+  await runCommand(page, 'Sensitive session');
   await expect(flag).toBeVisible();
-  await runCommand(page, 'Sensitive Session');
+  await runCommand(page, 'Sensitive session');
   await expect(flag).toHaveCount(0);
 });
 
@@ -366,7 +374,7 @@ test('flatten refuses a form pdf.js does not render as XFA and says why, produci
   await expect(form).toContainText('This is a static XFA form: its pages are already in the PDF.', {
     timeout: 60_000,
   });
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
   await expect(page).toHaveTitle(/unrendered\.pdf/);
 });
 
@@ -458,7 +466,7 @@ test('the numbered box of the heading follows the page through every quarter tur
     { name: 'three quarter turns', right: false, bottom: true },
   ] as const;
   for (const corner of corners) {
-    await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+    await page.getByRole('button', { name: 'Rotate right' }).click();
     await expect
       .poll(async () => {
         at = await where();
@@ -641,7 +649,7 @@ test('an image is placed at 96 dpi, shrunk to 60 % of the page when larger, and 
 
 test('on a page turned a quarter the picture keeps the size it shows on screen', async ({ page }) => {
   await openPdf(page);
-  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await page.getByRole('button', { name: 'Rotate right' }).click();
   await expect
     .poll(async () => {
       const box = await page.locator(CANVAS).first().boundingBox();
@@ -672,11 +680,11 @@ test('on a page turned a quarter the picture keeps the size it shows on screen',
 
 const settingsStrip = (page: Page) => page.getByRole('group', { name: 'Tool settings' });
 
-test('Add Text settings: the size is kept between 6 and 72 pt, an empty field keeps the last size, colour and author are taken', async ({
+test('Add Text settings: the size is kept between 6 and 72 pt, an empty field keeps the last size, the colour is taken and there is no author field', async ({
   page,
 }) => {
   await openPdf(page);
-  await rail(page, 'Add Text').click();
+  await rail(page, 'Add text').click();
   const strip = settingsStrip(page);
   const size = strip.getByRole('spinbutton', { name: 'Size' });
   await size.fill('500');
@@ -693,16 +701,14 @@ test('Add Text settings: the size is kept between 6 and 72 pt, an empty field ke
   const colour = strip.getByLabel('Color');
   await colour.fill('#0000ff');
   await expect(colour).toHaveValue('#0000ff');
-  const author = strip.getByRole('textbox', { name: 'Author' });
-  await author.fill('Ada Lovelace');
-  await expect(author).toHaveValue('Ada Lovelace');
+  await expect(strip.getByLabel('Author')).toHaveCount(0);
 });
 
 test('shape settings: thickness stays between 1 and 20, opacity is read out, and the chosen kind is what is drawn', async ({
   page,
 }) => {
   await openPdf(page);
-  await rail(page, 'Draw Shape (Rectangle)').click();
+  await rail(page, 'Draw shape').click();
   const strip = settingsStrip(page);
   const thickness = strip.getByRole('spinbutton', { name: 'Thickness' });
   await thickness.fill('99');
@@ -726,6 +732,39 @@ test('shape settings: thickness stays between 1 and 20, opacity is read out, and
   expect(circles).toHaveLength(1);
 });
 
+test('each tool keeps its own style, a new shape starts solid, and the styles are remembered after a reload', async ({
+  page,
+}) => {
+  await openPdf(page);
+  const strip = settingsStrip(page);
+  await rail(page, 'Freehand drawing').click();
+  await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('1');
+  await strip.getByLabel('Color').fill('#00aa00');
+  await rail(page, 'Draw shape').click();
+  await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('1');
+  await expect(strip.getByLabel('Color')).not.toHaveValue('#00aa00');
+  await rail(page, 'Mark up text').click();
+  await expect(strip.getByLabel('Color')).toHaveValue('#ffd400');
+  await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('0.4');
+
+  await openPdf(page);
+  await rail(page, 'Freehand drawing').click();
+  await expect(strip.getByLabel('Color')).toHaveValue('#00aa00');
+});
+
+test('the author is one setting of the Settings dialog, kept after a reload', async ({ page }) => {
+  await openPdf(page);
+  await useAuthor(page, 'Ada Lovelace');
+  await openPdf(page);
+  await page
+    .getByRole('button', { name: /^(Ayarlar|Settings)$/ })
+    .first()
+    .click();
+  await expect(
+    page.getByRole('dialog', { name: /Ayarlar|Settings/ }).getByRole('textbox', { name: /^(Yazar|Author)$/ }),
+  ).toHaveValue('Ada Lovelace');
+});
+
 test('redaction settings count the marked areas and Apply redaction removes the covered text from the file', async ({
   page,
 }) => {
@@ -745,16 +784,13 @@ test('redaction settings count the marked areas and Apply redaction removes the 
   await expect(apply).toBeEnabled();
   await apply.click();
   // Apply opens the redaction form over the pending marks; its two steps remove the text.
-  const form = page.getByRole('region', { name: /Redact/ });
+  const form = page.getByRole('region', { name: /Permanent redaction/ });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(form.getByRole('alert')).toHaveText(
     'This operation may permanently delete content. Continue?',
   );
-  await form.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
+  expect(await applyForm(form, 'Continue')).toBe('review');
   const texts = await readProducedPageTexts(await exportBytes(page, 'redacted.pdf'));
   expect(texts[0]).toContain('Third line stays untouched');
   expect(texts[0]).not.toContain('Fourth line for redaction marks');

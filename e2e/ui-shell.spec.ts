@@ -140,7 +140,7 @@ test('command palette: ranking by label, keyword and group, recents first, mouse
   await expect(options.first()).toContainText('Rename');
   // A group name finds its commands: "Settings" is also the name of a menu.
   await input.fill('theme');
-  await expect(options.filter({ hasText: 'Dark Theme' })).toHaveCount(1);
+  await expect(options.filter({ hasText: 'Dark theme' })).toHaveCount(1);
   // Fuzzy: the letters of the query in order.
   await input.fill('shtcts');
   await expect(options.filter({ hasText: 'Keyboard shortcuts' })).toHaveCount(1);
@@ -189,7 +189,7 @@ test('command palette: the simple mode names what it hides and offers the advanc
   await way.click();
   // Back on the input, with the hidden command now listed.
   await expect(input).toBeFocused();
-  await expect(page.getByRole('option', { name: /Optimize/ }).first()).toBeVisible();
+  await expect(page.getByRole('option', { name: /Reduce file size/ }).first()).toBeVisible();
 });
 
 test('settings: theme and language choices persist and change the page', async ({ page }) => {
@@ -199,9 +199,9 @@ test('settings: theme and language choices persist and change the page', async (
     .first()
     .click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
-  const dark = dialog.getByRole('button', { name: 'Dark Theme' });
-  const light = dialog.getByRole('button', { name: 'Light Theme' });
-  const system = dialog.getByRole('button', { name: 'System Theme' });
+  const dark = dialog.getByRole('button', { name: 'Dark theme' });
+  const light = dialog.getByRole('button', { name: 'Light theme' });
+  const system = dialog.getByRole('button', { name: 'System theme' });
 
   await dark.click();
   await expect(dark).toHaveAttribute('aria-pressed', 'true');
@@ -224,7 +224,7 @@ test('settings: theme and language choices persist and change the page', async (
   // The same choice made from the menu bar updates the dialog's pressed state.
   await dialog.getByRole('button', { name: 'Close' }).click();
   await trigger(page, 'Settings').click();
-  await page.getByRole('menuitemcheckbox', { name: 'Dark Theme' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Dark theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
 });
 
@@ -282,9 +282,9 @@ test('simple mode: no measure or redact button on the rail, and no redaction, co
   page,
 }) => {
   await openPdf(page, 'doc.pdf', undefined, { advanced: false });
-  await expect(page.getByRole('button', { name: 'Add Text', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add text', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Measure', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Redact (permanent removal)' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Permanent redaction' })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'History' })).toBeVisible();
   for (const name of ['Redaction', 'Redaction audit', 'Comparison', 'Accessibility', 'PDF/A']) {
     await expect(page.getByRole('tab', { name, exact: true })).toHaveCount(0);

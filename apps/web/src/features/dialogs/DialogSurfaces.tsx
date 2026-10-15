@@ -1,6 +1,6 @@
 /**
  * The modals the dialogs store opens: the standalone operation (`StartDialog`), the batch
- * dialog and the shortcut list. Each loads on demand — they are reached by a gesture, so none
+ * dialog, the report of a result that was delivered unread and the shortcut list. Each loads on demand — they are reached by a gesture, so none
  * belongs in the first paint — and is mounted only while the store says it is open: a static
  * import here is what put Kumo's dialog primitives on the first-paint graph, and a `lazy`
  * boundary that is mounted unconditionally still fetches immediately.
@@ -12,7 +12,7 @@ import { lazy, Suspense, useMemo } from 'react';
 import { downloadFiles } from '../../operations';
 import { SHELL_SHORTCUT_GROUPS } from '../../useShortcuts';
 import { showNotice } from '../core/core-store';
-import { closeBatchDialog, closeStartDialog, useDialogs } from './dialogs-store';
+import { closeBatchDialog, closeStartDialog, reportClosed, useDialogs } from './dialogs-store';
 
 /**
  * The batch dialog: a queue of files, not the open document. It carries Kumo's form and
@@ -29,6 +29,11 @@ const BatchDialog = lazy(async () => {
 const StartDialog = lazy(async () => {
   const module = await import('pdf-ui/dialog');
   return { default: module.StartDialog };
+});
+/** The report a delivered result's "Details" action opens. */
+const ReportDialog = lazy(async () => {
+  const module = await import('pdf-ui/dialog');
+  return { default: module.ReportDialog };
 });
 /**
  * The keyboard shortcut list. Help is not a document operation — it opens with no tab
@@ -57,13 +62,18 @@ export function StartDialogHost({ t, onResult }: StartDialogHostProps) {
   if (startSpec === null) return null;
   return (
     <Suspense fallback={null}>
-      <StartDialog
-        t={t}
-        spec={startSpec}
-        context={context}
-        onClose={closeStartDialog}
-        onResult={(result) => void onResult(result)}
-      />
+      <StartDialog t={t} spec={startSpec} context={context} onClose={closeStartDialog} onResult={onResult} />
+    </Suspense>
+  );
+}
+
+/** Mounted only while a delivered result's report is open. */
+export function ReportDialogHost({ t }: { readonly t: Translator }) {
+  const reportView = useDialogs((state) => state.reportView);
+  if (reportView === null) return null;
+  return (
+    <Suspense fallback={null}>
+      <ReportDialog t={t} title={reportView.title} report={reportView.report} onClose={reportClosed} />
     </Suspense>
   );
 }

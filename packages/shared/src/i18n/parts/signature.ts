@@ -43,7 +43,7 @@ export const signaturePart = {
   'sig.cancel': 'Vazgeç',
   'sig.placing': 'Yerleştirmek için sayfada bir yere tıklayın. Esc ile vazgeçin.',
   'sig.placed': '{kind} sayfaya eklendi. Taşımak, döndürmek ya da köşesinden boyutlandırmak için seçin.',
-  'sig.command': 'İmza ekle (çiz, yaz, görsel)',
+  'sig.command': 'İmza ekle',
 
   'img.add.title': 'Görsel ekle',
   'img.add.failed': 'Görsel okunamadı: {name}. PNG, JPEG, WebP, GIF ya da BMP seçin.',
@@ -56,6 +56,6 @@ export const signaturePart = {
   'op.note.stamp.added': '{kind} damga notu olarak eklendi.',
   'op.note.stamp.resized': 'Damga notunun boyutu değiştirildi; görsel yeniden kodlanmadı.',
 
-  'home.tool.signature': 'Çizerek, yazarak ya da fotoğraftan imza ve paraf ekleyin.',
-  'home.tool.imageAdd': 'Sayfaya görsel ekleyin; taşıyın, döndürün ve boyutlandırın.',
+  'home.tool.signature': 'Çizin, yazın ya da fotoğraftan yükleyin; paraf da olur.',
+  'home.tool.imageAdd': 'PNG, JPEG, WebP, GIF veya BMP yerleştirin; taşıyın, döndürün ve boyutlandırın.',
 } as const;

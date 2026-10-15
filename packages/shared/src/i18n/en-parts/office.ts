@@ -1,7 +1,7 @@
 export const officePart = {
   'export.office.title': 'Export to Word, Excel or CSV',
   'export.office.intro':
-    'Export the pages’ text, tables and pictures to an editable Word document, or their tables to an Excel workbook or a CSV file. Everything happens in this browser.',
+    'Export text, tables and pictures to an editable Word document, or tables to an Excel workbook or CSV file. Everything happens in this browser.',
   'export.office.format': 'Format',
   'export.office.format.docx': 'Word (DOCX)',
   'export.office.format.docxHint':
@@ -30,7 +30,7 @@ export const officePart = {
   'export.office.sheet.page': 'Page {n}',
   'export.office.option': 'Word, Excel or CSV',
   'export.office.download': 'Download as Word, Excel or CSV',
-  'tools.exportOffice': 'Export as Word, Excel or CSV',
+  'tools.exportOffice': 'Export to Word, Excel or CSV',
   'tools.exportOfficeDesc': 'Export the PDF to Word, Excel or CSV',
   'home.tool.exportOffice': 'Turn the PDF into an editable Word document, or its tables into Excel or CSV.',
 
@@ -39,7 +39,7 @@ export const officePart = {
   'op.note.exportOffice.done':
     '{pages} pages were exported to {format}, and the file was read back to check it.',
   'op.note.exportOffice.docxApproximate':
-    'The text was exported as flowing paragraphs: exact positions on the page, multi-column flow, drawings, form fields and annotations are not. Fonts are named; where one is not installed, Word uses a similar one.',
+    'The text was exported as flowing paragraphs; exact positions, multi-column flow, drawings, form fields and annotations are not. Fonts are named; if one is missing, Word uses a similar one.',
   'op.note.exportOffice.layout':
     'The page layout was rebuilt: {boxes} text boxes, {shapes} shapes and {pictures} pictures at their places; the text can be edited.',
   'op.note.exportOffice.hiddenText':

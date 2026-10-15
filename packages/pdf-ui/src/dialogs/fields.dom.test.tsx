@@ -5,7 +5,7 @@
  * The host keeps the values the way a dialog does, so what is typed comes back as what is shown.
  */
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import { useState } from 'react';
@@ -117,47 +117,78 @@ describe('initialParams', () => {
 
 describe('FieldList page scope', () => {
   const scope: FieldSpec = { kind: 'pageScope', id: 'scope', labelKey: 'op.scope' };
+  const trigger = () => screen.getByRole('combobox', { name: 'Page range' });
+  const pick = async (name: string) => {
+    await userEvent.click(trigger());
+    await userEvent.click(await screen.findByRole('option', { name }));
+  };
 
-  it('offers all pages, the current page and the selection, and disables a selection that is empty', () => {
+  it('is one select that opens on all pages, with no range box and no empty-selection note', () => {
     show([scope], { currentPage: 1, selectedCount: 0 });
-    expect(screen.getByRole('radio', { name: 'All pages (10)' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'Current page (2)' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'Selected pages (0)' }).getAttribute('aria-disabled')).toBe(
-      'true',
-    );
+    expect(trigger().textContent).toBe('All pages (10)');
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByPlaceholderText('e.g. 1-3, 5, 8-10')).toBeNull();
+    expect(screen.queryByText('No pages selected.')).toBeNull();
+  });
+
+  it('offers all pages, the current page, the selection and a range, and disables a selection that is empty', async () => {
+    show([scope], { currentPage: 1, selectedCount: 0 });
+    await userEvent.click(trigger());
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([
+      'All pages (10)',
+      'Current page (2)',
+      'Selected pages (0)',
+      'Custom range',
+    ]);
+    expect(options[2]?.getAttribute('aria-disabled')).toBe('true');
+    expect(options[1]?.getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('says that no pages are selected only once the selection is the choice', () => {
+    show([scope], { selectedCount: 0, initial: { scope: 'selection' } });
+    expect(trigger().textContent).toBe('Selected pages (0)');
     expect(screen.getByText('No pages selected.')).toBeTruthy();
   });
 
   it('leaves out "current page" when there is none, and selects pages when some are selected', async () => {
     const { onChange } = show([scope], { selectedCount: 3 });
-    expect(screen.queryByRole('radio', { name: /Current page/ })).toBeNull();
-    await userEvent.click(screen.getByRole('radio', { name: 'Selected pages (3)' }));
+    await userEvent.click(trigger());
+    expect(screen.queryByRole('option', { name: /Current page/ })).toBeNull();
+    await userEvent.click(await screen.findByRole('option', { name: 'Selected pages (3)' }));
     expect(onChange).toHaveBeenLastCalledWith('scope', 'selection');
+    expect(trigger().textContent).toBe('Selected pages (3)');
     expect(screen.queryByText('No pages selected.')).toBeNull();
   });
 
   it('types a custom range, says when it cannot be read, and remembers it when the choice moves away and back', async () => {
     const { onChange } = show([scope], { selectedCount: 1 });
-    await userEvent.click(screen.getByRole('radio', { name: 'Custom range' }));
+    await pick('Custom range');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'range:');
     const box = screen.getByPlaceholderText('e.g. 1-3, 5, 8-10');
     await userEvent.type(box, '2-4');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'range:2-4');
 
-    await userEvent.click(screen.getByRole('radio', { name: 'All pages (10)' }));
+    await pick('All pages (10)');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'all');
-    await userEvent.click(screen.getByRole('radio', { name: 'Custom range' }));
+    expect(screen.queryByPlaceholderText('e.g. 1-3, 5, 8-10')).toBeNull();
+    await pick('Custom range');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'range:2-4');
 
     await userEvent.clear(screen.getByPlaceholderText('e.g. 1-3, 5, 8-10'));
     await userEvent.type(screen.getByPlaceholderText('e.g. 1-3, 5, 8-10'), 'zz');
-    expect(screen.getByText(/Page range could not be parsed\./)).toBeTruthy();
+    expect(screen.getByText(/Page range could not be parsed./)).toBeTruthy();
   });
 
-  it('shows a hint instead of the empty-selection note when the field has one', () => {
+  it('shows the hint of a field that has one', () => {
     show([{ ...scope, hintKey: 'op.cancelled' }], { selectedCount: 0 });
     expect(screen.getByText('Operation cancelled.')).toBeTruthy();
     expect(screen.queryByText('No pages selected.')).toBeNull();
+  });
+
+  it('shows the value itself when it names a current page the dialog cannot offer', () => {
+    show([scope], { initial: { scope: 'current' } });
+    expect(trigger().textContent).toBe('current');
   });
 });
 
@@ -492,6 +523,94 @@ describe('FieldList files', () => {
   });
 });
 
+describe('FieldList files, dragged into order', () => {
+  const pdf = (name: string) => new File([name], name, { type: 'application/pdf' });
+  const files = ['one.pdf', 'two.pdf', 'three.pdf'].map(pdf);
+  const fileField: FieldSpec = {
+    kind: 'files',
+    id: 'fl',
+    labelKey: 'op.scope',
+    accept: '.pdf',
+    multiple: true,
+  };
+  const rows = () => within(screen.getByRole('list')).getAllByRole('listitem');
+  const row = (name: string) => rows().find((item) => item.textContent?.includes(name)) as HTMLElement;
+  const order = (onChange: ReturnType<typeof vi.fn>) =>
+    (must(onChange.mock.calls.at(-1))[1] as File[]).map((file) => file.name);
+  const transfer = () => ({ setData: vi.fn(), effectAllowed: '', dropEffect: '' });
+  /** A drag event carrying the test's own transfer: the DOM would not build one. Returns false when the page took it. */
+  const send = (
+    name: 'dragStart' | 'dragOver' | 'dragEnd' | 'drop',
+    target: Element,
+    dataTransfer: object = transfer(),
+  ) => {
+    const event = createEvent[name](target);
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    return fireEvent(target, event);
+  };
+  const open = () => show([fileField], { initial: { fl: files } });
+
+  it('lets every row be dragged, with a grip that tells so', () => {
+    open();
+    expect(rows().map((item) => item.getAttribute('draggable'))).toEqual(['true', 'true', 'true']);
+    expect(within(row('one.pdf')).getByText('⋮⋮').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('moves the dragged row to the row it is dropped on, downwards and upwards', () => {
+    const { onChange } = open();
+    const data = transfer();
+    send('dragStart', row('one.pdf'), data);
+    expect(data.setData).toHaveBeenCalledWith('text/plain', 'one.pdf');
+    expect(data.effectAllowed).toBe('move');
+    send('dragOver', row('three.pdf'), data);
+    expect(data.dropEffect).toBe('move');
+    send('drop', row('three.pdf'), data);
+    expect(order(onChange)).toEqual(['two.pdf', 'three.pdf', 'one.pdf']);
+
+    send('dragStart', row('one.pdf'));
+    send('dragOver', row('two.pdf'));
+    send('drop', row('two.pdf'));
+    expect(order(onChange)).toEqual(['one.pdf', 'two.pdf', 'three.pdf']);
+  });
+
+  it('marks the dragged row and the line it would land on, and clears both when the drag ends', () => {
+    open();
+    send('dragStart', row('one.pdf'));
+    expect(row('one.pdf').className).toContain('opacity-50');
+    send('dragOver', row('three.pdf'));
+    expect(row('three.pdf').className).toContain('border-b-2');
+    send('dragOver', row('three.pdf'));
+    send('dragOver', row('two.pdf'));
+    expect(row('three.pdf').className).not.toContain('border-b-2');
+    expect(row('two.pdf').className).toContain('border-b-2');
+
+    send('dragEnd', row('one.pdf'));
+    expect(row('one.pdf').className).not.toContain('opacity-50');
+    expect(row('two.pdf').className).not.toContain('border-b-2');
+
+    send('dragStart', row('three.pdf'));
+    send('dragOver', row('one.pdf'));
+    expect(row('one.pdf').className).toContain('border-t-2');
+    send('dragOver', row('three.pdf'));
+    expect(row('three.pdf').className).not.toMatch(/border-[bt]-2/);
+  });
+
+  it('ignores a drag that did not start in the list', () => {
+    const { onChange } = open();
+    expect(send('dragOver', row('two.pdf'))).toBe(true);
+    expect(send('drop', row('two.pdf'))).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('accepts the drop on a row it is dragged over, and lets go of the drag after it', () => {
+    open();
+    send('dragStart', row('one.pdf'));
+    expect(send('dragOver', row('two.pdf'))).toBe(false);
+    expect(send('drop', row('two.pdf'))).toBe(false);
+    expect(row('one.pdf').className).not.toContain('opacity-50');
+  });
+});
+
 describe('FieldList scan field', () => {
   const scan: FieldSpec = { kind: 'scan', id: 'sc', labelKey: 'op.scope', hintKey: 'op.running' };
 
@@ -602,13 +721,8 @@ describe('FieldList with no value held yet', () => {
       />,
     );
     const radios = screen.getAllByRole('radio');
-    expect(radios.map((radio) => radio.getAttribute('aria-checked'))).toEqual([
-      'true',
-      'false',
-      'false',
-      'false',
-      'true',
-    ]);
+    expect(radios.map((radio) => radio.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+    expect(screen.getByRole('combobox', { name: 'Page range' }).textContent).toBe('All pages (3)');
     expect(screen.getByRole('combobox', { name: t('op.cancel') }).textContent).toBe('Cancel');
     expect(screen.getByRole('combobox', { name: t('op.running') }).textContent).toBe('Ex');
     expect((screen.getByRole('spinbutton', { name: t('op.scope.custom') }) as HTMLInputElement).value).toBe(

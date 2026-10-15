@@ -3,7 +3,7 @@
  */
 
 export const stampPart = {
-  'stamp.title': 'Üst bilgi / alt bilgi ve sayfa numarası',
+  'stamp.title': 'Sayfa numarası ve üst/alt bilgi',
   'stamp.intro':
     'Damga, seçilen konuma çizilir; sayfa döndürmesi olan belgelerde konum ekrandaki görünüşe göre hesaplanır, damga düz okunur.',
   'stamp.position': 'Konum',
@@ -33,7 +33,7 @@ export const stampPart = {
   'stamp.bates.digits': 'Basamak sayısı',
   'stamp.done': '{count} sayfaya damga eklendi.',
 
-  'watermark.title': 'Filigran',
+  'watermark.title': 'Filigran ekle',
   'watermark.intro':
     'Filigran sayfa içeriğinin üzerine çizilir; metin seçilebilir kalır ve belge yeniden yazılır (artımlı değil).',
   'watermark.text': 'Metin',

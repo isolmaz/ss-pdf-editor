@@ -96,10 +96,10 @@ export const contentWritersPart = {
     'Belgedeki {count} önceki imza geçerli kalır: yeni imza dosyaya ek bir sürüm olarak eklendi, önceki imzaların kapsadığı baytlar değişmedi.',
   'op.note.sign.earlierLost':
     'Belgede {count} önceki imza var. Dosya ek sürüm olarak yazılamadı (onarım gerektiriyordu), bu yüzden baştan yazıldı ve önceki imzalar artık doğrulanmayacak.',
-  'op.note.sign.signed': 'PAdES B-B imzası yazıldı ({digest}, {bytes} bayt CMS).',
+  'op.note.sign.signed': 'PAdES B-B imzası yazıldı ({digest}, {bytes} bayt).',
   'op.note.sign.byteRange':
     'İmzalanan aralık: {start}–{end} ve {tail} baytlık kuyruk; aradaki baytlar imzanın kendisi.',
-  'sign.title': 'Belgeyi imzala (PAdES B-B)',
+  'sign.title': 'Belgeyi imzala',
   'sign.intro':
     'PKCS#12 (.p12/.pfx) dosyanızı ve parolasını seçin. İmza tamamen bu cihazda üretilir; hiçbir şey gönderilmez. Zaman damgası (B-T) bu sürümde yoktur.',
   'sign.field.file': 'PKCS#12 dosyası',
@@ -109,9 +109,9 @@ export const contentWritersPart = {
   'sign.field.passwordHint': 'Parola yalnızca anahtarı açmak için kullanılır, hiçbir yerde saklanmaz.',
   'sign.field.name': 'İmza alanı adı (isteğe bağlı)',
   'sign.field.nameHint':
-    'Boş bırakılırsa belgedeki ilk boş imza alanı olduğu yerde doldurulur, yoksa yeni alan oluşturulur. Ad verirseniz yalnızca bu adlı boş alan doldurulur; böyle bir alan yoksa bu adla yeni alan oluşturulur.',
+    'Boşsa ilk boş imza alanı doldurulur, yoksa yeni alan oluşturulur. Ad verirseniz yalnızca o adlı boş alan doldurulur; yoksa o adla yeni alan oluşturulur.',
   'sign.field.digest': 'Özet algoritması',
-  'sign.field.digestHint': 'SHA-256 B-B için yaygın olandır; daha uzun özet daha büyük CMS yazar.',
+  'sign.field.digestHint': 'SHA-256 B-B için yaygın olandır; daha uzun özet daha büyük imza verisi üretir.',
   'sign.digest.sha256': 'SHA-256',
   'sign.digest.sha384': 'SHA-384',
   'sign.digest.sha512': 'SHA-512',

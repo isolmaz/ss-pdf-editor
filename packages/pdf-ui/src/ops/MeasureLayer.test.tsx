@@ -721,7 +721,6 @@ describe('MeasureSettings', () => {
       onColor: vi.fn(),
       onOpacity: vi.fn(),
       onThickness: vi.fn(),
-      onAuthor: vi.fn(),
       onStop: vi.fn(),
     };
     const props: MeasureSettingsProps = {
@@ -735,7 +734,6 @@ describe('MeasureSettings', () => {
       color: '#ff0000',
       opacity: 0.5,
       thickness: 2,
-      author: 'Ada',
       reading: null,
       ...callbacks,
       ...overrides,
@@ -814,16 +812,15 @@ describe('MeasureSettings', () => {
     expect((screen.getByRole('combobox', { name: 'Spacing' }) as HTMLSelectElement).value).toBe('10');
   });
 
-  it('edits the colour, the opacity, the thickness and the author', async () => {
-    const { onColor, onOpacity, onThickness, onAuthor } = strip();
+  it('edits the colour, the opacity and the thickness, and has no author field', () => {
+    const { onColor, onOpacity, onThickness } = strip();
     fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#00ff00' } });
     expect(onColor).toHaveBeenCalledExactlyOnceWith('#00ff00');
     fireEvent.change(screen.getByLabelText('Opacity'), { target: { value: '0.75' } });
     expect(onOpacity).toHaveBeenCalledExactlyOnceWith(0.75);
     fireEvent.change(screen.getByLabelText('Thickness'), { target: { value: '5' } });
     expect(onThickness).toHaveBeenCalledExactlyOnceWith(5);
-    fireEvent.change(screen.getByLabelText('Author'), { target: { value: 'Grace' } });
-    expect(onAuthor).toHaveBeenCalledExactlyOnceWith('Grace');
+    expect(screen.queryByRole('textbox', { name: 'Author' })).toBeNull();
   });
 
   it('shows the hint until there is a reading, then the reading with its boundary and angle', () => {

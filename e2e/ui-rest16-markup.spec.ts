@@ -11,7 +11,7 @@ import { runsPdf } from './ui-rest16-helpers';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
-const MARKUP_TOOL = 'Mark Up Text (highlight, underline, strike)';
+const MARKUP_TOOL = 'Mark up text';
 
 /** Two runs on one baseline, a gap between them, and one run on the line below. */
 const PDF = runsPdf([

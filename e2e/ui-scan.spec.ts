@@ -241,8 +241,8 @@ test.describe('without a camera permission', () => {
     page,
   }) => {
     await openPdf(page);
-    await menuItem(page, 'Page', 'Insert Pages');
-    const form = page.getByRole('region', { name: 'Insert Pages' });
+    await menuItem(page, 'Page', 'Insert pages');
+    const form = page.getByRole('region', { name: 'Insert pages' });
     await expect(form).toBeVisible();
     await form.getByRole('radio', { name: 'Scan with camera', exact: true }).check();
     await expect(form.getByText('No scanned pages yet')).toBeVisible();

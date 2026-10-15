@@ -210,7 +210,7 @@ CI `verify` job, after `pnpm build`.
 |---|---|
 | `errors.ts` | The single error contract. `ToolError` carries a stable code (39 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
 | `format.ts` | `formatBytes(bytes, locale)` and `formatPercent(fraction, locale)`: sizes and percentages the way the interface language writes them (`1,5 KB` and `%140` in Turkish, `1.5 KB` and `140%` in English), through `Intl.NumberFormat`. Report notes never format a size: they carry the byte counts as numbers and the sentence asks for a size with a `{name:bytes}` placeholder, which `createTranslator` writes in its own locale. |
-| `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`. |
+| `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`; the gauge and the limit-profile badge are drawn only while the limit verdict is not `ok` or the gauge is at 75 % or more (from 768 px up). |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
 Because `MessageKey` is a union of literal keys, passing an unknown key is a compile
@@ -1205,7 +1205,11 @@ PageRect          { pageIndex; rect: [x0,y0,x1,y1] }
 `steps` is not decoration: the step ids an operation reports are the vocabulary the save
 verification uses to decide what the operation was allowed to change (§10). Notes carry
 `kind: 'lost'` for anything the user must be told about, and the report panel renders lost
-notes first.
+notes first, under the heading "Lost" and ahead of the page count and size. What only a
+developer reads — whether the file was rewritten, the step ids, the producer lines in
+`TECHNICAL_NOTES` (`dialogs/ReportPanel.tsx`) — sits in one closed "Technical details"
+section. Only `changed` and `preserved` notes can be folded into it; a loss or a warning is
+never hidden.
 
 Every long operation is cancellable through `OperationContext.signal`; `throwIfAborted()`
 and engine-specific abort handling are checked between phases, and a cancelled OCR run
@@ -1657,7 +1661,7 @@ signature widgets only a page's `/Annots` reach, once the password has opened th
 `lost` note in the report: `op.note.security.signatureInvalidated` for protect,
 `op.note.security.signatureInvalidatedUnlock` for unlock. The download path never reaches the
 save plan's signature warning.
-The Security dialog's `resultKind` is `download`: the encrypted copy is handed over, never
+The Protect with password dialog's `resultKind` is `download`: the encrypted copy is handed over, never
 applied to the open document (a protected file is read-only in the editor, so applying it
 ended in a password prompt). A run may also overrule its dialog's `resultKind` for one result
 with `OpRunResult.deliver` — the form-data **export** uses it to download its data file from a
@@ -1808,7 +1812,7 @@ moved rests at the end of the page. The line is the one the drawn text continues
 (`TextEditInsertLine.lineSpan`, its left and right edge): a run of the column or table cell
 beside it shares the baseline but not the span, and splicing after it read the two columns
 interleaved, line by line. Text with no run of its own line to follow (a match that starts
-its line with nothing kept after it, a paragraph Edit Text redraws), or a page whose content
+its line with nothing kept after it, a paragraph Edit text redraws), or a page whose content
 cannot be read, is drawn in one stream after the page's own. The splice point is the end of
 the anchor's text object, so a producer that writes several lines in one `BT … ET` (LaTeX
 does) still reads that object's line heads before the rests drawn after it. A line that only
@@ -2440,22 +2444,35 @@ when the document's list really is empty. A run's `noticeKey` is the sentence th
 shows whatever the result kind (replace, new tab, download); without one it says what
 happened to the file. A field marked `advanced` is rendered in one closed "advanced
 options" section after the essential fields (it opens itself while one of its fields is
-invalid); short controls — number, colour, select — share a row two by two
+invalid); short controls — number, colour, select, page scope — share a row two by two
 once the form's container is wider than 28 rem (a container query, because the same list
 renders in the panel and in a modal). A select shows its option's **label** in the trigger
 (`renderValue`): Kumo's trigger prints the raw value otherwise, and a stamp position read
-"bottom-right". A file field is a labelled button over a hidden input that lists what was
+"bottom-right". The `pageScope` field is such a select too — all pages, the current page, the
+selected pages (disabled while none are selected) or a custom range — and the range box exists only
+while "Custom range" is the choice; "No pages selected." is said only when the selection itself is
+the choice. A file field is a labelled button over a hidden input that lists what was
 picked, in the product's words rather than the browser's "Choose File".
 
 **One host.** `OperationForm` (`dialogs/OperationForm.tsx`) is the whole of an operation's
-surface — title, the two numbered steps (`DialogSteps`: settings, then review/result), the
-fields, progress with a working cancel, the destructive second confirmation, the error with
-its diagnostic, the report — and the right dock (`features/shell/RightDock.tsx`) shows it in
+surface — title, the fields, progress with a working cancel, the destructive second
+confirmation, the error with its diagnostic, the report of a result that has to be read — and the right dock (`features/shell/RightDock.tsx`) shows it in
 its tools panel for **every** operation, so there is one runner with one destructive confirmation and one meaning
-of "Close". The first-step button reads *Preview* (`op.apply`) because it
-runs the operation and shows the report; only the result's own action
-(`RESULT_ACTIONS[resultKind]`: apply to the document / open in a new tab / download) changes
-anything, and "Close" discards. Modals remain for decisions that block: password, unsaved
+of "Close". The button reads *Apply* (`op.apply`) and runs the operation. What follows is
+`resultNeedsReview` (`dialogs/review.ts`): a result with no file, a `lost` or `warning` note,
+or one of the few `changed` notes that say the output differs from what was asked (a text
+that had to be shrunk or reflowed, an approximate conversion, a generated owner password, pages
+scaled to fit Word, a protection removed for PDF/A) is shown as a report first, and only its own action (`RESULT_ACTIONS[resultKind]`: apply to the
+document / open in a new tab / download) changes anything, while "Close" discards. Every
+other result is handed to the host at once — the document keeps an undo step for it, so a
+report screen in front of that step would be a second button and nothing more. Every `changed`
+note the sources write is classified, in `REVIEW_CHANGES` or in the plain list of `review.test.ts`,
+and the test fails for a note that is in neither. The form
+shows "Processing…" meanwhile; if the host's promise ends and the form is still mounted
+(another operation held the document, the write failed), the report and its button appear,
+so the result is never lost. A result that has to be read is headed "Review the result" (`dialog.review`); the form has no step indicator. A delivered result's notice carries *Ctrl+Z* as its undo hint and a *Details* action
+(`NoticeAction` in `core-store`, rendered by `ActivityOverlay`) that opens the report in a
+`ReportDialog` (`dialogs-store.reportView`). Modals remain for decisions that block: password, unsaved
 changes, signature warning, export choice, print, settings and the shortcut list.
 
 The host (`dialogResult`, built by `createDialogRuns` in `features/dialogs/dialog-actions.ts`) applies a result and closes the form itself once the result
@@ -2481,8 +2498,9 @@ standalone operation through it would leave a command that is enabled with no do
 does nothing.
 
 A multiple `files` field is an ordered list: a new pick appends, and each entry can be moved
-up or down or removed, so the order of a merge or of the pages built from images is the
-user's.
+up or down with its arrow buttons, dragged onto another entry (the browser's own drag and drop,
+which only reorders when the drag started in that list) or removed, so the order of a merge or
+of the pages built from images is the user's.
 
 The command palette runs **one command per opening**: Enter reaches both the input's own
 handler and the list's item activation, so the keyboard path runs the command once (twice, a
@@ -2511,13 +2529,29 @@ only hides entry points: the shortcuts still arm the tools, and a right-dock tab
 hides but the store still names (the mode changed while it was open) shows the tools tab
 instead, without writing the store, so switching back finds the tab as it was.
 
+The menu bar's layout is `commands.ts` too. `MENU_SECTIONS` lists the commands section by section,
+group after group; `buildCommands` returns them in that order, each carrying its `section`, and
+`MenuBar` draws a rule between two neighbouring entries of a menu whose sections differ, so a
+section that the simple mode hides entirely leaves no rule behind. An entry that is disabled
+because of the state of the document says why: `Command.disabledReason` (no document open, the
+document cannot be edited, no pages or marks selected, nothing to undo) is the entry's native
+tooltip and its `aria-description`, and only while it is disabled. `menuCommands` is what the
+menu bar renders: the commands of the mode, without a command the editor header already has a
+button for when it would be the only entry of its menu (Settings in the simple mode); the command
+stays in the palette.
+
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that
 dispatches keyboard actions, keeping the displayed bindings and their behavior together. A chord
-names the modifiers it needs and ignores the rest (`F4` answers with `Shift` held), except a `bare`
-chord: `F5` toggles the tools dock only with no modifier down, so `Ctrl+F5` and `Shift+F5` stay the
-browser's reloads instead of being swallowed. The page keys (`PageUp`, `PageDown`,
+names the modifiers it needs and ignores the rest (`F4` answers with `Ctrl` or `Alt` held; the
+`Shift+F4` row ahead of it toggles the tools dock), except a `bare` chord: the eleven tool
+letters (`V`, `H`, `E`, `T`, `U`, `D`, `R`, `N`, `K`, `M`, `X`, rows with a `tool`) answer only
+with no modifier down, so `Ctrl+R`, `Ctrl+D` and the like stay the browser's, and `F5` is not bound
+at all, so it reloads. A bare chord also stands aside in a composite widget and in a dialog, where
+typed letters belong to the widget, and ignores key repeat; `armTool` declines (`false`) without
+a document, or for a tool that writes while the document cannot be edited, and `pressTool`
+(`features/core/core-store.ts`) is the one toggle the rail's click and the letter share. The page keys (`PageUp`, `PageDown`,
 `Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
 tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
 list), which owns them. They stand aside for a full-screen presentation too: its own key
@@ -2537,7 +2571,7 @@ everything a canvas gesture can be — `select`, `hand`, `highlight`, `underline
 `squiggly`, `ink`, `shapes`, `note`, `redact`, `measure`, `link`, `text`, `freetext`, `stamp`
 — and the shell holds exactly one at a time. `stamp` is armed only with a picture to place
 (the signature dialog or the image picker) and any other tool drops that picture. The tool rail (`apps/web/src/components/ToolRail.tsx`) is a
-column **in the layout** beside the document and shows every one of them; the four
+column **in the layout** beside the document (below 640 px a toolbar under it that scrolls sideways, so the page keeps the whole width of a phone) and shows every one of them; the four
 text-markup looks share one button that is pressed for any of them and arms the look used
 last. Because the rail shows every tool, a tool armed from a menu always has a pressed button.
 The tool is one value rather than several parallel flags that could disagree: the rail's
@@ -2567,13 +2601,17 @@ pointer rests on it.
 (`COMPACT_VIEW_QUERY`, `(max-width: 1023px)`) both docks start collapsed and reopen as
 overlaid panels, so the canvas keeps the width and the tools stay one click away. The page
 and view controls (`PageNavigation`) live in the status bar's navigation slot, never over
-the page. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
+the page. Zoom in and out walk `ZOOM_STOPS` (`pdf-shared`'s `zoom.ts`, shared by the buttons,
+the shortcuts and the commands), and the percentage opens `ZoomMenu` (a popover, so the status bar's
+clipping cannot hide it) with the stops, fit width, fit page and a typed value. On a touch screen (`(pointer: coarse)`) the status bar grows from 32 to 44 px (the `--spacing-pdf-statusbar` token), its buttons are at least 40 px and the bar scrolls sideways when they do not fit, and the rail's buttons are 40 px. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
 panel, reading pane, text-edit tool — and the one-shot convert and sign actions), the document
 switcher, the file actions and one settings button — language, theme, the interface mode,
 privacy, storage and offline preparation are in `SettingsDialog`. The header never overflows the bar at
-any width from 320 px: as the bar narrows, the labels of Open, Save and Export yield first (below 1280 px), then
-the menu bar (below 1024 px), then the task buttons (below 768 px), and on a phone (below 640 px) the Open button; the document name
-keeps a minimum width, and `e2e/ui-panels15b-shell.spec.ts` checks the bar from 320 to 1536 px in both
+any width from 320 px: as the bar narrows, the labels of Open, Save and Export yield first (below 1440 px; the task
+buttons name themselves from 1280 px, and in Turkish both sets of names do not fit before 1440 px), then the task
+names (below 1280 px), the menu bar (below 1024 px), the task buttons (below 768 px), and on a phone (below 640 px)
+the Find button (Open stays, as an icon); the document name
+keeps a minimum width, and `e2e/ui-panels15b-shell.spec.ts` checks the bar from 320 to 1536 px (1366, 1439 and 1440 included) in both
 languages. Tooltips are one wrapper
 (`components/Tooltip.tsx`) over Kumo's primitive: it portals to `document.body` so a
 scrolling rail or a clipped panel cannot crop it, uses the declared contrast/inverse token
@@ -2587,8 +2625,8 @@ them once rather than twice.
 
 `apps/web/src/App.tsx` is the composition root: the wiring between the feature modules,
 `pdf-model`, `pdf-core` and `pdf-ui`, the link-region and image-list state its hosts share,
-the six one-line callbacks
-(`saveActive`, `persistTabDraft`, `opfsSave`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
+the five one-line callbacks
+(`saveActive`, `persistTabDraft`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
 thin bindings of feature functions that `tools/audit/regressions.cjs` exercises directly), the
 drop target, and the feature hosts. UI state that several surfaces share
 lives in feature stores under `apps/web/src/features/`, each made with `createStore` from
@@ -2612,7 +2650,7 @@ testable logic lives:
 | `features/measure/` | Measuring: the ruler mode, scale, grid, snapping and live reading (`measure-store.ts`), adding a measurement as one undoable step (`measure-marks.ts`), and the settings strip and overlay hosts |
 | `features/results/` | Print, scan and accessibility: the print and scan dialogs' open state and the operation progress (`results-store.ts`), applying accessibility fixes, scanning a document and opening a printable result (`results-actions.ts`), and the print, scan, accessibility and PDF/A hosts (`ResultsSurfaces.tsx`) |
 | `features/pages/` | Page actions and undo/redo: the pure planner (`history-plan.ts`: the operation gate, the page selection, whether a history press is declined, refused or queued, and its notices) and the runner (`page-actions.ts`, `usePageActions`; a press with no step on that side of the journal's cursor does nothing and says nothing, the menu's disabled item in key form, while a step whose snapshot is missing says `op.undo.unavailable`) |
-| `features/annotations/` | Annotations: the style, the engine values held across a step, the known existing annotations and the orphan sweep (`annotations-store.ts`), XFDF/FDF/JSON import and export (`annotation-data.ts`), taking over the engine's own annotations (`engine-takeover.ts`), settling native editors and sweeping orphans (`orphans.ts`), run through `useAnnotationActions` |
+| `features/annotations/` | Annotations: the style each tool draws with and its persistence (`annotation-style.ts`), the author, the engine values held across a step, the known existing annotations and the orphan sweep (`annotations-store.ts`), XFDF/FDF/JSON import and export (`annotation-data.ts`), taking over the engine's own annotations (`engine-takeover.ts`), settling native editors and sweeping orphans (`orphans.ts`), run through `useAnnotationActions` |
 | `features/forms/` | Forms and XFA: the form and annotation inventories, the inspection revision, the selected field, form-field detection and the XFA state (`forms-store.ts`), filling, flattening and detecting fields (`form-actions.ts`), the inventory read (`use-form-inventory.ts`), and the XFA banner, field-candidate layer, forms panel and XFA dialog hosts (`FormsSurface.tsx`) |
 | `features/marks/` | Marks: the mark targets (`marks-store.ts`, `mark-targets.ts`), the visible and editable overlays (`overlays.ts`), removing and transforming marks, writing a file annotation, the writer pipeline (`writer.ts`: a writer's outcome and layer writes), and redaction (the erased words per tab in `redaction-store.ts`, the redaction marks and writer in `redaction.ts`, and `RedactionSurfaces.tsx`), run through `useWriterActions` and `useMarkActions` |
 | `features/dialogs/` | The dialog runner: the batch, operation, start and shortcuts dialogs' state (`dialogs-store.ts`), opening them and handling their results (`dialog-actions.ts`), dismissing a dialog whose tab or working version changed (`use-dialog-dismissal.ts`), and the hosts (`DialogSurfaces.tsx`) |
@@ -2629,7 +2667,7 @@ testable logic lives:
 | `notices.ts` | Turns notice descriptors, verification results and failures into sentences (i18n keys and params only, no English literals) |
 | `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App` inside the root error boundary (`recovery.tsx`), then warms the engine, editor, printer and palette chunks on idle (§2) |
 | `lazy-ops.ts` | Same-signature wrappers that load the writers and readers the shell runs only on an action (§2) |
-| `export-presets.ts`, `signature-store.ts` | What the export dialog's "Compressed PDF" level fills into the Optimize form, and the remembered simple signature (§8.7) |
+| `export-presets.ts`, `signature-store.ts` | What the export dialog's compression level ("Smaller file", "Balanced", "Higher quality") fills into the Optimize form, and the remembered simple signature (§8.7) |
 | `drafts.ts` | The OPFS half of draft storage |
 | `vault-channel.ts` | Cross-window vault coordination |
 | `offline.ts` | Capability manifests and readiness |
@@ -2668,15 +2706,17 @@ document is opening. A drop or a multi-file pick opens every PDF, each in its ow
 after the other (`openFilesFromSurface`), because an open holds the busy gate until it settles.
 
 **The home screen** (`components/HomeScreen.tsx`) has two tabs that both act. *Start* holds
-the ways to begin — open, a blank document, a PDF from images, merging several PDFs, a batch
-run — and the recent list (search, sort, star, page count, an "open" badge for entries that
+the ways to begin — a drop zone that is also the click target for opening a file (there is no second "open" card; the header's Open and its one palette button, with a search icon and the Ctrl+K hint, serve the whole screen), a blank document, a PDF from images, merging several PDFs, a batch
+run; on a coarse pointer the drop zone just says "Open a PDF" and, below 640 px, the cards are a compact list (icon, title, one line) so the recent list is on the first screen — and the recent list (search, sort, star, page count, an "open" badge for entries that
 are a tab right now; removing an entry or clearing the list never touches a file, it forgets
 the entry's stored handle at once, and the clear asks first; the clear keeps the handle of a
 document that is open in a tab or has a draft in the vault, and prunes nothing when the draft
-inventory cannot be read completely). *All tools*
+inventory cannot be read completely). The privacy claim is made once on this screen, by the status bar; what the list
+stores (name, size, page count, last opened, star) sits behind an info button next to the list's tabs. *All tools*
 (`components/HomeToolGrid.tsx`, a chunk the tab fetches when the pointer or focus reaches it, with a "Loading tools…" status in the panel until it arrives) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
-command, so the grid cannot drift from the menus or the palette. It lists
+command, so the grid cannot drift from the menus or the palette. *Organize pages*
+(`page.organize`) opens the page panel, and merge and batch are tiles of their own. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never
 disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
@@ -2844,9 +2884,11 @@ deletes, and when" need answers that span windows. `vault-channel.ts` uses
 manager the work runs unserialised (every vault operation is idempotent, so the worst case
 is a repeated `removeEntry`, not a lost document), a draft cannot be claimed (every claim is
 granted) and a probe reports `false`, so a sweep deletes nothing; and only when **both** channels are
-unavailable does `canReachPeers()` return false — and then the sweep refuses to run,
+unavailable does `canReachPeers()` return false — and then the sweep does not run,
 because without peer knowledge "delete everything unreferenced" would delete another
-window's only copy.
+window's only copy. The sweep runs by itself, once per start-up, after the drafts are
+restored (`use-draft-recovery.ts`); it has no button and no command, and it says nothing,
+whether it deleted blobs, found none or refused.
 
 References are only ever **added**. A window that answers once and dies leaves its keys
 pinned, which costs space; forgetting a live window's keys would cost a document.
@@ -2859,7 +2901,7 @@ waits, the probe asks the lock manager again every 250 ms and stops waiting for 
 whose lock is gone: a tab closed a moment before the sweep can still be listed by the first
 query, and it will never answer. A window the lock manager lists but that stays silent for
 10 s (a frozen tab) makes `probe()` resolve `false` and the sweep refuses
-(`vault.peerSilent`: nothing is deleted). Without a lock manager, or when it cannot be asked,
+(nothing is deleted, nothing is said; the next start tries again). Without a lock manager, or when it cannot be asked,
 the probe still collects the answers that arrive within 250 ms but reports `false`: a timer
 cannot prove that no window is missing, so the sweep refuses (fail closed).
 
@@ -2875,8 +2917,9 @@ lists a snapshot blob between its write and its manifest.
 
 ### 8.5 Sensitive sessions, drafts and cleanup
 
-Persistence is a shared callback used by both the manual OPFS save and the automatic draft
-path, so the two cannot disagree about what was persisted. A restore does not rerun just
+Persistence is one callback, `persistDraft`, which the autosave and the flush on the crash screen
+both go through; there is no manual "save the draft now" command, and Settings only deletes the
+stored copies of the open document. A restore does not rerun just
 because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
 guard, and a vault that cannot be read at all is said on the notice line) while the others
 recover, a draft whose document was opened meanwhile (from the recent list, say) is

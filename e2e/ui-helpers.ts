@@ -52,6 +52,76 @@ export async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Enter');
 }
 
+/** The heading of the review step: only a result that lost, warned about or approximated something shows it. */
+export const reviewHeading = (form: Locator): Locator =>
+  form.getByRole('heading', { name: 'Review the result' });
+
+/** The review step's one action, whatever the result becomes. */
+const REVIEW_ACTION = /^(Apply to document|Open in new tab|Download)$/;
+
+/**
+ * Press an operation form's run button, answer a destructive form's question, and wait for the
+ * outcome. A clean result is delivered at once and the form closes; one that lost, warned about
+ * or approximated something shows its review instead. Returns which of the two happened.
+ */
+export async function runForm(form: Locator, run: string | RegExp = 'Apply'): Promise<'closed' | 'review'> {
+  await form.getByRole('button', { name: run, exact: typeof run === 'string' }).click();
+  const goOn = form.getByRole('button', { name: 'Continue', exact: true });
+  const review = reviewHeading(form);
+  const seen: { outcome: 'closed' | 'review' | null } = { outcome: null };
+  await expect
+    .poll(
+      async () => {
+        if (await goOn.isVisible()) await goOn.click();
+        else if (await review.isVisible()) seen.outcome = 'review';
+        else if (!(await form.isVisible())) seen.outcome = 'closed';
+        return seen.outcome;
+      },
+      { timeout: 120_000 },
+    )
+    .not.toBeNull();
+  return seen.outcome as 'closed' | 'review';
+}
+
+/**
+ * Run an operation form and, if the result asks to be read first, apply it; wait for the form to
+ * close. Returns which way it went, so a spec whose result must be read (it lost or warned about
+ * something) or must not be can say so: `expect(await applyForm(form)).toBe('review')`.
+ */
+export async function applyForm(form: Locator, run: string | RegExp = 'Apply'): Promise<'closed' | 'review'> {
+  const outcome = await runForm(form, run);
+  if (outcome === 'review') await form.getByRole('button', { name: REVIEW_ACTION }).click();
+  await expect(form).toBeHidden({ timeout: 90_000 });
+  return outcome;
+}
+
+/** Pick an option of the page-scope select of an operation form, in either interface language. */
+export async function chooseScope(form: Locator, option: string | RegExp): Promise<void> {
+  await form.getByRole('combobox', { name: /^(Page range|Sayfa aralığı)$/ }).click();
+  await form.page().getByRole('option', { name: option }).click();
+}
+
+/** The "Details" button of the notice a delivered result ends in, in either interface language. */
+export const detailsButton = (page: Page): Locator =>
+  page.getByRole('button', { name: /^(Ayrıntılar|Details)$/ });
+
+/**
+ * Wait for the run of the operation form on the page to end and leave its result delivered: a
+ * clean result is applied at once, one that asked to be read first is applied from its review.
+ * The notice it ends in then offers {@link detailsButton}. Neutral about the interface language.
+ * Returns `'review'` when the result had to be applied from its review, `'closed'` when it was
+ * delivered at once.
+ */
+export async function finishRun(page: Page, timeout = 120_000): Promise<'closed' | 'review'> {
+  const apply = page.getByRole('button', { name: /^(Belgeye uygula|Apply to document)$/ });
+  const details = detailsButton(page);
+  await expect(apply.or(details)).toBeVisible({ timeout });
+  const outcome = (await apply.isVisible()) ? 'review' : 'closed';
+  if (outcome === 'review') await apply.click();
+  await expect(details).toBeVisible({ timeout: 30_000 });
+  return outcome;
+}
+
 /** Open a menu-bar menu and click one of its items. */
 export async function menuItem(page: Page, menu: string, item: string | RegExp): Promise<void> {
   await page.getByRole('menuitem', { name: menu, exact: true }).click();

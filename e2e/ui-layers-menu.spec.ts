@@ -13,7 +13,7 @@ import { clickAt, expectNear, ofSubtype, readAnnotations } from './ui-layers-hel
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 
-const REDACT_TOOL = 'Redact (permanent removal)';
+const REDACT_TOOL = 'Permanent redaction';
 
 async function rightClick(page: Page, x: number, y: number) {
   await clickAt(page, x, y, { button: 'right' });
@@ -26,16 +26,16 @@ test('the menu without a selection offers the page actions, stays inside the win
   await openPdf(page);
   await rightClick(page, 300, 300);
   const menu = page.getByRole('menu');
-  await expect(menu.getByText('Page & Edit', { exact: true })).toBeVisible();
-  await expect(menu.getByText('Text Selection Actions')).toHaveCount(0);
+  await expect(menu.getByText('Page and edit', { exact: true })).toBeVisible();
+  await expect(menu.getByText('Text selection actions')).toHaveCount(0);
   await expect(menu.getByRole('menuitem')).toHaveText([
-    'Rotate Clockwise (90°)',
-    'Rotate Counterclockwise (-90°)',
-    'Delete Current Page',
-    'Add Text',
-    'Edit Text',
-    'Freehand Draw',
-    'Fit Width',
+    'Rotate right',
+    'Rotate left',
+    'Delete this page',
+    'Add text',
+    'Edit text',
+    'Freehand drawing',
+    'Fit width',
   ]);
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
@@ -85,7 +85,7 @@ test('the menu takes focus as it opens, walks with the arrow keys and closes on 
   await expect(items.nth(3)).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(menu).toHaveCount(0);
-  await expect(rail(page, 'Add Text')).toHaveAttribute('aria-pressed', 'true');
+  await expect(rail(page, 'Add text')).toHaveAttribute('aria-pressed', 'true');
 
   await rightClick(page, 300, 300);
   await page.keyboard.press('Tab');
@@ -130,28 +130,28 @@ test('rotate, delete and the tool entries run the page action or arm the tool, a
   const menu = page.getByRole('menu');
 
   await rightClick(page, 300, 300);
-  await menu.getByRole('menuitem', { name: 'Freehand Draw' }).click();
+  await menu.getByRole('menuitem', { name: 'Freehand drawing' }).click();
   await expect(menu).toHaveCount(0);
   await expect(rail(page, 'Freehand drawing')).toHaveAttribute('aria-pressed', 'true');
 
   await rightClick(page, 300, 300);
-  await menu.getByRole('menuitem', { name: 'Add Text' }).click();
-  await expect(rail(page, 'Add Text')).toHaveAttribute('aria-pressed', 'true');
+  await menu.getByRole('menuitem', { name: 'Add text' }).click();
+  await expect(rail(page, 'Add text')).toHaveAttribute('aria-pressed', 'true');
 
   await rightClick(page, 300, 300);
-  await menu.getByRole('menuitem', { name: 'Edit Text' }).click();
-  await expect(rail(page, 'Edit Text')).toHaveAttribute('aria-pressed', 'true');
+  await menu.getByRole('menuitem', { name: 'Edit text' }).click();
+  await expect(rail(page, 'Edit text')).toHaveAttribute('aria-pressed', 'true');
 
   await rightClick(page, 300, 300);
-  await menu.getByRole('menuitem', { name: 'Fit Width' }).click();
-  await expect(page.getByRole('button', { name: /^Fit Width \(\d+%\)$/ })).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Fit width' }).click();
+  await expect(page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ })).toBeVisible();
 
   await rightClick(page, 300, 300);
-  await menu.getByRole('menuitem', { name: 'Rotate Clockwise (90°)' }).click();
+  await menu.getByRole('menuitem', { name: 'Rotate right' }).click();
   await rightClick(page, 300, 300);
-  await menu.getByRole('menuitem', { name: 'Rotate Clockwise (90°)' }).click();
+  await menu.getByRole('menuitem', { name: 'Rotate right' }).click();
   await rightClick(page, 300, 300);
-  await menu.getByRole('menuitem', { name: 'Rotate Counterclockwise (-90°)' }).click();
+  await menu.getByRole('menuitem', { name: 'Rotate left' }).click();
   await expect(menu).toHaveCount(0);
 
   const turned = await exportBytes(page, 'turned.pdf');
@@ -162,7 +162,7 @@ test('rotate, delete and the tool entries run the page action or arm the tool, a
 test('Delete Current Page removes the page on screen from the exported file', async ({ page }) => {
   await openPdf(page);
   await rightClick(page, 300, 300);
-  await page.getByRole('menu').getByRole('menuitem', { name: 'Delete Current Page' }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Delete this page' }).click();
   const bytes = await exportBytes(page, 'deleted.pdf');
   expect(await readProducedEntry(bytes, null, 'Pages', 'Count')).toBe('1');
 });
@@ -194,29 +194,29 @@ test('with words selected the menu marks, copies and redacts that selection', as
 
   await word();
   await rightClickLine();
-  await expect(menu.getByText('Text Selection Actions')).toBeVisible();
+  await expect(menu.getByText('Text selection actions')).toBeVisible();
   await expect(menu.getByRole('menuitem')).toHaveText([
     'Highlight',
     'Underline',
     'Strikethrough',
-    'Copy Text',
-    'Redact Selection',
-    'Add Note',
-    'Rotate Clockwise (90°)',
-    'Rotate Counterclockwise (-90°)',
-    'Delete Current Page',
-    'Add Text',
-    'Edit Text',
-    'Freehand Draw',
-    'Fit Width',
+    'Copy text',
+    'Redact selection',
+    'Add note',
+    'Rotate right',
+    'Rotate left',
+    'Delete this page',
+    'Add text',
+    'Edit text',
+    'Freehand drawing',
+    'Fit width',
   ]);
-  await menu.getByRole('menuitem', { name: 'Copy Text' }).click();
+  await menu.getByRole('menuitem', { name: 'Copy text' }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(line);
 
   // Redact Selection turns the words into a pending redaction area at once.
   await word();
   await rightClickLine();
-  await menu.getByRole('menuitem', { name: 'Redact Selection' }).click();
+  await menu.getByRole('menuitem', { name: 'Redact selection' }).click();
   const areas = page.locator('[data-mark-family="redaction"]');
   await expect(areas).toHaveCount(1);
   const frame = await pageFrame(page);

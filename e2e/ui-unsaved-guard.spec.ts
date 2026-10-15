@@ -1,6 +1,5 @@
 import type { Page } from 'playwright/test';
 import { notice, openApp, palette, pdfFile, rotateCurrentPage, settled } from './app-helpers';
-import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { encryptedToolFixturePdf } from './tool-fixture';
 
@@ -61,8 +60,6 @@ test('a file that only an owner password restricts is stored like any other docu
       ),
     )
     .toBe(true);
-  await palette(page, 'Save to Browser Storage');
-  await expect(notice(page, 'Sensitive session: persistent draft disabled.')).toHaveCount(0);
 });
 
 test('a document opened with its password is a sensitive session: nothing of it reaches the vault', async ({
@@ -77,10 +74,12 @@ test('a document opened with its password is a sensitive session: nothing of it 
   await prompt.getByLabel('Document open password').fill('parola');
   await prompt.getByRole('button', { name: 'Open', exact: true }).click();
   await settled(page);
-  await useAdvancedMode(page);
 
-  await palette(page, 'Save to Browser Storage');
-  await expect(notice(page, 'Sensitive session: persistent draft disabled.')).toBeVisible();
+  // Settings shows the session as sensitive, and the vault holds nothing of it.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(
+    page.getByRole('dialog', { name: /Settings/ }).getByRole('switch', { name: 'Sensitive session' }),
+  ).toBeChecked();
   expect(await vault(page)).toEqual({ drafts: [], sources: [] });
 });
 
@@ -88,7 +87,7 @@ test('a window with unsaved changes no draft protects asks before the browser cl
   page,
 }) => {
   await openApp(page, 'secret.pdf');
-  await palette(page, 'Sensitive Session');
+  await palette(page, 'Sensitive session');
   await expect(notice(page, 'Sensitive session: persistent draft disabled.')).toBeVisible();
   await rotateCurrentPage(page);
 

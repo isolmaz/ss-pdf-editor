@@ -16,7 +16,7 @@ import type { Command } from 'pdf-ui';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { STANDALONE_COMMAND_IDS } from '../../commands';
-import { coreStore, initialCoreState, setBusy } from '../core/core-store';
+import { coreStore, initialCoreState, setBusy, showNotice } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
 import { dialogsStore, initialDialogsState } from '../dialogs/dialogs-store';
 import { exportStore, initialExportState } from '../export/export-store';
@@ -57,7 +57,6 @@ vi.mock('../../components/HomeScreen', async () => {
         button('open files', () =>
           (props.onOpenFiles as (files: File[]) => void)([new File(['x'], 'x.pdf')]),
         ),
-        button('open picker', props.onOpenPicker as () => void),
         button('start blank', () => onStart('blank')),
         button('start images', () => onStart('images')),
         button('start convert', () => onStart('convert')),
@@ -66,7 +65,6 @@ vi.mock('../../components/HomeScreen', async () => {
         button('start scan', () => onStart('scan')),
         button('run command', () => (props.onRunCommand as (id: string) => void)('file.new')),
         button('select recent', () => (props.onSelectRecent as (item: unknown) => void)({ id: 'recent-1' })),
-        button('open palette', props.onOpenPalette as () => void),
       );
     },
   };
@@ -88,6 +86,7 @@ vi.mock('../../components/ActivityOverlay', async () => {
         {
           'aria-label': 'activity overlay',
           'data-notice': String(props.notice),
+          'data-notice-action': (props.noticeAction as { label: string } | null)?.label ?? 'null',
           'data-progress': JSON.stringify(props.progress),
           'data-activity': String(props.activity),
         },
@@ -109,6 +108,7 @@ vi.mock('../dialogs/DialogSurfaces', async () => {
       );
     },
     BatchDialogHost: () => createElement('div', { 'aria-label': 'batch host' }),
+    ReportDialogHost: () => createElement('div', { 'aria-label': 'report host' }),
   };
 });
 vi.mock('../results/ResultsSurfaces', async () => {
@@ -189,7 +189,7 @@ let tabIds: string[];
 let props: {
   runHomeCommand: Mock;
   dialogContext: ShellBodyProps['dialogContext'];
-  home: { openFilesFromSurface: Mock; openViaPicker: Mock; openStart: Mock; selectRecent: Mock };
+  home: { openFilesFromSurface: Mock; openStart: Mock; selectRecent: Mock };
   dock: Record<string, unknown>;
   viewer: Record<string, unknown>;
   right: Record<string, unknown>;
@@ -244,7 +244,6 @@ beforeEach(() => {
     dialogContext: { name: 'ctx' } as never,
     home: {
       openFilesFromSurface: vi.fn(async () => undefined),
-      openViaPicker: vi.fn(async () => undefined),
       openStart: vi.fn(),
       selectRecent: vi.fn(),
     },
@@ -291,21 +290,17 @@ describe('ShellBody home screen', () => {
     expect(screen.getByLabelText('home screen').dataset.busy).toBe('true');
   });
 
-  it('opens dropped files, the picker, a recent document and the palette through the shell', async () => {
+  it('opens dropped files and a recent document through the shell', async () => {
     renderBody();
     await userEvent.click(screen.getByRole('button', { name: 'open files' }));
     expect(props.home.openFilesFromSurface).toHaveBeenCalledTimes(1);
     expect(props.home.openFilesFromSurface.mock.calls).toEqual([
       [[expect.objectContaining({ name: 'x.pdf' })]],
     ]);
-    await userEvent.click(screen.getByRole('button', { name: 'open picker' }));
-    expect(props.home.openViaPicker).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getByRole('button', { name: 'select recent' }));
     expect(props.home.selectRecent).toHaveBeenCalledWith({ id: 'recent-1' });
     await userEvent.click(screen.getByRole('button', { name: 'run command' }));
     expect(props.runHomeCommand).toHaveBeenCalledWith('file.new');
-    await userEvent.click(screen.getByRole('button', { name: 'open palette' }));
-    expect(shellStore.get().paletteOpen).toBe(true);
   });
 
   it('starts the batch dialog and the scanner from the start screen', async () => {
@@ -446,12 +441,14 @@ describe('ShellBody dialogs and status overlay', () => {
   it('mounts the standalone dialog hosts with and without a document', async () => {
     renderBody();
     expect(screen.getByLabelText('batch host')).toBeTruthy();
+    expect(screen.getByLabelText('report host')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'start result' }));
     expect(props.startResult).toHaveBeenCalledWith({ kind: 'started' });
     cleanup();
     openTab();
     renderBody();
     expect(screen.getByLabelText('batch host')).toBeTruthy();
+    expect(screen.getByLabelText('report host')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'start result' }));
     expect(props.startResult).toHaveBeenCalledTimes(2);
   });
@@ -469,6 +466,15 @@ describe('ShellBody dialogs and status overlay', () => {
     expect(screen.getByLabelText('activity overlay').dataset.notice).toBe('saved');
     await userEvent.click(screen.getByRole('button', { name: 'dismiss' }));
     expect(coreStore.get().notice).toBeNull();
+  });
+
+  it('hands the overlay the button the notice offers, and none once the notice is replaced', () => {
+    renderBody();
+    expect(screen.getByLabelText('activity overlay').dataset.noticeAction).toBe('null');
+    act(() => showNotice('applied', { label: 'Details', run: () => undefined }));
+    expect(screen.getByLabelText('activity overlay').dataset.noticeAction).toBe('Details');
+    act(() => showNotice('saved'));
+    expect(screen.getByLabelText('activity overlay').dataset.noticeAction).toBe('null');
   });
 
   it('shows the running operation’s progress and cancels it through the shell', async () => {

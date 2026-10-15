@@ -3,6 +3,7 @@ import type { Download, Page } from 'playwright/test';
 import { useAdvancedMode, useLanguage } from './settings';
 import { expect, test } from './test';
 import { authoredToolFixturePdf, readProducedEntry, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { applyForm, reviewHeading } from './ui-helpers';
 
 /**
  * The flows the parity work added, driven in the built app: the command palette's empty
@@ -68,7 +69,7 @@ test('comments: a note with a reply and a status leaves as XFDF and comes back a
   await page.getByRole('tab', { name: 'Comments', exact: true }).click();
 
   // An empty spot on the page (the fixture's marks sit in other bands).
-  await page.getByRole('button', { name: 'Add comment / Note', exact: true }).click();
+  await page.getByRole('button', { name: 'Add note', exact: true }).click();
   const sheet = await page.locator('.pdfViewer[data-active-viewer] .page').first().boundingBox();
   if (sheet === null) throw new Error('no page box');
   await page.mouse.click(sheet.x + 300, sheet.y + 400);
@@ -226,16 +227,13 @@ test('sanitize: the preview report comes first, and applying it takes the author
 
   const form = await openForm(page, 'Sanitize document', 'Sanitize document');
   await expect(form.getByRole('checkbox', { name: 'Document metadata' })).toBeChecked();
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  const report = form.getByRole('heading', { name: 'Operation report' });
-  const goOn = form.getByRole('button', { name: 'Continue', exact: true });
-  await expect(goOn.or(report)).toBeVisible({ timeout: 60_000 });
-  if (await goOn.isVisible()) await goOn.click();
-  await expect(report).toBeVisible({ timeout: 60_000 });
-  // The report says what was found before anything is written.
-  await expect(form).toContainText(/Metadata: \d+ items found, \d+ removed\./);
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
+  expect(await applyForm(form)).toBe('closed');
+  // The notice that says it was applied keeps the report one press away.
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  const report = page.getByRole('dialog', { name: 'Sanitize document' });
+  await expect(report).toContainText(/Metadata: \d+ items found, \d+ removed\./);
+  await report.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(report).toBeHidden();
 
   const after = await exported(page, 'after.pdf');
   expect(await readProducedEntry(after, 'trailer', 'Info', 'Author')).toBe('');
@@ -253,7 +251,7 @@ test('PDF/A: saving as PDF/A-2b opens a new tab whose own check says PDF/A-2b wi
   await expect(form.getByRole('radio', { name: 'PDF/A-2b (recommended)' })).toBeChecked();
   // The first press converts and reports; the second opens the result.
   await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 180_000 });
+  await expect(reviewHeading(form)).toBeVisible({ timeout: 180_000 });
   await expect(form).toContainText('The document was converted to PDF/A-2b');
   await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
 
@@ -315,7 +313,7 @@ test('accessibility: the PDF/UA view lists its rules with states, and the Tags v
   for (const role of ['H1', 'P', 'L', 'LI', 'Table', 'TR', 'TH', 'TD']) expect(roles).toContain(role);
 });
 
-test('home: the Start tab lays eight tiles out in full rows, and the status bar states the privacy claim', async ({
+test('home: the Start tab lays its tiles out in full rows, and the status bar states the privacy claim', async ({
   page,
 }) => {
   await page.goto('/editor/');
@@ -325,15 +323,26 @@ test('home: the Start tab lays eight tiles out in full rows, and the status bar 
   const boxes = await grid.locator(':scope > *').evaluateAll((tiles) =>
     tiles.map((tile) => {
       const box = tile.getBoundingClientRect();
-      return { top: Math.round(box.top), left: Math.round(box.left) };
+      return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right) };
     }),
   );
-  expect(boxes).toHaveLength(8);
-  // The rows, as the distinct tops: at 1440 px the tiles fill them completely, so a lone
-  // tile on a last row (what a seven-tile grid left behind) is a failure.
-  const rows = new Map<number, number>();
-  for (const box of boxes) rows.set(box.top, (rows.get(box.top) ?? 0) + 1);
-  expect([...rows.values()]).toEqual([4, 4]);
+  // The drop zone and six start cards. The drop zone is two columns wide, so at 1440 px the seven
+  // tiles make two full rows of four columns: three tiles, then four. A lone tile on a last row
+  // (what a seven-tile grid of equal tiles left behind) is a failure.
+  expect(boxes).toHaveLength(7);
+  const rows = new Map<number, { count: number; left: number; right: number }>();
+  for (const box of boxes) {
+    const row = rows.get(box.top) ?? { count: 0, left: box.left, right: box.right };
+    rows.set(box.top, {
+      count: row.count + 1,
+      left: Math.min(row.left, box.left),
+      right: Math.max(row.right, box.right),
+    });
+  }
+  const filled = [...rows.values()];
+  expect(filled.map((row) => row.count)).toEqual([3, 4]);
+  expect(new Set(filled.map((row) => row.left)).size).toBe(1);
+  expect(new Set(filled.map((row) => row.right)).size).toBe(1);
 
   await expect(page.getByRole('contentinfo')).toContainText('The document never leaves your device.');
 });
@@ -346,10 +355,10 @@ test('insert pages from a scan with nothing scanned says the input is missing, n
   await page.keyboard.press('Control+k');
   await paletteInput(page).fill('Insert pages');
   await page.keyboard.press('Enter');
-  const form = page.getByRole('region', { name: 'Insert Pages' });
+  const form = page.getByRole('region', { name: 'Insert pages' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('radio', { name: 'Scan with camera', exact: true }).check();
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(form.getByText('This operation has nothing to work with yet.')).toBeVisible({
     timeout: 30_000,
   });

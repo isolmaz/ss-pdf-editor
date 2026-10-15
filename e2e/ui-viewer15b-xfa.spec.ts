@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { readProducedEntry } from './tool-fixture';
-import { exportBytes, openPdf, runCommand } from './ui-helpers';
+import { applyForm, exportBytes, openPdf, runCommand } from './ui-helpers';
 import { dynamicXfaPdf, XFA_DATASETS, XFA_TEMPLATE } from './ui-xfa-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -45,12 +45,10 @@ function staticXfaPdf(): Uint8Array {
 const NEW_DATA =
   '<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><Name>Grace Hopper</Name><City>Arlington</City></form1></xfa:data></xfa:datasets>';
 
-/** Run the form's export: the report first, then the download it offers. */
+/** Run the form's export and read the file it downloads. */
 async function downloadData(page: Page, form: Locator): Promise<string> {
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
   const download = page.waitForEvent('download', { timeout: 60_000 });
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  await applyForm(form);
   const saved = await download;
   const path = test.info().outputPath(saved.suggestedFilename());
   await saved.saveAs(path);
@@ -79,10 +77,7 @@ test('import XFA data replaces the form values in the document', async ({ page }
     mimeType: 'application/xml',
     buffer: Buffer.from(NEW_DATA),
   });
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
+  await applyForm(form);
   // Read back through the export of the same dialog: the datasets now hold the imported values.
   await runCommand(page, 'Export or import XFA data');
   const again = page.getByRole('region', { name: 'XFA data' });
@@ -98,7 +93,7 @@ test('import XFA data without a file is refused, naming the missing file', async
   await runCommand(page, 'Export or import XFA data');
   const form = page.getByRole('region', { name: 'XFA data' });
   await form.getByRole('radio', { name: 'Import', exact: true }).check();
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   const alert = form.getByRole('alert');
   await expect(alert).toContainText('This operation has nothing to work with yet.', { timeout: 60_000 });
   await expect(alert.locator('[data-dialog-diagnostic]')).toHaveAttribute(
@@ -131,10 +126,7 @@ test('remove XFA on a static form drops the XFA entry and keeps the AcroForm fie
   await runCommand(page, 'Remove XFA');
   const form = page.getByRole('region', { name: 'Remove XFA' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await form.getByRole('button', { name: 'Remove XFA', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
+  expect(await applyForm(form, 'Remove XFA')).toBe('review');
   const bytes = await exportBytes(page, 'no-xfa.pdf');
   expect(await readProducedEntry(bytes, null, 'AcroForm', 'XFA')).toBe('');
   expect(await readProducedEntry(bytes, null, 'AcroForm', 'Fields', 0, 'T')).toBe('(Name)');

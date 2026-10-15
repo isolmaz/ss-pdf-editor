@@ -9,9 +9,17 @@ import {
   MagnifyingGlassPlus,
   Sidebar,
 } from '@phosphor-icons/react';
-import { formatPercent, type MessageKey, type Translator } from 'pdf-shared';
+import {
+  formatPercent,
+  type MessageKey,
+  nextZoomStop,
+  type Translator,
+  ZOOM_MAX,
+  ZOOM_MIN,
+} from 'pdf-shared';
 import { Tooltip } from 'pdf-ui/ui';
-import { useState } from 'react';
+import type { ZoomRequest } from 'pdf-ui/zoom';
+import { lazy, Suspense, useId, useState } from 'react';
 import { toggleLeftDock, useCore } from '../features/core/core-store';
 import { toggleReading, useReading } from '../features/reading/reading-store';
 
@@ -34,23 +42,29 @@ export interface PageNavigationProps {
   readonly pageCount: number;
   readonly onGoToPage: (pageIndex: number) => void;
   readonly zoom: number;
-  readonly onZoomChange: (zoom: number | 'page-width') => void;
+  readonly onZoomChange: (zoom: ZoomRequest) => void;
   /** Absent while the document cannot be edited. */
   readonly onRotate?: () => void;
   readonly onToggleFullscreen: () => void;
 }
 
+/**
+ * The zoom menu is a popover, and its floating-UI chunk would put the first paint over the
+ * JavaScript budget: it loads when the bar first shows, and the percentage is drawn as plain text
+ * until it has.
+ */
+const ZoomMenu = lazy(async () => {
+  const module = await import('pdf-ui/zoom');
+  return { default: module.ZoomMenu };
+});
+
 const ICON_BUTTON =
   'flex size-6 shrink-0 items-center justify-center rounded text-kumo-default transition-colors hover:bg-kumo-recessed hover:text-kumo-strong focus-visible:outline-2 focus-visible:outline-kumo-focus disabled:opacity-30';
 const PRESSED = 'bg-pdf-accent text-pdf-on-accent hover:bg-pdf-accent hover:text-pdf-on-accent';
 
-/** Zoom steps: a quarter at a time, inside the viewer's own 25 %–400 % range. */
-const ZOOM_STEP = 0.25;
-const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 4;
-
 function IconButton({
   label,
+  hint,
   icon: Glyph,
   onClick,
   disabled,
@@ -58,6 +72,8 @@ function IconButton({
   mirrored = false,
 }: {
   readonly label: string;
+  /** What the button does, in a sentence: the tooltip and the accessible description. */
+  readonly hint?: string;
   readonly icon: Icon;
   /** A direction glyph (previous/next) that turns over in a right-to-left UI. */
   readonly mirrored?: boolean;
@@ -66,10 +82,11 @@ function IconButton({
   readonly pressed?: boolean;
 }) {
   return (
-    <Tooltip label={label} side="top">
+    <Tooltip label={hint ?? label} side="top">
       <button
         type="button"
         aria-label={label}
+        aria-description={hint}
         {...(pressed === undefined ? {} : { 'aria-pressed': pressed })}
         disabled={disabled}
         onClick={onClick}
@@ -92,10 +109,11 @@ export function PageNavigation({
   onToggleFullscreen,
 }: PageNavigationProps) {
   const [pageInput, setPageInput] = useState<string | null>(null);
+  const [pageInvalid, setPageInvalid] = useState(false);
+  const pageMessageId = useId();
   const thumbnailsOpen = useCore((state) => state.leftDock);
   const readingActive = useReading((state) => state.reading);
   const label = (key: MessageKey) => t(key);
-  const zoomText = formatPercent(zoom, t.locale);
 
   return (
     <fieldset aria-label={t('nav.controls')} className="m-0 flex shrink-0 items-center gap-0.5 border-0 p-0">
@@ -110,9 +128,17 @@ export function PageNavigation({
         className="flex items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
-          const page = Number.parseInt(pageInput ?? '', 10);
-          if (!Number.isNaN(page) && page >= 1 && page <= pageCount) onGoToPage(page - 1);
-          setPageInput(null);
+          // Nothing typed: nothing to check.
+          if (pageInput === null) return;
+          const typed = pageInput.trim();
+          const page = /^\d+$/.test(typed) ? Number(typed) : Number.NaN;
+          if (page >= 1 && page <= pageCount) {
+            onGoToPage(page - 1);
+            setPageInput(null);
+          } else {
+            // Say so and keep what was typed, so the mistake is in front of the reader.
+            setPageInvalid(true);
+          }
         }}
       >
         <input
@@ -120,15 +146,28 @@ export function PageNavigation({
           inputMode="numeric"
           aria-label={label('nav.pageNumber')}
           value={pageInput ?? String(currentPage + 1)}
-          onChange={(event) => setPageInput(event.target.value)}
+          aria-invalid={pageInvalid}
+          aria-describedby={pageInvalid ? pageMessageId : undefined}
+          onChange={(event) => {
+            setPageInput(event.target.value);
+            setPageInvalid(false);
+          }}
           onFocus={(event) => {
             setPageInput(String(currentPage + 1));
             event.currentTarget.select();
           }}
-          onBlur={() => setPageInput(null)}
-          className="h-5 w-8 rounded-sm border border-kumo-line bg-kumo-base px-0.5 text-center text-xs tabular-nums text-kumo-strong focus:border-pdf-accent focus:outline-hidden"
+          onBlur={() => {
+            setPageInput(null);
+            setPageInvalid(false);
+          }}
+          className="h-5 w-8 rounded-sm border border-kumo-line bg-kumo-base px-0.5 text-center text-xs tabular-nums text-kumo-strong aria-invalid:border-kumo-danger focus:border-pdf-accent focus:outline-hidden"
         />
         <span className="tabular-nums text-kumo-subtle">/ {pageCount}</span>
+        {pageInvalid ? (
+          <span id={pageMessageId} role="alert" className="whitespace-nowrap text-kumo-danger">
+            {t('nav.pageInvalid', { count: pageCount })}
+          </span>
+        ) : null}
       </form>
       <IconButton
         label={label('nav.nextPage')}
@@ -144,29 +183,33 @@ export function PageNavigation({
         label={label('nav.zoomOut')}
         icon={MagnifyingGlassMinus}
         disabled={zoom <= ZOOM_MIN}
-        onClick={() => onZoomChange(Math.max(ZOOM_MIN, zoom - ZOOM_STEP))}
+        onClick={() => onZoomChange(nextZoomStop(zoom, 'out'))}
       />
-      <Tooltip label={label('nav.fitWidth')} side="top">
-        <button
-          type="button"
-          aria-label={`${label('nav.fitWidth')} (${zoomText})`}
-          onClick={() => onZoomChange('page-width')}
-          className="min-w-11 rounded px-1 text-xs font-semibold tabular-nums text-kumo-subtle transition-colors hover:bg-kumo-recessed hover:text-kumo-strong focus-visible:outline-2 focus-visible:outline-kumo-focus"
-        >
-          {zoomText}
-        </button>
-      </Tooltip>
+      <Suspense
+        fallback={
+          <span className="min-w-11 px-1 text-center text-xs font-semibold tabular-nums text-kumo-subtle">
+            {formatPercent(zoom, t.locale)}
+          </span>
+        }
+      >
+        <ZoomMenu t={t} zoom={zoom} onZoomChange={onZoomChange} />
+      </Suspense>
       <IconButton
         label={label('nav.zoomIn')}
         icon={MagnifyingGlassPlus}
         disabled={zoom >= ZOOM_MAX}
-        onClick={() => onZoomChange(Math.min(ZOOM_MAX, zoom + ZOOM_STEP))}
+        onClick={() => onZoomChange(nextZoomStop(zoom, 'in'))}
       />
 
       <span aria-hidden="true" className="mx-1 h-4 w-px bg-kumo-line" />
 
       {onRotate === undefined ? null : (
-        <IconButton label={label('nav.rotate')} icon={ArrowClockwise} onClick={onRotate} />
+        <IconButton
+          label={label('nav.rotate')}
+          hint={label('nav.rotate.hint')}
+          icon={ArrowClockwise}
+          onClick={onRotate}
+        />
       )}
       <IconButton
         label={label('nav.togglePages')}

@@ -27,9 +27,7 @@ export interface ShellActions {
   readonly deleteMarkSelection: () => boolean;
   readonly selectAllMarks: () => boolean;
   readonly toggleSensitiveSession: () => void;
-  readonly opfsSave: () => Promise<void>;
   readonly purgeActiveDocument: () => Promise<void>;
-  readonly sweepVault: () => Promise<void>;
   readonly checkOffline: () => Promise<void>;
   readonly prepareOfflinePackages: () => Promise<void>;
   /** Switch the interface mode; entering the simple mode also closes a dialog it hides. */

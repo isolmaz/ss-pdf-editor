@@ -10,7 +10,7 @@
  *    to the app. It never touches the document (state changes go
  *    through the model).
  *  - **`MeasureSettings`** — the tool's own settings strip: mode, scale, unit,
- *    grid spacing, snapping, colour/opacity/thickness/author, and the readout.
+ *    grid spacing, snapping, colour/opacity/thickness, and the readout.
  *    The shell mounts it once and owns the state it edits.
  *
  * ## Geometry, once
@@ -92,7 +92,6 @@ const MEASURE_KEYS = {
   color: 'ann.tool.color',
   opacity: 'ann.tool.opacity',
   thickness: 'ann.tool.thickness',
-  author: 'ann.tool.author',
   stop: 'ann.tool.stop',
   close: 'op.close',
 } as const;
@@ -188,8 +187,6 @@ export interface MeasureSettingsProps {
   readonly onOpacity: (opacity: number) => void;
   readonly thickness: number;
   readonly onThickness: (thickness: number) => void;
-  readonly author: string;
-  readonly onAuthor: (author: string) => void;
   /** The chain being clicked, as the layer reports it. */
   readonly reading: MeasureReading | null;
   readonly onStop: () => void;
@@ -422,7 +419,7 @@ export function MeasureLayer({
   // Escape, Enter and Backspace are the tool's own keys: a click chain needs its
   // own keyboard path (the shell's shortcut layer only knows single-shot tools).
   // They are the tool's only while the keyboard is not in a field: the strip's own
-  // Scale and Author inputs sit on the same page, and a Backspace taken from them
+  // Scale input sits on the same page, and a Backspace taken from them
   // would leave a typo that cannot be deleted (Enter would write the chain, Escape
   // end the tool, from inside a text box).
   useEffect(() => {
@@ -748,8 +745,6 @@ export function MeasureSettings({
   onOpacity,
   thickness,
   onThickness,
-  author,
-  onAuthor,
   reading,
   onStop,
 }: MeasureSettingsProps) {
@@ -896,16 +891,6 @@ export function MeasureSettings({
           value={thickness}
           onChange={(event) => onThickness(Number(event.target.value))}
           className={`${FIELD_CLASS} w-12`}
-        />
-      </label>
-
-      <label className="flex items-center gap-1">
-        {label(t, MEASURE_KEYS.author)}
-        <input
-          type="text"
-          value={author}
-          onChange={(event) => onAuthor(event.target.value)}
-          className={`${FIELD_CLASS} w-24`}
         />
       </label>
 

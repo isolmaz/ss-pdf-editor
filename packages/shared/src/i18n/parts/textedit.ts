@@ -30,7 +30,7 @@ export const texteditPart = {
   'textedit.align.justify': 'İki yana yasla',
   'textedit.font.auto': 'Özgün yazı tipine en yakın',
   'textedit.font.notoSans': 'Noto Sans (gömülür)',
-  'textedit.font.notoSansSemibold': 'Noto Sans Kalın (gömülür)',
+  'textedit.font.notoSansSemibold': 'Noto Sans SemiBold (gömülür)',
   'textedit.unit.pt': 'pt',
   'textedit.done': 'Metin güncellendi: {count} satır yeniden yazıldı.',
   'textedit.readFailed': 'Bu sayfanın metni okunamadı; düzenleme kapatıldı.',

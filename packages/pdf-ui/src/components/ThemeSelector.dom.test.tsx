@@ -60,30 +60,30 @@ function pressed(): string[] {
 describe('ThemeSelector in a page', () => {
   it('starts on system when nothing is stored', () => {
     render(<ThemeSelector t={t} />);
-    expect(pressed()).toEqual(['System Theme']);
+    expect(pressed()).toEqual(['System theme']);
   });
 
   it('starts on the stored light or dark mode, and on system for any other stored value', () => {
     window.localStorage.setItem(STORAGE_KEY, 'dark');
     const dark = render(<ThemeSelector t={t} />);
-    expect(pressed()).toEqual(['Dark Theme']);
+    expect(pressed()).toEqual(['Dark theme']);
     dark.unmount();
 
     window.localStorage.setItem(STORAGE_KEY, 'light');
     const light = render(<ThemeSelector t={t} />);
-    expect(pressed()).toEqual(['Light Theme']);
+    expect(pressed()).toEqual(['Light theme']);
     light.unmount();
 
     window.localStorage.setItem(STORAGE_KEY, 'sepia');
     render(<ThemeSelector t={t} />);
-    expect(pressed()).toEqual(['System Theme']);
+    expect(pressed()).toEqual(['System theme']);
   });
 
   it('a press on Dark stores it, paints the document dark and presses the button', () => {
     render(<ThemeSelector t={t} />);
-    fireEvent.click(screen.getByTitle('Dark Theme'));
+    fireEvent.click(screen.getByTitle('Dark theme'));
 
-    expect(pressed()).toEqual(['Dark Theme']);
+    expect(pressed()).toEqual(['Dark theme']);
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('dark');
     expect(document.documentElement.dataset.mode).toBe('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
@@ -92,7 +92,7 @@ describe('ThemeSelector in a page', () => {
   it('a press on Light paints the document light even when the system prefers dark', () => {
     preference.prefersDark = true;
     render(<ThemeSelector t={t} />);
-    fireEvent.click(screen.getByTitle('Light Theme'));
+    fireEvent.click(screen.getByTitle('Light theme'));
 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('light');
     expect(document.documentElement.dataset.mode).toBe('light');
@@ -103,14 +103,14 @@ describe('ThemeSelector in a page', () => {
     window.localStorage.setItem(STORAGE_KEY, 'light');
     preference.prefersDark = true;
     render(<ThemeSelector t={t} />);
-    fireEvent.click(screen.getByTitle('System Theme'));
+    fireEvent.click(screen.getByTitle('System theme'));
 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(document.documentElement.dataset.mode).toBe('dark');
 
     preference.prefersDark = false;
-    fireEvent.click(screen.getByTitle('Dark Theme'));
-    fireEvent.click(screen.getByTitle('System Theme'));
+    fireEvent.click(screen.getByTitle('Dark theme'));
+    fireEvent.click(screen.getByTitle('System theme'));
     expect(document.documentElement.dataset.mode).toBe('light');
     expect(document.documentElement.style.colorScheme).toBe('light');
   });
@@ -120,9 +120,9 @@ describe('ThemeSelector in a page', () => {
     const listen = (event: Event) => heard.push((event as CustomEvent).detail);
     window.addEventListener('pdf-theme-change', listen);
     render(<ThemeSelector t={t} />);
-    fireEvent.click(screen.getByTitle('Dark Theme'));
+    fireEvent.click(screen.getByTitle('Dark theme'));
     preference.prefersDark = true;
-    fireEvent.click(screen.getByTitle('System Theme'));
+    fireEvent.click(screen.getByTitle('System theme'));
     window.removeEventListener('pdf-theme-change', listen);
 
     expect(heard).toEqual([
@@ -143,10 +143,10 @@ describe('ThemeSelector in a page', () => {
       </>,
     );
     const second = screen.getByTestId('second');
-    fireEvent.click(screen.getByTestId('first').querySelector('[title="Dark Theme"]') as Element);
+    fireEvent.click(screen.getByTestId('first').querySelector('[title="Dark theme"]') as Element);
 
-    expect(second.querySelector('[title="Dark Theme"]')?.getAttribute('aria-pressed')).toBe('true');
-    expect(second.querySelector('[title="System Theme"]')?.getAttribute('aria-pressed')).toBe('false');
+    expect(second.querySelector('[title="Dark theme"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(second.querySelector('[title="System theme"]')?.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('follows the system preference live while on system, and not while a mode is chosen', () => {
@@ -162,7 +162,7 @@ describe('ThemeSelector in a page', () => {
     for (const listener of mediaListeners) listener();
     expect(document.documentElement.dataset.mode).toBe('light');
 
-    fireEvent.click(screen.getByTitle('Dark Theme'));
+    fireEvent.click(screen.getByTitle('Dark theme'));
     preference.prefersDark = false;
     for (const listener of mediaListeners) listener();
     expect(document.documentElement.dataset.mode).toBe('dark');
@@ -182,21 +182,21 @@ describe('ThemeSelector in a page', () => {
     expect(getStoredTheme()).toBe('system');
 
     render(<ThemeSelector t={t} />);
-    fireEvent.click(screen.getByTitle('Dark Theme'));
-    expect(pressed()).toEqual(['Dark Theme']);
+    fireEvent.click(screen.getByTitle('Dark theme'));
+    expect(pressed()).toEqual(['Dark theme']);
     expect(document.documentElement.dataset.mode).toBe('dark');
 
     preference.prefersDark = true;
-    fireEvent.click(screen.getByTitle('System Theme'));
+    fireEvent.click(screen.getByTitle('System theme'));
     expect(document.documentElement.dataset.mode).toBe('dark');
   });
 
   it('applyTheme called outside a selector paints the document and moves a mounted selector', () => {
     render(<ThemeSelector t={t} />);
-    fireEvent.click(screen.getByTitle('System Theme'));
+    fireEvent.click(screen.getByTitle('System theme'));
     act(() => applyTheme('light'));
 
-    expect(pressed()).toEqual(['Light Theme']);
+    expect(pressed()).toEqual(['Light theme']);
     expect(document.documentElement.dataset.mode).toBe('light');
   });
 });

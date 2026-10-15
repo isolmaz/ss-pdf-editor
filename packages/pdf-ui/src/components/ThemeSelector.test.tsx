@@ -16,17 +16,17 @@ describe('ThemeSelector', () => {
     );
 
     expect(buttons).toEqual([
-      ['Light Theme', 'false'],
-      ['Dark Theme', 'false'],
-      ['System Theme', 'true'],
+      ['Light theme', 'false'],
+      ['Dark theme', 'false'],
+      ['System theme', 'true'],
     ]);
     expect(markup).toContain('extra');
   });
 
   it('uses the other language’s words for the same buttons', () => {
     const markup = renderToStaticMarkup(<ThemeSelector t={createTranslator('tr')} />);
-    expect(markup).toContain('title="Açık Tema"');
-    expect(markup).toContain('title="Koyu Tema"');
-    expect(markup).toContain('title="Sistem Teması"');
+    expect(markup).toContain('title="Açık tema"');
+    expect(markup).toContain('title="Koyu tema"');
+    expect(markup).toContain('title="Sistem teması"');
   });
 });

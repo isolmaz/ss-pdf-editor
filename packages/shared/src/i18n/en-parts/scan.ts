@@ -1,12 +1,12 @@
 export const scanPart = {
   'scan.title': 'Scan with camera',
   'scan.intro':
-    'Photograph a document or pick photos. The page edges are found, the page is straightened and turned into a PDF. Everything stays on this device; no image is sent anywhere.',
+    'Photograph a document or pick photos. Page edges are found, the page is straightened and made into a PDF. Everything stays on this device; no image is sent.',
   'scan.command': 'Scan with camera',
   'home.start.scan.title': 'Scan with camera',
   'home.start.scan.desc': 'Photograph a document: edges found, page straightened, PDF made.',
   'home.tool.scan':
-    'Scan a document with the camera or from photos: edges found, page straightened, filter applied.',
+    'Photograph a document: its edges are found, the page is straightened and a clean PDF results.',
 
   'scan.camera.label': 'Camera preview',
   'scan.camera.select': 'Camera',

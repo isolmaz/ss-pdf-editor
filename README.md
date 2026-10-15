@@ -85,8 +85,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 ### Reading and navigation
 
-- **Home screen.** *Start* opens a PDF (or several, each in its own tab), creates a blank
-  document, builds a PDF from images, merges several PDFs in the order you choose or starts
+- **Home screen.** *Start* opens a PDF (or several, each in its own tab: drop them on the
+  first tile or click it to choose, the header's **Open** does the same), creates a blank
+  document, builds a PDF from images, merges several PDFs in the order you choose (drag the
+  files or use their arrow buttons) or starts
   a batch run, and lists recent documents with search, sorting and stars. *All tools* lays
   every tool out by task; pick a tool first and the editor asks for the file when the tool
   needs one. A file that does not open drops the tool, so it never runs on a later document.
@@ -102,6 +104,14 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
     leaving full screen. A browser that refuses full screen still shows the presentation
     layout in the page. Leaving restores the zoom you had.
+- **Page box.** The status bar's page box goes to the page typed. A number outside the document,
+  or text that is not a number, is marked invalid with a short message beside the box (for
+  example “Enter 1–5”) and the page stays where it was.
+- **Zoom.** `Ctrl+=` and `Ctrl+-` (and the status bar's plus and minus) step through the
+  standard levels, 25 · 33 · 50 · 67 · 75 · 90 · 100 · 110 · 125 · 150 · 175 · 200 · 250 · 300 ·
+  400 %, from wherever fit width left the page. The percentage in the status bar opens a menu
+  with those levels, fit width, fit page and a box for a typed value (25 to 400). The rotate
+  button next to it turns the current page in the document; it is one undoable step.
 - **Reading mode.** The page is shown as a text column. Read-aloud speaks it a sentence at a
   time, with pause, stop and a speed control, and uses only a speech voice installed on the
   device for the document's own language (the catalog `/Lang`, matched on its primary
@@ -118,11 +128,22 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   for it, then opens read-only. "Create unlocked copy" opens an editable copy in a new tab,
   and the password is kept in memory only. A file that only an owner password restricts
   opens without a prompt, is stored like any other and keeps its encryption when saved.
+- **Menus.** Each menu groups its entries into sections with a rule between them. An entry
+  that cannot be used says why when you hover it (for example "Open a document first." or
+  "Select a mark first."), and screen readers read the same text. The simple mode has no
+  Settings menu, since the header already has a Settings button; the palette still lists it.
 - **Shortcut list.** It is available in both languages from Help or `Ctrl+K`, even with no
   document open. The list is the binding table itself, so every chord it prints works.
   `Home`, `End`, `PageUp` and `PageDown` turn the document's page, except while the focus is
   in a menu bar or menu, a list, tree or grid, a tab strip or the form panel's field list:
   those keep the keys to move inside themselves.
+- **Tool letters.** A plain letter arms a tool, and the same letter puts it away again: `V`
+  select, `H` hand, `E` edit text, `T` add text, `U` markup (highlight, underline, strike-out,
+  squiggly: the look used last), `D` freehand draw, `R` shapes, `N` note, `K` link, `M`
+  measure, `X` redact. They work only without `Ctrl`, `Alt` or `Shift` held, outside a text
+  field, a menu, a list and a dialog, and only on an open document (the tools that write also
+  need it to be editable). Each tool's letter is in its rail tooltip and in the shortcut list.
+  `F4` toggles the page panel and `Shift+F4` the tools dock; `F5` is the browser's reload.
 
 ### Annotating, forms, measuring
 
@@ -132,7 +153,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   embedded Noto Sans, so Turkish letters survive in every reader. It stays upright on
   rotated pages.
 - **One tool rail.** The rail holds every canvas tool: select, hand, edit text, add text,
-  markup, ink, shapes, note, link, measure and redact.
+  markup, ink, shapes, note, link, measure and redact. On a phone it is a toolbar under the
+  document that scrolls sideways, and on a touch screen its buttons and the status bar's are
+  40 px.
   - The rail, menus, palette, context menu and keyboard all share one armed tool.
   - Text you selected before arming a markup tool is marked at once.
 - **One selection for every mark.** This covers session marks, measurements, staged
@@ -141,7 +164,12 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Then delete, rotate 90°, drag, or nudge by 5 pt. Every edit can be undone.
   - Selection deletes whole marks only, never page content. To remove page content
     securely, use redaction.
-- **Style.** The app sets colour, opacity, thickness and author. Multiply blending keeps
+- **Style.** The tool strip sets colour, opacity and thickness for the armed tool. Each tool
+  keeps its own style (a translucent yellow marker, solid underline, strike-out, squiggly, pen
+  and shape strokes, a yellow note, black typed text, the ruler), so changing the pen's colour
+  does not repaint the marker, and the styles are remembered on this device between visits. The
+  author a new mark carries is one setting (Settings → Marks), remembered the same way.
+  Multiply blending keeps
   text readable, and freehand strokes stay continuous in the exported file. A rectangle,
   circle or line writes its thickness as the annotation's border width (`/BS /W` and
   `/Border`), so other readers draw it and this editor reads the same thickness back.
@@ -166,11 +194,15 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     `#rrggbb` becomes the default colour and a date that is not a real one (month 13, hour 25)
     becomes the time of the import; a comment on a page the document does not have, or of a
     shape this app cannot draw, is skipped and counted in the notice.
-- **Operations in two steps.** Every operation opens in the tools panel. First you set it
-  up, then *Preview* runs it and shows a report. The report's own button applies the
-  result. Pop-up windows are used only for decisions that block, such as a password,
-  unsaved changes, a signature warning, export, print or settings, plus the XFA form
-  viewer, which needs the room.
+- **Operations apply at once.** Every operation opens in the tools panel. You set it up and
+  press *Apply*: a clean result goes straight into the document (or a new tab, or a
+  download) and a notice says so — *Ctrl+Z* undoes it, and the notice's *Details* button
+  opens the report, with the technical lines folded under *Technical details*. A result that
+  lost something, warns of something or only approximates what you asked for is shown first
+  as *Review the result*, warnings on top, and its own button applies it. A
+  destructive operation asks once before it runs. Pop-up windows are used only for
+  decisions that block, such as a password, unsaved changes, a signature warning, export,
+  print or settings, plus the XFA form viewer, which needs the room.
 - **Save versus Export.** *Save* writes over the file you opened; this needs Chromium
   and its File System Access API, and a document with no file yet asks where to save it
   first. The header's Save button and the Save entry of the menu and the palette are offered
@@ -421,7 +453,7 @@ nothing leaving the browser.
   it goes on the page.
   - It is written into the file at once as a `/Stamp` annotation with an image
     appearance, as one step that undo takes back. It stays upright on turned pages.
-  - **Add an image** places a PNG, JPEG, WebP, GIF or BMP the same way; transparency is
+  - **Add image** places a PNG, JPEG, WebP, GIF or BMP the same way; transparency is
     kept, and a JPEG that needs no turn or shrink keeps its own bytes.
   - Select a placed picture to move or turn it, or resize it from a corner handle (or the
     arrow keys on a focused handle). Resizing changes only `/Rect`; the image is not
@@ -641,7 +673,9 @@ The limits are defined once, in
   a touch-screen laptop with a mouse or trackpad stays on the desktop column. Mobile has no
   warning of its own: viewing-only starts at 300 pages, where a warning would.
 - **Memory gauge.** The status bar measures what the open documents hold against the render
-  cache figure of the column that applies.
+  cache figure of the column that applies. The gauge and the name of the column ("Desktop
+  limits" or "Mobile limits") appear only when they matter: when a document is over a limit
+  or the gauge reaches 75 %. They are hidden below 768 px.
 - **Viewing-only.** Above this threshold the document still opens and renders, but editing
   is disabled and the UI says why.
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two

@@ -3,13 +3,14 @@
 export const sanitizePart = {
   'sanitize.title': 'Sanitize document',
   'sanitize.intro':
-    'Remove, in one step, what the document carries that its pages do not show: scripts, attached files, metadata, hidden layers and private application data. Everything runs in this browser. The output is read back and every category you chose is checked to be really gone. Objects nothing refers to are always dropped. Digital signatures become invalid.',
+    'Removes what the pages do not show but the file holds: scripts, attachments, metadata, hidden layers. The result is verified; digital signatures become invalid.',
   'sanitize.remove': 'What to remove',
   'sanitize.removeHint':
-    'JavaScript covers launching programs, importing files and submitting forms too; links inside the document stay. The producer line stays in the metadata. Links to the web and comments are off by default: they are part of the content, and removing them changes how the pages look. Hidden layers are cut out only where the page can be shown to look the same.',
-  'sanitize.opt.javascript': 'JavaScript and actions that run code',
+    'Web links and comments are off by default because they are part of the content. Hidden layers are removed only where the page stays identical.',
+  'sanitize.opt.javascript':
+    'JavaScript and actions that run code (launching programs, importing files, submitting forms)',
   'sanitize.opt.files': 'Attached files',
-  'sanitize.opt.metadata': 'Document metadata',
+  'sanitize.opt.metadata': 'Document metadata (the producer line stays)',
   'sanitize.opt.private': 'Private application data',
   'sanitize.opt.thumbnails': 'Thumbnails',
   'sanitize.opt.layers': 'Hidden layers',
@@ -22,7 +23,7 @@ export const sanitizePart = {
   'sanitize.forms.flatten': 'Flatten into the page',
   'sanitize.forms.remove': 'Remove',
   'sanitize.done': 'Document sanitized: {count} items removed.',
-  'tools.sanitize': 'Sanitize Document',
+  'tools.sanitize': 'Sanitize document',
   'tools.sanitizeDesc': 'Remove scripts, attachments, metadata and hidden content in one step',
   'home.tool.sanitize': 'Remove scripts, attached files, metadata and hidden layers; the output is verified.',
 
@@ -63,7 +64,7 @@ export const sanitizePart = {
   'op.note.sanitize.signatureBroken':
     'The document carries a digital signature. Sanitizing rewrites the file, so the signature is no longer valid.',
   'op.note.sanitize.xfaDropped':
-    'The XFA form definition was dropped; the AcroForm fields were handled separately.',
+    'The XFA form definition was dropped; the form fields were handled separately.',
   'op.note.sanitize.media':
     '{count} 3D or rich media annotations are present; their own scripts are not read and were not changed.',
   'op.note.sanitize.unreadable': '{count} objects could not be read and were not scanned.',

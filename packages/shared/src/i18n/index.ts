@@ -1,4 +1,4 @@
-import { formatBytes } from '../format';
+import { formatBytes, formatPercent } from '../format';
 import { type Locale, localeInfo } from './locales';
 import type { MessageKey } from './tr';
 
@@ -44,8 +44,11 @@ export interface Translator {
   readonly locale: Locale;
 }
 
-/** `{name}`, or `{name:bytes}` for a byte count written as a size in the locale (`1,5 KB`). */
-const PARAM = /\{(\w+)(:bytes)?\}/g;
+/**
+ * `{name}`, `{name:bytes}` for a byte count written as a size in the locale (`1,5 KB`), or
+ * `{name:percent}` for a fraction written as a whole percent (`%25` in Turkish, `25%` in English).
+ */
+const PARAM = /\{(\w+)(?::(bytes|percent))?\}/g;
 
 /**
  * The dictionaries a key is looked up in, in order: the locale's own, its fallbacks',
@@ -86,10 +89,11 @@ export function createTranslator(locale: Locale = DEFAULT_LOCALE): Translator {
       }
     }
     if (params === undefined) return template;
-    return template.replace(PARAM, (match, name: string, bytes: string | undefined) => {
+    return template.replace(PARAM, (match, name: string, format: string | undefined) => {
       const value = params[name];
       if (value === undefined) return match;
-      return bytes === undefined ? String(value) : formatBytes(Number(value), locale);
+      if (format === undefined) return String(value);
+      return format === 'bytes' ? formatBytes(Number(value), locale) : formatPercent(Number(value), locale);
     });
   };
   return Object.assign(translate, { locale });

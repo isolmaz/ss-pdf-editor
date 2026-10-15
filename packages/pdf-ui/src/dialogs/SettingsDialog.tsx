@@ -8,8 +8,8 @@ import { ThemeSelector } from '../components/ThemeSelector';
 /**
  * Settings, in one place.
  *
- * Language, theme and the interface mode, the privacy switches and offline preparation
- * are gathered here, each with the sentence that says what it changes; the header keeps
+ * Language, theme and the interface mode, the author of new marks, the privacy switches and
+ * offline preparation are gathered here, each with the sentence that says what it changes; the header keeps
  * one button.
  *
  * The interface mode is a **choice between two named options**, not a toggle labelled
@@ -24,12 +24,13 @@ export interface SettingsDialogProps {
   readonly onClose: () => void;
   readonly mode: InterfaceMode;
   readonly onModeChange: (mode: InterfaceMode) => void;
+  /** Who new marks and notes are by; one global value, kept on this device. */
+  readonly author: string;
+  readonly onAuthorChange: (author: string) => void;
   /** The open document's privacy state; `null` when nothing is open. */
   readonly sensitive: boolean | null;
   readonly onToggleSensitive: () => void;
-  readonly onSaveDraft: () => void;
   readonly onPurgeDocument: () => void;
-  readonly onSweepVault: () => void;
   readonly onPrepareOffline: () => void;
   readonly onCheckOffline: () => void;
   readonly onShowShortcuts: () => void;
@@ -80,11 +81,11 @@ export function SettingsDialog({
   onClose,
   mode,
   onModeChange,
+  author,
+  onAuthorChange,
   sensitive,
   onToggleSensitive,
-  onSaveDraft,
   onPurgeDocument,
-  onSweepVault,
   onPrepareOffline,
   onCheckOffline,
   onShowShortcuts,
@@ -152,6 +153,18 @@ export function SettingsDialog({
             </fieldset>
           </Section>
 
+          <Section title={t('settings.section.annotations')}>
+            <Row label={t('settings.author')} hint={t('settings.author.hint')}>
+              <input
+                type="text"
+                value={author}
+                aria-label={t('settings.author')}
+                onChange={(event) => onAuthorChange(event.target.value)}
+                className="w-40 rounded-sm border border-kumo-line bg-kumo-base px-1.5 py-1 text-xs text-kumo-default"
+              />
+            </Row>
+          </Section>
+
           <Section title={t('settings.section.privacy')}>
             <Row label={t('settings.sensitive')} hint={t('settings.sensitive.hint')}>
               <input
@@ -165,11 +178,6 @@ export function SettingsDialog({
                 className="size-4 accent-current"
               />
             </Row>
-            <Row label={t('settings.saveDraft')} hint={t('settings.saveDraft.hint')}>
-              <Button size="sm" disabled={sensitive === null || sensitive} onClick={onSaveDraft}>
-                {t('settings.saveDraft.action')}
-              </Button>
-            </Row>
             <Row label={t('setting.purgeDocument')} hint={t('settings.purge.hint')}>
               <Button
                 size="sm"
@@ -178,11 +186,6 @@ export function SettingsDialog({
                 onClick={onPurgeDocument}
               >
                 {t('settings.purge.action')}
-              </Button>
-            </Row>
-            <Row label={t('setting.sweepVault')} hint={t('settings.sweep.hint')}>
-              <Button size="sm" onClick={onSweepVault}>
-                {t('settings.sweep.action')}
               </Button>
             </Row>
           </Section>

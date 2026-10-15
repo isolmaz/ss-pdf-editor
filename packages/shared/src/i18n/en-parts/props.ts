@@ -65,9 +65,9 @@ export const propsPart = {
     'The certificates in this file offer too many possible chains to try them all; the search stopped at its limit, so no chain was confirmed or ruled out.',
   'props.sig.revocation.indeterminate': 'Indeterminate',
   'props.sig.revocation.note':
-    'Revocation is read only from lists already on this device: the CRLs you import below and the CRLs and OCSP responses stored in the PDF. Nothing is fetched from the network; with no list for an issuer, the result is "indeterminate".',
+    'Revocation is read only from lists already on this device: CRLs you import and the CRLs and OCSP responses stored in the PDF. Nothing is fetched; with no list, the result is “indeterminate”.',
   'props.sig.trust.note':
-    'Certificate trust is evaluated solely against user-imported trust roots: certificate chain is validated via WebCrypto up to the root. If no roots were imported, result is "not checked" — this reflects lack of proof, not a negative verdict.',
+    'Certificate trust is checked only against the trust roots you imported. If none were imported, the result is “not checked”: a lack of evidence, not a negative verdict.',
   'props.sig.chain': 'Chain: {path}',
   'props.sig.roots.title': 'Imported trust roots',
   'props.sig.roots.empty':
@@ -95,7 +95,7 @@ export const propsPart = {
   'props.sig.reason.invalid':
     'Either covered bytes digest does not match messageDigest or signature could not be verified: document may have been altered.',
   'props.sig.reason.unchecked.layout':
-    'Signature dictionary not found in file bytes or /ByteRange and /Contents mismatched; local check skipped.',
+    'The signed part of the file could not be located or does not match its contents (possible tampering); local check skipped.',
   'props.sig.reason.unchecked.subFilter':
     'This signature format is not a direct CMS signature over byte range; not checked.',
   'props.sig.reason.unchecked.digest':

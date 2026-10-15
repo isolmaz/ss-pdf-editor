@@ -20,7 +20,7 @@ test('a free text box keeps the colour and size chosen in the strip, and a drag 
 }) => {
   await openPdf(page);
   await framed(page);
-  await rail(page, 'Add Text').click();
+  await rail(page, 'Add text').click();
   await page.getByLabel('Color', { exact: true }).first().fill('#ff0000');
   await page.getByLabel('Size', { exact: true }).fill('24');
   await clickAt(page, 100, 300);
@@ -66,7 +66,7 @@ test('a note is moved by a drag and its comment re-worded in the panel; the file
 }) => {
   await openPdf(page);
   await framed(page);
-  await rail(page, 'Add comment / Note').click();
+  await rail(page, 'Add note').click();
   await clickAt(page, 250, 300);
   await page.getByRole('tab', { name: 'Comments' }).click();
   const row = page.locator('ul[aria-label="Comments"] > li').filter({ hasText: 'unsaved' }).first();
@@ -114,7 +114,7 @@ test('a shape is moved by a drag, an interrupted drag leaves it where it was, an
 }) => {
   await openPdf(page);
   const frame = await framed(page);
-  await rail(page, 'Draw Shape (Rectangle)').click();
+  await rail(page, 'Draw shape').click();
   await dragPage(page, [380, 360], [500, 400]);
   const squares = (name: string) => exported(page, name, 'Square');
   const [placed] = await squares('square-1.pdf');

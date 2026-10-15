@@ -14,7 +14,8 @@
     "./printing": "./src/printing/PrintSurface.tsx",
     "./palette": "./src/commands/PaletteSurface.tsx",
     "./text-edit": "./src/ops/TextEditSurface.tsx",
-    "./scan": "./src/scan/ScanDialog.tsx"
+    "./scan": "./src/scan/ScanDialog.tsx",
+    "./zoom": "./src/shell/ZoomMenu.tsx"
   },
   "dependencies": {
     "@cloudflare/kumo": "2.13.2",

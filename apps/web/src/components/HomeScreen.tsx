@@ -17,8 +17,8 @@ import {
   FileArrowUp,
   FilePdf,
   FilePlus,
-  FolderOpen,
   Images,
+  Info,
   MagnifyingGlass,
   Stack,
   Star,
@@ -65,10 +65,8 @@ export interface HomeScreenProps {
   readonly t: Translator;
   /** A file the user chose or dropped here; with none, the shell opens its picker. */
   readonly onOpenFiles: (files: readonly File[]) => void;
-  readonly onOpenPicker: () => void;
   readonly onSelectRecent: (item: RecentDocumentItem) => void;
   readonly onStart: (action: HomeStartAction) => void;
-  readonly onOpenPalette: () => void;
   /** Every command; the tool grid is built from them whatever the interface mode. */
   readonly commands: readonly Command[];
   /** Commands that start a document and never need one open. */
@@ -151,13 +149,17 @@ function StartCard({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="group flex h-full flex-col rounded-lg border border-kumo-line bg-kumo-base p-4 text-start transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      className="group flex h-full flex-col rounded-lg border border-kumo-line bg-kumo-base p-4 text-start transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 max-sm:flex-row max-sm:items-center max-sm:gap-3 max-sm:p-2.5"
     >
-      <span className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-105">
+      <span className="mb-3 flex size-9 shrink-0 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-105 max-sm:mb-0 max-sm:size-8">
         {icon}
       </span>
-      <span className="text-sm font-semibold text-kumo-strong">{title}</span>
-      <span className="mt-1 text-xs leading-relaxed text-kumo-subtle">{description}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="text-sm font-semibold text-kumo-strong">{title}</span>
+        <span className="mt-1 text-xs leading-relaxed text-kumo-subtle max-sm:mt-0 max-sm:truncate">
+          {description}
+        </span>
+      </span>
     </button>
   );
 }
@@ -165,10 +167,8 @@ function StartCard({
 export function HomeScreen({
   t,
   onOpenFiles,
-  onOpenPicker,
   onSelectRecent,
   onStart,
-  onOpenPalette,
   commands,
   standaloneCommands,
   onRunCommand,
@@ -182,8 +182,10 @@ export function HomeScreen({
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('date');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showStored, setShowStored] = useState(false);
   const fileInputId = useId();
   const startPanelId = useId();
+  const storedId = useId();
   const toolsPanelId = useId();
   const locale = t.locale;
 
@@ -205,7 +207,7 @@ export function HomeScreen({
     recentTab === 'starred' ? recentItems.filter((item) => item.starred === true) : recentItems;
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-kumo-canvas px-4 py-6 text-kumo-default select-none md:px-12">
+    <div className="flex h-full flex-col overflow-y-auto bg-kumo-canvas px-4 py-6 text-kumo-default select-none max-sm:py-4 md:px-12">
       <input
         id={fileInputId}
         type="file"
@@ -238,14 +240,6 @@ export function HomeScreen({
             {t('home.tab.tools')}
           </TabButton>
         </div>
-        <button
-          type="button"
-          className="mb-2 flex items-center gap-1.5 text-xs font-medium text-kumo-strong hover:underline"
-          onClick={onOpenPalette}
-        >
-          <MagnifyingGlass size={14} aria-hidden="true" />
-          {t('home.palette')}
-        </button>
       </div>
 
       {topTab === 'tools' ? (
@@ -269,24 +263,25 @@ export function HomeScreen({
       ) : (
         <div id={startPanelId} role="tabpanel" className="flex flex-1 flex-col">
           <h2 className="sr-only">{t('home.start.title')}</h2>
-          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid grid-cols-1 gap-2 max-sm:mt-3 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4">
             <label
               htmlFor={fileInputId}
-              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus"
+              className="group flex cursor-pointer sm:col-span-2 flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus max-sm:flex-row max-sm:justify-start max-sm:gap-3 max-sm:p-2.5 max-sm:text-start"
             >
-              <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110">
+              <span className="mb-2 flex size-10 shrink-0 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110 max-sm:mb-0 max-sm:size-8">
                 <CloudArrowUp size={24} weight="duotone" aria-hidden="true" />
               </span>
-              <span className="text-xs font-semibold text-kumo-strong">{t('home.drop.title')}</span>
-              <span className="mt-1 text-[11px] text-kumo-subtle">{t('home.drop.desc')}</span>
+              <span className="flex min-w-0 flex-col">
+                {/* Nothing is dragged with a finger: on a touch screen the zone only says to open. */}
+                <span className="text-xs font-semibold text-kumo-strong pointer-coarse:hidden">
+                  {t('home.drop.title')}
+                </span>
+                <span className="hidden text-xs font-semibold text-kumo-strong pointer-coarse:inline">
+                  {t('home.drop.titleTouch')}
+                </span>
+                <span className="mt-1 text-[11px] text-kumo-subtle">{t('home.drop.desc')}</span>
+              </span>
             </label>
-            <StartCard
-              icon={<FolderOpen size={20} weight="duotone" />}
-              title={t('home.start.open.title')}
-              description={t('home.start.open.desc')}
-              onClick={onOpenPicker}
-              disabled={busy}
-            />
             <StartCard
               icon={<FilePlus size={20} weight="duotone" />}
               title={t('home.start.blank.title')}
@@ -331,23 +326,36 @@ export function HomeScreen({
             />
           </div>
 
-          <div className="mt-10 flex flex-1 flex-col">
+          <div className="mt-10 flex flex-1 flex-col max-sm:mt-6">
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-kumo-line">
-              <div role="tablist" aria-label={t('home.recentTab')} className="flex items-center gap-6">
-                <TabButton
-                  selected={recentTab === 'recent'}
-                  controls="home-recent"
-                  onSelect={() => setRecentTab('recent')}
+              <div className="flex items-center gap-4">
+                <div role="tablist" aria-label={t('home.recentTab')} className="flex items-center gap-6">
+                  <TabButton
+                    selected={recentTab === 'recent'}
+                    controls="home-recent"
+                    onSelect={() => setRecentTab('recent')}
+                  >
+                    {t('home.recentTab')}
+                  </TabButton>
+                  <TabButton
+                    selected={recentTab === 'starred'}
+                    controls="home-recent"
+                    onSelect={() => setRecentTab('starred')}
+                  >
+                    {t('home.starredTab')}
+                  </TabButton>
+                </div>
+                <button
+                  type="button"
+                  aria-expanded={showStored}
+                  aria-controls={storedId}
+                  aria-label={t('home.recent.about')}
+                  title={t('home.recent.about')}
+                  onClick={() => setShowStored((open) => !open)}
+                  className="mb-2 rounded p-1 text-kumo-subtle transition-colors hover:text-kumo-default focus-visible:outline-2 focus-visible:outline-kumo-focus"
                 >
-                  {t('home.recentTab')}
-                </TabButton>
-                <TabButton
-                  selected={recentTab === 'starred'}
-                  controls="home-recent"
-                  onSelect={() => setRecentTab('starred')}
-                >
-                  {t('home.starredTab')}
-                </TabButton>
+                  <Info size={14} aria-hidden="true" />
+                </button>
               </div>
               {recentItems.length > 0 ? (
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -413,6 +421,12 @@ export function HomeScreen({
               ) : null}
             </div>
 
+            {showStored ? (
+              <p id={storedId} className="mt-3 text-[11px] text-kumo-subtle">
+                {t('home.recent.stores')}
+              </p>
+            ) : null}
+
             <div id="home-recent" role="tabpanel" className="flex flex-1 flex-col">
               {displayedItems.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
@@ -426,7 +440,6 @@ export function HomeScreen({
                         ? t('home.noStarred')
                         : t('home.noRecent')}
                   </p>
-                  <p className="mt-1 max-w-sm text-xs text-kumo-subtle">{t('home.privacyNotice')}</p>
                 </div>
               ) : (
                 <div className="mt-3 overflow-x-auto">
@@ -518,7 +531,6 @@ export function HomeScreen({
                       ))}
                     </tbody>
                   </table>
-                  <p className="mt-4 text-[11px] text-kumo-subtle">{t('home.privacyNotice')}</p>
                 </div>
               )}
             </div>

@@ -11,11 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   annotationsStore,
   chooseAuthor,
-  chooseColor,
-  chooseFontSize,
-  chooseOpacity,
-  chooseTextColor,
-  chooseThickness,
+  chooseStyle,
   existingAnnotationsRead,
   heldEngineValues,
   holdEngineValues,
@@ -25,63 +21,93 @@ import {
   orphanSweepSettled,
   orphanSweepStarted,
   releaseEngineValues,
-  useAnnotationStyle,
-  useAnnotations,
+  useAnnotationAuthor,
+  useToolStyle,
 } from './annotations-store';
 
 const draft = (dropped = 0): EngineValuesDraft => ({ entries: [], dropped });
 
-beforeEach(() => annotationsStore.set(initialAnnotationsState()));
-afterEach(cleanup);
+beforeEach(() => {
+  localStorage.clear();
+  annotationsStore.set(initialAnnotationsState());
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
-describe('the annotation style', () => {
-  it('starts as the marker a first-time user gets', () => {
-    expect(annotationsStore.get().style).toEqual({
-      color: '#ffd400',
-      textColor: '#000000',
-      fontSize: 12,
-      opacity: 0.4,
-      thickness: 2,
-      author: '',
-    });
+describe('the annotation styles', () => {
+  it('start per tool: a translucent marker, solid underline, ink and shapes, a yellow note, black text', () => {
+    const { styles } = annotationsStore.get();
+    expect(styles.highlight).toEqual({ color: '#ffd400', opacity: 0.4, thickness: 2, fontSize: 12 });
+    expect(styles.measure).toEqual(styles.highlight);
+    for (const tool of ['underline', 'strikeout', 'squiggly', 'ink', 'shapes', 'note', 'freetext'] as const) {
+      expect(styles[tool].opacity, tool).toBe(1);
+    }
+    expect(styles.note.color).toBe('#ffd400');
+    expect(styles.freetext.color).toBe('#000000');
+    expect(styles.ink.color).not.toBe(styles.highlight.color);
+    expect(annotationsStore.get().author).toBe('');
   });
 
-  it('changes one value at a time and leaves the others as they were', () => {
-    chooseColor('#ff0000');
-    chooseTextColor('#00ff00');
-    chooseFontSize(18);
-    chooseOpacity(0.9);
-    chooseThickness(5);
+  it('changes one value of one tool and leaves its other values and every other tool as they were', () => {
+    const before = annotationsStore.get().styles;
+    chooseStyle('ink', { color: '#ff0000' });
+    chooseStyle('ink', { opacity: 0.9, thickness: 5 });
+    chooseStyle('freetext', { fontSize: 18 });
     chooseAuthor('Ada');
-    expect(annotationsStore.get().style).toEqual({
-      color: '#ff0000',
-      textColor: '#00ff00',
-      fontSize: 18,
-      opacity: 0.9,
-      thickness: 5,
-      author: 'Ada',
-    });
+    const { styles, author } = annotationsStore.get();
+    expect(styles.ink).toEqual({ ...before.ink, color: '#ff0000', opacity: 0.9, thickness: 5 });
+    expect(styles.freetext).toEqual({ ...before.freetext, fontSize: 18 });
+    expect(styles.highlight).toBe(before.highlight);
+    expect(styles.shapes).toBe(before.shapes);
+    expect(author).toBe('Ada');
   });
 
-  it('re-renders a reader only when a value really changed', () => {
+  it('remembers the styles: a store started after a change reads them back', async () => {
+    chooseStyle('shapes', { color: '#00ff00', thickness: 7 });
+    vi.resetModules();
+    const fresh = await import('./annotations-store');
+    expect(fresh.annotationsStore.get().styles.shapes).toMatchObject({ color: '#00ff00', thickness: 7 });
+    expect(fresh.annotationsStore.get().styles.highlight).toEqual(annotationsStore.get().styles.highlight);
+  });
+
+  it('writes the styles only when a value really changed', () => {
+    const setItem = vi.fn();
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem });
+    chooseStyle('ink', { color: '#123456' });
+    chooseStyle('ink', { color: '#123456' });
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(setItem.mock.calls[0]?.[1] as string).ink.color).toBe('#123456');
+  });
+
+  it('re-renders a reader of one tool only when that tool`s style changed', () => {
     const renders = vi.fn();
     const { result } = renderHook(() => {
       renders();
-      return useAnnotationStyle();
+      return useToolStyle('ink');
     });
     const first = result.current;
-    act(() => chooseColor('#ffd400'));
+    act(() => chooseStyle('ink', { color: first.color }));
+    act(() => chooseStyle('highlight', { color: '#123456' }));
     expect(result.current).toBe(first);
     expect(renders).toHaveBeenCalledTimes(1);
-    act(() => chooseColor('#123456'));
-    expect(result.current.color).toBe('#123456');
+    act(() => chooseStyle('ink', { color: '#654321' }));
+    expect(result.current.color).toBe('#654321');
     expect(renders).toHaveBeenCalledTimes(2);
   });
 
-  it('lets a component select any part of the state', () => {
-    const { result } = renderHook(() => useAnnotations((state) => state.style.author));
+  it('keeps the author apart from the styles, and lets a component read it', () => {
+    const { result } = renderHook(() => useAnnotationAuthor());
     act(() => chooseAuthor('Grace'));
     expect(result.current).toBe('Grace');
+  });
+
+  it('remembers the author: a store started after a change starts with it', async () => {
+    chooseAuthor('Grace');
+    vi.resetModules();
+    const fresh = await import('./annotations-store');
+    expect(fresh.annotationsStore.get().author).toBe('Grace');
   });
 });
 

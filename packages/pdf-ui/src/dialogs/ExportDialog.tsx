@@ -9,7 +9,8 @@ type OfficeLayout = 'layout' | 'flow' | 'page-images';
 export interface ExportOptions {
   readonly kind: 'pdf' | 'compressed' | 'images' | 'text' | 'office';
   readonly compressionLevel?: 'high' | 'medium' | 'low';
-  readonly imageFormat?: 'png' | 'jpg';
+  readonly imageFormat?: 'png' | 'jpeg' | 'webp';
+  readonly textFormat?: 'text' | 'markdown';
   readonly officeFormat?: 'docx' | 'xlsx' | 'csv';
   /** Word only: the exact layout (text boxes), flowing text, or one picture per page. */
   readonly officeLayout?: OfficeLayout;
@@ -28,7 +29,8 @@ export interface ExportDialogProps {
 export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }: ExportDialogProps) {
   const [selectedKind, setSelectedKind] = useState<ExportOptions['kind']>('pdf');
   const [compressionLevel, setCompressionLevel] = useState<'high' | 'medium' | 'low'>('medium');
-  const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png');
+  const [imageFormat, setImageFormat] = useState<'png' | 'jpeg' | 'webp'>('png');
+  const [textFormat, setTextFormat] = useState<'text' | 'markdown'>('text');
   const [officeFormat, setOfficeFormat] = useState<'docx' | 'xlsx' | 'csv'>('docx');
   const [officeLayout, setOfficeLayout] = useState<OfficeLayout>('layout');
   const formId = useId();
@@ -38,6 +40,7 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
       kind: selectedKind,
       compressionLevel,
       imageFormat,
+      textFormat,
       officeFormat,
       officeLayout,
     });
@@ -114,7 +117,7 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
               value={compressionLevel}
               disabled={selectedKind !== 'compressed'}
               onChange={(e) => setCompressionLevel(e.target.value as 'high' | 'medium' | 'low')}
-              className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
+              className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
               onClick={(e) => e.stopPropagation()}
             >
               <option value="high">{t('export.levelHigh')}</option>
@@ -151,12 +154,13 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
             <select
               value={imageFormat}
               disabled={selectedKind !== 'images'}
-              onChange={(e) => setImageFormat(e.target.value as 'png' | 'jpg')}
-              className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
+              onChange={(e) => setImageFormat(e.target.value as 'png' | 'jpeg' | 'webp')}
+              className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
               onClick={(e) => e.stopPropagation()}
             >
-              <option value="png">PNG</option>
-              <option value="jpg">JPG</option>
+              <option value="png">{t('export.images.format.png')}</option>
+              <option value="jpeg">{t('export.images.format.jpeg')}</option>
+              <option value="webp">{t('export.images.format.webp')}</option>
             </select>
           </label>
 
@@ -178,9 +182,17 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
               />
               <span className="text-xs font-semibold text-kumo-strong">{t('export.textFormat')}</span>
             </div>
-            <span className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold uppercase text-kumo-subtle">
-              TXT
-            </span>
+            <select
+              value={textFormat}
+              disabled={selectedKind !== 'text'}
+              onChange={(e) => setTextFormat(e.target.value as 'text' | 'markdown')}
+              aria-label={t('export.textFormat')}
+              className="rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-[11px] font-semibold text-kumo-strong outline-none focus:border-pdf-accent disabled:opacity-40"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <option value="text">{t('export.text.format.text')}</option>
+              <option value="markdown">{t('export.text.format.markdown')}</option>
+            </select>
           </label>
 
           {/* Option 5: Word, Excel or CSV */}

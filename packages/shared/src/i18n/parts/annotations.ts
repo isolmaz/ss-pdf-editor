@@ -38,7 +38,7 @@ export const annotationsPart = {
   'ann.comment': 'Yorum metni',
   'ann.remove': 'Sil',
   'ann.clear': 'Tümünü sil',
-  'ann.captured': '{count} not motordan devralındı; kaydettiğinizde dosyaya yazılacak.',
+  'ann.captured': '{count} not belgeden alındı; kaydettiğinizde dosyaya yazılacak.',
 
   // Data interchange (`annotation-data.ts`): the review as a file of its own, so a
   // review can move between machines without the PDF carrying it.
@@ -56,12 +56,11 @@ export const annotationsPart = {
   'ann.tool.strikeout': 'Üstü çizili',
   'ann.tool.squiggly': 'Dalgalı çizgi',
   'ann.tool.ink': 'Serbest çizim',
-  'ann.tool.shapes': 'Dikdörtgen',
+  'ann.tool.shapes': 'Şekil çiz',
   'ann.tool.note': 'Not ekle',
   'ann.tool.color': 'Renk',
   'ann.tool.opacity': 'Saydamlık',
   'ann.tool.thickness': 'Kalınlık',
-  'ann.tool.author': 'Yazar',
   'ann.tool.stop': 'Aracı kapat',
 
   // The active tool's property strip (`tools/ToolProperties.tsx`): what the next
@@ -70,7 +69,6 @@ export const annotationsPart = {
   // colour, a thickness and an opacity, so those three are what a mark tool offers.
   'ann.tool.selection': 'Seçim',
   'ann.tool.selection.count': '{count} işaret seçili',
-  'ann.tool.selection.none': 'Seçili işaret yok',
   'ann.tool.deleteSelection': 'Seçilenleri sil',
   'ann.tool.rotateSelection': '90° döndür',
   'ann.tool.moveSelection': 'Seçimi taşı',
@@ -97,7 +95,7 @@ export const annotationsPart = {
   // `writeShapeAnnotations`).
   'op.progress.annotate': 'Notlar yazılıyor',
   'op.progress.annotate.retag': 'Altı çizili ve üstü çizili biçimler düzeltiliyor',
-  'op.note.annotate.engine': '{count} not motorun kendi yazıcısıyla eklendi (artımlı güncelleme).',
+  'op.note.annotate.engine': '{count} not, dosyanın sonuna eklenen artımlı bir güncellemeyle yazıldı.',
   'op.note.annotate.incremental': 'Dosya biçimi artımlı kaldı: yalnızca yeni nesneler yazıldı.',
   'op.note.annotate.retagged':
     '{count} notun türü gerçek biçimine çevrildi (altı çizili / üstü çizili / dalgalı).',

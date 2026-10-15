@@ -5,6 +5,7 @@ import type { DeviceTier, Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { lazy, Suspense } from 'react';
 import { isCommandVisible, visibleCommands } from '../../commands';
+import { chooseAuthor, useAnnotationAuthor } from '../annotations/annotations-store';
 import { useCore } from '../core/core-store';
 import type { ShellActions } from './shell-actions';
 import { closePalette, closeSettings, useShell } from './shell-store';
@@ -63,9 +64,7 @@ export interface SettingsHostProps {
     ShellActions,
     | 'changeMode'
     | 'toggleSensitiveSession'
-    | 'opfsSave'
     | 'purgeActiveDocument'
-    | 'sweepVault'
     | 'prepareOfflinePackages'
     | 'checkOffline'
     | 'showShortcuts'
@@ -75,6 +74,7 @@ export interface SettingsHostProps {
 export function SettingsHost({ session, tier, t, actions }: SettingsHostProps) {
   const settingsOpen = useShell((state) => state.settingsOpen);
   const mode = useCore((state) => state.mode);
+  const author = useAnnotationAuthor();
   const { activeTab } = useEditState(session, tier);
   if (!settingsOpen) return null;
   return (
@@ -84,11 +84,11 @@ export function SettingsHost({ session, tier, t, actions }: SettingsHostProps) {
         onClose={closeSettings}
         mode={mode}
         onModeChange={actions.changeMode}
+        author={author}
+        onAuthorChange={chooseAuthor}
         sensitive={activeTab === null ? null : activeTab.sensitive}
         onToggleSensitive={actions.toggleSensitiveSession}
-        onSaveDraft={() => void actions.opfsSave()}
         onPurgeDocument={() => void actions.purgeActiveDocument()}
-        onSweepVault={() => void actions.sweepVault()}
         onPrepareOffline={() => void actions.prepareOfflinePackages()}
         onCheckOffline={() => void actions.checkOffline()}
         onShowShortcuts={() => {

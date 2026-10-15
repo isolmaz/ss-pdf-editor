@@ -17,8 +17,9 @@ import type { CanvasToolId } from 'pdf-ui/tools';
 import { Tooltip } from 'pdf-ui/ui';
 import { Fragment } from 'react';
 import { SIMPLE_MODE_RAIL_TOOLS } from '../commands';
-import { pickTool, useCore } from '../features/core/core-store';
+import { pressTool, useCore } from '../features/core/core-store';
 import { isMarkupTool } from '../features/core/tools';
+import { toolShortcutHint, withShortcut } from '../useShortcuts';
 
 /**
  * The tool rail: **every** canvas tool, in one column beside the document.
@@ -35,6 +36,10 @@ import { isMarkupTool } from '../features/core/tools';
  * The four text-markup kinds share one button: they are one gesture (select text,
  * release) with four looks, so the strip under the header picks the look and the button
  * is pressed for any of them. Pressing it arms the look used last.
+ *
+ * Below 640 px the column would take an eighth of a phone's width, so the same buttons lay
+ * out as a toolbar under the document (`EditorSurface` puts it last) that scrolls sideways.
+ * On a touch screen the buttons are 40 px, the size a finger can hit.
  */
 
 /** One rail button: the tool it arms (or the markup group), its icon and its name. */
@@ -80,41 +85,42 @@ export interface ToolRailProps {
  * at a glance rather than inferred from a slightly lighter background.
  */
 const BUTTON_CLASS =
-  'flex size-9 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-kumo-focus disabled:cursor-not-allowed disabled:opacity-40';
+  'flex size-9 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-kumo-focus disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:size-10';
 const ARMED_CLASS = 'bg-pdf-accent text-pdf-on-accent ring-1 ring-inset ring-pdf-on-accent/30';
 const IDLE_CLASS = 'text-kumo-default hover:bg-kumo-recessed hover:text-kumo-strong';
 
 export function ToolRail({ t, canEdit }: ToolRailProps) {
   const activeTool = useCore((state) => state.canvasTool);
-  const markupTool = useCore((state) => state.markupTool);
   const mode = useCore((state) => state.mode);
   const specs = mode === 'simple' ? RAIL.filter((spec) => SIMPLE_MODE_RAIL_TOOLS.includes(spec.id)) : RAIL;
   return (
     <nav
       aria-label={t('tools.all')}
-      className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-contain border-e border-kumo-line bg-kumo-base py-2 select-none"
+      className="order-last flex shrink-0 items-center gap-1 overflow-x-auto overscroll-contain border-t border-kumo-line bg-kumo-base px-2 py-1 select-none max-sm:[scrollbar-width:none] sm:order-none sm:w-12 sm:flex-col sm:overflow-x-visible sm:overflow-y-auto sm:border-e sm:border-t-0 sm:px-0 sm:py-2"
     >
       {specs.map((spec) => {
         const armed = spec.id === 'markup' ? isMarkupTool(activeTool) : activeTool === spec.id;
         const label = t(spec.labelKey);
+        const shortcut = toolShortcutHint(spec.id);
         const Glyph = spec.icon;
         return (
           <Fragment key={spec.id}>
             {spec.startsGroup === true ? (
-              <span aria-hidden="true" className="my-1 h-px w-7 shrink-0 bg-kumo-line" />
+              <span
+                aria-hidden="true"
+                className="mx-1 h-7 w-px shrink-0 bg-kumo-line sm:mx-0 sm:my-1 sm:h-px sm:w-7"
+              />
             ) : null}
-            <Tooltip label={label} side="right">
+            <Tooltip label={withShortcut(label, shortcut)} side="right">
               <button
                 type="button"
                 aria-label={label}
                 aria-pressed={armed}
+                aria-keyshortcuts={shortcut}
                 disabled={spec.mutating && !canEdit}
-                onClick={() => {
-                  // A second press on the armed tool puts the pointer back in select,
-                  // the same toggle the menus and the palette offer.
-                  const target = spec.id === 'markup' ? markupTool : spec.id;
-                  pickTool(armed && spec.id !== 'select' ? 'select' : target);
-                }}
+                // A second press on the armed tool puts the pointer back in select,
+                // the same toggle the menus, the palette and the tool letters offer.
+                onClick={() => pressTool(spec.id)}
                 className={`${BUTTON_CLASS} ${armed ? ARMED_CLASS : IDLE_CLASS}`}
               >
                 <Glyph size={18} weight={armed ? 'fill' : 'regular'} aria-hidden="true" />

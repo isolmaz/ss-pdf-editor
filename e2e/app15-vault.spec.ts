@@ -129,9 +129,9 @@ test('an unreadable manifest is counted, the readable draft still returns, and a
   await expect(page.locator(CANVAS).first()).toBeVisible();
 
   // A reference graph with an unreadable member is incomplete: the purge refuses to guess.
-  await palette(page, 'Delete Stored Copies of This Document');
+  await palette(page, 'Delete stored copies of this document');
   await expect(
-    notice(page, 'The vault inventory could not be read completely, so nothing was deleted.'),
+    notice(page, 'The list of stored copies could not be read completely, so nothing was deleted.'),
   ).toBeVisible({
     timeout: 30_000,
   });

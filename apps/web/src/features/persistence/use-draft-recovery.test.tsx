@@ -335,6 +335,30 @@ describe('useDraftRecovery', () => {
     expect(notice()).toBeNull();
   });
 
+  it('sweeps the blobs nothing references once the drafts are back, and keeps theirs', async () => {
+    persistenceStore.set({ channel: fakeChannel() });
+    stored(manifest('draft', { sourceKey: 'src-draft' }));
+    storage.sources.set('orphan', new Uint8Array([9]));
+    await recover();
+    await vi.waitFor(() => expect(storage.sources.has('orphan')).toBe(false));
+    expect(storage.sources.has('src-draft')).toBe(true);
+    expect(notice()).toBe(en('draft.restored', { count: 1 }));
+  });
+
+  it('does not sweep when the shell is gone before the recent handles are pruned', async () => {
+    persistenceStore.set({ channel: fakeChannel() });
+    storage.sources.set('orphan', new Uint8Array([9]));
+    const { promise: pruned, resolve } = Promise.withResolvers<undefined>();
+    outside.pruneRecentHandles.mockReturnValue(pruned);
+    const view = render(<Recovery translator={{ current: en }} />);
+    await act(() => vi.waitFor(() => expect(outside.pruneRecentHandles).toHaveBeenCalled()));
+    view.unmount();
+    resolve(undefined);
+    await act(() => pruned);
+    await act(() => Promise.resolve());
+    expect(storage.sources.has('orphan')).toBe(true);
+  });
+
   it('does not replay over live tabs when only the interface language changes', async () => {
     stored(manifest('draft'));
     const translator = { current: en };

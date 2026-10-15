@@ -46,7 +46,7 @@ test('the Select second document button of the comparison tab opens the chooser 
   page,
 }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Doc', 2));
-  await runCommand(page, 'Document comparison');
+  await runCommand(page, 'Compare documents');
   await expect(page.getByText('Select a second PDF to compare.')).toBeVisible();
   await chooseFiles(
     page,

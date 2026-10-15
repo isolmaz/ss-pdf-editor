@@ -45,7 +45,7 @@ export const verifyPart = {
   'verify.reason.unverified': 'işlem tanınmadı: {steps}',
   'verify.reason.no-reference': 'karşılaştırılacak belge yok',
   'verify.reason.engine-cannot': 'okuyucu bu bilgiyi veremiyor',
-  'verify.reason.pending-storage': 'motorun bekleyen açıklama deposu referansla çakışıyor',
+  'verify.reason.pending-storage': 'bekleyen açıklama deposu referansla çakışıyor',
   'verify.reason.trust-policy':
     'imza geçerliliği güven politikası gerektirir; kaydetme yolu bunu ayrıca denetler',
 } as const;

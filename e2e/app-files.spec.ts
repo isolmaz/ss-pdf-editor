@@ -197,7 +197,7 @@ test('Ctrl+Shift+S asks how to export; the plain PDF choice downloads the edited
   await rotateCurrentPage(page);
   await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeEnabled({ timeout: 30_000 });
   await page.keyboard.press('Control+Shift+S');
-  const dialog = page.getByRole('dialog', { name: 'Download / Export' });
+  const dialog = page.getByRole('dialog', { name: 'Export options' });
   await expect(dialog).toBeVisible();
   // Escape puts the dialog away without exporting.
   await page.keyboard.press('Escape');
@@ -227,7 +227,7 @@ test('closing an edited document: cancel keeps it, export saves a copy, discard 
   await page.getByRole('button', { name: 'Close tab' }).click();
   const dialog = page.getByRole('dialog', { name: /Close "close.pdf"/ });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText('This document has no file handle')).toBeVisible();
+  await expect(dialog.getByText(/Export starts a download/)).toBeVisible();
 
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();

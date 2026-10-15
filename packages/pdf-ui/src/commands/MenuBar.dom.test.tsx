@@ -135,6 +135,47 @@ describe('MenuBar opening and closing with the pointer', () => {
     expect(danger?.className).toContain('text-kumo-danger');
   });
 
+  it('draws a rule where the section changes, and nowhere else', async () => {
+    const sectioned = [
+      command('a', 'panel.pages', 'file', { section: 0 }),
+      command('b', 'panel.outline', 'file', { section: 0 }),
+      command('c', 'panel.attachments', 'file', { section: 1 }),
+      command('d', 'panel.layers', 'file', { section: 2 }),
+    ];
+    show(sectioned);
+    await userEvent.click(trigger('File'));
+    // Entries and rules in the order drawn: a rule sits between two sections, never at an end.
+    const drawn = [...menu().children].map((child) => (child.tagName === 'HR' ? '---' : child.textContent));
+    expect(drawn).toEqual(['Pages', 'Outline', '---', 'Attachments', '---', 'Layers']);
+    expect(within(menu()).getAllByRole('separator')).toHaveLength(2);
+    // The rules are not entries: the keyboard walks the four entries.
+    expect(items()).toHaveLength(4);
+  });
+
+  it('draws no rule in a menu whose entries carry no section', async () => {
+    show();
+    await userEvent.click(trigger('File'));
+    expect(within(menu()).queryAllByRole('separator')).toHaveLength(0);
+  });
+
+  it('explains a disabled entry with its reason, and an enabled one with nothing', async () => {
+    const reasoned = [
+      command('a', 'panel.pages', 'file', { disabled: true, disabledReason: 'cmd.reason.noDocument' }),
+      command('b', 'panel.outline', 'file', { disabled: true }),
+      command('c', 'panel.attachments', 'file', { disabledReason: 'cmd.reason.noDocument' }),
+    ];
+    show(reasoned);
+    await userEvent.click(trigger('File'));
+    const [withReason, withoutReason, enabled] = items();
+    const text = t('cmd.reason.noDocument');
+    expect(withReason?.getAttribute('title')).toBe(text);
+    expect(withReason?.getAttribute('aria-description')).toBe(text);
+    expect(withoutReason?.hasAttribute('title')).toBe(false);
+    expect(withoutReason?.hasAttribute('aria-description')).toBe(false);
+    expect(enabled?.hasAttribute('title')).toBe(false);
+    expect(enabled?.hasAttribute('aria-description')).toBe(false);
+  });
+
   it('highlights the first enabled entry and leaves focus on the trigger when opened by a press', async () => {
     show([outline, pages, attachments]);
     await userEvent.click(trigger('File'));

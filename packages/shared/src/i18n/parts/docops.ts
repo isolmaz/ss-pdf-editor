@@ -39,7 +39,7 @@ export const docopsPart = {
   'op.note.stamp.overContent': 'Filigran sayfa içeriğinin üzerine çizildi.',
   'op.note.stamp.imageEmbedded': 'Filigran görseli gömüldü: {name}',
   'op.note.stamp.noPrint':
-    'Yazdırma engeli PDF optik katmanı (OCG, yazdırma durumu kapalı) ile uygulandı; katmanları yok sayan görüntüleyiciler damgayı yine yazdırabilir.',
+    'Yazdırma engeli, damga yazdırmada gizlenen bir katmana konarak uygulandı; katmanları yok sayan görüntüleyiciler damgayı yine yazdırabilir.',
 
   /* imposition: N-up, booklet, poster */
   'op.note.impose.sheets': '{sheets} yaprak üretildi.',

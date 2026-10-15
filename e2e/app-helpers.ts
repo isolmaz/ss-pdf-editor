@@ -194,9 +194,13 @@ export async function readFile(page: Page, name: string): Promise<Uint8Array> {
   return new Uint8Array(values);
 }
 
+/** The status bar's turn button: it shares its name with the thumbnails' and the menu's, so it is found by its group. */
+export const statusRotate = (page: Page): Locator =>
+  page.getByRole('group', { name: 'Page and view controls' }).getByRole('button', { name: 'Rotate right' });
+
 /** Rotate the page on screen from the status bar (a real, journaled page action). */
 export async function rotateCurrentPage(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Rotate Page (90°)', exact: true }).click();
+  await statusRotate(page).click();
   await expect(notice(page, 'Applied')).toBeVisible({ timeout: 30_000 });
 }
 

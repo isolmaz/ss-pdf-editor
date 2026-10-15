@@ -4,16 +4,16 @@
  */
 
 export const convertPart = {
-  'convert.title': 'Belgeyi PDF’e dönüştür',
+  'convert.title': 'Belgeyi PDF’ye dönüştür',
   'convert.intro':
-    'Word, Excel, PowerPoint, HTML, metin, CSV, EPUB ya da FB2 dosyasını bu tarayıcıda PDF’e dönüştürün. Birden çok dosya seçerseniz listedeki sırayla tek bir PDF olur.',
+    'Word, Excel, PowerPoint, HTML, metin, CSV, EPUB ya da FB2 dosyasını bu tarayıcıda PDF’ye dönüştürün. Birden çok dosya, listedeki sırayla tek PDF olur.',
   'convert.files': 'Dosyalar',
   'convert.hint':
     'DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. Eski DOC, XLS ve PPT biçimleri desteklenmez.',
   'convert.pageSize': 'Sayfa boyutu',
   'convert.margin': 'Kenar boşluğu (mm)',
-  'convert.command': 'Belgeyi PDF’e dönüştür (Word, Excel, PowerPoint…)',
-  'convert.opened': '{format} dosyası PDF’e dönüştürülüp yeni sekmede açıldı.',
+  'convert.command': 'Belgeyi PDF’ye dönüştür',
+  'convert.opened': '{format} dosyası PDF’ye dönüştürülüp yeni sekmede açıldı.',
   'convert.unsupported':
     '{kind} dosyaları dönüştürülemiyor. Desteklenen biçimler: DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. Dosyayı bunlardan birinde kaydedip yeniden deneyin.',
   'convert.imageOpened': 'Görsel, PDF sayfası olarak yeni sekmede açıldı.',
@@ -21,7 +21,7 @@ export const convertPart = {
 
   'op.progress.convert.read': 'Belge okunuyor',
   'op.progress.convert.write': 'Sayfalar yerleştiriliyor ve PDF yazılıyor',
-  'op.note.convert.done': '{name}: {format} dosyası {pages} sayfalık PDF’e dönüştürüldü.',
+  'op.note.convert.done': '{name}: {format} dosyası {pages} sayfalık PDF’ye dönüştürüldü.',
   'op.note.convert.docxApproximate':
     'Word belgesinin metni, başlıkları, listeleri, tabloları, bağlantıları ve görselleri aktarıldı; sayfa düzeni, yazı tipleri, üst/alt bilgiler ve dipnot yerleşimi birebir korunmaz.',
   'op.note.convert.xlsxApproximate':
@@ -41,7 +41,7 @@ export const convertPart = {
   'op.note.convert.linksSkipped':
     '{count} bağlantı, güvenli olmayan bir adres şeması taşıdığı için eklenmedi.',
 
-  'home.start.convert.title': 'PDF’e dönüştür',
+  'home.start.convert.title': 'PDF’ye dönüştür',
   'home.start.convert.desc': 'Word, Excel, PowerPoint, HTML ya da metin dosyasını PDF yapın.',
-  'home.tool.convert': 'Word, Excel, PowerPoint, HTML, metin ve e-kitapları PDF’e dönüştürün.',
+  'home.tool.convert': 'Word, Excel, PowerPoint, HTML, metin ve e-kitapları PDF’ye dönüştürün.',
 } as const;

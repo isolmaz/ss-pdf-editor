@@ -215,7 +215,22 @@ The interface ships in Turkish and English. To add a language:
 The language picker lists it, the browser's language selects it on a first visit, and
 dates and numbers are formatted with its `id`. In a sentence, a percentage is written where
 the language puts the sign (`%{value}` in Turkish, `{value}%` in English) and a byte size is
-a `{name:bytes}` placeholder, which the translator writes with the locale's decimal mark.
+a `{name:bytes}` placeholder, which the translator writes with the locale's decimal mark;
+a share is a `{name:percent}` placeholder (a fraction, `0.25` is `%25` and `25%`).
+
+## Wording the interface
+
+`packages/shared/src/i18n/copy.test.ts` pins these rules, so a string that breaks one fails with
+its key:
+
+- One name per tool on every surface (home tile, menu, palette, rails, panel, dialog title,
+  context menu), in both languages.
+- Labels are in sentence case. A Turkish suffix after `PDF` follows how it is said: `PDF’ye`,
+  `PDF’yi`, `PDF’de`, `PDF’den`, `PDF’nin`.
+- An ellipsis ends only a menu or palette command that opens a dialog asking for more input;
+  a title or heading never has one.
+- A dialog's opening line or hint is at most 160 characters and names no library, storage or
+  file-format internals (`OCG`, `OPFS`, engine names).
 
 A right-to-left language mirrors the interface through `<html dir>`, so interface code
 uses logical classes (`ms-`/`me-`, `ps-`/`pe-`, `start-`/`end-`, `border-s`/`border-e`,

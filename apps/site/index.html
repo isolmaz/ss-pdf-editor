@@ -221,7 +221,7 @@
             <p class="mt-2 text-xs leading-relaxed text-kumo-subtle">
               Düzenleyiciyi bir kez açtığınızda başlangıç sayfası, arayüz metinleri ve yazı tipleri bu cihaza
               kaydedilir. Ayarlar → Çevrimdışı kullanım içindeki Hazırla’ya bastığınızda her aracın kodu ve PDF
-              motorları da saklanır; böylece uçakta veya seyahatte bir PDF’i açıp düzenleyebilir ve dışa
+              motorları da saklanır; böylece uçakta veya seyahatte bir PDF’yi açıp düzenleyebilir ve dışa
               aktarabilirsiniz. OCR ve PDF/A dönüştürücü internetle bir kez kullanıldıktan sonra çevrimdışı çalışır.
             </p>
           </div>
@@ -341,7 +341,7 @@
               <li>· Statik XFA: normal form gibi doldurulur ve XFA verisi de güncellenir; formun zaten taşıdığı imza, imzaladığı içeriği kapsamaya devam eder</li>
               <li>· Dinamik XFA: pdf.js’in XFA oluşturucusuyla kendi penceresinde doldurun, girdiğiniz veriyi kaydedin ve XML olarak dışa aktarın</li>
               <li>· XFA verisini Acrobat’ın “Veriyi dışa aktar” XML’i olarak içe ve dışa aktarma</li>
-              <li>· Normal bir PDF’e düzleştirme veya XFA’yı kaldırıp yalnızca AcroForm’u tutma; XFA betikleri ve hesaplamaları çalışmaz</li>
+              <li>· Normal bir PDF’ye düzleştirme veya XFA’yı kaldırıp yalnızca AcroForm’u tutma; XFA betikleri ve hesaplamaları çalışmaz</li>
             </ul>
           </div>
 
@@ -375,8 +375,8 @@
             </div>
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Dönüştürme & Oluşturma</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
-              <li>· Word (DOCX), Excel (XLSX), PowerPoint (PPTX), HTML, metin/Markdown, CSV/TSV, EPUB ve FB2 dosyalarını tarayıcıda PDF’e dönüştürme</li>
-              <li>· PDF’i düzenlenebilir Word, Excel veya CSV dosyasına dönüştürme; Word için üç düzen seçilebilir: tam düzen (varsayılan) sayfayı göründüğü gibi korur; metin, PDF’teki harf konumlarına yerleştirilmiş düzenlenebilir kutulardadır, PDF’in yazı tipleri lisansı izin verdiği ölçüde belgeye gömülür, şekiller, resimler, renkler ve bağlantılar yerindedir (iki yana yaslı paragraflar, her sözcük yerinde kalsın diye sola yaslı yazılır); uzun metin düzenlemek için akan metin; ya da her sayfanın birebir tek resim olduğu hâli (22 inçten büyük sayfalar orantılı küçültülür). Tam düzende taranmış bir sayfa seçtiğiniz dillerde (varsayılan Türkçe ve İngilizce) OCR ile okunur ve resimlerinin üzerinde düzenlenebilir metne dönüşür; OCR’ın emin olmadığı sözcükler Word yorumuyla işaretlenir; Word, Excel ve CSV dosyası sunulmadan önce geri okunarak doğrulanır; rapor neyin taşınmadığını söyler (Word çıktısında bırakılan resimlerin sayısı dahil)</li>
+              <li>· Word (DOCX), Excel (XLSX), PowerPoint (PPTX), HTML, metin/Markdown, CSV/TSV, EPUB ve FB2 dosyalarını tarayıcıda PDF’ye dönüştürme</li>
+              <li>· PDF’yi düzenlenebilir Word, Excel veya CSV dosyasına dönüştürme; Word için üç düzen seçilebilir: tam düzen (varsayılan) sayfayı göründüğü gibi korur; metin, PDF’deki harf konumlarına yerleştirilmiş düzenlenebilir kutulardadır, PDF’nin yazı tipleri lisansı izin verdiği ölçüde belgeye gömülür, şekiller, resimler, renkler ve bağlantılar yerindedir (iki yana yaslı paragraflar, her sözcük yerinde kalsın diye sola yaslı yazılır); uzun metin düzenlemek için akan metin; ya da her sayfanın birebir tek resim olduğu hâli (22 inçten büyük sayfalar orantılı küçültülür). Tam düzende taranmış bir sayfa seçtiğiniz dillerde (varsayılan Türkçe ve İngilizce) OCR ile okunur ve resimlerinin üzerinde düzenlenebilir metne dönüşür; OCR’ın emin olmadığı sözcükler Word yorumuyla işaretlenir; Word, Excel ve CSV dosyası sunulmadan önce geri okunarak doğrulanır; rapor neyin taşınmadığını söyler (Word çıktısında bırakılan resimlerin sayısı dahil)</li>
               <li>· Sayfaları PNG, JPEG veya WebP görseli olarak dışa aktarma; görsellerden PDF oluşturma</li>
               <li>· Dönüştürme içeriği korur, birebir görünümü değil; eski DOC, XLS, PPT, OpenDocument ve RTF dönüştürülmez</li>
             </ul>
@@ -450,7 +450,7 @@
               <li>· PKCS#12 kimliğinizle, isteğe bağlı görünür damgalı PAdES B-B standardında yerel dijital imza</li>
               <li>· Çizilmiş, yazılmış veya kâğıttan fotoğraflanmış imza ve paraf; bunlar sertifikalı imza değil, sayfadaki bir görseldir</li>
               <li>· İmza doğrulama: bütünlük, güven, iptal ve kapsam ayrı ayrı bildirilir; RSA ve ECDSA anahtarları; güven yalnızca içe aktardığınız sertifikalara dayanır</li>
-              <li>· İptal bilgisi cihazınızdaki CRL’lerden ve PDF’e gömülü iptal verisinden okunur, ağdan çekilmez; RFC 3161 zaman damgaları çevrimdışı doğrulanır</li>
+              <li>· İptal bilgisi cihazınızdaki CRL’lerden ve PDF’ye gömülü iptal verisinden okunur, ağdan çekilmez; RFC 3161 zaman damgaları çevrimdışı doğrulanır</li>
             </ul>
           </div>
 
@@ -819,7 +819,7 @@
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
               Düzenleyiciyi ilk açtığınızda başlangıç sayfası, arayüz metinleri ve yazı tipleri tarayıcı önbelleğinize
               kaydedilir. <strong class="font-medium text-kumo-strong">Ayarlar → Çevrimdışı kullanım → Hazırla</strong>
-              gerisini önceden indirir: her aracın kodunu, PDF motorlarını ve yazı tiplerini. Hazır dediğinde, bir PDF’i
+              gerisini önceden indirir: her aracın kodunu, PDF motorlarını ve yazı tiplerini. Hazır dediğinde, bir PDF’yi
               hiç çevrimiçi açmamış bir cihazda bile uçak modunda açabilir, düzenleyebilir ve dışa aktarabilirsiniz.
               OCR motoru ve dil paketleri ile PDF/A dönüştürücü internetle bir kez kullanıldıktan sonra çevrimdışı
               çalışır. Hazırla kullanılmadıysa, bu cihazda daha önce kullanmadığınız bir araç ilk kez internet ister.
@@ -937,7 +937,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Evet. DOCX, XLSX, PPTX, HTML, metin/Markdown, CSV/TSV, EPUB ve FB2 dosyaları açıldığında ya da düzenleyiciye bırakıldığında tarayıcıda PDF’e dönüştürülür ve yeni sekmede açılır; sonuç seçilip aranabilen gerçek metindir. Dönüştürme belgenin içeriğini korur, sayfa düzenini, yazı tiplerini ve biçimlendirmeyi birebir korumaz; her rapor neyin yaklaştırıldığını söyler. Eski DOC, XLS ve PPT biçimleri, OpenDocument ve RTF dönüştürülmez. PDF’ten Word, Excel veya CSV’ye aktarma da vardır; PDF paragrafları ve tabloları saklamadığından bunlar sayfadan yeniden kurulur ve hatalı olabilir. Word’ün tam düzeninde taranmış sayfa OCR ile okunur (başka dil seçmezseniz Türkçe ve İngilizce), böylece metni düzenlenebilir olur; OCR’ın emin olmadığı sözcüklere Word yorumu eklenir.
+              Evet. DOCX, XLSX, PPTX, HTML, metin/Markdown, CSV/TSV, EPUB ve FB2 dosyaları açıldığında ya da düzenleyiciye bırakıldığında tarayıcıda PDF’ye dönüştürülür ve yeni sekmede açılır; sonuç seçilip aranabilen gerçek metindir. Dönüştürme belgenin içeriğini korur, sayfa düzenini, yazı tiplerini ve biçimlendirmeyi birebir korumaz; her rapor neyin yaklaştırıldığını söyler. Eski DOC, XLS ve PPT biçimleri, OpenDocument ve RTF dönüştürülmez. PDF’den Word, Excel veya CSV’ye aktarma da vardır; PDF paragrafları ve tabloları saklamadığından bunlar sayfadan yeniden kurulur ve hatalı olabilir. Word’ün tam düzeninde taranmış sayfa OCR ile okunur (başka dil seçmezseniz Türkçe ve İngilizce), böylece metni düzenlenebilir olur; OCR’ın emin olmadığı sözcüklere Word yorumu eklenir.
             </div>
           </details>
 
@@ -981,7 +981,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Çizilmiş, yazılmış veya fotoğraflanmış imza sayfaya konan bir görseldir; kimin imzaladığını ya da belgenin sonradan değişip değişmediğini kanıtlamaz, iletişim kutusu da bunu söyler. Bunun için PKCS#12 kimliğinizle PAdES B-B imzası atın. Yeni imza zaman damgası ve iptal verisi taşımaz, çünkü sormak için bir ağ yoktur. Doğrulamada güven yalnızca içe aktardığınız sertifikalara dayanır ve iptal durumu yalnızca cihazınızdaki listelerden ve PDF’in kendi içine gömülü iptal verisinden okunur; hiçbiri yoksa yanıt “bilinmiyor” olur.
+              Çizilmiş, yazılmış veya fotoğraflanmış imza sayfaya konan bir görseldir; kimin imzaladığını ya da belgenin sonradan değişip değişmediğini kanıtlamaz, iletişim kutusu da bunu söyler. Bunun için PKCS#12 kimliğinizle PAdES B-B imzası atın. Yeni imza zaman damgası ve iptal verisi taşımaz, çünkü sormak için bir ağ yoktur. Doğrulamada güven yalnızca içe aktardığınız sertifikalara dayanır ve iptal durumu yalnızca cihazınızdaki listelerden ve PDF’nin kendi içine gömülü iptal verisinden okunur; hiçbiri yoksa yanıt “bilinmiyor” olur.
             </div>
           </details>
 
@@ -1003,7 +1003,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Evet: Dosya → Kamerayla tara (ana ekranda ve Ctrl+K paletinde de var). Telefonda arka kamera açılır, görüntü cihazınızdan çıkmaz ve kamera yalnızca tararken çalışır. Kamera yoksa ya da izin vermediyseniz fotoğraf dosyalarını seçebilirsiniz. Kamera güvenli bağlantı (https veya localhost) ister. Sayfa kenarlarından bulunur ve düzeltilir; çıktı arşiv kalitesinde çoğaltma için değildir. Oluşan PDF’i OCR ile aranabilir hale getirebilirsiniz.
+              Evet: Dosya → Kamerayla tara (ana ekranda ve Ctrl+K paletinde de var). Telefonda arka kamera açılır, görüntü cihazınızdan çıkmaz ve kamera yalnızca tararken çalışır. Kamera yoksa ya da izin vermediyseniz fotoğraf dosyalarını seçebilirsiniz. Kamera güvenli bağlantı (https veya localhost) ister. Sayfa kenarlarından bulunur ve düzeltilir; çıktı arşiv kalitesinde çoğaltma için değildir. Oluşan PDF’yi OCR ile aranabilir hale getirebilirsiniz.
             </div>
           </details>
 

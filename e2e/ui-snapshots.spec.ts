@@ -216,7 +216,7 @@ test('a mark that has not been saved is in the picture', async ({ page }) => {
   const before = await magentaOf(page, (await saveSnapshot(page, await openSnapshot(page))).bytes);
 
   // A magenta text box, drawn on the page and not saved: the shell's overlay, not the engine's page.
-  await rail(page, 'Add Text').click();
+  await rail(page, 'Add text').click();
   await page.getByLabel('Color', { exact: true }).first().fill('#ff00ff');
   await page.getByLabel('Size', { exact: true }).fill('24');
   await clickAt(page, 100, 300);

@@ -17,7 +17,7 @@ import { ActivityOverlay } from '../../components/ActivityOverlay';
 import { HomeScreen } from '../../components/HomeScreen';
 import type { RecentDocumentItem } from '../../recent';
 import { clearNotice, useCore } from '../core/core-store';
-import { BatchDialogHost, StartDialogHost } from '../dialogs/DialogSurfaces';
+import { BatchDialogHost, ReportDialogHost, StartDialogHost } from '../dialogs/DialogSurfaces';
 import { openBatchDialog } from '../dialogs/dialogs-store';
 import { useOpen } from '../open/open-store';
 import { requestCancel } from '../pages/page-actions';
@@ -27,8 +27,6 @@ import { openScanDialog, useResults } from '../results/results-store';
 import type { DocumentDockProps } from './DocumentDock';
 import { requestEditor, useEditorSurfaces } from './editor-store';
 import type { RightDockProps } from './RightDock';
-import type { ShellActions } from './shell-actions';
-import { openPalette } from './shell-store';
 import { useEditState } from './use-edit-state';
 import type { ViewerAreaProps } from './ViewerArea';
 
@@ -41,7 +39,6 @@ export interface ShellBodyProps {
   readonly dialogContext: RightDockProps['dialogContext'];
   readonly home: {
     readonly openFilesFromSurface: (files: readonly File[]) => Promise<void>;
-    readonly openViaPicker: ShellActions['openViaPicker'];
     readonly openStart: (id: string) => void;
     readonly selectRecent: (item: RecentDocumentItem) => void;
   };
@@ -58,6 +55,7 @@ export function ShellBody(props: ShellBodyProps) {
   const editor = useEditorSurfaces();
   const busy = useCore((state) => state.busy);
   const notice = useCore((state) => state.notice);
+  const noticeAction = useCore((state) => state.noticeAction);
   const opening = useOpen((state) => state.opening);
   const progress = useResults((state) => state.progress);
   const openIds = useMemo(() => new Set(tabs.map((tab) => tab.id)), [tabs]);
@@ -73,7 +71,6 @@ export function ShellBody(props: ShellBodyProps) {
         <HomeScreen
           t={t}
           onOpenFiles={(files) => void props.home.openFilesFromSurface(files)}
-          onOpenPicker={() => void props.home.openViaPicker()}
           onStart={(action) => {
             if (action === 'batch') openBatchDialog();
             else if (action === 'scan') openScanDialog();
@@ -96,7 +93,6 @@ export function ShellBody(props: ShellBodyProps) {
           activeDocumentName={activeTab === null ? null : activeTab.name}
           openIds={openIds}
           onSelectRecent={props.home.selectRecent}
-          onOpenPalette={openPalette}
           busy={busy}
         />
       ) : (
@@ -116,11 +112,13 @@ export function ShellBody(props: ShellBodyProps) {
           static import here is what put Kumo's dialog primitives on the first-paint graph, and a
           `lazy` boundary that is mounted unconditionally still fetches immediately. */}
       <StartDialogHost t={t} onResult={props.startResult} />
+      <ReportDialogHost t={t} />
       <ScanDialogHost t={t} onDocument={results.scanDocument} />
       <BatchDialogHost t={t} />
       <ActivityOverlay
         t={t}
         notice={notice}
+        noticeAction={noticeAction}
         onDismiss={clearNotice}
         progress={progress}
         onCancel={() => requestCancel({ t })}

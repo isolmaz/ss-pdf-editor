@@ -7,7 +7,7 @@
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
-import { openPdf, runCommand } from './ui-helpers';
+import { openPdf, reviewHeading, runCommand } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -20,19 +20,19 @@ async function openForm(page: Page, command: string, region: string): Promise<Lo
 }
 
 async function expectRefused(form: Locator, message: string, diagnostic: string): Promise<void> {
-  await form.getByRole('button', { name: /^(Preview|Sign)$/ }).click();
+  await form.getByRole('button', { name: /^(Apply|Sign)$/ }).click();
   const alert = form.getByRole('alert');
   await expect(alert).toContainText(message, { timeout: 60_000 });
   await expect(alert.locator('[data-dialog-diagnostic]')).toHaveAttribute(
     'data-dialog-diagnostic',
     diagnostic,
   );
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
 }
 
 test('signing without a certificate container is refused, naming the missing file', async ({ page }) => {
   await openPdf(page, 'contract.pdf', labelledPdf('Contract', 1));
-  const form = await openForm(page, 'Sign document', 'Sign Document (PAdES B-B)');
+  const form = await openForm(page, 'Sign document', 'Sign document');
   await expectRefused(form, 'This operation has nothing to work with yet.', 'no PKCS#12 file was chosen');
 });
 

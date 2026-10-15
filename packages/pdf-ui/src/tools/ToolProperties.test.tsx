@@ -20,7 +20,6 @@ function show(tool: CanvasToolId, overrides: Partial<ToolPropertiesProps> = {}) 
     onColor: vi.fn(),
     onOpacity: vi.fn(),
     onThickness: vi.fn(),
-    onAuthor: vi.fn(),
     onShape: vi.fn(),
   };
   render(
@@ -30,7 +29,6 @@ function show(tool: CanvasToolId, overrides: Partial<ToolPropertiesProps> = {}) 
       color="#ff0000"
       opacity={0.8}
       thickness={3}
-      author="Ann"
       shape="square"
       selectedCount={0}
       {...handlers}
@@ -50,7 +48,7 @@ const has = (name: string) => inputs(name).length > 0;
 
 describe('the sentence for what the pointer does now', () => {
   it.each<[CanvasToolId, string]>([
-    ['select', 'Click a mark, or drag to select several.'],
+    ['select', 'Click or drag to select marks.'],
     ['hand', 'Drag the page to scroll.'],
     ['text', 'Click the paragraph you want to edit.'],
     ['freetext', 'Click where the text goes; click outside or press Ctrl+Enter when done.'],
@@ -95,7 +93,7 @@ describe('the four text-markup looks', () => {
     expect(buttons.map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
       ['Highlight', 'false'],
       ['Underline', 'true'],
-      ['Strikeout', 'false'],
+      ['Strikethrough', 'false'],
       ['Squiggly', 'false'],
     ]);
     await userEvent.setup().click(within(group).getByRole('button', { name: 'Squiggly' }));
@@ -121,7 +119,6 @@ describe('typed text', () => {
     expect(control('Size').value).toBe('18');
     expect(has('Opacity')).toBe(false);
     expect(has('Thickness')).toBe(false);
-    expect(control('Author').value).toBe('Ann');
   });
 
   it('starts black at 12 pt', () => {
@@ -186,10 +183,10 @@ describe('the properties a tool carries', () => {
     ['select', []],
     ['hand', []],
     ['highlight', ['Color', 'Opacity', 'Thickness']],
-    ['underline', ['Color', 'Opacity', 'Thickness', 'Author']],
-    ['ink', ['Color', 'Opacity', 'Thickness', 'Author']],
-    ['shapes', ['Color', 'Opacity', 'Thickness', 'Author', 'Shape']],
-    ['note', ['Color', 'Author']],
+    ['underline', ['Color', 'Opacity', 'Thickness']],
+    ['ink', ['Color', 'Opacity', 'Thickness']],
+    ['shapes', ['Color', 'Opacity', 'Thickness', 'Shape']],
+    ['note', ['Color']],
     ['redact', []],
     ['measure', []],
     ['link', []],
@@ -199,6 +196,14 @@ describe('the properties a tool carries', () => {
     show(tool);
     expect(['Color', 'Opacity', 'Thickness', 'Author', 'Shape'].filter(has)).toEqual(shown);
   });
+
+  it.each<CanvasToolId>(['highlight', 'underline', 'ink', 'shapes', 'note', 'freetext', 'redact', 'select'])(
+    '%s has no text field: the author is a setting, not a tool property',
+    (tool) => {
+      show(tool);
+      expect(document.querySelectorAll('input[type="text"]')).toHaveLength(0);
+    },
+  );
 
   it('reports a chosen colour', () => {
     const { onColor } = show('ink');
@@ -233,12 +238,6 @@ describe('the properties a tool carries', () => {
     expect(onThickness).not.toHaveBeenCalled();
   });
 
-  it('reports each character typed into the author field', async () => {
-    const { onAuthor } = show('note');
-    await userEvent.setup().type(control('Author'), 'b');
-    expect(onAuthor).toHaveBeenCalledExactlyOnceWith('Annb');
-  });
-
   it('offers the three shapes, shows the current one and reports the chosen one', async () => {
     const { onShape } = show('shapes', { shape: 'circle' });
     const select = screen.getByRole('combobox', { name: 'Shape' }) as HTMLSelectElement;
@@ -254,9 +253,12 @@ describe('the properties a tool carries', () => {
 });
 
 describe('the selection', () => {
-  it('is the select tool’s own readout, and says when nothing is selected', () => {
+  it('with nothing selected the select tool shows its hint only: no readout, no chip, no action', () => {
     show('select');
-    expect(screen.getByRole('status', { name: 'Selection' }).textContent).toBe('No marks selected');
+    expect(screen.getByRole('group', { name: 'Tool settings' }).textContent).toBe(
+      'Click or drag to select marks.',
+    );
+    expect(screen.queryByRole('status', { name: 'Selection' })).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
   });
 

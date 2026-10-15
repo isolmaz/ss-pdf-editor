@@ -1,5 +1,6 @@
 import type { MessageKey } from 'pdf-shared';
 import type { MenuGroup } from 'pdf-ui';
+import type { CanvasToolId } from 'pdf-ui/tools';
 import { useEffect } from 'react';
 
 /**
@@ -23,8 +24,12 @@ import { useEffect } from 'react';
  * meaning whatever else is held. `Shift` is written only where it decides between two
  * bindings — `Ctrl+S` saves, `Ctrl+Shift+S` exports — and there the shifted row comes
  * first, exactly as the pre-table handler checked it. A chord whose key the browser also gives
- * modified meanings is `bare` instead: `F5` toggles the tools dock, and `Ctrl+F5` / `Shift+F5` stay
- * the browser's own reloads.
+ * modified meanings is `bare` instead: the tool letters (`V`, `H`, `E`, `T`, `U`, `D`, `R`, `N`,
+ * `K`, `M`, `X`) answer only with no modifier down, so `Ctrl+R`, `Ctrl+D` and the rest stay the
+ * browser's own. A bare chord also stands down inside a menu, a list or a dialog, where typed
+ * letters belong to the widget, and ignores key repeat, so holding a letter does not toggle the
+ * tool back and forth. `F5` is not bound: it stays the browser's reload; the tools dock is
+ * `Shift+F4`, beside `F4` for the page panel.
  *
  * Editing contexts win: while the focus is in a field, a text area or a
  * `contenteditable` (the form widgets pdf.js renders are fields), the shell stays out
@@ -88,6 +93,12 @@ export interface ShellShortcuts {
   readonly palette: () => void;
   readonly toggleLeftDock: () => void;
   readonly toggleRightDock: () => void;
+  /**
+   * Arms a canvas tool, or puts the pointer back in select when it is the armed one (the rail's
+   * toggle). Declines (`false`) while no document is open or the tool writes and the document is
+   * not editable, so the letter is not swallowed to mean nothing.
+   */
+  readonly armTool: (tool: ShortcutTool) => boolean;
   readonly reading: () => void;
   readonly documentProperties: () => void;
   /** Opens find and replace; `false` when no editable document is open. */
@@ -97,6 +108,9 @@ export interface ShellShortcuts {
   /** Selects every mark of the common selection; `false` unless the select tool can answer. */
   readonly selectAllMarks?: () => boolean;
 }
+
+/** What a tool shortcut arms: a canvas tool, or `markup` for the markup button's last-used look. */
+export type ShortcutTool = CanvasToolId | 'markup';
 
 /**
  * One key chord, split into its parts so the matcher and the printed form are the
@@ -116,7 +130,7 @@ export interface ShortcutChord {
   readonly shift?: boolean;
   /**
    * No modifier at all is held — not `Ctrl`, `Cmd`, `Shift` or `Alt`. For a key whose modified forms
-   * belong to the browser, so the chord does not swallow them.
+   * belong to the browser, so the chord does not swallow them: the single tool letters.
    */
   readonly bare?: boolean;
 }
@@ -133,6 +147,8 @@ export interface ShellShortcut {
   readonly group: MenuGroup;
   readonly labelKey: MessageKey;
   readonly chords: readonly ShortcutChord[];
+  /** The tool a tool shortcut arms; the rail's tooltip reads its key from the row that names its tool. */
+  readonly tool?: ShortcutTool;
   /** Runs while a field owns the focus; every other binding stands down there. */
   readonly fromAnywhere?: boolean;
   /**
@@ -153,6 +169,14 @@ export interface ShellShortcut {
  * `PageUp`/`PageDown`/`Home`/`End` are page navigation, not scrolling: the viewer
  * keeps the scroll keys for the page canvas.
  */
+/**
+ * One tool letter. `id` is the command id where the tool has a menu command (so the menu hint
+ * comes from here), `key` is the plain letter.
+ */
+function toolShortcut(id: string, tool: ShortcutTool, key: string, labelKey: MessageKey): ShellShortcut {
+  return { id, group: 'tools', labelKey, chords: [{ key, bare: true }], tool, run: (s) => s.armTool(tool) };
+}
+
 export const SHELL_SHORTCUTS: readonly ShellShortcut[] = [
   // File — the four gestures that must work from anywhere.
   {
@@ -280,20 +304,19 @@ export const SHELL_SHORTCUTS: readonly ShellShortcut[] = [
     run: (shortcuts) => shortcuts.reading(),
   },
   {
+    // Ahead of `F4`, which fires with any modifier held. Not `F5`: that is the browser's reload.
+    id: 'view.right-dock',
+    group: 'view',
+    labelKey: 'dock.toggleRight',
+    chords: [{ key: 'F4', shift: true }],
+    run: (shortcuts) => shortcuts.toggleRightDock(),
+  },
+  {
     id: 'view.left-dock',
     group: 'view',
     labelKey: 'dock.toggleLeft',
     chords: [{ key: 'F4' }],
     run: (shortcuts) => shortcuts.toggleLeftDock(),
-  },
-  {
-    id: 'view.right-dock',
-    group: 'view',
-    labelKey: 'dock.toggleRight',
-    // Bare: `Ctrl+F5` and `Shift+F5` are the browser's reloads, and a toggle that consumed them would
-    // leave the page with no way to reload from the keyboard.
-    chords: [{ key: 'F5', bare: true }],
-    run: (shortcuts) => shortcuts.toggleRightDock(),
   },
   {
     id: 'tools.properties',
@@ -302,6 +325,18 @@ export const SHELL_SHORTCUTS: readonly ShellShortcut[] = [
     chords: [{ key: 'd', accel: true, shift: true }],
     run: (shortcuts) => shortcuts.documentProperties(),
   },
+  // The tool letters, as the common PDF editors have them. Plain letters only (`bare`).
+  toolShortcut('tools.select', 'select', 'v', 'toolbar.select'),
+  toolShortcut('tools.hand', 'hand', 'h', 'toolbar.hand'),
+  toolShortcut('tools.text-edit', 'text', 'e', 'cmd.textEdit.label'),
+  toolShortcut('tools.freetext', 'freetext', 't', 'toolbar.freetext'),
+  toolShortcut('tools.markup', 'markup', 'u', 'toolbar.markup'),
+  toolShortcut('tools.ink', 'ink', 'd', 'ann.tool.ink'),
+  toolShortcut('tools.shapes', 'shapes', 'r', 'toolbar.shape'),
+  toolShortcut('tools.note', 'note', 'n', 'toolbar.comment'),
+  toolShortcut('tools.link', 'link', 'k', 'link.tool'),
+  toolShortcut('tools.measure', 'measure', 'm', 'toolbar.measure'),
+  toolShortcut('tools.redact-area', 'redact', 'x', 'toolbar.redact'),
 
   // Page navigation
   {
@@ -354,7 +389,6 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   Delete: 'Delete',
   Backspace: 'Backspace',
   F4: 'F4',
-  F5: 'F5',
   F9: 'F9',
 };
 
@@ -382,6 +416,17 @@ export function shortcutLabel(binding: ShellShortcut): string {
 export function shortcutHint(id: string): string | undefined {
   const binding = SHELL_SHORTCUTS.find((candidate) => candidate.id === id);
   return binding === undefined ? undefined : shortcutLabel(binding);
+}
+
+/** The printed key of the shortcut that arms `tool`, for the rail's tooltip; `undefined` if it has none. */
+export function toolShortcutHint(tool: ShortcutTool): string | undefined {
+  const binding = SHELL_SHORTCUTS.find((candidate) => candidate.tool === tool);
+  return binding === undefined ? undefined : shortcutLabel(binding);
+}
+
+/** A name with its shortcut after it, as a tooltip prints it; the bare name when there is none. */
+export function withShortcut(name: string, shortcut: string | undefined): string {
+  return shortcut === undefined ? name : `${name} (${shortcut})`;
 }
 
 /** One section of the help surface: a menu group and the bindings it holds. */
@@ -412,6 +457,11 @@ export const SHELL_SHORTCUT_GROUPS: readonly ShellShortcutGroup[] = (() => {
   return groups;
 })();
 
+/** A modal dialog: the letters typed in it are not the canvas's. */
+function inDialog(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[role="dialog"],[role="alertdialog"]') !== null;
+}
+
 function isEditing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
@@ -420,11 +470,13 @@ function isEditing(target: EventTarget | null): boolean {
 }
 
 /**
- * Widgets that own the navigation keys (Home, End, Page Up/Down) while the focus is inside them:
- * the ARIA composite roles, and a list that walks its own rows (`data-owns-page-keys`).
+ * Widgets that own the navigation keys (Home, End, Page Up/Down) and the plain letters while the
+ * focus is inside them: the ARIA composite roles, the controls that take typed or arrowed values
+ * (a select's `combobox` button, a `textbox`, a `spinbutton`, a `slider`), and a list that walks its
+ * own rows (`data-owns-page-keys`).
  */
 const COMPOSITE_WIDGETS =
-  '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"],[role="tablist"],[data-owns-page-keys]';
+  '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"],[role="tablist"],[role="combobox"],[role="textbox"],[role="spinbutton"],[role="slider"],[data-owns-page-keys]';
 
 /**
  * Whether the focus sits in a composite widget (a menu bar, a menu, the thumbnail list, a dock's tabs):
@@ -462,7 +514,9 @@ export function useShellShortcuts(shortcuts: ShellShortcuts): void {
       const composite = inCompositeWidget(event.target);
       for (const binding of SHELL_SHORTCUTS) {
         if (editing && binding.fromAnywhere !== true) continue;
-        if (composite && binding.group === 'page') continue;
+        const bare = binding.chords.some((chord) => chord.bare === true);
+        if (composite && (binding.group === 'page' || bare)) continue;
+        if (bare && (event.repeat || inDialog(event.target))) continue;
         if (!binding.chords.some((chord) => chordMatches(chord, event, accel))) continue;
         /**
          * **One owner per key.** `false` means the shell did not answer: the row is

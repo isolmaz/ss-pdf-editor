@@ -28,6 +28,7 @@ import {
   openRightPanel,
   operationRunning,
   pickTool,
+  pressTool,
   refuseBusy,
   selectLeftTab,
   selectRightTab,
@@ -84,6 +85,7 @@ describe('the starting state', () => {
       markupTool: 'highlight',
       pendingStamp: null,
       notice: null,
+      noticeAction: null,
       busy: false,
       leftTab: 'pages',
       rightTab: 'history',
@@ -99,6 +101,22 @@ describe('the notice line', () => {
     expect(coreStore.get().notice).toBe('Exported');
     clearNotice();
     expect(coreStore.get().notice).toBeNull();
+  });
+
+  it('carries the button a notice offers, and drops it when anything else is said or the line is cleared', () => {
+    const action = { label: 'Details', run: vi.fn() };
+    showNotice('Applied', action);
+    expect(coreStore.get()).toMatchObject({ notice: 'Applied', noticeAction: action });
+    showNotice('Saved');
+    expect(coreStore.get()).toMatchObject({ notice: 'Saved', noticeAction: null });
+
+    showNotice('Applied', action);
+    showNoticeOnce('Storage is full');
+    expect(coreStore.get()).toMatchObject({ notice: 'Storage is full', noticeAction: null });
+
+    showNotice('Applied', action);
+    clearNotice();
+    expect(coreStore.get()).toMatchObject({ notice: null, noticeAction: null });
   });
 
   it('says a repeated warning once: it is shown unless the line already contains it', () => {
@@ -238,6 +256,27 @@ describe('tools', () => {
     selectRightTab('history');
     pickTool('note');
     expect(coreStore.get().rightTab).toBe('comments');
+  });
+
+  it('presses a rail button: arms the tool, and a second press puts the pointer back on select', () => {
+    pressTool('ink');
+    expect(coreStore.get().canvasTool).toBe('ink');
+    pressTool('ink');
+    expect(coreStore.get().canvasTool).toBe('select');
+    pressTool('select');
+    expect(coreStore.get().canvasTool).toBe('select');
+    pressTool('note');
+    expect(coreStore.get()).toMatchObject({ canvasTool: 'note', rightTab: 'comments' });
+  });
+
+  it('presses the markup button: arms the look used last, and is pressed for any of the four', () => {
+    pressTool('markup');
+    expect(coreStore.get().canvasTool).toBe('highlight');
+    selectTool('squiggly');
+    pressTool('markup');
+    expect(coreStore.get().canvasTool).toBe('select');
+    pressTool('markup');
+    expect(coreStore.get().canvasTool).toBe('squiggly');
   });
 
   it('chooses the shape the next shape mark carries', () => {

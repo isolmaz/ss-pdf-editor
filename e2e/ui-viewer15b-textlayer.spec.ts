@@ -5,8 +5,7 @@
 
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { exportBytes, openPdf } from './ui-helpers';
-import { applyOperation } from './ui-viewer15-helpers';
+import { applyForm, exportBytes, openPdf } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 120_000 });
@@ -15,7 +14,7 @@ test('clicking a paragraph box opens its text; the rewritten line is what the fi
   page,
 }) => {
   await openPdf(page, 'edit.pdf', labelledPdf('Original', 1));
-  await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit text', exact: true }).click();
   const block = page.locator('[data-text-block][data-block-text="Original 1"]');
   await expect(block).toHaveCount(1, { timeout: 30_000 });
   await block.click();
@@ -24,7 +23,7 @@ test('clicking a paragraph box opens its text; the rewritten line is what the fi
   const text = form.getByRole('textbox', { name: 'Text', exact: true });
   await expect(text).toHaveValue('Original 1');
   await text.fill('Rewritten line');
-  await applyOperation(form);
+  await applyForm(form);
   const texts = await readProducedPageTexts(await exportBytes(page, 'edited.pdf'));
   expect(texts[0]).toContain('Rewritten line');
   expect(texts[0]).not.toContain('Original 1');

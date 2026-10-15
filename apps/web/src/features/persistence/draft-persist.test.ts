@@ -1,15 +1,13 @@
 /**
  * Writing drafts: the manifest describes the version whose bytes were written, a sensitive
- * document never reaches the vault, a manual save queues behind the automatic one, and turning
- * the opt-out on removes what was stored.
+ * document never reaches the vault, and turning the opt-out on removes what was stored.
  */
 
 import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
-import { persistDraft, retainedSnapshotsFor, saveDraft, toggleSensitiveSession } from './draft-persist';
-import { failureNotice } from './draft-vault';
+import { persistDraft, retainedSnapshotsFor, toggleSensitiveSession } from './draft-persist';
 import {
   draftWrites,
   holdsUnprotectedWork,
@@ -252,66 +250,6 @@ describe('persistDraft', () => {
     session.setSensitive(tab.id, true);
     expect(await persistDraft(session, tab.id, 'desktop')).toBe('sensitive');
     expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
-  });
-});
-
-describe('saveDraft', () => {
-  it('does nothing with no document open', async () => {
-    const persist = vi.fn();
-    await saveDraft(new SessionStore(), persist, t);
-    expect(persist).not.toHaveBeenCalled();
-    expect(notice()).toBeNull();
-  });
-
-  it('refuses a sensitive document and says why', async () => {
-    const session = new SessionStore();
-    const tab = openTab(session);
-    session.setSensitive(tab.id, true);
-    const persist = vi.fn();
-    await saveDraft(session, persist, t);
-    expect(persist).not.toHaveBeenCalled();
-    expect(notice()).toBe(t('redact.sensitive.on'));
-  });
-
-  it('persists the active document and says it was saved', async () => {
-    const session = new SessionStore();
-    const tab = openTab(session);
-    const persist = vi.fn(async () => 'written' as const);
-    await saveDraft(session, persist, t);
-    expect(persist).toHaveBeenCalledWith(tab.id);
-    expect(notice()).toBe(t('setting.opfsSaved'));
-  });
-
-  it('says the document is sensitive when it turned so while the save waited', async () => {
-    const session = new SessionStore();
-    openTab(session);
-    await saveDraft(session, async () => 'sensitive', t);
-    expect(notice()).toBe(t('redact.sensitive.on'));
-  });
-
-  it.each(['skipped', 'gone'] as const)('says nothing when the outcome is %s', async (outcome) => {
-    const session = new SessionStore();
-    openTab(session);
-    await saveDraft(session, async () => outcome, t);
-    expect(notice()).toBeNull();
-  });
-
-  it('waits for the writes queued before it, and reports a failure without stopping the queue', async () => {
-    const session = new SessionStore();
-    openTab(session);
-    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
-    draftWrites.current = gate;
-    const persist = vi.fn(async () => {
-      throw new Error('quota');
-    });
-    const saving = saveDraft(session, persist, t);
-    await Promise.resolve();
-    expect(persist).not.toHaveBeenCalled();
-    release();
-    await saving;
-    expect(persist).toHaveBeenCalledTimes(1);
-    expect(notice()).toBe(failureNotice(new Error('quota'), t));
-    await expect(draftWrites.current).resolves.toBeUndefined();
   });
 });
 

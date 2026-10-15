@@ -7,8 +7,8 @@
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry, readProducedPageTexts } from './tool-fixture';
-import { encodePng, exportBytes, inkPng, openPdf, pdfFile, runCommand } from './ui-helpers';
-import { applyOperation, browserJpeg } from './ui-viewer15-helpers';
+import { applyForm, encodePng, exportBytes, inkPng, openPdf, pdfFile, runCommand } from './ui-helpers';
+import { browserJpeg } from './ui-viewer15-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -27,9 +27,9 @@ async function choose(page: Page, form: Locator, label: string, option: string):
   await page.getByRole('option', { name: option, exact: true }).click();
 }
 
-/** Preview and expect the alert: the translated message and the engine's own words as its diagnostic. */
+/** Run and expect the alert: the translated message and the engine's own words as its diagnostic. */
 async function expectRefused(form: Locator, message: string, diagnostic: string): Promise<void> {
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   const alert = form.getByRole('alert');
   await expect(alert).toContainText(message, { timeout: 60_000 });
   await expect(alert.locator('[data-dialog-diagnostic]')).toHaveAttribute(
@@ -48,7 +48,7 @@ test('insert from images: every picture becomes one page after the chosen page, 
   await page.goto('/editor/');
   const jpeg = await browserJpeg(page, 40, 20);
   await openPdf(page, 'base.pdf', labelledPdf('Base', 3), { navigate: false });
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From images' }).check();
   await form.locator('input[type="file"]').setInputFiles([
     { name: 'ink.png', mimeType: 'image/png', buffer: inkPng(60, 30) },
@@ -57,7 +57,7 @@ test('insert from images: every picture becomes one page after the chosen page, 
   await form.getByText(/^Advanced options/).click();
   await choose(page, form, 'Image placement', 'Fill (crop overflow)');
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('1');
-  await applyOperation(form);
+  await applyForm(form);
   await expect(thumbs(page)).toHaveCount(5);
   const bytes = await exportBytes(page, 'with-pictures.pdf');
   const texts = (await readProducedPageTexts(bytes)).map((text) => text.trim());
@@ -73,7 +73,7 @@ test('insert from images with the stretch placement still makes one picture page
   page,
 }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 1));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From images' }).check();
   await form.locator('input[type="file"]').setInputFiles({
     name: 'ink.png',
@@ -82,7 +82,7 @@ test('insert from images with the stretch placement still makes one picture page
   });
   await form.getByText(/^Advanced options/).click();
   await choose(page, form, 'Image placement', 'Stretch (ignore aspect ratio)');
-  await applyOperation(form);
+  await applyForm(form);
   await expect(thumbs(page)).toHaveCount(2);
   const bytes = await exportBytes(page, 'stretched.pdf');
   expect(await pictures(bytes, 1)).toMatch(/^<<\/\w+ \d+ 0 R>>$/);
@@ -90,11 +90,11 @@ test('insert from images with the stretch placement still makes one picture page
 
 test('insert from another PDF with the range left blank brings in every page of it', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From another PDF' }).check();
   await form.locator('input[type="file"]').setInputFiles(pdfFile('donor.pdf', labelledPdf('Donor', 3)));
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('2');
-  await applyOperation(form);
+  await applyForm(form);
   await expect(thumbs(page)).toHaveCount(5);
   const texts = await readProducedPageTexts(await exportBytes(page, 'all-donor.pdf'));
   expect(texts.map((text) => text.trim())).toEqual(['Base 1', 'Base 2', 'Donor 1', 'Donor 2', 'Donor 3']);
@@ -102,7 +102,7 @@ test('insert from another PDF with the range left blank brings in every page of 
 
 test('insert from another PDF without a file is refused, naming the missing source', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From another PDF' }).check();
   await expectRefused(
     form,
@@ -113,7 +113,7 @@ test('insert from another PDF without a file is refused, naming the missing sour
 
 test('insert from images without a file is refused, naming the missing pictures', async ({ page }) => {
   await openPdf(page, 'base.pdf', labelledPdf('Base', 2));
-  const form = await openForm(page, 'Insert page', 'Insert Pages');
+  const form = await openForm(page, 'Insert page', 'Insert pages');
   await form.getByRole('radio', { name: 'From images' }).check();
   await expectRefused(form, 'This operation has nothing to work with yet.', 'pageedit: no image was picked');
 });
@@ -121,7 +121,7 @@ test('insert from images without a file is refused, naming the missing pictures'
 test('replace with a picture sized to the page it replaces keeps that page size', async ({ page }) => {
   await openPdf(page, 'small.pdf', labelledPdf('Small', 3, { size: [300, 400] }));
   await thumbs(page).nth(1).click();
-  const form = await openForm(page, 'Replace Pages', 'Replace Pages');
+  const form = await openForm(page, 'Replace pages', 'Replace pages');
   await form.getByRole('radio', { name: 'Image', exact: true }).check();
   await form.locator('input[type="file"]').setInputFiles({
     name: 'ink.png',
@@ -130,7 +130,7 @@ test('replace with a picture sized to the page it replaces keeps that page size'
   });
   await form.getByText(/^Advanced options/).click();
   await choose(page, form, 'Image placement', 'Stretch (ignore aspect ratio)');
-  await applyOperation(form);
+  await applyForm(form);
   const bytes = await exportBytes(page, 'replaced.pdf');
   const texts = (await readProducedPageTexts(bytes)).map((text) => text.trim());
   expect(texts).toEqual(['Small 1', '', 'Small 3']);
@@ -144,7 +144,7 @@ test('replacing two pages with one picture is refused and says how many were pre
   await thumbs(page)
     .nth(1)
     .click({ modifiers: ['Control'] });
-  const form = await openForm(page, 'Replace Pages', 'Replace Pages');
+  const form = await openForm(page, 'Replace pages', 'Replace pages');
   await form.getByRole('radio', { name: 'Image', exact: true }).check();
   await form.locator('input[type="file"]').setInputFiles({
     name: 'dot.png',

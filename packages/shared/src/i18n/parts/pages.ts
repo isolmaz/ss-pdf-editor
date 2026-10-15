@@ -8,7 +8,7 @@ export const pagesPart = {
   'pages.selected': '{count} sayfa seçildi',
   'pages.moveUp': 'Yukarı taşı',
   'pages.moveDown': 'Aşağı taşı',
-  'pages.moveTo': 'Şu konuma taşı…',
+  'pages.moveTo': 'Şu konuma taşı',
   'pages.dragHandle': '{page}. sayfayı taşı',
   'pages.moved': '{count} sayfa taşındı.',
   'pages.rotate.left': 'Sola döndür',
@@ -20,11 +20,11 @@ export const pagesPart = {
   'pages.duplicate.done': '{count} sayfa çoğaltıldı.',
   'pages.extract.title': 'Sayfaları ayıkla',
   'pages.extract.intro':
-    'Seçilen sayfalar yeni bir belge olur; geçerli belge değişmez. Bileşim yeni bir katalog yazar: görünüm tercihleri, dil ve katman yapılandırması yeni belgeye taşınmaz.',
+    'Seçilen sayfalar yeni bir belge olur; geçerli belge değişmez. Görünüm tercihleri, dil ve katman ayarları yeni belgeye taşınmaz.',
 
   'split.title': 'Belgeyi böl',
   'split.intro':
-    'Belge, seçilen kurala göre ayrı PDF dosyalarına bölünür. Parça sayısı ve dosya adları çalıştırıldığında hesaplanır ve raporda gösterilir. Her parça yeni bir katalog yazar: görünüm tercihleri, dil ve katman yapılandırması parçalara taşınmaz.',
+    'Belge, seçilen kurala göre ayrı PDF dosyalarına bölünür; parça sayısı ve adları raporda görünür. Görünüm tercihleri, dil ve katmanlar taşınmaz.',
   'split.mode': 'Bölme yöntemi',
   'split.mode.ranges': 'Aralıklara göre',
   'split.mode.everyN': 'Her N sayfada bir',

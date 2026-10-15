@@ -29,7 +29,7 @@
 
 import { Check } from '@phosphor-icons/react';
 import type { Translator } from 'pdf-shared';
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import { type Command, MENU_GROUP_KEYS, MENU_GROUPS, type MenuGroup } from './types';
 
 export interface MenuBarProps {
@@ -247,46 +247,58 @@ export function MenuBar({ t, commands }: MenuBarProps) {
                   onKeyDown={handlePanelKeyDown}
                   className="absolute top-full start-0 z-50 mt-0.5 flex max-h-[min(70vh,32rem)] min-w-48 flex-col gap-0.5 overflow-y-auto rounded-md border border-kumo-line bg-kumo-base p-1 outline-none"
                 >
-                  {items.map((command, index) => (
-                    <button
-                      key={command.id}
-                      id={`${menuId}-${index}`}
-                      type="button"
-                      // A command with a `checked` state is a toggle, and its role has
-                      // to say so for `aria-checked` to be legal — so both travel
-                      // together in one spread.
-                      role={command.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
-                      {...(command.checked === undefined ? {} : { 'aria-checked': command.checked })}
-                      disabled={command.disabled === true}
-                      tabIndex={-1}
-                      onClick={() => activate(command)}
-                      onPointerEnter={() => {
-                        const at = enabled.indexOf(command);
-                        if (at >= 0) setHighlight(at);
-                      }}
-                      // A disabled class naming a text token Kumo does not declare would
-                      // render a disabled row exactly like an enabled one. `subtle` is
-                      // Kumo's own disabled text and stays legible.
-                      className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-start text-xs hover:bg-kumo-tint disabled:text-kumo-subtle disabled:hover:bg-transparent ${
-                        command.danger === true ? 'text-kumo-danger' : 'text-kumo-default'
-                      }`}
-                    >
-                      {command.icon === undefined ? null : (
-                        <span aria-hidden="true" className="shrink-0 text-kumo-subtle">
-                          {command.icon}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1 truncate">{t(command.labelKey)}</span>
-                      {command.checked === true ? (
-                        <Check aria-hidden="true" className="size-3 shrink-0" />
-                      ) : null}
-                      {command.shortcut === undefined ? null : (
-                        <span className="ms-auto shrink-0 text-[11px] tabular-nums text-kumo-subtle">
-                          {command.shortcut}
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                  {items.map((command, index) => {
+                    const reason =
+                      command.disabled === true && command.disabledReason !== undefined
+                        ? t(command.disabledReason)
+                        : undefined;
+                    return (
+                      <Fragment key={command.id}>
+                        {index > 0 && items[index - 1]?.section !== command.section ? (
+                          <hr className="my-0.5 h-px shrink-0 border-0 bg-kumo-line" />
+                        ) : null}
+                        <button
+                          id={`${menuId}-${index}`}
+                          type="button"
+                          // A command with a `checked` state is a toggle, and its role has
+                          // to say so for `aria-checked` to be legal — so both travel
+                          // together in one spread.
+                          role={command.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+                          {...(command.checked === undefined ? {} : { 'aria-checked': command.checked })}
+                          disabled={command.disabled === true}
+                          // Why it is unavailable, for a pointer (a native tooltip) and a screen reader.
+                          {...(reason === undefined ? {} : { title: reason, 'aria-description': reason })}
+                          tabIndex={-1}
+                          onClick={() => activate(command)}
+                          onPointerEnter={() => {
+                            const at = enabled.indexOf(command);
+                            if (at >= 0) setHighlight(at);
+                          }}
+                          // A disabled class naming a text token Kumo does not declare would
+                          // render a disabled row exactly like an enabled one. `subtle` is
+                          // Kumo's own disabled text and stays legible.
+                          className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-start text-xs hover:bg-kumo-tint disabled:text-kumo-subtle disabled:hover:bg-transparent ${
+                            command.danger === true ? 'text-kumo-danger' : 'text-kumo-default'
+                          }`}
+                        >
+                          {command.icon === undefined ? null : (
+                            <span aria-hidden="true" className="shrink-0 text-kumo-subtle">
+                              {command.icon}
+                            </span>
+                          )}
+                          <span className="min-w-0 flex-1 truncate">{t(command.labelKey)}</span>
+                          {command.checked === true ? (
+                            <Check aria-hidden="true" className="size-3 shrink-0" />
+                          ) : null}
+                          {command.shortcut === undefined ? null : (
+                            <span className="ms-auto shrink-0 text-[11px] tabular-nums text-kumo-subtle">
+                              {command.shortcut}
+                            </span>
+                          )}
+                        </button>
+                      </Fragment>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

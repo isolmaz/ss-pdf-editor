@@ -160,7 +160,7 @@ describe('CommentsPanel filter', () => {
       'All',
       'Highlight',
       'Underline',
-      'Strikeout',
+      'Strikethrough',
       'Squiggly',
       'Freehand drawing',
       'Shape',

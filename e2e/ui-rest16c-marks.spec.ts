@@ -15,7 +15,7 @@ test('a Shift-click on empty page keeps the selected picture; a plain click, eve
 }) => {
   await openPdf(page);
   await placePicture(page, 400, 200, 300, 400);
-  await rail(page, 'Selection Tool').click();
+  await rail(page, 'Selection tool').click();
   const handles = page.locator('[data-mark-resize]');
   await expect(handles).toHaveCount(4);
 

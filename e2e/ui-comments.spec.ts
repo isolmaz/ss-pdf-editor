@@ -21,7 +21,7 @@ const status = (row: Locator): Locator => row.getByLabel('Review status');
 
 /** Put a note on an empty spot of the page and give it a comment. */
 async function addNote(page: Page, comment: string, at: readonly [number, number] = [300, 400]) {
-  await rail(page, 'Add comment / Note').click();
+  await rail(page, 'Add note').click();
   await clickPage(page, at[0], at[1]);
   const row = rows(page).filter({ hasText: 'unsaved' }).filter({ hasText: 'No comment' }).first();
   await expect(row).toBeVisible();
@@ -99,7 +99,7 @@ test('a session note is edited, answered, given a status, deleted and cleared; t
   await expect(page.getByText('1 mark(s) selected')).toBeVisible();
   await pick.click();
   await expect(pick).not.toHaveAttribute('aria-current', 'true');
-  await expect(page.getByText('No marks selected')).toBeVisible();
+  await expect(page.getByText('1 mark(s) selected')).toBeHidden();
   await pick.click();
   await expect(pick).toHaveAttribute('aria-current', 'true');
   await expect(page.getByText('1 mark(s) selected')).toBeVisible();

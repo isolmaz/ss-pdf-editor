@@ -170,7 +170,7 @@ describe('convertToPdfA', () => {
     expect(notes.get('op.note.pdfa.annotationsDropped')).toEqual({ count: 2, types: 'Square ×1, Link ×1' });
     expect(notes.get('op.note.pdfa.producer')).toEqual({ producer: expect.stringContaining('Ghostscript') });
     // The constant alpha is flattened to a picture in part 1: the text is gone as text, and the report says so.
-    expect(notes.get('op.note.pdfa.textLoss')).toEqual({ percent: '0 %', pages: '1' });
+    expect(notes.get('op.note.pdfa.textLoss')).toEqual({ recall: 0, pages: '1' });
     expect(outcome.measures.textDiffers).toEqual([0]);
     expect(outcome.measures.wordRecall).toBe(0);
   });
@@ -197,7 +197,11 @@ describe('convertToPdfA', () => {
       'op.note.pdfa.limits',
     ]);
     const kept = outcome.report.notes.find((entry) => entry.key === 'op.note.pdfa.textKept');
-    expect(kept?.params).toEqual({ percent: '100 %', pages: 1 });
+    expect(kept?.params).toEqual({ recall: 1, pages: 1 });
+    expect(outcome.report.notes.find((entry) => entry.key === 'op.note.pdfa.pictureKept')?.params).toEqual({
+      pages: 1,
+      difference: expect.any(Number),
+    });
     expect(outcome.measures.wordRecall).toBe(1);
     expect(outcome.measures.pictureDiffers).toEqual([]);
   });

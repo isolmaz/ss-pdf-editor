@@ -171,7 +171,7 @@ async function recoverFromFailure() {
     }
     // An operation left open in the tools panel is closed the same way a user would; its way
     // back disappearing is the proof the panel closed.
-    const back = page.getByRole('button', { name: 'Tüm Araçlara Dön', exact: true }).first();
+    const back = page.getByRole('button', { name: 'Tüm araçlara dön', exact: true }).first();
     if ((await back.count()) > 0 && (await back.isVisible())) {
       await back.click();
       await back.waitFor({ state: 'hidden', timeout: 10_000 });
@@ -301,6 +301,11 @@ async function notesWithRow(pattern, what, timeout = 15_000) {
   return list.innerText();
 }
 
+/** A menu entry's name is its label, then its shortcut when it has one. */
+function menuLabel(label) {
+  return new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?: \\S.*)?$`);
+}
+
 /**
  * A menu command, by its own Turkish label (the dictionary's copy, never a
  * paraphrase). The menu bar is a real ARIA menubar: the triggers are
@@ -311,10 +316,11 @@ async function runMenuCommand(menu, command) {
   await bar.getByRole('menuitem', { name: menu, exact: true }).first().click();
   // Toggle commands (the annotation tools, reading mode, the docks) are
   // `menuitemcheckbox`; a command without a `checked` state is a plain menu item.
+  const label = menuLabel(command);
   const item = page
     .getByRole('menu')
-    .getByRole('menuitem', { name: command, exact: true })
-    .or(page.getByRole('menu').getByRole('menuitemcheckbox', { name: command, exact: true }))
+    .getByRole('menuitem', { name: label })
+    .or(page.getByRole('menu').getByRole('menuitemcheckbox', { name: label }))
     .first();
   await item.waitFor({ state: 'visible', timeout: 10_000 });
   await item.click();
@@ -332,7 +338,7 @@ async function menuOffers(menu, command) {
   await bar.getByRole('menuitem', { name: menu, exact: true }).first().click();
   const panel = page.getByRole('menu');
   await panel.waitFor({ state: 'visible', timeout: 10_000 });
-  const offered = (await panel.getByRole('menuitem', { name: command, exact: true }).count()) > 0;
+  const offered = (await panel.getByRole('menuitem', { name: menuLabel(command) }).count()) > 0;
   await page.keyboard.press('Escape');
   await panel.waitFor({ state: 'hidden', timeout: 10_000 });
   return offered;
@@ -340,36 +346,61 @@ async function menuOffers(menu, command) {
 
 /**
  * The operation form: every capability opens in the tools panel as a region named by its
- * title, in two steps — "Önizle" runs it and shows the report, "Belgeye uygula" applies it.
+ * title. "Uygula" runs it; a clean result is applied at once, one that lost or approximated
+ * something shows its report first and "Belgeye uygula" applies it.
  */
 async function waitForOperationForm(timeout) {
   await page
-    .getByRole('button', { name: 'Önizle', exact: true })
+    .getByRole('button', { name: 'Uygula', exact: true })
     .first()
     .waitFor({ state: 'visible', timeout });
 }
 
+/**
+ * Run the open operation form and leave its result in the document. Returns the report's text
+ * when the result had to be read first, and null when it was applied at once.
+ */
 async function confirmDialog() {
   // The tools panel's operation region, identified by its way back — a locator that
   // survives the form turning into its report.
   const form = page
     .getByRole('region')
-    .filter({ has: page.getByRole('button', { name: 'Tüm Araçlara Dön' }) });
-  await form.getByRole('button', { name: 'Önizle', exact: true }).click();
-  try {
-    await form.getByRole('heading', { name: 'İşlem raporu', exact: true }).waitFor({ timeout: 60_000 });
-  } catch {
-    throw new Error(
-      `operation did not finish: ${await form.innerText()} | ${await form
-        .locator('[data-dialog-diagnostic]')
-        .getAttribute('data-dialog-diagnostic')
-        .catch(() => '')}`,
-    );
+    .filter({ has: page.getByRole('button', { name: 'Tüm araçlara dön' }) });
+  const review = form.getByRole('heading', { name: 'Sonucu gözden geçir', exact: true });
+  await form.getByRole('button', { name: 'Uygula', exact: true }).click();
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    if (await review.isVisible()) {
+      const report = await form.innerText();
+      await form.getByRole('button', { name: 'Belgeye uygula', exact: true }).click();
+      await review.waitFor({ state: 'hidden', timeout: 30_000 });
+      return report;
+    }
+    if ((await form.count()) === 0) return null;
+    if (Date.now() > deadline) {
+      throw new Error(
+        'operation did not finish: ' +
+          (await form.innerText()) +
+          ' | ' +
+          (await form
+            .locator('[data-dialog-diagnostic]')
+            .getAttribute('data-dialog-diagnostic')
+            .catch(() => '')),
+      );
+    }
+    await page.waitForTimeout(250);
   }
-  await form.getByRole('button', { name: 'Belgeye uygula', exact: true }).click();
-  await page
-    .getByRole('heading', { name: 'İşlem raporu', exact: true })
-    .waitFor({ state: 'hidden', timeout: 30_000 });
+}
+
+/** The report of a result that was applied at once: the notice's "Ayrıntılar" opens it. */
+async function openAppliedReport() {
+  await page.getByRole('button', { name: 'Ayrıntılar', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.waitFor({ state: 'visible', timeout: 10_000 });
+  const report = await dialog.innerText();
+  await dialog.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+  return report;
 }
 
 const fixtureDir = join(tmpdir(), `pdf-editor-editor-flow-${process.pid}`);
@@ -613,7 +644,7 @@ try {
       undefined,
       { timeout: 10_000 },
     );
-    await runMenuCommand('Araçlar', 'Dikdörtgen');
+    await runMenuCommand('Araçlar', 'Şekil çiz');
     // The layer takes the gesture itself, so the page is the only surface to wait for.
     const pageEl = page.locator('.pdfViewer .page').first();
     await pageEl.waitFor({ state: 'visible', timeout: 10_000 });
@@ -813,7 +844,7 @@ try {
   });
 
   await check('header/footer: the stamp dialog writes page numbers', async () => {
-    await runMenuCommand('Araçlar', 'Üst bilgi / alt bilgi ve sayfa numarası');
+    await runMenuCommand('Araçlar', 'Sayfa numarası ve üst/alt bilgi');
     await waitForOperationForm(15_000);
     const format = page.getByLabel('Biçim', { exact: true }).first();
     await format.fill('Sayfa {page} / {total}');
@@ -837,23 +868,17 @@ try {
   await check('page labels: the dialog writes a label plan and reports it back', async () => {
     await runMenuCommand('Sayfa', 'Sayfa etiketleri');
     await waitForOperationForm(15_000);
-    // The two steps by hand (`confirmDialog` would apply without reading the report): the
-    // report's read-back sentence is the operation's own evidence that the plan landed in
-    // the written file — first label "1", last label the document's last page.
-    const form = page
-      .getByRole('region')
-      .filter({ has: page.getByRole('button', { name: 'Tüm Araçlara Dön' }) });
-    await form.getByRole('button', { name: 'Önizle', exact: true }).click();
-    await form.getByRole('heading', { name: 'İşlem raporu', exact: true }).waitFor({ timeout: 90_000 });
+    // The report's read-back sentence is the operation's own evidence that the plan landed in
+    // the written file — first label "1", last label the document's last page. It is read from
+    // the review when the run asked for one and from the applied notice's details otherwise.
+    const report = (await confirmDialog()) ?? (await openAppliedReport());
     const verified = `Etiketler geri okunarak doğrulandı: ilk “1”, son “${FIXTURE_PAGES - 1}”.`;
-    await form.getByText(verified).waitFor({ state: 'visible', timeout: 15_000 });
-    if ((await form.getByText(/Geri okunan ilk etiket beklenenden farklı/).count()) > 0) {
+    if (!report.includes(verified)) {
+      throw new Error(`the report does not carry the read-back sentence: ${report.slice(0, 300)}`);
+    }
+    if (/Geri okunan ilk etiket beklenenden farklı/.test(report)) {
       throw new Error('the report says the first label read back differs from the one written');
     }
-    await form.getByRole('button', { name: 'Belgeye uygula', exact: true }).click();
-    await page
-      .getByRole('heading', { name: 'İşlem raporu', exact: true })
-      .waitFor({ state: 'hidden', timeout: 30_000 });
     return `label plan applied; the report read "1" … "${FIXTURE_PAGES - 1}" back`;
   });
 

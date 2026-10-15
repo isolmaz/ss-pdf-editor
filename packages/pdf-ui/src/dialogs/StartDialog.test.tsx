@@ -4,7 +4,7 @@
  * backdrop and Escape leave it open while a run is in flight.
  */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { OperationReport } from 'pdf-core';
 import { createTranslator } from 'pdf-shared';
@@ -31,8 +31,12 @@ const report: OperationReport = {
   notes: [],
 };
 const produced: OpRunResult = { files: [], report };
+const clean: OpRunResult = {
+  files: [{ name: 'new.pdf', bytes: new Uint8Array([1]), mime: 'application/pdf' }],
+  report,
+};
 
-function show() {
+function show(delivery: () => void | Promise<void> = () => undefined) {
   let finish: (result: OpRunResult) => void = () => {};
   const spec: OperationDialogSpec = {
     id: 'blank',
@@ -48,7 +52,7 @@ function show() {
       }),
   };
   const onClose = vi.fn();
-  const onResult = vi.fn();
+  const onResult = vi.fn(delivery);
   render(<StartDialog t={t} spec={spec} context={context} onClose={onClose} onResult={onResult} />);
   return { onClose, onResult, finish: (result: OpRunResult) => finish(result) };
 }
@@ -81,5 +85,16 @@ describe('StartDialog', () => {
     finish(produced);
     await userEvent.click(await screen.findByRole('button', { name: 'Open in new tab' }));
     expect(onResult).toHaveBeenCalledExactlyOnceWith(produced);
+  });
+
+  it('opens a clean result at once, and stays open on Escape until the host has delivered it', async () => {
+    const { onClose, onResult, finish } = show(() => new Promise<void>(() => undefined));
+    await userEvent.click(screen.getByRole('button', { name: 'Open in new tab' }));
+    finish(clean);
+    await waitFor(() => expect(onResult).toHaveBeenCalledExactlyOnceWith(clean));
+    expect(screen.queryByRole('heading', { level: 3 })).toBeNull();
+
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

@@ -26,7 +26,7 @@ import { type PrintFailure, type PrintProducedFile, type PrintScale, usePrinting
  *    verified path, and the reason the
  *    imposition choices below are marked as belonging to the produced file
  *    (`print.imposeHint`) instead of pretending to change it.
- *  - **Yazdırılacak PDF'i üret** runs `buildPrintDocument` over the same pages and
+ *  - **Yazdırılacak PDF’yi üret** runs `buildPrintDocument` over the same pages and
  *    hands the imposed bytes to `onProduced`, which the shell opens in a new tab:
  *    that is where N-up, a saddle-stitch signature, duplex sides, margins and
  *    crop marks actually happen, because none of them is expressible in a browser

@@ -25,7 +25,7 @@ export const enginesPart = {
     '{count} alternative or replacement text(s) of the tags on the redacted pages removed; they repeated the page text.',
   'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
   'op.note.redact.xfaDropped':
-    'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining AcroForm fields keep their values.',
+    'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining form fields keep their values.',
   'op.note.redact.annotationsRemoved':
     '{count} annotation(s) (comments, markup) under the marked areas removed.',
   'op.progress.encrypt': 'Encrypting document',

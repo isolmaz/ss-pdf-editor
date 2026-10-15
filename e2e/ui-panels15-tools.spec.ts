@@ -19,54 +19,58 @@ test('a group folds and unfolds, and only its own tools are listed while it is o
   await openPdf(page);
   await openDockTab(page, 'Tools');
 
-  const security = group(page, 'Security & Redaction');
+  const security = group(page, 'Security and redaction');
   await expect(security).toHaveAttribute('aria-expanded', 'false');
-  await expect(tool(page, 'Protect with Password')).toHaveCount(0);
+  await expect(tool(page, 'Protect with password')).toHaveCount(0);
 
   await security.click();
   await expect(security).toHaveAttribute('aria-expanded', 'true');
   for (const title of [
-    'Protect with Password',
-    'Remove Password',
-    'Sanitize Document',
-    'Permanent Redaction',
+    'Protect with password',
+    'Remove password',
+    'Sanitize document',
+    'Permanent redaction',
   ]) {
     await expect(tool(page, title)).toBeVisible();
   }
 
-  const pages = group(page, 'Organize Pages');
+  const pages = group(page, 'Organize pages');
   await expect(pages).toHaveAttribute('aria-expanded', 'true');
   await pages.click();
   await expect(pages).toHaveAttribute('aria-expanded', 'false');
-  await expect(tool(page, 'Split Document')).toHaveCount(0);
-  await expect(tool(page, 'Protect with Password')).toBeVisible();
+  await expect(tool(page, 'Split document')).toHaveCount(0);
+  await expect(tool(page, 'Protect with password')).toBeVisible();
 
   await security.click();
   await expect(security).toHaveAttribute('aria-expanded', 'false');
 });
 
 const TOOLS: readonly { readonly group: string; readonly button: string; readonly region: string }[] = [
-  { group: 'Organize Pages', button: 'Extract Pages', region: 'Extract Pages' },
-  { group: 'Organize Pages', button: 'Split Document', region: 'Split Document' },
-  { group: 'Organize Pages', button: 'Combine / Add Document', region: 'Add / Import Document' },
-  { group: 'Convert & Export PDF', button: 'Compress PDF', region: 'Optimize / Compress' },
-  { group: 'Convert & Export PDF', button: 'Export Pages as Images', region: 'Export Pages as Images' },
-  { group: 'Convert & Export PDF', button: 'Export as Plain Text', region: 'Export Text' },
+  { group: 'Organize pages', button: 'Extract pages', region: 'Extract pages' },
+  { group: 'Organize pages', button: 'Split document', region: 'Split document' },
+  { group: 'Organize pages', button: 'Add document', region: 'Add document' },
+  { group: 'Convert and export', button: 'Reduce file size', region: 'Reduce file size' },
+  { group: 'Convert and export', button: 'Export pages as images', region: 'Export pages as images' },
+  { group: 'Convert and export', button: 'Export text', region: 'Export text' },
   {
-    group: 'Convert & Export PDF',
-    button: 'Export as Word, Excel or CSV',
+    group: 'Convert and export',
+    button: 'Export to Word, Excel or CSV',
     region: 'Export to Word, Excel or CSV',
   },
-  { group: 'Convert & Export PDF', button: 'Save as PDF/A', region: 'Save as PDF/A' },
-  { group: 'Fill & Sign', button: 'Digital Signature (PAdES)', region: 'Sign Document (PAdES B-B)' },
-  { group: 'Fill & Sign', button: 'Fill Form Fields', region: 'Fill form fields' },
-  { group: 'Fill & Sign', button: 'Add New Form Field', region: 'New form field' },
-  { group: 'Security & Redaction', button: 'Protect with Password', region: 'Security' },
-  { group: 'Security & Redaction', button: 'Remove Password', region: 'Remove password' },
-  { group: 'Security & Redaction', button: 'Sanitize Document', region: 'Sanitize document' },
-  { group: 'Security & Redaction', button: 'Permanent Redaction', region: 'Redaction (Permanent Erase)' },
-  { group: 'Numbering & Watermark', button: 'Add Page Numbers', region: 'Header / Footer & Page Numbering' },
-  { group: 'Numbering & Watermark', button: 'Add Watermark', region: 'Watermark' },
+  { group: 'Convert and export', button: 'Save as PDF/A', region: 'Save as PDF/A' },
+  { group: 'Fill and sign', button: 'Sign document', region: 'Sign document' },
+  { group: 'Fill and sign', button: 'Fill form fields', region: 'Fill form fields' },
+  { group: 'Fill and sign', button: 'Add form field', region: 'Add form field' },
+  { group: 'Security and redaction', button: 'Protect with password', region: 'Protect with password' },
+  { group: 'Security and redaction', button: 'Remove password', region: 'Remove password' },
+  { group: 'Security and redaction', button: 'Sanitize document', region: 'Sanitize document' },
+  { group: 'Security and redaction', button: 'Permanent redaction', region: 'Permanent redaction' },
+  {
+    group: 'Numbering and watermark',
+    button: 'Page numbers and headers/footers',
+    region: 'Page numbers and headers/footers',
+  },
+  { group: 'Numbering and watermark', button: 'Add watermark', region: 'Add watermark' },
 ];
 
 for (const entry of TOOLS) {
@@ -94,15 +98,15 @@ test('Export Options opens the export dialog and the footer button opens the com
   await openPdf(page);
   await openDockTab(page, 'Tools');
 
-  await tool(page, 'Export Options').click();
-  const dialog = page.getByRole('dialog', { name: /Download \/ Export/ });
+  await tool(page, 'Export options').click();
+  const dialog = page.getByRole('dialog', { name: /Export options/ });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('This PDF (');
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 
   await panel(page)
-    .getByRole('button', { name: /Search All Commands/ })
+    .getByRole('button', { name: /Search all commands/ })
     .click();
   await expect(page.getByRole('combobox')).toBeVisible();
 });
@@ -115,10 +119,10 @@ test('Delete Pages removes the selected page and Rotate Pages turns it', async (
   expect(await shape()).toBeLessThan(1);
 
   await openDockTab(page, 'Tools');
-  await tool(page, 'Rotate Pages').click();
+  await tool(page, 'Rotate pages').click();
   await expect.poll(shape).toBeGreaterThan(1);
 
-  await tool(page, 'Delete Pages').click();
+  await tool(page, 'Delete pages').click();
   await expect(pages).toHaveCount(1);
 });
 

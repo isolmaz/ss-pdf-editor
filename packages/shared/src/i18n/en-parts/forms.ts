@@ -46,7 +46,7 @@ export const formsPart = {
   'form.dialog.validateOnly': 'Validate only',
   'form.dialog.validateOnlyHint':
     'When enabled, document is not modified: rules and required fields are checked and reported.',
-  'form.dialog.create.title': 'New form field',
+  'form.dialog.create.title': 'Add form field',
   'form.dialog.create.intro': 'Place field as rectangle on page (in points, bottom-left origin).',
   'form.dialog.kind': 'Field type',
   'form.dialog.name': 'Field name',

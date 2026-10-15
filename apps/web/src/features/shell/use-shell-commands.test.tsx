@@ -128,9 +128,7 @@ beforeEach(() => {
       'deleteMarkSelection',
       'selectAllMarks',
       'toggleSensitiveSession',
-      'opfsSave',
       'purgeActiveDocument',
-      'sweepVault',
       'checkOffline',
       'prepareOfflinePackages',
       'changeMode',
@@ -166,7 +164,7 @@ describe('useShellCommands', () => {
     run(result, 'view.fit-width');
     run(result, 'view.single');
     run(result, 'view.book');
-    expect(viewer.setZoom.mock.calls).toEqual([[1.25], [0.75], [1], ['page-width']]);
+    expect(viewer.setZoom.mock.calls).toEqual([[1.1], [0.9], [1], ['page-width']]);
     expect(viewer.setSpreadMode.mock.calls).toEqual([['single'], ['book']]);
   });
 
@@ -357,9 +355,7 @@ describe('useShellCommands', () => {
       ['tools.xfa-fill', 'openXfaForm'],
       ['help.shortcuts', 'showShortcuts'],
       ['settings.sensitive-session', 'toggleSensitiveSession'],
-      ['settings.opfs-save', 'opfsSave'],
       ['settings.purge-document', 'purgeActiveDocument'],
-      ['settings.sweep-vault', 'sweepVault'],
       ['help.offline', 'checkOffline'],
       ['help.prepare-offline', 'prepareOfflinePackages'],
     ];

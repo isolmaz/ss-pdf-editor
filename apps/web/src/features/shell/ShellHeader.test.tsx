@@ -122,13 +122,13 @@ const COMMANDS: readonly Command[] = [
   { id: 'tools.something-advanced', labelKey: 'shell.menu.tools', group: 'tools', run: vi.fn() },
 ] as never;
 
-function renderHeader() {
+function renderHeader(commands: readonly Command[] = COMMANDS) {
   return render(
     <ShellHeader
       session={session}
       tier="desktop"
       t={t}
-      commands={COMMANDS}
+      commands={commands}
       actions={actions as unknown as ShellHeaderProps['actions']}
     />,
   );
@@ -282,6 +282,21 @@ describe('ShellHeader editor state', () => {
     openTab();
     renderHeader();
     expect(screen.getByLabelText('menu bar').dataset.commands).toBe('file.save,tools.something-advanced');
+    act(() => coreStore.set({ mode: 'simple' }));
+    expect(screen.getByLabelText('menu bar').dataset.commands).toBe('file.save');
+  });
+
+  it('leaves out a Settings menu that holds only what the header’s Settings button already opens', () => {
+    const settings = { id: 'settings.open', labelKey: 'settings.open', group: 'settings', run: vi.fn() };
+    const theme = {
+      id: 'settings.theme.dark',
+      labelKey: 'setting.theme.dark',
+      group: 'settings',
+      run: vi.fn(),
+    };
+    openTab();
+    renderHeader([...COMMANDS, settings, theme] as never);
+    expect(screen.getByLabelText('menu bar').dataset.commands).toContain('settings.open,settings.theme.dark');
     act(() => coreStore.set({ mode: 'simple' }));
     expect(screen.getByLabelText('menu bar').dataset.commands).toBe('file.save');
   });

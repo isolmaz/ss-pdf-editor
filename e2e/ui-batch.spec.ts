@@ -15,14 +15,14 @@ test.use({ viewport: { width: 1440, height: 1000 } });
 test.describe.configure({ timeout: 150_000 });
 
 const STEPS = [
-  'Extract Pages',
-  'Optimize / Compress',
+  'Extract pages',
+  'Reduce file size',
   'Text recognition (OCR)',
   'Page labels',
-  'Header / Footer & Page Numbering',
+  'Page numbers and headers/footers',
   'Document properties',
-  'Export Text',
-  'Security',
+  'Export text',
+  'Protect with password',
 ] as const;
 
 async function openBatch(page: Page): Promise<Locator> {
@@ -88,7 +88,7 @@ test('extract, label and describe: every file gets each step, in order, and the 
   ]);
   await expect(dialog.getByText('2/', { exact: false }).first()).toBeVisible();
   await expect(dialog.getByRole('list').getByText('alpha.pdf', { exact: true })).toBeVisible();
-  await onlySteps(dialog, ['Extract Pages', 'Page labels', 'Document properties']);
+  await onlySteps(dialog, ['Extract pages', 'Page labels', 'Document properties']);
   await dialog.getByRole('textbox', { name: 'Page range' }).fill('2-3');
   await dialog.getByRole('textbox', { name: 'Prefix' }).fill('A-');
   await dialog.getByRole('textbox', { name: 'Title' }).fill('Batch title');
@@ -125,7 +125,7 @@ test('extract, label and describe: every file gets each step, in order, and the 
 test('Header / Footer: the format template and the start number reach every file', async ({ page }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
-  await onlySteps(dialog, ['Header / Footer & Page Numbering']);
+  await onlySteps(dialog, ['Page numbers and headers/footers']);
   await dialog.getByRole('textbox', { name: 'Format' }).fill('Leaf {page} of {total}');
   await dialog.getByRole('spinbutton', { name: 'Starting page number' }).fill('5');
   await dialog.getByRole('checkbox', { name: 'Skip first page' }).check();
@@ -144,7 +144,7 @@ test('Header / Footer: the format template and the start number reach every file
 test('Export Text: a text file comes with the finished PDF', async ({ page }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
-  await onlySteps(dialog, ['Export Text']);
+  await onlySteps(dialog, ['Export text']);
   await dialog.getByRole('button', { name: 'Run batch' }).click();
   await expect(dialog.getByText('1 completed, 0 failed, 0 skipped').first()).toBeVisible({
     timeout: 120_000,
@@ -164,7 +164,7 @@ test('Export Text: a text file comes with the finished PDF', async ({ page }) =>
 test('Security without an owner password generates one and still encrypts every file', async ({ page }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
-  await onlySteps(dialog, ['Security']);
+  await onlySteps(dialog, ['Protect with password']);
   await dialog.getByLabel('Open password').fill('s3cret');
   await dialog.getByRole('button', { name: 'Run batch' }).click();
   await expect(dialog.getByText('1 completed, 0 failed, 0 skipped').first()).toBeVisible({
@@ -182,7 +182,7 @@ test('Security: the finished PDF is encrypted with the open password and the cho
 }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
-  await onlySteps(dialog, ['Security']);
+  await onlySteps(dialog, ['Protect with password']);
   await dialog.getByLabel('Open password').fill('s3cret');
   await dialog.getByLabel('Owner password').fill('0wner');
   await dialog.getByRole('checkbox', { name: 'Printing', exact: true }).setChecked(true);
@@ -237,13 +237,13 @@ test.describe('a damaged file in the queue', () => {
 test('a page range that cannot be read stops the run before any file is touched', async ({ page }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
-  await onlySteps(dialog, ['Extract Pages']);
+  await onlySteps(dialog, ['Extract pages']);
   await dialog.getByRole('textbox', { name: 'Page range' }).fill('two to three');
   await dialog.getByRole('button', { name: 'Run batch' }).click();
   const alert = dialog.getByRole('alert');
   await expect(alert).toContainText('Could not read step settings.');
   await expect(alert).toContainText('Enter a range like 1-3, 5 or 8-10.');
-  await expect(alert).toContainText('Step “Extract Pages”, page range “two to three”.');
+  await expect(alert).toContainText('Step “Extract pages”, page range “two to three”.');
   await expect(fileReport(dialog)).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Download finished files' })).toHaveCount(0);
 });
@@ -260,7 +260,7 @@ test('the run needs a queue and at least one step', async ({ page }) => {
 
 test('a ruleset is saved as JSON, loaded again, locks the steps, and can be discarded', async ({ page }) => {
   const dialog = await openBatch(page);
-  await onlySteps(dialog, ['Extract Pages', 'Page labels']);
+  await onlySteps(dialog, ['Extract pages', 'Page labels']);
   await dialog.getByRole('textbox', { name: 'Page range' }).fill('1-2');
   await dialog.getByRole('textbox', { name: 'Prefix' }).fill('Z-');
   await dialog.getByRole('textbox', { name: 'Ruleset name' }).fill('my rules');
@@ -290,7 +290,7 @@ test('a ruleset is saved as JSON, loaded again, locks the steps, and can be disc
   ).toBeVisible();
   await expect(again.getByRole('textbox', { name: 'Ruleset name' })).toHaveValue('my rules');
   await expect(again.getByRole('textbox', { name: 'Ruleset name' })).toBeDisabled();
-  await expect(again.getByRole('checkbox', { name: 'Extract Pages', exact: true })).toBeDisabled();
+  await expect(again.getByRole('checkbox', { name: 'Extract pages', exact: true })).toBeDisabled();
   await again.getByRole('button', { name: 'Run batch' }).click();
   await expect(again.getByText('1 completed, 0 failed, 0 skipped').first()).toBeVisible({ timeout: 120_000 });
   const files = await downloads(page, 1, () =>
@@ -301,7 +301,7 @@ test('a ruleset is saved as JSON, loaded again, locks the steps, and can be disc
   expect(await readProducedEntry(out, null, 'PageLabels')).toContain('Z-');
 
   await again.getByRole('button', { name: 'Discard loaded ruleset' }).click();
-  await expect(again.getByRole('checkbox', { name: 'Extract Pages', exact: true })).toBeEnabled();
+  await expect(again.getByRole('checkbox', { name: 'Extract pages', exact: true })).toBeEnabled();
   await expect(again.getByRole('textbox', { name: 'Ruleset name' })).toBeEnabled();
   await expect(again.getByText('Loaded ruleset contains')).toHaveCount(0);
 });
@@ -316,7 +316,7 @@ test('a file that is not a ruleset is refused with a message and loads nothing',
   const alert = dialog.getByRole('alert');
   await expect(alert).toBeVisible();
   await expect(dialog.getByText('Loaded ruleset contains')).toHaveCount(0);
-  await expect(dialog.getByRole('checkbox', { name: 'Optimize / Compress', exact: true })).toBeEnabled();
+  await expect(dialog.getByRole('checkbox', { name: 'Reduce file size', exact: true })).toBeEnabled();
 });
 
 test('Cancel stops a running batch: progress names the file, finished files are kept, the rest are skipped', async ({
@@ -328,7 +328,7 @@ test('Cancel stops a running batch: progress names the file, finished files are 
     { name: 'two.pdf', bytes: labelledPdf('Two', 40) },
     { name: 'three.pdf', bytes: labelledPdf('Three', 40) },
   ]);
-  await onlySteps(dialog, ['Optimize / Compress']);
+  await onlySteps(dialog, ['Reduce file size']);
   await dialog.getByRole('radio', { name: 'Convert pages to image (lossy)' }).check();
   await dialog.getByRole('spinbutton', { name: /Resolution/ }).fill('300');
   await dialog.getByRole('button', { name: 'Run batch' }).click();
@@ -382,7 +382,7 @@ test('watching a folder queues its PDFs, picks up a new one, and stops on reques
     { name: 'b.PDF', bytes: labelledPdf('B', 1) },
     { name: 'notes.txt', bytes: new TextEncoder().encode('not a pdf') },
   ]);
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   await expect(dialog.getByText('Watching folder: watched')).toBeVisible();
   const list = dialog.getByRole('list').first();
   await expect(list.getByText('a.pdf', { exact: true })).toBeVisible();
@@ -397,9 +397,9 @@ test('watching a folder queues its PDFs, picks up a new one, and stops on reques
   await expect(dialog.getByText(/^3\/\d+$/)).toBeVisible();
   await expect(page.getByText('3 PDF files queued from folder.')).toBeVisible();
 
-  await dialog.getByRole('button', { name: 'Stop Watching' }).click();
+  await dialog.getByRole('button', { name: 'Stop watching' }).click();
   await expect(dialog.getByText('Watching folder')).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Watch Folder' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Watch folder' })).toBeVisible();
 });
 
 test('a refused folder picker changes nothing', async ({ page }) => {
@@ -412,9 +412,9 @@ test('a refused folder picker changes nothing', async ({ page }) => {
       },
     });
   });
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   await expect(dialog.getByText('Watching folder')).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Watch Folder' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Watch folder' })).toBeVisible();
   await expect(dialog.getByText(/^0\/\d+$/)).toBeVisible();
 });
 
@@ -596,7 +596,7 @@ test('closing the dialog while watching a folder stops the folder timer', async 
   const dialog = await openBatch(page);
   const before = await timers();
   await stageFolder(page, [{ name: 'a.pdf', bytes: labelledPdf('A', 1) }]);
-  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await dialog.getByRole('button', { name: 'Watch folder' }).click();
   await expect(dialog.getByText('Watching folder: watched')).toBeVisible();
   await expect.poll(timers).toBe(before + 1);
   await dialog.getByRole('button', { name: 'Close' }).click();

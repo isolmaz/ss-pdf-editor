@@ -205,6 +205,13 @@
   color-scheme: light dark;
 }
 
+/* A finger needs a taller status bar than a pointer: its controls grow to 40 px (StatusBar). */
+@media (pointer: coarse) {
+  :root {
+    --spacing-pdf-statusbar: 2.75rem;
+  }
+}
+
 /* pdf.js sizes pages as content boxes. Preflight's border-box shrinks only the
  * canvas by the transparent page border, separating it from text and hit targets. */
 .pdfViewer .page {

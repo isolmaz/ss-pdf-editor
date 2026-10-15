@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from 'playwright/test';
+import { statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { makeSignerContainer, readSignature, SIGNER } from './signer-fixture';
 import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { applyForm } from './ui-helpers';
 
 /**
  * Keyboard history, the home screen's status bar, reading mode and presentation mode.
@@ -199,12 +201,10 @@ async function signOpenDocument(page: Page, dir: string): Promise<void> {
   const container = makeSignerContainer(dir);
   await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign document' }).click();
-  const form = page.getByRole('region', { name: /Sign Document/ });
+  const form = page.getByRole('region', { name: /Sign document/ });
   await form.locator('input[type="file"]').setInputFiles(container);
   await form.getByRole('textbox', { name: 'PKCS#12 password' }).fill(SIGNER.password);
-  await form.getByRole('button', { name: 'Sign', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+  await applyForm(form, 'Sign');
   await expect(notice(page, `Signature applied (${SIGNER.commonName})`)).toBeVisible({ timeout: 60_000 });
 }
 
@@ -267,7 +267,7 @@ test('editing after signing warns before the save, and saving anyway breaks the 
   const dir = test.info().outputPath('signer');
   await open(page, 'resign.pdf', toolFixturePdf());
   await signOpenDocument(page, dir);
-  await page.getByRole('button', { name: 'Rotate Page (90°)' }).click();
+  await statusRotate(page).click();
   await expect(notice(page, '1 page(s) rotated')).toBeVisible();
 
   await page.getByRole('button', { name: 'Export', exact: true }).click();
@@ -327,12 +327,43 @@ test('view and settings commands from the menu bar act and are named in the inte
   await menu('View', 'Magnifier', 'menuitemcheckbox');
 
   // The dark theme reaches the document element, then the light one takes it back.
-  await menu('Settings', 'Dark Theme', 'menuitemcheckbox');
+  await menu('Settings', 'Dark theme', 'menuitemcheckbox');
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
-  await menu('Settings', 'Light Theme', 'menuitemcheckbox');
+  await menu('Settings', 'Light theme', 'menuitemcheckbox');
   await expect(page.locator('html')).not.toHaveAttribute('data-mode', 'dark');
 
   // The batch dialog opens in the interface language.
   await menu('File', 'Batch operations');
   await expect(page.getByRole('dialog', { name: 'Batch operations' })).toBeVisible();
+});
+
+test('menus rule off their sections, say why an entry is unavailable and drop the Settings menu in the simple mode', async ({
+  page,
+}) => {
+  await open(page, 'sections.pdf', toolFixturePdf());
+  // The header has a Settings button, so a menu holding only "Settings" would say it twice.
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Settings', exact: true })).toHaveCount(0);
+
+  await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
+  const menu = page.getByRole('menu');
+  // Undo, redo | pages | marks | find, rename: three rules between four sections.
+  await expect(menu.getByRole('separator')).toHaveCount(3);
+  const undo = menu.getByRole('menuitem', { name: /^Undo/ });
+  await expect(undo).toBeDisabled();
+  await expect(undo).toHaveAttribute('aria-description', 'Nothing to undo.');
+  await expect(undo).toHaveAttribute('title', 'Nothing to undo.');
+  // Nothing is selected, so deleting a mark says what to do first.
+  await expect(menu.getByRole('menuitem', { name: /^Delete/ })).toHaveAttribute(
+    'aria-description',
+    'Select a mark first.',
+  );
+  // An available entry has no such text.
+  await expect(menu.getByRole('menuitem', { name: /^Rename/ })).not.toHaveAttribute('aria-description');
+  await page.keyboard.press('Escape');
+
+  await useAdvancedMode(page);
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+  // Settings | theme | privacy.
+  await expect(page.getByRole('menu').getByRole('separator')).toHaveCount(2);
 });

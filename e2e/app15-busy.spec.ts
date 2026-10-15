@@ -3,7 +3,7 @@ import { installPickers, menu, notice, openApp } from './app-helpers';
 import { holdSavePicker } from './app15-helpers';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
-import { exportBytes } from './ui-helpers';
+import { exportBytes, reviewHeading } from './ui-helpers';
 
 /**
  * Work that arrives while the shell is busy with something else. A save waiting on its file
@@ -29,7 +29,7 @@ async function undoItem(page: Page): Promise<Locator> {
   return page.getByRole('menuitem', { name: /^Undo/ });
 }
 
-test('a previewed result applied while a save waits on its picker is refused, and applies once the picker closes', async ({
+test('a result that ends while a save waits on its picker is refused, falls back to its review, and applies once the picker closes', async ({
   page,
 }) => {
   await installPickers(page);
@@ -39,23 +39,18 @@ test('a previewed result applied while a save waits on its picker is refused, an
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Optimize');
   await page.keyboard.press('Enter');
-  const form = page.getByRole('region', { name: 'Optimize / Compress' });
+  const form = page.getByRole('region', { name: 'Reduce file size' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  const report = form.getByRole('heading', { name: 'Operation report' });
-  // A destructive operation asks once more before it runs.
-  const goOn = form.getByRole('button', { name: 'Continue', exact: true });
-  await expect(goOn.or(report)).toBeVisible({ timeout: 60_000 });
-  if (await goOn.isVisible()) await goOn.click();
-  await expect(report).toBeVisible({ timeout: 60_000 });
 
   await page.keyboard.press('Control+s');
   await expect.poll(() => page.evaluate(() => Reflect.get(window, '__saveCalls'))).toBe(1);
 
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(notice(page, BUSY)).toBeVisible();
-  // Refused, not dropped: the form is still there with its result.
-  await expect(form).toBeVisible();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
+  // A destructive operation asks once more before it runs.
+  await form.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(notice(page, BUSY)).toBeVisible({ timeout: 60_000 });
+  // Refused, not dropped: the form is still there, showing the review of its result.
+  await expect(reviewHeading(form)).toBeVisible();
   await expect(await undoItem(page)).toBeDisabled();
   await page.keyboard.press('Escape');
 

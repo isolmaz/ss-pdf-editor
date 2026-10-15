@@ -31,9 +31,9 @@ const items = () => screen.getAllByRole('menuitem').map((item) => item.textConte
 describe('ContextMenu', () => {
   it('lists only the page entries the shell wired, under their heading, without a selection block', () => {
     show({ onRotateRight: vi.fn(), onFitWidth: vi.fn() });
-    expect(items()).toEqual(['Rotate Clockwise (90°)', 'Fit Width']);
-    expect(screen.getByText('Page & Edit')).toBeTruthy();
-    expect(screen.queryByText('Text Selection Actions')).toBeNull();
+    expect(items()).toEqual(['Rotate right', 'Fit width']);
+    expect(screen.getByText('Page and edit')).toBeTruthy();
+    expect(screen.queryByText('Text selection actions')).toBeNull();
   });
 
   it('puts the selection block ahead of the page block, split by a separator, when text is selected', () => {
@@ -57,26 +57,26 @@ describe('ContextMenu', () => {
       'Highlight',
       'Underline',
       'Strikethrough',
-      'Copy Text',
-      'Redact Selection',
-      'Add Note',
-      'Rotate Clockwise (90°)',
-      'Rotate Counterclockwise (-90°)',
-      'Delete Current Page',
-      'Add Text',
-      'Edit Text',
-      'Freehand Draw',
-      'Fit Width',
+      'Copy text',
+      'Redact selection',
+      'Add note',
+      'Rotate right',
+      'Rotate left',
+      'Delete this page',
+      'Add text',
+      'Edit text',
+      'Freehand drawing',
+      'Fit width',
     ]);
     expect(container.querySelectorAll('span[aria-hidden="true"].h-px')).toHaveLength(1);
     const menu = screen.getByRole('menu');
-    expect(within(menu).getByText('Text Selection Actions')).toBeTruthy();
+    expect(within(menu).getByText('Text selection actions')).toBeTruthy();
   });
 
   it('runs the chosen entry and then closes', async () => {
     const onDeletePage = vi.fn();
     const { onClose } = show({ onDeletePage });
-    await userEvent.setup().click(screen.getByRole('menuitem', { name: 'Delete Current Page' }));
+    await userEvent.setup().click(screen.getByRole('menuitem', { name: 'Delete this page' }));
     expect(onDeletePage).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -86,8 +86,8 @@ describe('ContextMenu', () => {
     const onFitWidth = vi.fn();
     const { onClose } = show({ canEdit: false, onRotateRight, onFitWidth });
     const user = userEvent.setup();
-    const rotate = screen.getByRole('menuitem', { name: 'Rotate Clockwise (90°)' }) as HTMLButtonElement;
-    const fit = screen.getByRole('menuitem', { name: 'Fit Width' }) as HTMLButtonElement;
+    const rotate = screen.getByRole('menuitem', { name: 'Rotate right' }) as HTMLButtonElement;
+    const fit = screen.getByRole('menuitem', { name: 'Fit width' }) as HTMLButtonElement;
     expect(rotate.disabled).toBe(true);
     expect(fit.disabled).toBe(false);
     await user.click(rotate);
@@ -141,12 +141,12 @@ describe('ContextMenu', () => {
 
     it('takes focus into the first entry as it opens', () => {
       show(WIRED);
-      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Rotate Clockwise (90°)' }));
+      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Rotate right' }));
     });
 
     it('lands on the first entry that is live while the document is read-only', () => {
       show({ ...WIRED, canEdit: false });
-      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Fit Width' }));
+      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Fit width' }));
     });
 
     it('takes focus itself when every entry it offers is disabled, and walks nowhere', async () => {
@@ -162,15 +162,15 @@ describe('ContextMenu', () => {
       show(WIRED);
       const user = userEvent.setup();
       await user.keyboard('{ArrowDown}');
-      expect(focused()).toBe('Delete Current Page');
+      expect(focused()).toBe('Delete this page');
       await user.keyboard('{ArrowDown}{ArrowDown}');
-      expect(focused()).toBe('Fit Width');
+      expect(focused()).toBe('Fit width');
       await user.keyboard('{ArrowDown}');
-      expect(focused()).toBe('Rotate Clockwise (90°)');
+      expect(focused()).toBe('Rotate right');
       await user.keyboard('{ArrowUp}');
-      expect(focused()).toBe('Fit Width');
+      expect(focused()).toBe('Fit width');
       await user.keyboard('{ArrowUp}');
-      expect(focused()).toBe('Add Text');
+      expect(focused()).toBe('Add text');
     });
 
     it('walks past the disabled entries while the document is read-only', async () => {
@@ -185,24 +185,24 @@ describe('ContextMenu', () => {
       });
       const user = userEvent.setup();
       // Copy and Fit Width are the only entries that do not write: the keys reach those two.
-      expect(focused()).toBe('Copy Text');
+      expect(focused()).toBe('Copy text');
       await user.keyboard('{ArrowDown}');
-      expect(focused()).toBe('Fit Width');
+      expect(focused()).toBe('Fit width');
       await user.keyboard('{ArrowDown}');
-      expect(focused()).toBe('Copy Text');
+      expect(focused()).toBe('Copy text');
       await user.keyboard('{ArrowUp}');
-      expect(focused()).toBe('Fit Width');
+      expect(focused()).toBe('Fit width');
       await user.keyboard('{Home}');
-      expect(focused()).toBe('Copy Text');
+      expect(focused()).toBe('Copy text');
     });
 
     it('goes to the first and last entry with Home and End', async () => {
       show(WIRED);
       const user = userEvent.setup();
       await user.keyboard('{End}');
-      expect(focused()).toBe('Fit Width');
+      expect(focused()).toBe('Fit width');
       await user.keyboard('{Home}');
-      expect(focused()).toBe('Rotate Clockwise (90°)');
+      expect(focused()).toBe('Rotate right');
     });
 
     it('enters the last entry with ArrowUp from the menu itself, and keeps the keys it does not use', async () => {
@@ -211,10 +211,10 @@ describe('ContextMenu', () => {
       act(() => menu.focus());
       const user = userEvent.setup();
       await user.keyboard('{ArrowUp}');
-      expect(focused()).toBe('Fit Width');
+      expect(focused()).toBe('Fit width');
       const other = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true });
       act(() => {
-        screen.getByRole('menuitem', { name: 'Fit Width' }).dispatchEvent(other);
+        screen.getByRole('menuitem', { name: 'Fit width' }).dispatchEvent(other);
       });
       expect(other.defaultPrevented).toBe(false);
     });
@@ -223,7 +223,7 @@ describe('ContextMenu', () => {
       const { onClose } = show(WIRED);
       await userEvent.setup().keyboard('{Tab}');
       expect(onClose).toHaveBeenCalledOnce();
-      expect(focused()).toBe('Rotate Clockwise (90°)');
+      expect(focused()).toBe('Rotate right');
     });
 
     it('hands focus back to where it was when it closes with focus still inside', () => {
@@ -248,7 +248,7 @@ describe('ContextMenu', () => {
         opener.focus();
         const onAddText = vi.fn(() => elsewhere.focus());
         const { unmount } = show({ onAddText });
-        await userEvent.setup().click(screen.getByRole('menuitem', { name: 'Add Text' }));
+        await userEvent.setup().click(screen.getByRole('menuitem', { name: 'Add text' }));
         expect(document.activeElement).toBe(elsewhere);
         unmount();
         expect(document.activeElement).toBe(elsewhere);

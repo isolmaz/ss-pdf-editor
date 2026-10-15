@@ -21,7 +21,7 @@ test('Edit Text on a page MuPDF cannot read says so on the page and offers no bo
   await injectEngineFaults(page);
   await openPdf(page, 'edit.pdf', labelledPdf('Original', 1));
   await failNext(page, 'mupdf', 'PDFDocument.loadPage', 'page tree unreadable');
-  await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit text', exact: true }).click();
 
   const failure = page.locator('[data-text-layer-error]');
   await expect(failure).toHaveText('Could not extract text for this page; editing disabled.');
@@ -34,7 +34,7 @@ test('Edit Text on a page MuPDF cannot read says so on the page and offers no bo
   // The tool is left with Escape, and entered again, the page reads and its paragraph is offered.
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-text-layer]')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Edit Text', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit text', exact: true }).click();
   await expect(page.locator('[data-text-block][data-block-text="Original 1"]')).toHaveCount(1, {
     timeout: 30_000,
   });

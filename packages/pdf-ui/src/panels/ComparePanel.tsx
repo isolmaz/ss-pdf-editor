@@ -36,7 +36,7 @@ import type {
 } from 'pdf-core/ops/compare';
 import { compareText, compareVisual } from 'pdf-core/ops/compare';
 import type { OperationProgress } from 'pdf-core/ops/types';
-import { type MessageKey, progressLine, type Translator, toToolError } from 'pdf-shared';
+import { formatPercent, type MessageKey, progressLine, type Translator, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PanelMessage } from './PanelParts';
@@ -152,7 +152,7 @@ function pixelRows(result: VisualComparison, t: Translator): CompareRow[] {
         : page.status === 'unavailable'
           ? // `compare.ts` gives every unavailable page the reason it could not be rendered.
             t(REASON_KEYS[page.reason as PageReason])
-          : `${page.differencePercent.toFixed(2)}% · ${String(page.differingTiles)}/${String(page.tileCount)}${
+          : `${formatPercent(page.differencePercent / 100, t.locale, 2)} · ${String(page.differingTiles)}/${String(page.tileCount)}${
               page.reason === undefined ? '' : ` · ${t(REASON_KEYS[page.reason])}`
             }`;
     return {

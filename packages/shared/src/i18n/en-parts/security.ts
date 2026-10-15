@@ -1,7 +1,7 @@
 export const securityPart = {
-  'security.title': 'Security',
+  'security.title': 'Protect with password',
   'security.intro':
-    'Document is encrypted with AES-256 and cannot be opened without a password. Passwords cannot be recovered, so keep it safe. Output is reopened and permissions verified before delivery.',
+    'The document is encrypted with AES-256 and cannot be opened without the password. Passwords cannot be recovered; keep it safe. Permissions are verified first.',
   'security.oldPassword': 'Current password',
   'security.oldPasswordHint':
     'Open password if document is already encrypted; leave empty for unencrypted documents.',
@@ -22,7 +22,7 @@ export const securityPart = {
   'security.done': 'Document encrypted.',
   'security.unlock.title': 'Remove password',
   'security.unlock.intro':
-    'The document is decrypted with the provided password and an unprotected copy is opened in a new tab; original file remains unchanged. Password is used only for this operation and never stored.',
+    'The document is decrypted with the password and an unprotected copy opens in a new tab; the original is unchanged. The password is used once, never stored.',
   'security.unlock.suffix': 'unprotected',
   'security.unlock.password': 'Password',
   'security.unlock.passwordHint': 'Document open password; used only for this operation.',

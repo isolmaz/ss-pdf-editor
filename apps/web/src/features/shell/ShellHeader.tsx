@@ -4,7 +4,7 @@ import type { SessionStore } from 'pdf-model';
 import type { DeviceTier, Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { MenuBar } from 'pdf-ui/ui';
-import { visibleCommands } from '../../commands';
+import { menuCommands } from '../../commands';
 import { ModernEditorHeader } from '../../components/ModernEditorHeader';
 import { cancelOperation, showNotice, useCore } from '../core/core-store';
 import { openExportDialog } from '../export/export-store';
@@ -74,7 +74,7 @@ export function ShellHeader({ session, tier, t, commands, actions }: ShellHeader
       onExportOptions={openExportDialog}
       onSearch={() => currentViewer()?.openFind()}
       onPalette={openPalette}
-      menu={<MenuBar t={t} commands={mode === 'simple' ? visibleCommands(commands, 'simple') : commands} />}
+      menu={<MenuBar t={t} commands={menuCommands(commands, mode)} />}
       tabs={tabs.map((tab) => ({ id: tab.id, name: tab.name, dirty: tab.dirty }))}
       activeTabId={activeId}
       onSelectTab={(id) => {

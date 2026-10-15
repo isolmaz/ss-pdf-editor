@@ -139,6 +139,19 @@ describe('ImagePickerInput', () => {
     expect(input?.getAttribute('tabindex')).toBe('-1');
   });
 
+  it.each(['tr', 'en'] as const)(
+    'is described on the home tile by every kind it accepts (%s)',
+    (language) => {
+      const { container } = render(<ImagePickerInput t={t} />);
+      const accepted = (container.querySelector('input[type="file"]')?.getAttribute('accept') ?? '')
+        .split(',')
+        .map((type) => type.replace('image/', ''));
+      expect(accepted).toEqual(['png', 'jpeg', 'webp', 'gif', 'bmp']);
+      const description = createTranslator(language)('home.tool.imageAdd').toLowerCase();
+      for (const kind of accepted) expect(description, kind).toContain(kind);
+    },
+  );
+
   it('names a chosen file the browser cannot read as a picture, and resets the input', async () => {
     const user = userEvent.setup();
     const { container } = render(<ImagePickerInput t={t} />);

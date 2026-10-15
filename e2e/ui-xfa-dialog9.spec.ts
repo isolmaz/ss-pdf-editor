@@ -9,7 +9,7 @@
 import type { Page } from 'playwright/test';
 import { expect, test } from './test';
 import { readProducedPageTexts, toolFixturePdf } from './tool-fixture';
-import { exportBytes, menuItem, openPdf } from './ui-helpers';
+import { applyForm, detailsButton, exportBytes, menuItem, openPdf, reviewHeading } from './ui-helpers';
 import { xfaWithoutNeedsRendering } from './ui-small-helpers';
 import { dynamicXfaPdf } from './ui-xfa-helpers';
 
@@ -111,9 +111,7 @@ test('flatten draws every kind of control, both faces and the second page as wor
   await menuItem(page, 'Tools', 'Flatten XFA form to a normal PDF…');
   const form = page.getByRole('region', { name: 'Flatten XFA form to a normal PDF' });
   await form.getByRole('radio').first().check();
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 90_000 });
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await applyForm(form, 'Open in new tab');
   await expect(page).toHaveTitle('rich-flat.pdf', { timeout: 60_000 });
   const texts = await readProducedPageTexts(await exportBytes(page, 'rich-flat.pdf'));
   expect(texts.length).toBeGreaterThanOrEqual(2);
@@ -138,14 +136,14 @@ test.describe('without the service worker', () => {
     const form = page.getByRole('region', { name: 'Flatten XFA form to a normal PDF' });
     await form.getByRole('radio').first().check();
     await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-    await expect(form.getByRole('alert')).toContainText('A required engine package is not downloaded.', {
+    await expect(form.getByRole('alert')).toContainText('A required package is not downloaded.', {
       timeout: 90_000,
     });
-    await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+    await expect(reviewHeading(form)).toHaveCount(0);
 
     await page.unroute('**/LiberationSans-Regular.ttf');
-    await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-    await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 90_000 });
-    await expect(form).toContainText('1 XFA page(s) became normal PDF pages.');
+    await applyForm(form, 'Open in new tab');
+    await detailsButton(page).click();
+    await expect(page.getByRole('dialog')).toContainText('1 XFA page(s) became normal PDF pages.');
   });
 });

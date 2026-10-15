@@ -5,7 +5,7 @@
 
 import { expect, test } from './test';
 import { labelledPdf, readProducedPdf } from './tool-fixture';
-import { exportBytes, openDockTab, openPdf } from './ui-helpers';
+import { applyForm, exportBytes, openDockTab, openPdf } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -16,7 +16,7 @@ test('bookmarks typed into the outline editor’s box become the outline of the 
   await openPdf(page, 'plain.pdf', labelledPdf('Doc', 3));
   await openDockTab(page, 'Outline');
   await page.getByRole('button', { name: 'Edit outline' }).click();
-  const form = page.getByRole('region', { name: 'Edit outline (bookmarks)' });
+  const form = page.getByRole('region', { name: 'Edit outline' });
   await expect(form).toBeVisible({ timeout: 30_000 });
 
   // The mode starts on "add child"; the multi-line box only exists once "Rewrite all" is chosen.
@@ -29,10 +29,7 @@ test('bookmarks typed into the outline editor’s box become the outline of the 
   const box = form.getByRole('textbox', { name: /^Bookmarks/ });
   await box.fill('Start | 1\nMiddle | 2\nEnd | 3');
   await expect(box).toHaveValue('Start | 1\nMiddle | 2\nEnd | 3');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
 
   const produced = await readProducedPdf(await exportBytes(page, 'outlined.pdf'));
   expect(produced.outlineTitles).toEqual(['Start', 'Middle', 'End']);
@@ -44,7 +41,7 @@ test('a number outside its range, or none, blocks the run with the range; a vali
   await openPdf(page, 'plain.pdf', labelledPdf('Doc', 3));
   await openDockTab(page, 'Outline');
   await page.getByRole('button', { name: 'Edit outline' }).click();
-  const form = page.getByRole('region', { name: 'Edit outline (bookmarks)' });
+  const form = page.getByRole('region', { name: 'Edit outline' });
   const pageNumber = form.getByRole('spinbutton', { name: 'Destination page' });
   const run = form.locator('button').last();
 

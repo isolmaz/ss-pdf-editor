@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 import { paragraphTexts } from './docx-text';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
-import { openPdf, runCommand } from './ui-helpers';
+import { applyForm, openPdf, runCommand } from './ui-helpers';
 
 interface Package {
   readonly files: Readonly<Record<string, { readonly dir: boolean }>>;
@@ -41,11 +41,8 @@ test('Word as one picture per page: a section and a picture for each page, at it
   // The layout is a Word choice: the exact layout unless asked otherwise.
   await expect(form.getByRole('radio', { name: /exact layout/ })).toBeChecked();
   await form.getByRole('radio', { name: /One picture per page/ }).check();
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 90_000 });
-
-  const download = page.waitForEvent('download', { timeout: 60_000 });
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  const download = page.waitForEvent('download', { timeout: 90_000 });
+  await applyForm(form, 'Download');
   const saved = await download;
   expect(saved.suggestedFilename()).toBe('plan.docx');
   const path = test.info().outputPath('plan.docx');
@@ -107,11 +104,8 @@ test('Word as the exact layout (the default): text boxes with the words, a live 
   const form = page.getByRole('region', { name: 'Export to Word, Excel or CSV' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await expect(form.getByRole('radio', { name: /exact layout/ })).toBeChecked();
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 90_000 });
-
-  const download = page.waitForEvent('download', { timeout: 60_000 });
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  const download = page.waitForEvent('download', { timeout: 90_000 });
+  await applyForm(form, 'Download');
   const saved = await download;
   expect(saved.suggestedFilename()).toBe('report.docx');
   const path = test.info().outputPath('report.docx');

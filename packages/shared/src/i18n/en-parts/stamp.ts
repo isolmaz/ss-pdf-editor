@@ -1,5 +1,5 @@
 export const stampPart = {
-  'stamp.title': 'Header / Footer & Page Numbering',
+  'stamp.title': 'Page numbers and headers/footers',
   'stamp.intro':
     'Stamps are drawn at the chosen position; on rotated pages, position is calculated according to on-screen orientation and renders upright.',
   'stamp.position': 'Position',
@@ -28,7 +28,7 @@ export const stampPart = {
   'stamp.bates.prefix': 'Prefix',
   'stamp.bates.digits': 'Number of digits',
   'stamp.done': 'Stamp added to {count} page(s).',
-  'watermark.title': 'Watermark',
+  'watermark.title': 'Add watermark',
   'watermark.intro':
     'Watermark is placed over page content; text remains selectable and document is rewritten (not incremental).',
   'watermark.text': 'Text',

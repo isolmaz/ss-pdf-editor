@@ -111,7 +111,7 @@ export async function purgeActiveDocument(session: SessionStore, t: Translator):
   if (tab === null) return;
   const { channel } = persistenceStore.get();
   if (channel === null) {
-    showNotice(t('vault.sweepNoChannel'));
+    showNotice(t('vault.purgeNoChannel'));
     return;
   }
   try {
@@ -129,27 +129,21 @@ export async function purgeActiveDocument(session: SessionStore, t: Translator):
 }
 
 /**
- * The orphan sweep: delete the vault blobs no document references any more.
+ * The orphan sweep: delete the vault blobs no document references any more. It runs once at
+ * start-up, after the drafts are back (`use-draft-recovery.ts`), and says nothing: it is a chore,
+ * not something the user asked for.
  *
- * It refuses in two cases, both of them stated to the user rather than hidden. An
+ * It does nothing in the cases where deleting could lose the only copy of something. An
  * incomplete inventory means the reference graph is unknown. An unreachable peer channel
- * means another window's live documents are invisible, and sweeping then would delete
- * the only copy of something this window never heard about.
+ * means another window's live documents are invisible, and a live window that never answered
+ * is a window whose documents are unknown. A failure leaves the orphans for the next start.
  */
-export async function sweepVault(session: SessionStore, t: Translator): Promise<void> {
+export async function sweepVault(session: SessionStore): Promise<void> {
   try {
     const { channel } = persistenceStore.get();
-    if (channel === null || !channel.canReachPeers()) {
-      showNotice(t('vault.sweepNoChannel'));
-      return;
-    }
+    if (channel === null || !channel.canReachPeers()) return;
     await channel.runExclusive(async () => {
-      // A live window that never answered is a window whose documents are unknown: the
-      // reference graph is incomplete, so nothing is deleted.
-      if (!(await channel.probe())) {
-        showNotice(t('vault.peerSilent'));
-        return;
-      }
+      if (!(await channel.probe())) return;
       await queueDraftWrite(async () => {
         const storage = draftStorage();
         const inventory = await readInventory();
@@ -160,20 +154,12 @@ export async function sweepVault(session: SessionStore, t: Translator): Promise<
           inventory,
           peerReferences: channel.peerReferences(),
         });
-        if (!plan.ok) {
-          showNotice(t('vault.incomplete'));
-          return;
-        }
+        if (!plan.ok) return;
         for (const key of plan.deleteKeys) await storage.deleteSource(key);
-        showNotice(
-          plan.deleteKeys.length === 0
-            ? t('vault.sweepNothing')
-            : t('vault.swept', { count: plan.deleteKeys.length }),
-        );
       });
     });
-  } catch (error) {
-    showNotice(failureNotice(error, t));
+  } catch {
+    // Orphans are only disk space; the next start tries again.
   }
 }
 

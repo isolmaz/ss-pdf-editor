@@ -11,7 +11,7 @@ import { notice } from './app-helpers';
 import { makeSignerContainer, SIGNER } from './signer-fixture';
 import { expect, test } from './test';
 import { readProducedPdf } from './tool-fixture';
-import { exportBytes, openDockTab, openPdf } from './ui-helpers';
+import { applyForm, exportBytes, openDockTab, openPdf } from './ui-helpers';
 import {
   cmsBy,
   cmsWithTimestamp,
@@ -481,7 +481,7 @@ test('an authority that chains to no imported root has its time shown but not re
   );
   await expect(fact(row, 'Timestamp')).toHaveText('Valid');
   await expect(row).toContainText(
-    'The time-stamping authority does not chain to an imported root, one of its certificates is revoked, or no list on this device clears one of them: the time is shown but not relied on, since anyone can run a timestamp server.',
+    'The time-stamping authority does not chain to an imported root, or a certificate is revoked or not cleared: the time is shown but not relied on, since anyone can run a timestamp server.',
   );
   await expect(row).toContainText(`Judged at: ${utc(issued)} — untrusted timestamp.`);
 });
@@ -617,12 +617,10 @@ test('signing the open document adds a row that says self-signed', async ({ page
   const container = makeSignerContainer(test.info().outputPath('signer'));
   await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign document' }).click();
-  const form = page.getByRole('region', { name: /Sign Document/ });
+  const form = page.getByRole('region', { name: /Sign document/ });
   await form.locator('input[type="file"]').setInputFiles(container);
   await form.getByRole('textbox', { name: 'PKCS#12 password' }).fill(SIGNER.password);
-  await form.getByRole('button', { name: 'Sign', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+  await applyForm(form, 'Sign');
   await expect(notice(page, `Signature applied (${SIGNER.commonName})`)).toBeVisible({ timeout: 60_000 });
 
   // The signing form took the dock's place; the panel reads the signed file when it is back.
