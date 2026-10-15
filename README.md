@@ -581,7 +581,10 @@ nothing leaving the browser.
   method it used. Text changes are listed in document order, and the line list is capped
   (the report says when it is).
 - **Batch.** Run one ordered set of steps over up to 256 files at a time, with a report for
-  each file. The steps are extract pages, compress, OCR, page labels, header/footer and page
+  each file. The files are sized before any is read and then read one at a time; a file over
+  300 MB is reported as failed without being read, and a queue of more than 1 GB in total is
+  refused before the run starts. *Cancel* stops the run and leaves the dialog open on the
+  report of what finished. The steps are extract pages, compress, OCR, page labels, header/footer and page
   numbering, document properties, text export and security (password and permissions).
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
     it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;

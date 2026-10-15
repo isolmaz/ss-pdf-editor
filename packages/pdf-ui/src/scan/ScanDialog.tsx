@@ -177,6 +177,8 @@ export function ScanDialog(props: ScanDialogProps) {
   const [pages, setPages] = useState<readonly ScanPageState[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [queue, setQueue] = useState<readonly Photo[]>([]);
+  /** How many photographs the last choice brought to the crop screen, so "Photo 2 of 3" knows its 3. */
+  const [batchTotal, setBatchTotal] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftQuad, setDraftQuad] = useState<Quad | null>(null);
   const [draftUrl, setDraftUrl] = useState<string | null>(null);
@@ -193,6 +195,12 @@ export function ScanDialog(props: ScanDialogProps) {
   const [confirmClose, setConfirmClose] = useState(false);
   const nextId = useRef(1);
   const abort = useRef<AbortController | null>(null);
+  // The pages as the last render saw them. `openNext` runs on after the handler that started it has
+  // already queued a page (accepting a photograph adds the page and opens the next photograph in
+  // the same tick), so what it decides when a photograph cannot be opened must not come from the
+  // pages of the render it was created in.
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
 
   const selected = useMemo(
     () => pages.find((page) => page.id === selectedId) ?? pages[0] ?? null,
@@ -237,12 +245,12 @@ export function ScanDialog(props: ScanDialogProps) {
         // Carry on with the rest of the photographs; a damaged one must not stop the batch.
         const [following, ...others] = rest;
         if (following !== undefined) await openNext(following, others, into, true);
-        else setView(pages.length > 0 ? 'pages' : 'camera');
+        else setView(pagesRef.current.length > 0 ? 'pages' : 'camera');
       } finally {
         setDecoding(false);
       }
     },
-    [pages.length, t],
+    [t],
   );
 
   const onPhotos = useCallback(
@@ -254,6 +262,7 @@ export function ScanDialog(props: ScanDialogProps) {
       const accepted = photos.slice(0, room);
       const leftOut = accepted.length < photos.length;
       if (leftOut) setNotice(t('scan.page.limit', { max: MAX_SCAN_PAGES }));
+      setBatchTotal(accepted.length);
       const [first, ...others] = accepted as [Photo, ...Photo[]];
       void openNext(first, others, target.kind === 'retake' ? target : { kind: 'new' }, leftOut);
     },
@@ -338,6 +347,8 @@ export function ScanDialog(props: ScanDialogProps) {
     setDraft({ name: page.name, blob: page.blob, preview: page.preview, quad: page.quad, detected: true });
     setDraftQuad(page.quad);
     setQueue([]);
+    // Fixing one page's corners is not a step of any batch of photographs.
+    setBatchTotal(0);
     setView('crop');
   };
 
@@ -477,9 +488,9 @@ export function ScanDialog(props: ScanDialogProps) {
           <div className="flex min-h-0 flex-1 flex-col gap-2">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h3 className="text-xs font-semibold text-kumo-strong">{t('scan.crop.title')}</h3>
-              {queue.length > 0 ? (
+              {batchTotal > 1 ? (
                 <span className="text-[11px] text-kumo-subtle">
-                  {t('scan.crop.next', { current: 1, total: queue.length + 1 })}
+                  {t('scan.crop.next', { current: batchTotal - queue.length, total: batchTotal })}
                 </span>
               ) : null}
             </div>

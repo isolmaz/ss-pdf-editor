@@ -18,6 +18,7 @@ export const batchPart = {
   'batch.queue': 'Dosya kuyruğu',
   'batch.queue.hint': 'Her dosya kendi başına işlenir; belge bu cihazdan ayrılmaz.',
   'batch.name': 'Kural kümesi adı',
+  'batch.name.default': 'toplu',
   'batch.steps': 'Adımlar',
   'batch.steps.hint':
     'İşaretlenen adımlar sırayla uygulanır. Sayfa alanı boş bırakılırsa dosyanın bütün sayfalarına uygulanır.',
@@ -36,6 +37,9 @@ export const batchPart = {
   'batch.report.skipped': 'İşlenmedi (çalıştırma durduruldu).',
   'batch.report.cancelled': 'Çalıştırma iptal edildi. Tamamlanan dosyalar: {names}',
   'batch.report.summary': '{completed} tamamlandı, {failed} başarısız, {skipped} atlandı',
+  'batch.error.range': 'Adım “{step}”, sayfa aralığı “{value}”.',
+  'batch.error.total': 'Kuyruktaki dosyaların toplam boyutu {max} MB’ı aşıyor.',
+  'batch.error.total.hint': 'Kuyruktan bazı dosyaları çıkarıp yeniden çalıştırın.',
   'batch.error.queue': 'Adım ayarları okunamadı.',
   'batch.error.steps': 'En az bir adım işaretleyin.',
   'batch.error.template': 'Kural kümesi dosyası okunamadı.',

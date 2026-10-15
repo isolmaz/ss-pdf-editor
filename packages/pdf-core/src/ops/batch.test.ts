@@ -12,9 +12,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BATCH_STEP_KINDS,
   BATCH_TEMPLATE_VERSION,
+  type BatchItem,
   type BatchProgress,
   type BatchRuleSet,
   type BatchStep,
+  MAX_BATCH_BYTES,
   MAX_BATCH_ITEMS,
   parseRuleSet,
   planBatch,
@@ -30,6 +32,11 @@ function notoRegular(): Uint8Array<ArrayBuffer> {
     paths: [process.cwd()],
   });
   return new Uint8Array(readFileSync(file));
+}
+
+/** A queue item whose file is already in memory. */
+function queued(name: string, bytes: Uint8Array): BatchItem {
+  return { name, size: bytes.length, read: async () => bytes };
 }
 
 async function pages(count: number, options = ''): Promise<Uint8Array> {
@@ -145,7 +152,7 @@ const ruleSetOf = (...steps: BatchStep[]): BatchRuleSet => ({ version: 1, name: 
 
 /** Runs one item and returns its only result. */
 async function runOne(bytes: Uint8Array, ...steps: BatchStep[]) {
-  const report = await runBatch([{ name: 'a.pdf', bytes }], ruleSetOf(...steps), run);
+  const report = await runBatch([queued('a.pdf', bytes)], ruleSetOf(...steps), run);
   const [result] = report.results;
   if (result === undefined) throw new Error('no result');
   return { report, result };
@@ -382,9 +389,9 @@ describe('runBatch', () => {
   it('resolves "all" per item and fails a password-locked item on its own', async () => {
     const report = await runBatch(
       [
-        { name: 'iki.pdf', bytes: await pages(2) },
-        { name: 'kilitli.pdf', bytes: await pages(1, 'encrypt=aes-256,user-password=x,owner-password=y') },
-        { name: 'bir.pdf', bytes: await pages(1) },
+        queued('iki.pdf', await pages(2)),
+        queued('kilitli.pdf', await pages(1, 'encrypt=aes-256,user-password=x,owner-password=y')),
+        queued('bir.pdf', await pages(1)),
       ],
       numbering,
       { signal: new AbortController().signal },
@@ -431,49 +438,163 @@ describe('runBatch', () => {
   it('refuses an empty queue, an oversized queue and a rule set the validator refuses, before any work', async () => {
     await expect(runBatch([], numbering, run)).rejects.toMatchObject({ code: 'input-missing' });
     const bytes = await pages(1);
-    const crowd = Array.from({ length: MAX_BATCH_ITEMS + 1 }, (_unused, index) => ({
-      name: `${index}.pdf`,
-      bytes,
-    }));
+    const crowd = Array.from({ length: MAX_BATCH_ITEMS + 1 }, (_unused, index) =>
+      queued(`${index}.pdf`, bytes),
+    );
     await expect(runBatch(crowd, numbering, run)).rejects.toMatchObject({
       code: 'unsupported',
       details: { engineMessage: `257 files in one run; the bound is ${MAX_BATCH_ITEMS}` },
     });
     await expect(
-      runBatch([{ name: 'a.pdf', bytes }], { version: 1, name: 'x', steps: [] }, run),
+      runBatch([queued('a.pdf', bytes)], { version: 1, name: 'x', steps: [] }, run),
     ).rejects.toMatchObject({ code: 'selection-empty' });
   });
 
-  it('fails an item over the document ceiling as file-too-large without running a step', async () => {
-    const huge = new Uint8Array(LIMITS.desktop.maxBytes + 1);
+  it('fails an item over the document ceiling as file-too-large without reading it or running a step', async () => {
+    const size = LIMITS.desktop.maxBytes + 1;
+    const read = vi.fn(async () => new Uint8Array(0));
     const report = await runBatch(
-      [
-        { name: 'huge.pdf', bytes: huge },
-        { name: 'ok.pdf', bytes: await pages(1) },
-      ],
+      [{ name: 'huge.pdf', size, read }, queued('ok.pdf', await pages(1))],
       numbering,
       run,
     );
+    expect(read).not.toHaveBeenCalled();
     expect(report.results[0]).toEqual({
       status: 'failed',
       name: 'huge.pdf',
-      inputBytes: huge.length,
+      inputBytes: size,
       code: 'file-too-large',
       messageKey: 'error.file-too-large.message',
       hintKey: 'error.file-too-large.hint',
-      detail: `item is ${huge.length} bytes, the ceiling is ${LIMITS.desktop.maxBytes}`,
+      detail: `item is ${size} bytes, the ceiling is ${LIMITS.desktop.maxBytes}`,
       step: null,
       stepIndex: null,
     });
     expect(report.completed).toEqual(['ok.pdf']);
   });
 
-  it('captures a failing step with its kind, position and the engine message, and goes on', async () => {
+  it('refuses a queue whose declared sizes pass the total bound before reading any file', async () => {
+    const read = vi.fn(async () => new Uint8Array(0));
+    // Each file is under the item ceiling; together they are one byte over the total bound.
+    const sizes = [LIMITS.desktop.maxBytes, LIMITS.desktop.maxBytes, LIMITS.desktop.maxBytes];
+    sizes.push(MAX_BATCH_BYTES - sizes.reduce((sum, size) => sum + size, 0) + 1);
+    const queue = sizes.map((size, index) => ({ name: `${index}.pdf`, size, read }));
+    await expect(runBatch(queue, numbering, run)).rejects.toMatchObject({
+      code: 'file-too-large',
+      details: { engineMessage: `${MAX_BATCH_BYTES + 1} bytes in one run; the bound is ${MAX_BATCH_BYTES}` },
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('accepts a queue exactly at the total bound, and does not count an item over the item ceiling', async () => {
+    const ok = await pages(1);
+    const read = async () => ok;
+    const sizes = [LIMITS.desktop.maxBytes, LIMITS.desktop.maxBytes, LIMITS.desktop.maxBytes];
+    sizes.push(MAX_BATCH_BYTES - sizes.reduce((sum, size) => sum + size, 0));
+    const queue = sizes.map((size, index) => ({ name: `${index}.pdf`, size, read }));
+    // Unread and uncounted: were it counted, the queue would be over the bound.
+    const huge = { name: 'huge.pdf', size: LIMITS.desktop.maxBytes + 1, read };
+    const report = await runBatch([...queue, huge], numbering, run);
+    expect(report.completed).toEqual(['0.pdf', '1.pdf', '2.pdf', '3.pdf']);
+    expect(report.failed).toEqual(['huge.pdf']);
+  });
+
+  it('reads the files one at a time, each only when the run reaches it', async () => {
+    const log: string[] = [];
+    const source = (name: string, bytes: Uint8Array): BatchItem => ({
+      name,
+      size: bytes.length,
+      read: async () => {
+        log.push(`read ${name}`);
+        return bytes;
+      },
+    });
+    const one = await pages(1);
+    await runBatch([source('a.pdf', one), source('b.pdf', one)], numbering, {
+      signal: run.signal,
+      onProgress: (event) => {
+        if (event.operation === null) log.push(`start ${event.itemName}`);
+      },
+    });
+    expect(log).toEqual(['start a.pdf', 'read a.pdf', 'start b.pdf', 'read b.pdf']);
+  });
+
+  it('fails an item whose file cannot be read, with the mapped code and no step, and goes on', async () => {
     const report = await runBatch(
       [
-        { name: 'short.pdf', bytes: await pages(1) },
-        { name: 'long.pdf', bytes: await pages(3) },
+        {
+          name: 'gone.pdf',
+          size: 12,
+          read: async () => {
+            throw new Error('the file changed on disk');
+          },
+        },
+        {
+          name: 'denied.pdf',
+          size: 7,
+          read: async () => {
+            throw new ToolError('permission-denied', { engine: 'fs' });
+          },
+        },
+        queued('ok.pdf', await pages(1)),
       ],
+      numbering,
+      run,
+    );
+    expect(report.results.slice(0, 2)).toEqual([
+      {
+        status: 'failed',
+        name: 'gone.pdf',
+        inputBytes: 12,
+        code: 'internal',
+        messageKey: 'error.internal.message',
+        hintKey: 'error.internal.hint',
+        detail: 'the file changed on disk',
+        step: null,
+        stepIndex: null,
+      },
+      {
+        status: 'failed',
+        name: 'denied.pdf',
+        inputBytes: 7,
+        code: 'permission-denied',
+        messageKey: 'error.permission-denied.message',
+        hintKey: 'error.permission-denied.hint',
+        detail: null,
+        step: null,
+        stepIndex: null,
+      },
+    ]);
+    expect(report.completed).toEqual(['ok.pdf']);
+  });
+
+  it('counts a read that fails after the run was aborted as the cancellation, not a failure of the file', async () => {
+    const controller = new AbortController();
+    const report = await runBatch(
+      [
+        {
+          name: 'a.pdf',
+          size: 3,
+          read: async () => {
+            controller.abort();
+            throw new Error('read stopped');
+          },
+        },
+        queued('b.pdf', await pages(1)),
+      ],
+      numbering,
+      { signal: controller.signal },
+    );
+    expect(report).toMatchObject({ cancelled: true, completed: [], failed: [] });
+    expect(report.results).toEqual([
+      { status: 'skipped', name: 'a.pdf', reason: 'cancelled' },
+      { status: 'skipped', name: 'b.pdf', reason: 'not-started' },
+    ]);
+  });
+
+  it('captures a failing step with its kind, position and the engine message, and goes on', async () => {
+    const report = await runBatch(
+      [queued('short.pdf', await pages(1)), queued('long.pdf', await pages(3))],
       ruleSetOf(bates([2])),
       run,
     );
@@ -491,7 +612,7 @@ describe('runBatch', () => {
   });
 
   it('reports a step failure that carries no engine message as a null detail', async () => {
-    const report = await runBatch([{ name: 'a.pdf', bytes: await pages(1) }], numbering, {
+    const report = await runBatch([queued('a.pdf', await pages(1))], numbering, {
       signal: run.signal,
       onProgress: (event) => {
         if (event.operation !== null) throw new ToolError('internal', { engine: 'ui' });
@@ -695,10 +816,7 @@ describe('runBatch', () => {
   it('exports text as a file named after the item, leaving the document untouched', async () => {
     const input = await words('Alpha', 'Bravo');
     const report = await runBatch(
-      [
-        { name: 'rapor.v2.pdf', bytes: input },
-        { name: 'ikinci.pdf', bytes: input },
-      ],
+      [queued('rapor.v2.pdf', input), queued('ikinci.pdf', input)],
       ruleSetOf({ kind: 'text-export', params: { pages: 'all', format: 'text', baseName: 'cikti' } }),
       run,
     );
@@ -766,14 +884,10 @@ describe('runBatch', () => {
 
   it('reports the item start and every operation step through onProgress', async () => {
     const events: BatchProgress[] = [];
-    await runBatch(
-      [
-        { name: 'a.pdf', bytes: await pages(1) },
-        { name: 'b.pdf', bytes: await pages(1) },
-      ],
-      numbering,
-      { signal: run.signal, onProgress: (event) => events.push(event) },
-    );
+    await runBatch([queued('a.pdf', await pages(1)), queued('b.pdf', await pages(1))], numbering, {
+      signal: run.signal,
+      onProgress: (event) => events.push(event),
+    });
     const starts = events.filter((event) => event.operation === null);
     expect(starts).toMatchObject([
       { itemIndex: 0, itemName: 'a.pdf', doneItems: 0, totalItems: 2, stepIndex: 0, step: 'stamp' },
@@ -794,10 +908,7 @@ describe('runBatch', () => {
     const controller = new AbortController();
     controller.abort();
     const report = await runBatch(
-      [
-        { name: 'a.pdf', bytes: await pages(1) },
-        { name: 'b.pdf', bytes: await pages(1) },
-      ],
+      [queued('a.pdf', await pages(1)), queued('b.pdf', await pages(1))],
       numbering,
       { signal: controller.signal },
     );
@@ -816,10 +927,7 @@ describe('runBatch', () => {
   it('drops the item whose start event aborted, and marks the rest not-started', async () => {
     const controller = new AbortController();
     const report = await runBatch(
-      [
-        { name: 'a.pdf', bytes: await pages(1) },
-        { name: 'b.pdf', bytes: await pages(1) },
-      ],
+      [queued('a.pdf', await pages(1)), queued('b.pdf', await pages(1))],
       numbering,
       {
         signal: controller.signal,
@@ -836,11 +944,7 @@ describe('runBatch', () => {
   it('keeps the finished files when the user cancels in the middle of a step, even if the engine threw another error', async () => {
     const controller = new AbortController();
     const report = await runBatch(
-      [
-        { name: 'a.pdf', bytes: await pages(1) },
-        { name: 'b.pdf', bytes: await pages(1) },
-        { name: 'c.pdf', bytes: await pages(1) },
-      ],
+      [queued('a.pdf', await pages(1)), queued('b.pdf', await pages(1)), queued('c.pdf', await pages(1))],
       numbering,
       {
         signal: controller.signal,

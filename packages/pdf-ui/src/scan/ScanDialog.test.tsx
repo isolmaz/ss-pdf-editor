@@ -330,19 +330,52 @@ describe('ScanDialog several photographs', () => {
     expect(screen.getByText('Photo 1 of 2')).toBeTruthy();
     expect(button('Skip this photo')).toBeTruthy();
     await user.click(button('Add page'));
-    // The second is the last: no counter, and it can only be cancelled.
+    // The second is the last, and it says so: the count follows the photographs taken, not those left.
     await waitFor(() => expect(screen.getByText(/The page edges could not be found/)).toBeTruthy());
-    expect(screen.queryByText(/Photo 1 of/)).toBeNull();
+    expect(screen.getByText('Photo 2 of 2')).toBeTruthy();
+    expect(screen.queryByText('Photo 1 of 2')).toBeNull();
     await user.click(button('Add page'));
     await screen.findByRole('list', { name: 'Scanned pages' });
     expect(screen.getAllByRole('button', { name: /^Select page/ })).toHaveLength(2);
+  });
+
+  it('counts each photograph of three in turn, up to the last', async () => {
+    renderDocumentDialog();
+    await chooseAndCrop(fileOf('one.jpg'), fileOf('two.jpg'), fileOf('three.jpg'));
+    expect(screen.getByText('Photo 1 of 3')).toBeTruthy();
+    await user.click(button('Add page'));
+    expect(await screen.findByText('Photo 2 of 3')).toBeTruthy();
+    await user.click(button('Add page'));
+    expect(await screen.findByText('Photo 3 of 3')).toBeTruthy();
+    expect(screen.queryByText('Photo 1 of 3')).toBeNull();
+  });
+
+  it('counts past a photograph that could not be opened: the next one keeps its own place in the choice', async () => {
+    renderDocumentDialog();
+    await chooseAndCrop(fileOf('one.jpg'), fileOf('broken.png', 'broken'), fileOf('three.jpg'));
+    expect(screen.getByText('Photo 1 of 3')).toBeTruthy();
+    await user.click(button('Add page'));
+    expect(await screen.findByText('Photo 3 of 3')).toBeTruthy();
+    expect(screen.getByText('This photo could not be opened: broken.png')).toBeTruthy();
+  });
+
+  it('shows no count for a single photograph, nor on a page whose corners are edited after a longer choice', async () => {
+    renderDocumentDialog();
+    await chooseAndCrop(fileOf('one.jpg'), fileOf('two.jpg'));
+    await user.click(button('Add page'));
+    await screen.findByText('Photo 2 of 2');
+    await user.click(button('Add page'));
+    await screen.findByRole('list', { name: 'Scanned pages' });
+    await user.click(button('Edit corners'));
+    await screen.findByRole('heading', { name: 'Adjust the corners' });
+    expect(screen.queryByText(/^Photo \d+ of \d+$/)).toBeNull();
   });
 
   it('skips a photograph without adding it', async () => {
     renderDocumentDialog();
     await chooseAndCrop(fileOf('one.jpg'), fileOf('two.jpg'));
     await user.click(button('Skip this photo'));
-    await waitFor(() => expect(screen.queryByText(/Photo 1 of/)).toBeNull());
+    expect(await screen.findByText('Photo 2 of 2')).toBeTruthy();
     await user.click(button('Add page'));
     await screen.findByRole('list', { name: 'Scanned pages' });
     expect(screen.getAllByRole('button', { name: /^Select page/ })).toHaveLength(1);
@@ -400,6 +433,17 @@ describe('ScanDialog several photographs', () => {
     await choose(fileOf('bad.png', 'broken'));
     expect(await screen.findByText('This photo could not be opened: bad.png')).toBeTruthy();
     expect(screen.getByRole('list', { name: 'Scanned pages' })).toBeTruthy();
+  });
+
+  it('goes to the pages, not back to the camera, when the photograph after the first accepted one cannot be opened', async () => {
+    renderDocumentDialog();
+    await chooseAndCrop(fileOf('good.jpg'), fileOf('bad.png', 'broken'));
+    // Accepting the first adds its page and opens the next photograph in one step; the next one fails.
+    await user.click(button('Add page'));
+    expect(await screen.findByText('This photo could not be opened: bad.png')).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Scanned pages' })).toBeTruthy();
+    expect(screen.queryByTestId('scan-shutter')).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Select page/ })).toHaveLength(1);
   });
 });
 
@@ -529,7 +573,7 @@ describe('ScanDialog pages', () => {
     await user.click(button('Retake'));
     await chooseAndCrop(fileOf('a.jpg'), fileOf('b.jpg'));
     await user.click(button('Skip this photo'));
-    await waitFor(() => expect(screen.queryByText(/Photo 1 of/)).toBeNull());
+    expect(await screen.findByText('Photo 2 of 2')).toBeTruthy();
     await user.click(button('Add page'));
     await screen.findByRole('list', { name: 'Scanned pages' });
     // The first photograph was skipped, the second is a new page rather than a replacement.
