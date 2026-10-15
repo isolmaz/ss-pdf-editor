@@ -127,8 +127,8 @@ describe('dependency versions', () => {
       const manifest = JSON.parse(read(path)) as Record<string, Record<string, string> | undefined>;
       for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
         for (const [name, version] of Object.entries(manifest[field] ?? {})) {
-          // `axe-core` is removed by its own change; peer ranges are ranges by design and not read here.
-          if (!EXACT.test(version) && name !== 'axe-core') ranges.push(`${path}: ${name}@${version}`);
+          // Peer ranges are ranges by design and not read here.
+          if (!EXACT.test(version)) ranges.push(`${path}: ${name}@${version}`);
         }
       }
     }

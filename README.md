@@ -180,11 +180,13 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   Safari offer Export only, and there the download is the only way to keep your work, so it
   also counts as saving: the document is no longer marked as having unsaved changes. In
   Chromium an export is a copy and leaves the document as unsaved as it was. Saving to a file
-  you pick with *Save as* reads that file once; it is read again only if its size or modified
-  time changed while the document was being prepared. If the file changed on disk since it
-  was opened or last saved here, Save writes nothing and asks: **Overwrite** replaces that file
-  with your version, **Save as** writes a new file and leaves the changed one alone, **Cancel**
-  keeps both.
+  you pick with *Save as* reads that file once, before the document is prepared; it is read
+  again only if its size or modified time changed while the document was being prepared. If the
+  file Save would write changed on disk — since it was opened or last saved here, or, for a
+  *Save as* target, while the document was being prepared — Save writes nothing and asks:
+  **Overwrite** replaces that file with your version, **Save as** writes a new file and leaves
+  the changed one alone, **Cancel** keeps both. A changed file is never written over without
+  that question; only choosing **Overwrite** lets the write go to it unchecked.
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
   flatten them and add simple calculations. Flattening draws each field's value into the
   page: a form another tool filled in (`/NeedAppearances`) is redrawn from its values first

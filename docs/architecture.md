@@ -194,9 +194,9 @@ page's lifetime, so the way out of each of these is a reload, not a retry in pla
 The entry chunk is not all of the first paint: the `modulepreload` links the build adds for
 it (Kumo's shared dialog chunk, the React runtime, the `mupdf-write` vocabulary and the few
 `pdf-core` modules the shell's hooks and the editor chunk share) download with it. The first
-paint is the entry chunk plus every one of those links, gzipped at Node's default level: about
-248 KiB, of which the entry chunk is about 187 KiB (the compiled `App` and status bar are about
-5 KiB of it). The 250 KiB target
+paint is the entry chunk plus every one of those links, gzipped at Node's default level:
+245.5 KiB over nine files, of which the entry chunk is 198.7 KiB (the compiled `App` and status
+bar are about 5 KiB of it). The 250 KiB target
 (`BUILD_BUDGETS.firstPaintJsGzipBytes`) is checked on that sum: `pnpm check:budgets`
 (`tools/check-build-budgets.mjs`) reads the built `apps/web/dist/index.html`, prints each file's
 gzip size and fails when the sum is over the budget; it is a step of `pnpm ci:verify` and of the
