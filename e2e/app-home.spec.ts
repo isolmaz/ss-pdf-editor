@@ -202,7 +202,9 @@ test('the home screen has one way to pick a file besides the header and one comm
   await expect(page.getByText('Ctrl+K', { exact: true })).toBeVisible();
 });
 
-test('All tools lists the page panel, merge and batch, and each tile starts its tool', async ({ page }) => {
+test('All tools lists the organize grid, merge and batch, and each tile starts its tool', async ({
+  page,
+}) => {
   await openApp(page, 'grid.pdf', labelledPdf('Grid', 2));
   await page.getByRole('tab', { name: 'Outline', exact: true }).click();
   await page.getByRole('button', { name: 'Home', exact: true }).click();
@@ -210,10 +212,8 @@ test('All tools lists the page panel, merge and batch, and each tile starts its 
   const tile = (name: string) => page.getByRole('list').getByRole('button', { name, exact: false });
 
   await tile('Organize pages').click();
-  await expect(page.getByRole('tab', { name: 'Pages', exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
+  await expect(page.getByRole('listbox', { name: 'Organize pages' }).getByRole('option')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Back to document' }).click();
 
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   await page.getByRole('tab', { name: 'All tools' }).click();

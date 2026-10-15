@@ -15,6 +15,7 @@ import { commonPart } from './parts/common';
 import { comparePart } from './parts/compare';
 import { contentWritersPart } from './parts/contentwriters';
 import { convertPart } from './parts/convert';
+import { deskewPart } from './parts/deskew';
 import { dialogsPart } from './parts/dialogs';
 import { docopsPart } from './parts/docops';
 import { enginesPart } from './parts/engines';
@@ -36,6 +37,7 @@ import { pdfaPart } from './parts/pdfa';
 import { propertiesPart } from './parts/properties';
 import { propsPart } from './parts/props';
 import { redactPart } from './parts/redact';
+import { repairPart } from './parts/repair';
 import { reviewPart } from './parts/review';
 import { sanitizePart } from './parts/sanitize';
 import { scanPart } from './parts/scan';
@@ -62,6 +64,7 @@ export const tr = {
   ...propsPart,
   ...auditPart,
   ...boxesPart,
+  ...deskewPart,
   ...formsPart,
   ...commonPart,
   ...docopsPart,
@@ -92,6 +95,7 @@ export const tr = {
   ...sigValidatePart,
   ...xfaPart,
   ...pdfaPart,
+  ...repairPart,
 
   'open.pdfFilter': 'PDF belgesi',
   'open.progress': 'Belge açılıyor…',

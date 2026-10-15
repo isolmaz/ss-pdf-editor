@@ -31,7 +31,7 @@ const SKEW_FINE = 0.05;
 /** The turn applied: between these (degrees), if the peak stands this far above the mean score. */
 const SKEW_MIN = 0.3;
 const SKEW_MAX = 5.9;
-const SKEW_CONFIDENCE = 2.5;
+export const SKEW_CONFIDENCE = 2.5;
 const SKEW_LONG_SIDE = 1100;
 const SKEW_POINTS = 60000;
 const SKEW_MARGIN = 0.03;
@@ -159,8 +159,20 @@ function dropNonText(mask: Uint8Array, width: number, height: number, limit: num
   }
 }
 
+/**
+ * The ink points of a page for the skew search, centred on the reduced copy of `width` × `height`
+ * they were measured on.
+ */
+export interface InkPoints {
+  readonly xs: Float32Array;
+  readonly ys: Float32Array;
+  readonly diagonal: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 /** The ink points of a page for the skew search: centred, subsampled, without pictures, rules, long strokes, slivers and the margin. */
-function inkPoints(grey: Grey): { xs: Float32Array; ys: Float32Array; diagonal: number } | null {
+export function inkPoints(grey: Grey): InkPoints | null {
   const factor = Math.max(1, Math.round(Math.max(grey.width, grey.height) / SKEW_LONG_SIDE));
   const small = downscale(grey, factor);
   const { width, height } = small;
@@ -206,16 +218,14 @@ function inkPoints(grey: Grey): { xs: Float32Array; ys: Float32Array; diagonal: 
     xs[i] = (found[i * step * 2] as number) - width / 2;
     ys[i] = (found[i * step * 2 + 1] as number) - height / 2;
   }
-  return { xs, ys, diagonal: Math.ceil(Math.hypot(width, height)) };
+  return { xs, ys, diagonal: Math.ceil(Math.hypot(width, height)), width, height };
 }
 
 /**
  * The skew of the text lines by projection profile: the angle at which the ink points, projected
- * across the lines, make the sharpest histogram.
+ * across the lines, make the sharpest histogram, searched within `range` degrees either side of level.
  */
-export function detectSkew(grey: Grey): Skew {
-  const points = inkPoints(grey);
-  if (points === null) return { angle: 0, confidence: 1 };
+export function skewOfPoints(points: InkPoints, range: number): Skew {
   const { xs, ys, diagonal } = points;
   const offset = diagonal;
   const histogram = new Int32Array(2 * diagonal + 2);
@@ -239,7 +249,7 @@ export function detectSkew(grey: Grey): Skew {
   let top = -1;
   let sum = 0;
   let count = 0;
-  for (let degrees = -SKEW_RANGE; degrees <= SKEW_RANGE + 1e-9; degrees += SKEW_COARSE) {
+  for (let degrees = -range; degrees <= range + 1e-9; degrees += SKEW_COARSE) {
     const value = score(degrees);
     sum += value;
     count += 1;
@@ -258,6 +268,12 @@ export function detectSkew(grey: Grey): Skew {
     }
   }
   return { angle: Math.round(best * 100) / 100, confidence: top / mean };
+}
+
+/** The skew of the text lines of a picture, within the window the OCR turns (`SKEW_RANGE`); no ink to measure is level. */
+export function detectSkew(grey: Grey): Skew {
+  const points = inkPoints(grey);
+  return points === null ? { angle: 0, confidence: 1 } : skewOfPoints(points, SKEW_RANGE);
 }
 
 /** Whether a measured skew is one to correct: reliable (a peak, inside the searched window) and visible. */

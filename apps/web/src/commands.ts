@@ -97,6 +97,8 @@ export interface CommandHost {
   readonly detectFormFields?: () => void;
   /** Open the left dock on one of its views (the layer write lives behind a tab). */
   readonly openLeftTab: (tab: DocumentPanelTab) => void;
+  /** Show the organize grid: every page as a large thumbnail, for putting them in order. */
+  readonly openOrganize: () => void;
   readonly pageAction: (action: PageAction) => void;
   readonly setZoom: (zoom: number | 'page-width' | 'page-fit' | 'auto') => void;
   readonly setSpread: (mode: 'single' | 'book') => void;
@@ -173,6 +175,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'file.convert',
   'file.create-images',
   'file.scan',
+  'file.repair',
   'file.save',
   'file.export',
   'file.print',
@@ -206,6 +209,9 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'page.duplicate',
   'page.delete',
   'page.extract',
+  'page.reverse',
+  'page.remove-blank',
+  'page.split-two-up',
   // Tools: the annotation, form and signature set the free tier of every reader carries.
   'tools.select',
   'tools.hand',
@@ -294,6 +300,7 @@ export const STANDALONE_COMMAND_IDS: ReadonlySet<string> = new Set([
   'file.convert',
   'file.create-images',
   'file.scan',
+  'file.repair',
   'file.batch',
 ]);
 
@@ -332,7 +339,7 @@ export function menuCommands(commands: readonly Command[], mode: InterfaceMode):
  * lists follow one another group by group, and a rule is drawn between two sections of a menu.
  */
 export const MENU_SECTIONS: readonly (readonly string[])[] = [
-  ['file.new', 'file.open', 'file.merge', 'file.convert', 'file.create-images', 'file.scan'],
+  ['file.new', 'file.open', 'file.merge', 'file.convert', 'file.create-images', 'file.scan', 'file.repair'],
   ['file.save', 'file.export'],
   ['file.add', 'file.batch'],
   ['file.print', 'file.close'],
@@ -347,8 +354,9 @@ export const MENU_SECTIONS: readonly (readonly string[])[] = [
   ['page.organize'],
   ['page.rotate-left', 'page.rotate-right'],
   ['page.duplicate', 'page.delete', 'page.extract', 'page.split'],
+  ['page.reverse', 'page.remove-blank', 'page.split-two-up'],
   ['page.insert', 'page.replace'],
-  ['page.boxes', 'page.labels'],
+  ['page.boxes', 'page.deskew', 'page.labels'],
   ['tools.select', 'tools.hand'],
   [
     'tools.highlight',
@@ -428,8 +436,27 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       id: 'file.merge',
       labelKey: 'start.merge.title',
       group: 'file',
-      keywords: ['merge', 'combine', 'join', 'birlestir', 'birlestirme'],
+      keywords: [
+        'merge',
+        'combine',
+        'join',
+        'interleave',
+        'duplex',
+        'double-sided',
+        'birlestir',
+        'birlestirme',
+        'cift tarafli',
+        'on arka',
+      ],
       run: dialog('merge-files'),
+    },
+    {
+      id: 'file.repair',
+      labelKey: 'repair.title',
+      group: 'file',
+      // Standalone: a damaged file is picked in the dialog, and the repaired copy opens in a new tab.
+      keywords: ['repair', 'fix', 'damaged', 'broken', 'corrupt', 'onar', 'bozuk', 'tamir', 'duzelt'],
+      run: dialog('repair'),
     },
     {
       id: 'file.convert',
@@ -749,7 +776,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabled: noDocument,
       disabledReason: documentReason,
       keywords: ['organize', 'reorder', 'thumbnails', 'duzenle', 'sirala', 'kucuk resim'],
-      run: () => host.openLeftTab('pages'),
+      run: host.openOrganize,
     },
     {
       id: 'page.rotate-left',
@@ -800,6 +827,33 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabledReason: editReason,
       run: dialog('split'),
     },
+    {
+      id: 'page.reverse',
+      labelKey: 'pages.reverse',
+      group: 'page',
+      disabled: noEdit,
+      disabledReason: editReason,
+      keywords: ['reverse', 'flip', 'backwards', 'ters', 'tersine', 'cevir'],
+      run: action({ kind: 'reverse' }),
+    },
+    {
+      id: 'page.remove-blank',
+      labelKey: 'tidy.blank.title',
+      group: 'page',
+      disabled: noEdit,
+      disabledReason: editReason,
+      keywords: ['blank', 'empty', 'scan', 'bos', 'tarama'],
+      run: dialog('remove-blank-pages'),
+    },
+    {
+      id: 'page.split-two-up',
+      labelKey: 'tidy.split.title',
+      group: 'page',
+      disabled: noEdit,
+      disabledReason: editReason,
+      keywords: ['two-up', 'facing', 'spread', 'scan', 'half', 'tarama', 'yan yana', 'ikiye'],
+      run: dialog('split-two-up'),
+    },
   ];
 
   page.push(
@@ -828,6 +882,15 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabledReason: editReason,
       keywords: ['crop', 'media', 'trim', 'bleed', 'art', 'resize'],
       run: dialog('page-boxes'),
+    },
+    {
+      id: 'page.deskew',
+      labelKey: 'deskew.title',
+      group: 'page',
+      disabled: noEdit,
+      disabledReason: editReason,
+      keywords: ['deskew', 'straighten', 'scan', 'tilt', 'skew', 'egik', 'duzelt', 'tarama'],
+      run: dialog('deskew'),
     },
     {
       id: 'page.labels',

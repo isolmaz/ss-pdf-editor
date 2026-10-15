@@ -16,6 +16,7 @@ import {
   bumpHandleVersion,
   cancelOperation,
   clearNotice,
+  closeOrganize,
   compactViewportChanged,
   coreStore,
   endOperation,
@@ -25,6 +26,7 @@ import {
   isBusy,
   isCompactViewport,
   openLeftPanel,
+  openOrganize,
   openRightPanel,
   operationRunning,
   pickTool,
@@ -376,5 +378,21 @@ describe('useCore', () => {
     act(() => setBusy(true));
     expect(screen.getByRole('status').textContent).toBe('true');
     expect(renders).toEqual([false, true]);
+  });
+});
+
+describe('the organize grid', () => {
+  it('starts away, is shown by opening it and taken away by closing it', () => {
+    expect(coreStore.get().organize).toBe(false);
+    openOrganize();
+    expect(coreStore.get().organize).toBe(true);
+    closeOrganize();
+    expect(coreStore.get().organize).toBe(false);
+  });
+
+  it('leaves the docks and the tab they show as they were', () => {
+    openLeftPanel('outline');
+    openOrganize();
+    expect(coreStore.get()).toMatchObject({ leftDock: true, leftTab: 'outline', organize: true });
   });
 });

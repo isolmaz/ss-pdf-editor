@@ -14,9 +14,42 @@ export const pagesPart = {
   'pages.delete.done': '{count} page(s) deleted.',
   'pages.duplicate': 'Duplicate pages',
   'pages.duplicate.done': '{count} page(s) duplicated.',
+
+  'pages.reverse': 'Reverse page order',
+  'pages.reverse.done': 'Page order reversed.',
+
+  'tidy.blank.title': 'Remove blank pages',
+  'tidy.blank.intro':
+    'Finds pages with no text, pictures, drawings or notes, and shows which ones will go before anything changes.',
+  'tidy.blank.confirm': 'Find blank pages',
+  'tidy.blank.removed': 'Blank pages removed: {count} (pages {pages}).',
+  'tidy.blank.done': '{count} blank page(s) removed.',
+  'tidy.blank.none': 'No blank pages found. Nothing changed.',
+  'tidy.blank.all': 'Every page looks blank, so none were removed. Nothing changed.',
+  'tidy.progress.scan': 'Looking for blank pages',
+
+  'tidy.split.title': 'Split two-up scans',
+  'tidy.split.intro':
+    'Cuts each landscape page into a left and a right page without redrawing it. Pages with notes or form fields stay whole.',
+  'tidy.split.done': '{count} page(s) split into a left and a right page (pages {pages}).',
+  'tidy.split.lossless': 'Page content is unchanged; each new page shows its half of the original.',
+  'tidy.split.portrait': '{count} page(s) that are not landscape were left as they are.',
+  'tidy.split.annotated': '{count} page(s) with notes, links or form fields were left whole (pages {pages}).',
+  'tidy.split.none': 'No landscape page without notes or form fields to split. Nothing changed.',
+  'tidy.progress.split': 'Splitting pages',
   'pages.extract.title': 'Extract pages',
   'pages.extract.intro':
     'Selected pages become a new document; the current one is unchanged. Viewer preferences, language and layer settings are not carried over.',
+  'organize.status': '{selected} of {total} page(s) selected',
+  'organize.page': 'Page {page}',
+  'organize.help':
+    'Select pages, then drag them or press Alt or Ctrl with an arrow key to move them. Enter opens a page.',
+  'organize.size': 'Thumbnail size',
+  'organize.selectMode': 'Select several',
+  'organize.close': 'Back to document',
+  'organize.moveEarlier': 'Move earlier',
+  'organize.moveLater': 'Move later',
+  'organize.movedTo': 'Moved to position {position}.',
 
   'split.title': 'Split document',
   'split.intro':
@@ -26,6 +59,11 @@ export const pagesPart = {
   'split.mode.everyN': 'Every N pages',
   'split.mode.size': 'By file size',
   'split.mode.booklet': 'Booklet imposition',
+  'split.mode.bookmarks': 'By bookmarks',
+  'split.bookmarkLevel': 'Bookmark level',
+  'split.bookmarkLevelHint':
+    '1 cuts at the top-level bookmarks; a higher number also cuts at the ones inside them.',
+  'split.bookmarks.lead': 'Beginning',
   'split.ranges': 'Page ranges',
   'split.rangesHint': 'Each range becomes a separate file, numbered in ascending order.',
   'split.everyN': 'Page count',
@@ -33,8 +71,11 @@ export const pagesPart = {
   'split.maxSize': 'Max part size (MB)',
   'split.maxSizeHint': 'Parts will not exceed this size; if a single page is larger, it stands alone.',
   'split.partNames': 'Filename prefix',
-  'split.partNamesHint': 'Defaults to document name; number and extension are added automatically.',
+  'split.partNamesHint':
+    'Defaults to the document name; the number, the bookmark title (by bookmarks) and the extension are added.',
   'split.done': '{count} part(s) generated.',
   'split.note.oversized':
     '{count} page(s) are larger than the size limit on their own; a page cannot be cut, so each stays in its own file above the limit (page(s): {pages}).',
+  'split.note.bookmarksSkipped':
+    '{count} bookmark(s) point to no page of this document and were not used to cut it.',
 } as const;

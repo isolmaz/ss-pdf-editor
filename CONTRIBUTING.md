@@ -216,7 +216,8 @@ The language picker lists it, the browser's language selects it on a first visit
 dates and numbers are formatted with its `id`. In a sentence, a percentage is written where
 the language puts the sign (`%{value}` in Turkish, `{value}%` in English) and a byte size is
 a `{name:bytes}` placeholder, which the translator writes with the locale's decimal mark;
-a share is a `{name:percent}` placeholder (a fraction, `0.25` is `%25` and `25%`).
+a share is a `{name:percent}` placeholder (a fraction, `0.25` is `%25` and `25%`) and an angle a
+`{name:degrees}` placeholder (`1.84` is `1,8°` and `1.8°`).
 
 ## Wording the interface
 

@@ -43,11 +43,11 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
-| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · PDF/A conversion and check |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · repair of damaged PDFs · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes (chosen in Settings) · offline |
 
@@ -88,7 +88,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Home screen.** *Start* opens a PDF (or several, each in its own tab: drop them on the
   first tile or click it to choose, the header's **Open** does the same), creates a blank
   document, builds a PDF from images, merges several PDFs in the order you choose (drag the
-  files or use their arrow buttons) or starts
+  files or use their arrow buttons), alternates the front and back sides of a double-sided
+  scan (the back sides read from the last page by default, the usual order of a stack turned
+  over; pages without a partner follow at the end and the report says so) or starts
   a batch run, and lists recent documents with search, sorting and stars. *All tools* lays
   every tool out by task; pick a tool first and the editor asks for the file when the tool
   needs one. A file that does not open drops the tool, so it never runs on a later document.
@@ -258,6 +260,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 - **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
   and merge.
+  - Split cuts by page ranges, every N pages, file size, booklet signatures or the
+    bookmarks of the outline (down to a level you choose): each part is named after its
+    bookmark, the pages before the first bookmark are a part of their own, and a document
+    without bookmarks is told to use another method.
   - The Page menu works on the pages you selected, or on the page on screen when none is
     selected.
   - A new document starts as blank pages of A3, A4, A5, Letter or Legal, in either
@@ -265,13 +271,45 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Merging several files builds a new document in the order you set; its metadata comes
     from the first file, and the report says so.
   - Outlines, form fields and page labels travel with the pages.
+  - *Reverse page order* flips the whole document, or the selected pages among the places they
+    hold when two or more are selected. It is one journaled step, undone like any page action.
+  - *Remove blank pages* looks for pages with nothing on them and shows their count and
+    numbers in the report before anything is removed. A page is kept when it has an
+    annotation or form field, any letter or digit of text (visible or not), or more than a
+    speck of ink in a small grey render; a scanned sheet with a little noise still counts as
+    blank. When no page is blank it says so and changes nothing, and it never removes every
+    page.
+  - *Split two-up scans* cuts each landscape page in scope into a left and a right page. The
+    halves are windows onto the same page content (new media and crop boxes, rotation
+    honoured), so nothing is redrawn or re-encoded and the file does not grow by a second
+    copy of the scan. Pages that are not landscape, and pages with annotations or form fields,
+    stay whole and the report names them. Page labels follow their source page.
   - The Pages panel selects by click, `Ctrl`, `Shift` or the keyboard. It moves the
     selection with `Alt` or `Ctrl` plus the arrow keys, the up and down buttons, the *Move
     to* field or drag and drop, and its toolbar rotates, duplicates, deletes and extracts.
     The toolbar buttons, the *Move to* field and dragging are disabled while the document
     is viewing-only.
+  - *Organize pages* (the Page menu, the palette and the home tile) opens every page as a
+    large thumbnail in a grid over the editor, for reordering a document at a glance. It
+    selects like the Pages panel (click, `Ctrl`, `Shift`, `Ctrl+A`) and has a *Select several*
+    mode for a touch screen; drag moves the whole selection to the line shown between two
+    pages, `Alt` or `Ctrl` plus the arrow keys (a row for up and down), the move buttons and
+    the *Move to* field are the routes without a drag, and the toolbar rotates, duplicates,
+    deletes, extracts and inserts. A slider sets the thumbnail size, `Enter` or a double
+    click opens a page, and `Escape` or *Back to document* returns. Every change is one undoable
+    step; only the pages near the window are drawn, so a 1000-page document stays smooth.
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
   the box from the ink bounds.
+- **Straighten pages.** **Page → Straighten pages** measures how far each scanned page is tilted
+  (up to 15° either way, to a few hundredths of a degree on generated pages) and turns the page back.
+  - The scan is not re-encoded: a rotation about the page centre is added to the page's content, so the
+    picture, an OCR text layer and any vector content turn together, and the page keeps its size and boxes.
+  - The report names every page: the tilt removed (`1.8°`), already straight (under 0.1°), skipped for
+    having no clear text lines (a blank page, a photograph, a page number) or skipped because the
+    turn would push text off the page.
+  - Annotations, links and form fields stay where they were. The report counts the turned pages that
+    carry any, since they may no longer line up with the content.
+  - Undo restores the scan.
 - **Structure.**
   - Page labels. Inserting, replacing or merging pages keeps the label every page already had;
     a page from a document without labels is numbered by its page number in that document.
@@ -287,6 +325,12 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   selected pages into images (lossy: their text layer, links and annotations are lost; the
   outline still leads to them).
   If the file grows, the report says so.
+- **Repair.** *Repair PDF* (File menu, All tools) takes a damaged file, rebuilds its structure
+  from the objects found in it and opens a clean copy in a new tab; the file you picked is
+  not changed. The copy is read back (it must open without a repair and hold the same pages)
+  and the report says whether the file really was damaged, that content which could not be
+  read cannot be restored, and that a digital signature does not survive the rewrite. A file
+  that does not open at all points to the tool in its notice.
 
 ### Text
 

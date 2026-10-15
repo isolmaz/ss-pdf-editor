@@ -208,8 +208,8 @@ CI `verify` job, after `pnpm build`.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (39 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
-| `format.ts` | `formatBytes(bytes, locale)` and `formatPercent(fraction, locale)`: sizes and percentages the way the interface language writes them (`1,5 KB` and `%140` in Turkish, `1.5 KB` and `140%` in English), through `Intl.NumberFormat`. Report notes never format a size: they carry the byte counts as numbers and the sentence asks for a size with a `{name:bytes}` placeholder, which `createTranslator` writes in its own locale. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (40 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
+| `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
 | `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`; the gauge and the limit-profile badge are drawn only while the limit verdict is not `ok` or the gauge is at 75 % or more (from 768 px up). |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -423,8 +423,8 @@ From here on, a path that starts with `ops/` or `engines/` is relative to
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/v<digest>/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
-| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
-| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
+| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction audit, encryption, page boxes (auto-crop), straightening (the greyscale render the skew search reads), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
+| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), straightening (`ops/deskew.ts`), blank-page detection and two-up splitting (`ops/page-tidy.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 | `engines/ghostscript.ts` (+ `ghostscript-worker.ts`, `ghostscript-run.ts`) | `@bentopdf/gs-wasm` 0.1.1 (Ghostscript 10.06.0, wasm ~14.8 MiB) | one module Web Worker per conversion, terminated after it | PDF/A conversion only (§5.13) |
@@ -800,7 +800,8 @@ writer does, and the steps it reports:
          positions move with the frame; `textBoxXml` writes it as a frame turned by `a:xfrm rot`
          like a slanted PDF line, so the text sits on the scan's own lines, which Word draws
          turned and LibreOffice draws level at the same centre. A page read from its own text
-         layer is never turned.
+         layer is never turned. The search itself (`inkPoints`, `skewOfPoints(points, range)`) is
+         shared with the straightening tool (§5.14), which widens the window to ±15°.
        - *Underlines.* Rules under words make Tesseract misread them (a link's underline cuts
          the descenders). `findUnderlines` looks, for every word of at least two letters or
          digits and at least 1.2 × its height wide, at the rows from 0.35 × its height above its
@@ -1019,6 +1020,24 @@ writer does, and the steps it reports:
   a content transform wraps the page's streams through `wrapPageContent`, auto-crop measures
   on the document it edits instead of opening a second copy, and a page that needs no change
   is counted once in the unchanged-pages note;
+- page tidy-up (`ops/page-tidy.ts`, steps `load` / `split-two-up` / `save`). `findBlankPages`
+  judges a page blank only when it has no annotation (a widget is one), no letter or digit of
+  structured text (invisible text counts, punctuation alone does not) and at most 0.01 % of
+  its pixels count as ink when drawn in grey at 50 dpi (longest side capped at 2000 px): darker
+  than grey 200, or more than 25 levels darker than the page's paper (its median grey), so a
+  light-grey logo or gridline on white paper is content and a tinted or noisy sheet is not. It judges the render, not the content stream, so an image of an empty sheet or a white
+  rectangle is blank and a scan's noise does not hold the page. `splitTwoUpPages` copies the
+  page dictionary of each landscape page (every entry shared by reference, so the content
+  streams and images exist once; inherited `/Resources` and `/Rotate` are made the page's own
+  first; `/Thumb` and `/StructParents` are not copied) and gives the two the halves of the
+  displayed page as `/MediaBox` and `/CropBox`, found with `displayToUserPoint` so a turned
+  page splits left to right as shown; `/TrimBox`, `/BleedBox` and `/ArtBox` are dropped. Pages
+  go last first so an insertion never moves a page still to do, and the label plan is rebuilt
+  with `composeLabelRanges` so every new page keeps its source page's label. A page with
+  annotations is left whole. Removing the blank pages is the pdf.js composition an extraction
+  uses; reversing the order is the `reverse` page action in `planPageAction`;
+- straightening scanned pages (`ops/deskew.ts`, steps `render` / `deskew` / `save`), which
+  wraps a page's streams in a rotation through `wrapPageContent` and re-encodes nothing (§5.14);
 - the rotation pass, the repeated-page repair and the merge's metadata step after pdf.js
   `extractPages` (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`;
   `compose.rotate` is declared to the save verification (it may change `rotation`).
@@ -1051,7 +1070,28 @@ writer does, and the steps it reports:
   `op.note.merge.encryptionDropped` when a document had `/Encrypt`, because the merged file is
   written without any protection, and counts the fully qualified field names used by more than
   one document (`fieldNamesOf`; a field's widget kids without a `/T` of their own belong to
-  it) as `op.note.merge.sharedFields`, because fields with one name share one value;
+  it) as `op.note.merge.sharedFields`, because fields with one name share one value. The
+  front/back merge of a double-sided scan (`interleaveDocuments`) is the same function with a
+  different layout: `mergeWithLayout` takes the engine's entries and the label placements, the
+  append merge asks for one block after a base page (`insertAfter`) and the interleave gives
+  each file explicit `pageIndices` from `planInterleave` (front, back, front, back…; with
+  `reverseBacks` the back of the first sheet is the last page of the backs file; the pages of
+  the longer file with no partner follow, and `op.note.merge.unequalFronts` /
+  `op.note.merge.unequalBacks` warn about them). The front file is the base, so its Info,
+  outline and form carry over and every page keeps its own label;
+- splitting (`ops/split.ts`): one `composeDocument` per part on the document that owns the
+  annotation storage, in five modes (ranges, every N pages, size, booklet, bookmarks). The
+  bookmarks mode cuts at the entries of the outline down to a chosen level
+  (`readSplitBookmarks` reads pdf.js's resolved outline, `flattenOutline` takes the level): a
+  part runs from a bookmark's page to the page before the next bookmark's, bookmarks on one
+  page start one part named after the first, the pages before the first bookmark are a part of
+  their own, and an entry that points to no page of the document is counted and reported
+  (`split.note.bookmarksSkipped`) rather than cut at. A part's file name is the document's name,
+  its number and the bookmark title written as a file name (reserved characters and edge dots
+  dropped, 60 characters at most); the number keeps the parts in document order and makes the
+  names distinct. A document with no usable bookmark is refused as `no-bookmarks`, whose hint
+  names the other modes. The dialog (`ops/pages.ts`) refuses a plan over `MAX_SPLIT_PARTS`
+  before any part is produced;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written, plus the planned page labels) and matched image pages drawn as form XObjects. The
@@ -2235,7 +2275,95 @@ uses transparency into a picture (a 98 KB file became 4.2 MB, its text no longer
 its links gone) and the report says so; a font with ligatures and no `/ToUnicode` loses part of
 its text mapping.
 
+### 5.14 Straightening scanned pages
+
+`ops/deskew.ts` (`deskewPages`, the `deskew` dialog, the Page menu's *Straighten pages*) measures how far
+the text lines of each selected page are tilted and turns the page's content back by that angle,
+without re-encoding the scan. The operation table (`apps/web/src/operations.ts`) declares its step
+`deskew` as one that may change `pageContent` and nothing else; `render` and `save` are the usual
+read-back and serialise steps.
+
+**Measuring.** MuPDF draws the page as the viewer shows it (`/Rotate` and the CropBox applied,
+annotations left out) as a greyscale picture 1400 pixels along its long side, small enough to be quick
+and below the 1650 at which the OCR's search would shrink it again. The search is the one OCR already
+uses (§5.5): Otsu threshold; pictures, rules, frames and slivers left out; at most 60 000 ink points;
+projected across the lines, the angle whose histogram is sharpest wins. Here the window is ±15° (a
+coarse 0.5° step, then 0.05° around the best). The measurement is trusted only when there are at least
+2000 ink points and the best score is at least 2.5 × the mean of the coarse scores; a best angle past
+the window (the fine step reaches half a coarse step beyond it) is not trusted either. Both fall under
+*no clear text lines*, as do a blank page, a photograph, a form of boxes and a lone page number. An
+angle under 0.1° is *level*: a turn that small would not be seen and would only resample the scan on
+screen. The measurement runs on the main thread (the search alone took about 75 ms on a 1000 × 1400
+bitmap, and the whole operation about 115 ms a page on generated scans, drawing and saving included, in
+Node on the development machine), with a yield to the event loop after each page for the progress bar
+and Cancel; no worker was added for it, since MuPDF has none to share.
+
+**Turning, losslessly.** The page's content streams are wrapped as they are between a first stream
+`q a b c d e f cm q` and a last `Q Q` (`wrapPageContent`), where `cm` is a counter-clockwise rotation
+by the angle the lines descend by, about the centre of the visible box (the CropBox clipped to the
+MediaBox) in user space. The scan's picture, an OCR text layer (invisible text) and any vector content
+turn together, and not a byte of the picture changes (`deskew.test.ts` compares the decoded pixels of
+the input and the output). `/Rotate` is a rigid quarter-turn of the whole displayed page, so a
+counter-clockwise turn on screen is counter-clockwise in the page's own space for every `/Rotate`:
+the angle measured on the displayed picture is the angle written, and the centre of the visible box
+is the same point in both spaces.
+
+**Page boxes.** None is touched. The page keeps its MediaBox, CropBox, TrimBox, BleedBox and ArtBox:
+a scan's size is what printing, its signatures and its annotations rely on, and the corners the turn
+carries off the page are scan margin, while the ones it brings in are the page's own background. The
+check that keeps this honest is made on the measuring picture: the ink points are turned back by the
+measured angle about the centre of the frame and, if more than 0.1 % of them would land outside it,
+the page is skipped (*would push text off the page*) instead of being cut. A few specks may leave;
+a line of text may not. This happens when the sheet lay crooked about a point far from the centre
+(in the tests: a sheet turned about a corner by 10°, with a 40 px margin on an 850 × 1200 frame; the
+same tilt about the centre, or 2° about the corner, is turned), and the report says so. Moving the turn's centre to keep such text on the page
+(a translation inside the same `cm`) was left out.
+
+**Annotations.** Not moved. A rectangle turned without its appearance stream would be wrong in a
+new way, and rewriting each kind's appearance (a highlight's quads, a stamp's form matrix) is a
+tool of its own. The turned pages that carry a non-empty `/Annots` are counted in one warning,
+which also makes the result a review before it is applied.
+
+**Report.** One note per selected page, in page order: the tilt removed (`changed`, with the angle as
+`{angle:degrees}`, so `1,8°` in Turkish and `1.8°` in English), already straight (`preserved`), no clear
+text lines (`warning`) or skipped at the edge (`warning`); then, when a file was written, that the scans
+were not re-encoded and the producer line. A run in which no page was turned writes nothing: the core
+returns the input bytes, the dialog returns no file, and applying it records no step in the history.
+The dialog is `changesPageGeometry`, so pending redaction marks hold it, as they hold a content shift.
+
+**Measured.** On generated bitmaps (word-shaped blocks tilted by a known angle) the largest error over
+41 angles from −14.9° to 14.9° was 0.02°, and the tests hold ten angles, and three noisy pages, to
+0.1°. On eleven generated scans (typeset text drawn at 150 dpi and embedded as a picture, tilted from
+−12.43° to 13.12°, half of them with grey noise) the largest error was 0.03°, and measuring the
+straightened pages again with the OCR's own search found 0.00° (it steps by 0.05°). Real scans were not
+benchmarked: paper grain,
+a curled spine, a photographed page or a table-heavy form can lower the confidence (the page is then
+reported, not guessed) and a ruled form whose rules are crooked on their own can still pull the
+estimate. A sheet tilted past 15° may be measured as a different tilt inside the window rather than as
+unclear; the edge check often, not always, catches it.
+
 ---
+
+### 5.15 Repair
+
+`ops/repair.ts` (steps `load`, `repair`, `save`) opens a file with MuPDF, which rebuilds the
+cross-reference table from the objects it finds when the table or the trailer is missing,
+cut off or points at the wrong offsets, and writes the document out as a clean full rewrite
+(`saveRewrite`). `wasRepaired()` is asked after the whole file has been read for the save,
+because MuPDF repairs lazily, when an object is not where the table says: asked on open it can
+still be `false` for a damaged file. The output is read back before it is returned: it must open
+without a repair, with the page count of the input, in MuPDF and in the viewer's engine, or the
+operation throws `verification-failed`. A file with no object to rebuild from is
+`corrupt-document` (so is one with no readable page), and a document that needs a password is
+`encrypted-unsupported` like every writer here. The report says whether the file really was damaged
+(`op.note.repair.rebuilt` plus the warning `op.note.repair.check`, so the result is read before
+it opens: content that could not be read is not restored) or only rewritten
+(`op.note.repair.rewritten`), and a signed document carries the `lost` note that the rewrite
+invalidates the signature. The dialog (`ops/repair.ts` in `pdf-ui`) is a standalone operation
+(`repair`, command `file.repair`) because the files that need it are the ones that do not open: it
+takes the file itself and opens `<name>-repaired.pdf` in a new tab, never replacing a document. An
+open that fails with `corrupt-document` adds `open.repairHint` to its notice. The module is
+loaded with the dialog, outside the entry chunk and outside the `pdf-core` barrel.
 
 ## 6. `pdf-text-engine` — the text model
 
@@ -2487,8 +2615,9 @@ passed from a surface has to be the id the registry declares.
 
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
 synchronously through `isStandaloneDialog`): a blank document (`new-document`,
-`ops/create.ts`), a PDF from images (`images-to-pdf`), several PDFs merged into a
-new one (`merge-files`, the first file as the base of `mergeDocuments`) and other documents
+`ops/create.ts`), a PDF from images (`images-to-pdf`), a damaged PDF rebuilt into a clean copy (`repair`, §5.15), several PDFs merged into a
+new one (`merge-files`, the first file as the base of `mergeDocuments`, or in its alternating
+mode the front-sides file as the base of `interleaveDocuments`) and other documents
 converted to PDF (`convert-to-pdf`, several files converted one by one and merged in order). They run with no
 document open, their context carries no bytes, and their one result opens in a new tab. A
 tab's tools panel is frozen against that tab and dismissed when it changes, so these get a
@@ -2716,7 +2845,7 @@ stores (name, size, page count, last opened, star) sits behind an info button ne
 (`components/HomeToolGrid.tsx`, a chunk the tab fetches when the pointer or focus reaches it, with a "Loading tools…" status in the panel until it arrives) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
 command, so the grid cannot drift from the menus or the palette. *Organize pages*
-(`page.organize`) opens the page panel, and merge and batch are tiles of their own. It lists
+(`page.organize`) opens the organize grid (below), and merge and batch are tiles of their own. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never
 disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
@@ -2874,6 +3003,31 @@ and each caption leads with the file's page label (`getPageLabels`) when it diff
 number — `App-ii (2)`. A change to the session's marks is journalled under the kind drawn, a
 delete, a comment edit or a mark edit (`annotationStepLabel`), so History names the step
 instead of calling every one "Comments".
+
+**The organize grid** (`page.organize`, `panels/OrganizeView.tsx`) is the page list's larger
+sibling: every page as a thumbnail in a CSS grid over the whole editor area, for reordering a
+document at a glance. `core-store.ts` holds one flag (`organize`); `features/pages/OrganizeSurface.tsx`
+binds the view to the shell (the selection of `open-store.ts` the page panel shares, the page on
+screen, the session's marks, the page actions that journal a change) and fetches it through
+`import('pdf-ui/organize')`, a package export of its own that gives the view a chunk of its own, so
+the first-paint budget does not carry it. While it is open the editor under it is `inert`, and it is
+taken away by another tab, the start screen, or an operation form (the forms open in the right dock,
+which the grid covers). The thumbnails are the page list's own `PageThumbnail`
+(`panels/PageThumbnail.tsx`: drawn when near the window, given up when it leaves, marks over the
+page), scaled to fit a cell of the chosen size (four steps of a slider; a phone opens on the second).
+The selection rules and the move arithmetic are pure functions shared with the page list
+(`panels/page-select.ts`: `clickSelection`, `dropIndex`, plus `shiftIndex`, `gridColumns` and
+`arrowDelta` for the grid), and the labels and mark grouping are `panels/page-info.ts`. The grid
+listens once and finds the card under the event, so a card's props are values and a selection change
+redraws only the cards it changes. A drop shows a line on the side of the card the pointer is on
+(mirrored in a right-to-left interface); a move leaves as the same `PageMoveAction` the panel emits,
+so `planPageAction` and the journal handle it and undo is one step. `Alt` or `Ctrl` with an arrow moves
+the selection (a row for up and down; the column count is `gridColumns` of the grid's width), plain
+arrows walk the cards, and the move buttons, the *Move to* field and the *Select several* mode are the
+routes without a drag or a `Ctrl` key. The view marks itself `data-owns-select-keys`, so the shell's
+`Ctrl+A` and `Delete` (which act on marks) stand down inside it; `Escape` is taken in the capture
+phase, so a tooltip cannot swallow it. A button that is off while a change runs drops the focus, and
+the view puts it back (by the button's name, since the element may be new) when editing returns.
 
 ### 8.4 Cross-window coordination
 
@@ -3314,6 +3468,10 @@ shows.
 - **PDF/A** is checked by a subset of veraPDF's rules, and the conversion rewrites the whole
   file (§5.13): signatures stop validating, form fields are flattened, tags are not kept, and
   PDF/A-1b turns pages that use transparency into pictures.
+- **Straightening** measures text lines: it needs at least two lines' worth of ink and a clear
+  peak, searches ±15°, leaves annotations, links and form fields where they were (the report counts
+  the pages that carry any), keeps the page size and so skips a page whose text a turn would push
+  off it, and does not correct perspective or curl (the camera scan does, §5.9).
 - **`adbe.pkcs7.sha1`** signatures are reported `unchecked`, because their digest relation
   differs from the detached-CMS one this build verifies.
 
@@ -3512,7 +3670,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 
 | Layer | Mechanism |
 |---|---|
-| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, settled (renamed and retagged) text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
+| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, settled (renamed and retagged) text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), the skew search on generated bitmaps and the straightened scan measured again, its picture compared pixel for pixel (`deskew.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
 | Model integrity | `tools/audit/typecheck-model.cjs` re-runs the root compiler options over `pdf-model`, `pdf-shared`, `pdf-text-engine` and `apps/web/src/drafts.ts` with paths mapped to source, so a regression that makes the model depend on the app fails even if the bundler would resolve it. The gate runs it as its own step |
 | Mark selection and editing | `mark-interaction.test.ts` (projection, hit tests, identity), `annotation-remove.test.ts` (deletion and refusal), `annotation-transform.test.ts` (geometry and independent MuPDF raster readback), `annotations.test.ts` (recovered engine records), and history/save cases in `apps/web/src/operations.test.ts` |
 | Parity features | One `*.test.ts` beside each module, against bytes re-read by MuPDF or pdf.js: comment replies and review states (`annotation-review`, `annotation-threads`), XFDF/FDF/JSON round trips with Turkish text, font subsets (`mupdf-write`), the locale registry and the Phosphor weight plugin; find and replace, the glyph-less font, Office and text conversion (a damaged part becomes a loss note), Office export and page layout; CRLs, RFC 3161 timestamps and the signature evidence (`signature-revocation.fixtures.ts` builds the PKI); form-field detection and XFA (`xfa-data`, `xfa-form`, `xfa-flatten`); the scan geometry, detector (every turn, antialiased and hard-edged), warp and filters; sanitize per category; one real Ghostscript PDF/A-2b run checked by `checkPdfA`, the PDF/UA rules and the structure editor (`ua.fixtures.ts`); and `useShortcuts.test.ts`, which refuses a chord two rows share |

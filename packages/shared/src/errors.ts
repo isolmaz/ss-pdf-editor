@@ -26,6 +26,7 @@ export const TOOL_ERROR_CODES = [
   'no-text',
   'no-match',
   'no-xfa',
+  'no-bookmarks',
   'xfa-dynamic',
   'xfa-static',
   'password-policy',

@@ -28,9 +28,12 @@ import type { PdfDocumentHandle } from 'pdf-core';
 import { readAnnotations } from 'pdf-core';
 import type { Mupdf } from 'pdf-core/engines/mupdf';
 import { openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
+import { deskewPages } from 'pdf-core/ops/deskew';
+import { scanDocument, tiltedText } from 'pdf-core/ops/deskew.fixtures';
 import { fieldValueText } from 'pdf-core/ops/form-value';
 import { readFormFields } from 'pdf-core/ops/forms';
 import { scaleForRatio } from 'pdf-core/ops/measure';
+import { splitTwoUpPages } from 'pdf-core/ops/page-tidy';
 import { redactDocument } from 'pdf-core/ops/redact';
 import { readPageText } from 'pdf-core/text-source';
 import {
@@ -617,6 +620,52 @@ describe('verifyForWrite: the steps a redaction reports', () => {
 });
 
 /**
+ * Straightening journals the step ids `deskewPages` reports. The table has to know the one that
+ * turns a page, or a straightened scan is an unexplained change instead of the declared one.
+ */
+describe('verifyForWrite: the steps straightening reports', () => {
+  it('declares every step the writer reports, so a turned scan verifies against the scan it came from', async () => {
+    const source = await scanDocument([{ content: tiltedText(3) }, { content: tiltedText(-2) }]);
+    const outcome = await deskewPages(source, { pages: [0, 1] }, SIGNAL);
+    expect(outcome.report.steps).toEqual(['render', 'deskew', 'save']);
+
+    const result = await verify(outcome.bytes, source, {
+      expectedPageCount: 2,
+      steps: outcome.report.steps,
+    });
+    expect(result.operation).toEqual({ kind: 'declared', steps: [] });
+    expect(result.declared).toEqual(['pageContent']);
+    for (const fact of ['pageCount', 'pageOrder', 'rotation', 'cropBox']) {
+      expect(checkFor(result, fact)?.verdict, fact).toBe('verified');
+    }
+  });
+});
+
+/** Splitting two-up scans journals the step ids `splitTwoUpPages` reports; the table has to know the one that splits. */
+describe('verifyForWrite: the steps a two-up split reports', () => {
+  it('declares every step the writer reports, so a split scan verifies against the scan it came from', async () => {
+    const source = await scanDocument([{ content: tiltedText(0), size: [842, 595] }]);
+    const outcome = await splitTwoUpPages(source, [0], SIGNAL);
+    expect(outcome.report.steps).toEqual(['load', 'split-two-up', 'save']);
+
+    const result = await verify(outcome.bytes, source, {
+      expectedPageCount: 2,
+      steps: outcome.report.steps,
+    });
+    expect(result.operation).toEqual({ kind: 'declared', steps: [] });
+    expect(result.declared).toEqual([
+      'pageCount',
+      'pageOrder',
+      'pageContent',
+      'textContent',
+      'rotation',
+      'cropBox',
+      'pageLabels',
+    ]);
+  });
+});
+
+/**
  * Fill a field, then Save. A typed value reaches the session only as engine values, so the form
  * inventory Save verifies against (`prepareOutput` hands it to `verifyForWrite`) has to be read again
  * once the value is typed, from the bytes the engine would save. The inventory is the shell's own
@@ -917,6 +966,16 @@ describe('planPageAction', () => {
     });
   });
 
+  it('reverses the selected pages among the places they hold, and every page when fewer than two are selected', () => {
+    expect(ids(planPageAction(pages, [1, 3], { kind: 'reverse' }).pages)).toEqual(['a', 'd', 'c', 'b']);
+    expect(ids(planPageAction(pages, [0, 1, 2, 3], { kind: 'reverse' }).pages)).toEqual(['d', 'c', 'b', 'a']);
+    expect(ids(planPageAction(pages, [2], { kind: 'reverse' }).pages)).toEqual(['d', 'c', 'b', 'a']);
+    expect(ids(planPageAction(pages, [], { kind: 'reverse' }).pages)).toEqual(['d', 'c', 'b', 'a']);
+    expect(planPageAction(pages, [1, 3], { kind: 'reverse' }).rotations).toEqual({});
+    // The selection may be given in any order; the places are the same.
+    expect(ids(planPageAction(pages, [3, 1], { kind: 'reverse' }).pages)).toEqual(['a', 'd', 'c', 'b']);
+  });
+
   it('leaves the page list of this document alone for an insert, which is a merge', () => {
     const plan = planPageAction(pages, [0], {
       kind: 'insert',
@@ -946,6 +1005,10 @@ describe('pageActionLabel', () => {
     expect(pageActionLabel({ kind: 'move', toIndex: 0 }, 4)).toEqual({
       key: 'pages.moved',
       params: { count: 4 },
+    });
+    expect(pageActionLabel({ kind: 'reverse' }, 3)).toEqual({
+      key: 'pages.reverse.done',
+      params: { count: 3 },
     });
     // An insert counts the pages it brings, not the selection.
     expect(
@@ -1013,6 +1076,44 @@ describe('applyPageAction', () => {
       expect(rotationsOf(produced?.bytes ?? new Uint8Array())).toEqual([0, 90, 0]);
       expect(textsOf(produced?.bytes ?? new Uint8Array())).toEqual(LINES);
       await next?.destroy();
+    } finally {
+      await handle.destroy();
+    }
+  });
+
+  it('reverses the page order of the document, or only the selected pages, and journals it', async () => {
+    const source = await threePageDocument();
+    const { store, handle, context } = await openSession(source.bytes, 3);
+    try {
+      const all = await applyPageAction(context(), [0], { kind: 'reverse' }, SIGNAL);
+      expect(textsOf(store.active?.working.produced?.bytes ?? new Uint8Array())).toEqual(
+        [...LINES].reverse(),
+      );
+      await all?.destroy();
+      expect(store.active?.journal.canUndo).toBe(true);
+    } finally {
+      await handle.destroy();
+    }
+
+    const second = await openSession(source.bytes, 3);
+    try {
+      const some = await applyPageAction(second.context(), [0, 1], { kind: 'reverse' }, SIGNAL);
+      expect(textsOf(second.store.active?.working.produced?.bytes ?? new Uint8Array())).toEqual([
+        LINES[1],
+        LINES[0],
+        LINES[2],
+      ]);
+      await some?.destroy();
+    } finally {
+      await second.handle.destroy();
+    }
+  });
+
+  it('answers null for reversing a one-page document, which is already in reverse order', async () => {
+    const source = await threePageDocument(1);
+    const { handle, context } = await openSession(source.bytes, 1);
+    try {
+      expect(await applyPageAction(context(), [0], { kind: 'reverse' }, SIGNAL)).toBeNull();
     } finally {
       await handle.destroy();
     }

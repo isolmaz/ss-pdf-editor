@@ -68,6 +68,7 @@ function recordingHost(overrides: Partial<CommandHost> = {}) {
     showRightTab: rec('showRightTab'),
     detectFormFields: rec('detectFormFields'),
     openLeftTab: rec('openLeftTab'),
+    openOrganize: rec('openOrganize'),
     pageAction: rec('pageAction'),
     setZoom: rec('setZoom'),
     setSpread: rec('setSpread'),
@@ -107,6 +108,7 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'file.open': ['openFile'],
   'file.merge': dialog('merge-files'),
   'file.convert': dialog('convert-to-pdf'),
+  'file.repair': dialog('repair'),
   'file.save': ['save'],
   'file.export': ['exportDocument'],
   'file.add': dialog('add-document'),
@@ -142,12 +144,16 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'page.rotate-right': ['pageAction', { kind: 'rotate', direction: 'right' }],
   'page.duplicate': ['pageAction', { kind: 'duplicate' }],
   'page.delete': ['pageAction', { kind: 'delete' }],
-  'page.organize': ['openLeftTab', 'pages'],
+  'page.organize': ['openOrganize'],
   'page.extract': dialog('extract-pages'),
   'page.insert': dialog('insert-pages'),
   'page.replace': dialog('replace-pages'),
   'page.split': dialog('split'),
+  'page.reverse': ['pageAction', { kind: 'reverse' }],
+  'page.remove-blank': dialog('remove-blank-pages'),
+  'page.split-two-up': dialog('split-two-up'),
   'page.boxes': dialog('page-boxes'),
+  'page.deskew': dialog('deskew'),
   'page.labels': dialog('page-labels'),
   'tools.numbering': dialog('page-numbers'),
   'tools.watermark': dialog('watermark'),
@@ -289,7 +295,7 @@ describe('buildCommands', () => {
       },
     );
 
-    it('lays out the page panel, merge and batch as home tiles that run their own command', () => {
+    it('lays out the organize grid, merge and batch as home tiles that run their own command', () => {
       const { host, calls } = recordingHost();
       const commands = buildCommands(host);
       const tiles = HOME_TOOLS.filter((tool) =>
@@ -297,7 +303,7 @@ describe('buildCommands', () => {
       );
       expect(tiles.map((tool) => tool.id)).toEqual(['page.organize', 'file.merge', 'file.batch']);
       for (const tool of tiles) byId(commands, tool.id).run();
-      expect(calls).toEqual([['openLeftTab', 'pages'], ['openDialog', 'merge-files'], ['openBatch']]);
+      expect(calls).toEqual([['openOrganize'], ['openDialog', 'merge-files'], ['openBatch']]);
     });
 
     it('names the three zoom entries by what each one does', () => {
@@ -371,7 +377,7 @@ describe('buildCommands', () => {
     ]) {
       expect(byId(none, id).disabled, id).toBe(true);
     }
-    for (const id of ['page.split', 'tools.ocr', 'tools.impose', 'tools.measure-area']) {
+    for (const id of ['page.split', 'page.deskew', 'tools.ocr', 'tools.impose', 'tools.measure-area']) {
       expect(byId(none, id).disabled, id).toBe(true);
     }
     // Starting a document, help and settings never need one.
@@ -382,6 +388,7 @@ describe('buildCommands', () => {
     const viewing = buildCommands(recordingHost({ canEdit: false }).host);
     expect(byId(viewing, 'view.zoom-in').disabled).toBeFalsy();
     expect(byId(viewing, 'tools.ocr').disabled).toBe(true);
+    expect(byId(viewing, 'page.deskew').disabled).toBe(true);
     // Redaction rewrites the file: a protected (read-only) tab refuses it from the palette
     // exactly as the toolbar does.
     expect(byId(viewing, 'tools.redact').disabled).toBe(true);
@@ -429,6 +436,9 @@ describe('buildCommands', () => {
       'page.delete',
       'page.extract',
       'page.replace',
+      'page.reverse',
+      'page.remove-blank',
+      'page.split-two-up',
     ];
     const unselected = buildCommands(recordingHost({ selectedPages: [] }).host);
     for (const id of ids) {
@@ -600,6 +610,7 @@ describe('interface mode filtering', () => {
       'file.create-images',
       'file.merge',
       'file.new',
+      'file.repair',
       'file.scan',
     ]);
   });

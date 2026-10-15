@@ -1,8 +1,8 @@
 /**
  * Splitting.
  *
- * Four modes: ranges, every N pages, by approximate size, and booklet
- * signatures. Range parsing and part naming come from `page-ranges.ts`, so the
+ * Five modes: ranges, every N pages, by approximate size, booklet
+ * signatures, and the bookmarks of the outline. Range parsing and part naming come from `page-ranges.ts`, so the
  * Turkish error text and the file-name width rule are shared with every other
  * range consumer.
  *
@@ -13,12 +13,18 @@
  */
 
 import { ToolError } from 'pdf-shared';
-import { openWithPdfjs } from '../engines/pdfjs-handle';
+import { openWithPdfjs, type PdfOutlineEntry } from '../engines/pdfjs-handle';
 import { composeDocument } from './compose';
 import { chunkPages, parsePageRanges, partFileName, splitRangeSegments } from './page-ranges';
 import { type OperationContext, type OutputFile, throwIfAborted } from './types';
 
-export type SplitMode = 'ranges' | 'everyN' | 'size' | 'booklet';
+export type SplitMode = 'ranges' | 'everyN' | 'size' | 'booklet' | 'bookmarks';
+
+/** A bookmark that starts a part: its title and the 0-based page it points to. */
+export interface SplitBookmark {
+  readonly title: string;
+  readonly pageIndex: number;
+}
 
 export interface SplitOptions {
   readonly mode: SplitMode;
@@ -38,6 +44,10 @@ export interface SplitOptions {
    * `planSplit` fails instead of previewing a part count it cannot know.
    */
   readonly totalBytes?: number;
+  /** `bookmarks` mode: the bookmarks that start the parts, as `readSplitBookmarks` returns them. */
+  readonly bookmarks?: readonly SplitBookmark[];
+  /** `bookmarks` mode: the name of the part holding the pages before the first bookmark. */
+  readonly leadTitle?: string;
 }
 
 export interface SplitPlan {
@@ -54,10 +64,12 @@ const DEFAULT_SIGNATURE_PAGES = 4;
  * the user commits, and what validation errors are reported against.
  */
 export function planSplit(options: SplitOptions): SplitPlan {
-  const parts = planParts(options);
+  const { parts, suffixes } = planParts(options);
   return {
     parts,
-    names: parts.map((_part, index) => partFileName(options.baseName, index, parts.length)),
+    names: parts.map((_part, index) =>
+      partFileName(options.baseName, index, parts.length, suffixes?.[index] ?? ''),
+    ),
   };
 }
 
@@ -85,6 +97,7 @@ export async function splitDocument(
   const handle = await openWithPdfjs(bytes, { signal: context.signal });
   try {
     const parts: number[][] = [];
+    let suffixes: readonly string[] | undefined;
     const blobs: Uint8Array[] = [];
     const oversizedPages: number[] = [];
     const composePart = async (partPages: readonly number[]): Promise<Uint8Array> => {
@@ -131,13 +144,14 @@ export async function splitDocument(
       }
     } else {
       const plan = planParts(options);
-      for (const [index, partPages] of plan.entries()) {
+      suffixes = plan.suffixes;
+      for (const [index, partPages] of plan.parts.entries()) {
         throwIfAborted(context.signal);
         context.onProgress?.({
           phase: 'part',
           labelKey: 'op.progress.split.parts',
           done: index,
-          total: plan.length,
+          total: plan.parts.length,
         });
         parts.push([...partPages]);
         blobs.push(await composePart(partPages));
@@ -148,7 +162,7 @@ export async function splitDocument(
     // after the last part was measured — and `partFileName` widens the number
     // instead of running into the extension past 999.
     const files: OutputFile[] = blobs.map((partBytes, index) => ({
-      name: partFileName(options.baseName, index, blobs.length),
+      name: partFileName(options.baseName, index, blobs.length, suffixes?.[index] ?? ''),
       bytes: partBytes,
       mime: 'application/pdf',
     }));
@@ -197,18 +211,115 @@ async function fitPart(
   return fits ?? over;
 }
 
-function planParts(options: SplitOptions): number[][] {
+interface PlannedParts {
+  readonly parts: number[][];
+  /** The text each part adds to its file name after its number; `bookmarks` mode only. */
+  readonly suffixes?: readonly string[];
+}
+
+function planParts(options: SplitOptions): PlannedParts {
   assertPageCount(options);
   assertSelection(options);
+  const all = pageBlock(0, options.pageCount);
   switch (options.mode) {
     case 'ranges':
-      return planRanges(options);
+      return { parts: planRanges(options) };
     case 'everyN':
-      return chunkPages(pageBlock(0, options.pageCount), requireChunkSize(options, null));
+      return { parts: chunkPages(all, requireChunkSize(options, null)) };
     case 'booklet':
-      return chunkPages(pageBlock(0, options.pageCount), requireChunkSize(options, DEFAULT_SIGNATURE_PAGES));
+      return { parts: chunkPages(all, requireChunkSize(options, DEFAULT_SIGNATURE_PAGES)) };
     case 'size':
-      return planBySize(options);
+      return { parts: planBySize(options) };
+    case 'bookmarks':
+      return planByBookmarks(options);
+  }
+}
+
+/** Longest bookmark title kept in a file name, in characters. */
+const MAX_TITLE_NAME = 60;
+
+/** A bookmark title as the end of a file name: no path or reserved characters, no edge dots or spaces. */
+function titleSuffix(title: string): string {
+  const clean = title
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what a file name must not hold
+    .replace(/[\u0000-\u001f\u007f\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  const cut = Array.from(clean.trim()).slice(0, MAX_TITLE_NAME).join('');
+  const name = cut.replace(/^[. ]+|[. ]+$/g, '');
+  return name === '' ? '' : `-${name}`;
+}
+
+/**
+ * One part per bookmark, from its page to the page before the next bookmark's; the pages before
+ * the first bookmark are a part of their own. Bookmarks on the same page start one part, named
+ * after the first of them in outline order.
+ */
+function planByBookmarks(options: SplitOptions): PlannedParts {
+  const marks = (options.bookmarks ?? []).map((mark, order) => ({ ...mark, order }));
+  for (const mark of marks) {
+    if (!Number.isSafeInteger(mark.pageIndex) || mark.pageIndex < 0 || mark.pageIndex >= options.pageCount) {
+      throw new ToolError('range-invalid', {
+        engine: 'model',
+        engineMessage: `bookmark "${mark.title}" points to page index ${mark.pageIndex}, outside the document`,
+      });
+    }
+  }
+  if (marks.length === 0) {
+    throw new ToolError('no-bookmarks', {
+      engine: 'model',
+      engineMessage: 'the document has no bookmark that points to a page',
+    });
+  }
+  marks.sort((left, right) => left.pageIndex - right.pageIndex || left.order - right.order);
+  const starts = marks.filter((mark, index) => index === 0 || mark.pageIndex !== marks[index - 1]?.pageIndex);
+  const parts: number[][] = [];
+  const titles: string[] = [];
+  const first = starts[0] as (typeof starts)[number];
+  if (first.pageIndex > 0) {
+    parts.push(pageBlock(0, first.pageIndex));
+    titles.push(options.leadTitle ?? '');
+  }
+  for (const [index, mark] of starts.entries()) {
+    const end = starts[index + 1]?.pageIndex ?? options.pageCount;
+    parts.push(pageBlock(mark.pageIndex, end - mark.pageIndex));
+    titles.push(mark.title);
+  }
+  return { parts, suffixes: titles.map(titleSuffix) };
+}
+
+/**
+ * The bookmarks of the outline down to `level` (1 = the top ones), in outline order, with the page
+ * each points to. `skipped` counts those that point to no page of this document (a link to another
+ * file, a destination that does not resolve): they cannot start a part.
+ */
+export function flattenOutline(
+  outline: readonly PdfOutlineEntry[],
+  level: number,
+): { readonly bookmarks: readonly SplitBookmark[]; readonly skipped: number } {
+  const bookmarks: SplitBookmark[] = [];
+  let skipped = 0;
+  const walk = (entries: readonly PdfOutlineEntry[], depth: number): void => {
+    for (const entry of entries) {
+      if (entry.pageIndex === null) skipped += 1;
+      else bookmarks.push({ title: entry.title, pageIndex: entry.pageIndex });
+      if (depth < level) walk(entry.children, depth + 1);
+    }
+  };
+  walk(outline, 1);
+  return { bookmarks, skipped };
+}
+
+/** Read the outline of a document and flatten it for `bookmarks` mode. */
+export async function readSplitBookmarks(
+  bytes: Uint8Array,
+  level: number,
+  context: OperationContext,
+): Promise<{ readonly bookmarks: readonly SplitBookmark[]; readonly skipped: number }> {
+  const handle = await openWithPdfjs(bytes, { signal: context.signal });
+  try {
+    return flattenOutline(await handle.getOutline(), level);
+  } finally {
+    await handle.destroy();
   }
 }
 

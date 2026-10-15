@@ -38,8 +38,12 @@ const TOOL_NAMES: readonly ToolName[] = [
   { tr: 'Sayfaları sil', en: 'Delete pages', keys: ['pages.delete', 'tools.delete'] },
   { tr: 'Sayfaları ayıkla', en: 'Extract pages', keys: ['pages.extract.title', 'tools.extract'] },
   { tr: 'Belgeyi böl', en: 'Split document', keys: ['split.title', 'tools.split'] },
+  { tr: 'Sayfa sırasını ters çevir', en: 'Reverse page order', keys: ['pages.reverse'] },
+  { tr: 'Boş sayfaları kaldır', en: 'Remove blank pages', keys: ['tidy.blank.title'] },
+  { tr: 'Çift sayfalı taramaları böl', en: 'Split two-up scans', keys: ['tidy.split.title'] },
   { tr: 'Belge ekle', en: 'Add document', keys: ['file.add.title', 'tools.combine'] },
   { tr: 'Sayfa kutuları ve boyut', en: 'Page boxes and size', keys: ['boxes.title', 'boxes.dialog.title'] },
+  { tr: 'Eğik sayfaları düzelt', en: 'Straighten pages', keys: ['deskew.title'] },
   {
     tr: 'Sayfa numarası ve üst/alt bilgi',
     en: 'Page numbers and headers/footers',
@@ -74,6 +78,7 @@ const TOOL_NAMES: readonly ToolName[] = [
   { tr: 'Parola ile koru', en: 'Protect with password', keys: ['security.title', 'tools.protect'] },
   { tr: 'Parolayı kaldır', en: 'Remove password', keys: ['security.unlock.title', 'tools.unlock'] },
   { tr: 'Belgeyi temizle', en: 'Sanitize document', keys: ['sanitize.title', 'tools.sanitize'] },
+  { tr: 'PDF’yi onar', en: 'Repair PDF', keys: ['repair.title'] },
   { tr: 'Dosyayı küçült', en: 'Reduce file size', keys: ['optimize.title', 'tools.compress'] },
   {
     tr: 'Belgeyi PDF’ye dönüştür',

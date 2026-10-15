@@ -65,6 +65,8 @@ export interface CoreState {
   readonly rightTab: string;
   /** Simple or advanced (`interface-mode.ts`). */
   readonly mode: InterfaceMode;
+  /** The organize grid covers the editor area (`features/pages/OrganizeSurface.tsx`). */
+  readonly organize: boolean;
 }
 
 /** Whether the viewport is narrow enough for the docks to overlay the canvas; `false` with no window. */
@@ -94,6 +96,7 @@ export function initialCoreState(): CoreState {
     leftTab: 'pages',
     rightTab: 'history',
     mode: readStoredMode(),
+    organize: false,
   };
 }
 
@@ -291,6 +294,15 @@ export function selectRightTab(tab: string): void {
 /** Open the left dock on `tab`. */
 export function openLeftPanel(tab: DocumentPanelTab): void {
   coreStore.set({ leftDock: true, leftTab: tab });
+}
+
+/** Show the organize grid over the document, or take it away. */
+export function openOrganize(): void {
+  coreStore.set({ organize: true });
+}
+
+export function closeOrganize(): void {
+  coreStore.set({ organize: false });
 }
 
 /** Open the right dock on `tab`. */

@@ -24,6 +24,7 @@ import {
   type OperationOutcome,
   openWithPdfjs,
   planSplit,
+  readSplitBookmarks,
   type SplitMode,
   type SplitOptions,
   splitDocument,
@@ -87,7 +88,7 @@ export const extractPagesDialog: OperationDialogSpec = {
 /**
  * Split the document.
  *
- * Four modes, one operation. Only the fields the chosen mode reads are visible,
+ * Five modes, one operation. Only the fields the chosen mode reads are visible,
  * and the ranges mode takes its text through the shared page-range parser, so a
  * duplicate (`'1,1'`) is refused here rather
  * than producing two identical parts.
@@ -110,6 +111,7 @@ export const splitDialog: OperationDialogSpec = {
         { value: 'everyN', labelKey: 'split.mode.everyN' },
         { value: 'size', labelKey: 'split.mode.size' },
         { value: 'booklet', labelKey: 'split.mode.booklet' },
+        { value: 'bookmarks', labelKey: 'split.mode.bookmarks' },
       ],
     },
     {
@@ -145,6 +147,17 @@ export const splitDialog: OperationDialogSpec = {
       visibleWhen: { field: 'mode', equals: ['size'] },
     },
     {
+      id: 'bookmarkLevel',
+      kind: 'number',
+      labelKey: 'split.bookmarkLevel',
+      hintKey: 'split.bookmarkLevelHint',
+      defaultValue: 1,
+      min: 1,
+      max: 8,
+      step: 1,
+      visibleWhen: { field: 'mode', equals: ['bookmarks'] },
+    },
+    {
       id: 'baseName',
       advanced: true,
       kind: 'text',
@@ -158,7 +171,7 @@ export const splitDialog: OperationDialogSpec = {
     // The renderer can only produce a declared option value, so this narrows the
     // wider `FieldValue` instead of guessing.
     const mode = params.mode as SplitMode;
-    const options: SplitOptions = {
+    let options: SplitOptions = {
       mode,
       // An empty stem means "name the parts after the document being split"; the
       // operations strip the `.pdf` themselves.
@@ -171,6 +184,14 @@ export const splitDialog: OperationDialogSpec = {
       ...(mode === 'size' ? { maxBytes: Math.round(Number(params.maxSizeMb) * 1024 * 1024) } : {}),
       ...(mode === 'everyN' || mode === 'booklet' ? { chunkSize: Number(params.chunkSize) } : {}),
     };
+    let skippedBookmarks = 0;
+    if (mode === 'bookmarks') {
+      const read = await readSplitBookmarks(context.bytes, Number(params.bookmarkLevel), {
+        signal: context.signal,
+      });
+      skippedBookmarks = read.skipped;
+      options = { ...options, bookmarks: read.bookmarks, leadTitle: context.t('split.bookmarks.lead') };
+    }
 
     // Planned before anything is written: the count is the one number a split owes
     // the user up front, and the plan is also what refuses a rule that would
@@ -202,6 +223,11 @@ export const splitDialog: OperationDialogSpec = {
           note('lost', 'op.note.compose.catalog'),
           note('preserved', 'op.note.compose.storage'),
           note('changed', 'split.done', { count: files.length }),
+          // A bookmark with no page of this document cannot start a part; the user asked for
+          // the bookmarks as the cuts, so the ones that were passed over are said.
+          ...(skippedBookmarks === 0
+            ? []
+            : [note('warning', 'split.note.bookmarksSkipped', { count: skippedBookmarks })]),
           // A page cannot be cut: one that is over the limit on its own still
           // leaves in a part that breaks the limit, and the report says which.
           ...(oversizedPages.length === 0

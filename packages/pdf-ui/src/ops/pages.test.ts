@@ -1,3 +1,4 @@
+import { applyOutlineEdit, type OutlineNodeInput } from 'pdf-core/ops/outline-edit';
 import { describe, expect, it } from 'vitest';
 import { pageCountOf, pageTextsOf, runContext, runDialog, textPdf } from '../pdf-fixtures';
 import { extractPagesDialog, splitDialog } from './pages';
@@ -87,5 +88,62 @@ describe('splitDialog', () => {
       await runContext(await five(), { name: 'book.pdf' }),
     );
     expect(result.files.map((file) => file.name)).toEqual(['book-1.pdf']);
+  });
+
+  describe('by bookmarks', () => {
+    const outlined = async (nodes: readonly OutlineNodeInput[]) =>
+      (
+        await applyOutlineEdit(
+          await five(),
+          { kind: 'replace-all', nodes },
+          { signal: new AbortController().signal },
+        )
+      ).bytes;
+    const at = (title: string, pageIndex: number | null, children: OutlineNodeInput[] = []) => ({
+      title,
+      destination: pageIndex === null ? null : { pageIndex },
+      children,
+    });
+
+    it('cuts at the top-level bookmarks and names the parts after them', async () => {
+      const bytes = await outlined([at('Intro', 1, [at('Detail', 2)]), at('Method', 3)]);
+      const result = await runDialog(splitDialog, { mode: 'bookmarks' }, bytes);
+      expect(result.files.map((file) => file.name)).toEqual([
+        'doc-1-Beginning.pdf',
+        'doc-2-Intro.pdf',
+        'doc-3-Method.pdf',
+      ]);
+      expect(await Promise.all(result.files.map((file) => pageCountOf(file.bytes)))).toEqual([1, 2, 2]);
+      expect(result.noticeParams).toEqual({ count: 3 });
+      expect(result.report.notes.some((entry) => entry.kind === 'warning')).toBe(false);
+    });
+
+    it('cuts at the inner bookmarks too when the level is raised', async () => {
+      const bytes = await outlined([at('Intro', 1, [at('Detail', 2)]), at('Method', 3)]);
+      const result = await runDialog(splitDialog, { mode: 'bookmarks', bookmarkLevel: 2 }, bytes);
+      expect(result.files.map((file) => file.name)).toEqual([
+        'doc-1-Beginning.pdf',
+        'doc-2-Intro.pdf',
+        'doc-3-Detail.pdf',
+        'doc-4-Method.pdf',
+      ]);
+    });
+
+    it('says which bookmarks pointed nowhere and were not used', async () => {
+      const bytes = await outlined([at('Intro', 0), at('Loose', null), at('Method', 3)]);
+      const result = await runDialog(splitDialog, { mode: 'bookmarks' }, bytes);
+      expect(result.files.map((file) => file.name)).toEqual(['doc-1-Intro.pdf', 'doc-2-Method.pdf']);
+      expect(result.report.notes).toContainEqual({
+        kind: 'warning',
+        key: 'split.note.bookmarksSkipped',
+        params: { count: 1 },
+      });
+    });
+
+    it('asks for another method when the document has no bookmarks', async () => {
+      await expect(runDialog(splitDialog, { mode: 'bookmarks' }, await five())).rejects.toMatchObject({
+        code: 'no-bookmarks',
+      });
+    });
   });
 });

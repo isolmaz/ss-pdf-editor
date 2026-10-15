@@ -8,7 +8,9 @@ import type { SessionStore } from 'pdf-model';
 import type { DeviceTier, Translator } from 'pdf-shared';
 import { useLocale } from 'pdf-ui/ui';
 import { ToolRail } from '../../components/ToolRail';
+import { useCore } from '../core/core-store';
 import { showContextMenu } from '../export/export-actions';
+import { OrganizeSurface } from '../pages/OrganizeSurface';
 import { ReadingLayers } from '../reading/ReadingLayers';
 import { PrintDialogHost } from '../results/ResultsSurfaces';
 import type { ResultsActions } from '../results/results-actions';
@@ -43,24 +45,29 @@ export function EditorSurface({
   const { canEdit } = useEditState(session, tier);
   const handle = useSave((state) => state.viewer);
   const currentPage = useSave((state) => state.currentPage);
+  const organizing = useCore((state) => state.organize);
   return (
-    <div className="flex h-full flex-col sm:flex-row">
-      <DocumentDock session={session} tier={tier} t={t} actions={dock} />
-      <ToolRail t={t} canEdit={canEdit} />
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: context menu listener on the document canvas container */}
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden" onContextMenu={showContextMenu}>
-        <ViewerArea session={session} tier={tier} t={t} actions={viewer} />
+    <>
+      {/* The grid covers the editor; what is under it takes no focus and is not read out. */}
+      <div inert={organizing} className="flex h-full flex-col sm:flex-row">
+        <DocumentDock session={session} tier={tier} t={t} actions={dock} />
+        <ToolRail t={t} canEdit={canEdit} />
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: context menu listener on the document canvas container */}
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden" onContextMenu={showContextMenu}>
+          <ViewerArea session={session} tier={tier} t={t} actions={viewer} />
+        </div>
+        <RightDock session={session} tier={tier} t={t} dialogContext={dialogContext} actions={right} />
+        <ReadingLayers
+          t={t}
+          locale={locale}
+          viewer={handle}
+          viewerRef={viewerRef}
+          pageNumber={currentPage}
+          read={right.currentBytes}
+        />
+        <PrintDialogHost t={t} viewer={handle} read={right.currentBytes} onProduced={results.printProduced} />
       </div>
-      <RightDock session={session} tier={tier} t={t} dialogContext={dialogContext} actions={right} />
-      <ReadingLayers
-        t={t}
-        locale={locale}
-        viewer={handle}
-        viewerRef={viewerRef}
-        pageNumber={currentPage}
-        read={right.currentBytes}
-      />
-      <PrintDialogHost t={t} viewer={handle} read={right.currentBytes} onProduced={results.printProduced} />
-    </div>
+      <OrganizeSurface session={session} tier={tier} t={t} actions={dock} />
+    </>
   );
 }

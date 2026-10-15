@@ -19,6 +19,8 @@ export const errorsPart = {
     'Check the spelling, or turn off match case and whole word and try again. Scanned pages need OCR first.',
   'error.no-xfa.message': 'This document has no XFA form.',
   'error.no-xfa.hint': 'This operation only works on PDF forms that contain XFA.',
+  'error.no-bookmarks.message': 'This document has no bookmarks to split at.',
+  'error.no-bookmarks.hint': 'Choose another way to split the document.',
   'error.xfa-dynamic.message': 'This is a dynamic XFA form: its content exists only in the XFA template.',
   'error.xfa-dynamic.hint': 'Open it with “Fill XFA form”, or use “Flatten XFA form to a normal PDF”.',
   'error.xfa-static.message': 'This is a static XFA form: its pages are already in the PDF.',

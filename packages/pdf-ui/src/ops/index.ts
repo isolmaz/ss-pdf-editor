@@ -39,9 +39,12 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'form-create-field': async () => (await import('./forms')).createFieldDialog,
   'form-data': async () => (await import('./forms')).formDataDialog,
   'page-boxes': async () => (await import('./pageboxes')).pageBoxesDialog,
+  deskew: async () => (await import('./deskew')).deskewDialog,
   'page-labels': async () => (await import('./pagelabels')).pageLabelsDialog,
   'insert-pages': async () => (await import('./pageedit')).insertPagesDialog,
   'replace-pages': async () => (await import('./pageedit')).replacePagesDialog,
+  'remove-blank-pages': async () => (await import('./tidy')).removeBlankPagesDialog,
+  'split-two-up': async () => (await import('./tidy')).splitTwoUpDialog,
   'text-edit': async () => (await import('./TextEditSurface')).textEditDialog,
   'outline-edit': async () => (await import('./outline-edit')).outlineEditDialog,
   'link-add': async () => (await import('./link-add')).linkAddDialog,
@@ -50,6 +53,7 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'new-document': async () => (await import('./start')).newDocumentDialog,
   'merge-files': async () => (await import('./start')).mergeFilesDialog,
   'convert-to-pdf': async () => (await import('./convert')).convertDialog,
+  repair: async () => (await import('./repair')).repairDialog,
   'xfa-remove': async () => (await import('./xfa')).xfaRemoveDialog,
   'xfa-data': async () => (await import('./xfa')).xfaDataDialog,
   'xfa-flatten': async () => (await import('./xfa')).xfaFlattenDialog,
@@ -66,6 +70,7 @@ const STANDALONE: ReadonlySet<string> = new Set([
   'new-document',
   'merge-files',
   'convert-to-pdf',
+  'repair',
 ]);
 
 export function isStandaloneDialog(id: string): boolean {

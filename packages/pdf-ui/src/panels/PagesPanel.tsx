@@ -55,8 +55,9 @@ import {
   useState,
 } from 'react';
 import { Button } from '../components/Button';
-import { markVisual } from '../ops/AnnotationLayer';
-import { type MarkPageFrame, markPageFrame } from '../ops/mark-interaction';
+import { PageThumbnail } from './PageThumbnail';
+import { NO_MARKS, pageCaption, useMarksByPage, usePageLabels } from './page-info';
+import { clickSelection, dropIndex } from './page-select';
 
 /**
  * What the page list asks the app to do with the selection.
@@ -108,14 +109,6 @@ export interface PagesPanelProps {
 /** Thumbnail width; the page's own aspect ratio supplies the height. */
 const THUMBNAIL_WIDTH = 104;
 
-const NO_MARKS: readonly AnnotationMark[] = [];
-
-/** A thumbnail's caption: the page number, with the file's own label before it when the two differ. */
-function pageCaption(label: string | undefined, pageIndex: number): string {
-  const number = String(pageIndex + 1);
-  return label === undefined || label === '' || label === number ? number : `${label} (${number})`;
-}
-
 /**
  * The drop indicator is a real element between two rows, in flow and always
  * present, so highlighting a gap cannot move the rows under the pointer while a
@@ -140,33 +133,8 @@ export function PagesPanel({
   marks,
 }: PagesPanelProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
-  /**
-   * The file's page labels. Written by the page-labels tool and shown by every other
-   * reader; without them here the tool's result was visible everywhere but in the app.
-   */
-  const [labels, setLabels] = useState<readonly string[] | null>(null);
-  useEffect(() => {
-    let current = true;
-    setLabels(null);
-    document.getPageLabels().then(
-      (read) => {
-        if (current) setLabels(read);
-      },
-      () => undefined,
-    );
-    return () => {
-      current = false;
-    };
-  }, [document]);
-  const marksByPage = useMemo(() => {
-    const byPage = new Map<number, AnnotationMark[]>();
-    for (const mark of marks ?? []) {
-      const list = byPage.get(mark.pageIndex);
-      if (list === undefined) byPage.set(mark.pageIndex, [mark]);
-      else list.push(mark);
-    }
-    return byPage;
-  }, [marks]);
+  const labels = usePageLabels(document);
+  const marksByPage = useMarksByPage(marks);
   const moveToId = useId();
   /** The roving tab stop: exactly one option carries `tabIndex={0}`. */
   const [focusPage, setFocusPage] = useState(currentPage);
@@ -244,21 +212,17 @@ export function PagesPanel({
   };
 
   const selectPage = (page: number, event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.shiftKey && anchor !== null) {
-      const from = Math.min(anchor, page);
-      const to = Math.max(anchor, page);
-      applySelection(Array.from({ length: to - from + 1 }, (_unused, offset) => from + offset));
-      return;
-    }
-    if (event.ctrlKey || event.metaKey) {
-      setAnchor(page);
-      applySelection(selected.has(page) ? selection.filter((item) => item !== page) : [...selection, page]);
-      return;
-    }
-    setAnchor(page);
-    setFocusPage(page);
-    applySelection([page]);
-    onGoToPage(page);
+    const next = clickSelection({
+      selection,
+      anchor,
+      page,
+      shift: event.shiftKey,
+      toggle: event.ctrlKey || event.metaKey,
+    });
+    setAnchor(next.anchor);
+    if (next.plain) setFocusPage(page);
+    applySelection(next.selection);
+    if (next.plain) onGoToPage(page);
   };
 
   /**
@@ -363,10 +327,7 @@ export function PagesPanel({
     setDragPages(null);
     setDropGap(null);
     if (dragging === null) return;
-    // The gap counts pages in the current order; the action counts positions in the
-    // order that remains, so the dragged pages before the gap are subtracted.
-    const before = dragging.filter((page) => page < gap).length;
-    moveSelection(Math.max(0, Math.min(gap - before, remaining)), dragging);
+    moveSelection(dropIndex(dragging, gap, remaining), dragging);
   };
 
   const submitMoveTo = (event: ReactFormEvent<HTMLFormElement>) => {
@@ -610,6 +571,7 @@ export function PagesPanel({
                   document={document}
                   pageIndex={page}
                   marks={marksByPage.get(page) ?? NO_MARKS}
+                  width={THUMBNAIL_WIDTH}
                 />
                 <span
                   className={`mt-1 block text-xs tabular-nums ${
@@ -623,149 +585,6 @@ export function PagesPanel({
           );
         })}
         <div data-gap={pageCount} aria-hidden="true" className={gapClass(dropGap === pageCount)} />
-      </div>
-    </div>
-  );
-}
-
-/**
- * A canvas given up: a canvas keeps its pixel buffer until the element is collected, and
- * a thumbnail list of a long document scrolled end to end holds hundreds of them (a
- * 2000-page file at a high pixel density is an estimated half a gigabyte). Zero size drops
- * the buffer now.
- */
-function releaseCanvas(canvas: HTMLCanvasElement): void {
-  canvas.width = 0;
-  canvas.height = 0;
-}
-
-/**
- * One page's canvas, drawn when the item becomes visible and never eagerly: the whole
- * point of the observer is that a 2000-page document costs 2000 cheap placeholders, not
- * 2000 render tasks. It works the other way round too: an item that scrolls away stops
- * its render and gives its canvas up, keeping its height so the list does not move, and is
- * drawn again when it comes back — so what the list holds is what is near the window.
- */
-function PageThumbnail({
-  document,
-  pageIndex,
-  marks,
-}: {
-  document: PdfDocumentHandle;
-  pageIndex: number;
-  marks: readonly AnnotationMark[];
-}) {
-  const holderRef = useRef<HTMLDivElement | null>(null);
-  const paintedRef = useRef(false);
-  const [height, setHeight] = useState<number | null>(null);
-  /** The painted page's projection, for the marks drawn over it; null until it is painted. */
-  const [frame, setFrame] = useState<MarkPageFrame | null>(null);
-
-  /**
-   * Each attempt owns a **fresh canvas**. Reusing the element across tab switches
-   * let a superseded render task (aborted, or still finishing after the panel
-   * remounted) write into the same node as its replacement: the result was a
-   * page drawn upside down.
-   */
-  const draw = useCallback(
-    async (holder: HTMLElement, signal: AbortSignal) => {
-      const page = await document.getPageSize(pageIndex, 1);
-      const scale = THUMBNAIL_WIDTH / page.width;
-      const shown = { x: 0, y: 0, width: THUMBNAIL_WIDTH, height: Math.round(page.height * scale) };
-      setHeight(shown.height);
-      // `document` here is the PDF handle prop, not the global: reach for the DOM explicitly.
-      const canvas = globalThis.document.createElement('canvas');
-      canvas.className = 'max-w-full';
-      canvas.width = THUMBNAIL_WIDTH;
-      canvas.height = Math.round(page.height * scale);
-      try {
-        await document.renderPage(pageIndex, canvas, { scale, signal });
-      } catch (error) {
-        releaseCanvas(canvas);
-        throw error;
-      }
-      if (signal.aborted) {
-        releaseCanvas(canvas);
-        return;
-      }
-      // The picture of an earlier document or revision gives its buffer up as it is replaced.
-      for (const previous of holder.querySelectorAll('canvas')) releaseCanvas(previous);
-      holder.replaceChildren(canvas);
-      const [x0, y0, x1, y1] = page.viewBox;
-      setFrame(
-        markPageFrame({
-          rotation: (((page.rotation % 360) + 360) % 360) as 0 | 90 | 180 | 270,
-          originX: x0,
-          top: y1,
-          width: x1 - x0,
-          height: y1 - y0,
-          page: shown,
-          container: shown,
-        }),
-      );
-      paintedRef.current = true;
-    },
-    [document, pageIndex],
-  );
-
-  useEffect(() => {
-    // The holder is rendered unconditionally, so the ref is set by the time an effect runs.
-    const holder = holderRef.current as HTMLDivElement;
-    // `draw` changes exactly when the handle or the page does, so what is painted is
-    // stale from here on. The item keeps its key across a document swap of the same
-    // length (two freshly opened files are both state `source`) and across a write
-    // whose new handle lands after its new state id — a flag that survived either kept
-    // the previous document's picture on screen.
-    paintedRef.current = false;
-    setFrame(null);
-    /** The render of the current visit; every visit has its own, so leaving stops exactly that one. */
-    let attempt: AbortController | null = null;
-    // Lazy, and **staying** lazy: the observer is not disconnected after the first
-    // hit, so a thumbnail whose attempt was aborted is drawn when it next
-    // becomes visible instead of staying blank forever.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // One target: the last report is where the item is now.
-        if ((entries.at(-1) as { isIntersecting: boolean }).isIntersecting) {
-          if (paintedRef.current) return;
-          attempt?.abort();
-          attempt = new AbortController();
-          void draw(holder, attempt.signal).catch(() => undefined);
-          return;
-        }
-        // Out of reach: stop a render still running, and give a finished picture's buffer up.
-        attempt?.abort();
-        attempt = null;
-        if (!paintedRef.current) return;
-        for (const canvas of holder.querySelectorAll('canvas')) releaseCanvas(canvas);
-        holder.replaceChildren();
-        paintedRef.current = false;
-        setFrame(null);
-      },
-      { rootMargin: '120px' },
-    );
-    observer.observe(holder);
-    return () => {
-      observer.disconnect();
-      attempt?.abort();
-    };
-  }, [draw]);
-
-  // The canvas and the marks share one isolated box the size of the painted page: a
-  // highlight's multiply then blends with the page under it and nothing outside.
-  return (
-    <div className="flex justify-center">
-      <div
-        className="relative isolate overflow-hidden bg-pdf-paper"
-        data-thumbnail-page=""
-        style={{ width: THUMBNAIL_WIDTH, height: height ?? 140 }}
-      >
-        <div ref={holderRef} />
-        {frame === null || marks.length === 0 ? null : (
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0" data-thumbnail-marks="">
-            {marks.map((mark) => markVisual(mark, frame, false))}
-          </div>
-        )}
       </div>
     </div>
   );

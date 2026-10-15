@@ -7,6 +7,7 @@ import { commonPart } from './en-parts/common';
 import { comparePart } from './en-parts/compare';
 import { contentWritersPart } from './en-parts/contentwriters';
 import { convertPart } from './en-parts/convert';
+import { deskewPart } from './en-parts/deskew';
 import { dialogsPart } from './en-parts/dialogs';
 import { docopsPart } from './en-parts/docops';
 import { enginesPart } from './en-parts/engines';
@@ -28,6 +29,7 @@ import { pdfaPart } from './en-parts/pdfa';
 import { propertiesPart } from './en-parts/properties';
 import { propsPart } from './en-parts/props';
 import { redactPart } from './en-parts/redact';
+import { repairPart } from './en-parts/repair';
 import { reviewPart } from './en-parts/review';
 import { sanitizePart } from './en-parts/sanitize';
 import { scanPart } from './en-parts/scan';
@@ -59,6 +61,7 @@ export const en: Record<MessageKey, string> = {
   ...propsPart,
   ...auditPart,
   ...boxesPart,
+  ...deskewPart,
   ...formsPart,
   ...commonPart,
   ...docopsPart,
@@ -89,6 +92,7 @@ export const en: Record<MessageKey, string> = {
   ...sigValidatePart,
   ...xfaPart,
   ...pdfaPart,
+  ...repairPart,
 
   'open.progress': 'Opening the document…',
   'open.pdfFilter': 'PDF document',

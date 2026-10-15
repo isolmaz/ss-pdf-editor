@@ -1,295 +1,75 @@
 [
   {
-    "commit": "0c884962855caf17ad069be7bc292884780d4982",
-    "title": "Make the privacy claim once on the home screen, in the status bar",
+    "commit": "993dd81118f1fdc751bbc9c3a694c7d548c0017a",
+    "title": "Add an alternating mode to Merge PDFs for the front and back sides of a double-sided scan",
     "kind": "unit",
-    "tests": [
-      "apps/web/src/components/HomeScreen.test.tsx",
-      "apps/web/src/features/open/OpenSurfaces.test.tsx"
-    ],
-    "run": [
-      "apps/web/src/components/HomeScreen.test.tsx",
-      "apps/web/src/features/open/OpenSurfaces.test.tsx"
-    ],
-    "filter": "repeats no privacy claim|leaves the privacy claim to the status bar"
+    "tests": ["packages/pdf-ui/src/ops/start.test.ts"],
+    "run": ["packages/pdf-ui/src/ops/start.test.ts"],
+    "filter": "alternating the sides of a double-sided scan"
   },
   {
-    "commit": "ca6298e306311f9db335b07d338fdaa34fbab837",
-    "title": "Give every annotation tool its own style and remember the styles between visits",
+    "commit": "64931ff7ad15cd9d46aef87f29717a6fac493af5",
+    "title": "Split a document at its bookmarks, naming each part after its bookmark",
     "kind": "unit",
-    "tests": ["apps/web/src/features/annotations/annotations-store.test.tsx"],
-    "run": ["apps/web/src/features/annotations/annotations-store.test.tsx"],
-    "filter": "start per tool",
-    "failure": "Cannot read properties of undefined [(]reading 'highlight'[)]"
+    "tests": ["packages/pdf-ui/src/ops/pages.test.ts"],
+    "run": ["packages/pdf-ui/src/ops/pages.test.ts"],
+    "filter": "by bookmarks"
   },
   {
-    "commit": "452685f25c6a16fada5b88756a828f96d22bb8a8",
-    "title": "Move the author to the Settings dialog as one remembered value",
+    "commit": "1b6a0336d5961cca0f93457b28bffee959e431cf",
+    "title": "Add Repair PDF: rebuild a damaged file into a clean copy and point to it when a file will not open",
     "kind": "unit",
-    "tests": [
-      "apps/web/src/features/annotations/annotations-store.test.tsx",
-      "apps/web/src/features/shell/ShellOverlays.test.tsx",
-      "packages/pdf-ui/src/ops/MeasureLayer.test.tsx"
-    ],
-    "run": [
-      "apps/web/src/features/annotations/annotations-store.test.tsx",
-      "apps/web/src/features/shell/ShellOverlays.test.tsx",
-      "packages/pdf-ui/src/ops/MeasureLayer.test.tsx"
-    ],
-    "filter": "remembers the author|shows the global author|has no author field"
+    "tests": ["apps/web/src/commands.test.ts", "apps/web/src/features/open/open-actions.test.ts"],
+    "run": ["apps/web/src/commands.test.ts", "apps/web/src/features/open/open-actions.test.ts"],
+    "filter": "runs, for every command|lists each id once|names the commands that start a document without one|drops the start-screen tool that waited for the file when the open fails|reports a failure that is not a tool error as a corrupt document"
   },
   {
-    "commit": "936345b51d0861cc7c92b01dbd7386a717a5d67f",
-    "title": "Shorten the select tool's hint and drop the empty-selection chip from the tool strip",
+    "commit": "8eb52742fa9349035715787a18afaed24b9af62c",
+    "title": "Add Reverse page order, Remove blank pages and Split two-up scans",
     "kind": "unit",
-    "tests": ["packages/pdf-ui/src/tools/ToolProperties.test.tsx"],
-    "run": ["packages/pdf-ui/src/tools/ToolProperties.test.tsx"],
-    "filter": "with nothing selected the select tool shows its hint only"
+    "tests": ["apps/web/src/operations.test.ts", "apps/web/src/commands.test.ts"],
+    "run": ["apps/web/src/operations.test.ts", "apps/web/src/commands.test.ts"],
+    "filter": "reverses the selected pages|reverses the page order of the document|answers null for reversing|runs, for every command|lists each id once"
   },
   {
-    "commit": "f3af730192d6060cb780541b724857799074a5f2",
-    "title": "Give every tool one name on every surface",
+    "commit": "628026a3d19659f42a87c081c7e7972b2454c175",
+    "title": "Keep the organize view's focus and Escape working while a change runs",
     "kind": "unit",
-    "tests": ["apps/web/src/commands.test.ts", "packages/shared/src/i18n/copy.test.ts"],
-    "run": ["apps/web/src/commands.test.ts", "packages/shared/src/i18n/copy.test.ts"],
-    "filter": "labels the three measurements|tool names|names the three measurements"
+    "tests": ["packages/pdf-ui/src/panels/OrganizeView.test.tsx"],
+    "run": ["packages/pdf-ui/src/panels/OrganizeView.test.tsx"],
+    "filter": "OrganizeView focus while a change is made"
   },
   {
-    "commit": "b0323347cbf619318b1f810bf8732099998c226f",
-    "title": "Write Turkish and English labels in sentence case",
-    "kind": "unit",
-    "tests": ["packages/shared/src/i18n/copy.test.ts"],
-    "run": ["packages/shared/src/i18n/copy.test.ts"],
-    "filter": "sentence case|not shouted in capitals"
-  },
-  {
-    "commit": "c4cb95978bae0a8907672d2b9ce1be6e8e823a7e",
-    "title": "Attach Turkish suffixes to PDF by how it is said",
-    "kind": "unit",
-    "tests": ["packages/shared/src/i18n/copy.test.ts"],
-    "run": ["packages/shared/src/i18n/copy.test.ts"],
-    "filter": "follow how PDF is said"
-  },
-  {
-    "commit": "2ff27c562391a413bb94a45ce81ef0d624a4274d",
-    "title": "Keep the ellipsis for menu items that open a dialog",
-    "kind": "unit",
-    "tests": ["apps/web/src/components/HomeToolGrid.test.tsx", "packages/shared/src/i18n/copy.test.ts"],
-    "run": ["apps/web/src/components/HomeToolGrid.test.tsx", "packages/shared/src/i18n/copy.test.ts"],
-    "filter": "HomeToolGrid tile titles|the ellipsis"
-  },
-  {
-    "commit": "7f7434c1c06dade144d46ec19a2a809f85818fd5",
-    "title": "Offer one way to open a file and one palette button on the home screen",
-    "kind": "unit",
-    "tests": [
-      "apps/web/src/components/HomeScreen.test.tsx",
-      "apps/web/src/features/open/OpenSurfaces.test.tsx",
-      "apps/web/src/features/shell/ShellBody.test.tsx"
-    ],
-    "run": [
-      "apps/web/src/components/HomeScreen.test.tsx",
-      "apps/web/src/features/open/OpenSurfaces.test.tsx",
-      "apps/web/src/features/shell/ShellBody.test.tsx"
-    ],
-    "filter": "opens a file through the drop zone alone|names the shortcut on the one palette button|opens dropped files and a recent document"
-  },
-  {
-    "commit": "dbe48c3ae72d0382dea0b46a6f21a33e5da8b6da",
-    "title": "Show the limit profile and the memory meter in the status bar only when they matter",
-    "kind": "unit",
-    "tests": ["packages/pdf-ui/src/shell/StatusBar.dom.test.tsx"],
-    "run": ["packages/pdf-ui/src/shell/StatusBar.dom.test.tsx"],
-    "filter": "is left out while|appears with the verdict|shows at 75"
-  },
-  {
-    "commit": "493aa68c1d8995c75313b40347649c6b41034698",
-    "title": "Fit the editor and the home screen to a 375 px phone and to touch targets",
-    "kind": "unit",
-    "tests": ["apps/web/src/components/HomeScreen.test.tsx"],
-    "run": ["apps/web/src/components/HomeScreen.test.tsx"],
-    "filter": "opens a file through the drop zone alone"
-  },
-  {
-    "commit": "631295d1ceb4cdf18a41f0a82a8492824044d139",
-    "title": "Name the task buttons from 1280 px instead of 1536 px",
-    "kind": "e2e",
-    "tests": ["e2e/ui-panels15b-shell.spec.ts"],
-    "run": ["e2e/ui-panels15b-shell.spec.ts"],
-    "filter": "the task buttons name themselves from 1280 px",
-    "failure": "Error: Tools at 1280 px[^]*expect.locator.[.]toBeVisible.. failed"
-  },
-  {
-    "commit": "b5f6e49e21a302ab7ce9fed3b072031b706cfa68",
-    "title": "Apply a clean operation result at once and keep the review for results that lost or approximated something",
-    "kind": "unit",
-    "tests": [
-      "packages/pdf-ui/src/dialogs/OperationForm.test.tsx",
-      "packages/pdf-ui/src/dialogs/StartDialog.test.tsx",
-      "apps/web/src/features/dialogs/dialog-actions.test.ts",
-      "apps/web/src/features/core/core-store.test.tsx",
-      "apps/web/src/features/dialogs/dialogs-store.test.tsx",
-      "apps/web/src/features/shell/ShellBody.test.tsx"
-    ],
-    "run": [
-      "packages/pdf-ui/src/dialogs/OperationForm.test.tsx",
-      "packages/pdf-ui/src/dialogs/StartDialog.test.tsx",
-      "apps/web/src/features/dialogs/dialog-actions.test.ts",
-      "apps/web/src/features/core/core-store.test.tsx",
-      "apps/web/src/features/dialogs/dialogs-store.test.tsx",
-      "apps/web/src/features/shell/ShellBody.test.tsx"
-    ],
-    "filter": "hands a clean result to the host at once|keeps the review for a result|falls back to the review|still asks once before a destructive run|opens a clean result at once|then how to undo it|and how to undo it|carries the button a notice offers|holds the report of a delivered result|hands the overlay the button"
-  },
-  {
-    "commit": "718fff05dca60c20aef25d28208c531ce33de3db",
-    "title": "Say dialog intros and hints in plain, short language",
-    "kind": "unit",
-    "tests": ["packages/shared/src/i18n/copy.test.ts"],
-    "run": ["packages/shared/src/i18n/copy.test.ts"],
-    "filter": "keeps a dialog intro or hint to 160|does not name the libraries"
-  },
-  {
-    "commit": "4a851c2813d1341ba1030284062ee3107f9f8fdf",
-    "title": "Give each home tile a description that adds something to its title",
-    "kind": "unit",
-    "tests": ["apps/web/src/commands.test.ts"],
-    "run": ["apps/web/src/commands.test.ts"],
-    "filter": "tells more in a home tile description"
-  },
-  {
-    "commit": "a167746deedef20396a1dfb68206675741c26344",
-    "title": "Add page organising, merge and batch to the home tool grid and drop the stale badge and doubled heading in the tools panel",
-    "kind": "unit",
-    "tests": ["apps/web/src/commands.test.ts"],
-    "run": ["apps/web/src/commands.test.ts"],
-    "filter": "lays out the page panel, merge and batch"
-  },
-  {
-    "commit": "32fbc6c76897dd66e232c34038b8f4d1d877258d",
-    "title": "Drop the step indicator and put the technical lines of a report behind a Technical details section",
-    "kind": "unit",
-    "tests": ["packages/pdf-ui/src/dialogs/ReportPanel.test.tsx"],
-    "run": ["packages/pdf-ui/src/dialogs/ReportPanel.test.tsx"],
-    "filter": "states the page count and the size delta up front|keeps how the file was written|technical section|never folds a loss|reads what was removed"
-  },
-  {
-    "commit": "486946e039f94c8cbd722dc6d5d9c394d3f4e85c",
-    "title": "Offer the same image and text formats in the quick export dialog as in the full tools and name its compression levels by outcome",
-    "kind": "unit",
-    "tests": [
-      "packages/pdf-ui/src/dialogs/ExportDialog.test.tsx",
-      "apps/web/src/features/export/export-actions.test.ts",
-      "packages/shared/src/i18n/copy.test.ts"
-    ],
-    "run": [
-      "packages/pdf-ui/src/dialogs/ExportDialog.test.tsx",
-      "apps/web/src/features/export/export-actions.test.ts",
-      "packages/shared/src/i18n/copy.test.ts"
-    ],
-    "filter": "names the compression levels by what they|chosen .* format|downloads the text as plain text|starting from the format the dialog chose|quick-export compression levels"
-  },
-  {
-    "commit": "46ce7c8789693ede8fa080581699d7faeaa31c07",
-    "title": "Write the compare and PDF/A percentages the way the interface language writes them",
-    "kind": "unit",
-    "tests": [
-      "packages/pdf-ui/src/panels/ComparePanel.test.tsx",
-      "packages/shared/src/format.test.ts",
-      "packages/shared/src/i18n/index.test.ts"
-    ],
-    "run": [
-      "packages/pdf-ui/src/panels/ComparePanel.test.tsx",
-      "packages/shared/src/format.test.ts",
-      "packages/shared/src/i18n/index.test.ts"
-    ],
-    "filter": "writes the difference the way Turkish|keeps the decimals asked for|param as a share in its own language"
-  },
-  {
-    "commit": "b0c1a57b2f76f2811df5c7d6f7548912897ee6c6",
-    "title": "Show the page scope as one compact select instead of four radio buttons",
-    "kind": "unit",
-    "tests": ["packages/pdf-ui/src/dialogs/fields.dom.test.tsx"],
-    "run": ["packages/pdf-ui/src/dialogs/fields.dom.test.tsx"],
-    "filter": "is one select that opens on all pages|a range, and disables a selection|says that no pages are selected only once|shows the value itself when it names",
-    "failure": "Unable to find an accessible element with the role .combobox."
-  },
-  {
-    "commit": "525a3a734d055d8a5e36d05a92a71c230577ed2b",
-    "title": "Let the files list of the merge dialog be reordered by dragging",
-    "kind": "unit",
-    "tests": ["packages/pdf-ui/src/dialogs/fields.dom.test.tsx"],
-    "run": ["packages/pdf-ui/src/dialogs/fields.dom.test.tsx"],
-    "filter": "dragged into order"
-  },
-  {
-    "commit": "c738ea674c2f58a88774711ea88e85be6004d510",
-    "title": "Say the signature check and the XFA form messages without the file-format terms",
-    "kind": "unit",
-    "tests": ["packages/shared/src/i18n/copy.test.ts"],
-    "run": ["packages/shared/src/i18n/copy.test.ts"],
-    "filter": "does not name the libraries"
-  },
-  {
-    "commit": "72c1b7c508e065eafb588b3e4f6f5dfaa63642d4",
-    "title": "Add single-letter tool shortcuts and give F5 back to the browser",
-    "kind": "unit",
-    "tests": [
-      "apps/web/src/useShortcuts.test.ts",
-      "apps/web/src/useShellShortcuts.test.tsx",
-      "apps/web/src/components/ToolRail.test.tsx"
-    ],
-    "run": [
-      "apps/web/src/useShortcuts.test.ts",
-      "apps/web/src/useShellShortcuts.test.tsx",
-      "apps/web/src/components/ToolRail.test.tsx"
-    ],
-    "filter": "puts the tools dock on Shift|gives each tool one plain letter|prints a tool letter|puts the shortcut after the name|the dock keys|the tool letters|names each tool.s letter"
-  },
-  {
-    "commit": "7a9ee3d61007b09d3affa3c6fd762f85b9f68b5b",
-    "title": "Step the zoom through the standard levels and give the percentage a menu",
-    "kind": "unit",
-    "tests": ["apps/web/src/commands.test.ts", "apps/web/src/components/PageNavigation.test.tsx"],
-    "run": ["apps/web/src/commands.test.ts", "apps/web/src/components/PageNavigation.test.tsx"],
-    "filter": "zooms in and out to the standard stops|zooms to the next standard stop|shows the zoom on the button that opens"
-  },
-  {
-    "commit": "419bc6eef35834914ca337812ed17fe825c07160",
-    "title": "Say so when the page number typed is not a page of the document",
-    "kind": "unit",
-    "tests": ["apps/web/src/components/PageNavigation.test.tsx"],
-    "run": ["apps/web/src/components/PageNavigation.test.tsx"],
-    "filter": "takes the message back|writes the message in Turkish|goes to the page typed"
-  },
-  {
-    "commit": "1a5a6da1d2b7427514f72f05ed43a9f88e6cd6df",
-    "title": "Take the draft chores out of Settings: the orphan sweep runs by itself at start-up and the manual draft save goes",
-    "kind": "unit",
-    "tests": [
-      "apps/web/src/features/persistence/draft-vault.test.ts",
-      "apps/web/src/features/persistence/use-draft-recovery.test.tsx"
-    ],
-    "run": [
-      "apps/web/src/features/persistence/draft-vault.test.ts",
-      "apps/web/src/features/persistence/use-draft-recovery.test.tsx"
-    ],
-    "filter": "keeps the others, without a word|sweeps the blobs nothing references once|leaves the orphans for the next start"
-  },
-  {
-    "commit": "a9a93963d316525f03c32c2027676d04db511807",
-    "title": "Section the menus, say why an entry is unavailable and drop the Settings menu that only repeats the header button",
+    "commit": "8fec30028ac20972a5dc661fedbb8a62d6455152",
+    "title": "Open the organize grid from Organize pages instead of the page panel",
     "kind": "unit",
     "tests": [
       "apps/web/src/commands.test.ts",
-      "apps/web/src/features/shell/ShellHeader.test.tsx",
-      "packages/pdf-ui/src/commands/MenuBar.dom.test.tsx"
+      "apps/web/src/features/core/core-store.test.tsx",
+      "apps/web/src/useShellShortcuts.test.tsx"
     ],
     "run": [
       "apps/web/src/commands.test.ts",
-      "apps/web/src/features/shell/ShellHeader.test.tsx",
-      "packages/pdf-ui/src/commands/MenuBar.dom.test.tsx"
+      "apps/web/src/features/core/core-store.test.tsx",
+      "apps/web/src/useShellShortcuts.test.tsx"
     ],
-    "filter": "says why a command is unavailable|menu layout|leaves out a Settings menu|draws a rule where the section changes|draws no rule in a menu|explains a disabled entry"
+    "filter": "runs, for every command|lays out the organize grid|the organize grid|a view that selects pages"
+  },
+  {
+    "commit": "7cd33d2036fc78138b8b454c86e3168f5d4c8e4a",
+    "title": "Let the skew search of the OCR take a wider window and write angles in the reader's language",
+    "kind": "unit",
+    "tests": ["packages/shared/src/format.test.ts"],
+    "run": ["packages/shared/src/format.test.ts"],
+    "filter": "formatDegrees",
+    "failure": "formatDegrees is not a function"
+  },
+  {
+    "commit": "30c72e86e7601ec785139e0dddcd50787b3c556c",
+    "title": "Offer Straighten pages in the Page menu and on the home tool grid",
+    "kind": "unit",
+    "tests": ["apps/web/src/commands.test.ts", "apps/web/src/commands.simple-mode.test.ts"],
+    "run": ["apps/web/src/commands.test.ts", "apps/web/src/commands.simple-mode.test.ts"],
+    "filter": "runs, for every command|lists each id once|keeps the everyday|disables"
   }
 ]

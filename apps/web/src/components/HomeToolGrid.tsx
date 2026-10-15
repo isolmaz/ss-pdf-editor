@@ -15,10 +15,12 @@
 
 import {
   Archive,
+  ArrowsDownUp,
   ArrowsIn,
   Broom,
   Camera,
   Certificate,
+  Columns,
   Crop,
   Database,
   Drop,
@@ -27,6 +29,7 @@ import {
   FileCode,
   FileDoc,
   FileImage,
+  FileMinus,
   FilePlus,
   Files,
   FileText,
@@ -47,6 +50,7 @@ import {
   MagnifyingGlass,
   Note,
   PersonSimple,
+  Perspective,
   PlusSquare,
   Rows,
   Ruler,
@@ -62,6 +66,7 @@ import {
   Tag,
   Textbox,
   TextT,
+  Wrench,
 } from '@phosphor-icons/react';
 import type { MessageKey, Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
@@ -104,7 +109,11 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'file.add', category: 'pages', icon: Files, descriptionKey: 'home.tool.add' },
   { id: 'file.merge', category: 'pages', icon: Stack, descriptionKey: 'home.tool.merge' },
   { id: 'page.split', category: 'pages', icon: Scissors, descriptionKey: 'home.tool.split' },
+  { id: 'page.reverse', category: 'pages', icon: ArrowsDownUp, descriptionKey: 'home.tool.reverse' },
+  { id: 'page.remove-blank', category: 'pages', icon: FileMinus, descriptionKey: 'home.tool.blankPages' },
+  { id: 'page.split-two-up', category: 'pages', icon: Columns, descriptionKey: 'home.tool.splitTwoUp' },
   { id: 'page.boxes', category: 'pages', icon: Crop, descriptionKey: 'home.tool.boxes' },
+  { id: 'page.deskew', category: 'pages', icon: Perspective, descriptionKey: 'home.tool.deskew' },
   { id: 'page.labels', category: 'pages', icon: Tag, descriptionKey: 'home.tool.labels' },
   { id: 'tools.impose', category: 'pages', icon: SquaresFour, descriptionKey: 'home.tool.impose' },
   { id: 'tools.numbering', category: 'pages', icon: ListNumbers, descriptionKey: 'home.tool.numbering' },
@@ -133,6 +142,7 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'tools.sanitize', category: 'security', icon: Broom, descriptionKey: 'home.tool.sanitize' },
   { id: 'tools.redaction-audit', category: 'security', icon: ShieldCheck, descriptionKey: 'home.tool.audit' },
   { id: 'tools.optimize', category: 'document', icon: ArrowsIn, descriptionKey: 'home.tool.optimize' },
+  { id: 'file.repair', category: 'document', icon: Wrench, descriptionKey: 'home.tool.repair' },
   { id: 'tools.ocr', category: 'document', icon: Scan, descriptionKey: 'home.tool.ocr' },
   { id: 'tools.watermark', category: 'document', icon: Drop, descriptionKey: 'home.tool.watermark' },
   { id: 'tools.properties', category: 'document', icon: Info, descriptionKey: 'home.tool.properties' },
