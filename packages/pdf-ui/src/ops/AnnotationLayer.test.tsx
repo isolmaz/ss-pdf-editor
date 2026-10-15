@@ -536,6 +536,61 @@ describe('what a selection measures', () => {
     selectText([rectOf(300, 100, 400, 120), rectOf(100, 100, 200, 120)]);
     expect(selectionBoxes(fakeViewer())).toEqual([{ pageIndex: 0, boxes: [[100, 100, 400, 120]] }]);
   });
+
+  it('measures a page whose geometry the viewer does not give as an upright one', () => {
+    const { viewer, state } = switchable();
+    state.noGeometry = true;
+    selectText([rectOf(100, 100, 200, 120), rectOf(200, 102, 300, 122)]);
+    expect(selectionBoxes(viewer)).toEqual([{ pageIndex: 0, boxes: [[100, 100, 300, 122]] }]);
+  });
+
+  /**
+   * A page turned a quarter, with the real projection: the page is 600 × 800 pt, drawn 400 × 300
+   * px, so a screen line runs along the page's own y axis and the lines are stacked along its x.
+   */
+  function turnedViewer(rotation: 90 | 270): ViewerApi {
+    const page: FakePage = {
+      rect: { x: 100, y: 50, width: 400, height: 300 },
+      box: { x: 0, y: 0, width: 600, height: 800 },
+      rotation,
+    };
+    const base = fakeViewer({ pages: [page] });
+    return {
+      ...base,
+      pointToPage: (clientX: number, clientY: number) => {
+        const frame = markPageFrameOf(base, 0);
+        const inside =
+          clientX >= page.rect.x &&
+          clientX <= page.rect.x + page.rect.width &&
+          clientY >= page.rect.y &&
+          clientY <= page.rect.y + page.rect.height;
+        return frame === null || !inside ? null : { pageIndex: 0, ...frame.toPage(clientX, clientY) };
+      },
+    } as ViewerApi;
+  }
+
+  it.each<[90 | 270]>([[90], [270]])(
+    'keeps the lines of a page turned %s° apart and merges the spans of each',
+    (rotation) => {
+      // Two screen lines (y 100–120 and 150–170), two spans each along x 120–200 and 200–300.
+      selectText([
+        { left: 120, top: 100, right: 200, bottom: 120 },
+        { left: 200, top: 101, right: 300, bottom: 121 },
+        { left: 120, top: 150, right: 200, bottom: 170 },
+        { left: 200, top: 151, right: 300, bottom: 171 },
+      ]);
+      const [selection] = selectionBoxes(turnedViewer(rotation));
+      const boxes = selection?.boxes ?? [];
+      expect(boxes).toHaveLength(2);
+      for (const box of boxes) {
+        // One line is 21 px thick across the page's x (42 pt) and 180 px long along its y (360 pt).
+        expect(box[2] - box[0]).toBeCloseTo(42, 6);
+        expect(box[3] - box[1]).toBeCloseTo(360, 6);
+      }
+      // The two lines are 50 px (100 pt) apart across x, and do not touch.
+      expect(Math.abs((boxes[1]?.[0] ?? 0) - (boxes[0]?.[0] ?? 0))).toBeCloseTo(100, 6);
+    },
+  );
 });
 
 describe('text marks', () => {
@@ -604,6 +659,105 @@ describe('text marks', () => {
     selectText([rectOf(100, 100, 300, 120)]);
     await release(at(100, 100));
     expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it.each<[AnnotationTool]>([['underline'], ['highlight']])(
+    'does not commit a selection made earlier on a right click on the page (%s)',
+    async (tool) => {
+      const { onCreate } = show({ tool });
+      selectText([rectOf(100, 100, 300, 120)]);
+      await user().pointer([
+        { keys: '[MouseRight>]', target: page, coords: at(100, 100) },
+        { keys: '[/MouseRight]', target: page, coords: at(300, 120) },
+      ]);
+      expect(onCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not commit the release of a press that began off the page, and marks the next real selection', async () => {
+    const { onCreate } = show({ tool: 'strikeout' });
+    const chrome = document.createElement('div');
+    document.body.append(chrome);
+    under = chrome;
+    await press(at(100, 100), chrome);
+    selectText([rectOf(100, 100, 300, 120)]);
+    under = page;
+    await release(at(300, 120), page);
+    expect(onCreate).not.toHaveBeenCalled();
+
+    await press(at(100, 100));
+    await release(at(300, 120));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    expect(onCreate.mock.calls[0]?.[0]).toMatchObject({ kind: 'strikeout', quads: [[100, 100, 300, 120]] });
+  });
+
+  it('marks a selection that ends off the page when its own press began on one', async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    selectText([rectOf(100, 100, 300, 120)]);
+    const chrome = document.createElement('div');
+    document.body.append(chrome);
+    under = chrome;
+    await release(at(900, 900), chrome);
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not commit when the browser cancels the press, nor for the release that would follow', async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    selectText([rectOf(100, 100, 300, 120)]);
+    fireEvent.pointerCancel(page, { pointerId: 1 });
+    await release(at(300, 120));
+    expect(onCreate).not.toHaveBeenCalled();
+    // A stranger's cancel does not drop a press that is still going.
+    await press(at(100, 100));
+    fireEvent.pointerCancel(page, { pointerId: 9 });
+    await release(at(300, 120));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits only on the press's own pointer, and only as the primary button", async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    selectText([rectOf(100, 100, 300, 120)]);
+    fireEvent.pointerUp(page, { ...at(300, 120), button: 0, pointerId: 9 });
+    expect(onCreate).not.toHaveBeenCalled();
+    fireEvent.pointerUp(page, { ...at(300, 120), button: 2, pointerId: 1 });
+    expect(onCreate).not.toHaveBeenCalled();
+    // The press ended with that release: the next release has no press of its own.
+    await release(at(300, 120));
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it('forgets a press when the window loses focus', async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    fireEvent.blur(window);
+    selectText([rectOf(100, 100, 300, 120)]);
+    await release(at(300, 120));
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('a finger that drags', () => {
+  it.each<[AnnotationTool]>([['ink'], ['shapes'], ['link'], ['highlight']])(
+    'tells the viewer to leave the touch drag to the %s tool',
+    (tool) => {
+      const { content } = show({ tool });
+      expect(content.querySelectorAll('[data-touch-draw]')).toHaveLength(1);
+    },
+  );
+
+  it.each<[AnnotationTool | null]>([
+    ['underline'],
+    ['strikeout'],
+    ['squiggly'],
+    ['note'],
+    ['freetext'],
+    [null],
+  ])('keeps touch scrolling while the tool is %s: it is a tap or the browser’s own selection', (tool) => {
+    const { content } = show({ tool });
+    expect(content.querySelector('[data-touch-draw]')).toBeNull();
   });
 });
 

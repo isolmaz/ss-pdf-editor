@@ -353,3 +353,26 @@ test('Escape on an empty chain ends the tool', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(page.getByRole('application', { name: 'Measure', exact: true })).toHaveCount(0);
 });
+
+test('Backspace, Enter and Escape typed in the Scale field belong to the field, not to the chain being measured', async ({
+  page,
+}) => {
+  await openPdf(page);
+  await armMeasure(page, 'Perimeter');
+  await clickAt(page, 100, 300);
+  await clickAt(page, 200, 300);
+
+  const scale = strip(page).getByRole('textbox', { name: 'Scale', exact: true });
+  const before = await scale.inputValue();
+  expect(before.length).toBeGreaterThan(0);
+  await scale.click();
+  await scale.press('End');
+  await page.keyboard.press('Backspace');
+  await expect(scale).toHaveValue(before.slice(0, -1));
+
+  // Enter and Escape in the field neither write the chain nor end the tool.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('application', { name: 'Measure', exact: true })).toBeVisible();
+  await expect(page.locator('button[data-measure]')).toHaveCount(0);
+});

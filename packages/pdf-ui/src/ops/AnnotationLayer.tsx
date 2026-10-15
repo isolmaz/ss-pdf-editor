@@ -250,12 +250,27 @@ export function selectionBoxes(viewer: ViewerApi): readonly TextSelection[] {
     if (page === undefined) boxesByPage.set(pageIndex, [box]);
     else page.push(box);
   }
-  return [...boxesByPage].map(([pageIndex, boxes]) => ({ pageIndex, boxes: mergeLineBoxes(boxes) }));
+  return [...boxesByPage].map(([pageIndex, boxes]) => ({
+    pageIndex,
+    boxes: mergeLineBoxes(boxes, viewer.pageGeometry(pageIndex)?.rotation ?? 0),
+  }));
 }
 
-/** Merge boxes that overlap vertically (same line, several spans) into one. */
-function mergeLineBoxes(boxes: readonly MarkBox[]): readonly MarkBox[] {
-  const sorted = [...boxes].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+/**
+ * Merge boxes that share a line (several spans of one line) into one.
+ *
+ * The boxes are in the page's own, unrotated space, where the lines of an upright page
+ * (`/Rotate` 0 or 180) are rows stacked down `y`, but the lines of a page turned a
+ * quarter (90 or 270) are columns stacked along `x`: a line on the screen runs along the
+ * page's `y`. A line is therefore the boxes that overlap on the axis the lines are stacked
+ * on, and merging them by their `y` on a turned page joins every line that happens to
+ * cover the same stretch of `y` — all of them — into one box over the whole text block.
+ */
+function mergeLineBoxes(boxes: readonly MarkBox[], rotation: 0 | 90 | 180 | 270): readonly MarkBox[] {
+  // The tuple indices of the stacking axis' two edges, and of the other axis' first edge.
+  const [near, far, along] =
+    rotation === 90 || rotation === 270 ? ([0, 2, 1] as const) : ([1, 3, 0] as const);
+  const sorted = [...boxes].sort((a, b) => a[near] - b[near] || a[along] - b[along]);
   const merged: MarkBox[] = [];
   for (const box of sorted) {
     const previous = merged[merged.length - 1];
@@ -263,8 +278,8 @@ function mergeLineBoxes(boxes: readonly MarkBox[]): readonly MarkBox[] {
       merged.push(box);
       continue;
     }
-    const overlapsVertically = box[1] <= previous[3] + 1 && box[3] >= previous[1] - 1;
-    if (!overlapsVertically) {
+    const sameLine = box[near] <= previous[far] + 1 && box[far] >= previous[near] - 1;
+    if (!sameLine) {
       merged.push(box);
       continue;
     }
@@ -373,8 +388,16 @@ export function AnnotationLayer({
     if (tool === null) return;
     const layer = layerRef.current;
 
+    /**
+     * The pointer of the press a text tool is waiting to see released: the press that
+     * began on a page with the primary button, whose drag is the browser's own selection.
+     * It is what ties a release to a selection (see `commitSelection`).
+     */
+    let textPress: number | null = null;
+
     const resetGesture = (): void => {
       dragRef.current = null;
+      textPress = null;
       setLive(null);
       setPreview(null);
     };
@@ -382,8 +405,9 @@ export function AnnotationLayer({
     /**
      * The text tools fire on release: the browser has finished the selection by
      * then, and the measured boxes are the ones the user can see. A selection made
-     * earlier must not be re-committed, so only a release whose own press started
-     * on a page counts.
+     * earlier must not be re-committed, so only the release of a press that itself
+     * started on a page (`textPress`, primary button) counts — never a right click,
+     * a press that began on the chrome, or a gesture the browser cancelled.
      */
     const commitSelection = (kind: AnnotationKind): void => {
       const selections = selectionBoxes(viewer);
@@ -407,7 +431,10 @@ export function AnnotationLayer({
       // drawn **freehand** — over a scan, or any page area with no text to select — so
       // its press starts sampling instead of returning, and its release decides between
       // the two: the selection when the browser made one, the stroke when it did not.
-      if (isTextTool(tool) && tool !== 'highlight') return;
+      if (isTextTool(tool) && tool !== 'highlight') {
+        textPress = event.pointerId;
+        return;
+      }
       if (!isTextTool(tool)) {
         releaseFocusHolder();
         event.preventDefault();
@@ -510,7 +537,11 @@ export function AnnotationLayer({
     const onPointerUp = (event: PointerEvent): void => {
       const drag = dragRef.current;
       if (drag === null || drag.pointerId !== event.pointerId) {
-        if (isTextTool(tool) && pageGestureAt(event.clientX, event.clientY).available) commitSelection(tool);
+        // The release of a text tool's press: it ends that press, and commits only as the
+        // primary button's (a chord's last release is another button's).
+        const pressed = textPress === event.pointerId;
+        if (pressed) textPress = null;
+        if (pressed && event.button === 0 && isTextTool(tool)) commitSelection(tool);
         return;
       }
       dragRef.current = null;
@@ -587,6 +618,10 @@ export function AnnotationLayer({
     };
 
     const cancel = (event: PointerEvent): void => {
+      // A text press the browser took over (dragging the selected words, a system gesture)
+      // never produces the release that would commit, and must not be committed by the
+      // release of whatever press comes next.
+      if (textPress === event.pointerId) textPress = null;
       if (dragRef.current?.pointerId !== event.pointerId) return;
       resetGesture();
     };
@@ -756,7 +791,18 @@ export function AnnotationLayer({
         {tool === 'highlight' ? liveStroke : null}
       </div>
 
-      <div ref={layerRef} className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+      <div
+        ref={layerRef}
+        className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+        // The pen, the marker, shapes and the link region are drags across the page, and the
+        // finger that drags must not scroll the document (which cancels the pointer): the
+        // viewer's scroll container answers this mark with `touch-action: none`
+        // (`PdfViewerPane`). The page, not this inert layer, is what the finger touches.
+        // The other tools are a tap or the browser's own selection, and keep touch scrolling.
+        data-touch-draw={
+          tool === 'ink' || tool === 'shapes' || tool === 'link' || tool === 'highlight' ? '' : undefined
+        }
+      >
         {/* The armed tool's name, for assistive tech. It is a status, not a control:
             every binding stays in `useShortcuts.ts`. */}
         {tool === null ? null : (

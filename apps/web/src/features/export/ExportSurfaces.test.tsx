@@ -140,7 +140,12 @@ describe('ContextMenuHost', () => {
     return removeAllRanges;
   }
   const pageViewer = (setZoom = vi.fn()) =>
-    ({ pointToPage: (x: number, y: number) => ({ pageIndex: 2, x, y }), setZoom }) as unknown as ViewerApi;
+    ({
+      pointToPage: (x: number, y: number) => ({ pageIndex: 2, x, y }),
+      // The selection's lines are merged along the page's own direction, so the page's turn is read.
+      pageGeometry: () => ({ x: 0, y: 0, width: 600, height: 800, rotation: 0 as const }),
+      setZoom,
+    }) as unknown as ViewerApi;
 
   it('renders nothing until the store holds a menu, and closes through it', async () => {
     const user = userEvent.setup();

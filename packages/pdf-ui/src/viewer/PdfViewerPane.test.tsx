@@ -966,6 +966,66 @@ describe('page geometry', () => {
     lastViewer().pageViews = [pageView(new DOMRect(100, 50, 318, 418), { border: 9 })];
     expect(apiOf(pane).pointToPage(x, y)).toBeNull();
   });
+
+  /** A page view that counts how often the layout is read off its element. */
+  function counted(rect: DOMRect, reads: { count: number }): PageViewFake {
+    const view = pageView(rect);
+    view.div.getBoundingClientRect = () => {
+      reads.count += 1;
+      return rect;
+    };
+    return view;
+  }
+
+  it('finds the page under a point in a long document without measuring every page', async () => {
+    const pane = await mount();
+    const reads = { count: 0 };
+    lastViewer().pagesCount = 2000;
+    // 100 pt tall pages, 20 px apart, one under the other.
+    lastViewer().pageViews = Array.from({ length: 2000 }, (_, index) =>
+      counted(new DOMRect(100, index * 120, 300, 100), reads),
+    );
+    const api = apiOf(pane);
+    expect(api.pointToPage(250, 1500 * 120 + 50)).toEqual({ pageIndex: 1500, x: 300, y: 100 });
+    expect(reads.count).toBeLessThanOrEqual(20);
+    // The gap between two pages, above the first and below the last are no page.
+    expect(api.pointToPage(250, 1500 * 120 + 110)).toBeNull();
+    expect(api.pointToPage(250, -5)).toBeNull();
+    expect(api.pointToPage(250, 1999 * 120 + 101)).toBeNull();
+    expect(api.pointToPage(250, 50)).toEqual({ pageIndex: 0, x: 300, y: 100 });
+    expect(api.pointToPage(250, 1999 * 120 + 50)).toEqual({ pageIndex: 1999, x: 300, y: 100 });
+  });
+
+  it('finds either page of a spread whose two pages differ in height', async () => {
+    const pane = await mount();
+    lastViewer().pagesCount = 7;
+    // Rows of two pages side by side; in the second row the left page is tall and the right one
+    // short and centred, so the pages' bottoms are not in page order inside that row.
+    lastViewer().pageViews = [
+      pageView(new DOMRect(100, 0, 300, 400)),
+      pageView(new DOMRect(420, 0, 300, 400)),
+      pageView(new DOMRect(100, 500, 300, 400)),
+      pageView(new DOMRect(420, 600, 300, 100)),
+      pageView(new DOMRect(100, 1000, 300, 400)),
+      pageView(new DOMRect(420, 1000, 300, 400)),
+      pageView(new DOMRect(100, 1500, 300, 400)),
+    ];
+    const api = apiOf(pane);
+    expect(api.pointToPage(150, 800)?.pageIndex).toBe(2);
+    expect(api.pointToPage(450, 650)?.pageIndex).toBe(3);
+    expect(api.pointToPage(450, 800)).toBeNull();
+    expect(api.pointToPage(450, 50)?.pageIndex).toBe(1);
+    expect(api.pointToPage(150, 1200)?.pageIndex).toBe(4);
+    expect(api.pointToPage(450, 1200)?.pageIndex).toBe(5);
+    expect(api.pointToPage(150, 1600)?.pageIndex).toBe(6);
+  });
+
+  it('leaves the scroll container to its mark layers: no touch scrolling while one draws', async () => {
+    const pane = await mount();
+    // The class that turns `touch-action: none` on while a mounted layer carries `data-touch-draw`;
+    // what it does to a finger is exercised in a real browser (e2e `ui-layers-annotations.spec.ts`).
+    expect(pane.container.className).toContain('has-[[data-touch-draw]]:touch-none');
+  });
 });
 
 describe('the find bar', () => {

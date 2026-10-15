@@ -174,7 +174,7 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   // written to a protected tab, so neither its form nor its drawing layer may appear.
   await useAdvancedMode(page);
   const redactForm = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
-  const redactLayer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+  const redactLayer = page.locator('[data-redaction-layer]');
 
   // (a) The command palette lists the command but disabled; choosing it opens nothing.
   await page.keyboard.press('Control+k');

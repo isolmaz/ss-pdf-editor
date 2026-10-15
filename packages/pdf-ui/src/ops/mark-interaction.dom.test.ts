@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 /**
- * The two answers `mark-interaction` reads from the live document: whether a mark tool may
- * take the pointer at a point, and whether a consumed press lets go of a text control.
+ * The answers `mark-interaction` reads from the live document: whether a mark tool may take the
+ * pointer at a point, whether a key's target is a control that takes typed keys, and whether a
+ * consumed press lets go of a text control.
  * happy-dom has no layout, so `elementFromPoint` is the one thing a test supplies: it answers
  * with whatever element the test says is under the pointer.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { pageGestureAt, releaseFocusHolder } from './mark-interaction';
+import { holdsKeyboard, pageGestureAt, releaseFocusHolder } from './mark-interaction';
 
 let under: Element | null = null;
 
@@ -63,6 +64,34 @@ describe('pageGestureAt', () => {
   ])('leaves %s inside a page to the control itself', (_title, markup, selector) => {
     under = pageWith(markup).querySelector(selector);
     expect(pageGestureAt(5, 5)).toEqual({ available: false, onLink: false });
+  });
+});
+
+describe('holdsKeyboard', () => {
+  it.each([
+    ['a text input', '<input type="text">', 'input'],
+    ['a text area', '<textarea></textarea>', 'textarea'],
+    ['a select', '<select><option>a</option></select>', 'select'],
+    ['an editable region', '<div contenteditable="true">x</div>', 'div'],
+    ['a plain-text editable region', '<div contenteditable="plaintext-only">x</div>', 'div'],
+    ['inside an editable region', '<div contenteditable="true"><b>x</b></div>', 'b'],
+  ])('is true for %s', (_title, markup, selector) => {
+    expect(holdsKeyboard(pageWith(markup).querySelector(selector))).toBe(true);
+  });
+
+  it.each([
+    ['a button', '<button type="button">b</button>', 'button'],
+    ['a link', '<a href="https://example.com/">l</a>', 'a'],
+    ['plain content', '<p>text</p>', 'p'],
+    ['an explicitly non-editable region', '<div contenteditable="false">x</div>', 'div'],
+  ])('is false for %s: it takes no typed keys', (_title, markup, selector) => {
+    expect(holdsKeyboard(pageWith(markup).querySelector(selector))).toBe(false);
+  });
+
+  it('is false for the window, the document and no target at all', () => {
+    expect(holdsKeyboard(window)).toBe(false);
+    expect(holdsKeyboard(document)).toBe(false);
+    expect(holdsKeyboard(null)).toBe(false);
   });
 });
 

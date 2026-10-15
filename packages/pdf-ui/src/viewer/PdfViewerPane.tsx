@@ -954,34 +954,68 @@ export function PdfViewerPane({
           };
         },
         pointToPage: (clientX, clientY) => {
-          for (let index = 0; index < viewer.pagesCount; index += 1) {
+          const count = viewer.pagesCount;
+          // The page's content box in client pixels. The border is transparent and
+          // outside the page content, so both the containment test and the conversion
+          // start at the content box — the same frame `pageRect` reports and the
+          // canvas paints in. `null`: the viewer has no page view at that index.
+          const contentBox = (index: number) => {
             const pageView = viewer.getPageView(index);
-            if (pageView === undefined) continue;
+            if (pageView === undefined) return null;
             const bounds = pageView.div.getBoundingClientRect();
-            // The border is transparent and outside the page content, so both the
-            // containment test and the conversion start at the content box — the same
-            // frame `pageRect` reports and the canvas paints in.
             const left = bounds.left + pageView.div.clientLeft;
             const top = bounds.top + pageView.div.clientTop;
-            if (
-              clientX < left ||
-              clientX > left + pageView.div.clientWidth ||
-              clientY < top ||
-              clientY > top + pageView.div.clientHeight
-            ) {
-              continue;
+            return {
+              pageView,
+              left,
+              top,
+              right: left + pageView.div.clientWidth,
+              bottom: top + pageView.div.clientHeight,
+            };
+          };
+          const pageAt = (index: number) => {
+            const box = contentBox(index);
+            if (box === null) return null;
+            if (clientX < box.left || clientX > box.right || clientY < box.top || clientY > box.bottom) {
+              return null;
             }
-            const [pdfX, pdfY] = pageView.viewport.convertToPdfPoint(clientX - left, clientY - top) as [
-              number,
-              number,
-            ];
+            const [pdfX, pdfY] = box.pageView.viewport.convertToPdfPoint(
+              clientX - box.left,
+              clientY - box.top,
+            ) as [number, number];
             // PDF user space has its origin at the bottom-left and a y axis that
             // grows upward; MuPDF's page space (and therefore every redaction
             // mark) starts at the top-left corner of the page box.
-            const pdfTop = viewBoxOf(pageView.viewport.viewBox)[3];
+            const pdfTop = viewBoxOf(box.pageView.viewport.viewBox)[3];
             return { pageIndex: index, x: pdfX, y: pdfTop - pdfY };
+          };
+          const firstHit = (from: number, to: number) => {
+            for (let index = from; index < to; index += 1) {
+              const hit = pageAt(index);
+              if (hit !== null) return hit;
+            }
+            return null;
+          };
+
+          // This runs on every pointer move of every mark tool, so it does not measure
+          // the pages one by one (a 2000-page document would force that many rectangle
+          // reads per move). The viewer only ever scrolls vertically — a spread is the one
+          // layout switch — so the pages follow each other down the scroll content and
+          // those whose bottom edge is above the point come first: a binary search finds
+          // where they end. A spread puts two pages of possibly different heights side by
+          // side, so the order is exact between rows but not inside one; the search lands
+          // within one row, and the two pages either side of where it lands cover it.
+          let low = 0;
+          let high = count;
+          while (low < high) {
+            const middle = (low + high) >> 1;
+            const box = contentBox(middle);
+            // A page the viewer has not built cannot be ordered: ask every page.
+            if (box === null) return firstHit(0, count);
+            if (box.bottom < clientY) low = middle + 1;
+            else high = middle;
           }
-          return null;
+          return firstHit(Math.max(0, low - 2), Math.min(count, low + 2));
         },
       };
       viewer.setDocument(document.raw);
@@ -1190,12 +1224,20 @@ export function PdfViewerPane({
         </search>
       ) : null}
       {/* pdf.js requires an absolutely positioned container with a `.pdfViewer` child. `isolate`
-          keeps the mark layers (z-20 inside it) below the find bar and the shell chrome. */}
+          keeps the mark layers (z-20 inside it) below the find bar and the shell chrome.
+          `has-[[data-touch-draw]]:touch-none`: a mark layer whose tool is a drag gesture on the
+          page (the pen, the marker, shapes, the link region) marks itself `data-touch-draw`, and
+          while one is mounted the browser must not take a finger's drag for a scroll — it would
+          pan the document and cancel the pointer (`pointercancel`) a few pixels into the stroke.
+          The touch-action of the element under the finger and of its ancestors up to the scroll
+          container decides that, and the page is not the layers' child, so it is the container
+          that carries it. The layers that are the touched element themselves set `touch-none` on
+          their own surface. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: pan drag gesture container */}
       <div
         ref={containerRef}
         onMouseDown={handlePanMouseDown}
-        className={`absolute inset-0 isolate overflow-auto bg-pdf-surround ${
+        className={`absolute inset-0 isolate overflow-auto bg-pdf-surround has-[[data-touch-draw]]:touch-none ${
           handTool ? (isPanning ? 'cursor-grabbing select-none' : 'cursor-grab select-none') : ''
         }`}
       >

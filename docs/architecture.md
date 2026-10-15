@@ -2150,7 +2150,10 @@ pdf.js; hand-tool panning writes `scrollLeft`/`scrollTop` directly.
 
 - `pointToPage(clientX, clientY)` — viewport point → page index + point in unrotated user
   space with a top-left origin, via pdf.js's `PageViewport.convertToPdfPoint` plus a Y
-  flip. This is MuPDF's page space, which is what redaction marks are expressed in.
+  flip. This is MuPDF's page space, which is what redaction marks are expressed in. It runs on
+  every pointer move of every mark tool, so it finds the page by a binary search over the
+  pages' bottom edges (reading a handful of page rectangles, not one per page) and checks the
+  pages around where the search lands, which is what a spread of two unequal pages needs.
 - `pageGeometry(i)`, `pageRect(i)`, `containerRect()` — the three reads an overlay needs
   to place a mark. `containerRect()` answers the **origin of the scrolled content**
   (padding box minus the scroll offsets), so `pageRect − containerRect` is a page's offset in
@@ -2183,6 +2186,20 @@ in the model's page space and places them at render, so its boxes follow zoom an
 it uses: `MeasureLayer` keeps its own scale (`page.width / displaySize(geometry).width`) and
 its docblock records that the annotation layer's projection does not multiply by zoom — the
 kind of drift that produces "at 150 % a mark is drawn at two-thirds of its offset".
+
+Touch: a finger's drag is a scroll unless `touch-action` says otherwise, and the browser then
+ends the pointer with `pointercancel` a few pixels into a stroke. `RedactionLayer` and the armed
+`MeasureLayer` surface are the touched element and carry `touch-none` themselves. The page is
+what a finger touches under `AnnotationLayer`, whose root is inert, so the layer marks its root
+`data-touch-draw` while the pen, the marker, shapes or the link region is armed and the pane's
+scroll container answers with `touch-action: none` (`has-[[data-touch-draw]]:touch-none`). A
+cancelled gesture adds nothing: the redaction layer drops the rectangle it had, as the
+annotation layer drops its stroke. The text-markup tools commit the browser's selection only on
+the release of a press that itself began on a page with the primary button — never on a right
+click, a press that began on the chrome or a press the browser cancelled — and merge a
+selection's spans into lines along the page's own text direction (columns on a `/Rotate`
+90/270 page). The measure tool's Backspace, Enter and Escape are left to a text field that holds
+the keyboard (the strip's Scale and Author).
 
 `MarkInteractionLayer` is the fifth and it is deliberately *not* an intercepting sibling: its
 root is `pointer-events-none` and it listens on `window` in the capture phase rather than
