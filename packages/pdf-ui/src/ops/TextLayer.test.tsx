@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { loadMupdf } from 'pdf-core/engines/mupdf';
-import { readPageText } from 'pdf-core/text-source';
+import { loadTextFonts, readPageText } from 'pdf-core/text-source';
 import { createTranslator } from 'pdf-shared';
 import { buildTextPage } from 'pdf-text-engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -133,13 +133,26 @@ describe('a read that is overtaken', () => {
   });
 
   it('does not paint the late result of the read it replaced over the new read’s failure', async () => {
+    vi.mocked(readPageText).mockClear();
     const release = gatedFonts();
     const good = await textPage();
     const { view, props } = show(good);
+    // The page itself is read — every checkpoint of the reader is behind it — and only the held
+    // fonts keep the read in flight. Replacing the bytes any earlier would abort the reader at
+    // its own checkpoint and the read would never come back with a result at all: the result
+    // that arrives late is the one this test is about, and this is the only way to have one.
+    await vi.mocked(readPageText).mock.results[0]?.value;
     view.rerender(<TextLayer {...props} bytes={new TextEncoder().encode('not a pdf')} />);
     await waitFor(() => expect(failure()).not.toBeNull());
+    const [stale] = vi.mocked(readPageText).mock.calls;
+    expect(stale?.[2].signal.aborted).toBe(true);
     release(200);
-    await new Promise((settle) => setTimeout(settle, 300));
+    // The fonts are loaded once they answer; a turn after that is when the stale read, which
+    // was waiting for them, has had its say.
+    await loadTextFonts();
+    const turn = Promise.withResolvers<void>();
+    setTimeout(turn.resolve, 0);
+    await turn.promise;
     expect(failure()).not.toBeNull();
     expect(blocks()).toHaveLength(0);
   });
