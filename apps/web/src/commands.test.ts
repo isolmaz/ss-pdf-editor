@@ -341,8 +341,8 @@ describe('buildCommands', () => {
       'edit.redo',
       'file.save',
       'file.export',
-      'page.rotate-left',
       'edit.delete-mark',
+      'edit.clear-selection',
     ]) {
       expect(byId(idle, id).disabled, id).toBe(true);
     }
@@ -352,11 +352,34 @@ describe('buildCommands', () => {
       'edit.redo',
       'file.save',
       'file.export',
-      'page.rotate-left',
       'edit.delete-mark',
+      'edit.clear-selection',
     ]) {
       expect(byId(ready, id).disabled, id).toBeFalsy();
     }
+  });
+
+  it('keeps the page commands available with no page selected, so they act on the page on screen', () => {
+    const ids = [
+      'page.rotate-left',
+      'page.rotate-right',
+      'page.duplicate',
+      'page.delete',
+      'page.extract',
+      'page.replace',
+    ];
+    const unselected = buildCommands(recordingHost({ selectedPages: [] }).host);
+    for (const id of ids) {
+      expect(byId(unselected, id).disabled, id).toBeFalsy();
+    }
+    // Editing not being allowed still turns them off.
+    const viewing = buildCommands(recordingHost({ selectedPages: [], canEdit: false }).host);
+    for (const id of ids) {
+      expect(byId(viewing, id).disabled, id).toBe(true);
+    }
+    const { host, calls } = recordingHost({ selectedPages: [] });
+    byId(buildCommands(host), 'page.rotate-left').run();
+    expect(calls).toEqual([['pageAction', { kind: 'rotate', direction: 'left' }]]);
   });
 
   it('checks the measure, theme and tool entries from the host state', () => {

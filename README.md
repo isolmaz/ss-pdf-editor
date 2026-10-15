@@ -226,6 +226,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 - **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
   and merge.
+  - The Page menu works on the pages you selected, or on the page on screen when none is
+    selected.
   - A new document starts as blank pages of A3, A4, A5, Letter or Legal, in either
     orientation.
   - Merging several files builds a new document in the order you set; its metadata comes

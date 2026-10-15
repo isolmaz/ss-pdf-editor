@@ -590,26 +590,28 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
   ];
 
+  // No selection is not a reason to disable a page command: the host falls back to the page
+  // on screen (`pageSelection`), and the dialogs open on "current page" the same way.
   const page: Command[] = [
     {
       id: 'page.rotate-left',
       labelKey: 'pages.rotate.left',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'rotate', direction: 'left' }),
     },
     {
       id: 'page.rotate-right',
       labelKey: 'pages.rotate.right',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'rotate', direction: 'right' }),
     },
     {
       id: 'page.duplicate',
       labelKey: 'pages.duplicate',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'duplicate' }),
     },
     {
@@ -617,14 +619,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.delete',
       group: 'page',
       danger: true,
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'delete' }),
     },
     {
       id: 'page.extract',
       labelKey: 'pages.extract.title',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: dialog('extract-pages'),
     },
     { id: 'page.split', labelKey: 'split.title', group: 'page', disabled: noEdit, run: dialog('split') },
@@ -643,7 +645,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       id: 'page.replace',
       labelKey: 'replace.title',
       group: 'page',
-      disabled: noEdit || noSelection,
+      disabled: noEdit,
       run: dialog('replace-pages'),
     },
     {
