@@ -25,6 +25,14 @@ describe('convert formats', () => {
     expect(convertFormatOf('noextension')).toBeNull();
   });
 
+  it('does not mistake a file named after an Object.prototype member for a convertible one', () => {
+    // The lookup table is a plain object: `x.constructor` used to answer the Object function.
+    for (const name of ['x.constructor', 'x.__proto__', 'X.CONSTRUCTOR', 'a.b.__proto__']) {
+      expect(convertFormatOf(name)).toBeNull();
+    }
+    expect(convertFormatOf('x.docx')).toBe('docx');
+  });
+
   it('names pictures and known-but-unreadable documents, and nothing else', () => {
     expect(isImageName('photo.JPEG')).toBe(true);
     expect(isImageName('scan.tiff')).toBe(true);

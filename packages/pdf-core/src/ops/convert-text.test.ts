@@ -6,9 +6,28 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { csvToHtml, decodeText, MAX_CSV_ROWS, parseCsv, sniffDelimiter, textToHtml } from './convert-text';
+import {
+  csvToHtml,
+  decodeText,
+  MAX_CSV_CELLS,
+  MAX_CSV_COLUMNS,
+  MAX_CSV_ROWS,
+  parseCsv,
+  sniffDelimiter,
+  textToHtml,
+} from './convert-text';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+/** What `run` throws, or `null` when it returns. */
+function refusal(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  return null;
+}
 
 describe('convert-text', () => {
   it('decodes UTF-8, and falls back to Windows-1254 with a note for legacy Turkish bytes', () => {
@@ -65,6 +84,53 @@ describe('convert-text', () => {
     expect(notes).toEqual([
       { kind: 'changed', key: 'op.note.convert.encoding', params: { encoding: 'Windows-1254' } },
     ]);
+  });
+
+  it('keeps at most one field past the column limit of a row, and none of the rest of it', () => {
+    expect(parseCsv('a,b,c,d,e\n1,2', ',', 2)).toEqual([
+      ['a', 'b', 'c'],
+      ['1', '2'],
+    ]);
+    // No limit given: every field.
+    expect(parseCsv('a,b,c,d,e', ',')).toEqual([['a', 'b', 'c', 'd', 'e']]);
+  });
+
+  it('refuses a CSV with a row wider than the column limit, however few its rows are', () => {
+    // 100 001 fields: padded to every row of a long file, this was two billion cells.
+    const hundredThousand = refusal(() => csvToHtml(bytes(`x,y\n${','.repeat(100_000)}`), false));
+    expect(hundredThousand).toMatchObject({
+      code: 'file-too-large',
+      details: { engine: 'model', engineMessage: `a CSV row has more than ${MAX_CSV_COLUMNS} fields` },
+    });
+    expect(refusal(() => csvToHtml(bytes(','.repeat(MAX_CSV_COLUMNS)), false))).toMatchObject({
+      code: 'file-too-large',
+    });
+    // Exactly the limit is a table.
+    const html = csvToHtml(bytes(','.repeat(MAX_CSV_COLUMNS - 1)), false).parts[0]?.html ?? '';
+    expect(html.split('<th>').length - 1).toBe(MAX_CSV_COLUMNS);
+  });
+
+  it('refuses a CSV whose table (rows × widest row) is past the cell limit, and takes one at it', () => {
+    // 20 000 rows of 101 fields: 2 020 000 cells.
+    const tooMany = bytes(`a${',a'.repeat(100)}\n`.repeat(MAX_CSV_ROWS));
+    expect(refusal(() => csvToHtml(tooMany, false))).toMatchObject({
+      code: 'file-too-large',
+      details: {
+        engineMessage: `${MAX_CSV_ROWS} rows of 101 fields make more than ${MAX_CSV_CELLS} cells`,
+      },
+    });
+    // 20 000 rows of 100 fields: 2 000 000 cells, exactly the limit.
+    const atTheLimit = bytes(`a${',a'.repeat(99)}\n`.repeat(MAX_CSV_ROWS));
+    const html = csvToHtml(atTheLimit, false).parts[0]?.html ?? '';
+    expect(html.split('<tr>').length - 1).toBe(MAX_CSV_ROWS);
+    expect(html.split('<td>').length - 1 + (html.split('<th>').length - 1)).toBe(MAX_CSV_CELLS);
+  }, 60_000);
+
+  it('judges the table that is kept: a wide row among the rows that were cut does not count', () => {
+    const wideAfterTheCut = `${'a,b\n'.repeat(MAX_CSV_ROWS)}${','.repeat(MAX_CSV_COLUMNS * 2)}`;
+    const { parts, notes } = csvToHtml(bytes(wideAfterTheCut), false);
+    expect((parts[0]?.html ?? '').split('<tr>').length - 1).toBe(MAX_CSV_ROWS);
+    expect(notes.map((entry) => entry.key)).toEqual(['op.note.convert.csvTruncated']);
   });
 
   it('keeps the first rows of an oversized CSV and says how many there were', () => {

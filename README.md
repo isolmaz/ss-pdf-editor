@@ -262,6 +262,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
     document become link annotations. The title comes from the file or its name.
   - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
+  - A Word, Excel or PowerPoint file that unpacks to far more than it weighs (a part over 64 MiB,
+    or 256 MiB in all) and a CSV with more than 1000 columns or two million cells are refused
+    rather than opened.
 - **PDF to Word, Excel and CSV.** **Export → Word, Excel or CSV** (also in the tools panel,
   the palette and the home screen) rebuilds the pages in the browser as an editable file.
   - **Word (DOCX):** paragraphs that reflow, with their fonts, sizes, bold, italic and
