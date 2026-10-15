@@ -86,7 +86,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 ### Reading and navigation
 
 - **Home screen.** *Start* opens a PDF (or several, each in its own tab), creates a blank
-  document, builds a PDF from images, merges several PDFs in the order you choose or starts
+  document, builds a PDF from images, merges several PDFs in the order you choose (drag the files or use their arrow buttons) or starts
   a batch run, and lists recent documents with search, sorting and stars. *All tools* lays
   every tool out by task; pick a tool first and the editor asks for the file when the tool
   needs one. A file that does not open drops the tool, so it never runs on a later document.

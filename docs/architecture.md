@@ -2496,8 +2496,9 @@ standalone operation through it would leave a command that is enabled with no do
 does nothing.
 
 A multiple `files` field is an ordered list: a new pick appends, and each entry can be moved
-up or down or removed, so the order of a merge or of the pages built from images is the
-user's.
+up or down with its arrow buttons, dragged onto another entry (the browser's own drag and drop,
+which only reorders when the drag started in that list) or removed, so the order of a merge or
+of the pages built from images is the user's.
 
 The command palette runs **one command per opening**: Enter reaches both the input's own
 handler and the list's item activation, so the keyboard path runs the command once (twice, a

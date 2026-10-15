@@ -24,7 +24,7 @@ async function openTool(page: Page, group: string, title: string, region: string
   return form;
 }
 
-test('the files of a multiple picker are reordered and removed before the merge, and the file follows that order', async ({
+test('the files of a multiple picker are reordered by dragging or by the arrows and removed before the merge, and the file follows that order', async ({
   page,
 }) => {
   await page.goto('/editor/');
@@ -42,6 +42,12 @@ test('the files of a multiple picker are reordered and removed before the merge,
   await expect(dialog.getByText('3 files chosen')).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Move a.pdf up' })).toBeDisabled();
   await expect(dialog.getByRole('button', { name: 'Move c.pdf down' })).toBeDisabled();
+
+  // A row dragged onto another lands there, downwards and back up.
+  await names.nth(0).dragTo(names.nth(2));
+  await expect(names).toHaveText([/b.pdf/, /c.pdf/, /a.pdf/]);
+  await names.nth(2).dragTo(names.nth(0));
+  await expect(names).toHaveText([/a.pdf/, /b.pdf/, /c.pdf/]);
 
   await dialog.getByRole('button', { name: 'Move c.pdf up' }).click();
   await expect(names).toHaveText([/a\.pdf/, /c\.pdf/, /b\.pdf/]);

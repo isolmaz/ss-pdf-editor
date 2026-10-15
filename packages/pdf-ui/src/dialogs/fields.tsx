@@ -313,6 +313,12 @@ export function FieldList({
   const [rangeDrafts, setRangeDrafts] = useState<Readonly<Record<string, string>>>({});
   /** The scan field whose scanner is open, if any. */
   const [scanning, setScanning] = useState<string | null>(null);
+  /** The row of a files list being dragged, and the row it is over: the one drag the page has. */
+  const [reorder, setReorder] = useState<{
+    readonly field: string;
+    readonly from: number;
+    readonly over: number;
+  } | null>(null);
   /** Text inputs that can take a token, by field id — a caret needs the element. */
   const textInputs = useRef(new Map<string, HTMLInputElement>());
   /** Where the caret belongs once a token insertion has rendered. */
@@ -650,6 +656,12 @@ export function FieldList({
         const inputId = `${fileInputBase}-${field.id}`;
         const picked = Array.isArray(values[field.id]) ? (values[field.id] as readonly File[]) : [];
         const multiple = field.kind === 'files' && field.multiple;
+        const dragging = reorder?.field === field.id ? reorder : null;
+        const moveFile = (from: number, to: number) => {
+          const next = [...picked];
+          next.splice(to, 0, ...next.splice(from, 1));
+          set(field.id, next);
+        };
         return (
           <div key={field.id} className="flex flex-col gap-1">
             <span className="text-xs font-medium text-kumo-default">{label}</span>
@@ -692,16 +704,48 @@ export function FieldList({
             {multiple && picked.length > 0 ? (
               <ol className="flex flex-col gap-1">
                 {picked.map((file, index) => {
-                  const move = (to: number) => {
-                    const next = [...picked];
-                    next.splice(to, 0, ...next.splice(index, 1));
-                    set(field.id, next);
-                  };
+                  const move = (to: number) => moveFile(index, to);
+                  // The line the dragged row would land on: below the row it is dragged
+                  // down onto, above the row it is dragged up onto.
+                  const landing =
+                    dragging === null || dragging.over !== index || dragging.from === index
+                      ? ''
+                      : dragging.from < index
+                        ? 'border-b-2 border-b-kumo-focus'
+                        : 'border-t-2 border-t-kumo-focus';
                   return (
                     <li
                       key={fileKey(file)}
-                      className="flex items-center gap-1 rounded-sm border border-kumo-line/60 bg-kumo-base px-2 py-1 text-[11px] text-kumo-default"
+                      // The mouse reorders by dragging; the arrow buttons are the same move
+                      // for the keyboard and for a pointer that cannot drag.
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move';
+                        // Firefox starts no drag without data on the transfer.
+                        event.dataTransfer.setData('text/plain', file.name);
+                        setReorder({ field: field.id, from: index, over: index });
+                      }}
+                      onDragOver={(event) => {
+                        // Only this list's own drag is accepted; a file dragged in from outside is not a reorder.
+                        if (dragging === null) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                        if (dragging.over !== index) setReorder({ ...dragging, over: index });
+                      }}
+                      onDrop={(event) => {
+                        if (dragging === null) return;
+                        event.preventDefault();
+                        moveFile(dragging.from, index);
+                        setReorder(null);
+                      }}
+                      onDragEnd={() => setReorder(null)}
+                      className={`flex cursor-grab items-center gap-1 rounded-sm border border-kumo-line/60 bg-kumo-base px-2 py-1 text-[11px] text-kumo-default ${
+                        dragging?.from === index ? 'opacity-50' : ''
+                      } ${landing}`}
                     >
+                      <span aria-hidden="true" className="shrink-0 text-kumo-subtle">
+                        ⋮⋮
+                      </span>
                       <span className="w-5 shrink-0 text-end tabular-nums text-kumo-subtle">
                         {index + 1}.
                       </span>

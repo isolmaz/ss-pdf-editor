@@ -5,7 +5,7 @@
  * The host keeps the values the way a dialog does, so what is typed comes back as what is shown.
  */
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import { useState } from 'react';
@@ -520,6 +520,94 @@ describe('FieldList files', () => {
       initial: {},
     });
     expect(chooser().multiple).toBe(false);
+  });
+});
+
+describe('FieldList files, dragged into order', () => {
+  const pdf = (name: string) => new File([name], name, { type: 'application/pdf' });
+  const files = ['one.pdf', 'two.pdf', 'three.pdf'].map(pdf);
+  const fileField: FieldSpec = {
+    kind: 'files',
+    id: 'fl',
+    labelKey: 'op.scope',
+    accept: '.pdf',
+    multiple: true,
+  };
+  const rows = () => within(screen.getByRole('list')).getAllByRole('listitem');
+  const row = (name: string) => rows().find((item) => item.textContent?.includes(name)) as HTMLElement;
+  const order = (onChange: ReturnType<typeof vi.fn>) =>
+    (must(onChange.mock.calls.at(-1))[1] as File[]).map((file) => file.name);
+  const transfer = () => ({ setData: vi.fn(), effectAllowed: '', dropEffect: '' });
+  /** A drag event carrying the test's own transfer: the DOM would not build one. Returns false when the page took it. */
+  const send = (
+    name: 'dragStart' | 'dragOver' | 'dragEnd' | 'drop',
+    target: Element,
+    dataTransfer: object = transfer(),
+  ) => {
+    const event = createEvent[name](target);
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    return fireEvent(target, event);
+  };
+  const open = () => show([fileField], { initial: { fl: files } });
+
+  it('lets every row be dragged, with a grip that tells so', () => {
+    open();
+    expect(rows().map((item) => item.getAttribute('draggable'))).toEqual(['true', 'true', 'true']);
+    expect(within(row('one.pdf')).getByText('⋮⋮').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('moves the dragged row to the row it is dropped on, downwards and upwards', () => {
+    const { onChange } = open();
+    const data = transfer();
+    send('dragStart', row('one.pdf'), data);
+    expect(data.setData).toHaveBeenCalledWith('text/plain', 'one.pdf');
+    expect(data.effectAllowed).toBe('move');
+    send('dragOver', row('three.pdf'), data);
+    expect(data.dropEffect).toBe('move');
+    send('drop', row('three.pdf'), data);
+    expect(order(onChange)).toEqual(['two.pdf', 'three.pdf', 'one.pdf']);
+
+    send('dragStart', row('one.pdf'));
+    send('dragOver', row('two.pdf'));
+    send('drop', row('two.pdf'));
+    expect(order(onChange)).toEqual(['one.pdf', 'two.pdf', 'three.pdf']);
+  });
+
+  it('marks the dragged row and the line it would land on, and clears both when the drag ends', () => {
+    open();
+    send('dragStart', row('one.pdf'));
+    expect(row('one.pdf').className).toContain('opacity-50');
+    send('dragOver', row('three.pdf'));
+    expect(row('three.pdf').className).toContain('border-b-2');
+    send('dragOver', row('three.pdf'));
+    send('dragOver', row('two.pdf'));
+    expect(row('three.pdf').className).not.toContain('border-b-2');
+    expect(row('two.pdf').className).toContain('border-b-2');
+
+    send('dragEnd', row('one.pdf'));
+    expect(row('one.pdf').className).not.toContain('opacity-50');
+    expect(row('two.pdf').className).not.toContain('border-b-2');
+
+    send('dragStart', row('three.pdf'));
+    send('dragOver', row('one.pdf'));
+    expect(row('one.pdf').className).toContain('border-t-2');
+    send('dragOver', row('three.pdf'));
+    expect(row('three.pdf').className).not.toMatch(/border-[bt]-2/);
+  });
+
+  it('ignores a drag that did not start in the list', () => {
+    const { onChange } = open();
+    expect(send('dragOver', row('two.pdf'))).toBe(true);
+    expect(send('drop', row('two.pdf'))).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('accepts the drop on a row it is dragged over, and lets go of the drag after it', () => {
+    open();
+    send('dragStart', row('one.pdf'));
+    expect(send('dragOver', row('two.pdf'))).toBe(false);
+    expect(send('drop', row('two.pdf'))).toBe(false);
+    expect(row('one.pdf').className).not.toContain('opacity-50');
   });
 });
 
