@@ -131,20 +131,13 @@ export const en: Record<MessageKey, string> = {
   'setting.theme.dark': 'Dark Theme',
   'setting.theme.system': 'System Theme',
   'setting.sensitiveSession': 'Sensitive Session (Disable persistent drafts)',
-  'setting.opfsSave': 'Save to Browser Storage (OPFS)',
-  'setting.opfsSaved': 'Draft saved to browser storage (OPFS).',
   'setting.purgeDocument': 'Delete Stored Copies of This Document',
-  'setting.sweepVault': 'Clean Up Orphaned Vault Copies',
   'vault.purged':
-    '{count} record(s) for this document were removed from browser storage. This is deletion of the entry in the application vault; the bytes already written to disk are not overwritten, and copies you downloaded, the original file you opened, or browser profile backups are outside this application’s reach.',
-  'vault.swept': '{count} record(s) no other document references were removed from the vault.',
-  'vault.sweepNothing': 'No orphaned copies in the vault; nothing to remove.',
+    '{count} stored item(s) of this document were deleted from this browser. Copies you downloaded, the file you opened it from and browser backups are outside this application’s reach and were not touched.',
   'vault.incomplete':
-    'The vault inventory could not be read completely, so nothing was deleted. Sweeping from a partial list can destroy another document’s only copy.',
-  'vault.sweepNoChannel':
-    'This browser exposes no cross-window channel, so the orphan sweep was not run: it cannot see documents open in another window.',
-  'vault.peerSilent':
-    'The editor could not confirm which documents its other windows hold, so nothing was deleted. Try again once every other window of the editor responds, or close them.',
+    'The list of stored copies could not be read completely, so nothing was deleted. Deleting from a partial list could destroy another document’s only copy.',
+  'vault.purgeNoChannel':
+    'This browser cannot check the other windows, so nothing was deleted: a copy another window is using could be lost.',
   'batch.folder.watch': 'Watch Folder',
   'batch.folder.watching': 'Watching folder',
   'batch.folder.stop': 'Stop Watching',

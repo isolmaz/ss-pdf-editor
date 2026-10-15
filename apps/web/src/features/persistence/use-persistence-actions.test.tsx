@@ -13,15 +13,11 @@ import { type PersistenceActions, usePersistenceActions } from './use-persistenc
 const commands = vi.hoisted(() => ({
   toggleSensitiveSession: vi.fn(),
   purgeActiveDocument: vi.fn(),
-  sweepVault: vi.fn(),
   checkOffline: vi.fn(),
   prepareOfflinePackages: vi.fn(),
 }));
 vi.mock('./draft-persist', () => ({ toggleSensitiveSession: commands.toggleSensitiveSession }));
-vi.mock('./draft-vault', () => ({
-  purgeActiveDocument: commands.purgeActiveDocument,
-  sweepVault: commands.sweepVault,
-}));
+vi.mock('./draft-vault', () => ({ purgeActiveDocument: commands.purgeActiveDocument }));
 vi.mock('./offline-actions', () => ({
   checkOffline: commands.checkOffline,
   prepareOfflinePackages: commands.prepareOfflinePackages,
@@ -54,13 +50,11 @@ describe('usePersistenceActions', () => {
 
     actions.toggleSensitiveSession();
     actions.purgeActiveDocument();
-    actions.sweepVault();
     actions.checkOffline();
     actions.prepareOfflinePackages();
 
     expect(commands.toggleSensitiveSession).toHaveBeenCalledWith(session, en);
     expect(commands.purgeActiveDocument).toHaveBeenCalledWith(session, en);
-    expect(commands.sweepVault).toHaveBeenCalledWith(session, en);
     expect(commands.checkOffline).toHaveBeenCalledWith(en);
     expect(commands.prepareOfflinePackages).toHaveBeenCalledWith(en);
   });

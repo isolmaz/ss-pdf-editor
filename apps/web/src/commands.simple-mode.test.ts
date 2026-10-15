@@ -77,9 +77,7 @@ function host(overrides: Partial<CommandHost> = {}): CommandHost {
     setTheme: noop,
     sensitiveSession: false,
     toggleSensitiveSession: noop,
-    opfsSave: noop,
     purgeActiveDocument: noop,
-    sweepVault: noop,
     checkOffline: noop,
     prepareOfflinePackages: noop,
     ...overrides,
@@ -139,7 +137,6 @@ describe('the simple mode keeps what a free reader carries', () => {
       'view.layers',
       'tools.outline-edit',
       'settings.purge-document',
-      'settings.sweep-vault',
       'help.prepare-offline',
     ]) {
       // Absent from a mode proves nothing for an id the builder never produces.

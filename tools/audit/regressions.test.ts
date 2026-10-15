@@ -76,10 +76,10 @@ describe('regressions.cjs', () => {
       PREVIEW_CHECK,
     ]);
     const passed = new Set(report.results.filter((result) => result.ok).map((result) => result.name));
-    // One check for each binding the shell used to be read for: save, manual save, prepare, discard.
+    // One check for each binding the shell used to be read for: save, draft write, prepare, discard.
     for (const name of [
       'save commits the prepared state rather than an obsolete captured state',
-      'manual browser save persists the exact source key referenced by the draft',
+      'a queued draft write persists the exact source key referenced by the draft',
       'Save/Export preparation still accepts a document without pending redactions',
       'discard deletes an unreferenced source and clears pending engine values',
     ]) {

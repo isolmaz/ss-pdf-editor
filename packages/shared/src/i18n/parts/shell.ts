@@ -122,13 +122,8 @@ export const shellPart = {
   'settings.sensitive': 'Hassas oturum',
   'settings.sensitive.hint':
     'Açıkken bu belgenin taslağı ve kopyaları cihaza yazılmaz; kayıtlı olanlar silinir.',
-  'settings.saveDraft': 'Taslağı şimdi kaydet',
-  'settings.saveDraft.hint': 'Taslaklar zaten otomatik kaydedilir; bu düğme hemen kaydeder.',
-  'settings.saveDraft.action': 'Kaydet',
   'settings.purge.hint': 'Bu belgenin cihazda tutulan taslak ve kopyalarını siler; açık belge etkilenmez.',
   'settings.purge.action': 'Sil',
-  'settings.sweep.hint': 'Artık hiçbir belgeye ait olmayan eski kopyaları temizler.',
-  'settings.sweep.action': 'Temizle',
   'settings.offline': 'Çevrimdışı paketler',
   'settings.offline.hint':
     'Düzenleyicinin araçlarını, PDF motorlarını ve yazı tiplerini bu cihaza indirir; sonrasında internet yokken de çalışırlar.',

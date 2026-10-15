@@ -117,14 +117,9 @@ export const shellPart = {
   'settings.sensitive': 'Sensitive session',
   'settings.sensitive.hint':
     'While on, no draft or copy of this document is written to the device; stored ones are deleted.',
-  'settings.saveDraft': 'Save draft now',
-  'settings.saveDraft.hint': 'Drafts are saved automatically; this saves one immediately.',
-  'settings.saveDraft.action': 'Save',
   'settings.purge.hint':
     "Deletes this document's drafts and copies stored on the device; the open document is not affected.",
   'settings.purge.action': 'Delete',
-  'settings.sweep.hint': 'Removes old copies that no longer belong to any document.',
-  'settings.sweep.action': 'Clean up',
   'settings.offline': 'Offline packages',
   'settings.offline.hint':
     "Downloads the editor's tools, the PDF engines and the fonts to this device; they then work without internet.",

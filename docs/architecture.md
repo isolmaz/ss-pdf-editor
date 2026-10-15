@@ -2594,8 +2594,8 @@ them once rather than twice.
 
 `apps/web/src/App.tsx` is the composition root: the wiring between the feature modules,
 `pdf-model`, `pdf-core` and `pdf-ui`, the link-region and image-list state its hosts share,
-the six one-line callbacks
-(`saveActive`, `persistTabDraft`, `opfsSave`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
+the five one-line callbacks
+(`saveActive`, `persistTabDraft`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
 thin bindings of feature functions that `tools/audit/regressions.cjs` exercises directly), the
 drop target, and the feature hosts. UI state that several surfaces share
 lives in feature stores under `apps/web/src/features/`, each made with `createStore` from
@@ -2851,9 +2851,11 @@ deletes, and when" need answers that span windows. `vault-channel.ts` uses
 manager the work runs unserialised (every vault operation is idempotent, so the worst case
 is a repeated `removeEntry`, not a lost document), a draft cannot be claimed (every claim is
 granted) and a probe reports `false`, so a sweep deletes nothing; and only when **both** channels are
-unavailable does `canReachPeers()` return false — and then the sweep refuses to run,
+unavailable does `canReachPeers()` return false — and then the sweep does not run,
 because without peer knowledge "delete everything unreferenced" would delete another
-window's only copy.
+window's only copy. The sweep runs by itself, once per start-up, after the drafts are
+restored (`use-draft-recovery.ts`); it has no button and no command, and it says nothing,
+whether it deleted blobs, found none or refused.
 
 References are only ever **added**. A window that answers once and dies leaves its keys
 pinned, which costs space; forgetting a live window's keys would cost a document.
@@ -2866,7 +2868,7 @@ waits, the probe asks the lock manager again every 250 ms and stops waiting for 
 whose lock is gone: a tab closed a moment before the sweep can still be listed by the first
 query, and it will never answer. A window the lock manager lists but that stays silent for
 10 s (a frozen tab) makes `probe()` resolve `false` and the sweep refuses
-(`vault.peerSilent`: nothing is deleted). Without a lock manager, or when it cannot be asked,
+(nothing is deleted, nothing is said; the next start tries again). Without a lock manager, or when it cannot be asked,
 the probe still collects the answers that arrive within 250 ms but reports `false`: a timer
 cannot prove that no window is missing, so the sweep refuses (fail closed).
 
@@ -2882,8 +2884,9 @@ lists a snapshot blob between its write and its manifest.
 
 ### 8.5 Sensitive sessions, drafts and cleanup
 
-Persistence is a shared callback used by both the manual OPFS save and the automatic draft
-path, so the two cannot disagree about what was persisted. A restore does not rerun just
+Persistence is one callback, `persistDraft`, which the autosave and the flush on the crash screen
+both go through; there is no manual "save the draft now" command, and Settings only deletes the
+stored copies of the open document. A restore does not rerun just
 because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
 guard, and a vault that cannot be read at all is said on the notice line) while the others
 recover, a draft whose document was opened meanwhile (from the recent list, say) is

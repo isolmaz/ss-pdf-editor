@@ -1,7 +1,6 @@
 /**
  * Writing a document's draft: the model data every open tab keeps in the vault so that closing
- * the browser is not losing work, the manual "save to browser" command, and the sensitive
- * session opt-out that removes what was stored.
+ * the browser is not losing work, and the sensitive session opt-out that removes what was stored.
  */
 
 import {
@@ -18,7 +17,7 @@ import type { DeviceTier, Translator } from 'pdf-shared';
 import { deleteRecentHandle } from '../../recent-handles';
 import { showNotice } from '../core/core-store';
 import { handleFor } from '../core/handles';
-import { failureNotice, forgetDraft } from './draft-vault';
+import { forgetDraft } from './draft-vault';
 import {
   draftStorage,
   draftWritten,
@@ -50,8 +49,8 @@ export function retainedSnapshotsFor(
 }
 
 /**
- * The **one** implementation of draft persistence, used by the manual save command and
- * the debounced automatic save alike.
+ * The **one** implementation of draft persistence, used by the debounced automatic save
+ * and by the flush on the crash screen.
  *
  * The model state — the tab, its journal, the snapshots it retains — is captured synchronously
  * before the first `await`, so the manifest always describes the version whose bytes were
@@ -132,31 +131,6 @@ export async function persistDraft(
   }
   persistedKeysRecorded(tabId, keys);
   return 'written';
-}
-
-/**
- * The manual "save to browser" command. `persist` is the shell's persistence callback; it runs
- * on the same write queue as the automatic save: a manual save that took its own path wrote a
- * manifest against a source key nothing ever stored, and could race the debounced one.
- */
-export async function saveDraft(
-  session: SessionStore,
-  persist: (tabId: string) => Promise<PersistOutcome>,
-  t: Translator,
-): Promise<void> {
-  const tab = session.active;
-  if (tab === null) return;
-  if (tab.sensitive) {
-    showNotice(t('redact.sensitive.on'));
-    return;
-  }
-  try {
-    const outcome = await queueVaultWrite(() => persist(tab.id));
-    if (outcome === 'written') showNotice(t('setting.opfsSaved'));
-    else if (outcome === 'sensitive') showNotice(t('redact.sensitive.on'));
-  } catch (error) {
-    showNotice(failureNotice(error, t));
-  }
 }
 
 /**

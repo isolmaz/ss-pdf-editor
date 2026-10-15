@@ -1,7 +1,7 @@
 /**
  * Removing documents from the vault: a forget deletes only what nothing else references and
- * nothing at all when the inventory is incomplete; the purge and the sweep refuse without the
- * other windows and say what happened.
+ * nothing at all when the inventory is incomplete; the purge refuses without the other windows and
+ * says what happened, and the sweep, which runs by itself at start-up, refuses silently.
  */
 
 import { type DraftSnapshot, SessionStore } from 'pdf-model';
@@ -160,7 +160,7 @@ describe('purgeActiveDocument', () => {
     const session = new SessionStore();
     openTab(session);
     await purgeActiveDocument(session, t);
-    expect(notice()).toBe(t('vault.sweepNoChannel'));
+    expect(notice()).toBe(t('vault.purgeNoChannel'));
     expect(handles.deleteRecentHandle).not.toHaveBeenCalled();
   });
 
@@ -205,23 +205,16 @@ describe('sweepVault', () => {
   it.each([
     ['no channel', null],
     ['peers that cannot be reached', fakeChannel({ canReachPeers: () => false })],
-  ])('refuses with %s', async (_name, channel) => {
+    ['a live window that never answered', fakeChannel({ probe: async () => false })],
+  ])('deletes nothing, and says nothing, with %s', async (_name, channel) => {
     persistenceStore.set({ channel });
     storage.sources.set('orphan', new Uint8Array([1]));
-    await sweepVault(new SessionStore(), t);
-    expect(notice()).toBe(t('vault.sweepNoChannel'));
+    await sweepVault(new SessionStore());
+    expect(notice()).toBeNull();
     expect(storage.sources.has('orphan')).toBe(true);
   });
 
-  it('refuses when a live window never answered', async () => {
-    persistenceStore.set({ channel: fakeChannel({ probe: async () => false }) });
-    storage.sources.set('orphan', new Uint8Array([1]));
-    await sweepVault(new SessionStore(), t);
-    expect(notice()).toBe(t('vault.peerSilent'));
-    expect(storage.sources.has('orphan')).toBe(true);
-  });
-
-  it('deletes the blobs nothing references and says how many', async () => {
+  it('deletes the blobs nothing references and keeps the others, without a word', async () => {
     const session = new SessionStore();
     openTab(session, 'open');
     storage.drafts.set('draft', manifest('draft', { sourceKey: 'src-draft' }));
@@ -229,31 +222,30 @@ describe('sweepVault', () => {
       storage.sources.set(key, new Uint8Array([1]));
     }
     persistenceStore.set({ channel: fakeChannel({ peerReferences: () => ['src-peer'] }) });
-    await sweepVault(session, t);
+    await sweepVault(session);
     expect([...storage.sources.keys()].sort()).toEqual(['src-draft', 'src-open', 'src-peer']);
-    expect(notice()).toBe(t('vault.swept', { count: 2 }));
+    expect(notice()).toBeNull();
   });
 
-  it('says there was nothing to sweep', async () => {
-    await sweepVault(new SessionStore(), t);
-    expect(notice()).toBe(t('vault.sweepNothing'));
-  });
-
-  it('sweeps nothing when the storage cannot list its sources', async () => {
+  it('has nothing to do for an empty vault, or a storage that cannot list its sources', async () => {
+    await sweepVault(new SessionStore());
     delete storage.listSources;
-    await sweepVault(new SessionStore(), t);
-    expect(notice()).toBe(t('vault.sweepNothing'));
+    storage.sources.set('kept', new Uint8Array([1]));
+    await sweepVault(new SessionStore());
+    expect(storage.sources.has('kept')).toBe(true);
+    expect(notice()).toBeNull();
   });
 
   it('refuses an inventory that could not be read completely', async () => {
     storage.sources.set('orphan', new Uint8Array([1]));
     storage.failInventory = true;
-    await sweepVault(new SessionStore(), t);
-    expect(notice()).toBe(t('vault.incomplete'));
+    await sweepVault(new SessionStore());
     expect(storage.sources.has('orphan')).toBe(true);
+    expect(notice()).toBeNull();
   });
 
-  it('words a failure on the notice line', async () => {
+  it('leaves the orphans for the next start when it fails, and does not reject', async () => {
+    storage.sources.set('orphan', new Uint8Array([1]));
     persistenceStore.set({
       channel: fakeChannel({
         runExclusive: async () => {
@@ -261,8 +253,9 @@ describe('sweepVault', () => {
         },
       }),
     });
-    await sweepVault(new SessionStore(), t);
-    expect(notice()).toBe(failureNotice(new Error('lock refused'), t));
+    await expect(sweepVault(new SessionStore())).resolves.toBeUndefined();
+    expect(storage.sources.has('orphan')).toBe(true);
+    expect(notice()).toBeNull();
   });
 });
 

@@ -48,7 +48,7 @@ import { openAndFingerprint } from './features/open/open-actions';
 import { selectedPagesNow, useOpen } from './features/open/open-store';
 import { useOpenActions } from './features/open/use-open-actions';
 import { usePageActions } from './features/pages/page-actions';
-import { persistDraft, saveDraft } from './features/persistence/draft-persist';
+import { persistDraft } from './features/persistence/draft-persist';
 import { forgetDraft } from './features/persistence/draft-vault';
 import { useDraftRecovery } from './features/persistence/use-draft-recovery';
 import { usePersistenceActions } from './features/persistence/use-persistence-actions';
@@ -160,8 +160,7 @@ export function App({ store }: AppProps) {
   /** The persistence callbacks: the work is in `features/persistence`, and these bind it to the shell's session and device tier. */
   const forgetTabDraft = useCallback((tabId: string) => forgetDraft(store, tabId), [store]);
   const persistTabDraft = useCallback((tabId: string) => persistDraft(store, tabId, tier), [store, tier]);
-  const opfsSave = useCallback(() => saveDraft(store, persistTabDraft, t), [store, persistTabDraft, t]);
-  const { toggleSensitiveSession, purgeActiveDocument, sweepVault, checkOffline, prepareOfflinePackages } =
+  const { toggleSensitiveSession, purgeActiveDocument, checkOffline, prepareOfflinePackages } =
     usePersistenceActions(store, t);
 
   /** A handle the viewer let go that would not shut down says so, in the current language. */
@@ -347,9 +346,7 @@ export function App({ store }: AppProps) {
     deleteMarkSelection,
     selectAllMarks,
     toggleSensitiveSession,
-    opfsSave,
     purgeActiveDocument,
-    sweepVault,
     checkOffline,
     prepareOfflinePackages,
     changeMode,

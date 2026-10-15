@@ -133,12 +133,8 @@ export interface CommandHost {
   /** Sensitive session state and toggle. */
   readonly sensitiveSession: boolean;
   readonly toggleSensitiveSession: () => void;
-  /** Explicit OPFS save action. */
-  readonly opfsSave: () => void;
   /** User-requested scoped cleanup of this document's stored copies. */
   readonly purgeActiveDocument: () => void;
-  /** Delete vault blobs no document references any more (`vault.ts`). */
-  readonly sweepVault: () => void;
   /**
    * Offline readiness: the worker's own answer, and the
    * preparation pass that fills the cache. Both are app callbacks rather than an
@@ -1113,27 +1109,12 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       run: host.toggleSensitiveSession,
     },
     {
-      id: 'settings.opfs-save',
-      labelKey: 'setting.opfsSave',
-      group: 'settings',
-      disabled: noDocument,
-      keywords: ['opfs', 'draft', 'save', 'taslak', 'depolama', 'kaydet', 'tarayici'],
-      run: host.opfsSave,
-    },
-    {
       id: 'settings.purge-document',
       labelKey: 'setting.purgeDocument',
       group: 'settings',
       disabled: noDocument,
       keywords: ['purge', 'delete', 'draft', 'vault', 'sil', 'temizle', 'taslak', 'gizlilik', 'mahremiyet'],
       run: host.purgeActiveDocument,
-    },
-    {
-      id: 'settings.sweep-vault',
-      labelKey: 'setting.sweepVault',
-      group: 'settings',
-      keywords: ['sweep', 'orphan', 'vault', 'cleanup', 'temizle', 'artik', 'depo', 'opfs'],
-      run: host.sweepVault,
     },
   ];
 

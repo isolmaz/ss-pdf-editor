@@ -146,20 +146,13 @@ export const tr = {
   'setting.theme.dark': 'Koyu Tema',
   'setting.theme.system': 'Sistem Teması',
   'setting.sensitiveSession': 'Hassas Oturum (Taslak Kaydetmeyi Aç/Kapat)',
-  'setting.opfsSave': 'Tarayıcı Depolamasına Kaydet (OPFS)',
-  'setting.opfsSaved': 'Taslak tarayıcı depolamasına (OPFS) kaydedildi.',
   'setting.purgeDocument': 'Bu Belgenin Kayıtlı Kopyalarını Sil',
-  'setting.sweepVault': 'Depodaki Artık Kopyaları Temizle',
   'vault.purged':
-    'Bu belge için tarayıcı deposundan {count} kayıt silindi. Bu, uygulama deposundaki kaydın kaldırılmasıdır; diske yazılmış baytların üzerine yazılmaz ve indirdiğiniz kopyalar, açtığınız özgün dosya ya da tarayıcı yedekleri bu uygulamanın erişimi dışındadır.',
-  'vault.swept': 'Başka hiçbir belgenin başvurmadığı {count} kayıt depodan silindi.',
-  'vault.sweepNothing': 'Depoda artık kopya yok; silinecek bir şey bulunamadı.',
+    'Bu belgenin bu tarayıcıda saklanan {count} öğesi silindi. İndirdiğiniz kopyalar, belgeyi açtığınız dosya ve tarayıcı yedekleri bu uygulamanın erişimi dışındadır, onlara dokunulmadı.',
   'vault.incomplete':
-    'Depo listesi eksiksiz okunamadı; hiçbir şey silinmedi. Yarım bir listeden silmek, başka bir belgenin tek kopyasını yok edebilir.',
-  'vault.sweepNoChannel':
-    'Bu tarayıcıda pencereler arası bilgi kanalı yok; artık kopya taraması, başka bir pencerede açık belgeleri göremeden çalıştırılmadı.',
-  'vault.peerSilent':
-    'Düzenleyicinin diğer pencerelerinin hangi belgeleri tuttuğu doğrulanamadı; hiçbir şey silinmedi. Diğer pencerelerin hepsi yanıt verdiğinde yeniden deneyin ya da onları kapatın.',
+    'Saklanan kopyaların listesi eksiksiz okunamadı; hiçbir şey silinmedi. Yarım bir listeden silmek, başka bir belgenin tek kopyasını yok edebilir.',
+  'vault.purgeNoChannel':
+    'Bu tarayıcı diğer pencereleri denetleyemiyor, bu yüzden hiçbir şey silinmedi: başka bir pencerenin kullandığı bir kopya kaybolabilirdi.',
   'batch.folder.watch': 'Klasör İzle',
   'batch.folder.watching': 'Klasör izleniyor',
   'batch.folder.stop': 'İzlemeyi Durdur',

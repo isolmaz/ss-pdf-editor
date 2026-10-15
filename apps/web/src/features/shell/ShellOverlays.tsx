@@ -64,9 +64,7 @@ export interface SettingsHostProps {
     ShellActions,
     | 'changeMode'
     | 'toggleSensitiveSession'
-    | 'opfsSave'
     | 'purgeActiveDocument'
-    | 'sweepVault'
     | 'prepareOfflinePackages'
     | 'checkOffline'
     | 'showShortcuts'
@@ -90,9 +88,7 @@ export function SettingsHost({ session, tier, t, actions }: SettingsHostProps) {
         onAuthorChange={chooseAuthor}
         sensitive={activeTab === null ? null : activeTab.sensitive}
         onToggleSensitive={actions.toggleSensitiveSession}
-        onSaveDraft={() => void actions.opfsSave()}
         onPurgeDocument={() => void actions.purgeActiveDocument()}
-        onSweepVault={() => void actions.sweepVault()}
         onPrepareOffline={() => void actions.prepareOfflinePackages()}
         onCheckOffline={() => void actions.checkOffline()}
         onShowShortcuts={() => {

@@ -30,9 +30,7 @@ export interface SettingsDialogProps {
   /** The open document's privacy state; `null` when nothing is open. */
   readonly sensitive: boolean | null;
   readonly onToggleSensitive: () => void;
-  readonly onSaveDraft: () => void;
   readonly onPurgeDocument: () => void;
-  readonly onSweepVault: () => void;
   readonly onPrepareOffline: () => void;
   readonly onCheckOffline: () => void;
   readonly onShowShortcuts: () => void;
@@ -87,9 +85,7 @@ export function SettingsDialog({
   onAuthorChange,
   sensitive,
   onToggleSensitive,
-  onSaveDraft,
   onPurgeDocument,
-  onSweepVault,
   onPrepareOffline,
   onCheckOffline,
   onShowShortcuts,
@@ -182,11 +178,6 @@ export function SettingsDialog({
                 className="size-4 accent-current"
               />
             </Row>
-            <Row label={t('settings.saveDraft')} hint={t('settings.saveDraft.hint')}>
-              <Button size="sm" disabled={sensitive === null || sensitive} onClick={onSaveDraft}>
-                {t('settings.saveDraft.action')}
-              </Button>
-            </Row>
             <Row label={t('setting.purgeDocument')} hint={t('settings.purge.hint')}>
               <Button
                 size="sm"
@@ -195,11 +186,6 @@ export function SettingsDialog({
                 onClick={onPurgeDocument}
               >
                 {t('settings.purge.action')}
-              </Button>
-            </Row>
-            <Row label={t('setting.sweepVault')} hint={t('settings.sweep.hint')}>
-              <Button size="sm" onClick={onSweepVault}>
-                {t('settings.sweep.action')}
               </Button>
             </Row>
           </Section>

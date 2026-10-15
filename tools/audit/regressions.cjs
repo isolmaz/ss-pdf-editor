@@ -69,17 +69,13 @@ const _recentHandles = load(path.join(ROOT, 'apps/web/src/recent-handles.ts'));
 
 /**
  * The shell binds each feature function to its session in a one-line callback (`App.tsx`):
- * `saveActive`, `discardTab`, `prepareOutput`, `forgetTabDraft`, `persistTabDraft` and
- * `opfsSave`. The harnesses below build those bindings here, with the arguments the shell
+ * `saveActive`, `discardTab`, `prepareOutput`, `forgetTabDraft` and `persistTabDraft`. The harnesses below build those bindings here, with the arguments the shell
  * passes, over the real feature functions. They do not read the bindings out of `App.tsx`'s
  * source: an audit about the features must not break because the shell renamed a variable, and
  * a binding the shell got wrong is the shell's own tests' to catch.
  */
 function bindSaveActive({ store, saveDocument, t, prepareOutput }) {
   return (tabId) => saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id);
-}
-function bindOpfsSave({ store, saveDraft, persistTabDraft, t }) {
-  return () => saveDraft(store, persistTabDraft, t);
 }
 function bindPersistTabDraft({ store, tier, persistDraft }) {
   return (tabId) => persistDraft(store, tabId, tier);
@@ -917,9 +913,9 @@ async function main() {
         drafts.delete(id);
       },
     };
-    // The manual save runs the *shared* persistence callback: the harness builds that
-    // callback over the real `features/persistence` functions (the vault's removal is the one
-    // double), then the `opfsSave` command over it.
+    // The autosave runs the persistence callback on the vault's write queue: the harness builds
+    // that callback over the real `features/persistence` functions (the vault's removal is the
+    // one double) and queues it the way the autosave does.
     const modules = persistenceModules({
       '../core/core-store': { showNotice: (notice) => notices.push(notice), showNoticeOnce() {} },
       './draft-vault': {
@@ -940,14 +936,8 @@ async function main() {
       tier: 'desktop',
       persistDraft: modules('draft-persist.ts').persistDraft,
     });
-    const bindings = {
-      store,
-      persistTabDraft,
-      saveDraft: modules('draft-persist.ts').saveDraft,
-      t: (key) => key,
-    };
     return {
-      run: bindOpfsSave(bindings),
+      run: () => persistence.queueVaultWrite(() => persistTabDraft(tab.id)),
       persist: persistTabDraft,
       persisted: persistence,
       writeStarts,
@@ -959,7 +949,7 @@ async function main() {
       tab,
     };
   }
-  await check('manual browser save persists the exact source key referenced by the draft', async () => {
+  await check('a queued draft write persists the exact source key referenced by the draft', async () => {
     const h = await draftHarness();
     await h.run();
     const draft = h.drafts.get(h.tab.id);
@@ -967,18 +957,17 @@ async function main() {
     assert.ok(h.sources.has(draft.sourceKey), `missing source ${draft.sourceKey}`);
     assert.deepEqual([...h.sources.get(draft.sourceKey)], [1, 2, 3]);
   });
-  await check('manual browser save respects sensitive-session persistence opt-out', async () => {
+  await check('a queued draft write respects sensitive-session persistence opt-out', async () => {
     const h = await draftHarness({ sensitive: true });
     await h.run();
     assert.equal(h.drafts.size, 0);
     assert.equal(h.sources.size, 0);
   });
-  await check('manual browser save reports storage failures', async () => {
+  await check('a queued draft write rejects with the storage failure for its caller to report', async () => {
     const h = await draftHarness({ failWrite: true });
-    await h.run();
-    assert.ok(h.notices.some((notice) => String(notice).includes('write-failed')));
+    await assert.rejects(h.run(), /quota/);
   });
-  await check('manual browser save waits for the shared draft-write queue', async () => {
+  await check('a queued draft write waits for the shared draft-write queue', async () => {
     let release;
     const queue = new Promise((resolve) => {
       release = resolve;
@@ -993,8 +982,8 @@ async function main() {
     assert.equal(h.drafts.size, 1);
   });
 
-  // The manual-save check above runs the `opfsSave` guard (its captured tab is already
-  // sensitive); the shared persistence callback the automatic save uses is driven here.
+  // The checks above drive the persistence callback through the write queue; the outcomes it
+  // returns are driven here.
   await check(
     'persistence refuses a sensitive document and removes what an earlier session stored',
     async () => {
@@ -1023,7 +1012,7 @@ async function main() {
     assert.equal(h.sources.has('snapshot-old'), false);
     assert.ok(h.sources.has(h.drafts.get(h.tab.id).sourceKey));
   });
-  await check('manual saves queue behind each other, including after one has failed', async () => {
+  await check('draft writes queue behind each other, including after one has failed', async () => {
     let release;
     const gate = new Promise((resolve) => {
       release = resolve;
@@ -1038,8 +1027,7 @@ async function main() {
     await Promise.all([first, second]);
     assert.equal(h.writeStarts.length, 2);
     const failing = await draftHarness({ failWrite: true });
-    await failing.run();
-    assert.ok(failing.notices.some((notice) => String(notice).includes('write-failed')));
+    await assert.rejects(failing.run(), /quota/);
     // The queue's own copy swallowed the failure: the next link must still run.
     await assert.doesNotReject(failing.queue.current);
   });

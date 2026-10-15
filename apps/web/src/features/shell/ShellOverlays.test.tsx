@@ -59,9 +59,7 @@ vi.mock('pdf-ui/dialog', async () => {
       onClose: () => void;
       onModeChange: (mode: string) => void;
       onToggleSensitive: () => void;
-      onSaveDraft: () => void;
       onPurgeDocument: () => void;
-      onSweepVault: () => void;
       onPrepareOffline: () => void;
       onCheckOffline: () => void;
       onShowShortcuts: () => void;
@@ -78,9 +76,7 @@ vi.mock('pdf-ui/dialog', async () => {
         createElement('button', { type: 'button', onClick: props.onClose }, 'close settings'),
         createElement('button', { type: 'button', onClick: () => props.onModeChange('advanced') }, 'mode'),
         createElement('button', { type: 'button', onClick: props.onToggleSensitive }, 'sensitive'),
-        createElement('button', { type: 'button', onClick: props.onSaveDraft }, 'save draft'),
         createElement('button', { type: 'button', onClick: props.onPurgeDocument }, 'purge'),
-        createElement('button', { type: 'button', onClick: props.onSweepVault }, 'sweep'),
         createElement('button', { type: 'button', onClick: props.onPrepareOffline }, 'prepare offline'),
         createElement('button', { type: 'button', onClick: props.onCheckOffline }, 'check offline'),
         createElement('button', { type: 'button', onClick: props.onShowShortcuts }, 'shortcuts'),
@@ -177,9 +173,7 @@ describe('SettingsHost', () => {
     return {
       changeMode: vi.fn(),
       toggleSensitiveSession: vi.fn(),
-      opfsSave: vi.fn(async () => undefined),
       purgeActiveDocument: vi.fn(async () => undefined),
-      sweepVault: vi.fn(async () => undefined),
       prepareOfflinePackages: vi.fn(async () => undefined),
       checkOffline: vi.fn(async () => undefined),
       showShortcuts: vi.fn(),
@@ -244,12 +238,8 @@ describe('SettingsHost', () => {
     expect(given.changeMode).toHaveBeenCalledWith('advanced');
     await user.click(screen.getByRole('button', { name: 'sensitive' }));
     expect(given.toggleSensitiveSession).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: 'save draft' }));
-    expect(given.opfsSave).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'purge' }));
     expect(given.purgeActiveDocument).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: 'sweep' }));
-    expect(given.sweepVault).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'prepare offline' }));
     expect(given.prepareOfflinePackages).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'check offline' }));
