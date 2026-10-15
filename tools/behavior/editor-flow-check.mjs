@@ -731,17 +731,39 @@ try {
     await page.waitForFunction(() => /Belgeye uygulandı/.test(document.body.innerText), undefined, {
       timeout: 60_000,
     });
-    // The write swaps the tab's working version, so the inventory reloads from the
-    // new bytes. The row listing the new value (a draft's input is not row text, so only a
-    // reload can put it there) is the signal that the reload landed, and the shell at rest
-    // is the signal that nothing is still churning when the next press comes. Then re-open
-    // the row and read the value the document now holds.
-    await list
-      .locator('li')
-      .filter({ hasText: 'musteri' })
-      .filter({ hasText: 'Grace Hopper' })
-      .first()
-      .waitFor({ state: 'visible', timeout: 30_000 });
+    // The write swaps the tab's working version, so the inventory reloads from the new bytes
+    // (the list is replaced by its loading state meanwhile). The commit closed the draft, and
+    // the selected row's control opens again seeded from the document's own value once the
+    // reload lands — so the row holds the new value as that control's value, not as text the
+    // list prints (a control's value is not `innerText`). A row still holding the old value
+    // is a reload that never landed, which is the defect this guards. The shell at rest is
+    // the signal that nothing is still churning when the next press comes. Then re-open the
+    // row and read the value the document now holds.
+    try {
+      await page.waitForFunction(
+        () => {
+          const row = [...document.querySelectorAll('ul[aria-label="Form alanları"] > li')].find((item) =>
+            (item.textContent ?? '').includes('musteri'),
+          );
+          const control = row?.querySelector('input[type="text"]');
+          return ((control ? control.value : row?.textContent) ?? '').includes('Grace Hopper');
+        },
+        undefined,
+        { timeout: 30_000 },
+      );
+    } catch (error) {
+      const held = await page.evaluate(() => {
+        const list = document.querySelector('ul[aria-label="Form alanları"]');
+        const control = list?.querySelector('input[type="text"]');
+        return {
+          list: list === null ? '(no list: still loading)' : list.textContent?.replace(/\s+/g, ' ').trim(),
+          control: control ? control.value : '(no control)',
+        };
+      });
+      throw new Error(
+        `the form inventory never showed the new value · ${JSON.stringify(held)} · ${String(error).slice(0, 60)}`,
+      );
+    }
     await documentAtRest();
     await row.getByRole('button').first().click();
     const reopened = page.locator('#form-musteri');

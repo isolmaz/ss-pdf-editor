@@ -298,13 +298,18 @@ function mountNow(doc: DocumentFake, props: Partial<PdfViewerPaneProps> = {}): P
   };
 }
 
-/** Mounts the pane and waits until its first stack has been published. */
+/**
+ * Mounts the pane and waits until its first stack has been published. `onReady(null)` is the
+ * pane saying it has no viewer, so a first call that is not an api is a failed mount, named as
+ * such here instead of surfacing as a silent listener in whichever test comes next.
+ */
 async function mount(
   doc: DocumentFake = makeDocument(),
   props: Partial<PdfViewerPaneProps> = {},
 ): Promise<Pane> {
   const pane = mountNow(doc, props);
   await settle(() => expect(pane.onReady).toHaveBeenCalledTimes(1));
+  expect(pane.onReady.mock.calls[0]?.[0]).not.toBeNull();
   return pane;
 }
 
@@ -768,15 +773,20 @@ describe('a rewritten document', () => {
 });
 
 describe('a viewer chunk the browser cannot fetch', () => {
-  /** The viewer chunk cannot be fetched from here on: the import the pane makes rejects. */
-  function breakImport(): void {
+  /**
+   * The viewer chunk cannot be fetched from here on: the import the pane makes rejects. The
+   * returned spy is the module's factory, called each time an import reaches the broken chunk.
+   */
+  function breakImport(): Mock {
     // Vitest wraps what a factory throws in its own message (the browser's wording is only in
     // `cause`), so the pane sees an unclassified failure here: the sentence is the generic one.
     // How the browser's own wording is told offline from stale is `errors.test.ts`'s, and the
     // whole path in a real browser is `e2e/shell-recovery.spec.ts`'s.
-    vi.doMock('pdfjs-dist/web/pdf_viewer.mjs', () => {
+    const reached = vi.fn(() => {
       throw new TypeError('Failed to fetch dynamically imported module: /editor/assets/pdf_viewer-1.js');
     });
+    vi.doMock('pdfjs-dist/web/pdf_viewer.mjs', reached);
+    return reached;
   }
 
   /** The chunk is served again. */
@@ -817,10 +827,15 @@ describe('a viewer chunk the browser cannot fetch', () => {
   });
 
   it('says nothing for a pane that is gone before the failure arrives', async () => {
-    breakImport();
+    const reached = breakImport();
     const pane = mountNow(makeDocument());
     pane.unmount();
+    // The failure is late only once the import has reached the broken chunk. A test that ends
+    // before that leaves its import in flight while `afterEach` repairs the chunk; measured, the
+    // next test's pane then failed to load with this test's broken chunk and published
+    // `onReady(null)` — which `mount` took for its stack — in about one run in six.
     await act(async () => {
+      await vi.waitFor(() => expect(reached).toHaveBeenCalled());
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     });
     // Only the unmount's own "no viewer"; the late failure is not reported over it.
