@@ -10,6 +10,7 @@ import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import type { PageTextInput, Rect } from 'pdf-text-engine';
 import { describe, expect, it, vi } from 'vitest';
+import { readPageText } from '../text-source';
 import {
   checkAccessibility,
   claimsFor,
@@ -1099,6 +1100,20 @@ describe('matchBlocks: a farther block inside the slack', () => {
   });
 });
 
+describe('matchBlocks: a box that does not start at the origin', () => {
+  it("measures a show's y down from the box's top edge, which is the y the text model counts", () => {
+    // CropBox [100 200 400 600]: a show at user-space (140, 500) is 600 − 500 = 100 below the
+    // top edge, inside the block's box (the model's y never includes the box's own `y`).
+    const box = { x: 100, y: 200, width: 300, height: 400 };
+    const regions = [
+      { id: 'a', rect: [130, 90, 170, 105] as Rect, fontSize: 10, bold: false, characters: 5, text: 'a' },
+    ];
+    const result = matchBlocks([{ index: 0, x: 140, y: 500, fontSize: 10, fontName: null }], regions, box);
+    expect(result).toMatchObject({ matched: 1, unmatched: 0, ambiguous: 0 });
+    expect(result.matches).toEqual([{ blockIndex: 0, first: 0, last: 0, count: 1, shows: [0] }]);
+  });
+});
+
 describe('expandToNesting: ranges that never settle', () => {
   it('gives up on a text object opened inside another one', () => {
     const instructions = readInstructions(bytesOf('BT BT ET')) ?? [];
@@ -1306,6 +1321,41 @@ describe('planPages: pages that cannot be tagged are named', () => {
   it('lets a caller abort pass through unchanged instead of naming a page', async () => {
     const abort = abortError();
     await expect(planned(pdfOf(['q Q']), readerOf({ 0: abort }))).rejects.toBe(abort);
+  });
+});
+
+describe('planPages: a page box that does not start at the origin', () => {
+  // A 200×200 page cropped to [20 30 180 190]: `Hello` at user-space (40, 150) is 190 − 150 = 40
+  // below the top edge of the box.
+  const CROPPED = 'BT /F 12 Tf 40 150 Td (Hello) Tj ET';
+  const crop = (_doc: PDFDocument, pages: PDFObject[]) => pages[0]?.put('CropBox', [20, 30, 180, 190]);
+
+  it('gives the show to the block that holds it when the model counts y from the box top', async () => {
+    // A hand-made model that follows the contract: x in user space, y below the top edge.
+    const model = { ...inputOf(0, blockInput('Hello', 40, 30, 12)), width: 160, height: 160 };
+    const result = await planned(pdfOf([CROPPED], { edit: crop }), readerOf({ 0: model }));
+    expect(result.notes).toEqual([]);
+    expect(result.plans).toHaveLength(1);
+    expect(result.plans[0]?.matched).toMatchObject({ matched: 1, unmatched: 0, ambiguous: 0 });
+    // `shows` holds instruction indices: BT 0, Tf 1, Td 2, `(Hello) Tj` 3.
+    expect(result.plans[0]?.matched.matches).toEqual([
+      { blockIndex: 0, first: 3, last: 3, count: 1, shows: [3] },
+    ]);
+  });
+
+  it('matches the shows against the text model the page reader really produces', async () => {
+    // Reader and matcher must agree on the same page: fixing only one of them leaves every
+    // show of a cropped page unmatched and the page untagged.
+    const result = await planned(
+      pdfOf([CROPPED], {
+        edit: crop,
+        resources: (doc) => ({ Font: { F: doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin') } }),
+      }),
+      readPageText,
+    );
+    expect(result.notes).toEqual([]);
+    expect(result.plans).toHaveLength(1);
+    expect(result.plans[0]?.matched).toMatchObject({ matched: 1, unmatched: 0, ambiguous: 0 });
   });
 });
 

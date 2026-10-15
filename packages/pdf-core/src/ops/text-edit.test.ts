@@ -9,8 +9,10 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { ToolError } from 'pdf-shared';
-import type { TextEditInsertLine } from 'pdf-text-engine';
+import { buildTextPage, type TextEditInsertLine } from 'pdf-text-engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadMupdf } from '../engines/mupdf';
+import { readPageText } from '../text-source';
 import { applyTextEdit } from './text-edit';
 
 const run = { signal: new AbortController().signal };
@@ -1021,5 +1023,79 @@ describe('applyTextEdit remaining placement and report paths', () => {
       run,
     );
     expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.textEdit.nothingErased');
+  });
+});
+
+/**
+ * A 612×792 `/MediaBox` cropped to `[100 200 400 600]` — a 300×400 page whose box starts away
+ * from the origin. `Eski satir` is drawn at user-space (140, 500) and `Kalan` at (140, 400),
+ * so MuPDF's displayed space (origin at the box's top-left corner) has them at baselines 100
+ * and 200 and x = 40.
+ */
+async function croppedPage(): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const font = doc.addObject({
+    Type: 'Font',
+    Subtype: 'Type1',
+    BaseFont: 'Helvetica',
+    Encoding: 'WinAnsiEncoding',
+  });
+  const content = 'BT /F 14 Tf 140 500 Td (Eski satir) Tj ET BT /F 14 Tf 140 400 Td (Kalan) Tj ET';
+  doc.insertPage(0, doc.addPage([0, 0, 612, 792], 0, { Font: { F: font } }, content));
+  doc.findPage(0).put('CropBox', [100, 200, 400, 600]);
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+describe('applyTextEdit on a page box that does not start at the origin', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', async () => new Response(notoRegular()));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('replaces a line read through the text model where it stood and leaves the line below it', async () => {
+    const input = await croppedPage();
+    // The real reader's output is the request's source, as in the app: a reader and a writer
+    // that disagree about `y` on a cropped page erase the wrong place and draw the new line
+    // `box.y` lower.
+    const model = buildTextPage(await readPageText(input, 0, run));
+    const block = model.blocks.find((entry) => entry.text.includes('Eski'));
+    expect(block).toBeDefined();
+    const [x0, y0, x1, y1] = block?.rect ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
+    const baseline = block?.lines[0]?.baseline ?? Number.NaN;
+    // 600 (the box's top edge) − 500 (the line's user-space baseline).
+    expect(baseline).toBeCloseTo(100, 0);
+
+    const out = await applyTextEdit(
+      input,
+      {
+        erase: [{ pageIndex: 0, rects: [[x0 - 1, y0 - 1, x1 + 1, y1 + 1]] }],
+        insert: [{ pageIndex: 0, lines: [{ ...line('Yeni satir', baseline, 'helvetica'), x: x0 }] }],
+        fonts: {},
+      },
+      run,
+    );
+    expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.textEdit.verifiedErased');
+
+    const before = await read(input);
+    const after = await read(out.bytes);
+    const texts = after.map((entry) => entry.text);
+    expect(texts).not.toContain('Eski satir');
+    expect(texts).toEqual(expect.arrayContaining(['Yeni satir', 'Kalan']));
+    const old = before.find((entry) => entry.text === 'Eski satir');
+    const yeni = after.find((entry) => entry.text === 'Yeni satir');
+    expect(old?.y).toBeCloseTo(100, 0);
+    // MuPDF reads the new line back on the old line's baseline (±1 pt) and at its x.
+    expect(Math.abs((yeni?.y ?? Number.NaN) - (old?.y ?? Number.NaN))).toBeLessThanOrEqual(1);
+    expect(Math.abs((yeni?.x ?? Number.NaN) - (old?.x ?? Number.NaN))).toBeLessThanOrEqual(2);
+    // The line below was not the one erased, and did not move.
+    const kalanBefore = before.find((entry) => entry.text === 'Kalan');
+    const kalanAfter = after.find((entry) => entry.text === 'Kalan');
+    expect(kalanAfter?.y).toBeCloseTo(200, 0);
+    expect(Math.abs((kalanAfter?.y ?? Number.NaN) - (kalanBefore?.y ?? Number.NaN))).toBeLessThanOrEqual(1);
   });
 });

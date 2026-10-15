@@ -231,6 +231,62 @@ describe('readPageText', () => {
   });
 });
 
+/**
+ * A 612×792 `/MediaBox` cropped to `[100 200 400 600]` — a 300×400 page whose box starts
+ * away from the origin — turned by `/Rotate`, with `Hi` drawn at user-space (140, 500) in
+ * 12 pt Helvetica. Whatever the rotation, that glyph is 40 pt right of the box's left edge
+ * and 100 pt below its top edge (600 − 500).
+ */
+async function croppedPage(rotate: 0 | 90 | 180 | 270): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+  doc.insertPage(
+    -1,
+    doc.addPage([0, 0, 612, 792], rotate, { Font: { F: helvetica } }, 'BT /F 12 Tf 140 500 Td (Hi) Tj ET'),
+  );
+  doc.findPage(0).put('CropBox', [100, 200, 400, 600]);
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+describe('readPageText: a page box that does not start at the origin', () => {
+  it.each([0, 90, 180, 270] as const)(
+    'reports x in user space and y as the distance below the box top at /Rotate %i',
+    async (rotate) => {
+      const page = await readPageText(await croppedPage(rotate), 0, run);
+      expect([page.width, page.height, page.rotation]).toEqual([300, 400, rotate]);
+      const block = page.blocks[0];
+      const line = block?.lines[0];
+      expect(line?.chars[0]?.ch).toBe('H');
+      // x stays the user-space 140; y is 200 + 400 − 500 = 100 below the top edge — the
+      // `box.y` of the old reader would have made it 300.
+      const origin = line?.chars[0]?.origin ?? [Number.NaN, Number.NaN];
+      expect(origin[0]).toBeCloseTo(140, 3);
+      expect(origin[1]).toBeCloseTo(100, 3);
+      expect(line?.baseline).toBeCloseTo(100, 3);
+      // The block's box starts at the glyph's left edge and straddles the baseline: ascent
+      // above it, descent below.
+      const quad = block?.quad ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
+      expect(quad[0]).toBeGreaterThan(139);
+      expect(quad[0]).toBeLessThan(141);
+      expect(quad[1]).toBeGreaterThan(80);
+      expect(quad[1]).toBeLessThan(100);
+      expect(quad[3]).toBeGreaterThan(100);
+      expect(quad[3]).toBeLessThan(110);
+    },
+  );
+
+  it('gives readDocumentText the same geometry as readPageText', async () => {
+    const bytes = await croppedPage(0);
+    const [read] = await readDocumentText(bytes, [0], run);
+    expect([read?.width, read?.height]).toEqual([300, 400]);
+    expect(read?.blocks[0]?.lines[0]?.baseline).toBeCloseTo(100, 3);
+    expect(read?.blocks[0]?.lines[0]?.chars[0]?.origin[0]).toBeCloseTo(140, 3);
+  });
+});
+
 describe('readDocumentText', () => {
   it('reads the chosen pages through one document, reporting progress after each', async () => {
     const bytes = await pages(

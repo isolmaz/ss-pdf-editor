@@ -9,6 +9,14 @@
  * `[x0, y0, x1, y1]` with `x0 < x1`, `y0 < y1` and `y0` measured downwards. This is
  * the same space as `PageRect` in `packages/pdf-core/src/ops/types.ts:44-52`.
  *
+ * "Top-left origin" is exact about the two axes, because the page box need not start at
+ * `(0, 0)` (a `/CropBox`, or a `/MediaBox` that does not): `x` is the **user-space x**
+ * (the box's own `x` included), `y` is the **distance below the box's top edge**
+ * (`box.y + box.height − userY`, so `0` at the top edge). It is the viewer's pointer
+ * space (`PdfViewerPane.pointToPage`); `pdf-core/src/text-source.ts` ("Space") is where
+ * the reader produces it and `pdf-core/src/engines/mupdf.ts > topLeftToUserPoint` is
+ * where the writer takes it back.
+ *
  * The engine never emits *rotated page space*: MuPDF
  * **annotation** geometry lives in rotated page space while content streams live in
  * unrotated user space, and mixing the two fails silently (text survives,
@@ -93,9 +101,9 @@ export interface TextBlock {
 
 export interface TextPage {
   readonly pageIndex: number;
-  /** Unrotated page width in points (the `MediaBox` width). */
+  /** Unrotated page width in points: the visible box's (`/CropBox`, else `/MediaBox`) width. */
   readonly width: number;
-  /** Unrotated page height in points (the `MediaBox` height). */
+  /** Unrotated page height in points: the visible box's height, the extent `y` counts down over. */
   readonly height: number;
   /** The page's `/Rotate`, kept for the UI. It does **not** change this package's
    *  coordinate space: rects stay unrotated, exactly as the writer consumes them. */

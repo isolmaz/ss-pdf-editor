@@ -2799,7 +2799,7 @@ PDF editor, so each one is stated once:
 
 | Space | Origin | Where |
 |---|---|---|
-| **App / page space** | unrotated page, **top-left**, Y down, points | every overlay, `RedactRect` (`space: 'app-v1'`), `PageRect`, the text engine's rects |
+| **App / page space** | unrotated page, **top-left**, Y down, points; `x` is the user-space x, `y` the distance below the page box's top edge (a CropBox that does not start at `y = 0` adds nothing) | every overlay, `RedactRect` (`space: 'app-v1'`), `PageRect`, the text engine's rects |
 | **PDF user space** | bottom-left, Y up, points | what the writers write; `topLeftToUserPoint()` in the MuPDF adapter is the one flip |
 | **MuPDF page space** | top-left, Y down, rotation included | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table |
 | **Client pixels** | viewport | overlays; `pointToPage()` and each layer's projection handle zoom, rotation and offset |
