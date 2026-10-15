@@ -344,6 +344,18 @@ describe('OperationForm result step', () => {
     expect(onResult).toHaveBeenLastCalledWith(clean);
   });
 
+  it('falls back to the review when the host rejects its delivery, instead of staying on Processing', async () => {
+    const { onResult, onRunningChange } = await finished(clean, {}, () =>
+      Promise.reject(new Error('refused')),
+    );
+    await review();
+    expect(screen.queryByText('Processing…')).toBeNull();
+    expect(onRunningChange).toHaveBeenLastCalledWith(false);
+
+    await click('Apply to document');
+    expect(onResult).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the review for a result with a warning, and applies only through the one button', async () => {
     const { onResult, onClose } = await finished(warned);
     await review();

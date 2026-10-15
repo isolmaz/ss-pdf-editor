@@ -128,7 +128,9 @@ export function OperationForm({
   useEffect(() => {
     if (!delivering || deliveredRef.current === result) return;
     deliveredRef.current = result;
-    void Promise.resolve(onResult(result)).then(() => setUndelivered(true));
+    void Promise.resolve(onResult(result))
+      .catch(() => undefined)
+      .then(() => setUndelivered(true));
   }, [delivering, result, onResult]);
 
   // The destructive step is the only place the form moves focus on its own: the
