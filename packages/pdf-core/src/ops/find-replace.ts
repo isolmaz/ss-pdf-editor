@@ -336,23 +336,29 @@ export async function documentFaces(
     return key;
   };
   const drawn = new Map<string, Set<number>>();
-  for (const model of models) {
-    for (const block of model.blocks) {
-      for (const line of block.lines) {
-        for (const word of line.words) {
-          for (const glyph of word.glyphs) {
-            if (glyph.fontName === undefined) continue;
-            const key = fontKey(model.pageIndex, glyph.fontName);
-            let points = drawn.get(key);
-            if (points === undefined) {
-              points = new Set();
-              drawn.set(key, points);
+  try {
+    for (const model of models) {
+      for (const block of model.blocks) {
+        for (const line of block.lines) {
+          for (const word of line.words) {
+            for (const glyph of word.glyphs) {
+              if (glyph.fontName === undefined) continue;
+              const key = fontKey(model.pageIndex, glyph.fontName);
+              let points = drawn.get(key);
+              if (points === undefined) {
+                points = new Set();
+                drawn.set(key, points);
+              }
+              for (const character of glyph.ch) points.add(pointOf(character));
             }
-            for (const character of glyph.ch) points.add(pointOf(character));
           }
         }
       }
     }
+  } catch (error) {
+    // The caller never gets `close` back, so the document is released here.
+    doc.destroy();
+    throw error;
   }
   const usable = (pageIndex: number, fontName: string, text: string): DocumentFont | null => {
     const font = findFont(fontsOf(pageIndex), fontName);
@@ -407,7 +413,17 @@ export async function documentFaces(
       return width * size;
     },
   };
-  return { faces, close: () => doc.destroy() };
+  return {
+    faces,
+    close: () => {
+      try {
+        for (const font of standard.values()) font.destroy();
+        standard.clear();
+      } finally {
+        doc.destroy();
+      }
+    },
+  };
 }
 
 /** A glyph of a block, by position, with the line that holds it. */

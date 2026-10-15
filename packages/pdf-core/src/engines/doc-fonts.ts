@@ -220,7 +220,12 @@ function toUnicodeCodes(entry: PDFObject, bytes: 1 | 2): Map<number, number> | n
   if (entry.isNull() || !entry.isStream()) return null;
   let source: string;
   try {
-    source = entry.readStream().asString();
+    const buffer = entry.readStream();
+    try {
+      source = buffer.asString();
+    } finally {
+      buffer.destroy();
+    }
   } catch {
     return null;
   }

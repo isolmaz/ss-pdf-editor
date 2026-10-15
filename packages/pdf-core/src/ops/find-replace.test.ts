@@ -1187,6 +1187,44 @@ describe('documentFaces', () => {
       source.close();
     }
   });
+
+  it('destroys the document it opened when reading the models fails, since the caller never gets `close`', async () => {
+    const { bytes, model, fonts } = await readPage();
+    const mupdf = await loadMupdf();
+    const destroy = vi.spyOn(mupdf.PDFDocument.prototype, 'destroy');
+    try {
+      // The document has one page; a model of page 7 makes the font lookup throw.
+      await expect(documentFaces(bytes, [{ ...model, pageIndex: 7 }], fonts)).rejects.toThrow();
+      expect(destroy.mock.contexts).toHaveLength(1);
+      expect(destroy.mock.contexts[0]).toBeInstanceOf(mupdf.PDFDocument);
+    } finally {
+      destroy.mockRestore();
+    }
+  });
+
+  it('destroys the standard faces it opened for measuring, and the document, when closed', async () => {
+    const { bytes, model, fonts } = await readPage();
+    const mupdf = await loadMupdf();
+    const source = await documentFaces(bytes, [model], fonts);
+    source.faces.measure('Merhaba', 'helvetica', 10, 0);
+    source.faces.measure('Merhaba', 'helvetica-bold', 10, 0);
+    // Measuring again reuses the open face rather than opening another.
+    source.faces.measure('dünya', 'helvetica', 10, 0);
+    const destroyed: string[] = [];
+    const original = mupdf.Font.prototype.destroy;
+    const destroy = vi.spyOn(mupdf.Font.prototype, 'destroy').mockImplementation(function (
+      this: InstanceType<typeof mupdf.Font>,
+    ) {
+      destroyed.push(this.getName());
+      original.call(this);
+    });
+    try {
+      source.close();
+      expect(destroyed.sort()).toEqual(['Helvetica', 'Helvetica-Bold']);
+    } finally {
+      destroy.mockRestore();
+    }
+  });
 });
 
 /**

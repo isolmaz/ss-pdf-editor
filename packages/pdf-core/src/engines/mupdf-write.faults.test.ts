@@ -95,6 +95,22 @@ describe('subsetEmbeddedFaces', () => {
     return { real, doc, face };
   }
 
+  it('releases every stream buffer it reads while measuring and copying the font programs', async () => {
+    const { real, doc, face } = await embedded();
+    const read = vi.spyOn(real.PDFObject.prototype, 'readStream');
+    const destroy = vi.spyOn(real.Buffer.prototype, 'destroy');
+    try {
+      expect(subsetEmbeddedFaces(real, doc, [face])).toBeGreaterThan(100_000);
+      // One buffer for the subset program, one for the whole program.
+      expect(read.mock.results.length).toBeGreaterThanOrEqual(2);
+      for (const result of read.mock.results) expect(destroy.mock.contexts).toContain(result.value);
+    } finally {
+      read.mockRestore();
+      destroy.mockRestore();
+      doc.destroy();
+    }
+  });
+
   it('keeps the whole program when the subsetting pass leaves the face without one', async () => {
     const { real, doc, face } = await embedded();
     const forgetful = damagingMupdf(real, (descriptor) => descriptor.delete('FontFile2'));
