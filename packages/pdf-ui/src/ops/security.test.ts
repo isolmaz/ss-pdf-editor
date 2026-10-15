@@ -117,11 +117,22 @@ describe('protectDialog without passwords', () => {
     expect(await inspectProtection(bytesOf(result))).toMatchObject({ encrypted: true, needsPassword: false });
   });
 
-  it('refuses a missing owner password with the password policy, as it does an empty one', async () => {
-    const run = protectDialog.run({ userPassword: 'open' }, await runContext(await textPdf([['x']])));
-    await expect(run).rejects.toMatchObject({
-      code: 'password-policy',
-      details: { engineMessage: expect.stringContaining('owner password is required') },
+  it.each([
+    ['missing', { userPassword: 'open', permissions: ['print'] }],
+    ['empty', { userPassword: 'open', ownerPassword: '', permissions: ['print'] }],
+  ])('generates a random owner password when it is %s, and says so in the report', async (_label, params) => {
+    const result = await protectDialog.run(params, await runContext(await textPdf([['x']])));
+    const bytes = bytesOf(result);
+    expect(result.noticeKey).toBe('security.done');
+    expect(result.report.notes.map((entry) => entry.key)).toContain(
+      'op.note.security.ownerPasswordGenerated',
+    );
+    // The open password is the user only (2, no owner bit 4): it cannot lift the restrictions.
+    expect(await authenticate(bytes, 'open')).toBe(2);
+    expect(await inspectProtection(bytes)).toMatchObject({
+      encrypted: true,
+      needsPassword: true,
+      permissions: { print: true, copy: false, modify: false },
     });
   });
 });

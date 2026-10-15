@@ -167,6 +167,58 @@ describe('protectDocument', () => {
     expect(await textOf(outcome.bytes, 0)).toBe('Public line Secret 4711');
   });
 
+  it('protects with one password serving as open and owner password, and applies the permissions', async () => {
+    const outcome = await protectDocument(
+      await threePages(),
+      { userPassword: 'tek', ownerPassword: 'tek', permissions: NO_COPY },
+      run,
+    );
+    expect(outcome.report.notes.map((entry) => entry.key)).toEqual([
+      'op.note.security.encryptionApplied',
+      'op.note.security.verified',
+    ]);
+    const mupdf = await loadMupdf();
+    const doc = mupdf.PDFDocument.openDocument(outcome.bytes, 'application/pdf');
+    expect(doc.needsPassword()).toBe(true);
+    expect(doc.authenticatePassword('yanlış')).toBe(0);
+    // Bit mask: user (2) + owner (4).
+    expect(doc.authenticatePassword('tek')).toBe(6);
+    expect(doc.countPages()).toBe(3);
+    doc.destroy();
+    expect((await inspectProtection(outcome.bytes)).permissions).toEqual(NO_COPY);
+    expect(await textOf(outcome.bytes, 1, 'tek')).toBe('Ikinci sayfa');
+  });
+
+  it('replaces an empty owner password with a random one that the open password cannot match', async () => {
+    const source = await threePages();
+    const outcome = await protectDocument(
+      source,
+      { userPassword: 'ac', ownerPassword: '', permissions: NO_COPY },
+      run,
+    );
+    expect(outcome.report.notes.map((entry) => entry.key)).toEqual([
+      'op.note.security.encryptionApplied',
+      'op.note.security.ownerPasswordGenerated',
+      'op.note.security.verified',
+    ]);
+    expect(outcome.report.notes[1]).toEqual({
+      kind: 'changed',
+      key: 'op.note.security.ownerPasswordGenerated',
+    });
+    const mupdf = await loadMupdf();
+    const doc = mupdf.PDFDocument.openDocument(outcome.bytes, 'application/pdf');
+    expect(doc.needsPassword()).toBe(true);
+    // The open password is the user only: the owner bit (4) is not set, so it cannot lift the restrictions.
+    expect(doc.authenticatePassword('ac')).toBe(2);
+    expect(doc.hasPermission('copy')).toBe(false);
+    expect(doc.hasPermission('print')).toBe(false);
+    expect(doc.hasPermission('edit')).toBe(true);
+    expect(doc.countPages()).toBe(3);
+    doc.destroy();
+    expect((await inspectProtection(outcome.bytes)).permissions).toEqual(NO_COPY);
+    expect(await textOf(outcome.bytes, 2, 'ac')).toBe('Ucuncu sayfa');
+  });
+
   describe('a signed document', () => {
     const SIGNATURE_NOTE = {
       kind: 'lost',
@@ -227,12 +279,8 @@ describe('protectDocument', () => {
     });
   });
 
-  it('refuses an empty owner password and a password the option list would mangle', async () => {
+  it('refuses a password the option list would mangle', async () => {
     const source = await build([TWO_LINES]);
-    await expect(protectDocument(source, { ...OPTIONS, ownerPassword: '' }, run)).rejects.toMatchObject({
-      code: 'password-policy',
-      details: { engineMessage: 'owner password is required: an empty owner password is not accepted' },
-    });
     for (const bad of [
       { userPassword: 'a,b' },
       { userPassword: 'a=b' },

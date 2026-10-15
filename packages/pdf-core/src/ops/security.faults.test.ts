@@ -142,7 +142,33 @@ describe('protectDocument verification', () => {
   it('refuses an output the user password does not fully open', async () => {
     state.plan = [undefined, { authenticatePassword: () => 1 }];
     await expect(protectDocument(await build([TWO_LINES]), OPTIONS, run)).rejects.toMatchObject(
-      failure('authenticatePassword(user) returned 1, expected 2'),
+      failure('authenticatePassword(user) returned 1, expected the user bit (2)'),
+    );
+  });
+
+  it('refuses an output whose distinct open password also authenticates as owner', async () => {
+    state.plan = [
+      undefined,
+      {
+        authenticatePassword: (document, ...args) =>
+          (args as [string])[0] === 'gizli' ? 6 : document.authenticatePassword(...(args as [string])),
+      },
+    ];
+    await expect(protectDocument(await build([TWO_LINES]), OPTIONS, run)).rejects.toMatchObject(
+      failure('the open password also authenticates as owner (returned 6), permissions are not restricted'),
+    );
+  });
+
+  it('refuses an output the owner password does not authenticate as owner', async () => {
+    state.plan = [
+      undefined,
+      {
+        authenticatePassword: (document, ...args) =>
+          (args as [string])[0] === 'sahip' ? 2 : document.authenticatePassword(...(args as [string])),
+      },
+    ];
+    await expect(protectDocument(await build([TWO_LINES]), OPTIONS, run)).rejects.toMatchObject(
+      failure('authenticatePassword(owner) returned 2, expected the owner bit (4)'),
     );
   });
 

@@ -31,11 +31,15 @@
  * therefore **3900 (`0xf3c`)**.
  *
  * Two further measured facts this file depends on:
- *  - `authenticatePassword()` returns **0** for a wrong password, **2** for the
- *    user password and **4** for the owner password; an owner-authenticated
- *    document reports *all* permissions as granted regardless of the stored bits,
- *    so verification **always authenticates with the user password** (or the empty
- *    string for owner-only encryption, which also returns 2).
+ *  - `authenticatePassword()` returns a **bit mask**, not an enum: **0** for a wrong
+ *    password, **2** (`AUTH_USER`) when the password opens the document as the user
+ *    and **4** (`AUTH_OWNER`) when it is the owner password. One password that is
+ *    both the open and the owner password answers **6** (measured), so every
+ *    check tests a bit (`& 2`, `& 4`), never equality. An owner-authenticated
+ *    document is not restricted by the stored bits, so verification authenticates
+ *    with the user password (or the empty string for owner-only encryption, which
+ *    also answers 2) before reading the permissions, and proves the owner role
+ *    separately with the owner password.
  *  - Saving an encrypted document **without authenticating** (or after a failed
  *    authentication) does not fail loudly: MuPDF writes a file whose streams are
  *    undecryptable garbage (measured: two `aes padding out of range` format errors
@@ -126,6 +130,16 @@ const MUPDF_PERMISSION_NAMES: Readonly<Record<keyof ProtectionPermissions, Docum
 
 const PERMISSION_FIELDS = Object.keys(PERMISSION_BITS) as (keyof ProtectionPermissions)[];
 
+/** Bits of `authenticatePassword()`'s answer (see the file header). */
+const AUTH_USER = 2;
+const AUTH_OWNER = 4;
+
+/** 256 random bits as hex: no `=`/`,` the engine option list would split on, well under the 127-byte limit. */
+function randomOwnerPassword(): string {
+  const random = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Encrypt a document. The produced bytes are **re-opened and checked** before
  * they are returned, so a silently unprotected output cannot reach the user.
@@ -136,12 +150,13 @@ export async function protectDocument(
   context: OperationContext,
 ): Promise<OperationOutcome> {
   throwIfAborted(context.signal);
-  if (options.ownerPassword.length === 0) {
-    throw new ToolError('password-policy', {
-      engine: 'mupdf',
-      engineMessage: 'owner password is required: an empty owner password is not accepted',
-    });
-  }
+  // The dialog promises "generated randomly if left empty": the owner password is
+  // then a throwaway secret nobody sees, so the permissions bind every reader who
+  // only knows the open password.
+  const ownerGenerated = options.ownerPassword.length === 0;
+  const resolved: ProtectOptions = ownerGenerated
+    ? { ...options, ownerPassword: randomOwnerPassword() }
+    : options;
   // MuPDF parses the option list itself, splitting on commas and `=`
   // (`fz_parse_pdf_write_options`); a password containing either would silently
   // produce a different option string, so it is refused instead of mangled.
@@ -157,7 +172,7 @@ export async function protectDocument(
   const encryptOptions = [
     'encrypt=aes-256',
     ...(options.userPassword.length > 0 ? [`user-password=${options.userPassword}`] : []),
-    `owner-password=${options.ownerPassword}`,
+    `owner-password=${resolved.ownerPassword}`,
     `permissions=${bits}`,
   ].join(',');
 
@@ -198,14 +213,14 @@ export async function protectDocument(
   }
   throwIfAborted(context.signal);
 
-  verifyProtection(mupdf, produced, options, bits);
+  verifyProtection(mupdf, produced, resolved, bits);
   // Authentication is also proven by content: the produced file must still
   // carry the same pages and text sample the authenticated input showed.
   {
     const check = openPdf(mupdf, produced);
     try {
       // Sampling needs decrypted streams: the new user password is the
-      // credential verifyProtection just proved (authenticatePassword === 2).
+      // credential verifyProtection just proved (authenticatePassword has the user bit).
       check.authenticatePassword(options.userPassword);
       if (check.countPages() !== pageCount) {
         throw new ToolError('verification-failed', {
@@ -241,6 +256,7 @@ export async function protectDocument(
         ...(options.userPassword.length === 0
           ? [note('warning', 'op.note.security.opensWithoutPassword')]
           : []),
+        ...(ownerGenerated ? [note('changed', 'op.note.security.ownerPasswordGenerated')] : []),
         ...(signed ? [note('lost', 'op.note.security.signatureInvalidated')] : []),
         note('preserved', 'op.note.security.verified'),
       ],
@@ -282,13 +298,23 @@ function verifyProtection(mupdf: Mupdf, produced: Uint8Array, options: ProtectOp
         engineMessage: 'owner-only encryption produced a document that demands a password',
       });
     }
-    // User-level authentication: the owner password unlocks every permission in
-    // MuPDF and would hide a wrong bitmask.
+    // User-level authentication: the open password must open the document as the
+    // user. `authenticatePassword` answers a bit mask (2 user, 4 owner), so a single
+    // password serving as both answers 6 and is still correct.
     const auth = doc.authenticatePassword(options.userPassword);
-    if (auth !== 2) {
+    if ((auth & AUTH_USER) === 0) {
       throw new ToolError('verification-failed', {
         engine: 'mupdf',
-        engineMessage: `authenticatePassword(user) returned ${auth}, expected 2`,
+        engineMessage: `authenticatePassword(user) returned ${auth}, expected the user bit (2)`,
+      });
+    }
+    // The open password may only carry the owner role when the user chose the same
+    // string for both; otherwise it would lift every permission restriction.
+    const sharedPassword = options.userPassword === options.ownerPassword;
+    if (!sharedPassword && (auth & AUTH_OWNER) !== 0) {
+      throw new ToolError('verification-failed', {
+        engine: 'mupdf',
+        engineMessage: `the open password also authenticates as owner (returned ${auth}), permissions are not restricted`,
       });
     }
     if (options.userPassword.length > 0 && doc.authenticatePassword('') !== 0) {
@@ -306,6 +332,14 @@ function verifyProtection(mupdf: Mupdf, produced: Uint8Array, options: ProtectOp
           engineMessage: `permission "${MUPDF_PERMISSION_NAMES[field]}" is ${actual[field]}, requested ${expected} (permissions=${bits})`,
         });
       }
+    }
+    // Last: authenticating as owner must not influence the permission reads above.
+    const ownerAuth = doc.authenticatePassword(options.ownerPassword);
+    if ((ownerAuth & AUTH_OWNER) === 0) {
+      throw new ToolError('verification-failed', {
+        engine: 'mupdf',
+        engineMessage: `authenticatePassword(owner) returned ${ownerAuth}, expected the owner bit (4)`,
+      });
     }
   } catch (error) {
     throw mapMupdfError(error, 'verify-protection');
