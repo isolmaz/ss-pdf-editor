@@ -364,6 +364,31 @@ describe('importing what cannot be used', () => {
     expect(out.marks.map((entry) => entry.author)).toEqual(['T', '', '']);
   });
 
+  it('applies the time zone of a date, and reads a comment whose date is not a date instead of failing the import', async () => {
+    const before = Date.now();
+    const out = await parseXfdf(
+      xfdf(
+        [
+          '<text name="a" rect="1,2,3,4" creationdate="D:20261002080000+02\'00\'"/>',
+          '<text name="b" rect="1,2,3,4" creationdate="D:20261002080000-05\'30\'"/>',
+          '<text name="c" rect="1,2,3,4" creationdate="D:20241301000000Z"/>',
+          '<text name="d" rect="1,2,3,4" creationdate="D:20260101250000Z"/>',
+          '<text name="e" rect="1,2,3,4" creationdate="D:20260230000000Z"/>',
+          '<text name="f" rect="1,2,3,4" creationdate="D:20261002080000Z"/>',
+        ].join(''),
+      ),
+    );
+    expect(out.skipped).toBe(0);
+    expect(out.marks).toHaveLength(6);
+    const [plusTwo, minusHalf, month, hour, february, utc] = out.marks.map((entry) => entry.createdAt);
+    expect(plusTwo).toBe('2026-10-02T06:00:00.000Z');
+    expect(minusHalf).toBe('2026-10-02T13:30:00.000Z');
+    expect(utc).toBe('2026-10-02T08:00:00.000Z');
+    for (const impossible of [month, hour, february]) {
+      expect(Date.parse(impossible ?? '')).toBeGreaterThanOrEqual(before);
+    }
+  });
+
   it('text markup: one box per eight coordinates, or the rectangle when there are fewer', async () => {
     const out = await parseXfdf(
       xfdf(

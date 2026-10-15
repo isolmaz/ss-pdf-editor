@@ -153,10 +153,21 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     not saved yet keeps it until the comment itself is written.
   - Deleting a comment deletes its replies and statuses with it.
 - **Comment exchange.** Comments can be exported and imported as **XFDF** (the XML format
-  review tools share), FDF (Acrobat's container) or JSON (this app's lossless form).
+  review tools share), FDF (the comments file Acrobat's “Export comments” writes and reads) or
+  JSON (this app's lossless form).
   - XFDF carries the comments already in the file as well as the unsaved ones, with their
     replies and statuses. JSON and FDF carry the unsaved ones.
-  - Imported comments arrive as unsaved marks that can still be edited.
+  - The FDF export is that Acrobat format itself: `%FDF-1.2`, then `/FDF /Annots` listing
+    one annotation object per comment (highlight, underline, strike-out, squiggly, ink, square,
+    circle, line, note, typed text) with its `/Page`, `/Rect`, colour, text, author and date,
+    a popup, and each reply and review status as an annotation that answers it (`/IRT`).
+    Acrobat's own comment files are read the same way, and so are the FDF files this app wrote
+    before (`ann.N.*` records). A comment's quarter turn stays in JSON, and a stroke drawn with
+    the marker (a highlight painted as a path) leaves FDF and XFDF as ink.
+  - Imported comments arrive as unsaved marks that can still be edited. A colour that is not
+    `#rrggbb` becomes the default colour and a date that is not a real one (month 13, hour 25)
+    becomes the time of the import; a comment on a page the document does not have, or of a
+    shape this app cannot draw, is skipped and counted in the notice.
 - **Operations in two steps.** Every operation opens in the tools panel. First you set it
   up, then *Preview* runs it and shows a report. The report's own button applies the
   result. Pop-up windows are used only for decisions that block, such as a password,
@@ -780,6 +791,10 @@ The limits are defined once, in
   plain text, and a rotated mark is exported as it was drawn, unrotated. A private
   `Marked` check mark is shown but not written or imported. Stamps, links and form fields
   are not comments and are left out of the export, and the notice counts them.
+- **Comment FDF.** The FDF carries each comment's dictionary and not its look: the export
+  writes no appearance streams (a reader draws the comment itself), and the import skips the
+  ones an Acrobat file carries. An annotation of another kind (a stamp, a polygon, a file
+  attachment) is counted as skipped, as is a reply whose comment is not in the file.
 - **Protected documents.** These are read-only. To edit one, make an explicit unlocked copy.
 - **Text editing.** Only horizontal text is editable. Vertical text, skewed baselines and
   Type3 text are not. Unknown fonts are re-rendered in a substitute font, and the UI says

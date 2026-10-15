@@ -15,10 +15,20 @@ import { commentText } from 'pdf-core/ops/annotations';
 
 const MARKER = 'pdf-editor-ann:';
 
+/**
+ * The text without the marker at its head. A text that only quotes the marker further on is
+ * left alone, and is not written back: setting `data` queues a mutation record even when it is
+ * the same string, which the observer below would read as an edit to clean again, forever.
+ */
+function cleanText(text: Text): void {
+  const clean = commentText(text.data);
+  if (clean !== text.data) text.data = clean;
+}
+
 /** Strip the marker from every text node under `node` that carries one. */
 function cleanTree(node: Node): void {
   if (node instanceof Text) {
-    if (node.data.includes(MARKER)) node.data = commentText(node.data);
+    if (node.data.includes(MARKER)) cleanText(node);
     return;
   }
   if (!(node instanceof Element) || !node.textContent.includes(MARKER)) return;
@@ -27,7 +37,7 @@ function cleanTree(node: Node): void {
   for (let current = walker.nextNode(); current !== null; current = walker.nextNode()) {
     if ((current as Text).data.includes(MARKER)) hits.push(current as Text);
   }
-  for (const text of hits) text.data = commentText(text.data);
+  for (const text of hits) cleanText(text);
 }
 
 /** Watch `root` for popups and clean each one as it appears; returns the disconnect. */

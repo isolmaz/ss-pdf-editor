@@ -19,16 +19,69 @@ export interface CommentThread {
   readonly records: readonly string[];
 }
 
-/** `D:YYYYMMDDHHmmSS` (or ISO 8601) → milliseconds; `0` for anything unreadable. */
+/**
+ * `D:YYYYMMDDHHmmSS` with the time zone a PDF writes after it (`Z`, `+02'00'`, `-0530`,
+ * `+03`): every part after the year is optional (ISO 32000-1 §7.9.4), the whole string must
+ * be a date.
+ */
+const PDF_DATE =
+  /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(?:Z(?:\d{2}'?(?:\d{2}'?)?)?|([+-])(\d{2})'?(\d{2})?'?)?$/i;
+
+/**
+ * A PDF date as milliseconds since the epoch, or `null` when it is not one.
+ *
+ * This is the one reader every comment path uses (the thread list, the Acrobat FDF and
+ * the XFDF imports). Each field is checked for what it is — month 1–12, a day the month
+ * has, hour 0–23, minute and second 0–59 — because `Date.UTC` would roll `D:20241301`
+ * into 2025 and `new Date(...)` of the same text would refuse it with a `RangeError`; an
+ * impossible date is no date, and the comment that carries it is still read. The zone is
+ * applied: `D:20261002080000+02'00'` is 06:00 UTC. A date without a zone is taken as UTC.
+ */
+export function parsePdfDate(raw: string): number | null {
+  const match = PDF_DATE.exec(raw.trim());
+  if (match === null) return null;
+  const [, year = '', month = '01', day = '01', hour = '00', minute = '00', second = '00'] = match;
+  const [sign, zoneHour = '00', zoneMinute = '00'] = match.slice(7);
+  const [y, mo, d, h, mi, s] = [year, month, day, hour, minute, second].map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  if (y < 1 || mo < 1 || mo > 12 || d < 1 || h > 23 || mi > 59 || s > 59) return null;
+  // `setUTCFullYear` takes the year as written: `Date.UTC(99, …)` would mean 1999.
+  const date = new Date(0);
+  date.setUTCFullYear(y, mo - 1, d);
+  date.setUTCHours(h, mi, s, 0);
+  // A day the month does not have (the 30th of February) rolls into the next month.
+  if (date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
+  if (sign === undefined) return date.getTime();
+  const zoneH = Number(zoneHour);
+  const zoneM = Number(zoneMinute);
+  if (zoneH > 23 || zoneM > 59) return null;
+  return date.getTime() - (sign === '-' ? -1 : 1) * (zoneH * 60 + zoneM) * 60_000;
+}
+
+/** Milliseconds since the epoch as a PDF date (`D:YYYYMMDDHHmmSSZ`); `null` when no such date can name it. */
+export function formatPdfDate(millis: number): string | null {
+  const date = new Date(millis);
+  const year = date.getUTCFullYear();
+  if (Number.isNaN(year) || year < 1 || year > 9999) return null;
+  const pad = (value: number, width = 2) => String(value).padStart(width, '0');
+  return `D:${pad(year, 4)}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}${pad(
+    date.getUTCHours(),
+  )}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+}
+
+/** A PDF date or ISO 8601 → milliseconds; `0` for anything unreadable. */
 export function reviewDateMillis(raw: string | null | undefined): number {
   if (raw === null || raw === undefined) return 0;
-  const match = /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/.exec(raw.trim());
-  if (match === null) {
-    const parsed = Date.parse(raw);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  const [, year, month = '01', day = '01', hour = '00', minute = '00', second = '00'] = match;
-  return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+  const text = raw.trim();
+  if (text.startsWith('D:')) return parsePdfDate(text) ?? 0;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 /**

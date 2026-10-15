@@ -66,12 +66,16 @@ import {
   throwIfAborted,
 } from './types';
 
-/** `/Subtype` for each shape kind this module builds. */
-const SHAPE_SUBTYPES: Readonly<Record<string, string>> = {
-  square: 'Square',
-  circle: 'Circle',
-  line: 'Line',
-};
+/**
+ * `/Subtype` for each shape kind this module builds. A `Map`: a shape named `constructor`
+ * or `__proto__` (a damaged import used to carry one) is found on a plain object's prototype
+ * and came out as a function written into `/Subtype`.
+ */
+const SHAPE_SUBTYPES: ReadonlyMap<string, string> = new Map([
+  ['square', 'Square'],
+  ['circle', 'Circle'],
+  ['line', 'Line'],
+]);
 
 /** Opacity floor: a mark the user can see is the point of the feature. */
 const MIN_OPACITY = 0.02;
@@ -144,7 +148,7 @@ export async function writeShapeAnnotations(
         if (page === undefined) {
           throw new ToolError('range-invalid', { engine: 'mupdf', pageIndex: mark.pageIndex });
         }
-        const subtype = SHAPE_SUBTYPES[mark.shape ?? 'square'];
+        const subtype = SHAPE_SUBTYPES.get(mark.shape ?? 'square');
         if (subtype === undefined) {
           throw new ToolError('unsupported-format', { engine: 'mupdf', pageIndex: mark.pageIndex });
         }
