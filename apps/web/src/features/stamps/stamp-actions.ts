@@ -119,11 +119,21 @@ export function pickImage(gate: AddGate): void {
   if (mayAdd(gate)) imageInputRef.current?.click();
 }
 
-/** The file the picker returned: armed as the next stamp, or the reason it could not be. */
+/**
+ * The file the picker returned: armed as the next stamp, or the reason it could not be. The
+ * caller does not await this (the picker's `change` handler), so nothing may escape it: a
+ * chunk that would not load or a picture that would not encode says so like one that would
+ * not decode, instead of becoming an unhandled rejection and a silent picker.
+ */
 export async function onImagePicked(file: File, t: Translator): Promise<void> {
-  // A dynamic chunk: the first paint must not carry the dialogs' code (the entry budget is locked).
-  const { imageFromFile } = await import('pdf-ui/dialog');
-  const source = await imageFromFile(file);
+  let source: StampSource | null;
+  try {
+    // A dynamic chunk: the first paint must not carry the dialogs' code (the entry budget is locked).
+    const { imageFromFile } = await import('pdf-ui/dialog');
+    source = await imageFromFile(file);
+  } catch {
+    source = null;
+  }
   if (source === null) {
     showNotice(t('img.add.failed', { name: file.name }));
     return;

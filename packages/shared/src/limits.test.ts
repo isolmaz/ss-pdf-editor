@@ -15,7 +15,7 @@ describe('checkDocumentLimits', () => {
   });
 
   it('warns before the desktop ceiling instead of blocking', () => {
-    expect(checkDocumentLimits('desktop', LIMITS.desktop.warnPages + 1, 20 * MIB)).toEqual({
+    expect(checkDocumentLimits('desktop', 1501, 20 * MIB)).toEqual({
       kind: 'warn',
       reason: 'pages',
     });
@@ -50,14 +50,26 @@ describe('checkDocumentLimits', () => {
   });
 
   it('pins the contract numbers themselves, not values read back from the table under test', () => {
-    expect(LIMITS.desktop).toMatchObject({ warnPages: 1500, maxPages: 2000, maxBytes: 300 * MIB });
-    expect(LIMITS.mobile).toMatchObject({
-      warnPages: 300,
+    expect(LIMITS.desktop).toMatchObject({
+      warnPages: 1500,
       maxPages: 2000,
       maxBytes: 300 * MIB,
+      renderCacheBytes: 512 * MIB,
+    });
+    expect(LIMITS.mobile).toMatchObject({
+      maxPages: 2000,
+      maxBytes: 300 * MIB,
+      renderCacheBytes: 128 * MIB,
       viewingOnlyAbovePages: 300,
       viewingOnlyAboveBytes: 64 * MIB,
     });
+  });
+
+  it('gives mobile no warning of its own: viewing-only starts where a warning would', () => {
+    expect(LIMITS.mobile).not.toHaveProperty('warnPages');
+    for (const pages of [1, 300, 301, 1500, 1501, 2000]) {
+      expect(checkDocumentLimits('mobile', pages, MIB).kind).not.toBe('warn');
+    }
   });
 
   it('draws the desktop lines exactly: at a limit is fine, one past it is not', () => {
@@ -95,11 +107,16 @@ describe('checkDocumentLimits', () => {
 });
 
 describe('detectDeviceTier', () => {
-  const tierFor = (userAgent: string | undefined, coarsePointer: boolean) => {
+  const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
+
+  /** The tier for a user agent and the pointers the browser reports (`media` answers per query). */
+  const tierFor = (userAgent: string | undefined, media: Record<string, boolean>, withMatchMedia = true) => {
     vi.stubGlobal('navigator', userAgent === undefined ? undefined : { userAgent });
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: coarsePointer && query === '(pointer: coarse)',
-    }));
+    if (withMatchMedia) {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: media[query] === true }));
+    } else {
+      vi.stubGlobal('matchMedia', undefined);
+    }
     try {
       return detectDeviceTier();
     } finally {
@@ -107,11 +124,23 @@ describe('detectDeviceTier', () => {
     }
   };
 
-  it('is desktop without a navigator, desktop for a desktop agent, mobile for a mobile agent or a coarse pointer', () => {
-    expect(tierFor(undefined, false)).toBe('desktop');
-    expect(tierFor('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', false)).toBe('desktop');
-    expect(tierFor('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', false)).toBe('mobile');
-    expect(tierFor('Mozilla/5.0 (Linux; Android 14)', false)).toBe('mobile');
-    expect(tierFor('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', true)).toBe('mobile');
+  it('is desktop without a navigator and mobile for a mobile agent', () => {
+    expect(tierFor(undefined, {})).toBe('desktop');
+    expect(tierFor(WINDOWS, {})).toBe('desktop');
+    expect(tierFor('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', {})).toBe('mobile');
+    expect(tierFor('Mozilla/5.0 (Linux; Android 14)', {})).toBe('mobile');
+  });
+
+  it('is mobile for a touch-only screen: a coarse primary pointer and no fine one', () => {
+    expect(tierFor(WINDOWS, { '(pointer: coarse)': true, '(any-pointer: fine)': false })).toBe('mobile');
+  });
+
+  it('stays desktop for a touch screen that also has a mouse or trackpad', () => {
+    expect(tierFor(WINDOWS, { '(pointer: coarse)': true, '(any-pointer: fine)': true })).toBe('desktop');
+    expect(tierFor(WINDOWS, { '(pointer: coarse)': false, '(any-pointer: fine)': true })).toBe('desktop');
+  });
+
+  it('stays desktop where the browser has no media queries to ask', () => {
+    expect(tierFor(WINDOWS, { '(pointer: coarse)': true }, false)).toBe('desktop');
   });
 });

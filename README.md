@@ -624,7 +624,9 @@ These describe how the build works; they are not promises.
     whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
     file in IndexedDB — a reference the browser asks permission for again, never the file's
     bytes. A sensitive session keeps no handle: marking a document sensitive, or purging it,
-    forgets its handle, and so do removing an entry and clearing the list.
+    forgets its handle, and so do removing an entry and clearing the list — except that
+    clearing keeps the handle of a document that is open in a tab or has a stored draft, so
+    a restored tab can still save over its file.
   - A signature picture is kept only when you tick **Remember on this device**: in
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.
@@ -657,6 +659,12 @@ The limits are defined once, in
 | Viewing-only above | — | 300 pages / 64 MB |
 | Render cache | 512 MB | 128 MB |
 
+- **Which column applies.** The mobile column is used for a phone or tablet user agent, and
+  for a screen whose only pointer is touch (`(pointer: coarse)` with no `(any-pointer: fine)`);
+  a touch-screen laptop with a mouse or trackpad stays on the desktop column. Mobile has no
+  warning of its own: viewing-only starts at 300 pages, where a warning would.
+- **Memory gauge.** The status bar measures what the open documents hold against the render
+  cache figure of the column that applies.
 - **Viewing-only.** Above this threshold the document still opens and renders, but editing
   is disabled and the UI says why.
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two

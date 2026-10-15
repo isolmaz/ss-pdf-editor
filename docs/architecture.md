@@ -195,7 +195,7 @@ CI `verify` job, after `pnpm build`.
 | Module | Responsibility |
 |---|---|
 | `errors.ts` | The single error contract. `ToolError` carries a stable code (37 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) becomes `asset-offline`, never a damaged document. |
-| `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
+| `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
 Because `MessageKey` is a union of literal keys, passing an unknown key is a compile
@@ -2455,7 +2455,9 @@ after the other (`openFilesFromSurface`), because an open holds the busy gate un
 the ways to begin — open, a blank document, a PDF from images, merging several PDFs, a batch
 run — and the recent list (search, sort, star, page count, an "open" badge for entries that
 are a tab right now; removing an entry or clearing the list never touches a file, it forgets
-the entry's stored handle at once, and the clear asks first). *All tools*
+the entry's stored handle at once, and the clear asks first; the clear keeps the handle of a
+document that is open in a tab or has a draft in the vault, and prunes nothing when the draft
+inventory cannot be read completely). *All tools*
 (`components/HomeToolGrid.tsx`, loaded with the tab) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
 command, so the grid cannot drift from the menus or the palette. It lists
@@ -2944,7 +2946,9 @@ shows.
 requests and anything outside `/editor/`, `/engines/`, `/fonts/` and a few root files;
 document bytes never enter `CacheStorage`. It re-applies the CORP/COOP/COEP headers to
 cached responses so cross-origin isolation survives an offline load, and its one offline
-answer is an explicit, un-cacheable 503 rather than a hang.
+answer is an explicit, un-cacheable 503 rather than a hang, worded in the first of the
+browser's languages (`navigator.languages`) that is Turkish or English, else Turkish — a
+worker has no `localStorage`, so the language chosen in the editor is not known to it.
 
 Versioning is the interesting half:
 

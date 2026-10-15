@@ -9,6 +9,8 @@ import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { persistenceStore, resetPersistence } from '../features/persistence/persistence-store';
+import { manifest, memoryStorage } from '../features/persistence/vault.fixtures';
 import { loadRecentDocuments, type RecentDocumentItem, saveRecentDocuments } from '../recent';
 import { HomeScreen } from './HomeScreen';
 
@@ -66,6 +68,8 @@ beforeEach(() => {
   localStorage.clear();
   handles.deleteRecentHandle.mockClear();
   handles.pruneRecentHandles.mockClear();
+  resetPersistence();
+  persistenceStore.set({ draftStorage: memoryStorage() });
 });
 afterEach(cleanup);
 
@@ -189,7 +193,7 @@ describe('HomeScreen recent list', () => {
     expect(handles.deleteRecentHandle).toHaveBeenCalledExactlyOnceWith('a');
   });
 
-  it('clears the list only after the confirmation, and prunes every handle', async () => {
+  it('clears the list only after the confirmation, and prunes every handle nothing else needs', async () => {
     seed();
     const user = userEvent.setup();
     const { container } = render(screenFor());
@@ -203,6 +207,45 @@ describe('HomeScreen recent list', () => {
     await user.click(screen.getByRole('button', { name: t('home.clearYes') }));
     expect(names(container)).toEqual([]);
     expect(loadRecentDocuments()).toEqual([]);
-    expect(handles.pruneRecentHandles).toHaveBeenCalledExactlyOnceWith(new Set());
+    await vi.waitFor(() => expect(handles.pruneRecentHandles).toHaveBeenCalledExactlyOnceWith(new Set()));
+  });
+
+  it('keeps the handle of a document that is open and of one the vault holds a draft for', async () => {
+    seed();
+    const storage = memoryStorage();
+    storage.drafts.set('drafted', manifest('drafted'));
+    persistenceStore.set({ draftStorage: storage });
+    const user = userEvent.setup();
+    render(screenFor({ openIds: new Set(['b']) }));
+
+    await user.click(screen.getByRole('button', { name: t('home.clearList') }));
+    await user.click(screen.getByRole('button', { name: t('home.clearYes') }));
+
+    await vi.waitFor(() =>
+      expect(handles.pruneRecentHandles).toHaveBeenCalledExactlyOnceWith(new Set(['b', 'drafted'])),
+    );
+    expect(loadRecentDocuments()).toEqual([]);
+  });
+
+  it.each([
+    ['an enumeration that failed', { drafts: [], unreadable: [], enumerationFailed: true }],
+    ['a manifest that could not be read', { drafts: [manifest('drafted')], unreadable: ['broken.json'] }],
+  ])('prunes no handle when the vault inventory is incomplete: %s', async (_name, inventory) => {
+    seed();
+    const storage = memoryStorage();
+    storage.inventory = inventory;
+    persistenceStore.set({ draftStorage: storage });
+    const user = userEvent.setup();
+    render(screenFor());
+
+    await user.click(screen.getByRole('button', { name: t('home.clearList') }));
+    await user.click(screen.getByRole('button', { name: t('home.clearYes') }));
+
+    expect(loadRecentDocuments()).toEqual([]);
+    // The inventory read is a few microtasks; let them all run before asserting nothing happened.
+    const { promise: settled, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 0);
+    await settled;
+    expect(handles.pruneRecentHandles).not.toHaveBeenCalled();
   });
 });

@@ -28,6 +28,7 @@ import { CONVERT_ACCEPT } from 'pdf-core/ops/convert-formats';
 import type { Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { lazy, type ReactNode, Suspense, useId, useMemo, useState } from 'react';
+import { readInventory } from '../features/persistence/draft-vault';
 import {
   clearRecentDocuments,
   loadRecentDocuments,
@@ -38,6 +39,19 @@ import {
 import { deleteRecentHandle, pruneRecentHandles } from '../recent-handles';
 
 const HomeToolGrid = lazy(() => import('./HomeToolGrid'));
+
+/**
+ * After the list is cleared, forget the file handles nothing else needs. A tab open now and a
+ * draft the vault still holds both reopen their file through the handle — a restored tab
+ * without it could only Export — so those stay. An inventory that could not be read completely
+ * prunes nothing: the same refusal the vault's own cleanup makes, because not knowing what is
+ * referenced is not the same as nothing being referenced.
+ */
+async function forgetUnneededHandles(openIds: ReadonlySet<string>): Promise<void> {
+  const inventory = await readInventory();
+  if (inventory.enumerationFailed === true || inventory.unreadable.length > 0) return;
+  await pruneRecentHandles(new Set([...openIds, ...inventory.drafts.map((draft) => draft.id)]));
+}
 
 export type HomeStartAction = 'blank' | 'images' | 'merge' | 'batch' | 'convert' | 'scan';
 
@@ -362,8 +376,7 @@ export function HomeScreen({
                         className="rounded-md bg-kumo-danger px-2 py-0.5 font-medium text-white hover:opacity-90"
                         onClick={() => {
                           setRecentItems(clearRecentDocuments());
-                          // The handles that would reopen those files go with the entries.
-                          void pruneRecentHandles(new Set());
+                          void forgetUnneededHandles(openIds);
                           setConfirmClear(false);
                         }}
                       >
