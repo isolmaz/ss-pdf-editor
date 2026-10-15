@@ -38,7 +38,7 @@ describe('HomeHeader', () => {
     const handlers = header();
 
     await user.click(screen.getByRole('button', { name: t('settings.open') }));
-    await user.click(screen.getByRole('button', { name: t('shell.commandPalette') }));
+    await user.click(screen.getByRole('button', { name: t('shell.commandPaletteHint') }));
     await user.click(screen.getByRole('button', { name: t('shell.open') }));
 
     expect(handlers.onSettings).toHaveBeenCalledOnce();

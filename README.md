@@ -226,6 +226,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 - **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
   and merge.
+  - The Page menu works on the pages you selected, or on the page on screen when none is
+    selected.
   - A new document starts as blank pages of A3, A4, A5, Letter or Legal, in either
     orientation.
   - Merging several files builds a new document in the order you set; its metadata comes
@@ -595,8 +597,14 @@ These describe how the build works; they are not promises.
     until each of them has said which documents it holds; a window that stays silent for
     10 seconds makes the cleanup refuse, while a window that closes during the wait drops out
     of it.
-  - When drafts are restored at start-up, the document you opened meanwhile stays in front;
-    a draft whose document you already opened is skipped, and the others are restored.
+  - When drafts are restored at start-up, the newest one is shown at once instead of the start
+    screen; the document you opened meanwhile stays in front instead, and the start screen is
+    left as you have it. A draft whose document you already opened is skipped, and the others
+    are restored.
+  - A restored tab gets its undo history back on a desktop browser: the draft keeps the journal
+    and every snapshot. A touch-only device keeps only the working version, to spare its
+    storage, so there the document returns with its unsaved changes but earlier steps cannot be
+    undone, and the restore notice says so.
   - A draft belongs to the window that has its document open (a Web Lock named after the
     draft): another window skips it at start-up instead of restoring a second copy, and
     opening that document from the recent list there says it is open in another window.

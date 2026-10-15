@@ -1,7 +1,7 @@
 export const auditPart = {
   'audit.title': 'Redaction audit',
   'audit.findings': 'Audit findings',
-  'audit.summary': 'File contains {objects} object(s) across {revisions} revision(s); size is {bytes}.',
+  'audit.summary': 'File contains {objects} object(s) across {revisions} revision(s); size is {size:bytes}.',
   'audit.rerun': 'Rerun audit',
   'audit.empty': 'No audit report yet. Results appear here after auditing a redacted document.',
   'audit.loading': 'Preparing audit report…',

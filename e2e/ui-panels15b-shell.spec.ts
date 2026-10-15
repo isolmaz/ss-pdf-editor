@@ -1,7 +1,7 @@
 /**
- * The settings dialog's language and theme controls (the choice applies to the page and
- * survives a reload) and the command palette's search, mouse activation, stored recents
- * and the simple-mode hint.
+ * The editor header at every width, the settings dialog's language and theme controls (the
+ * choice applies to the page and survives a reload) and the command palette's search, mouse
+ * activation, stored recents and the simple-mode hint.
  */
 
 import type { Page } from 'playwright/test';
@@ -53,6 +53,44 @@ test('the dark theme chosen in Settings applies to the page and is still there a
   await dialog.getByRole('button', { name: 'System Theme' }).click();
   expect(await page.evaluate(() => localStorage.getItem('pdf-editor.theme'))).toBeNull();
   await expect(dialog.getByRole('button', { name: 'System Theme' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+/** The editor header at `width`: nothing scrolls sideways, the file actions are on screen, the name keeps room. */
+async function expectHeaderFits(
+  page: Page,
+  width: number,
+  names: { readonly exportName: string; readonly options: string; readonly settings: string },
+): Promise<void> {
+  await page.setViewportSize({ width, height: 800 });
+  const header = page.locator('header');
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), {
+      message: `the page scrolls sideways at ${width} px`,
+    })
+    .toBe(true);
+  expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  for (const name of [names.exportName, names.options, names.settings]) {
+    const box = await header.getByRole('button', { name, exact: true }).boundingBox();
+    expect(box, `${name} is not rendered at ${width} px`).not.toBeNull();
+    expect((box?.x ?? -1) >= 0 && (box?.x ?? 0) + (box?.width ?? 0) <= width, `${name} at ${width} px`).toBe(
+      true,
+    );
+  }
+  const switcher = await header.getByRole('button', { name: /^a-long-document-name/ }).boundingBox();
+  expect(switcher?.width ?? 0, `the document name at ${width} px`).toBeGreaterThanOrEqual(64);
+}
+
+test('the editor header fits every width from a phone to a wide screen and keeps the file actions on screen', async ({
+  page,
+}) => {
+  await openPdf(page, 'a-long-document-name-that-has-to-be-cut-short.pdf');
+  const english = { exportName: 'Export', options: 'Export Options', settings: 'Settings' };
+  for (const width of [320, 375, 768, 900, 1024, 1280, 1536]) await expectHeaderFits(page, width, english);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await useLanguage(page, 'Türkçe');
+  const turkish = { exportName: 'Dışa aktar', options: 'Dışa Aktarma Seçenekleri', settings: 'Ayarlar' };
+  for (const width of [320, 768, 1024, 1280, 1536]) await expectHeaderFits(page, width, turkish);
 });
 
 const palette = (page: Page) => page.getByRole('dialog').filter({ has: page.getByRole('combobox') });
@@ -110,7 +148,9 @@ test('in the simple mode a command only the advanced mode has is counted, and th
   await openPdf(page, 'doc.pdf', undefined, { advanced: false });
   await search(page, 'Redaction audit');
   await expect(palette(page).getByText('No matching commands.')).toBeVisible();
-  await expect(palette(page).getByText(/more command\(s\) are hidden by the simple mode\./)).toBeVisible();
+  await expect(
+    palette(page).getByText(/more matching command\(s\) are hidden by the simple mode\./),
+  ).toBeVisible();
   await palette(page).getByRole('button', { name: 'Advanced mode' }).click();
   await expect(palette(page).getByRole('option').first()).toBeVisible();
   await expect(palette(page).getByText('No matching commands.')).toHaveCount(0);

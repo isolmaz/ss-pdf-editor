@@ -85,8 +85,9 @@ test.describe('editor shell', () => {
     await expect(page.getByRole('tab', { name: 'All tools', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
     await expect(page.locator('.pdfViewer')).toHaveCount(0);
-    // No document: the page and the zoom both read as a dash.
-    await expect(page.getByRole('contentinfo').getByText('—', { exact: true })).toHaveCount(2);
+    // No document: there is no page and no zoom to read, not even as dashes.
+    await expect(page.getByRole('contentinfo').getByText('—', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('contentinfo')).not.toContainText(/Page|\d+%/);
 
     await runPaletteCommand(page, 'Keyboard shortcuts');
 

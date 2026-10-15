@@ -213,7 +213,9 @@ The interface ships in Turkish and English. To add a language:
    chosen.
 
 The language picker lists it, the browser's language selects it on a first visit, and
-dates and numbers are formatted with its `id`.
+dates and numbers are formatted with its `id`. In a sentence, a percentage is written where
+the language puts the sign (`%{value}` in Turkish, `{value}%` in English) and a byte size is
+a `{name:bytes}` placeholder, which the translator writes with the locale's decimal mark.
 
 A right-to-left language mirrors the interface through `<html dir>`, so interface code
 uses logical classes (`ms-`/`me-`, `ps-`/`pe-`, `start-`/`end-`, `border-s`/`border-e`,

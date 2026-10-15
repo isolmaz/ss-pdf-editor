@@ -66,11 +66,22 @@ export function OperationForm({
   renderIntro,
   onRunningChange,
 }: OperationFormProps) {
-  const [values, setValues] = useState<DialogParams>(() => ({
-    ...initialParams(spec.fields),
-    ...(spec.initialValues?.(context) ?? {}),
-    ...(context.presets ?? {}),
-  }));
+  const [values, setValues] = useState<DialogParams>(() => {
+    const defaults: Record<string, FieldValue> = { ...initialParams(spec.fields) };
+    // A scope that defaults to the selection would open on its own error when nothing is
+    // selected (the Page menu runs with no selection); the page on screen is the same
+    // fallback the page actions use.
+    for (const field of spec.fields) {
+      if (
+        field.kind === 'pageScope' &&
+        defaults[field.id] === 'selection' &&
+        context.selectedPages.length === 0
+      ) {
+        defaults[field.id] = 'current';
+      }
+    }
+    return { ...defaults, ...(spec.initialValues?.(context) ?? {}), ...(context.presets ?? {}) };
+  });
 
   /**
    * Options for the `choice` fields, resolved once from the frozen context. A

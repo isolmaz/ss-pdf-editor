@@ -127,7 +127,8 @@ export function requestCancel(host: Pick<ActionHost, 't'>): void {
 /**
  * Undo/redo. The model moves its own state and reports which bytes the viewer must show;
  * mounting them is the app's half of the contract. A step whose snapshot the session no longer
- * holds is reported, never guessed.
+ * holds is reported, never guessed; no step at all is not a failure, and the press does nothing —
+ * the same answer the menu gives by disabling the item.
  */
 export async function stepHistory(host: StepHost, direction: 'undo' | 'redo'): Promise<void> {
   const { session, t } = host;
@@ -140,6 +141,7 @@ export async function stepHistory(host: StepHost, direction: 'undo' | 'redo'): P
     busy: isBusy(),
   });
   if (gate === 'ignore' || tab === null || handle === undefined) return;
+  if (!(direction === 'undo' ? tab.journal.canUndo : tab.journal.canRedo)) return;
   if (gate === 'refuse') {
     refuseBusy(t);
     return;

@@ -113,6 +113,21 @@ describe('OperationForm settings step', () => {
     expect((field() as HTMLInputElement).value).toBe('preset');
   });
 
+  it('opens a selection scope on the current page when nothing is selected, and on the selection otherwise', async () => {
+    const probe = job({
+      fields: [{ kind: 'pageScope', id: 'scope', labelKey: 'op.scope', default: 'selection' }],
+    });
+    show(probe.spec, { currentPage: 1, selectedPages: [] });
+    expect(screen.getByRole('radio', { name: 'Current page (2)' }).getAttribute('aria-checked')).toBe('true');
+    await click('Apply to document');
+    expect(probe.runs[0]?.params.scope).toBe('current');
+    cleanup();
+    show(probe.spec, { currentPage: 1, selectedPages: [0, 2] });
+    expect(screen.getByRole('radio', { name: 'Selected pages (2)' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+  });
+
   it('runs with the values the user typed and the frozen context', async () => {
     const probe = job();
     show(probe.spec);

@@ -4,10 +4,10 @@
  * reports, and be filtered by the interface mode the way the palette expects.
  */
 
-import type { Translator } from 'pdf-shared';
+import { createTranslator, loadLocale, type Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import type { CanvasToolId } from 'pdf-ui/tools';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   buildCommands,
   type CommandHost,
@@ -231,6 +231,52 @@ describe('buildCommands', () => {
     }
   });
 
+  describe('in each language', () => {
+    beforeAll(async () => {
+      await loadLocale('tr');
+      await loadLocale('en');
+    });
+
+    it.each(['tr', 'en'] as const)('gives no two commands of a menu the same %s label', (locale) => {
+      const translate = createTranslator(locale);
+      const commands = buildCommands(recordingHost({ t: translate }).host);
+      const seen = new Map<string, string>();
+      for (const command of commands) {
+        const key = `${command.group}/${translate(command.labelKey)}`;
+        expect(seen.get(key), `${command.id} repeats the label of ${seen.get(key)}`).toBeUndefined();
+        seen.set(key, command.id);
+      }
+    });
+
+    it.each(['tr', 'en'] as const)('never prints a command shortcut inside its %s label', (locale) => {
+      const translate = createTranslator(locale);
+      const commands = buildCommands(recordingHost({ t: translate }).host);
+      const withShortcut = commands.filter((command) => command.shortcut !== undefined);
+      // The Help menu's palette entry is the one that used to read "Komut ara (Ctrl+K) Ctrl+K".
+      expect(withShortcut.map((command) => command.id)).toContain('help.palette');
+      for (const command of withShortcut) {
+        const label = translate(command.labelKey);
+        expect(label, command.id).not.toMatch(/Ctrl|⌘|Alt\+|Shift\+/);
+        expect(label, command.id).not.toContain(command.shortcut as string);
+      }
+      expect(translate(byId(commands, 'help.palette').labelKey)).toBe(
+        locale === 'tr' ? 'Komut ara' : 'Search commands',
+      );
+    });
+
+    it('names the three zoom entries by what each one does', () => {
+      const labels = (locale: 'tr' | 'en') => {
+        const translate = createTranslator(locale);
+        const commands = buildCommands(recordingHost().host);
+        return ['view.zoom-in', 'view.zoom-out', 'view.zoom-reset'].map((id) =>
+          translate(byId(commands, id).labelKey),
+        );
+      };
+      expect(labels('tr')).toEqual(['Yakınlaştır', 'Uzaklaştır', 'Gerçek boyut (%100)']);
+      expect(labels('en')).toEqual(['Zoom in', 'Zoom out', 'Actual size (100%)']);
+    });
+  });
+
   it('opens the source repository in a new tab without handing it the opener', () => {
     const opened: unknown[][] = [];
     vi.stubGlobal('window', { open: (...args: unknown[]) => opened.push(args) });
@@ -311,8 +357,8 @@ describe('buildCommands', () => {
       'edit.redo',
       'file.save',
       'file.export',
-      'page.rotate-left',
       'edit.delete-mark',
+      'edit.clear-selection',
     ]) {
       expect(byId(idle, id).disabled, id).toBe(true);
     }
@@ -322,11 +368,34 @@ describe('buildCommands', () => {
       'edit.redo',
       'file.save',
       'file.export',
-      'page.rotate-left',
       'edit.delete-mark',
+      'edit.clear-selection',
     ]) {
       expect(byId(ready, id).disabled, id).toBeFalsy();
     }
+  });
+
+  it('keeps the page commands available with no page selected, so they act on the page on screen', () => {
+    const ids = [
+      'page.rotate-left',
+      'page.rotate-right',
+      'page.duplicate',
+      'page.delete',
+      'page.extract',
+      'page.replace',
+    ];
+    const unselected = buildCommands(recordingHost({ selectedPages: [] }).host);
+    for (const id of ids) {
+      expect(byId(unselected, id).disabled, id).toBeFalsy();
+    }
+    // Editing not being allowed still turns them off.
+    const viewing = buildCommands(recordingHost({ selectedPages: [], canEdit: false }).host);
+    for (const id of ids) {
+      expect(byId(viewing, id).disabled, id).toBe(true);
+    }
+    const { host, calls } = recordingHost({ selectedPages: [] });
+    byId(buildCommands(host), 'page.rotate-left').run();
+    expect(calls).toEqual([['pageAction', { kind: 'rotate', direction: 'left' }]]);
   });
 
   it('checks the measure, theme and tool entries from the host state', () => {

@@ -24,6 +24,7 @@ export const homePart = {
     'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’e dönüştürülür. Dosya seçmek için tıklayın.',
 
   'home.tools.search': 'Araç ara…',
+  'home.tools.loading': 'Araçlar yükleniyor…',
   'home.tools.activeDocument': 'Araçlar açık belgeye uygulanır: {name}',
   'home.tools.noDocument': 'Bir araç seçin; belge gerekiyorsa önce dosyanızı soracağız.',
   'home.tools.empty': 'Aramanızla eşleşen araç yok.',
@@ -37,7 +38,7 @@ export const homePart = {
   'home.tool.textEdit': 'Metni yerinde yeniden yazın.',
   'home.tool.highlight': 'Metni vurgulayın, altını çizin veya üstünü çizin.',
   'home.tool.ink': 'Serbest el ile çizin.',
-  'home.tool.shapes': 'Dikdörtgen, elips, çizgi ve ok ekleyin.',
+  'home.tool.shapes': 'Dikdörtgen, elips ve çizgi ekleyin.',
   'home.tool.note': 'Sayfaya yapışkan not bırakın.',
   'home.tool.link': 'Sayfaya bağlantı ekleyin.',
   'home.tool.imageEdit': 'Belgedeki bir görseli değiştirin.',

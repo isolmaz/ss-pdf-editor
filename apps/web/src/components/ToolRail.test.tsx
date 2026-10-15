@@ -75,6 +75,22 @@ describe('ToolRail', () => {
     expect(coreStore.get()).toMatchObject({ canvasTool: 'note', rightDock: true, rightTab: 'comments' });
   });
 
+  it('leaves measurement and redaction off the rail in the simple mode, and keeps everything else', () => {
+    const names = () => screen.getAllByRole('button').map((item) => item.getAttribute('aria-label'));
+    act(() => coreStore.set({ mode: 'advanced' }));
+    const { unmount } = render(<ToolRail t={t} canEdit />);
+    const everything = names();
+    expect(everything).toContain(t('toolbar.measure'));
+    expect(everything).toContain(t('toolbar.redact'));
+    unmount();
+
+    act(() => coreStore.set({ mode: 'simple' }));
+    render(<ToolRail t={t} canEdit />);
+    expect(names()).toEqual(
+      everything.filter((name) => name !== t('toolbar.measure') && name !== t('toolbar.redact')),
+    );
+  });
+
   it('disables the tools that write to the document while it cannot be edited', () => {
     render(<ToolRail t={t} canEdit={false} />);
     expect(button('toolbar.text')).toHaveProperty('disabled', true);

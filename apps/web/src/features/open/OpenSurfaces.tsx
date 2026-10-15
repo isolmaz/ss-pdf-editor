@@ -71,8 +71,8 @@ export function HomeHeader({ t, title, activeDocumentName, onSettings, onPalette
           variant="ghost"
           icon={Command}
           onClick={onPalette}
-          title={t('shell.commandPalette')}
-          aria-label={t('shell.commandPalette')}
+          title={t('shell.commandPaletteHint')}
+          aria-label={t('shell.commandPaletteHint')}
         >
           <span className="hidden md:inline">{t('shell.commandPaletteShort')}</span>
         </Button>

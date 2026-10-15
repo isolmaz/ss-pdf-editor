@@ -117,6 +117,8 @@ export const tr = {
   'panel.outline.empty': 'Bu belgede içindekiler yok.',
   'panel.goToPage': '{page}. sayfaya git',
   'draft.restored': '{count} taslak geri yüklendi; belge ve değişiklik günlüğü hazır.',
+  'draft.restoredNoHistory':
+    '{count} taslak kaydedilmemiş değişiklikleriyle geri yüklendi; {withoutHistory} tanesinde önceki adımlar geri alınamaz.',
   'draft.corrupt': '{count} taslak dosyası bozulmuş ve okunamadı.',
   'draft.openElsewhere':
     '“{name}” düzenleyicinin başka bir penceresinde açık. Üzerinde çalışmaya devam etmek için o pencereye geçin.',
@@ -166,7 +168,8 @@ export const tr = {
   'shell.openTabs': 'Açık belgeler',
   'shell.tasks': 'Görevler',
   'shell.closeTab': 'Sekmeyi kapat',
-  'shell.commandPalette': 'Komut ara (Ctrl+K)',
+  'shell.commandPalette': 'Komut ara',
+  'shell.commandPaletteHint': 'Komut ara (Ctrl+K)',
   'shell.commandPaletteShort': 'Komut ara',
   'shell.backToDocument': 'Belgeye Dön',
   'shell.homeTagline': '— Belgeniz cihazınızdan ayrılmaz, %100 yerel ve güvenli.',
@@ -194,7 +197,9 @@ export const tr = {
   'viewer.find.close': 'Aramayı kapat',
   'viewer.page': 'Sayfa',
   'viewer.of': '/',
-  'viewer.zoom': 'Yakınlaştırma',
+  'viewer.zoomIn': 'Yakınlaştır',
+  'viewer.zoomOut': 'Uzaklaştır',
+  'viewer.zoomReset': 'Gerçek boyut (%100)',
   'viewer.fitWidth': 'Genişliğe sığdır',
   'viewer.fitPage': 'Sayfaya sığdır',
   'viewer.privacyNote': 'Belge cihazınızdan ayrılmaz.',
@@ -355,7 +360,7 @@ export const tr = {
 
   // Export Dialog
   'export.title': 'İndir / Dışa Aktar',
-  'export.thisPdf': 'Bu PDF ({size})',
+  'export.thisPdf': 'Bu PDF ({size:bytes})',
   'export.compressed': 'Sıkıştırılmış PDF',
   'export.fileFormats': 'DOSYA FORMATLARI',
   'export.imageFormat': 'Görsel Formatı',

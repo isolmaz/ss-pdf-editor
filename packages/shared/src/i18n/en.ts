@@ -101,6 +101,8 @@ export const en: Record<MessageKey, string> = {
   'panel.outline.empty': 'This document has no outline.',
   'panel.goToPage': 'Go to page {page}',
   'draft.restored': '{count} draft(s) restored; the document and its change journal are ready.',
+  'draft.restoredNoHistory':
+    '{count} draft(s) restored with their unsaved changes; earlier steps cannot be undone for {withoutHistory} of them.',
   'draft.corrupt': '{count} draft file(s) corrupted and could not be read.',
   'draft.openElsewhere':
     '“{name}” is open in another window of the editor. Switch to that window to keep working on it.',
@@ -151,7 +153,8 @@ export const en: Record<MessageKey, string> = {
   'shell.tasks': 'Tasks',
   'shell.openTabs': 'Open documents',
   'shell.closeTab': 'Close tab',
-  'shell.commandPalette': 'Search commands (Ctrl+K)',
+  'shell.commandPalette': 'Search commands',
+  'shell.commandPaletteHint': 'Search commands (Ctrl+K)',
   'shell.commandPaletteShort': 'Search',
   'shell.backToDocument': 'Back to document',
   'shell.homeTagline': '— Your document never leaves your device, 100% local and secure.',
@@ -179,7 +182,9 @@ export const en: Record<MessageKey, string> = {
   'viewer.find.close': 'Close find',
   'viewer.page': 'Page',
   'viewer.of': 'of',
-  'viewer.zoom': 'Zoom',
+  'viewer.zoomIn': 'Zoom in',
+  'viewer.zoomOut': 'Zoom out',
+  'viewer.zoomReset': 'Actual size (100%)',
   'viewer.fitWidth': 'Fit width',
   'viewer.fitPage': 'Fit page',
   'viewer.privacyNote': 'The document never leaves your device.',
@@ -350,7 +355,7 @@ export const en: Record<MessageKey, string> = {
 
   // Export Dialog
   'export.title': 'Download / Export',
-  'export.thisPdf': 'This PDF ({size})',
+  'export.thisPdf': 'This PDF ({size:bytes})',
   'export.compressed': 'Compressed PDF',
   'export.fileFormats': 'FILE FORMATS',
   'export.imageFormat': 'Image Format',

@@ -121,6 +121,9 @@ test('an entry with no stored file handle reopens from the browser copy, or asks
     .toBe(true);
   await page.reload();
   await expect(notice(page, 'draft(s) restored')).toBeVisible({ timeout: 30_000 });
+  // The restored document is in front; the recent list is one click away.
+  await expect(page.locator(CANVAS).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Open drafted.pdf' })).toBeVisible();
   await expect(page.getByRole('table').getByText('Open', { exact: true })).toBeVisible();
 

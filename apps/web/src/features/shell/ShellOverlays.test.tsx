@@ -23,7 +23,7 @@ vi.mock('pdf-ui/palette', async () => {
     CommandPalette: (props: {
       commands: readonly Command[];
       open: boolean;
-      hiddenByMode: number;
+      hiddenCommands: readonly Command[];
       onClose: () => void;
       onRun: (command: Command) => void;
       onUseAdvanced: () => void;
@@ -33,7 +33,7 @@ vi.mock('pdf-ui/palette', async () => {
         {
           'aria-label': 'palette',
           'data-open': String(props.open),
-          'data-hidden': String(props.hiddenByMode),
+          'data-hidden': props.hiddenCommands.map((command) => command.id).join(','),
         },
         createElement('button', { type: 'button', onClick: props.onClose }, 'close palette'),
         createElement('button', { type: 'button', onClick: props.onUseAdvanced }, 'use advanced'),
@@ -119,21 +119,21 @@ describe('PaletteHost', () => {
     );
     act(() => openPalette());
     const palette = await screen.findByLabelText('palette');
-    expect(palette.getAttribute('data-hidden')).toBe('0');
+    expect(palette.getAttribute('data-hidden')).toBe('');
     expect(screen.getByRole('button', { name: 'x.advanced-only' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'close palette' }));
     expect(shellStore.get().paletteOpen).toBe(false);
     expect(screen.queryByLabelText('palette')).toBeNull();
   });
 
-  it('offers only the simple mode commands and counts the hidden ones', async () => {
+  it('offers only the simple mode commands and hands the palette the hidden ones', async () => {
     coreStore.set({ mode: 'simple' });
     render(
       <PaletteHost t={t} commands={[command('file.new'), command('x.advanced-only')]} changeMode={vi.fn()} />,
     );
     act(() => openPalette());
     const palette = await screen.findByLabelText('palette');
-    expect(palette.getAttribute('data-hidden')).toBe('1');
+    expect(palette.getAttribute('data-hidden')).toBe('x.advanced-only');
     expect(screen.getByRole('button', { name: 'file.new' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'x.advanced-only' })).toBeNull();
   });

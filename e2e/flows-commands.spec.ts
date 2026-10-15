@@ -262,7 +262,9 @@ test('compare, accessibility and redaction audit: each panel reports on the open
 
   await runCommand(page, 'Redaction audit');
   await page.getByRole('button', { name: 'Rerun audit' }).click();
-  await expect(page.getByText(/File contains \d+ object\(s\) across 1 revision/)).toBeVisible({
+  await expect(
+    page.getByText(/File contains \d+ object\(s\) across 1 revision\(s\); size is \d+(\.\d)? (B|KB|MB)\./),
+  ).toBeVisible({
     timeout: 60_000,
   });
 });

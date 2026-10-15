@@ -126,13 +126,64 @@ describe('CommandPalette filtering', () => {
     expect(labels()).toEqual(['Attachments']);
   });
 
-  it('matches a group name by prefix or inside it, ranking below label matches', async () => {
+  it('lists a group for its whole name or a prefix of at least three letters, not for letters inside it', async () => {
     show();
     await userEvent.type(input(), 'view');
     expect(labels()).toEqual(['Outline', 'Layers']);
     await userEvent.clear(input());
-    await userEvent.type(input(), 'ool');
+    await userEvent.type(input(), 'too');
     expect(labels()).toEqual(['Attachments', 'Signatures']);
+    await userEvent.clear(input());
+    // "ool" is inside "Tools" and "to" is short of three letters: neither lists the group.
+    await userEvent.type(input(), 'ool');
+    expect(labels()).toEqual([]);
+    await userEvent.clear(input());
+    await userEvent.type(input(), 'to');
+    expect(labels()).toEqual([]);
+  });
+
+  it('lists a group named by two letters only when they are its whole name', async () => {
+    const words: Partial<Record<MessageKey, string>> = {
+      'shell.menu.tools': 'Go',
+      'shell.menu.file': 'Gone',
+    };
+    const lexicon = Object.assign((key: MessageKey) => words[key] ?? key, { locale: 'en' as const });
+    show({ t: lexicon, commands: [open, attach] });
+    await userEvent.type(screen.getByRole('combobox'), 'go');
+    expect(labels()).toEqual(['panel.attachments']);
+  });
+
+  it('finds Turkish letters from a keyboard without them, on a label, a keyword and a group, in either case', async () => {
+    const words: Partial<Record<MessageKey, string>> = {
+      'panel.pages': 'Sola döndür',
+      'panel.outline': 'Aç',
+      'panel.attachments': 'Işık ayarı',
+      'panel.layers': 'Çağrı',
+      'panel.signatures': 'Şu ğ ü',
+      'shell.save': 'Kaydet',
+      'shell.menu.file': 'Dosya',
+      'shell.menu.view': 'Görünüm',
+      'shell.menu.tools': 'Araçlar',
+    };
+    const lexicon = Object.assign((key: MessageKey) => words[key] ?? key, { locale: 'tr' as const });
+    const keyworded = command('kw', 'shell.save', { keywords: ['Dönüştür'] });
+    show({ t: lexicon, commands: [open, outline, attach, layers, signatures, keyworded] });
+    const typed = async (query: string) => {
+      await userEvent.clear(screen.getByRole('combobox'));
+      await userEvent.type(screen.getByRole('combobox'), query);
+      return labels();
+    };
+    expect(await typed('dondur')).toEqual(['Sola döndür']);
+    expect(await typed('DÖNDÜR')).toEqual(['Sola döndür']);
+    expect(await typed('donustur')).toEqual(['Kaydet']);
+    expect(await typed('isik')).toEqual(['Işık ayarı']);
+    expect(await typed('ISIK')).toEqual(['Işık ayarı']);
+    expect(await typed('cagri')).toEqual(['Çağrı']);
+    expect(await typed('su g u')).toEqual(['Şu ğ ü']);
+    expect(await typed('ac')).toContain('Aç');
+    // "Görünüm" is the group of Aç and Çağrı; "Araçlar" does not list its commands for "ac".
+    expect(await typed('gorunum')).toEqual(['Aç', 'Çağrı']);
+    expect(await typed('ac')).not.toContain('Işık ayarı');
   });
 
   it('folds the Turkish dotted İ so a Turkish keyboard finds a keyword that begins with it', async () => {
@@ -159,28 +210,51 @@ describe('CommandPalette filtering', () => {
     expect(screen.queryByRole('button', { name: 'Advanced mode' })).toBeNull();
   });
 
-  it('also says nothing is hidden when the simple mode hides zero commands', async () => {
-    show({ hiddenByMode: 0 });
+  it('says nothing is hidden when the simple mode hides no command', async () => {
+    show({ hiddenCommands: [] });
     await userEvent.type(input(), 'zzzz');
     expect(screen.queryByRole('button', { name: 'Advanced mode' })).toBeNull();
   });
 
-  it('tells the user how many commands the simple mode hides and leaves it from the empty state', async () => {
-    const onUseAdvanced = vi.fn();
-    show({ hiddenByMode: 3, onUseAdvanced });
-    await userEvent.type(input(), 'zzzz');
+  describe('with commands the simple mode hides', () => {
+    const redact = command('redact', 'panel.layers', { group: 'tools' });
+    const measure = command('measure', 'panel.layers', { group: 'tools', keywords: ['ruler'] });
+    const hiddenCommands = [redact, measure];
 
-    expect(screen.getByText('3 more command(s) are hidden by the simple mode.')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Advanced mode' }));
-    expect(onUseAdvanced).toHaveBeenCalledTimes(1);
-    expect(document.activeElement).toBe(input());
-  });
+    it('counts only the hidden commands the query matches and leaves for the advanced mode from the empty state', async () => {
+      const onUseAdvanced = vi.fn();
+      show({ hiddenCommands, onUseAdvanced });
+      await userEvent.type(input(), 'ruler');
 
-  it('survives the Advanced button being pressed with no handler given', async () => {
-    show({ hiddenByMode: 1 });
-    await userEvent.type(input(), 'zzzz');
-    await userEvent.click(screen.getByRole('button', { name: 'Advanced mode' }));
-    expect(document.activeElement).toBe(input());
+      expect(screen.getByText('No matching commands.')).toBeTruthy();
+      expect(screen.getByText('1 more matching command(s) are hidden by the simple mode.')).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Advanced mode' }));
+      expect(onUseAdvanced).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(input());
+    });
+
+    it('offers the same way out beside visible results, because a few of them can bury the hidden tool', async () => {
+      show({ hiddenCommands });
+      await userEvent.type(input(), 'layer');
+
+      expect(labels()).toEqual(['Layers']);
+      expect(screen.getByText('2 more matching command(s) are hidden by the simple mode.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Advanced mode' })).toBeTruthy();
+    });
+
+    it('says nothing while the query is empty or matches none of them', async () => {
+      show({ hiddenCommands });
+      expect(screen.queryByRole('button', { name: 'Advanced mode' })).toBeNull();
+      await userEvent.type(input(), 'zzzz');
+      expect(screen.queryByRole('button', { name: 'Advanced mode' })).toBeNull();
+    });
+
+    it('survives the Advanced button being pressed with no handler given', async () => {
+      show({ hiddenCommands });
+      await userEvent.type(input(), 'layer');
+      await userEvent.click(screen.getByRole('button', { name: 'Advanced mode' }));
+      expect(document.activeElement).toBe(input());
+    });
   });
 });
 

@@ -25,7 +25,7 @@ import {
   Trash,
 } from '@phosphor-icons/react';
 import { CONVERT_ACCEPT } from 'pdf-core/ops/convert-formats';
-import type { Translator } from 'pdf-shared';
+import { formatBytes, type Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { lazy, type ReactNode, Suspense, useId, useMemo, useState } from 'react';
 import { readInventory } from '../features/persistence/draft-vault';
@@ -38,7 +38,13 @@ import {
 } from '../recent';
 import { deleteRecentHandle, pruneRecentHandles } from '../recent-handles';
 
-const HomeToolGrid = lazy(() => import('./HomeToolGrid'));
+/** The grid is a chunk of its own; the tab asks for it on hover and focus, before the click needs it. */
+let toolGrid: Promise<typeof import('./HomeToolGrid')> | undefined;
+const loadToolGrid = () => {
+  toolGrid ??= import('./HomeToolGrid');
+  return toolGrid;
+};
+const HomeToolGrid = lazy(loadToolGrid);
 
 /**
  * After the list is cleared, forget the file handles nothing else needs. A tab open now and a
@@ -77,14 +83,6 @@ export interface HomeScreenProps {
 
 type SortKey = 'date' | 'name' | 'size';
 
-function formatBytes(bytes: number, locale: string): string {
-  const format = (value: number, digits: number) =>
-    value.toLocaleString(locale, { maximumFractionDigits: digits, minimumFractionDigits: digits });
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${format(bytes / 1024, 1)} KB`;
-  return `${format(bytes / (1024 * 1024), 1)} MB`;
-}
-
 /** "3 minutes ago", "yesterday", or a date — in the interface language, never hardcoded. */
 function formatOpened(timestamp: number, locale: string, now = Date.now()): string {
   const seconds = Math.round((timestamp - now) / 1000);
@@ -105,11 +103,14 @@ function TabButton({
   selected,
   controls,
   onSelect,
+  onIntent,
   children,
 }: {
   readonly selected: boolean;
   readonly controls: string;
   readonly onSelect: () => void;
+  /** The pointer or the keyboard reached the tab: a chance to prepare what it opens. */
+  readonly onIntent?: () => void;
   readonly children: ReactNode;
 }) {
   return (
@@ -119,6 +120,8 @@ function TabButton({
       aria-selected={selected}
       aria-controls={controls}
       onClick={onSelect}
+      onPointerEnter={onIntent}
+      onFocus={onIntent}
       className={`border-b-2 pb-2 text-sm font-semibold transition-colors ${
         selected
           ? 'border-pdf-accent text-kumo-strong'
@@ -230,6 +233,7 @@ export function HomeScreen({
             selected={topTab === 'tools'}
             controls={toolsPanelId}
             onSelect={() => setTopTab('tools')}
+            onIntent={() => void loadToolGrid()}
           >
             {t('home.tab.tools')}
           </TabButton>
@@ -246,7 +250,13 @@ export function HomeScreen({
 
       {topTab === 'tools' ? (
         <div id={toolsPanelId} role="tabpanel">
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              <p role="status" className="mt-6 text-xs text-kumo-subtle">
+                {t('home.tools.loading')}
+              </p>
+            }
+          >
             <HomeToolGrid
               t={t}
               commands={commands}

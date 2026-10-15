@@ -1,6 +1,5 @@
 import { Dialog } from '@cloudflare/kumo/components/dialog';
 import { X } from '@phosphor-icons/react';
-import { formatBytes } from 'pdf-core/ops/types';
 import type { Translator } from 'pdf-shared';
 import { useId, useState } from 'react';
 import { Button } from '../components/Button';
@@ -85,7 +84,7 @@ export function ExportDialog({ open, t, fileName, fileSize, onClose, onExport }:
                 className="size-4 text-pdf-accent accent-pdf-accent"
               />
               <span className="text-xs font-semibold text-kumo-strong">
-                {t('export.thisPdf', { size: formatBytes(fileSize) })}
+                {t('export.thisPdf', { size: fileSize })}
               </span>
             </div>
             <span className="text-[11px] font-medium text-kumo-subtle truncate max-w-[140px]">
