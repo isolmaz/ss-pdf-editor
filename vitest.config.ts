@@ -1,25 +1,29 @@
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 /**
- * Phosphor's icons as one file. The package's ES entry imports about 9,000 modules (an SSR, a
+ * Phosphor's icons as one file. The package's ES entry imports about 4,500 modules (an SSR, a
  * client and a definition file per icon), and every isolated test file that draws an icon, or a
  * Kumo control that does, had Node load them again: more than half of the suite's time. Its CommonJS
  * build is the same icons in a single file, but named `.js` in a package Node reads as ES modules,
  * so it is copied under a `.cjs` name, next to `pdf-ui`'s own `react`, and the tests import that.
- * Kumo is inlined so its own icon imports take the same alias. The build is untouched.
+ * Kumo is inlined so its own icon imports take the same alias. The build is untouched. The copy is
+ * written only when it is missing or stale: a second run in the same checkout must not rewrite the
+ * file under a run that is reading it.
  */
 const phosphorBundle = fileURLToPath(
   new URL('./packages/pdf-ui/node_modules/.vitest/phosphor.cjs', import.meta.url),
 );
-mkdirSync(dirname(phosphorBundle), { recursive: true });
-copyFileSync(
-  createRequire(new URL('./packages/pdf-ui/package.json', import.meta.url)).resolve('@phosphor-icons/react'),
-  phosphorBundle,
+const phosphorBuild = createRequire(new URL('./packages/pdf-ui/package.json', import.meta.url)).resolve(
+  '@phosphor-icons/react',
 );
+if (!existsSync(phosphorBundle) || !readFileSync(phosphorBundle).equals(readFileSync(phosphorBuild))) {
+  mkdirSync(dirname(phosphorBundle), { recursive: true });
+  copyFileSync(phosphorBuild, phosphorBundle);
+}
 
 /**
  * The unit suite's boundary.
