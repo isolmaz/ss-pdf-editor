@@ -25,6 +25,8 @@ export const errorsPart = {
     'Yazımı kontrol edin; büyük/küçük harf ve tam sözcük seçeneklerini kapatıp yeniden deneyin. Taranmış sayfalarda önce OCR gerekir.',
   'error.no-xfa.message': 'Bu belgede XFA formu yok.',
   'error.no-xfa.hint': 'Bu işlem yalnızca XFA içeren PDF formlarında çalışır.',
+  'error.no-bookmarks.message': 'Bu belgede bölünecek yer imi yok.',
+  'error.no-bookmarks.hint': 'Belgeyi bölmek için başka bir yöntem seçin.',
   'error.xfa-dynamic.message': 'Bu dinamik bir XFA formu: içeriği yalnızca XFA şablonunda duruyor.',
   'error.xfa-dynamic.hint':
     'Formu “XFA formunu doldur” ile açın ya da “XFA formunu normal PDF’ye dönüştür” işlemini kullanın.',
