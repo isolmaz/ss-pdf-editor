@@ -1403,6 +1403,14 @@ async function mountUntagged(
   };
   const view = render(<TagsView {...props} />);
   await screen.findByText('This file has no tags.');
+  // The boxes are published by an effect of the editor, which runs after the commit that put the
+  // text on screen: a test that read the store at once raced it (measured: about one mount in a
+  // hundred under load). The published plan is the signal that the editor is at rest.
+  await waitFor(() =>
+    expect(readingOrderStore.snapshot().pages.map((entry) => entry.pageIndex)).toEqual(
+      pages.map((entry) => entry.pageIndex),
+    ),
+  );
   return { ...view, props, onWritten, onNotice, user: userEvent.setup() };
 }
 
