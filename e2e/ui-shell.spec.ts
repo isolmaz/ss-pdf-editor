@@ -227,3 +227,66 @@ test('settings: theme and language choices persist and change the page', async (
   await page.getByRole('menuitemcheckbox', { name: 'Dark Theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
 });
+
+test('menus: the View zoom entries are told apart, Help prints the palette shortcut once, and Page works with no selection', async ({
+  page,
+}) => {
+  await openPdf(page);
+
+  await trigger(page, 'View').click();
+  const view = page.getByRole('menu');
+  for (const name of ['Zoom in', 'Zoom out', 'Actual size (100%)']) {
+    await expect(view.getByRole('menuitem').filter({ hasText: name })).toHaveCount(1);
+  }
+  await page.keyboard.press('Escape');
+
+  await trigger(page, 'Help').click();
+  const search = page.getByRole('menu').getByRole('menuitem', { name: /^Search commands/ });
+  await expect(search).toHaveCount(1);
+  await expect(search).not.toContainText('(Ctrl+K)');
+  await expect(search).toContainText('Ctrl+K');
+  await page.keyboard.press('Escape');
+
+  // No page is selected: the Page menu acts on the page on screen.
+  await trigger(page, 'Page').click();
+  await page.getByRole('menuitem', { name: /^Rotate left/ }).click();
+  await expect(page.locator('[role="status"]').filter({ hasText: '1 page(s) rotated' })).toBeVisible();
+});
+
+test('simple mode: File offers Open and Close, the palette names the hidden OCR beside other hits, and Advanced mode brings the advanced rails back', async ({
+  page,
+}) => {
+  await openPdf(page, 'doc.pdf', undefined, { advanced: false });
+
+  await trigger(page, 'File').click();
+  const items = page.getByRole('menu').getByRole('menuitem');
+  await expect(items.filter({ hasText: /^Open/ })).toHaveCount(1);
+  await expect(items.last()).toContainText('Close tab');
+  await page.keyboard.press('Escape');
+
+  // "ocr" matches a few visible commands by letters in order; the hidden OCR tool is still named.
+  await page.keyboard.press('Control+k');
+  await page.getByRole('combobox').fill('ocr');
+  const palette = page.getByRole('dialog').filter({ has: page.getByRole('combobox') });
+  await expect(palette.getByText(/matching command\(s\) are hidden by the simple mode\./)).toBeVisible();
+  await palette.getByRole('button', { name: 'Advanced mode' }).click();
+  await expect(page.getByRole('option', { name: /OCR/ }).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // The mode switch brings back the rail button and the dock tab the simple mode hides.
+  await expect(page.getByRole('button', { name: 'Measure', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Redaction', exact: true })).toBeVisible();
+});
+
+test('simple mode: no measure or redact button on the rail, and no redaction, comparison, accessibility or PDF/A tab', async ({
+  page,
+}) => {
+  await openPdf(page, 'doc.pdf', undefined, { advanced: false });
+  await expect(page.getByRole('button', { name: 'Add Text', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Measure', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Redact (permanent removal)' })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'History' })).toBeVisible();
+  for (const name of ['Redaction', 'Redaction audit', 'Comparison', 'Accessibility', 'PDF/A']) {
+    await expect(page.getByRole('tab', { name, exact: true })).toHaveCount(0);
+  }
+});

@@ -14,6 +14,7 @@ import {
   stageFile,
 } from './app-helpers';
 import { holdSavePicker, offerHugeFile } from './app15-helpers';
+import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry } from './tool-fixture';
 
@@ -127,6 +128,7 @@ test('Save is held back while a redaction mark is unapplied, and the file on dis
   const original = labelledPdf('Marked', 1);
   await stageFile(page, 'open', 'marked.pdf', original);
   await openStaged(page);
+  await useAdvancedMode(page);
   await rotateCurrentPage(page);
 
   await page.getByRole('button', { name: 'Redact (permanent removal)' }).click();

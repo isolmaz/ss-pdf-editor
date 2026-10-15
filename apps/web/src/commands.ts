@@ -257,6 +257,37 @@ export const SIMPLE_MODE_RAIL_GROUPS: readonly string[] = ['pages', 'export', 's
 export const SIMPLE_MODE_DOCK_TABS: readonly DocumentPanelTab[] = ['pages', 'outline', 'search'];
 
 /**
+ * The right-dock tabs the simple mode keeps.
+ *
+ * Redaction and its audit, comparison, the accessibility check and PDF/A are the tools
+ * `SIMPLE_MODE_COMMANDS` leaves out; their tabs would be the way back in to exactly those.
+ */
+export const SIMPLE_MODE_RIGHT_TABS: readonly string[] = [
+  'tools',
+  'history',
+  'comments',
+  'forms',
+  'properties',
+];
+
+/**
+ * The tool-rail buttons the simple mode keeps (`markup` is the shared text-markup button).
+ * Measurement and redaction are advanced, so their buttons leave the rail; the shortcuts and
+ * the menu items that arm them are unaffected.
+ */
+export const SIMPLE_MODE_RAIL_TOOLS: readonly string[] = [
+  'select',
+  'hand',
+  'text',
+  'freetext',
+  'markup',
+  'ink',
+  'shapes',
+  'note',
+  'link',
+];
+
+/**
  * Commands that start a document instead of acting on the open one: they run with no
  * document, so the home screen runs them straight away rather than asking for a file.
  */

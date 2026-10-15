@@ -2494,6 +2494,15 @@ them, whether or not other commands matched, a line under the list says how many
 the "Advanced mode" button, which hands focus back to the input since the line disappears
 with it. An empty query says nothing.
 
+The simple mode filters every surface that lists capabilities, from tables exported by
+`commands.ts`: the menus and the palette (`SIMPLE_MODE_COMMANDS`), the left dock's tabs
+(`SIMPLE_MODE_DOCK_TABS`), the tools panel's groups (`SIMPLE_MODE_RAIL_GROUPS`), the canvas
+tool rail (`SIMPLE_MODE_RAIL_TOOLS`: no measure or redact button) and the right dock's tabs
+(`SIMPLE_MODE_RIGHT_TABS`: no redaction, audit, comparison, accessibility or PDF/A tab). It
+only hides entry points: the shortcuts still arm the tools, and a right-dock tab the mode
+hides but the store still names (the mode changed while it was open) shows the tools tab
+instead, without writing the store, so switching back finds the tab as it was.
+
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that
