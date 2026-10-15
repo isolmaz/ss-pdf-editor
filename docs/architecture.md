@@ -1389,8 +1389,21 @@ warning because it is additive; the dialog therefore calls it "Read again (adds 
 not "Overwrite", since the existing text stays. A worker that fails to start (a missing core, language pack or worker script) is mapped to
 `ocr-language-missing` or `asset-missing` rather than surfacing as a raw error, and a failed
 start is not cached. Cancellation is a real `worker.terminate()`, and the
-`finally` awaits worker termination, so "memory is back" is true when the function
-resolves.
+`finally` awaits the termination of the workers the run claimed, so "memory is back" is true
+when the function resolves. A pool is shared by every operation reading with the same language
+set and quality, so an operation holds it through a claim (`claimOcrWorkers`) and lets go of
+its own share only: the pool closes when its last holder does, and an OCR run finishing never
+terminates a worker a Word export is still reading with. A worker whose read fails, or does not
+answer within `OCR_READ_TIMEOUT_MS` (a dead thread answers nothing), is terminated and left out
+of its pool instead of being given back, so the next page starts a fresh worker. Each pdf.js
+page is released with `page.cleanup()` as soon as it has been read (memory does not grow with
+the page count), and a page index that is not a whole number fails as `range-invalid`. Before
+the first page the run probes every language pack with a GET to its pinned path, reading only
+the status and cancelling the body: the service worker answers GETs only, so a pack the device
+holds in the worker's cache is found with the network off. The Word export reads pages side by
+side on up to three workers (`suggestedOcrWorkers`: one fewer than the cores), and on one when
+the browser reports under 4 GiB of memory or does not report it (Firefox, Safari and iOS have no
+`navigator.deviceMemory`).
 
 The same recogniser reads the scanned pages of the exact Word layout (`recognizePage`, quality
 `best`, passed to `exportOffice` as `ocr.recognize`; see "Word exact layout" in 5.1). That path

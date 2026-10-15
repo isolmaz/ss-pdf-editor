@@ -10,13 +10,12 @@
  */
 
 import {
-  allowOcrWorkers,
+  claimOcrWorkers,
   OCR_LANGUAGE_CODES_ALL,
   type OcrLanguageCode,
   recognizePage,
   recognizeWord,
   suggestedOcrWorkers,
-  terminateOcrWorkers,
 } from 'pdf-core/engines/tesseract';
 import {
   type CsvDelimiter,
@@ -154,7 +153,14 @@ export const exportOfficeDialog: OperationDialogSpec = {
           }
         : undefined;
     let result: Awaited<ReturnType<typeof exportOffice>>;
-    if (ocr !== undefined) allowOcrWorkers(workers, languages, 'best');
+    // The pools the export reads with: the page reader, and the English-only one of the second look.
+    const claim =
+      ocr === undefined
+        ? undefined
+        : claimOcrWorkers([
+            { languages, quality: 'best', workers },
+            ...(ocr.englishAlone ? [{ languages: ['eng' as const], quality: 'best' as const }] : []),
+          ]);
     try {
       result = await exportOffice(
         context.bytes,
@@ -174,8 +180,8 @@ export const exportOfficeDialog: OperationDialogSpec = {
       );
     } finally {
       // The OCR workers (the page reader and the English-only one of the second look) each hold a wasm heap;
-      // the export is accountable for them, as `ocr.ts` is.
-      if (ocr !== undefined) await terminateOcrWorkers();
+      // the export is accountable for them, as `ocr.ts` is — for its own, not for another operation's.
+      await claim?.release();
     }
     return {
       files: [result.file],

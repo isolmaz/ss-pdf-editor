@@ -24,6 +24,8 @@ const state = vi.hoisted(() => ({
   nextCreate: [] as Array<() => Promise<unknown>>,
   recognize: undefined as undefined | ((call: number) => Promise<unknown>),
   terminateError: undefined as unknown,
+  /** While set, `terminate` has not finished: the worker's heap is not yet released. */
+  terminateGate: undefined as undefined | Promise<void>,
   logger: undefined as undefined | ((message: unknown) => void),
 }));
 
@@ -47,6 +49,7 @@ vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
       },
       terminate: async () => {
         record.terminated += 1;
+        await state.terminateGate;
         if (state.terminateError !== undefined) throw state.terminateError;
       },
     };
@@ -101,6 +104,7 @@ beforeEach(async () => {
   state.nextCreate = [];
   state.recognize = async () => pageOf([]);
   state.terminateError = undefined;
+  state.terminateGate = undefined;
   state.logger = undefined;
 });
 
@@ -427,7 +431,7 @@ describe('a pool of workers', () => {
   };
 
   it('starts as many workers as it is allowed for pages read side by side, and a page beyond them waits for one', async () => {
-    engine.allowOcrWorkers(2, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 2 }]);
     const { releases } = reads(3);
     const pages = [
       engine.recognizePage(input()),
@@ -449,7 +453,7 @@ describe('a pool of workers', () => {
   });
 
   it('keeps a pool for each language set and quality, and allows more than one worker only to the set it was asked for', async () => {
-    engine.allowOcrWorkers(2, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 2 }]);
     const { releases } = reads(1);
     const pages = [
       engine.recognizePage(input({ languages: ['tur'] })),
@@ -470,7 +474,7 @@ describe('a pool of workers', () => {
   });
 
   it('keeps every worker a cancelled waiter would have taken for the waiter behind it', async () => {
-    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 1 }]);
     const { releases } = reads(1);
     const busy = engine.recognizePage(input());
     await vi.waitFor(() => expect(releases).toHaveLength(1));
@@ -489,7 +493,7 @@ describe('a pool of workers', () => {
   });
 
   it('allows no more than three workers to a set', async () => {
-    engine.allowOcrWorkers(50, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 50 }]);
     const { releases } = reads(1);
     const pages = Array.from({ length: 5 }, () => engine.recognizePage(input()));
     await vi.waitFor(() => expect(releases).toHaveLength(3));
@@ -503,7 +507,7 @@ describe('a pool of workers', () => {
   });
 
   it('puts a cancelled read’s worker out of the pool and lets the next page start one in its place', async () => {
-    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 1 }]);
     const { releases } = reads(2);
     const controller = new AbortController();
     const cancelled = engine.recognizePage(input({ signal: controller.signal }));
@@ -519,7 +523,7 @@ describe('a pool of workers', () => {
   });
 
   it('sends a waiter away that is cancelled after it was woken but before it could take the freed place, which a newcomer took', async () => {
-    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 1 }]);
     const { releases } = reads(2);
     const owner = new AbortController();
     const reading = engine.recognizePage(input({ signal: owner.signal }));
@@ -552,7 +556,7 @@ describe('a pool of workers', () => {
   });
 
   it('stops a page waiting for a worker when it is cancelled, without touching the workers', async () => {
-    engine.allowOcrWorkers(1, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 1 }]);
     const { releases } = reads(1);
     const busy = engine.recognizePage(input());
     await vi.waitFor(() => expect(releases).toHaveLength(1));
@@ -605,7 +609,7 @@ describe('a pool of workers', () => {
   });
 
   it('terminates what is running, what is free and what is still starting, and sends the waiting pages away', async () => {
-    engine.allowOcrWorkers(3, ['tur'], 'fast');
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 3 }]);
     const { releases } = reads(1);
     const first = engine.recognizePage(input());
     const second = engine.recognizePage(input());
@@ -636,7 +640,7 @@ describe('a pool of workers', () => {
     expect(state.created).toHaveLength(4);
   });
 
-  it('suggests one worker less than the cores, from one to three, and one on a machine with little memory', () => {
+  it('suggests one worker less than the cores, from one to three, and one on a machine with little memory or one that does not say', () => {
     const suggested = (hardwareConcurrency?: number, deviceMemory?: number) => {
       vi.stubGlobal('navigator', {
         ...(hardwareConcurrency === undefined ? {} : { hardwareConcurrency }),
@@ -644,13 +648,237 @@ describe('a pool of workers', () => {
       });
       return engine.suggestedOcrWorkers();
     };
-    expect([undefined, 1, 2, 3, 4, 8, 64].map((cores) => suggested(cores))).toEqual([1, 1, 1, 2, 3, 3, 3]);
+    expect([undefined, 1, 2, 3, 4, 8, 64].map((cores) => suggested(cores, 8))).toEqual([1, 1, 1, 2, 3, 3, 3]);
     expect([0.5, 2, 3.5].map((memory) => suggested(8, memory))).toEqual([1, 1, 1]);
     expect([4, 8].map((memory) => suggested(8, memory))).toEqual([3, 3]);
+    // Firefox, Safari and iOS browsers do not implement `deviceMemory`: unknown memory is taken for little,
+    // whatever the cores say, instead of for enough for three wasm heaps.
+    expect([2, 4, 8, 64].map((cores) => suggested(cores))).toEqual([1, 1, 1, 1]);
+    vi.stubGlobal('navigator', { hardwareConcurrency: 8, deviceMemory: Number.NaN });
+    expect(engine.suggestedOcrWorkers()).toBe(1);
     vi.unstubAllGlobals();
     vi.stubGlobal('navigator', undefined);
     expect(engine.suggestedOcrWorkers()).toBe(1);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('a worker that failed', () => {
+  it('is terminated and left out of the pool, and the next page is read on a new worker', async () => {
+    let reads = 0;
+    state.recognize = async () => {
+      reads += 1;
+      if (reads === 1) throw new Error('RuntimeError: memory access out of bounds');
+      return pageOf([{ text: 'Sonra', bbox: [20, 40, 120, 80] }]);
+    };
+    await expect(engine.recognizePage(input())).rejects.toMatchObject({ code: 'out-of-memory' });
+    // The crashed worker is gone the moment the failure reaches the caller.
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1]);
+    const next = await engine.recognizePage(input());
+    expect(next.words.map((entry) => entry.text)).toEqual(['Sonra']);
+    // The second page did not run on the crashed worker: a second one was started for it.
+    expect(state.created).toHaveLength(2);
+    expect(state.workers.map((worker) => worker.recognize.length)).toEqual([1, 1]);
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 0]);
+  });
+
+  it('is not given back when a word read fails either', async () => {
+    state.recognize = async () => {
+      throw new Error('worker exploded');
+    };
+    const readWord = () =>
+      engine.recognizeWord({
+        image,
+        languages: ['eng'],
+        quality: 'best',
+        signal: new AbortController().signal,
+      });
+    await expect(readWord()).rejects.toMatchObject({ code: 'internal' });
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1]);
+    state.recognize = async () => ({ data: { text: 'ok', confidence: 80 } });
+    expect(await readWord()).toEqual({ text: 'ok', confidence: 80 });
+    expect(state.created).toHaveLength(2);
+  });
+
+  it('hands its place to a page that was waiting for it', async () => {
+    engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast', workers: 1 }]);
+    let reads = 0;
+    const crash = Promise.withResolvers<unknown>();
+    const answer = pageOf([{ text: 'Bekleyen', bbox: [0, 0, 2, 2] }]);
+    state.recognize = () => {
+      reads += 1;
+      return reads === 1 ? crash.promise : Promise.resolve(answer);
+    };
+    const failing = engine.recognizePage(input()).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(reads).toBe(1));
+    const waiting = engine.recognizePage(input());
+    crash.reject(new Error('worker crashed'));
+    expect(await failing).toBeInstanceOf(ToolError);
+    expect((await waiting).words.map((entry) => entry.text)).toEqual(['Bekleyen']);
+    expect(state.created).toHaveLength(2);
+  });
+
+  it('answers a read that never comes back with a timeout, and the next page does not wait on the dead worker', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let reads = 0;
+      const asked = Promise.withResolvers<void>();
+      state.recognize = () => {
+        reads += 1;
+        if (reads > 1) return Promise.resolve(pageOf([]));
+        asked.resolve();
+        return new Promise(() => undefined);
+      };
+      const dead = engine.recognizePage(input()).catch((error: unknown) => error);
+      // Awaited through the read itself, not polled: `vi.waitFor` moves a fake clock on at every check.
+      await asked.promise;
+      await vi.advanceTimersByTimeAsync(engine.OCR_READ_TIMEOUT_MS);
+      const failure = await dead;
+      expect(failure).toBeInstanceOf(ToolError);
+      expect(failure).toMatchObject({ code: 'timeout' });
+      expect(state.workers[0]?.terminated).toBe(1);
+      expect((await engine.recognizePage(input())).words).toEqual([]);
+      expect(state.created).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not time out a read that answers in time', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const answer = Promise.withResolvers<unknown>();
+      const asked = Promise.withResolvers<void>();
+      state.recognize = () => {
+        asked.resolve();
+        return answer.promise;
+      };
+      const reading = engine.recognizePage(input());
+      // The read is under way and its timer is set (both in the same turn): the clock is moved by this test alone.
+      // `vi.waitFor` is not used here: it advances a fake clock by its interval at every check, which would
+      // push this read past the timeout it is meant to beat.
+      await asked.promise;
+      await vi.advanceTimersByTimeAsync(engine.OCR_READ_TIMEOUT_MS - 1);
+      answer.resolve(pageOf([]));
+      expect((await reading).words).toEqual([]);
+      // The finished read left no timer behind, and the worker went back to the pool.
+      expect(vi.getTimerCount()).toBe(0);
+      await engine.recognizePage(input());
+      expect(state.created).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('claims on the worker pools', () => {
+  const tur = [{ languages: ['tur' as const], quality: 'fast' as const }];
+  const held = () => {
+    const releases: Array<() => void> = [];
+    state.recognize = () =>
+      new Promise((resolve) => {
+        releases.push(() => resolve(pageOf([])));
+      });
+    return releases;
+  };
+
+  it('keeps the workers another operation is reading with when one operation lets go', async () => {
+    const first = engine.claimOcrWorkers(tur);
+    const second = engine.claimOcrWorkers(tur);
+    const releases = held();
+    const reading = engine.recognizePage(input());
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    await first.release();
+    // The second operation's read still has its worker.
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([0]);
+    releases[0]?.();
+    expect((await reading).words).toEqual([]);
+    // ...and its next page reuses it: nothing was started again.
+    state.recognize = async () => pageOf([]);
+    await engine.recognizePage(input());
+    expect(state.created).toHaveLength(1);
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([0]);
+    // The pool closes when the last operation holding it lets go.
+    await second.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1]);
+  });
+
+  it('lets an operation take back only the pools nobody else holds', async () => {
+    const mine = engine.claimOcrWorkers([
+      { languages: ['tur'], quality: 'fast' },
+      { languages: ['eng'], quality: 'best' },
+    ]);
+    const theirs = engine.claimOcrWorkers([{ languages: ['tur'], quality: 'fast' }]);
+    await engine.recognizePage(input({ languages: ['tur'] }));
+    await engine.recognizePage(input({ languages: ['eng'], quality: 'best' }));
+    await mine.release();
+    // Turkish is still held by the other operation; English was mine alone.
+    expect(state.created.map((entry) => entry.languages)).toEqual([['tur'], ['eng']]);
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([0, 1]);
+    await engine.recognizePage(input({ languages: ['tur'] }));
+    expect(state.created).toHaveLength(2);
+    await theirs.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 1]);
+  });
+
+  it('resolves only once the workers it took back are terminated, and does nothing the second time', async () => {
+    const claim = engine.claimOcrWorkers(tur);
+    await engine.recognizePage(input());
+    const gate = Promise.withResolvers<void>();
+    state.terminateGate = gate.promise;
+    let done = false;
+    const releasing = claim.release().then(() => {
+      done = true;
+    });
+    // `terminate` has been asked for, and has not finished: the claim has not let go yet.
+    await vi.waitFor(() => expect(state.workers[0]?.terminated).toBe(1));
+    expect(done).toBe(false);
+    gate.resolve();
+    await releasing;
+    expect(done).toBe(true);
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1]);
+    await claim.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1]);
+  });
+
+  it('gives a pool as many workers as the largest request of the operations holding it', async () => {
+    const turkish = { languages: ['tur' as const], quality: 'fast' as const };
+    const small = engine.claimOcrWorkers([{ ...turkish, workers: 1 }]);
+    const large = engine.claimOcrWorkers([{ ...turkish, workers: 2 }]);
+    const releases = held();
+    const pages = [engine.recognizePage(input()), engine.recognizePage(input())];
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    expect(state.created).toHaveLength(2);
+    for (const release of releases) release();
+    await Promise.all(pages);
+    // The operation that asked for two lets go: the pool is back to what the other asked.
+    await large.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([0, 0]);
+    await small.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 1]);
+  });
+
+  it('starts a pool afresh for an operation that claims one the last holder has let go of', async () => {
+    const first = engine.claimOcrWorkers(tur);
+    await engine.recognizePage(input());
+    await first.release();
+    const second = engine.claimOcrWorkers(tur);
+    await engine.recognizePage(input());
+    expect(state.created).toHaveLength(2);
+    // A late second release by the first operation does not touch the pool the second one holds.
+    await first.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 0]);
+    await second.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1, 1]);
+  });
+
+  it('is cleared by terminateOcrWorkers, whoever still holds the pool', async () => {
+    const claim = engine.claimOcrWorkers(tur);
+    await engine.recognizePage(input());
+    await engine.terminateOcrWorkers();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1]);
+    await claim.release();
+    expect(state.workers.map((worker) => worker.terminated)).toEqual([1]);
   });
 });
 
@@ -682,22 +910,72 @@ describe('terminateOcrWorkers', () => {
 });
 
 describe('isOcrLanguageAvailable', () => {
-  it('asks with a HEAD request to the pinned path and answers what the origin can reach', async () => {
+  it('asks with a GET request to the pinned path, cancels the body unread, and answers what the origin can reach', async () => {
     const asked: Array<[string, string | undefined]> = [];
+    let cancelled = 0;
     vi.stubGlobal('fetch', async (url: string, init?: { method?: string }) => {
       asked.push([url, init?.method]);
-      return new Response(null, { status: url.includes('tur') ? 200 : 404 });
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(1024));
+        },
+        cancel() {
+          cancelled += 1;
+        },
+      });
+      return new Response(body, { status: url.includes('tur') ? 200 : 404 });
     });
     expect(await engine.isOcrLanguageAvailable('tur', 'fast')).toBe(true);
     expect(await engine.isOcrLanguageAvailable('deu', 'best')).toBe(false);
     expect(asked).toEqual([
-      [engine.tesseractLanguageUrl('tur', 'fast'), 'HEAD'],
-      [engine.tesseractLanguageUrl('deu', 'best'), 'HEAD'],
+      [engine.tesseractLanguageUrl('tur', 'fast'), 'GET'],
+      [engine.tesseractLanguageUrl('deu', 'best'), 'GET'],
     ]);
+    // Neither multi-megabyte model was downloaded for a yes or no.
+    expect(cancelled).toBe(2);
     vi.stubGlobal('fetch', async () => {
       throw new TypeError('offline');
     });
     expect(await engine.isOcrLanguageAvailable('tur', 'fast')).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('finds a pack that only the service worker can answer, which answers GET requests and not HEAD', async () => {
+    // The worker's cache holds the pack; the network is off. A HEAD never reaches the worker.
+    vi.stubGlobal('fetch', async (_url: string, init?: { method?: string }) => {
+      if (init?.method === 'GET') return new Response(new Uint8Array([31, 139]), { status: 200 });
+      throw new TypeError('NetworkError when attempting to fetch resource.');
+    });
+    expect(await engine.isOcrLanguageAvailable('tur', 'fast')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('still answers that the pack is there when cancelling its body fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              controller.enqueue(new Uint8Array(16));
+            },
+            cancel() {
+              throw new Error('the stream could not be cancelled');
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    expect(await engine.isOcrLanguageAvailable('tur', 'fast')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('answers a pack with no body, and a refusal the worker gave while offline, as they are', async () => {
+    vi.stubGlobal('fetch', async (url: string) =>
+      url.includes('tur') ? new Response(null, { status: 200 }) : new Response('offline', { status: 503 }),
+    );
+    expect(await engine.isOcrLanguageAvailable('tur', 'fast')).toBe(true);
+    expect(await engine.isOcrLanguageAvailable('eng', 'fast')).toBe(false);
     vi.unstubAllGlobals();
   });
 });
