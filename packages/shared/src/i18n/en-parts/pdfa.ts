@@ -32,7 +32,10 @@ export const pdfaPart = {
     'PDF/A-1 does not allow transparency: pages that use it were flattened, and their text and links may have become a picture.',
   'op.note.pdfa.formsFlattened':
     '{count} form field(s) were drawn into the page; they can no longer be filled in.',
-  'op.note.pdfa.widgetsRemoved': '{count} form button(s) or signature field(s) were removed.',
+  'op.note.pdfa.widgetsRemoved':
+    '{count} form widget(s) were removed: buttons, signature fields, or fields that could not be drawn into the page.',
+  'op.note.pdfa.filledWidgetsRemoved':
+    '{count} of them held a value (text, choice, check box or radio button); that value is not in the output.',
   'op.note.pdfa.signatures':
     '{count} digital signature(s) no longer validate: the file was rewritten, so signatures cannot be kept.',
   'op.note.pdfa.actionsRemoved':

@@ -50,6 +50,17 @@ describe('scanContent', () => {
     expect(found.paints[1]?.bbox).toEqual([0, 0, 10, 10]);
   });
 
+  it('gives the text state back with Q: render mode, font size and leading, as it does the matrix', () => {
+    // Inside q…Q the mode is clip-only (7), the size 30 and the leading 20; none of it outlives Q.
+    const found = marks('BT /F 12 Tf 10 TL q /F 30 Tf 20 TL 7 Tr Q T* (a) Tj ET');
+    expect(found.paints.map((paint) => paint.kind)).toEqual(['text']);
+    expect(found.paints[0]?.fontSize).toBe(12);
+    // T* moved down by the restored leading, 10, not the 20 set inside.
+    expect(found.paints[0]?.origin?.y).toBe(-10);
+    // The mode set inside a q…Q still applies inside it.
+    expect(marks('BT q 7 Tr (clip) Tj Q (shown) Tj ET').paints).toHaveLength(1);
+  });
+
   it('places an image under the transform in force and a path by its points', () => {
     const found = marks('q 100 0 0 50 10 20 cm /Im1 Do Q 0 0 m 30 40 l S', {
       xobject: (name) => (name === 'Im1' ? { kind: 'image' } : null),

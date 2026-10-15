@@ -5,6 +5,7 @@
  * `pdfuaid` identifier is written only when every automated rule passes.
  */
 
+import type { PDFObject } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { readXmpPacket } from './accessibility';
 import {
@@ -1269,7 +1270,7 @@ describe('forms and structure that cannot be walked', () => {
     });
   });
 
-  it('still finds a page that is one big picture when MuPDF cannot measure its characters', async () => {
+  it('does not call a page one big picture when MuPDF cannot measure its characters: the rule is unchecked', async () => {
     const found = await checked({
       pages: [{ content: '/Artifact BMC q 190 0 0 190 5 5 cm /Im1 Do Q /Fm1 Do EMC', image: true }],
       tree: doc([]),
@@ -1286,7 +1287,33 @@ describe('forms and structure that cannot be walked', () => {
       },
     });
     expect(found.rule('char-mapping').state).toBe('unchecked');
-    expect(found.rule('image-only').instances).toEqual([{ pageIndex: 0 }]);
+    // The page may well carry text MuPDF could not read, so it is not reported as a picture.
+    expect(found.rule('image-only')).toMatchObject({
+      state: 'unchecked',
+      instances: [{ pageIndex: 0, reason: 'unreadable' }],
+    });
+  });
+
+  it('fails image-only for a page it measured as picture-only even when another page could not be measured', async () => {
+    const picture = '/Artifact BMC q 190 0 0 190 5 5 cm /Im1 Do Q EMC';
+    const found = await checked({
+      pages: [
+        { content: picture, image: true },
+        { content: `${picture} /Fm1 Do`, image: true },
+      ],
+      tree: doc([]),
+      setup: (pdf, _root, pages) => {
+        const form = pdf.addRawStream(new Uint8Array([9, 9, 9, 9]), {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: [0, 0, 10, 10],
+          ...UNDECODABLE,
+        });
+        const page = pages[1] as PDFObject;
+        page.get('Resources').get('XObject').put('Fm1', form);
+      },
+    });
+    expect(found.rule('image-only')).toMatchObject({ state: 'fail', instances: [{ pageIndex: 0 }] });
   });
 
   it('says a page is unreadable when a content stream cannot be decoded, not only when its operators are malformed', async () => {

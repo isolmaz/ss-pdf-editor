@@ -1148,6 +1148,37 @@ describe('editStructure: moving, grouping and unwrapping', () => {
     });
   });
 
+  it('pins each grouped member to its own page, not to the first member’s', async () => {
+    // The first paragraph names page 0; the second names nothing and inherits page 1 from the
+    // section. Grouping them must leave the second on page 1.
+    const built = await buildTagged({
+      pages: LISTS.pages,
+      tree: [
+        {
+          s: 'Document',
+          pg: 1,
+          k: [
+            { s: 'P', pg: 0, k: [0] },
+            { s: 'P', k: [1] },
+          ],
+        },
+      ],
+    });
+    const model = await modelOfBytes(built.bytes);
+    expect(structureSignature(model)).toBe('Document(P(#0:0),P(#1:1))');
+    const [first, second] = [0, 1].map((index) => keyOfRole(model, 'P', index)) as [string, string];
+    const out = await editStructure(
+      built.bytes,
+      [{ op: 'group', keys: [first, second], role: 'L', newKey: 'n1' }],
+      run,
+    );
+    expect(structureSignature(await modelOfBytes(out.bytes))).toBe('Document(L(P(#0:0),P(#1:1)))');
+    await withDoc(out.bytes, (doc) => {
+      expect(elementOf(doc, first).get('Pg').asIndirect()).toBe(doc.findPage(0).asIndirect());
+      expect(elementOf(doc, second).get('Pg').asIndirect()).toBe(doc.findPage(1).asIndirect());
+    });
+  });
+
   it('groups top-level elements under a new one whose parent is the structure root', async () => {
     const built = await buildTagged(LISTS);
     const model = await modelOfBytes(built.bytes);
