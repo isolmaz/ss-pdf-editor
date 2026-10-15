@@ -51,13 +51,14 @@ import {
 } from '../engines/mupdf-write';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
 import {
+  claimOcrWorkers,
   effectiveOcrQuality,
   isOcrLanguageAvailable,
   OCR_LANGUAGE_CODES_ALL,
   type OcrLanguageCode,
   type OcrWord,
+  type RecognizeResult,
   recognizePage,
-  terminateOcrWorkers,
 } from '../engines/tesseract';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
@@ -127,6 +128,17 @@ export async function ocrDocument(
   if (options.pages.length === 0) {
     throw new ToolError('selection-empty', { engine: 'tesseract', engineMessage: 'no page selected' });
   }
+  // A page index is a whole number: `NaN` passes both bounds checks below (every comparison with it
+  // is false) and would reach pdf.js as a raw error, and the sort that orders the pages is
+  // undefined for it.
+  for (const pageIndex of options.pages) {
+    if (!Number.isInteger(pageIndex)) {
+      throw new ToolError('range-invalid', {
+        engine: 'tesseract',
+        engineMessage: `page index ${pageIndex} is not a whole number`,
+      });
+    }
+  }
   const quality = effectiveOcrQuality(options.languages, options.quality);
   for (const language of options.languages) {
     if (!(await isOcrLanguageAvailable(language, quality))) {
@@ -139,6 +151,9 @@ export async function ocrDocument(
   throwIfAborted(context.signal);
 
   const handle = await openWithPdfjs(bytes, { signal: context.signal });
+  // This run's hold on the worker pool of its languages: it gives back what it took and no more,
+  // so another operation reading with the same workers is not cut off when this one finishes.
+  const workers = claimOcrWorkers([{ languages: options.languages, quality }]);
   try {
     const pageCount = handle.pageCount;
     const targets = [...new Set(options.pages)].sort((a, b) => a - b);
@@ -172,27 +187,36 @@ export async function ocrDocument(
       if (existingText.length > 0) alreadyTextual += 1;
 
       const rawPage = await handle.raw.getPage(pageIndex + 1);
-      const image = await renderPageImage(rawPage, scale, context.signal);
-      const recognized = await recognizePage({
-        image,
-        scale,
-        languages: options.languages,
-        quality,
-        signal: context.signal,
-        onProgress: (fraction) => {
-          context.onProgress?.({
-            phase: 'ocr',
-            labelKey: 'ocr.running',
-            done: position + fraction,
-            total: targets.length,
-          });
-        },
-      });
-      throwIfAborted(context.signal);
-
       // The unit viewport is the inverse map used for every word on this page; it is
       // built once because building it per word would re-parse the rotation each time.
       const viewport = rawPage.getViewport({ scale: 1 });
+      let recognized: RecognizeResult;
+      try {
+        const image = await renderPageImage(rawPage, scale, context.signal);
+        recognized = await recognizePage({
+          image,
+          scale,
+          languages: options.languages,
+          quality,
+          signal: context.signal,
+          onProgress: (fraction) => {
+            context.onProgress?.({
+              phase: 'ocr',
+              labelKey: 'ocr.running',
+              done: position + fraction,
+              total: targets.length,
+            });
+          },
+        });
+      } finally {
+        // pdf.js keeps a page's operator list and its decoded images until told otherwise, and
+        // a document is only released when the whole run ends: without this the memory held
+        // grows with every page read, which is what limits how long a scan can be. The unit
+        // viewport above is a plain object and outlives the page's own caches.
+        rawPage.cleanup();
+      }
+      throwIfAborted(context.signal);
+
       layers.push({
         pageIndex,
         words: recognized.words,
@@ -264,7 +288,7 @@ export async function ocrDocument(
     // pdf.js and the OCR worker both hold wasm heaps; releasing them here keeps the
     // operation accountable for what it allocated.
     await handle.destroy().catch(() => undefined);
-    await terminateOcrWorkers();
+    await workers.release();
   }
 }
 

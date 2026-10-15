@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { Locator, Page } from 'playwright/test';
 import { exportBytes, notice, openApp, rotateCurrentPage } from './app-helpers';
 import { expect, test } from './test';
-import { readProducedEntry, toolFixturePdf } from './tool-fixture';
+import { readProducedEntry, readProducedPageTexts, scannedPdf, toolFixturePdf } from './tool-fixture';
 
 /** Every script and style the build put under `/editor/assets/` — what the editor can load. */
 const BUILT_CHUNKS = readdirSync(fileURLToPath(new URL('../dist/editor/assets/', import.meta.url)))
@@ -27,6 +27,49 @@ async function openOfflineSettings(page: Page): Promise<Locator> {
 async function prepare(page: Page, settings: Locator): Promise<void> {
   await settings.getByRole('button', { name: 'Prepare', exact: true }).click();
   await expect(notice(page, /^\d+ file\(s\) prepared for offline use\.$/)).toBeVisible({ timeout: 180_000 });
+}
+
+/**
+ * What the page asks the service worker the way the shell does (`apps/web/src/offline.ts`): a message with a reply
+ * port. `PREPARE_PACKAGE` names capabilities of the build's manifest; `CHECK_READINESS` asks what the cache holds.
+ */
+const askWorker = <Reply>(page: Page, message: Record<string, unknown>): Promise<Reply> =>
+  page.evaluate(
+    (payload) =>
+      new Promise<Reply>((resolve, reject) => {
+        const worker = navigator.serviceWorker.controller;
+        if (worker === null) {
+          reject(new Error('no service worker controls the page'));
+          return;
+        }
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event: MessageEvent<Reply>) => resolve(event.data);
+        worker.postMessage(payload, [channel.port2]);
+      }),
+    message,
+  );
+
+/** The worker's answer to `CHECK_READINESS`: for each capability, whether the cache holds all of it. */
+interface Readiness {
+  readonly capabilities: Record<string, { readonly ready: boolean; readonly missing: string[] }>;
+}
+
+/** The lines of the scanned page OCR has to read back with the network off. */
+const SCAN_LINES = ['Invoice 2041', 'Total 318.40', 'Payment due Friday'] as const;
+
+/** The OCR form, opened through the palette (the same steps `ocr.spec.ts` takes online). */
+const ocrForm = (page: Page): Locator => page.getByRole('region', { name: /Metin tanıma|Text recognition/ });
+
+async function openOcrForm(page: Page): Promise<void> {
+  await page.keyboard.press('Control+k');
+  const input = page.getByPlaceholder(/Komut veya araç ara|Search commands/);
+  await expect(input).toBeVisible({ timeout: 10_000 });
+  await input.fill('OCR');
+  await expect(page.getByRole('option', { name: /Metin tanıma|Text recognition/ }).first()).toBeVisible({
+    timeout: 10_000,
+  });
+  await page.keyboard.press('Enter');
+  await expect(ocrForm(page)).toBeVisible({ timeout: 15_000 });
 }
 
 /** The pathnames the worker's cache holds. */
@@ -138,6 +181,71 @@ test.describe('offline shell', { tag: '@service-worker' }, () => {
         {
           cause: error,
         },
+      );
+    } finally {
+      await context.setOffline(false);
+    }
+    expect(unserved).toEqual([]);
+  });
+
+  // OCR is the one package Prepare leaves out (it is cached when first used), but the manifest lists it
+  // as the `tesseract` capability and a device can hold it. Whether OCR then runs with the network off
+  // is decided before the first page: the run starts by asking whether the language pack is there.
+  // That question used to be a HEAD request, which the worker does not answer (it answers GETs only), so
+  // a device holding the whole package was told the pack was missing.
+  test('a device that holds the OCR package recognises a scanned page with the network off', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(900_000);
+    await page.goto('/editor/');
+    const settings = await openOfflineSettings(page);
+    await prepare(page, settings);
+    const prepared = await askWorker<{ type: string; failed: string[] }>(page, {
+      type: 'PREPARE_PACKAGE',
+      capabilities: ['tesseract'],
+    });
+    expect(prepared).toMatchObject({ type: 'PREPARE_DONE', failed: [] });
+    const readiness = await askWorker<Readiness>(page, { type: 'CHECK_READINESS' });
+    expect(readiness.capabilities.tesseract).toEqual({ ready: true, missing: [] });
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
+
+    const unserved: string[] = [];
+    page.on('response', (response) => {
+      if (response.status() === 503) unserved.push(new URL(response.url()).pathname);
+    });
+    await context.setOffline(true);
+    try {
+      await page.reload();
+      await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible({ timeout: 30_000 });
+      await openApp(page, 'scan.pdf', await scannedPdf([SCAN_LINES]), { navigate: false });
+      await openOcrForm(page);
+      const run = page.getByRole('button', { name: /^Önizle$|^Preview$/ }).first();
+      await expect(run).toBeEnabled({ timeout: 120_000 });
+      await run.click();
+
+      // The run read the page: a refusal ("the language pack is missing") shows no report at all.
+      const report = page.getByRole('region', { name: /İşlem raporu|Operation report/ });
+      await expect(report).toBeVisible({ timeout: 300_000 });
+      const layer = report.getByText(/Invisible text layer of \d+ word\(s\) added to \d+ page\(s\)/);
+      await expect(layer).toBeVisible({ timeout: 30_000 });
+      const counts = /of (\d+) word\(s\) added to (\d+) page\(s\)/.exec((await layer.textContent()) ?? '');
+      expect(Number(counts?.[1] ?? 0)).toBeGreaterThan(4);
+      expect(Number(counts?.[2] ?? 0)).toBe(1);
+
+      // The words are in the bytes the user takes away, in reading order: the scan had no text at all.
+      await page
+        .getByRole('button', { name: /Belgeye uygula|Apply to document/ })
+        .first()
+        .click();
+      const out = await exportBytes(page, 'offline-ocr-out.pdf');
+      const [text] = await readProducedPageTexts(out, 1);
+      expect((text ?? '').replace(/\s+/g, ' ')).toMatch(/Invoice 2041.*Total 318\.40.*Payment due Friday/);
+    } catch (error) {
+      throw new Error(
+        `offline OCR failed; the worker answered 503 for: ${unserved.join(', ') || 'nothing'}`,
+        { cause: error },
       );
     } finally {
       await context.setOffline(false);
