@@ -54,9 +54,10 @@ describe('StatusBar page and zoom', () => {
     expect(within(bar()).getByText('126%')).toBeTruthy();
   });
 
-  it('says "—" for both when no page is open', () => {
+  it('reads neither page nor zoom, not even dashes, when no page is open', () => {
     show({ pageIndex: null, pageCount: null });
-    expect(within(bar()).getAllByText('—')).toHaveLength(2);
+    expect(within(bar()).queryByText('—')).toBeNull();
+    expect(within(bar()).queryByText(/Page|\d+%/)).toBeNull();
   });
 
   it('says "—" for the page when the count is not known, yet keeps the zoom', () => {

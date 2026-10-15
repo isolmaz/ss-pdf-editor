@@ -22,7 +22,7 @@ export interface ShellStatusBarProps {
 }
 
 export function ShellStatusBar({ session, tier, t, actions }: ShellStatusBarProps) {
-  const { activeTab, activeHandle, pageCount, verdict, canEdit, isHome } = useEditState(session, tier);
+  const { activeTab, pageCount, verdict, canEdit, isHome } = useEditState(session, tier);
   const signatures = useCurrentSignatures(activeTab);
   const zoom = useSave((state) => state.zoom);
   const currentPage = useSave((state) => state.currentPage);
@@ -33,7 +33,7 @@ export function ShellStatusBar({ session, tier, t, actions }: ShellStatusBarProp
   return (
     <StatusBar
       t={t}
-      pageIndex={activeHandle === null ? null : currentPage}
+      pageIndex={isHome ? null : currentPage}
       pageCount={activeTab === null ? null : pageCount}
       zoom={zoom}
       tier={tier}

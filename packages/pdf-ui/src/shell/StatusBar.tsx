@@ -95,20 +95,19 @@ export function StatusBar({
 
   return (
     <footer className="flex h-[var(--spacing-pdf-statusbar)] items-center gap-3 overflow-hidden border-t border-kumo-line bg-kumo-base px-3 text-xs text-kumo-subtle">
-      {navigation ?? (
-        <>
-          <span className="shrink-0 tabular-nums">
-            {pageIndex === null || pageCount === null
-              ? '—'
-              : `${t('viewer.page')} ${pageIndex + 1} ${t('viewer.of')} ${pageCount}`}
-          </span>
-          {/* The zoom belongs to a document: with none open it is a stale reading, so the
-              bar says "—" for it exactly as it does for the page. */}
-          <span className="shrink-0 tabular-nums">
-            {pageIndex === null ? '—' : `${Math.round(zoom * 100)}%`}
-          </span>
-        </>
-      )}
+      {/* The page and zoom belong to a document on screen: with none (the start screen) there is
+          nothing to read, so the slot stays empty rather than showing dashes or a stale page. */}
+      {navigation ??
+        (pageIndex === null ? null : (
+          <>
+            <span className="shrink-0 tabular-nums">
+              {pageCount === null
+                ? '—'
+                : `${t('viewer.page')} ${pageIndex + 1} ${t('viewer.of')} ${pageCount}`}
+            </span>
+            <span className="shrink-0 tabular-nums">{`${Math.round(zoom * 100)}%`}</span>
+          </>
+        ))}
       {/* Diagnostics yield first on a narrow viewport: the tier badge and the memory
           meter describe the session, while the privacy line states the product's
           central claim and the warnings below report something the user must act on.

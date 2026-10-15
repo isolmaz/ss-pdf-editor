@@ -194,11 +194,13 @@ describe('ShellStatusBar', () => {
     expect(screen.queryByLabelText('page navigation')).toBeNull();
   });
 
-  it('hides the page controls behind the start screen', () => {
+  it('hides the page controls and the page behind the start screen', () => {
     openTab();
+    saveStore.set({ zoom: 1.5, currentPage: 3 });
     openStore.set({ showHomeScreen: true });
     mount();
     expect(screen.queryByLabelText('page navigation')).toBeNull();
+    expect(screen.getByLabelText('status bar').getAttribute('data-page-index')).toBe('null');
   });
 
   it('sends the page controls to the viewer and the presentation', async () => {
