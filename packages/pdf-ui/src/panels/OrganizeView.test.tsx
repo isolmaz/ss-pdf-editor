@@ -726,8 +726,10 @@ describe('OrganizeView focus while a change is made', () => {
     const view = show({ initial: [1] });
     const field = screen.getByRole('spinbutton', { name: 'Move to' });
     field.focus();
+    // The browser drops the focus of a field that turns off; the test does it where it can.
+    field.blur();
+    expect(document.activeElement).toBe(document.body);
     view.again({ editing: false });
-    (document.activeElement as HTMLElement).blur();
     view.again({ editing: true });
     expect(document.activeElement).toBe(field);
   });

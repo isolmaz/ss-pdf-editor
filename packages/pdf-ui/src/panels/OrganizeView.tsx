@@ -257,10 +257,10 @@ export function OrganizeView({
   const rootRef = useRef<HTMLElement | null>(null);
   const lastFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
+    if (!editing || globalThis.document.activeElement !== globalThis.document.body) return;
     const last = lastFocus.current;
-    if (!editing || last === null || globalThis.document.activeElement !== globalThis.document.body) return;
-    const label = last.getAttribute('aria-label');
-    (last.isConnected
+    const label = last?.getAttribute('aria-label');
+    (last?.isConnected
       ? last
       : rootRef.current?.querySelector<HTMLElement>(`[aria-label="${label}"]`)
     )?.focus();

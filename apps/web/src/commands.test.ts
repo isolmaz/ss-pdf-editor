@@ -290,7 +290,7 @@ describe('buildCommands', () => {
       },
     );
 
-    it('lays out the page panel, merge and batch as home tiles that run their own command', () => {
+    it('lays out the organize grid, merge and batch as home tiles that run their own command', () => {
       const { host, calls } = recordingHost();
       const commands = buildCommands(host);
       const tiles = HOME_TOOLS.filter((tool) =>
