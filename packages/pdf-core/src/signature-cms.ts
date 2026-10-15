@@ -11,9 +11,10 @@
  * file's byte range, with the two signed attributes PAdES requires besides the mandatory
  * pair: `contentType` and `messageDigest` (CMS, RFC 5652 §11.1), and `signingCertificateV2`
  * (RFC 5035) binding the signer's certificate into the signature. There is **no**
- * timestamp: `B-T` needs an RFC 3161 TSA, the public ones are not CORS-enabled and
- * `connect-src 'self'` forbids reaching them anyway — that belongs to the helper,
- * never to this build. The signature is produced entirely locally with WebCrypto.
+ * `signingTime` attribute (EN 319 142-1 §6.3 forbids it: the time is the `/M` of the
+ * signature dictionary) and no timestamp: `B-T` needs an RFC 3161 TSA, the public ones are
+ * not CORS-enabled and `connect-src 'self'` forbids reaching them anyway — that belongs to
+ * the helper, never to this build. The signature is produced entirely locally with WebCrypto.
  *
  * **The signature algorithm comes from the key, never from the caller.** A `CryptoKey`
  * knows what it is; pairing an RSASSA key with an ECDSA algorithm name — or claiming
@@ -185,27 +186,35 @@ async function algorithmFor(
   );
 }
 
-/** The signed attributes CMS requires, the PAdES one, and the signing time. */
+/**
+ * The signed attributes CMS requires and the PAdES one, plus a `signingTime` only when
+ * `signingTime` is given.
+ *
+ * ETSI EN 319 142-1 §6.3 (PAdES B-B) says the CMS **shall not** carry a `signing-time`
+ * attribute: the claimed time of a PAdES signature is the `/M` entry of its signature
+ * dictionary. So the PAdES writer never passes a time; the attribute exists for callers
+ * that build a classic `adbe.pkcs7.detached` CMS, where it is the convention.
+ */
 function signedAttributes(
   digestOid: string,
   messageDigest: Uint8Array,
   certHash: Uint8Array,
-  signedAt: Date,
+  signingTime: Date | undefined,
 ): Attribute[] {
   return [
     new Attribute({
       type: OID_CONTENT_TYPE,
       values: [new ObjectIdentifier({ value: OID_DATA })],
     }),
-    new Attribute({
-      /**
-       * `signingTime` (RFC 5652 §11.3) — the moment the signature was made, alongside the
-       * `/M` the PDF dictionary carries. It is the attribute a verifier shows when the
-       * document's own date is missing, and PAdES expects it present.
-       */
-      type: OID_SIGNING_TIME,
-      values: [new UTCTime({ valueDate: signedAt })],
-    }),
+    ...(signingTime === undefined
+      ? []
+      : [
+          new Attribute({
+            // `signingTime` (RFC 5652 §11.3).
+            type: OID_SIGNING_TIME,
+            values: [new UTCTime({ valueDate: signingTime })],
+          }),
+        ]),
     new Attribute({
       type: OID_MESSAGE_DIGEST,
       values: [new OctetString({ valueHex: messageDigest })],
@@ -242,6 +251,10 @@ function signedAttributes(
  * `content` is hashed once and that hash is what `messageDigest` states; the signature
  * itself is computed over the DER of the signed attributes, which is the rule CMS states
  * and the one every verifier checks.
+ *
+ * `options.signedAt` is **not** the PAdES signing moment (that is the signature dictionary's
+ * `/M`): giving it adds a `signingTime` signed attribute with that value, which PAdES B-B
+ * forbids (EN 319 142-1 §6.3). Leave it out for a PAdES signature, as `ops/sign.ts` does.
  */
 export async function detachedCmsSignature(
   content: Uint8Array,
@@ -249,7 +262,6 @@ export async function detachedCmsSignature(
   options: { readonly digest?: SignatureDigest; readonly signedAt?: Date } = {},
 ): Promise<CmsSignature> {
   const digest = options.digest ?? 'SHA-256';
-  const signedAt = options.signedAt ?? new Date();
   const algorithm = await algorithmFor(identity.privateKey, digest);
   const certificate = Certificate.fromBER(identity.certificate.slice());
   if (certificate.subject.typesAndValues.length === 0) {
@@ -262,6 +274,7 @@ export async function detachedCmsSignature(
   const certHash = new Uint8Array(
     await crypto.subtle.digest(digest, identity.certificate.slice() as unknown as ArrayBuffer),
   );
+  const unsorted = signedAttributes(algorithm.digestOid, digestBytes, certHash, options.signedAt);
 
   /**
    * DER requires a `SET OF` to be in **encoded order** (X.690 §11.6), and the signed
@@ -274,7 +287,7 @@ export async function detachedCmsSignature(
   const attributes = new SignedAndUnsignedAttributes({
     // `type: 0` is the implicit `[0]` tag of `signedAttrs`; `1` would be `unsignedAttrs`.
     type: 0,
-    attributes: signedAttributes(algorithm.digestOid, digestBytes, certHash, signedAt).sort((left, right) =>
+    attributes: unsorted.sort((left, right) =>
       // Not `Buffer.compare`: this module runs in the **browser**, where `Buffer` does not
       // exist. The comparison is the same one, written where it is used.
       compareBytes(

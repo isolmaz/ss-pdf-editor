@@ -8,10 +8,11 @@
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { Extension } from 'pkijs';
-import { describe, expect, it } from 'vitest';
-import { readText } from '../engines/mupdf-write';
+import { describe, expect, it, vi } from 'vitest';
+import { readNumbers, readText } from '../engines/mupdf-write';
+import { readSignedData } from '../signature-evidence';
 import { generateKey, issueCertificate } from '../signature-trust.fixtures';
-import { signPdf } from './sign';
+import { byteRangeText, signPdf } from './sign';
 import { verifySignatures } from './signature-status';
 
 const run = { signal: new AbortController().signal };
@@ -96,6 +97,91 @@ async function withEmptyField(): Promise<Uint8Array> {
       .put('AcroForm', { Fields: [field], SigFlags: 3 });
   });
 }
+
+/**
+ * A one-page document with an empty signature field per name, listed in `/Fields` in this
+ * order. `rect` of `null` leaves the widgets without an area, as a hidden field is.
+ */
+async function withEmptyFields(
+  names: readonly string[],
+  rect: readonly [number, number, number, number] | null = [10, 10, 120, 40],
+  pages = 1,
+): Promise<Uint8Array> {
+  return blank('', pages, (doc) => {
+    const page = doc.findPage(0);
+    const fields = names.map((name) =>
+      doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Widget',
+        FT: 'Sig',
+        T: doc.newString(name),
+        F: 4,
+        Rect: rect ?? [0, 0, 0, 0],
+        P: page,
+      }),
+    );
+    page.put('Annots', fields);
+    doc.getTrailer().get('Root').put('AcroForm', { Fields: fields, SigFlags: 3 });
+  });
+}
+
+/** A form whose only signature field is `kidName`, a kid of the non-terminal field `form`. */
+async function withNestedField(kidName: string): Promise<Uint8Array> {
+  return blank('', 1, (doc) => {
+    const page = doc.findPage(0);
+    const parent = doc.addObject({ T: doc.newString('form') });
+    const kid = doc.addObject({
+      Type: 'Annot',
+      Subtype: 'Widget',
+      FT: 'Sig',
+      T: doc.newString(kidName),
+      F: 4,
+      Rect: [10, 10, 120, 40],
+      P: page,
+      Parent: parent,
+    });
+    parent.put('Kids', [kid]);
+    page.put('Annots', [kid]);
+    doc
+      .getTrailer()
+      .get('Root')
+      .put('AcroForm', { Fields: [parent], SigFlags: 3 });
+  });
+}
+
+/** The `/T` of every signature widget on every page of a produced file, with its page. */
+async function fieldPages(bytes: Uint8Array): Promise<[string | null, number][]> {
+  const widgets = await widgetsOf(bytes);
+  const found = widgets.map((entry): [string | null, number] => [
+    readText(entry.widget.get('T')),
+    entry.page,
+  ]);
+  widgets[0]?.doc.destroy();
+  return found;
+}
+
+describe('byteRangeText', () => {
+  it('pads every number to the width of the placeholder it overwrites', () => {
+    expect(byteRangeText([0, 1234, 5678, 90], 45)).toBe('[0000000000 0000001234 0000005678 0000000090]');
+  });
+
+  it('refuses a number the fixed width cannot hold instead of shifting the bytes after it', () => {
+    let failure: unknown;
+    try {
+      byteRangeText([0, 123, 456, 10 ** 10], 45);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: 'internal',
+      details: {
+        engineMessage:
+          'the /ByteRange [0000000000 0000000123 0000000456 10000000000] is 46 characters wide ' +
+          'but the placeholder it overwrites is 45',
+      },
+    });
+  });
+});
 
 describe('signPdf', () => {
   it('writes a visible signature that the product’s verifier reads as intact', async () => {
@@ -353,16 +439,375 @@ describe('signPdf', () => {
     expect((await verifySignatures(out.bytes, run.signal))[0]?.integrity).toBe('valid');
   });
 
-  it('writes a second signature after an earlier one, and reports the new one', async () => {
+  it('signs an already signed file by appending, so the earlier signature stays valid', async () => {
     const first = await signPdf(
       await blank(),
       { identity: await identity(), field: { name: 'Birinci' } },
       run,
     );
+    expect(first.report.incremental).toBe(false);
     const second = await signPdf(first.bytes, { identity: await identity(), field: { name: 'Ikinci' } }, run);
+    // Every byte the first signature covers is still where it was.
+    expect(Buffer.from(second.bytes.subarray(0, first.bytes.length)).equals(Buffer.from(first.bytes))).toBe(
+      true,
+    );
+    expect(second.report.incremental).toBe(true);
+    expect(second.report.notes.filter((entry) => entry.key.startsWith('op.note.sign.earlier'))).toEqual([
+      { kind: 'preserved', key: 'op.note.sign.earlierKept', params: { count: 1 } },
+    ]);
     const verdicts = await verifySignatures(second.bytes, run.signal);
-    expect(verdicts.map((entry) => entry.fieldName)).toEqual(['Birinci', 'Ikinci']);
-    expect(verdicts[1]?.integrity).toBe('valid');
+    expect(verdicts.map((entry) => [entry.fieldName, entry.integrity, entry.changesAfterSigning])).toEqual([
+      ['Birinci', 'valid', 1],
+      ['Ikinci', 'valid', 0],
+    ]);
+  });
+
+  it('rewrites a signed file MuPDF cannot append to, and reports the earlier signature as lost', async () => {
+    const first = await signPdf(
+      await blank(),
+      { identity: await identity(), field: { name: 'Birinci' } },
+      run,
+    );
+    // A cross-reference table that points nowhere: MuPDF repairs the file on open and cannot append.
+    const damaged = Buffer.from(first.bytes)
+      .toString('latin1')
+      .replace(/startxref\s+\d+/, 'startxref\n7');
+    const second = await signPdf(
+      new Uint8Array(Buffer.from(damaged, 'latin1')),
+      { identity: await identity(), field: { name: 'Ikinci' } },
+      run,
+    );
+    expect(second.report.incremental).toBe(false);
+    expect(second.report.notes.filter((entry) => entry.key.startsWith('op.note.sign.earlier'))).toEqual([
+      { kind: 'lost', key: 'op.note.sign.earlierLost', params: { count: 1 } },
+    ]);
+    const verdicts = await verifySignatures(second.bytes, run.signal);
+    expect(verdicts.find((entry) => entry.fieldName === 'Ikinci')?.integrity).toBe('valid');
+  });
+
+  it('gives a second unnamed signature a field name of its own, even within the same second', async () => {
+    // The default name is `Signature<seconds>`: pin the clock so both signatures get the same
+    // second and the second one has to step past the name the first one took.
+    const now = new Date(Date.UTC(2026, 5, 1, 12));
+    const seconds = Math.floor(now.getTime() / 1000);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      const first = await signPdf(await blank(), { identity: await identity() }, run);
+      const second = await signPdf(first.bytes, { identity: await identity() }, run);
+      const verdicts = await verifySignatures(second.bytes, run.signal);
+      expect(verdicts.map((entry) => [entry.fieldName, entry.integrity])).toEqual([
+        [`Signature${seconds}`, 'valid'],
+        [`Signature${seconds + 1}`, 'valid'],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses a field name that another field of the document already uses', async () => {
+    const first = await signPdf(
+      await blank(),
+      { identity: await identity(), field: { name: 'Birinci' } },
+      run,
+    );
+    await expect(
+      signPdf(first.bytes, { identity: await identity(), field: { name: 'Birinci' } }, run),
+    ).rejects.toMatchObject({
+      code: 'value-out-of-range',
+      details: { path: 'request.field.name' },
+    });
+  });
+
+  it('fills an empty field nested under a parent by its full name, and keeps that name as a parent’s', async () => {
+    const source = await withNestedField('sig');
+    const out = await signPdf(source, { identity: await identity(), field: { name: 'form.sig' } }, run);
+    expect(out.report.steps[1]).toBe('field.reuse');
+    expect(out.report.notes[0]).toEqual({
+      kind: 'changed',
+      key: 'op.note.sign.fieldFilled',
+      params: { name: 'form.sig' },
+    });
+    expect(
+      (await verifySignatures(out.bytes, run.signal)).map((entry) => [entry.fieldName, entry.integrity]),
+    ).toEqual([['form.sig', 'valid']]);
+
+    // The leaf name alone is not the field's name, and the parent's name is taken.
+    const byLeaf = await signPdf(source, { identity: await identity(), field: { name: 'sig' } }, run);
+    expect(byLeaf.report.steps[1]).toBe('field.create');
+    await expect(
+      signPdf(source, { identity: await identity(), field: { name: 'form' } }, run),
+    ).rejects.toMatchObject({ code: 'value-out-of-range', details: { path: 'request.field.name' } });
+  });
+
+  it('reads an empty /T as no name, the way the verifier does', async () => {
+    const out = await signPdf(await withNestedField(''), { identity: await identity() }, run);
+    expect(out.report.notes[0]).toEqual({
+      kind: 'changed',
+      key: 'op.note.sign.fieldFilled',
+      params: { name: 'form' },
+    });
+    expect(
+      (await verifySignatures(out.bytes, run.signal)).map((entry) => [entry.fieldName, entry.integrity]),
+    ).toEqual([['form', 'valid']]);
+  });
+
+  it('creates a named field in a form whose lists hold odd entries, repeats and loops', async () => {
+    const source = await blank('', 1, (doc) => {
+      const page = doc.findPage(0);
+      const link = doc.addObject({ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 10, 10] });
+      const unnamed = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Widget',
+        FT: 'Tx',
+        Rect: [0, 0, 5, 5],
+        P: page,
+      });
+      const looped = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Widget',
+        FT: 'Tx',
+        T: doc.newString('Dongu'),
+        Rect: [0, 0, 5, 5],
+        P: page,
+      });
+      looped.put('Parent', looped);
+      const orphan = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Widget',
+        FT: 'Tx',
+        T: doc.newString('Yetim'),
+        Rect: [0, 0, 5, 5],
+        P: page,
+        Parent: 5,
+      });
+      const empty = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Widget',
+        FT: 'Sig',
+        T: doc.newString('Mevcut'),
+        Rect: [10, 10, 120, 40],
+        P: page,
+      });
+      page.put('Annots', [5, link, unnamed, looped, orphan, empty]);
+      // The same field twice, a number, a PDF null, two fields written inline (one with no
+      // name) and a chain of fields far deeper than a form is.
+      const chain = Array.from({ length: 36 }, (_, index) =>
+        doc.addObject({ T: doc.newString(`d${index}`) }),
+      );
+      chain.forEach((node, index) => {
+        const next = chain[index + 1];
+        if (next !== undefined) node.put('Kids', [next]);
+      });
+      doc
+        .getTrailer()
+        .get('Root')
+        .put('AcroForm', {
+          Fields: [empty, empty, 7, null, { T: doc.newString('Satir') }, { FT: 'Tx' }, chain[0]],
+          SigFlags: 3,
+        });
+    });
+    const out = await signPdf(source, { identity: await identity(), field: { name: 'Yeni' } }, run);
+    expect(out.report.steps[1]).toBe('field.create');
+    expect(out.report.notes[0]).toMatchObject({ key: 'op.note.sign.fieldCreated', params: { name: 'Yeni' } });
+    expect(await fieldPages(out.bytes)).toContainEqual(['Yeni', 0]);
+    expect((await verifySignatures(out.bytes, run.signal)).map((entry) => entry.fieldName)).toEqual(['Yeni']);
+    // A widget whose `/Parent` is no dictionary keeps its own name, and that name is taken;
+    // so is the name of a field written inline in `/Fields`.
+    for (const name of ['Yetim', 'Satir']) {
+      await expect(
+        signPdf(source, { identity: await identity(), field: { name } }, run),
+      ).rejects.toMatchObject({ code: 'value-out-of-range', details: { path: 'request.field.name' } });
+    }
+    // The chain is followed 33 levels down (the verifier's own bound) and not further.
+    const chained = (levels: number): string => Array.from({ length: levels }, (_, i) => `d${i}`).join('.');
+    await expect(
+      signPdf(source, { identity: await identity(), field: { name: chained(33) } }, run),
+    ).rejects.toMatchObject({ code: 'value-out-of-range', details: { path: 'request.field.name' } });
+    const beyond = await signPdf(source, { identity: await identity(), field: { name: chained(34) } }, run);
+    expect(beyond.report.steps[1]).toBe('field.create');
+  });
+
+  it('treats an empty field name as none: the first empty field is filled', async () => {
+    const out = await signPdf(
+      await withEmptyFields(['Bir', 'Iki']),
+      { identity: await identity(), field: { name: '' } },
+      run,
+    );
+    expect(out.report.steps[1]).toBe('field.reuse');
+    expect(out.report.notes[0]).toMatchObject({ key: 'op.note.sign.fieldFilled', params: { name: 'Bir' } });
+  });
+
+  it('fills a hidden empty field in place when no rectangle is asked for, and draws no appearance', async () => {
+    const out = await signPdf(await withEmptyFields(['Gizli'], null), { identity: await identity() }, run);
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.sign.fieldPlaceKept');
+    const [entry] = await widgetsOf(out.bytes);
+    expect(readNumbers(entry?.widget.get('Rect'))).toEqual([0, 0, 0, 0]);
+    expect(entry?.widget.get('AP').isNull()).toBe(true);
+    entry?.doc.destroy();
+    expect((await verifySignatures(out.bytes, run.signal))[0]).toMatchObject({
+      fieldName: 'Gizli',
+      integrity: 'valid',
+    });
+  });
+
+  it('gives an empty field that has no /Rect at all the requested rectangle on its own page', async () => {
+    const source = await blank('', 1, (doc) => {
+      const page = doc.findPage(0);
+      const field = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Widget',
+        FT: 'Sig',
+        T: doc.newString('SizRect'),
+        P: page,
+      });
+      page.put('Annots', [field]);
+      doc
+        .getTrailer()
+        .get('Root')
+        .put('AcroForm', { Fields: [field], SigFlags: 3 });
+    });
+    const out = await signPdf(
+      source,
+      { identity: await identity(), field: { rect: { x: 5, y: 6, width: 70, height: 20 }, lines: ['Ayse'] } },
+      run,
+    );
+    expect(await fieldPages(out.bytes)).toEqual([['SizRect', 0]]);
+    const [entry] = await widgetsOf(out.bytes);
+    expect(readNumbers(entry?.widget.get('Rect'))).toEqual([5, 6, 75, 26]);
+    expect(entry?.widget.get('AP').get('N').readStream().asString()).toContain('(Ayse) Tj');
+    entry?.doc.destroy();
+  });
+
+  it('creates the field it was named for, with an appearance, although another empty one exists', async () => {
+    const out = await signPdf(
+      await withEmptyField(),
+      {
+        identity: await identity(),
+        field: { name: 'Onay', rect: { x: 20, y: 20, width: 160, height: 50 }, pageIndex: 0 },
+        reason: 'Onaylandi',
+      },
+      run,
+    );
+    expect(out.report.steps[1]).toBe('field.create');
+    expect(out.report.notes[0]).toEqual({
+      kind: 'changed',
+      key: 'op.note.sign.fieldCreated',
+      params: { name: 'Onay' },
+    });
+    const verdicts = await verifySignatures(out.bytes, run.signal);
+    expect(verdicts.map((entry) => [entry.fieldName, entry.integrity])).toEqual([['Onay', 'valid']]);
+
+    const widgets = await widgetsOf(out.bytes);
+    const named = widgets.find((entry) => readText(entry.widget.get('T')) === 'Onay');
+    const other = widgets.find((entry) => readText(entry.widget.get('T')) === 'Mevcut');
+    expect(named?.page).toBe(0);
+    expect(named?.widget.get('AP').get('N').readStream().asString()).toContain('(Onaylandi) Tj');
+    // The other empty field is untouched: still empty, still on its page.
+    expect(other?.page).toBe(1);
+    expect(other?.widget.get('V').isNull()).toBe(true);
+    widgets[0]?.doc.destroy();
+  });
+
+  it('fills only the empty field it was named for, drawing the appearance in the field’s own rectangle', async () => {
+    const out = await signPdf(
+      await withEmptyFields(['Bos', 'Hedef']),
+      {
+        identity: await identity(),
+        field: {
+          name: 'Hedef',
+          rect: { x: 200, y: 300, width: 50, height: 20 },
+          lines: ['Ayse', 'Onay'],
+        },
+      },
+      run,
+    );
+    expect(out.report.steps[1]).toBe('field.reuse');
+    expect(out.report.notes.slice(0, 2)).toEqual([
+      { kind: 'changed', key: 'op.note.sign.fieldFilled', params: { name: 'Hedef' } },
+      { kind: 'preserved', key: 'op.note.sign.fieldPlaceKept', params: { name: 'Hedef' } },
+    ]);
+    const widgets = await widgetsOf(out.bytes);
+    const target = widgets.find((entry) => readText(entry.widget.get('T')) === 'Hedef')?.widget;
+    const untouched = widgets.find((entry) => readText(entry.widget.get('T')) === 'Bos')?.widget;
+    expect(readNumbers(target?.get('Rect'))).toEqual([10, 10, 120, 40]);
+    expect(readNumbers(target?.get('AP').get('N').get('BBox'))).toEqual([0, 0, 110, 30]);
+    const content = target?.get('AP').get('N').readStream().asString() ?? '';
+    expect(content).toContain('(Ayse) Tj');
+    expect(content).toContain('(Onay) Tj');
+    expect(untouched?.get('V').isNull()).toBe(true);
+    expect(untouched?.get('AP').isNull()).toBe(true);
+    widgets[0]?.doc.destroy();
+  });
+
+  it('makes a hidden empty field visible at the requested rectangle, on the requested page', async () => {
+    const out = await signPdf(
+      await withEmptyFields(['Gizli'], null, 2),
+      {
+        identity: await identity(),
+        field: { rect: { x: 30, y: 40, width: 100, height: 30 }, pageIndex: 1, lines: ['Ayse'] },
+      },
+      run,
+    );
+    expect(out.report.notes.map((entry) => entry.key)).not.toContain('op.note.sign.fieldPlaceKept');
+    expect(await fieldPages(out.bytes)).toEqual([['Gizli', 1]]);
+    const [entry] = await widgetsOf(out.bytes);
+    expect(readNumbers(entry?.widget.get('Rect'))).toEqual([30, 40, 130, 70]);
+    expect(entry?.widget.get('AP').get('N').readStream().asString()).toContain('(Ayse) Tj');
+    entry?.doc.destroy();
+    expect((await verifySignatures(out.bytes, run.signal))[0]).toMatchObject({
+      fieldName: 'Gizli',
+      integrity: 'valid',
+    });
+  });
+
+  it('judges the signature it wrote, not whichever signature field comes last', async () => {
+    const real = await identity();
+    const other = await generateKey({ kind: 'EC', curve: 'P-256' });
+    // `Hedef` is signed first, so it is a valid signature listed *after* the empty `Bos`.
+    const first = await signPdf(
+      await withEmptyFields(['Bos', 'Hedef']),
+      { identity: real, field: { name: 'Hedef' } },
+      run,
+    );
+    await expect(
+      signPdf(
+        first.bytes,
+        { identity: { certificate: real.certificate, privateKey: other.privateKey }, field: { name: 'Bos' } },
+        run,
+      ),
+    ).rejects.toMatchObject({
+      code: 'verification-failed',
+      details: {
+        engineMessage: expect.stringMatching(/^the produced signature does not verify: integrity "invalid"/),
+      },
+    });
+    const ok = await signPdf(first.bytes, { identity: real, field: { name: 'Bos' } }, run);
+    expect(
+      (await verifySignatures(ok.bytes, run.signal)).map((entry) => [entry.fieldName, entry.integrity]),
+    ).toEqual([
+      ['Bos', 'valid'],
+      ['Hedef', 'valid'],
+    ]);
+  });
+
+  it('writes no signingTime attribute: the time of a PAdES B-B signature is the /M of its dictionary', async () => {
+    const out = await signPdf(
+      await blank(),
+      { identity: await identity(), date: new Date(Date.UTC(2026, 5, 1, 12, 0, 5)) },
+      run,
+    );
+    const [entry] = await widgetsOf(out.bytes);
+    const signature = entry?.widget.get('V').resolve();
+    const contents = new Uint8Array(signature?.get('Contents').asByteString() ?? []);
+    const attributes = readSignedData(contents)?.signerInfos[0]?.signedAttrs?.attributes ?? [];
+    expect(attributes.map((attribute) => attribute.type).sort()).toEqual([
+      '1.2.840.113549.1.9.16.2.47', // signingCertificateV2
+      '1.2.840.113549.1.9.3', // contentType
+      '1.2.840.113549.1.9.4', // messageDigest
+    ]);
+    expect(readText(signature?.get('M'))).toBe('D:20260601120005Z');
+    entry?.doc.destroy();
   });
 
   it('stops when the signal is aborted, with the abort itself and not an engine error', async () => {

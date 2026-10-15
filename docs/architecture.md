@@ -1153,7 +1153,15 @@ mechanics are arranged around one number, `/ByteRange`:
    `/ByteRange` as four integers of a fixed 10-digit width (`2000000000`).
 2. The document is serialised **once** through the MuPDF writer base (no object streams,
    no appearance regeneration); an encrypted document is refused, since its placeholders
-   would be encrypted too.
+   would be encrypted too. A document that already carries a signature is **appended to**
+   as an incremental update instead of rewritten (a rewrite moves the bytes the earlier
+   signatures cover, and an append is what makes a counter-signature possible); the
+   output must start with every input byte, or the operation throws. Only a file MuPDF
+   cannot append to (one it repaired on open) is rewritten, and the report then carries a
+   `lost` note, as `protectDocument`'s does. The written field is told apart from the
+   others by its full name, which a new field may not repeat; a named request fills only
+   the empty field of that name and otherwise creates one, and a reused field also gets
+   its `/AP`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.
@@ -1175,8 +1183,9 @@ on every export of a document signed in the session, and the produced version al
 miss an edit that had already broken the opened file's signature.
 
 **CMS (`signature-cms.ts`).** `pkijs` + `asn1js` for structure, WebCrypto for crypto — no
-network. Signed attributes are `contentType`, `signingTime`, `messageDigest` and
-`signingCertificateV2`; the attribute SET is DER-sorted (X.690 §11.6) and the bytes signed
+network. Signed attributes are `contentType`, `messageDigest` and
+`signingCertificateV2` — no `signingTime`, which PAdES B-B (EN 319 142-1 §6.3) forbids;
+the time is the signature dictionary's `/M`. The attribute SET is DER-sorted (X.690 §11.6) and the bytes signed
 are the DER of the attributes re-tagged to the universal `SET OF` tag (RFC 5652 §5.4) —
 both measured against `openssl cms -verify`. Algorithms come from the key: RSA PKCS#1 v1.5
 (with the explicit ASN.1 NULL parameter RSA requires) or ECDSA P-256/384/521, with
@@ -1184,8 +1193,10 @@ SHA-256/384/512.
 
 **Identity (`signature-pkcs12.ts`).** PKCS#12 only, parsed with `checkIntegrity: true`, so
 a wrong password or a damaged container cannot be signed with. The key is imported
-**non-extractable** with `['sign']` only, and the container bytes are dropped after
-parsing. There is no OS keychain integration.
+**non-extractable** with `['sign']` only. The signer is the certificate whose public key
+the private key signs for (not the first one the container lists), and the password's
+bytes and the key's plain PKCS#8 are overwritten with zeros when the import ends (the
+password string itself cannot be wiped). There is no OS keychain integration.
 
 **Verification (`ops/signature-status.ts`).** Signatures are found by **scanning the raw
 bytes** for `/ByteRange` and the `/Contents` whose own offset falls inside the gap — in one pass
