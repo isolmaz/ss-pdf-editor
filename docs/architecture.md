@@ -2735,6 +2735,23 @@ behind the `\376\377` BOM (`form-data.ts`): escaping only the non-ASCII characte
 units inside a single-byte string would read back `gö` as `g\0ö`, which breaks Turkish form
 values and comments in every reader.
 
+The tokenizer advances on every character, so a lone `<`, `>` or `)` can no longer keep it in
+place (a hex `/ID [<0123ABCD><4567EF01>]`, as Acrobat writes it, used to hang the page).
+A hex string (`<FEFF00C7>`) reads like a literal one; a string without a BOM is PDFDocEncoding
+(`0x9A` is `ı`, `0xA0` is `€`) when `parseFdf` reads a file's bytes. `parseFdf` then reads the
+tokens as dictionaries: `/T` and `/V` in either order, `/Kids` as `parent.child`, a field written
+as an indirect object, and a `/V` that is a name (`/On`, `/1`, `/Evet`, `/Off`) or an array. A name
+is kept as text with `stateName` set to it — `/Off` is `false` and `/Yes` is `true` — and
+`writeValue` matches it against the checkbox's own on-states (`checkboxStates`), so a value the
+field has no state for is not written. A radio group reads a name as a widget's **state** and a
+plain text (JSON, or an FDF string) as an **option's** text; the two differ whenever `/Opt` is
+present (`/Opt [(1)(2)(3)]` over states `/0 /1 /2`), and a name no widget has falls back to the
+option of that spelling. The export is the inverse: `FormDataRecord.stateName` carries the state a
+checkbox or the selected radio widget is in (a checkbox group with several on-states writes the
+one that is on), and `serializeFdf` writes it as the `/V` name (JSON keeps `true` and the option
+text). `importFormData` returns the number of values written, not the number of records found, and
+refuses a file with none (`input-missing`).
+
 `planMarkRemoval(targets, keys)` turns a selection into the two paths it needs, and
 `removeTargets()` is **the one removal intent** for Delete, the strip and both panels:
 

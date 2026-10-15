@@ -495,6 +495,18 @@ describe('Acrobat comment FDF in every shape it comes in', () => {
     );
   });
 
+  it('reads a comment file whose dictionary carries an /ID of hex strings, as every file Acrobat writes does', () => {
+    const file = bytesOf(
+      '%FDF-1.2\n1 0 obj\n<</FDF<</Fields[<</T(c1)/V(<< /Subtype /Text /Rect [1 2 3 4] /Page 1 /Contents (hi) >>)>>]' +
+        '/ID[<0123ABCD><4567EF01>]>>>>\nendobj\ntrailer\n<</Root 1 0 R>>\n%%EOF\n',
+    );
+    for (const parsed of [parseAcrobatCommentsFdf(file), parseAnnotationData(file)]) {
+      expect(parsed.marks).toHaveLength(1);
+      expect(parsed.marks[0]).toMatchObject({ id: 'c1', kind: 'note', pageIndex: 1, contents: 'hi' });
+      expect(parsed.space).toBe('pdf-user');
+    }
+  });
+
   it('reads an annotation stored as a dictionary, counts a value that is not one, and skips an unknown subtype', () => {
     const parsed = parseAcrobatCommentsFdf(
       entries(
