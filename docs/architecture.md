@@ -2572,8 +2572,8 @@ panel, reading pane, text-edit tool — and the one-shot convert and sign action
 switcher, the file actions and one settings button — language, theme, the interface mode,
 privacy, storage and offline preparation are in `SettingsDialog`. The header never overflows the bar at
 any width from 320 px: the menu bar yields first (below 1024 px), then the task buttons (below 768 px), then the
-labels of Open, Save and Export (below 1280 px), and on a phone (below 640 px) the Find button (Open stays, as an icon); the document name
-keeps a minimum width, and `e2e/ui-panels15b-shell.spec.ts` checks the bar from 320 to 1536 px in both
+labels of Open, Save and Export (below 1440 px; the task buttons name themselves from 1280 px, and in Turkish both sets of names do not fit before 1440 px), and on a phone (below 640 px) the Find button (Open stays, as an icon); the document name
+keeps a minimum width, and `e2e/ui-panels15b-shell.spec.ts` checks the bar from 320 to 1536 px (1366, 1439 and 1440 included) in both
 languages. Tooltips are one wrapper
 (`components/Tooltip.tsx`) over Kumo's primitive: it portals to `document.body` so a
 scrolling rail or a clipped panel cannot crop it, uses the declared contrast/inverse token

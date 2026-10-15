@@ -90,7 +90,9 @@ test('the editor header fits every width from a phone to a wide screen and keeps
 }) => {
   await openPdf(page, 'a-long-document-name-that-has-to-be-cut-short.pdf');
   const english = { open: 'Open', exportName: 'Export', options: 'Export Options', settings: 'Settings' };
-  for (const width of [320, 375, 768, 900, 1024, 1280, 1536]) await expectHeaderFits(page, width, english);
+  for (const width of [320, 375, 768, 900, 1024, 1280, 1366, 1439, 1440, 1536]) {
+    await expectHeaderFits(page, width, english);
+  }
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await useLanguage(page, 'Türkçe');
@@ -100,7 +102,34 @@ test('the editor header fits every width from a phone to a wide screen and keeps
     options: 'Dışa Aktarma Seçenekleri',
     settings: 'Ayarlar',
   };
-  for (const width of [320, 768, 1024, 1280, 1536]) await expectHeaderFits(page, width, turkish);
+  for (const width of [320, 768, 1024, 1280, 1366, 1439, 1440, 1536]) {
+    await expectHeaderFits(page, width, turkish);
+  }
+});
+
+test('the task buttons name themselves from 1280 px and the file actions from 1440 px', async ({ page }) => {
+  await openPdf(page);
+  const header = page.locator('header');
+  const tasks = header.getByRole('navigation', { name: 'Tasks' });
+  const labels = ['Tools', 'Read', 'Edit', 'Convert', 'Sign'];
+  for (const [width, tasksNamed, filesNamed] of [
+    [1279, false, false],
+    [1280, true, false],
+    [1439, true, false],
+    [1440, true, true],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const label of labels) {
+      await expect(tasks.getByText(label, { exact: true }), `${label} at ${width} px`).toBeVisible({
+        visible: tasksNamed,
+      });
+    }
+    for (const label of ['Open', 'Export']) {
+      await expect(header.getByText(label, { exact: true }), `${label} at ${width} px`).toBeVisible({
+        visible: filesNamed,
+      });
+    }
+  }
 });
 
 test('the status bar keeps the limit profile and the memory meter out of sight while they do not matter', async ({
