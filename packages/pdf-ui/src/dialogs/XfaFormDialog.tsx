@@ -151,7 +151,8 @@ export function XfaFormDialog({ t, bytes, onClose, onSave, onExport }: XfaFormDi
       const toolError = toToolError(error, 'pdfjs');
       setStatus(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
-      if (saveRef.current === controller) saveRef.current = null;
+      // The save button is disabled while `busy`, so no second save can have replaced this one.
+      saveRef.current = null;
       setBusy(false);
     }
   };

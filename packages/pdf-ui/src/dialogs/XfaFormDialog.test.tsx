@@ -225,6 +225,22 @@ describe('XfaFormDialog on a dynamic form', () => {
     held.resolve(undefined);
   }, 40000);
 
+  it('says nothing about a save that failed after the dialog was closed', async () => {
+    const held = Promise.withResolvers<undefined>();
+    const { given } = await opened({ onSave: vi.fn(() => held.promise) });
+    await userEvent.type(screen.getAllByRole('textbox')[0] as HTMLInputElement, 'Q');
+    await waitFor(() => expect(button('Save to document').disabled).toBe(false));
+    await userEvent.click(button('Save to document'));
+    await waitFor(() => expect(given.onSave).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(button('Close'));
+    await userEvent.click(button('Close without saving'));
+    held.reject(new Error('host gave up'));
+    // The save ends (the button is live again) without a failure sentence beside the form.
+    await waitFor(() => expect(button('Export data (XML)').disabled).toBe(false));
+    expect(screen.queryByText(/Something unexpected went wrong/)).toBeNull();
+  }, 40000);
+
   it('stops a save in flight when the dialog goes away', async () => {
     const held = Promise.withResolvers<undefined>();
     const { given, view } = await opened({ onSave: vi.fn(() => held.promise) });
