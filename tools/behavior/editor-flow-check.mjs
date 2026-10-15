@@ -301,6 +301,11 @@ async function notesWithRow(pattern, what, timeout = 15_000) {
   return list.innerText();
 }
 
+/** A menu entry's name is its label, then its shortcut when it has one. */
+function menuLabel(label) {
+  return new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?: \\S.*)?$`);
+}
+
 /**
  * A menu command, by its own Turkish label (the dictionary's copy, never a
  * paraphrase). The menu bar is a real ARIA menubar: the triggers are
@@ -311,10 +316,11 @@ async function runMenuCommand(menu, command) {
   await bar.getByRole('menuitem', { name: menu, exact: true }).first().click();
   // Toggle commands (the annotation tools, reading mode, the docks) are
   // `menuitemcheckbox`; a command without a `checked` state is a plain menu item.
+  const label = menuLabel(command);
   const item = page
     .getByRole('menu')
-    .getByRole('menuitem', { name: command, exact: true })
-    .or(page.getByRole('menu').getByRole('menuitemcheckbox', { name: command, exact: true }))
+    .getByRole('menuitem', { name: label })
+    .or(page.getByRole('menu').getByRole('menuitemcheckbox', { name: label }))
     .first();
   await item.waitFor({ state: 'visible', timeout: 10_000 });
   await item.click();
@@ -332,7 +338,7 @@ async function menuOffers(menu, command) {
   await bar.getByRole('menuitem', { name: menu, exact: true }).first().click();
   const panel = page.getByRole('menu');
   await panel.waitFor({ state: 'visible', timeout: 10_000 });
-  const offered = (await panel.getByRole('menuitem', { name: command, exact: true }).count()) > 0;
+  const offered = (await panel.getByRole('menuitem', { name: menuLabel(command) }).count()) > 0;
   await page.keyboard.press('Escape');
   await panel.waitFor({ state: 'hidden', timeout: 10_000 });
   return offered;

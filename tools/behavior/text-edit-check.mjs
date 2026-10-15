@@ -369,7 +369,7 @@ try {
   });
 
   await check('text model: the text tool paints one overlay per block on page 1', async () => {
-    await runMenuCommand('Araçlar', '^Metni düzenle$');
+    await runMenuCommand('Araçlar', '^Metni düzenle(?: \\S.*)?$');
     await page.waitForSelector('[data-text-block]', { timeout: 60_000 });
     const blocks = await page.evaluate(() =>
       [...document.querySelectorAll('[data-text-block]')].map((node) => ({
