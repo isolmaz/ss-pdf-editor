@@ -383,6 +383,8 @@ export const tr = {
 
   'update.available': 'Yeni bir güncelleme mevcut. Değişiklikleri uygulamak için yenileyin.',
   'update.refresh': 'Yenile',
+  'update.saveFirst':
+    'Yeni sürüm hazır ama bu sekmede kaydedilmemiş çalışma var, bu yüzden yenilenmedi. Kaydedip yeniden yükleyin.',
 } as const;
 
 export type MessageKey = keyof typeof tr;

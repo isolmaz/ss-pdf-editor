@@ -1,14 +1,41 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+
+/** What the update banner shows. */
+export interface UpdateState {
+  /** A new version is waiting, or is already running behind a page that still holds the old one. */
+  readonly available: boolean;
+  /**
+   * The new worker took over, but this page was not reloaded onto it: it holds work a reload
+   * would lose, so the banner asks for a save and a reload instead of reloading by itself.
+   */
+  readonly held: boolean;
+}
+
+const NO_UPDATE: UpdateState = { available: false, held: false };
 
 let waitingWorker: ServiceWorker | null = null;
-let updateAvailableState = false;
-const listeners = new Set<(available: boolean) => void>();
+let updateState: UpdateState = NO_UPDATE;
+let reloadBlocked: (() => boolean) | null = null;
+const listeners = new Set<(state: UpdateState) => void>();
 
-function notifyListeners(available: boolean) {
-  updateAvailableState = available;
+function publish(state: UpdateState) {
+  updateState = state;
   for (const listener of listeners) {
-    listener(available);
+    listener(state);
   }
+}
+
+/**
+ * Register the check that says whether a reload now would lose work: unsaved changes no draft
+ * holds, or an operation still running. A worker that takes over while it answers `true` does
+ * not reload the page (see `initServiceWorkerUpdates`). Returns the function that withdraws it,
+ * which leaves a check registered since then alone.
+ */
+export function guardReload(blocked: () => boolean): () => void {
+  reloadBlocked = blocked;
+  return () => {
+    if (reloadBlocked === blocked) reloadBlocked = null;
+  };
 }
 
 export function initServiceWorkerUpdates(): void {
@@ -18,7 +45,7 @@ export function initServiceWorkerUpdates(): void {
     worker.addEventListener('statechange', () => {
       if (worker.state === 'installed' && navigator.serviceWorker.controller) {
         waitingWorker = worker;
-        notifyListeners(true);
+        publish({ available: true, held: false });
       }
     });
   };
@@ -29,7 +56,7 @@ export function initServiceWorkerUpdates(): void {
       // 1. Check if there is already a waiting worker
       if (registration.waiting && navigator.serviceWorker.controller) {
         waitingWorker = registration.waiting;
-        notifyListeners(true);
+        publish({ available: true, held: false });
       }
 
       // 2. Listen for newly installing workers
@@ -40,7 +67,7 @@ export function initServiceWorkerUpdates(): void {
       });
 
       // 3. Periodic check for updates every 15 minutes
-      const interval = setInterval(
+      setInterval(
         () => {
           registration.update().catch(() => undefined);
         },
@@ -48,16 +75,14 @@ export function initServiceWorkerUpdates(): void {
       );
 
       // 4. Check for updates when user returns to tab
-      const onVisibilityChange = () => {
+      //
+      // Neither is torn down: a page that unloads takes its timer and listener with it, and
+      // `beforeunload` is no sign of that any more — the user may decline the question
+      // `useUnsavedGuard` asks and stay, and that page must keep looking for updates.
+      document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           registration.update().catch(() => undefined);
         }
-      };
-      document.addEventListener('visibilitychange', onVisibilityChange);
-
-      window.addEventListener('beforeunload', () => {
-        clearInterval(interval);
-        document.removeEventListener('visibilitychange', onVisibilityChange);
       });
     })
     .catch(() => undefined);
@@ -66,18 +91,28 @@ export function initServiceWorkerUpdates(): void {
   // never on the initial claim of a first-time install. The first claim is what makes a
   // page controlled, so every change after it is a replacement: a visit that began
   // uncontrolled (the very first one) must reload on its first update too.
+  //
+  // A worker that takes over answers *every* open page of the editor, not only the one whose
+  // banner was pressed. A page that holds work a reload would lose (see `guardReload`) is left
+  // on its old code instead, and its banner asks for a save and a reload.
   let controlled = Boolean(navigator.serviceWorker.controller);
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     const replacing = controlled;
     controlled = true;
-    if (!refreshing && replacing) {
-      refreshing = true;
-      window.location.reload();
+    if (refreshing || !replacing) return;
+    // Whatever waited has taken over: nothing is left to skip the wait of.
+    waitingWorker = null;
+    if (reloadBlocked?.() === true) {
+      publish({ available: true, held: true });
+      return;
     }
+    refreshing = true;
+    window.location.reload();
   });
 }
 
+/** The banner's "refresh": let the waiting worker take over, or reload when none waits. */
 export function reloadToUpdate(): void {
   if (waitingWorker) {
     waitingWorker.postMessage({ type: 'SKIP_WAITING' });
@@ -86,27 +121,34 @@ export function reloadToUpdate(): void {
   }
 }
 
+/**
+ * The banner's "close". It closes the update for the whole page, not for the one banner that
+ * rendered it: a banner mounted again later must not bring back what the user dismissed. The
+ * next worker to finish installing offers its update again.
+ */
+export function dismissUpdate(): void {
+  publish(NO_UPDATE);
+}
+
 export function useServiceWorkerUpdate(): {
   updateAvailable: boolean;
+  /** The page was left on its old code because it holds unsaved work: save it, then reload. */
+  reloadHeld: boolean;
   reloadToUpdate: () => void;
   dismissUpdate: () => void;
 } {
-  const [available, setAvailable] = useState(updateAvailableState);
+  const [state, setState] = useState(updateState);
 
   useEffect(() => {
-    const listener = (next: boolean) => setAvailable(next);
-    listeners.add(listener);
+    listeners.add(setState);
     return () => {
-      listeners.delete(listener);
+      listeners.delete(setState);
     };
   }, []);
 
-  const dismissUpdate = useCallback(() => {
-    setAvailable(false);
-  }, []);
-
   return {
-    updateAvailable: available,
+    updateAvailable: state.available,
+    reloadHeld: state.held,
     reloadToUpdate,
     dismissUpdate,
   };

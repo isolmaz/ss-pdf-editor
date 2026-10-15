@@ -7,7 +7,7 @@ export interface UpdateBannerProps {
 }
 
 export function UpdateBanner({ t }: UpdateBannerProps) {
-  const { updateAvailable, reloadToUpdate, dismissUpdate } = useServiceWorkerUpdate();
+  const { updateAvailable, reloadHeld, reloadToUpdate, dismissUpdate } = useServiceWorkerUpdate();
 
   if (!updateAvailable) return null;
 
@@ -19,7 +19,7 @@ export function UpdateBanner({ t }: UpdateBannerProps) {
     >
       <div className="flex items-center gap-2">
         <Sparkle size={16} weight="fill" className="shrink-0 animate-pulse text-amber-300" />
-        <span>{t('update.available')}</span>
+        <span>{t(reloadHeld ? 'update.saveFirst' : 'update.available')}</span>
       </div>
 
       <div className="flex items-center gap-2">

@@ -145,16 +145,6 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
           ...(fileVerdict.reason === 'pages' ? { path: file.name } : {}),
         });
       }
-      // Read before the tab exists: it only needs the engine handle, and a rejection here
-      // is an open failure with nothing registered — the handle is released like the
-      // limit-blocked one above, and the original error is the one reported.
-      let encrypted: boolean;
-      try {
-        encrypted = (await handle.raw.getPermissions()) !== null;
-      } catch (error) {
-        await handle.destroy().catch(() => undefined);
-        throw error;
-      }
       const tab = session.openDocument({
         name: file.name,
         bytes,
@@ -175,7 +165,10 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       });
       hideStartScreen();
       let storageWarning: string | null = null;
-      if (encrypted) session.setSensitive(tab.id, true);
+      // A sensitive session is a document opened with its open password — the one the user had to
+      // type. A file that only an owner password restricts opens without one, so it has no secret
+      // to protect and gets a draft like any other.
+      if (password !== undefined) session.setSensitive(tab.id, true);
       else {
         // The tab is registered: keeping a recovery copy is not part of opening. A write
         // that fails (storage full, OPFS unavailable) costs the copy, never the

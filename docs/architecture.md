@@ -2429,10 +2429,11 @@ oversized file produced no notice at all, because the drop zone and the home scr
 this fire-and-forget. It reads the bytes, then runs `openWithPdfjs(bytes)` and
 `sha256Hex(bytes)` in parallel: the fingerprint only reads bytes, so on a large document it
 costs nothing on the path the user waits on. The parsed handle's page count feeds the same
-`checkDocumentLimits()` verdict. Encrypted inputs become **sensitive sessions** and are not
-written to the vault. Four surfaces open a file (picker, drop zone, home screen, hidden
-input) and all four go through one wrapper, so error handling cannot be forgotten at three
-of them. That wrapper (`openFromSurface`) also routes files that are not PDFs. A format
+`checkDocumentLimits()` verdict. A document opened **with its open password** becomes a
+**sensitive session** and is not written to the vault; a file that only an owner password
+restricts opens without one, has no secret to protect and is stored like any other. Four
+surfaces open a file (picker, drop zone, home screen, hidden input) and all four go through
+one wrapper, so error handling cannot be forgotten at three of them. That wrapper (`openFromSurface`) also routes files that are not PDFs. A format
 `ops/convert-formats.ts` lists is converted with defaults (the locale's paper, landscape for
 a spreadsheet, 15 mm margin) and opened as a new tab. The conversion's caveats are shown in
 the notice. A picture becomes a page through `imagesToPdf`. DOC, XLS, PPT, OpenDocument
@@ -2632,8 +2633,8 @@ retains any source another valid draft still references.
 When the inventory is unreadable or incomplete, the discard path deletes nothing and says
 so.
 
-Opening has one boundary: everything that can refuse a document (the engine, its permissions,
-the hash, the limits) runs before the tab is registered, and a handle opened beside a failed
+Opening has one boundary: everything that can refuse a document (the engine, the hash, the
+limits) runs before the tab is registered, and a handle opened beside a failed
 hash is destroyed. Storing the recovery copy comes after and is not part of opening: when that
 write fails, the document stays open and the notice says its recovery copy could not be stored
 and why (`draft.sourceNotStored`), next to whatever the operation reports
@@ -2644,6 +2645,23 @@ stays full does not replace the operation's line.
 Vault writes are serialised in-window through a single promise chain, and a writable that
 rejects is aborted best-effort **without replacing the error that explains what went wrong**
 — the caller must see the failure rather than a success.
+
+A draft is what makes closing a window safe, so the window knows which changes one protects
+(`holdsUnprotectedWork` in `features/persistence/persistence-store.ts`). A tab changes by
+being replaced in the session snapshot, and `persistDraft` records the exact tab object its
+manifest describes, so "the draft holds this state" is a lookup: a document with unsaved
+changes is **unprotected** when its session is sensitive, or when its current state was not
+written (the autosave's 600 ms debounce still waits, or the write failed — a tab with no engine
+handle, which `persistDraft` skips, stays unprotected for as long as it is dirty). Only then does the
+window act (`useUnsavedGuard`): `beforeunload` asks before it is closed or reloaded, and a
+service worker that takes over does not reload it. A worker answers every open window at
+once, so one window's "Refresh" must not reload the others under work a reload would lose —
+the same holds for a window with an operation or a save running. Such a window keeps its old
+code and its update banner says to save and reload (`update.saveFirst`); the banner's
+"Close" closes the update in the module, not only in that banner, and the next worker to
+finish installing offers it again (`serviceWorkerUpdate.ts`). A window whose changes a draft
+holds never asks and reloads as before. The password a tab was opened with lives in
+`lockedTabs` only as long as the tab: `discardDocument` removes it.
 
 ### 8.6 Interface modes
 

@@ -18,6 +18,7 @@ import {
 import { dropHandle, handleFor } from '../core/handles';
 import { dialogsStore } from '../dialogs/dialogs-store';
 import { redactedWordsForgotten } from '../marks/redaction-store';
+import { lockedTabForgotten } from '../open/open-store';
 import { draftWrites } from '../persistence/persistence-store';
 import { closeDismissed, closeRequested, saveStore } from './save-store';
 
@@ -44,6 +45,8 @@ export function discardDocument(host: CloseHost, id: string): void {
   session.closeTab(id);
   releaseEngineValues(id);
   redactedWordsForgotten(id);
+  // The open password is kept in memory for the tab's sake only: it does not outlive the tab.
+  lockedTabForgotten(id);
   draftWrites.current = draftWrites.current
     .then(async () => {
       // The reference graph is read fresh and *whole*, not derived from
