@@ -14,16 +14,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import { readPageText } from '../text-source';
 import { applyTextEdit } from './text-edit';
+import type { OperationOutcome } from './types';
 
 const run = { signal: new AbortController().signal };
 
-function notoRegular(): Uint8Array<ArrayBuffer> {
+/** A TrueType file of an installed `@expo-google-fonts` package, by its path inside `@expo-google-fonts/`. */
+function expoFont(path: string): Uint8Array<ArrayBuffer> {
   const require = createRequire(import.meta.url);
-  const file = require.resolve('@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf', {
-    paths: [process.cwd()],
-  });
+  const file = require.resolve(`@expo-google-fonts/${path}`, { paths: [process.cwd()] });
   return new Uint8Array(readFileSync(file));
 }
+
+const notoRegular = () => expoFont('noto-sans/400Regular/NotoSans_400Regular.ttf');
+
+/** Latin, Latin Extended and Devanagari: no Cyrillic and no Greek, which Noto Sans has. */
+const poppinsRegular = () => expoFont('poppins/400Regular/Poppins_400Regular.ttf');
 
 /** A 400×300 page: `Eski satir` at baseline y=100 from the top, `Kalan` below it. */
 async function page(): Promise<Uint8Array> {
@@ -531,6 +536,110 @@ describe('applyTextEdit faces', () => {
   });
 });
 
+/**
+ * The last face there is — Noto Sans — has no glyph for every character (no emoji, no
+ * CJK). Drawn anyway, such a character is glyph 0: a box, or text no reader extracts,
+ * which only the verification stage noticed, as a generic failure that names nothing.
+ */
+describe('applyTextEdit glyph coverage', () => {
+  const notes = (out: OperationOutcome, key: string) =>
+    out.report.notes.filter((entry) => entry.key === key).map((entry) => entry.params);
+
+  beforeEach(() => {
+    vi.stubGlobal('location', { origin: 'http://localhost' });
+    vi.stubGlobal('fetch', async (input: URL | string) =>
+      String(input).includes('my-face') ? new Response(poppinsRegular()) : new Response(notoRegular()),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('refuses a character Noto Sans has no glyph for, naming it, and writes nothing', async () => {
+    const failure = await failureOf(insertOnly([line('Yeni 😀 Şule', 60, 'helvetica')]));
+    expect(failure).toBeInstanceOf(ToolError);
+    expect(failure).toMatchObject({
+      code: 'glyph-missing',
+      details: {
+        engine: 'mupdf',
+        engineMessage: 'Noto Sans has no glyph for 😀 (U+1F600)',
+        params: { chars: '😀' },
+      },
+    });
+  });
+
+  it('names each missing character once, in text order, and none that Noto Sans has', async () => {
+    const failure = await failureOf(insertOnly([line('日本語 Şule ığ 日 😀', 60, 'comic-sans')]));
+    expect(failure).toMatchObject({
+      code: 'glyph-missing',
+      details: {
+        engineMessage: 'Noto Sans has no glyph for 日 (U+65E5), 本 (U+672C), 語 (U+8A9E), 😀 (U+1F600)',
+        params: { chars: '日 本 語 😀' },
+      },
+    });
+  });
+
+  it('names at most twelve characters and counts the rest', async () => {
+    const failure = await failureOf(insertOnly([line('一二三四五六七八九十百千万億', 60, 'helvetica')]));
+    expect(failure).toMatchObject({
+      code: 'glyph-missing',
+      details: { params: { chars: '一 二 三 四 五 六 七 八 九 十 百 千 …' } },
+    });
+    expect((failure as ToolError).details.engineMessage).toMatch(/ \(U\+5343\) and 2 more$/);
+  });
+
+  it.each([
+    ['a line set in a document font that cannot spell it', line('Hi 😀', 60, 'doc:Helvetica')],
+    [
+      'a line placed word by word',
+      {
+        ...line('iki 😀', 60, 'helvetica'),
+        words: [
+          { text: 'iki', x: 40 },
+          { text: '😀', x: 120 },
+        ],
+      },
+    ],
+  ])('refuses the missing character of %s', async (_name, insert) => {
+    const failure = await failureOf(insertOnly([insert]), documentFontPage());
+    expect(failure).toMatchObject({ code: 'glyph-missing', details: { params: { chars: '😀' } } });
+  });
+
+  it('gives a line a requested font file has no glyph for to Noto Sans, and says so', async () => {
+    const out = await applyTextEdit(
+      await page(),
+      insertOnly([line('Merhaba', 60, 'my-face'), line('Привет', 80, 'my-face')], {
+        fonts: { 'my-face': '/fonts/my-face.ttf' },
+      }),
+      run,
+    );
+    expect(notes(out, 'op.note.textEdit.fontSubstituted')).toEqual([
+      { requested: 'my-face', font: 'Noto Sans' },
+    ]);
+    expect(notes(out, 'op.note.textEdit.fontEmbedded')).toEqual([{ font: 'my-face, Noto Sans' }]);
+    expect(notes(out, 'op.note.textEdit.rendered')).toEqual([{ font: 'my-face, Noto Sans' }]);
+    const lines = await read(out.bytes);
+    const fontOf = (text: string) => lines.find((entry) => entry.text === text)?.font.name;
+    expect(fontOf('Merhaba')).not.toMatch(/Noto/);
+    expect(fontOf('Привет')).toMatch(/Noto/);
+  });
+
+  it('neither reports nor keeps a requested font file that drew nothing', async () => {
+    const out = await applyTextEdit(
+      await page(),
+      insertOnly([line('Привет', 60, 'my-face')], { fonts: { 'my-face': '/fonts/my-face.ttf' } }),
+      run,
+    );
+    expect(notes(out, 'op.note.textEdit.fontSubstituted')).toEqual([
+      { requested: 'my-face', font: 'Noto Sans' },
+    ]);
+    expect(notes(out, 'op.note.textEdit.fontEmbedded')).toEqual([{ font: 'Noto Sans' }]);
+    expect(notes(out, 'op.note.textEdit.rendered')).toEqual([{ font: 'Noto Sans' }]);
+    const fontNames = (await read(out.bytes)).map((entry) => entry.font.name);
+    expect(fontNames.every((name) => /Noto/.test(name) || /Helvetica/.test(name))).toBe(true);
+  });
+});
+
 describe('applyTextEdit font downloads', () => {
   const fonts = { 'my-face': '/fonts/my-face.ttf' };
   const request = () => insertOnly([line('Yeni', 60, 'my-face')], { fonts });
@@ -658,20 +767,32 @@ describe('applyTextEdit cancellation and progress', () => {
     expect(failure).toMatchObject({ code: 'aborted', details: { engine: 'mupdf' } });
   });
 
-  it.each(['textEdit.write', 'textEdit.verify'])(
-    'is cancelled as an AbortError when the signal is aborted during the %s phase',
-    async (phase) => {
-      const controller = new AbortController();
-      await expect(
-        applyTextEdit(await page(), both(), {
-          signal: controller.signal,
-          onProgress: (event) => {
-            if (event.phase === phase) controller.abort();
-          },
-        }),
-      ).rejects.toMatchObject({ name: 'AbortError' });
-    },
-  );
+  it('is cancelled as an AbortError when the signal is aborted during the write phase', async () => {
+    const controller = new AbortController();
+    await expect(
+      applyTextEdit(await page(), both(), {
+        signal: controller.signal,
+        onProgress: (event) => {
+          if (event.phase === 'textEdit.write') controller.abort();
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('maps a cancellation during the verify phase to the aborted ToolError, not an internal one', async () => {
+    const controller = new AbortController();
+    const failure = await applyTextEdit(await page(), both(), {
+      signal: controller.signal,
+      onProgress: (event) => {
+        if (event.phase === 'textEdit.verify') controller.abort();
+      },
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ToolError);
+    expect(failure).toMatchObject({
+      code: 'aborted',
+      details: { engine: 'pdfjs', engineMessage: 'operation aborted' },
+    });
+  });
 
   it('is cancelled before any work when the signal is already aborted', async () => {
     const controller = new AbortController();

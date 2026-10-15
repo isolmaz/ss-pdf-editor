@@ -31,6 +31,9 @@ export const errorsPart = {
   'error.xfa-static.message': 'Bu statik bir XFA formu: sayfaları zaten PDF’in içinde.',
   'error.xfa-static.hint':
     'Alanları “Form alanlarını düzleştir” ile düzleştirin ya da “XFA’yı kaldır” ile yalnızca AcroForm’u bırakın.',
+  'error.glyph-missing.message': 'Yazıda hiçbir yazı tipinde bulunmayan karakterler var: {chars}',
+  'error.glyph-missing.hint':
+    'Bu karakterleri metinden çıkarın ya da yazı tipinde bulunan karakterlerle değiştirin. Hiçbir şey yazılmadı; belgeniz değişmedi.',
   'error.password-policy.message': 'Parola politikası gereği işlem durduruldu.',
   'error.password-policy.hint': 'Açma parolası olmadan şifreleme yapılamaz.',
 } as const;

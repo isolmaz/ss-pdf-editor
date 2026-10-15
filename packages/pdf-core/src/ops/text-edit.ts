@@ -45,7 +45,9 @@
  * pinned asset): the standard 14 are WinAnsi and WinAnsi cannot spell `ğ ş ı İ`, so
  * a standard face is used only when a line's `fontId` names one *and* WinAnsi can
  * encode that line. Everything else falls back to Noto and is reported
- * as a substitution.
+ * as a substitution. A line with a character Noto has no glyph for either is refused
+ * before anything is drawn (`glyph-missing`, naming the characters): glyph 0 would be a
+ * box on screen, or text that cannot be extracted.
  *
  * `request.fonts` is fetched from **our own origin only**: a URL that
  * resolves elsewhere is refused here rather than becoming a third-party request.
@@ -164,6 +166,12 @@ const HALF_COVERED = 0.5;
 
 /** Report parameters are one line of Turkish interface text; the needles are clipped. */
 const MAX_NOTE_TEXT = 160;
+
+/**
+ * How many characters a `glyph-missing` refusal names; a paragraph in an unsupported
+ * script would otherwise fill the dialog.
+ */
+const MAX_MISSING_LISTED = 12;
 
 /**
  * The standard text faces, by the id shape a font candidate uses. Only the faces that
@@ -692,6 +700,9 @@ async function writeStage(
   const opened = await openForWrite(bytes);
   const { doc } = opened;
   const fonts = new Map<string, LineFace>();
+  // The faces a line was drawn with. `fonts` is the cache of every face opened, and a
+  // face can be opened and then not used (a font file with no glyph for a line).
+  const drawnWith = new Set<LineFace>();
   const embeddedFonts = new Set<string>();
   const substitutions = new Set<string>();
   const pages = works.filter((work) => work.lines.length > 0);
@@ -723,6 +734,7 @@ async function writeStage(
           substitutions,
           context.signal,
         );
+        drawnWith.add(font);
         let key = resourceKeys.get(font);
         if (key === undefined) {
           key = addPageResource(doc, page, 'Font', 'TE', font.ref);
@@ -772,12 +784,12 @@ async function writeStage(
     subsetEmbeddedFaces(
       opened.mupdf,
       doc,
-      [...fonts.values()].filter((face): face is EmbeddedFace => 'usedGlyphs' in face),
+      [...drawnWith].filter((face): face is EmbeddedFace => 'usedGlyphs' in face),
     );
     return {
       bytes: saveRewrite(doc, 'text-edit/write'),
       embeddedFonts: [...embeddedFonts],
-      fonts: [...new Set([...fonts.values()].map((font) => font.name))],
+      fonts: [...new Set([...drawnWith].map((font) => font.name))],
       substitutions: [...substitutions],
       lineCount,
       justifiedLines,
@@ -797,13 +809,19 @@ async function writeStage(
  * Resolution order, and the report carries whatever the fallback cost:
  *   0. the id is `doc:<name>` → the page's own font of that name, when it has a code
  *      for every character of the line (`engines/doc-fonts.ts`); nothing is embedded;
- *   1. the id is in `request.fonts` → fetch that file (same origin) and embed it;
+ *   1. the id is in `request.fonts` → fetch that file (same origin) and embed it, when
+ *      it has a glyph for every character of the line;
  *   2. the id names a standard face and this line's text is WinAnsi-encodable → that
  *      standard face (nothing is embedded; the text stays searchable);
  *   3. otherwise → Noto Sans from the pinned asset, reported as a substitution.
  *
- * Step 2 assigns duplicate work to duplicate ids only: the fan-out is per *face*,
- * so a block of twenty lines in one font embeds it once.
+ * Noto Sans is the last face there is: a line it has no glyph for in some character
+ * is refused (`glyph-missing`, naming the characters) rather than drawn with glyph 0
+ * — `.notdef` boxes, or text no reader can extract, which only the verification stage
+ * would notice, and only as a generic failure.
+ *
+ * The fan-out is per *face*, not per line: a block of twenty lines in one font embeds
+ * it once.
  */
 async function lineFont(
   opened: WritableDocument,
@@ -818,6 +836,7 @@ async function lineFont(
 ): Promise<LineFace> {
   const { mupdf, doc } = opened;
   const requested = line.fontId;
+  const text = drawnText(line);
   if (requested.startsWith(DOCUMENT_FONT_PREFIX)) {
     const name = requested.slice(DOCUMENT_FONT_PREFIX.length);
     const key = `doc:${pageIndex}:${name}`;
@@ -830,19 +849,25 @@ async function lineFont(
         fonts.set(key, face);
       }
     }
-    const text = line.words?.map((word) => word.text).join(' ') ?? line.text;
     if (face !== undefined && 'font' in face && encodes(face.font, text)) return face;
     substitutions.add(name);
-    return notoFace(opened, fonts, embeddedFonts);
+    return notoFace(opened, fonts, embeddedFonts, text);
   }
   const url = typeof fontUrls[requested] === 'string' ? fontUrls[requested] : undefined;
   if (url !== undefined) {
-    const cached = fonts.get(`file:${requested}`);
-    if (cached !== undefined) return cached;
-    const font = embedFontFile(mupdf, doc, requested, await fetchFontBytes(url, signal));
-    fonts.set(`file:${requested}`, font);
-    embeddedFonts.add(font.name);
-    return font;
+    let font = fonts.get(`file:${requested}`) as EmbeddedFace | undefined;
+    if (font === undefined) {
+      font = embedFontFile(mupdf, doc, requested, await fetchFontBytes(url, signal));
+      fonts.set(`file:${requested}`, font);
+    }
+    if (font.covers(text)) {
+      embeddedFonts.add(font.name);
+      return font;
+    }
+    // The file has no glyph for part of this line: it would draw glyph 0 for it. The
+    // line goes to Noto Sans — reported as a substitution — or is refused there.
+    substitutions.add(requested);
+    return notoFace(opened, fonts, embeddedFonts, text);
   }
 
   const member =
@@ -863,21 +888,60 @@ async function lineFont(
   } else {
     substitutions.add(requested);
   }
-  return notoFace(opened, fonts, embeddedFonts);
+  return notoFace(opened, fonts, embeddedFonts, text);
 }
 
-/** Noto Sans from the pinned asset, embedded once per document. */
+/** A line as it is drawn: its words when it was placed word by word, else its text. */
+function drawnText(line: TextEditInsertLine): string {
+  return line.words !== undefined && line.words.length > 0
+    ? line.words.map((word) => word.text).join(' ')
+    : line.text;
+}
+
+/**
+ * Noto Sans from the pinned asset, embedded once per document, for a line that no
+ * other face could draw. It is the last fallback: a character it has no glyph for has
+ * nowhere left to go, so the line is refused with those characters named.
+ */
 async function notoFace(
   opened: WritableDocument,
   fonts: Map<string, LineFace>,
   embeddedFonts: Set<string>,
-): Promise<LineFace> {
-  const cached = fonts.get('noto');
-  if (cached !== undefined) return cached;
-  const noto = embedFontFile(opened.mupdf, opened.doc, NOTO_NAME, await notoSansBytes());
-  fonts.set('noto', noto);
-  embeddedFonts.add(noto.name);
-  return noto;
+  text: string,
+): Promise<EmbeddedFace> {
+  let noto = fonts.get('noto');
+  if (noto === undefined) {
+    noto = embedFontFile(opened.mupdf, opened.doc, NOTO_NAME, await notoSansBytes());
+    fonts.set('noto', noto);
+    embeddedFonts.add(noto.name);
+  }
+  // Only this function writes the `noto` entry, and it always writes an embedded face.
+  const face = noto as EmbeddedFace;
+  // `covers` answers for the whole text at once; only a failing text is looked at per character.
+  if (!face.covers(text)) {
+    const missing = [...new Set(text)].filter((character) => !face.covers(character));
+    throw glyphMissing(face.name, missing);
+  }
+  return face;
+}
+
+/**
+ * The refusal for characters no face has a glyph for. The user's message names them
+ * (`params.chars`, the characters as typed); the diagnostic adds their code points, which
+ * is the only way to tell apart characters that look alike or do not show at all.
+ */
+function glyphMissing(faceName: string, missing: readonly string[]): ToolError {
+  const listed = missing.slice(0, MAX_MISSING_LISTED);
+  const more = missing.length - listed.length;
+  const named = listed.map(
+    (character) =>
+      `${character} (U+${(character.codePointAt(0) as number).toString(16).toUpperCase().padStart(4, '0')})`,
+  );
+  return new ToolError('glyph-missing', {
+    engine: 'mupdf',
+    engineMessage: `${faceName} has no glyph for ${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`,
+    params: { chars: `${listed.join(' ')}${more > 0 ? ' …' : ''}` },
+  });
 }
 
 /**
@@ -1027,11 +1091,9 @@ async function verifyPages(
     }
     return { removed, added, pageCount: handle.pageCount };
   } catch (error) {
-    // A cancellation is the caller's own, as in the write stage — not an engine fault.
-    if (error instanceof Error && error.name === 'AbortError') throw error;
     // The reader's own failures travel through the shared mapper (the adapter's own
     // vocabulary is private); the checks above already are `ToolError`s and pass
-    // through unchanged.
+    // through unchanged, and a cancellation is `aborted`, whoever raised it.
     throw toToolError(error, 'pdfjs');
   } finally {
     await handle.destroy();

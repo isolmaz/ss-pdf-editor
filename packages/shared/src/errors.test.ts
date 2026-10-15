@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isToolError, TOOL_ERROR_CODES, ToolError, toToolError } from './errors';
+import { createTranslator } from './i18n';
 import { tr } from './i18n/tr';
 
 /**
@@ -101,6 +102,33 @@ describe('ToolError contract', () => {
     const abort = toToolError(new DOMException('stopped by user', 'AbortError'), 'fs');
     expect(abort.details.engineMessage).toBe('stopped by user');
     expect(abort.message).toBe('[aborted] fs: stopped by user');
+  });
+
+  it('maps a cancellation to aborted by its name, whether it is a DOMException or a plain Error', () => {
+    // The shape `throwIfAborted` and the engines' own cancel paths throw.
+    const plain = new Error('operation aborted');
+    plain.name = 'AbortError';
+    const fromPlain = toToolError(plain, 'pdfjs');
+    expect(fromPlain.code).toBe('aborted');
+    expect(fromPlain.details).toEqual({ engine: 'pdfjs', engineMessage: 'operation aborted' });
+    expect(fromPlain.message).toBe('[aborted] pdfjs: operation aborted');
+
+    const fromDom = toToolError(new DOMException('stopped', 'AbortError'), 'pdfjs');
+    expect([fromDom.code, fromDom.details.engineMessage]).toEqual(['aborted', 'stopped']);
+
+    // Only the name decides: an error that merely says "abort" is not a cancellation.
+    expect(toToolError(new Error('operation aborted'), 'pdfjs').code).toBe('internal');
+    expect(toToolError({ name: 'AbortError', message: 'not an Error' }, 'pdfjs').code).toBe('internal');
+  });
+
+  it('puts the characters a glyph-missing refusal names into its message, in both languages', () => {
+    const error = new ToolError('glyph-missing', { engine: 'mupdf', params: { chars: '😀 😁' } });
+    for (const locale of ['tr', 'en'] as const) {
+      const translate = createTranslator(locale);
+      const message = translate(error.messageKey, error.details.params);
+      expect(message, locale).toContain('😀 😁');
+      expect(message, locale).not.toContain('{chars}');
+    }
   });
 
   it('carries an explicit cause through the constructor', () => {
