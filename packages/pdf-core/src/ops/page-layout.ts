@@ -138,6 +138,11 @@ export interface PageLayout {
   readonly marks: readonly Mark[];
 }
 
+/** What `readPageLayout` returns: the layout, and how many pictures (images and image masks) the page paints, counted from its own drawing whether or not `images` asked for their data. */
+export interface ReadLayout extends PageLayout {
+  readonly pictures: number;
+}
+
 /** A picture larger than this (pixels on its long side) is scaled down for the export. */
 const MAX_IMAGE_SIDE = 2000;
 /** Lines closer than this are the same line; gaps up to this join segments of one rule. */
@@ -615,7 +620,7 @@ function glyphNotes(symbols: boolean): GlyphNotes {
 }
 
 /** The page's characters, blocks and pictures, through MuPDF's structured-text walker. */
-export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): PageLayout {
+export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly images: boolean }): ReadLayout {
   const [px0, py0, px1, py1] = page.getBounds();
   const shift = (x: number, y: number): readonly [number, number] => [x - px0, y - py0];
   const { blocks, walked } = walkText(
@@ -648,6 +653,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
     marks.push({ box: [x0, y0, x1, y1], seed });
   };
   const glyphs = glyphNotes(false);
+  let pictures = 0;
   const device = new mupdf.Device({
     ...glyphs.calls,
     fillShade(shade, ctm) {
@@ -656,10 +662,12 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
     },
     fillImage(image, ctm) {
       borrowed(image);
+      pictures += 1;
       mark(transformBox([0, 0, 1, 1], ctm), true);
     },
     fillImageMask(image, ctm) {
       borrowed(image);
+      pictures += 1;
       mark(transformBox([0, 0, 1, 1], ctm), true);
     },
     strokePath(path, _stroke, ctm) {
@@ -697,7 +705,7 @@ export function readPageLayout(mupdf: Mupdf, page: Page, options: { readonly ima
   }
   glyphs.apply(walked);
 
-  return { width: px1 - px0, height: py1 - py0, blocks, rulings, marks };
+  return { width: px1 - px0, height: py1 - py0, blocks, rulings, marks, pictures };
 }
 
 /** The text of a page's annotations and form fields, and the fields whose value nothing shows. */
@@ -839,15 +847,141 @@ const FIGURE_PROSE = 40;
 /** Above this many drawn things on a page, it is treated as one drawing. */
 const MAX_MARKS = 2000;
 
-/** Whether a drawn region stays a figure (see `findFigures`). */
-function keepFigure(layout: PageLayout, tables: readonly Box[], box: Box): boolean {
-  const lines = layout.blocks.flatMap((block) => (block.kind === 'text' ? block.lines : []));
+/** A line of the page's text and the box its characters fill, for `keepFigure`. */
+interface TextLine {
+  readonly box: Box;
+  readonly chars: readonly LayoutChar[];
+}
+
+/** The page's lines with the box of their characters. */
+function textLines(layout: PageLayout): TextLine[] {
+  const out: TextLine[] = [];
+  for (const block of layout.blocks) {
+    if (block.kind !== 'text') continue;
+    for (const line of block.lines) {
+      let x0 = Number.POSITIVE_INFINITY;
+      let y0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
+      for (const char of line.chars) {
+        x0 = Math.min(x0, char.box[0]);
+        y0 = Math.min(y0, char.box[1]);
+        x1 = Math.max(x1, char.box[2]);
+        y1 = Math.max(y1, char.box[3]);
+      }
+      out.push({ box: [x0, y0, x1, y1], chars: line.chars });
+    }
+  }
+  return out;
+}
+
+/** Whether a drawn region stays a figure (see `findFigures`); `lines` are the page's (`textLines`). */
+function keepFigure(
+  layout: PageLayout,
+  tables: readonly Box[],
+  lines: readonly TextLine[],
+  box: Box,
+): boolean {
   if (box[2] - box[0] < MIN_FIGURE || box[3] - box[1] < MIN_FIGURE) return false;
   if (tables.some((table) => overlaps(table, box, 0))) return false;
   // A page that is one big drawing (a scanned page with vector rules over it, a form) is
   // left as it is: the text stays text.
   if ((box[2] - box[0]) * (box[3] - box[1]) > layout.width * layout.height * 0.6) return false;
-  return !lines.some((line) => line.chars.filter((char) => inside(char, box)).length >= FIGURE_PROSE);
+  // A character is inside when its centre is (`inside`, one point of slack), so a line whose
+  // characters' box is a point or more away from the region has none inside, and is not counted.
+  return !lines.some(
+    (line) =>
+      overlaps(line.box, box, 1) && line.chars.filter((char) => inside(char, box)).length >= FIGURE_PROSE,
+  );
+}
+
+/** The side of a grid cell, in points: about the size of the smallest figure. */
+const GRID_CELL = 32;
+/** A box that covers more cells than this is a candidate for every query instead of being entered in each cell. */
+const WIDE_BOX_CELLS = 64;
+/** A query that covers more cells than this takes every box for a candidate. */
+const WIDE_QUERY_CELLS = 256;
+
+/** The cells a box reaches: first and last column and row, and how many cells that is. */
+interface CellSpan {
+  readonly c0: number;
+  readonly r0: number;
+  readonly c1: number;
+  readonly r1: number;
+  readonly count: number;
+}
+
+/**
+ * Boxes in a uniform grid, so the ones near a box are found without looking at all of them. It
+ * answers with candidates — boxes that share a cell with the query — which the caller checks
+ * with `overlaps`; a box that reaches over many cells (a long rule, a frame) is a candidate of
+ * every query. Boxes can leave and come back with another box (`move`).
+ */
+class BoxGrid {
+  private readonly cells = new Map<number, Set<number>>();
+  private readonly wide = new Set<number>();
+  private readonly boxes = new Map<number, Box>();
+
+  /** The first and last column and row a box reaches, `gap` points out, and how many cells that is. */
+  private static span(box: Box, gap: number): CellSpan {
+    const c0 = Math.floor((box[0] - gap) / GRID_CELL);
+    const r0 = Math.floor((box[1] - gap) / GRID_CELL);
+    const c1 = Math.floor((box[2] + gap) / GRID_CELL);
+    const r1 = Math.floor((box[3] + gap) / GRID_CELL);
+    return { c0, r0, c1, r1, count: (c1 - c0 + 1) * (r1 - r0 + 1) };
+  }
+
+  /** A cell's key; two cells that share one only add a candidate, never lose one. */
+  private static key(column: number, row: number): number {
+    return column * 100_003 + row;
+  }
+
+  add(id: number, box: Box): void {
+    this.boxes.set(id, box);
+    const { c0, r0, c1, r1, count } = BoxGrid.span(box, 0);
+    // A box with no finite extent (`NaN`, infinite) is wide too: no cell holds it.
+    if (!(count <= WIDE_BOX_CELLS)) {
+      this.wide.add(id);
+      return;
+    }
+    for (let row = r0; row <= r1; row += 1) {
+      for (let column = c0; column <= c1; column += 1) {
+        const key = BoxGrid.key(column, row);
+        const cell = this.cells.get(key);
+        if (cell === undefined) this.cells.set(key, new Set([id]));
+        else cell.add(id);
+      }
+    }
+  }
+
+  /** Takes a box that was added out of the grid. */
+  remove(id: number): void {
+    const box = this.boxes.get(id) as Box;
+    this.boxes.delete(id);
+    if (this.wide.delete(id)) return;
+    const { c0, r0, c1, r1 } = BoxGrid.span(box, 0);
+    for (let row = r0; row <= r1; row += 1) {
+      for (let column = c0; column <= c1; column += 1) this.cells.get(BoxGrid.key(column, row))?.delete(id);
+    }
+  }
+
+  move(id: number, box: Box): void {
+    this.remove(id);
+    this.add(id, box);
+  }
+
+  /** The ids of the boxes that may lie within `gap` points of `box` (each once). */
+  near(box: Box, gap: number): number[] {
+    const { c0, r0, c1, r1, count } = BoxGrid.span(box, gap);
+    if (!(count <= WIDE_QUERY_CELLS)) return [...this.boxes.keys()];
+    const found = new Set<number>(this.wide);
+    for (let row = r0; row <= r1; row += 1) {
+      for (let column = c0; column <= c1; column += 1) {
+        for (const id of this.cells.get(BoxGrid.key(column, row)) ?? []) found.add(id);
+      }
+    }
+    return [...found];
+  }
 }
 
 /**
@@ -856,6 +990,12 @@ function keepFigure(layout: PageLayout, tables: readonly Box[], box: Box): boole
  * any mark touching it joins, until nothing more does. A region that holds a line of prose
  * is a coloured text box and is left to the text, and one inside or across a table is the
  * table's.
+ *
+ * The regions are the fixed point of two rules — a region takes in every mark within a point
+ * of it, and two regions within four points of each other become one — and any order of
+ * applying them ends at the same regions, so each region is settled once, against the marks
+ * and the other regions near it (`BoxGrid`) rather than all of them: a page of a thousand
+ * drawn things is not a thousand times a thousand comparisons for each pass.
  */
 export function findFigures(layout: PageLayout, tables: readonly Box[]): Box[] {
   const union = (a: Box, b: Box): Box => [
@@ -867,35 +1007,54 @@ export function findFigures(layout: PageLayout, tables: readonly Box[]): Box[] {
   const same = (a: Box, b: Box) => a.every((value, index) => value === b[index]);
   const seeds = layout.marks.filter((mark) => mark.seed).map((mark) => mark.box);
   if (seeds.length === 0) return [];
+  const lines = textLines(layout);
   // A page of thousands of paths (a map, a plan, text drawn as outlines) is one drawing;
   // growing it mark by mark would cost the square of its paths.
   if (layout.marks.length > MAX_MARKS) {
     const all = layout.marks.reduce((box, mark) => union(box, mark.box), seeds[0] as Box);
-    return keepFigure(layout, tables, all) ? [all] : [];
+    return keepFigure(layout, tables, lines, all) ? [all] : [];
   }
-  let regions: Box[] = seeds;
-  // Grow every region over the marks that touch it and merge regions that meet, until
-  // nothing changes.
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const next: Box[] = [];
-    for (const region of regions) {
-      let box = region;
-      for (const mark of layout.marks) {
-        if (overlaps(box, mark.box, 1)) box = union(box, mark.box);
+  /** `first` is the first seed the region holds: the regions come out in the order of their seeds. */
+  const regions = seeds.map((box, first) => ({ box, first, merged: false }));
+  const markGrid = new BoxGrid();
+  for (const [at, mark] of layout.marks.entries()) markGrid.add(at, mark.box);
+  const regionGrid = new BoxGrid();
+  for (const [at, region] of regions.entries()) regionGrid.add(at, region.box);
+  for (const [at, region] of regions.entries()) {
+    if (region.merged) continue;
+    let box = region.box;
+    // Grow over the marks that touch the region and take in the regions that meet it, until
+    // neither adds anything: a region that grew can touch more marks and regions.
+    let settled = false;
+    while (!settled) {
+      settled = true;
+      for (const nearby of markGrid.near(box, 1)) {
+        const markBox = (layout.marks[nearby] as Mark).box;
+        if (!overlaps(box, markBox, 1)) continue;
+        const grown = union(box, markBox);
+        if (!same(grown, box)) {
+          box = grown;
+          settled = false;
+        }
       }
-      if (!same(box, region)) changed = true;
-      const into = next.findIndex((other) => overlaps(other, box, 4));
-      if (into === -1) next.push(box);
-      else {
-        next[into] = union(next[into] as Box, box);
-        changed = true;
+      for (const other of regionGrid.near(box, 4)) {
+        const peer = regions[other] as (typeof regions)[number];
+        if (other === at || peer.merged || !overlaps(box, peer.box, 4)) continue;
+        box = union(box, peer.box);
+        region.first = Math.min(region.first, peer.first);
+        peer.merged = true;
+        regionGrid.remove(other);
+        settled = false;
       }
     }
-    regions = next;
+    region.box = box;
+    regionGrid.move(at, box);
   }
-  return regions.filter((box) => keepFigure(layout, tables, box));
+  return regions
+    .filter((region) => !region.merged)
+    .sort((a, b) => a.first - b.first)
+    .map((region) => region.box)
+    .filter((box) => keepFigure(layout, tables, lines, box));
 }
 
 /**
