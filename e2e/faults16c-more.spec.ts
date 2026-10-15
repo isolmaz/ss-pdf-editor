@@ -7,7 +7,7 @@
 import { failNext, firedCount, injectEngineFaults } from './engine-faults';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { exportBytes, menuItem, openPdf } from './ui-helpers';
+import { applyForm, exportBytes, menuItem, openPdf } from './ui-helpers';
 import { dynamicXfaPdf } from './ui-xfa-helpers';
 
 test.use({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block' });
@@ -55,9 +55,7 @@ test('flatten XFA when the browser cannot encode a page picture says so and open
   await expect(page).not.toHaveTitle('xfa-flat.pdf');
 
   await page.evaluate(() => Reflect.set(window, '__noBlobs', false));
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await applyForm(form, 'Open in new tab');
   await expect(page).toHaveTitle('xfa-flat.pdf', { timeout: 60_000 });
   expect((await readProducedPageTexts(await exportBytes(page, 'flat.pdf'))).join(' ')).toContain('Customer');
 });

@@ -9,7 +9,7 @@
 
 export const commonPart = {
   'unit.pt': 'pt',
-  'op.apply': 'Önizle',
+  'op.apply': 'Uygula',
   'op.cancel': 'Vazgeç',
   'op.close': 'Kapat',
   'op.running': 'İşleniyor…',
@@ -39,6 +39,8 @@ export const commonPart = {
   'op.result.newTab': 'Yeni sekmede aç',
   'op.result.download': 'İndir',
   'op.result.applied': 'Belgeye uygulandı: {label} (Ctrl+Z ile geri alın)',
+  'op.result.undoHint': 'Ctrl+Z ile geri alın.',
+  'op.result.details': 'Ayrıntılar',
   'op.result.noChangePages': 'Değişiklik yapılmadı: işlemin uygulanacağı sayfa bulunamadı.',
   'op.result.nothing': 'Değişiklik yapılmadı: işlem yazılacak bir dosya üretmedi.',
   'op.result.opened': 'Yeni sekmede açıldı: {name}',

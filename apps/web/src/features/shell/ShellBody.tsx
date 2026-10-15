@@ -17,7 +17,7 @@ import { ActivityOverlay } from '../../components/ActivityOverlay';
 import { HomeScreen } from '../../components/HomeScreen';
 import type { RecentDocumentItem } from '../../recent';
 import { clearNotice, useCore } from '../core/core-store';
-import { BatchDialogHost, StartDialogHost } from '../dialogs/DialogSurfaces';
+import { BatchDialogHost, ReportDialogHost, StartDialogHost } from '../dialogs/DialogSurfaces';
 import { openBatchDialog } from '../dialogs/dialogs-store';
 import { useOpen } from '../open/open-store';
 import { requestCancel } from '../pages/page-actions';
@@ -58,6 +58,7 @@ export function ShellBody(props: ShellBodyProps) {
   const editor = useEditorSurfaces();
   const busy = useCore((state) => state.busy);
   const notice = useCore((state) => state.notice);
+  const noticeAction = useCore((state) => state.noticeAction);
   const opening = useOpen((state) => state.opening);
   const progress = useResults((state) => state.progress);
   const openIds = useMemo(() => new Set(tabs.map((tab) => tab.id)), [tabs]);
@@ -116,11 +117,13 @@ export function ShellBody(props: ShellBodyProps) {
           static import here is what put Kumo's dialog primitives on the first-paint graph, and a
           `lazy` boundary that is mounted unconditionally still fetches immediately. */}
       <StartDialogHost t={t} onResult={props.startResult} />
+      <ReportDialogHost t={t} />
       <ScanDialogHost t={t} onDocument={results.scanDocument} />
       <BatchDialogHost t={t} />
       <ActivityOverlay
         t={t}
         notice={notice}
+        noticeAction={noticeAction}
         onDismiss={clearNotice}
         progress={progress}
         onCancel={() => requestCancel({ t })}

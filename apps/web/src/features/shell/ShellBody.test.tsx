@@ -16,7 +16,7 @@ import type { Command } from 'pdf-ui';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { STANDALONE_COMMAND_IDS } from '../../commands';
-import { coreStore, initialCoreState, setBusy } from '../core/core-store';
+import { coreStore, initialCoreState, setBusy, showNotice } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
 import { dialogsStore, initialDialogsState } from '../dialogs/dialogs-store';
 import { exportStore, initialExportState } from '../export/export-store';
@@ -88,6 +88,7 @@ vi.mock('../../components/ActivityOverlay', async () => {
         {
           'aria-label': 'activity overlay',
           'data-notice': String(props.notice),
+          'data-notice-action': (props.noticeAction as { label: string } | null)?.label ?? 'null',
           'data-progress': JSON.stringify(props.progress),
           'data-activity': String(props.activity),
         },
@@ -109,6 +110,7 @@ vi.mock('../dialogs/DialogSurfaces', async () => {
       );
     },
     BatchDialogHost: () => createElement('div', { 'aria-label': 'batch host' }),
+    ReportDialogHost: () => createElement('div', { 'aria-label': 'report host' }),
   };
 });
 vi.mock('../results/ResultsSurfaces', async () => {
@@ -446,12 +448,14 @@ describe('ShellBody dialogs and status overlay', () => {
   it('mounts the standalone dialog hosts with and without a document', async () => {
     renderBody();
     expect(screen.getByLabelText('batch host')).toBeTruthy();
+    expect(screen.getByLabelText('report host')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'start result' }));
     expect(props.startResult).toHaveBeenCalledWith({ kind: 'started' });
     cleanup();
     openTab();
     renderBody();
     expect(screen.getByLabelText('batch host')).toBeTruthy();
+    expect(screen.getByLabelText('report host')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'start result' }));
     expect(props.startResult).toHaveBeenCalledTimes(2);
   });
@@ -469,6 +473,15 @@ describe('ShellBody dialogs and status overlay', () => {
     expect(screen.getByLabelText('activity overlay').dataset.notice).toBe('saved');
     await userEvent.click(screen.getByRole('button', { name: 'dismiss' }));
     expect(coreStore.get().notice).toBeNull();
+  });
+
+  it('hands the overlay the button the notice offers, and none once the notice is replaced', () => {
+    renderBody();
+    expect(screen.getByLabelText('activity overlay').dataset.noticeAction).toBe('null');
+    act(() => showNotice('applied', { label: 'Details', run: () => undefined }));
+    expect(screen.getByLabelText('activity overlay').dataset.noticeAction).toBe('Details');
+    act(() => showNotice('saved'));
+    expect(screen.getByLabelText('activity overlay').dataset.noticeAction).toBe('null');
   });
 
   it('shows the running operation’s progress and cancels it through the shell', async () => {

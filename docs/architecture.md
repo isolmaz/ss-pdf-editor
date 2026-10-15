@@ -2448,14 +2448,22 @@ renders in the panel and in a modal). A select shows its option's **label** in t
 picked, in the product's words rather than the browser's "Choose File".
 
 **One host.** `OperationForm` (`dialogs/OperationForm.tsx`) is the whole of an operation's
-surface — title, the two numbered steps (`DialogSteps`: settings, then review/result), the
-fields, progress with a working cancel, the destructive second confirmation, the error with
-its diagnostic, the report — and the right dock (`features/shell/RightDock.tsx`) shows it in
+surface — title, the fields, progress with a working cancel, the destructive second
+confirmation, the error with its diagnostic, the report of a result that has to be read — and the right dock (`features/shell/RightDock.tsx`) shows it in
 its tools panel for **every** operation, so there is one runner with one destructive confirmation and one meaning
-of "Close". The first-step button reads *Preview* (`op.apply`) because it
-runs the operation and shows the report; only the result's own action
-(`RESULT_ACTIONS[resultKind]`: apply to the document / open in a new tab / download) changes
-anything, and "Close" discards. Modals remain for decisions that block: password, unsaved
+of "Close". The button reads *Apply* (`op.apply`) and runs the operation. What follows is
+`resultNeedsReview` (`dialogs/review.ts`): a result with no file, a `lost` or `warning` note,
+or one of the few `changed` notes that say the output differs from what was asked (a text
+that had to be shrunk or reflowed, an approximate conversion, a generated owner password) is
+shown as a report first, and only its own action (`RESULT_ACTIONS[resultKind]`: apply to the
+document / open in a new tab / download) changes anything, while "Close" discards. Every
+other result is handed to the host at once — the document keeps an undo step for it, so a
+report screen in front of that step would be a second button and nothing more. The form
+shows "Processing…" meanwhile; if the host's promise ends and the form is still mounted
+(another operation held the document, the write failed), the report and its button appear,
+so the result is never lost. A delivered result's notice carries *Ctrl+Z* as its undo hint and a *Details* action
+(`NoticeAction` in `core-store`, rendered by `ActivityOverlay`) that opens the report in a
+`ReportDialog` (`dialogs-store.reportView`). Modals remain for decisions that block: password, unsaved
 changes, signature warning, export choice, print, settings and the shortcut list.
 
 The host (`dialogResult`, built by `createDialogRuns` in `features/dialogs/dialog-actions.ts`) applies a result and closes the form itself once the result

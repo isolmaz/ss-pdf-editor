@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
 import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf } from './tool-fixture';
-import { exportBytes, menuItem, openPdf } from './ui-helpers';
+import { applyForm, detailsButton, exportBytes, menuItem, openPdf } from './ui-helpers';
 import { dynamicXfaPdf } from './ui-xfa-helpers';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
@@ -91,12 +91,12 @@ test('flatten: the laid-out form becomes a normal PDF whose text is the form tex
   const form = page.getByRole('region', { name: 'Flatten XFA form to a normal PDF' });
   await expect(form).toBeVisible();
   await form.getByRole('radio').first().check();
-  // The first click runs the flatten and shows its report; the second opens the result.
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await expect(form).toContainText('1 XFA page(s) became normal PDF pages.');
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await applyForm(form, 'Open in new tab');
   await expect(page).toHaveTitle('xfa-flat.pdf', { timeout: 60_000 });
+  // The notice that says the result opened keeps the report one press away.
+  await detailsButton(page).click();
+  await expect(page.getByRole('dialog')).toContainText('1 XFA page(s) became normal PDF pages.');
+  await page.keyboard.press('Escape');
   const bytes = await exportBytes(page, 'flat.pdf');
   expect((await readProducedPdf(bytes)).pageCount).toBeGreaterThanOrEqual(1);
   const text = (await readProducedPageTexts(bytes)).join(' ');

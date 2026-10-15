@@ -19,6 +19,7 @@ describe('the dialog surface', () => {
       'OperationForm',
       'OperationReportPanel',
       'PasswordDialog',
+      'ReportDialog',
       'SaveConflictDialog',
       'SettingsDialog',
       'ShortcutsDialog',

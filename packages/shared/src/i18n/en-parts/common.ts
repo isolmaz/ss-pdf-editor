@@ -1,6 +1,6 @@
 export const commonPart = {
   'unit.pt': 'pt',
-  'op.apply': 'Preview',
+  'op.apply': 'Apply',
   'op.cancel': 'Cancel',
   'op.close': 'Close',
   'op.running': 'Processing…',
@@ -30,6 +30,8 @@ export const commonPart = {
   'op.result.newTab': 'Open in new tab',
   'op.result.download': 'Download',
   'op.result.applied': 'Applied to document: {label} (Undo with Ctrl+Z)',
+  'op.result.undoHint': 'Undo with Ctrl+Z.',
+  'op.result.details': 'Details',
   'op.result.noChangePages': 'Nothing changed: no page to apply the action to.',
   'op.result.nothing': 'Nothing changed: the operation produced no file to write.',
   'op.result.opened': 'Opened in new tab: {name}',

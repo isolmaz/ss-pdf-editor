@@ -1,13 +1,13 @@
 /**
  * Which dialog the shell is showing: the operation dialog in the tools panel and the bytes it
- * was frozen with, the standalone operation in its modal, the batch dialog and the shortcut
- * list. None of it is document data — it belongs to the window — except `dialogInput`, which
+ * was frozen with, the standalone operation in its modal, the batch dialog, the report of a
+ * result that was delivered unread and the shortcut list. None of it is document data — it belongs to the window — except `dialogInput`, which
  * names the tab and working version it was frozen from so a dialog that outlived its document
  * can be dismissed.
  */
 
 import type { FieldValue } from 'pdf-ui';
-import type { OperationDialogSpec } from 'pdf-ui/ui';
+import type { OperationDialogSpec, OpRunResult } from 'pdf-ui/ui';
 import { createStore, type Equality, useStore } from '../store';
 
 /**
@@ -40,6 +40,12 @@ export interface DialogsState {
   readonly dialogInput: DialogInput | null;
   /** The standalone operation shown in its modal (`StartDialog`), or `null`. */
   readonly startSpec: OperationDialogSpec | null;
+  /**
+   * The report a delivered result's "Details" action opens (`ReportDialog`), under the
+   * operation's title; `null` while it is closed. Report data only — the bytes it describes
+   * are already in the document, a new tab or a download.
+   */
+  readonly reportView: { readonly title: string; readonly report: OpRunResult['report'] } | null;
   /** The shortcut list is open. Its own state: help is not a document operation. */
   readonly shortcutsOpen: boolean;
   /**
@@ -54,6 +60,7 @@ export const initialDialogsState = (): DialogsState => ({
   dialogSpec: null,
   dialogInput: null,
   startSpec: null,
+  reportView: null,
   shortcutsOpen: false,
   shortcutsTrigger: null,
 });
@@ -89,6 +96,14 @@ export function startDialogOpened(spec: OperationDialogSpec): void {
 
 export function closeStartDialog(): void {
   dialogsStore.set({ startSpec: null });
+}
+
+export function reportOpened(title: string, report: OpRunResult['report']): void {
+  dialogsStore.set({ reportView: { title, report } });
+}
+
+export function reportClosed(): void {
+  dialogsStore.set({ reportView: null });
 }
 
 /** The shortcut list opened over `trigger`, the element to give focus back to (if any). */

@@ -5,7 +5,7 @@
 
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { exportBytes, openPdf } from './ui-helpers';
+import { applyForm, exportBytes, openPdf } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 120_000 });
@@ -36,10 +36,7 @@ test('the header search button opens the find bar with its field focused; Replac
   await expect(form).toBeVisible({ timeout: 30_000 });
   await expect(form.getByRole('textbox', { name: 'Find', exact: true })).toHaveValue('Alpha');
   await form.getByRole('textbox', { name: 'Replace with' }).fill('Omega');
-  await form.getByRole('button', { name: 'Replace all', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
+  await applyForm(form, 'Replace all');
   const texts = await readProducedPageTexts(await exportBytes(page, 'replaced.pdf'));
   expect(texts[0]).toContain('Omega 1');
   expect(texts[0]).not.toContain('Alpha');

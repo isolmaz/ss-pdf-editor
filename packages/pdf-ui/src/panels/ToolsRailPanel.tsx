@@ -34,7 +34,7 @@ export interface ToolsRailPanelProps {
   readonly context?: OperationRunContext | null;
   readonly onSelectTool?: (id: string) => void;
   readonly onBackToTools?: () => void;
-  readonly onResult?: (result: OpRunResult) => void;
+  readonly onResult?: (result: OpRunResult) => void | Promise<void>;
   readonly onOpenDialog?: (id: string) => void;
   readonly onPageAction?: (action: { kind: string; direction?: string }) => void;
   readonly onArmTool?: (tool: string) => void;
@@ -86,7 +86,7 @@ function InlineToolRunner({
   readonly spec: OperationDialogSpec;
   readonly context: OperationRunContext;
   readonly onBack: () => void;
-  readonly onResult?: (result: OpRunResult) => void;
+  readonly onResult?: (result: OpRunResult) => void | Promise<void>;
 }) {
   return (
     <section aria-label={t(spec.titleKey)} className="flex h-full flex-col bg-kumo-base p-3 select-none">

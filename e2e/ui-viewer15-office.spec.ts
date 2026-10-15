@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
-import { openPdf, runCommand } from './ui-helpers';
+import { applyForm, openPdf, runCommand } from './ui-helpers';
 
 interface Workbook {
   file(name: string): { async(type: 'string'): Promise<string> } | null;
@@ -30,10 +30,8 @@ test('excel export of pages without a table names one sheet per page', async ({ 
   const form = page.getByRole('region', { name: 'Export to Word, Excel or CSV' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('radio', { name: /Excel \(XLSX\)/ }).check();
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
   const download = page.waitForEvent('download', { timeout: 60_000 });
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  await applyForm(form, 'Download');
   const path = test.info().outputPath('notes.xlsx');
   const saved = await download;
   expect(saved.suggestedFilename()).toMatch(/\.xlsx$/);

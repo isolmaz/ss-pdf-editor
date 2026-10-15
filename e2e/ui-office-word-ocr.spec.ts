@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 import { paragraphTexts } from './docx-text';
 import { expect, test } from './test';
 import { scannedPdf } from './tool-fixture';
-import { openPdf, runCommand } from './ui-helpers';
+import { applyForm, detailsButton, openPdf, runCommand } from './ui-helpers';
 
 interface Package {
   readonly files: Readonly<Record<string, { readonly dir: boolean }>>;
@@ -47,13 +47,12 @@ test('a scanned page exports to Word as text boxes read by OCR, with the report 
   await expect(languages.getByRole('checkbox', { name: /Turkish/ })).toBeChecked();
   await expect(languages.getByRole('checkbox', { name: /English/ })).toBeChecked();
 
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 540_000 });
-  await expect(form.getByText(/were read with OCR/)).toBeVisible();
-
-  const download = page.waitForEvent('download', { timeout: 60_000 });
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  const download = page.waitForEvent('download', { timeout: 540_000 });
+  await applyForm(form, 'Download');
   const saved = await download;
+  await detailsButton(page).click();
+  await expect(page.getByRole('dialog').getByText(/were read with OCR/)).toBeVisible();
+  await page.keyboard.press('Escape');
   expect(saved.suggestedFilename()).toBe('scan.docx');
   const path = test.info().outputPath('scan.docx');
   await saved.saveAs(path);

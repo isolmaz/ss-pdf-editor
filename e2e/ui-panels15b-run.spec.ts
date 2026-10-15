@@ -5,7 +5,7 @@
 
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
-import { openDockTab, openPdf } from './ui-helpers';
+import { openDockTab, openPdf, reviewHeading, runCommand } from './ui-helpers';
 import { viewingOnlyFixture } from './ui-tags-helpers';
 
 const panel = (page: Page): Locator => page.getByRole('tabpanel');
@@ -23,22 +23,20 @@ async function openTool(page: Page, group: string, title: string, region: string
   return form;
 }
 
-test('a tool that replaces the document names its second step Review and apply, and the step marker moves on after the preview', async ({
+test('a tool that replaces the document names its second step Review and apply, and the step marker moves on when the result has to be read first', async ({
   page,
 }) => {
   await openPdf(page);
-  const form = await openTool(
-    page,
-    'Numbering & Watermark',
-    'Add Page Numbers',
-    'Header / Footer & Page Numbering',
-  );
+  // Nothing to write: the run has no file to apply, so its report is the answer and is read.
+  await runCommand(page, 'Document properties');
+  const form = page.getByRole('region', { name: 'Document properties', exact: true });
+  await expect(form).toBeVisible();
   await expect(steps(form)).toHaveText(['1Settings', '2Review and apply']);
   await expect(steps(form).first()).toHaveAttribute('aria-current', 'step');
   await expect(steps(form).last()).not.toHaveAttribute('aria-current', 'step');
 
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(reviewHeading(form)).toBeVisible({ timeout: 60_000 });
   await expect(steps(form).last()).toHaveAttribute('aria-current', 'step');
   await expect(steps(form).first()).not.toHaveAttribute('aria-current', 'step');
   await expect(form.getByRole('button', { name: 'Apply to document', exact: true })).toBeVisible();

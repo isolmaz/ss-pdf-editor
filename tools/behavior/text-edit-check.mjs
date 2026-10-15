@@ -418,15 +418,16 @@ try {
     await area.fill(
       `${REPLACEMENT} şubesi bu kuralı istisnasız uygular ve arşivini yerel tutar. Metin düzenleme kabul ölçütü.`,
     );
-    // Step one runs the edit and shows its report ("Önizle"); step two applies it.
-    await form.getByRole('button', { name: 'Önizle', exact: true }).click();
-    // The dialog either offers the document action (the run produced bytes) or shows
-    // the dictionary sentence plus the engine's own diagnostic. Waiting on the report
-    // action alone would report both outcomes as "timed out", which says nothing.
+    // The run applies a clean result at once and shows the report of one that has to be read
+    // first ("Belgeye uygula"); a failure shows the dictionary sentence plus the engine's own
+    // diagnostic. Waiting on the form closing alone would report all three outcomes as
+    // "timed out", which says nothing.
+    await form.getByRole('button', { name: 'Uygula', exact: true }).click();
     await page.waitForFunction(
       () =>
         /Belgeye uygula/.test(document.body.innerText) ||
-        document.querySelector('[data-dialog-diagnostic]') !== null,
+        document.querySelector('[data-dialog-diagnostic]') !== null ||
+        document.querySelector('section[aria-label="Metni düzenle"]') === null,
       undefined,
       { timeout: 180_000 },
     );
@@ -435,9 +436,8 @@ try {
         document.querySelector('[data-dialog-diagnostic]')?.getAttribute('data-dialog-diagnostic') ?? null,
     );
     if (failure !== null) throw new Error(`the operation failed its own verification: ${failure}`);
-    // The report offers the document action, so it has to be there to press; a form that
-    // closes without it would let the page-count assertion below pass on an edit never applied.
-    await page.getByRole('button', { name: 'Belgeye uygula' }).first().click();
+    const reviewAction = page.getByRole('button', { name: 'Belgeye uygula' }).first();
+    if (await reviewAction.isVisible()) await reviewAction.click();
     // Applying swaps the working version and closes the form in one step; then the viewer
     // takes the new version, which the shell at rest says (the next check searches it).
     await form.waitFor({ state: 'hidden', timeout: 60_000 });

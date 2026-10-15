@@ -19,7 +19,7 @@ export interface StartDialogProps {
   readonly spec: OperationDialogSpec;
   readonly context: OperationRunContext;
   readonly onClose: () => void;
-  readonly onResult: (result: OpRunResult) => void;
+  readonly onResult: (result: OpRunResult) => void | Promise<void>;
 }
 
 export function StartDialog({ t, spec, context, onClose, onResult }: StartDialogProps) {

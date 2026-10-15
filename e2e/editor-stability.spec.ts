@@ -4,6 +4,7 @@ import { notice } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { encryptedPdf, encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { applyForm, runForm } from './ui-helpers';
 import { cmsBy, fromNow, signedDocument, signingPki } from './ui-panels9-helpers';
 
 /**
@@ -236,7 +237,9 @@ test('unlocking a signed protected PDF says its signature no longer validates', 
   ).toBeVisible({ timeout: 60_000 });
 });
 
-test('an operation applied from the tools panel reaches the document', async ({ page }) => {
+test('a clean operation run from the tools panel reaches the document at once and Ctrl+Z takes it back', async ({
+  page,
+}) => {
   // The panel's runner must not go "back" right after handing over its result: going
   // back cancels the operation in flight — the apply that has just started — and the result
   // would be dropped with no notice and the page left as it was.
@@ -249,17 +252,16 @@ test('an operation applied from the tools panel reaches the document', async ({ 
   const form = page.getByRole('region', { name: 'Watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('textbox', { name: 'Text', exact: true }).fill('PANEL APPLY');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => document.querySelector('.pdfViewer[data-active-viewer] .textLayer')?.textContent ?? '',
-      ),
-    )
-    .toContain('PANEL APPLY');
+  // A watermark loses nothing and warns of nothing: no report stands in front of the document.
+  expect(await runForm(form)).toBe('closed');
+  await expect(notice(page, 'Undo with Ctrl+Z.')).toBeVisible();
+  const pageText = () =>
+    page.evaluate(
+      () => document.querySelector('.pdfViewer[data-active-viewer] .textLayer')?.textContent ?? '',
+    );
+  await expect.poll(pageText).toContain('PANEL APPLY');
+  await page.keyboard.press('Control+z');
+  await expect.poll(pageText).not.toContain('PANEL APPLY');
 });
 
 test('document properties written in the browser reach the exported file', async ({ page }) => {
@@ -273,10 +275,7 @@ test('document properties written in the browser reach the exported file', async
   const form = page.getByRole('region', { name: 'Document properties' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('textbox', { name: 'Title', exact: true }).fill('Şişli Şubesi — Yıllık Rapor');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
 
   const download = page.waitForEvent('download', { timeout: 120_000 });
   await page.getByRole('button', { name: 'Export', exact: true }).click();
@@ -298,7 +297,7 @@ test('document properties with nothing changed say so and close, instead of stay
   await page.keyboard.press('Enter');
   const form = page.getByRole('region', { name: 'Document properties' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   // The report is still shown: the run found nothing to write and says so there too.
   await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
   await expect(form.getByText('No changes to write; document untouched.').first()).toBeVisible();
@@ -352,10 +351,7 @@ test('bookmarks added and deleted in the outline form reach the exported file', 
     await page.keyboard.press('Enter');
     await expect(form).toBeVisible({ timeout: 30_000 });
     await fill();
-    await form.getByRole('button', { name: 'Preview', exact: true }).click();
-    await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-    await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-    await expect(form).toBeHidden({ timeout: 30_000 });
+    await applyForm(form);
   };
   await run(() => form.getByRole('textbox', { name: 'Title', exact: true }).fill('Birinci bölüm'));
   await run(() => form.getByRole('textbox', { name: 'Title', exact: true }).fill('İkinci — Şişli'));

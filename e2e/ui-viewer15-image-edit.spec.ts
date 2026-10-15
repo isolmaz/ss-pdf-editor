@@ -7,14 +7,8 @@
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { readProducedEntry } from './tool-fixture';
-import { exportBytes, openPdf, runCommand } from './ui-helpers';
-import {
-  applyOperation,
-  browserJpeg,
-  type FixtureImage,
-  pdfWithImages,
-  rgbSamples,
-} from './ui-viewer15-helpers';
+import { applyForm, exportBytes, openPdf, runCommand } from './ui-helpers';
+import { browserJpeg, type FixtureImage, pdfWithImages, rgbSamples } from './ui-viewer15-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -63,9 +57,9 @@ async function action(form: Locator, label: string): Promise<void> {
   await form.getByRole('radio', { name: label, exact: true }).check();
 }
 
-/** Preview and expect the form's alert: the translated message, and the engine's own words as its diagnostic. */
+/** Run and expect the form's alert: the translated message, and the engine's own words as its diagnostic. */
 async function expectRefused(form: Locator, message: string, diagnostic: string): Promise<void> {
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   const alert = form.getByRole('alert');
   await expect(alert).toContainText(message, { timeout: 60_000 });
   await expect(alert.locator('[data-dialog-diagnostic]')).toHaveAttribute(
@@ -84,7 +78,7 @@ test('rotating an uncompressed image a quarter turn swaps its pixel width and he
   const form = await openWith(page, [RAW]);
   await pick(page, form, 'Raw');
   await action(form, 'Rotate');
-  await applyOperation(form);
+  await applyForm(form);
   const bytes = await exportBytes(page, 'rotated.pdf');
   expect(await entry(bytes, 'Raw', 'Width')).toBe('4');
   expect(await entry(bytes, 'Raw', 'Height')).toBe('8');
@@ -96,7 +90,7 @@ test('rotating by 180 degrees keeps the pixel size of the image', async ({ page 
   await action(form, 'Rotate');
   await form.getByRole('combobox', { name: 'Angle' }).click();
   await page.getByRole('option', { name: '180°', exact: true }).click();
-  await applyOperation(form);
+  await applyForm(form);
   const bytes = await exportBytes(page, 'half-turn.pdf');
   expect(await entry(bytes, 'Raw', 'Width')).toBe('8');
   expect(await entry(bytes, 'Raw', 'Height')).toBe('4');
@@ -110,7 +104,7 @@ test('cropping takes the chosen percentages off every side of the image', async 
   await form.getByRole('spinbutton', { name: 'Crop right (%)' }).fill('25');
   await form.getByRole('spinbutton', { name: 'Crop top (%)' }).fill('25');
   await form.getByRole('spinbutton', { name: 'Crop bottom (%)' }).fill('0');
-  await applyOperation(form);
+  await applyForm(form);
   const bytes = await exportBytes(page, 'cropped.pdf');
   // 8 px wide minus 2 + 2, 4 px high minus 1 + 0.
   expect(await entry(bytes, 'Raw', 'Width')).toBe('4');
@@ -136,7 +130,7 @@ test('recompressing an uncompressed image writes it as a JPEG stream', async ({ 
   await pick(page, form, 'Raw');
   await action(form, 'Recompress (JPEG)');
   await form.getByRole('spinbutton', { name: 'JPEG quality' }).fill('0.5');
-  await applyOperation(form);
+  await applyForm(form);
   const bytes = await exportBytes(page, 'recompressed.pdf');
   expect(await entry(bytes, 'Raw', 'Filter')).toBe('/DCTDecode');
   expect(await entry(bytes, 'Raw', 'Width')).toBe('8');
@@ -165,7 +159,7 @@ test('a JPEG image is decoded by the browser, cropped and written back at the cr
   await form.getByRole('spinbutton', { name: 'Crop right (%)' }).fill('0');
   await form.getByRole('spinbutton', { name: 'Crop top (%)' }).fill('0');
   await form.getByRole('spinbutton', { name: 'Crop bottom (%)' }).fill('0');
-  await applyOperation(form);
+  await applyForm(form);
   const bytes = await exportBytes(page, 'photo-cropped.pdf');
   expect(await entry(bytes, 'Photo', 'Width')).toBe('16');
   expect(await entry(bytes, 'Photo', 'Height')).toBe('16');
@@ -202,7 +196,7 @@ test('opacity leaves the picture alone and puts a graphics state around the oper
   await pick(page, form, 'Raw');
   await action(form, 'Opacity');
   await form.getByRole('spinbutton', { name: 'Opacity (0–1)' }).fill('0.25');
-  await applyOperation(form);
+  await applyForm(form);
   const bytes = await exportBytes(page, 'faded.pdf');
   expect(await entry(bytes, 'Raw', 'Width')).toBe('8');
   const states = await readProducedEntry(bytes, 0, 'Resources', 'ExtGState');

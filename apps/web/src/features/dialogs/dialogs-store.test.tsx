@@ -16,6 +16,8 @@ import {
   initialDialogsState,
   openBatchDialog,
   operationDialogOpened,
+  reportClosed,
+  reportOpened,
   shortcutsClosed,
   shortcutsOpened,
   startDialogOpened,
@@ -42,6 +44,7 @@ describe('the dialogs store', () => {
       dialogSpec: null,
       dialogInput: null,
       startSpec: null,
+      reportView: null,
       shortcutsOpen: false,
       shortcutsTrigger: null,
     });
@@ -69,6 +72,22 @@ describe('the dialogs store', () => {
     expect(dialogsStore.get().startSpec).toBe(other);
     closeStartDialog();
     expect(dialogsStore.get().startSpec).toBeNull();
+  });
+
+  it('holds the report of a delivered result under its title until it is closed', () => {
+    const report = {
+      engine: 'model',
+      steps: [],
+      notes: [],
+      inputBytes: 1,
+      outputBytes: 1,
+      pageCount: 1,
+      incremental: true,
+    } as const;
+    reportOpened('Stamp', report);
+    expect(dialogsStore.get().reportView).toEqual({ title: 'Stamp', report });
+    reportClosed();
+    expect(dialogsStore.get().reportView).toBeNull();
   });
 
   it('remembers what had the focus when the shortcut list opened, and keeps it once closed', () => {

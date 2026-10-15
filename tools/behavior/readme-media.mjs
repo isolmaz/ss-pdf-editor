@@ -122,6 +122,27 @@ async function openDemo(page, file = demo) {
 
 const notice = (page, text) => page.locator('[role="status"]').filter({ hasText: text });
 
+/**
+ * Let an operation's run end after "Apply" was pressed. A clean result is applied at once and the
+ * form closes; one that has to be read first shows its report, held for a beat before its action
+ * is pressed. `cut`, when given, drops the wait for the run from the clip.
+ */
+async function settle(page, form, { action = 'Apply to document', timeout = 60_000, cut } = {}) {
+  const resume = cut?.();
+  const review = form.getByRole('heading', { name: 'Operation report' });
+  const deadline = Date.now() + timeout;
+  let reviewing = false;
+  while (!reviewing && (await form.isVisible())) {
+    if (Date.now() > deadline) throw new Error(`the operation did not finish: ${await form.innerText()}`);
+    reviewing = await review.isVisible();
+    if (!reviewing) await sleep(200);
+  }
+  resume?.();
+  if (!reviewing) return;
+  await pace(1100);
+  await press(page, form.getByRole('button', { name: action, exact: true }), 300);
+}
+
 /** The settings dialog, opened from the header's gear as a user does. */
 async function settings(page, visible = true) {
   const gear = page.getByRole('button', { name: /^(Settings|Ayarlar)$/ }).first();
@@ -271,9 +292,7 @@ const SCENES = {
     await press(page, password, 200);
     await page.keyboard.type('demo', { delay: 80 });
     await press(page, form.getByRole('button', { name: 'Sign', exact: true }), 300);
-    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
-    await pace(900);
-    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    await settle(page, form);
     await notice(page, 'Signature applied').waitFor({ timeout: 60_000 });
     await pace(800);
     // The visible stamp sits at the bottom right of the page: bring it into view.
@@ -292,11 +311,9 @@ const SCENES = {
     await press(page, page.getByRole('tab', { name: 'Redaction', exact: true }), 500);
     await press(page, page.getByRole('button', { name: 'Redaction (Permanent Erase)', exact: true }), 600);
     const form = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
-    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 900);
+    await press(page, form.getByRole('button', { name: 'Apply', exact: true }), 900);
     await press(page, form.getByRole('button', { name: 'Continue', exact: true }), 300);
-    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
-    await pace(900);
-    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    await settle(page, form);
     await notice(page, 'no text remains in the marked areas').waitFor({ timeout: 60_000 });
     await pace(2200);
   },
@@ -333,12 +350,8 @@ const SCENES = {
       { delay: 22 },
     );
     await pace(500);
-    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
-    const resume = cut();
-    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 180_000 });
-    resume();
-    await pace(1100);
-    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    await press(page, form.getByRole('button', { name: 'Apply', exact: true }), 300);
+    await settle(page, form, { timeout: 180_000, cut });
     await form.waitFor({ state: 'hidden', timeout: 60_000 });
     await press(page, page.getByRole('button', { name: 'Selection Tool', exact: true }), 2200);
   },
@@ -353,10 +366,8 @@ const SCENES = {
     await page.keyboard.press('Control+a');
     await page.keyboard.type('CONFIDENTIAL', { delay: 90 });
     await pace(400);
-    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
-    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
-    await pace(1100);
-    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    await press(page, form.getByRole('button', { name: 'Apply', exact: true }), 300);
+    await settle(page, form);
     await form.waitFor({ state: 'hidden', timeout: 60_000 });
     await pace(2200);
   },
@@ -400,12 +411,8 @@ const SCENES = {
     const form = page.getByRole('region', { name: 'Text recognition' });
     await form.waitFor();
     await pace(600);
-    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
-    const resume = cut();
-    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 240_000 });
-    resume();
-    await pace(1300);
-    await press(page, form.getByRole('button', { name: 'Apply to document', exact: true }), 300);
+    await press(page, form.getByRole('button', { name: 'Apply', exact: true }), 300);
+    await settle(page, form, { timeout: 240_000, cut });
     const done = cut();
     await form.waitFor({ state: 'hidden', timeout: 60_000 });
     await pace(1500);
@@ -428,10 +435,9 @@ const SCENES = {
     await press(page, form.getByLabel('Owner password'), 200);
     await page.keyboard.type('owner-2026', { delay: 70 });
     await press(page, form.getByRole('checkbox', { name: 'Copying' }), 500);
-    await press(page, form.getByRole('button', { name: 'Preview', exact: true }), 300);
-    await form.getByRole('heading', { name: 'Operation report' }).waitFor({ timeout: 60_000 });
-    await pace(1500);
-    await press(page, form.getByRole('button', { name: 'Download', exact: true }), 1800);
+    await press(page, form.getByRole('button', { name: 'Apply', exact: true }), 300);
+    await settle(page, form, { action: 'Download' });
+    await pace(1800);
   },
 
   async compare(page, mark) {

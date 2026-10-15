@@ -11,7 +11,7 @@ import { notice } from './app-helpers';
 import { makeSignerContainer, SIGNER } from './signer-fixture';
 import { expect, test } from './test';
 import { readProducedPdf } from './tool-fixture';
-import { exportBytes, openDockTab, openPdf } from './ui-helpers';
+import { applyForm, exportBytes, openDockTab, openPdf } from './ui-helpers';
 import {
   cmsBy,
   cmsWithTimestamp,
@@ -620,9 +620,7 @@ test('signing the open document adds a row that says self-signed', async ({ page
   const form = page.getByRole('region', { name: /Sign Document/ });
   await form.locator('input[type="file"]').setInputFiles(container);
   await form.getByRole('textbox', { name: 'PKCS#12 password' }).fill(SIGNER.password);
-  await form.getByRole('button', { name: 'Sign', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+  await applyForm(form, 'Sign');
   await expect(notice(page, `Signature applied (${SIGNER.commonName})`)).toBeVisible({ timeout: 60_000 });
 
   // The signing form took the dock's place; the panel reads the signed file when it is back.

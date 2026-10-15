@@ -23,9 +23,17 @@ import { isMarkupTool, type MarkupTool } from './tools';
 /** Below this width the docks overlay the canvas instead of sharing the row with it. */
 export const COMPACT_VIEW_QUERY = '(max-width: 1023px)';
 
+/** A button the notice carries: what it says (in the interface language) and what it does. */
+export interface NoticeAction {
+  readonly label: string;
+  readonly run: () => void;
+}
+
 export interface CoreState {
   /** The status line's message (already in the interface language); `null` for none. */
   readonly notice: string | null;
+  /** The button beside the notice, if the notice offers one; always `null` with no notice. */
+  readonly noticeAction: NoticeAction | null;
   /** An operation holds the document: every other gesture is refused until it settles. */
   readonly busy: boolean;
   /**
@@ -72,6 +80,7 @@ export function initialCoreState(): CoreState {
   const compact = isCompactViewport();
   return {
     notice: null,
+    noticeAction: null,
     busy: false,
     operation: null,
     handleVersion: 0,
@@ -97,9 +106,9 @@ export function useCore<T>(selector: (state: CoreState) => T, equality?: Equalit
 
 // ── The notice line ─────────────────────────────────────────────────────────────────────────
 
-/** Say something on the status line, replacing what it said. */
-export function showNotice(text: string): void {
-  coreStore.set({ notice: text });
+/** Say something on the status line, replacing what it said (and the button it carried). */
+export function showNotice(text: string, action?: NoticeAction): void {
+  coreStore.set({ notice: text, noticeAction: action ?? null });
 }
 
 /**
@@ -107,7 +116,9 @@ export function showNotice(text: string): void {
  * browser store refusing a draft) would otherwise rewrite the same sentence forever.
  */
 export function showNoticeOnce(text: string): void {
-  coreStore.set((state) => (state.notice?.includes(text) === true ? {} : { notice: text }));
+  coreStore.set((state) =>
+    state.notice?.includes(text) === true ? {} : { notice: text, noticeAction: null },
+  );
 }
 
 /** Say it only when nothing is on the line: a result already showing wins over a footnote. */
@@ -117,7 +128,7 @@ export function showNoticeIfEmpty(text: string): void {
 
 /** Clear the line: a new operation starts, or the user dismissed it. */
 export function clearNotice(): void {
-  coreStore.set({ notice: null });
+  coreStore.set({ notice: null, noticeAction: null });
 }
 
 // ── The busy gate ───────────────────────────────────────────────────────────────────────────

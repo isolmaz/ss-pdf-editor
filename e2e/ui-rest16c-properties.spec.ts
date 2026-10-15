@@ -4,9 +4,8 @@
  */
 
 import { expect, test } from './test';
-import { openDockTab, openPdf, runCommand } from './ui-helpers';
+import { applyForm, openDockTab, openPdf, runCommand } from './ui-helpers';
 import { runsPdf } from './ui-rest16-helpers';
-import { applyOperation } from './ui-viewer15-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -26,7 +25,7 @@ test('undoing a watermark takes its font off the list and the panel announces th
   await runCommand(page, 'Watermark');
   const form = page.getByRole('region', { name: 'Watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await applyOperation(form);
+  await applyForm(form);
 
   // The tools panel took the dock over; the information panel is opened again on the new file.
   await openDockTab(page, 'Document information');

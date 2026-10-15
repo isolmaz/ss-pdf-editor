@@ -12,6 +12,7 @@ import {
   readProducedPdf,
   toolFixturePdf,
 } from './tool-fixture';
+import { applyForm } from './ui-helpers';
 
 /**
  * The menu-bar commands the other specs do not drive: one test per command (or family),
@@ -79,27 +80,10 @@ async function openForm(page: Page, command: string, region: string) {
   return form;
 }
 
-async function previewForm(form: ReturnType<Page['getByRole']>, confirm = 'Preview'): Promise<void> {
-  await form.getByRole('button', { name: confirm, exact: true }).click();
-  const report = form.getByRole('heading', { name: 'Operation report' });
-  // A destructive operation asks once more before it runs.
-  const goOn = form.getByRole('button', { name: 'Continue', exact: true });
-  await expect(goOn.or(report)).toBeVisible({ timeout: 60_000 });
-  if (await goOn.isVisible()) await goOn.click();
-  await expect(report).toBeVisible({ timeout: 60_000 });
-}
-
 /** Choose an entry of one of the dialog's drop-down lists. */
 async function choose(page: Page, form: ReturnType<Page['getByRole']>, label: string, option: string) {
   await form.getByRole('combobox', { name: label }).click();
   await page.getByRole('option', { name: option, exact: true }).click();
-}
-
-/** Preview, then apply to the document, and wait for the form to close. */
-async function applyForm(form: ReturnType<Page['getByRole']>): Promise<void> {
-  await previewForm(form);
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
 }
 
 test('a number field keeps the decimal the reader types, key by key', async ({ page }) => {
@@ -118,10 +102,10 @@ test('a number field keeps the decimal the reader types, key by key', async ({ p
   // A cleared field is not a value: the run waits for a number instead of using the minimum.
   await quality.selectText();
   await quality.press('Backspace');
-  await expect(form.getByRole('button', { name: 'Preview', exact: true })).toBeDisabled();
+  await expect(form.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled();
   await quality.pressSequentially('0.6');
   await expect(quality).toHaveValue('0.6');
-  await expect(form.getByRole('button', { name: 'Preview', exact: true })).toBeEnabled();
+  await expect(form.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
 });
 
 test('optimize: lossless pass strips metadata, the image pass replaces the text layer by pictures', async ({
@@ -191,9 +175,8 @@ test('new form field and form data: a created field exports, and an imported val
   expect(created?.rect).toEqual([72, 300, 272, 324]);
 
   form = await openForm(page, 'Form data', 'Form data');
-  await previewForm(form, 'Preview');
   const download = page.waitForEvent('download', { timeout: 60_000 });
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  await applyForm(form);
   const data = JSON.parse(Buffer.from(await saveDownload(await download, 'form.json')).toString('utf8'));
   expect(JSON.stringify(data)).toContain('Grace Hopper');
   expect(JSON.stringify(data)).toContain('email');
@@ -292,9 +275,8 @@ test('security and remove password: the downloaded copy carries the permissions 
   await form.getByLabel('Open password').fill('s3cret');
   await form.getByLabel('Owner password').fill('own3r');
   await form.getByRole('checkbox', { name: 'Copying' }).uncheck();
-  await previewForm(form);
   const download = page.waitForEvent('download', { timeout: 60_000 });
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  await applyForm(form);
   const encrypted = await saveDownload(await download, 'locked.pdf');
   const permissions = Number(await readProducedEntry(encrypted, 'trailer', 'Encrypt', 'P'));
   // Bit 5 (value 16) is "copy or extract text": cleared, while printing (bit 3, value 4) stays set.
@@ -313,8 +295,7 @@ test('security and remove password: the downloaded copy carries the permissions 
   await expect(page.getByRole('button', { name: 'owned.pdf', exact: true })).toBeVisible({ timeout: 30_000 });
   form = await openForm(page, 'Remove password', 'Remove password');
   await form.getByLabel('Password', { exact: true }).fill('own3r-owner');
-  await previewForm(form, 'Open in new tab');
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await applyForm(form, 'Open in new tab');
   await expect(page.getByRole('button', { name: /unprotected/ })).toBeVisible({ timeout: 60_000 });
   const unlocked = await exported(page, 'unlocked.pdf');
   expect(await readProducedEntry(unlocked, 'trailer', 'Encrypt')).toBe('');
@@ -608,10 +589,7 @@ test('home "Merge PDFs" tile: two chosen files become one new document, in the o
       pdfFile('second.pdf', labelledPdf('Second', 1)),
     ]);
   // The first press merges and reports; the result step's own press opens the new tab.
-  const confirm = dialog.getByRole('button', { name: 'Open in new tab', exact: true });
-  await confirm.click();
-  await expect(dialog.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await confirm.click();
+  await applyForm(dialog, 'Open in new tab');
   await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
     timeout: 30_000,
   });

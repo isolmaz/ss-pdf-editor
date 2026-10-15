@@ -3,6 +3,7 @@ import type { Page } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts, scannedPdf } from './tool-fixture';
+import { detailsButton, finishRun } from './ui-helpers';
 
 /**
  * Real OCR, on both kinds of document it has to handle. Both inputs are generated in the
@@ -78,14 +79,14 @@ async function scopeTo(page: Page, range: string): Promise<void> {
 }
 
 /**
- * Press the form's first-step button (`op.apply`, "Preview": it runs and shows the report).
+ * Press the form's run button (`op.apply`, "Apply").
  *
  * The editor refuses to start an operation while another runs, and a large fixture is
  * still being indexed right after it opens; waiting for the button to become enabled is
  * waiting on the application's own idle signal rather than sleeping and hoping.
  */
 async function runDialog(page: Page): Promise<void> {
-  const run = page.getByRole('button', { name: /^Önizle$|^Preview$/ }).first();
+  const run = page.getByRole('button', { name: /^Uygula$|^Apply$/ }).first();
   await expect(run).toBeVisible({ timeout: 30_000 });
   await expect(run).toBeEnabled({ timeout: 120_000 });
   await run.click();
@@ -101,11 +102,13 @@ test.describe('OCR on a scanned document', () => {
     await openOcrDialog(page);
     await scopeTo(page, '1-2');
     await runDialog(page);
+    await finishRun(page, 240_000);
+    await detailsButton(page).click();
 
     // The report's own note carries the word count: a skip, a stub or a crash report zero,
     // and the engine cannot invent words from a blank render. The count and the page count
     // are read as numbers, not matched as labels (the label is there with zero words too).
-    await expect(report(page)).toBeVisible({ timeout: 240_000 });
+    await expect(report(page)).toBeVisible();
     const layer = report(page).getByText(/Invisible text layer of \d+ word\(s\) added to \d+ page\(s\)/);
     await expect(layer).toBeVisible({ timeout: 30_000 });
     const match = /of (\d+) word\(s\) added to (\d+) page\(s\)/.exec((await layer.textContent()) ?? '');
@@ -120,13 +123,10 @@ test.describe('OCR on a scanned document', () => {
     await openOcrDialog(page);
     await scopeTo(page, '1-2');
     await runDialog(page);
-    await expect(report(page)).toBeVisible({ timeout: 240_000 });
 
-    // The round trip a user performs: run, apply, keep reading, export.
-    await page
-      .getByRole('button', { name: /Belgeye uygula|Apply to document/ })
-      .first()
-      .click();
+    // The round trip a user performs: run (a result that warned is applied from its review),
+    // keep reading, export.
+    await finishRun(page, 240_000);
     await expect(page.locator('.pdfViewer .page canvas').first()).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(`/ ${pages}`, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
 
@@ -153,11 +153,13 @@ test.describe('OCR on a document that already has text', () => {
     await openOcrDialog(page);
     await scopeTo(page, '1-3');
     await runDialog(page);
+    await finishRun(page);
+    await detailsButton(page).click();
 
     // Pages 1-3 of this fixture carry text, so the run must report them as skipped. This is
     // the guard that stops a working text layer from being replaced by a worse one — and
     // it is decided per page, from the page's own text, so it finishes in seconds.
-    await expect(report(page)).toBeVisible({ timeout: 120_000 });
+    await expect(report(page)).toBeVisible();
     await expect(report(page).getByText('3 page(s) with text skipped.', { exact: true })).toBeVisible({
       timeout: 30_000,
     });

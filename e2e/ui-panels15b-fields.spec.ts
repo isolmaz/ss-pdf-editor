@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { exportBytes, openDockTab, openPdf, pdfFile } from './ui-helpers';
+import { applyForm, exportBytes, openDockTab, openPdf, pdfFile } from './ui-helpers';
 
 const panel = (page: Page): Locator => page.getByRole('tabpanel');
 
@@ -54,10 +54,7 @@ test('the files of a multiple picker are reordered and removed before the merge,
   await picker.setInputFiles([pdfFile('d.pdf', labelledPdf('Delta', 1))]);
   await expect(names).toHaveText([/c\.pdf/, /a\.pdf/, /d\.pdf/]);
 
-  const confirm = dialog.getByRole('button', { name: 'Open in new tab', exact: true });
-  await confirm.click();
-  await expect(dialog.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await confirm.click();
+  await applyForm(dialog, 'Open in new tab');
   await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -91,10 +88,7 @@ test('a token button inserts its placeholder at the caret and the stamp carries 
   await expect(format).toHaveValue(/^\{date\}Page \{page\} of \{total\}$/);
   await format.fill('Page {page} of {total}');
 
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
   const texts = await readProducedPageTexts(await exportBytes(page, 'numbered.pdf'));
   expect(texts[0]).toContain('Page 1 of 2');
   expect(texts[1]).toContain('Page 2 of 2');
@@ -127,11 +121,8 @@ test('the passwords typed into the protect form are what encrypts the file', asy
   await expect(open).toHaveAttribute('type', 'password');
   await open.fill('open-sesame');
   await form.getByLabel('Owner password').fill('owner-secret');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-
   const download = page.waitForEvent('download');
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  await applyForm(form);
   const path = test.info().outputPath('protected.pdf');
   await (await download).saveAs(path);
   const text = readFileSync(path).toString('latin1');

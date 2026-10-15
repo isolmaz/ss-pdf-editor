@@ -20,7 +20,7 @@ async function openForm(page: Page, command: string, region: string): Promise<Lo
 }
 
 async function expectRefused(form: Locator, message: string, diagnostic: string): Promise<void> {
-  await form.getByRole('button', { name: /^(Preview|Sign)$/ }).click();
+  await form.getByRole('button', { name: /^(Apply|Sign)$/ }).click();
   const alert = form.getByRole('alert');
   await expect(alert).toContainText(message, { timeout: 60_000 });
   await expect(alert.locator('[data-dialog-diagnostic]')).toHaveAttribute(

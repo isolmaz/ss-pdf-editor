@@ -5,7 +5,7 @@
 
 import { expect, test } from './test';
 import { labelledPdf, readProducedPdf } from './tool-fixture';
-import { exportBytes, openDockTab, openPdf } from './ui-helpers';
+import { applyForm, exportBytes, openDockTab, openPdf } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -29,10 +29,7 @@ test('bookmarks typed into the outline editor’s box become the outline of the 
   const box = form.getByRole('textbox', { name: /^Bookmarks/ });
   await box.fill('Start | 1\nMiddle | 2\nEnd | 3');
   await expect(box).toHaveValue('Start | 1\nMiddle | 2\nEnd | 3');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
 
   const produced = await readProducedPdf(await exportBytes(page, 'outlined.pdf'));
   expect(produced.outlineTitles).toEqual(['Start', 'Middle', 'End']);

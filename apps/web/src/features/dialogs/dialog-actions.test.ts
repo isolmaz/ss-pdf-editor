@@ -68,6 +68,7 @@ const t = ((key: string, params?: Record<string, unknown>) =>
 const handle = { name: 'handle' } as unknown as PdfDocumentHandle;
 const produced = { name: 'produced' } as unknown as PdfDocumentHandle;
 const notice = () => coreStore.get().notice;
+const noticeAction = () => coreStore.get().noticeAction;
 const busy = () => coreStore.get().busy;
 const failure = (error: ToolError) => `${error.messageKey} ${error.hintKey}`;
 const internal = new ToolError('internal', { engine: 'model' });
@@ -531,16 +532,40 @@ describe('dialogResult', () => {
     expect(operationRunning()).toBe(false);
   });
 
-  it('says what the dialog asked it to say when it is a replace result', async () => {
+  it('says what the dialog asked it to say, then how to undo it, when it is a replace result', async () => {
     openFrozen();
     await runs().dialogResult(result({ noticeKey: 'op.custom', noticeParams: { n: 2 } }));
-    expect(notice()).toBe('op.custom {"n":2}');
+    expect(notice()).toBe('op.custom {"n":2} op.result.undoHint');
   });
 
-  it('says a custom notice with no parameters', async () => {
+  it('says a custom notice with no parameters, and how to undo it', async () => {
     openFrozen();
     await runs().dialogResult(result({ noticeKey: 'op.custom' }));
-    expect(notice()).toBe('op.custom {}');
+    expect(notice()).toBe('op.custom {} op.result.undoHint');
+  });
+
+  it.each([
+    ['replace', {}],
+    ['download', {}],
+    ['new-tab', {}],
+    ['replace', { deliver: 'download' }],
+  ] as const)(
+    'puts the way to the report on the notice of a delivered %s result (%j)',
+    async (kind, over) => {
+      openFrozen(spec({ resultKind: kind, titleKey: 'op.stamp.title' }));
+      const delivered = result(over);
+      await runs().dialogResult(delivered);
+      expect(noticeAction()?.label).toBe('op.result.details');
+      expect(dialogsStore.get().reportView).toBeNull();
+      noticeAction()?.run();
+      expect(dialogsStore.get().reportView).toEqual({ title: 'op.stamp.title', report: delivered.report });
+    },
+  );
+
+  it('offers no report on the notice of a result that wrote nothing', async () => {
+    openFrozen();
+    await runs().dialogResult(result({ files: [] }));
+    expect(noticeAction()).toBeNull();
   });
 
   it('downloads a download result without touching the document', async () => {
@@ -743,6 +768,18 @@ describe('startResult', () => {
     expect(mocks.downloadFiles).toHaveBeenCalledWith(files);
     expect(notice()).toBe('op.result.downloaded {"name":"new.pdf"}');
     expect(dialogsStore.get().startSpec).toBeNull();
+  });
+
+  it.each([
+    ['download', 'download'],
+    ['new-tab', 'new-tab'],
+  ] as const)('puts the way to the report on the notice of a %s result', async (_name, resultKind) => {
+    startDialogOpened(spec({ resultKind, titleKey: 'op.merge.title' }));
+    const delivered = result({ report: { engine: 'mupdf', steps: [], pageCount: 3 } });
+    await runs().startResult(delivered);
+    expect(noticeAction()?.label).toBe('op.result.details');
+    noticeAction()?.run();
+    expect(dialogsStore.get().reportView).toEqual({ title: 'op.merge.title', report: delivered.report });
   });
 
   it('lets the result choose to download over the spec’s default', async () => {

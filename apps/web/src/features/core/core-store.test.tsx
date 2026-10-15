@@ -84,6 +84,7 @@ describe('the starting state', () => {
       markupTool: 'highlight',
       pendingStamp: null,
       notice: null,
+      noticeAction: null,
       busy: false,
       leftTab: 'pages',
       rightTab: 'history',
@@ -99,6 +100,22 @@ describe('the notice line', () => {
     expect(coreStore.get().notice).toBe('Exported');
     clearNotice();
     expect(coreStore.get().notice).toBeNull();
+  });
+
+  it('carries the button a notice offers, and drops it when anything else is said or the line is cleared', () => {
+    const action = { label: 'Details', run: vi.fn() };
+    showNotice('Applied', action);
+    expect(coreStore.get()).toMatchObject({ notice: 'Applied', noticeAction: action });
+    showNotice('Saved');
+    expect(coreStore.get()).toMatchObject({ notice: 'Saved', noticeAction: null });
+
+    showNotice('Applied', action);
+    showNoticeOnce('Storage is full');
+    expect(coreStore.get()).toMatchObject({ notice: 'Storage is full', noticeAction: null });
+
+    showNotice('Applied', action);
+    clearNotice();
+    expect(coreStore.get()).toMatchObject({ notice: null, noticeAction: null });
   });
 
   it('says a repeated warning once: it is shown unless the line already contains it', () => {
