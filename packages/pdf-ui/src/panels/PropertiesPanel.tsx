@@ -129,6 +129,7 @@ const TRUST_REASON_LABEL: Record<TrustReason, MessageKey> = {
   'key-usage': 'props.sig.trustReason.keyUsage',
   'path-length': 'props.sig.trustReason.pathLength',
   'name-constraint': 'props.sig.trustReason.nameConstraint',
+  'search-limit': 'props.sig.trustReason.searchLimit',
 };
 
 const REVOCATION_LABEL: Record<SignatureRevocation, MessageKey> = {
