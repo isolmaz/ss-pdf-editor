@@ -36,6 +36,7 @@ import { pdfaPart } from './parts/pdfa';
 import { propertiesPart } from './parts/properties';
 import { propsPart } from './parts/props';
 import { redactPart } from './parts/redact';
+import { repairPart } from './parts/repair';
 import { reviewPart } from './parts/review';
 import { sanitizePart } from './parts/sanitize';
 import { scanPart } from './parts/scan';
@@ -92,6 +93,7 @@ export const tr = {
   ...sigValidatePart,
   ...xfaPart,
   ...pdfaPart,
+  ...repairPart,
 
   'open.pdfFilter': 'PDF belgesi',
   'open.progress': 'Belge açılıyor…',

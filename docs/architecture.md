@@ -2258,6 +2258,27 @@ its text mapping.
 
 ---
 
+### 5.14 Repair
+
+`ops/repair.ts` (steps `load`, `repair`, `save`) opens a file with MuPDF, which rebuilds the
+cross-reference table from the objects it finds when the table or the trailer is missing,
+cut off or points at the wrong offsets, and writes the document out as a clean full rewrite
+(`saveRewrite`). `wasRepaired()` is asked after the whole file has been read for the save,
+because MuPDF repairs lazily, when an object is not where the table says: asked on open it can
+still be `false` for a damaged file. The output is read back before it is returned: it must open
+without a repair, with the page count of the input, in MuPDF and in the viewer's engine, or the
+operation throws `verification-failed`. A file with no object to rebuild from is
+`corrupt-document` (so is one with no readable page), and a document that needs a password is
+`encrypted-unsupported` like every writer here. The report says whether the file really was damaged
+(`op.note.repair.rebuilt` plus the warning `op.note.repair.check`, so the result is read before
+it opens: content that could not be read is not restored) or only rewritten
+(`op.note.repair.rewritten`), and a signed document carries the `lost` note that the rewrite
+invalidates the signature. The dialog (`ops/repair.ts` in `pdf-ui`) is a standalone operation
+(`repair`, command `file.repair`) because the files that need it are the ones that do not open: it
+takes the file itself and opens `<name>-repaired.pdf` in a new tab, never replacing a document. An
+open that fails with `corrupt-document` adds `open.repairHint` to its notice. The module is
+loaded with the dialog, outside the entry chunk and outside the `pdf-core` barrel.
+
 ## 6. `pdf-text-engine` — the text model
 
 Pure by construction: plain data in, plain data out. No pdf.js, MuPDF or React
@@ -2508,7 +2529,7 @@ passed from a surface has to be the id the registry declares.
 
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
 synchronously through `isStandaloneDialog`): a blank document (`new-document`,
-`ops/create.ts`), a PDF from images (`images-to-pdf`), several PDFs merged into a
+`ops/create.ts`), a PDF from images (`images-to-pdf`), a damaged PDF rebuilt into a clean copy (`repair`, §5.14), several PDFs merged into a
 new one (`merge-files`, the first file as the base of `mergeDocuments`, or in its alternating
 mode the front-sides file as the base of `interleaveDocuments`) and other documents
 converted to PDF (`convert-to-pdf`, several files converted one by one and merged in order). They run with no

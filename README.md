@@ -47,7 +47,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · PDF/A conversion and check |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · repair of damaged PDFs · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
 | ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes (chosen in Settings) · offline |
 
@@ -293,6 +293,12 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   selected pages into images (lossy: their text layer, links and annotations are lost; the
   outline still leads to them).
   If the file grows, the report says so.
+- **Repair.** *Repair PDF* (File menu, All tools) takes a damaged file, rebuilds its structure
+  from the objects found in it and opens a clean copy in a new tab; the file you picked is
+  not changed. The copy is read back (it must open without a repair and hold the same pages)
+  and the report says whether the file really was damaged, that content which could not be
+  read cannot be restored, and that a digital signature does not survive the rewrite. A file
+  that does not open at all points to the tool in its notice.
 
 ### Text
 

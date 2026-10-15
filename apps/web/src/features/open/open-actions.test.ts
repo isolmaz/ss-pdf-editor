@@ -302,7 +302,7 @@ describe('openFile', () => {
     await actions().openFile(pdfFile());
 
     expect(openStore.get().pendingHomeCommand).toBeNull();
-    expect(notice()).toBe('error.corrupt-document.message error.corrupt-document.hint');
+    expect(notice()).toBe('error.corrupt-document.message error.corrupt-document.hint open.repairHint');
   });
 
   it('keeps a start-screen tool waiting while a password is asked for', async () => {
@@ -319,7 +319,7 @@ describe('openFile', () => {
 
     await actions().openFile(pdfFile());
 
-    expect(notice()).toBe('error.corrupt-document.message error.corrupt-document.hint');
+    expect(notice()).toBe('error.corrupt-document.message error.corrupt-document.hint open.repairHint');
   });
 
   it('refuses while another operation runs, and drops the waiting start-screen tool', async () => {

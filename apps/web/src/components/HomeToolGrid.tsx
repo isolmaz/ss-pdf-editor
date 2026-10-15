@@ -62,6 +62,7 @@ import {
   Tag,
   Textbox,
   TextT,
+  Wrench,
 } from '@phosphor-icons/react';
 import type { MessageKey, Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
@@ -133,6 +134,7 @@ export const HOME_TOOLS: readonly ToolEntry[] = [
   { id: 'tools.sanitize', category: 'security', icon: Broom, descriptionKey: 'home.tool.sanitize' },
   { id: 'tools.redaction-audit', category: 'security', icon: ShieldCheck, descriptionKey: 'home.tool.audit' },
   { id: 'tools.optimize', category: 'document', icon: ArrowsIn, descriptionKey: 'home.tool.optimize' },
+  { id: 'file.repair', category: 'document', icon: Wrench, descriptionKey: 'home.tool.repair' },
   { id: 'tools.ocr', category: 'document', icon: Scan, descriptionKey: 'home.tool.ocr' },
   { id: 'tools.watermark', category: 'document', icon: Drop, descriptionKey: 'home.tool.watermark' },
   { id: 'tools.properties', category: 'document', icon: Info, descriptionKey: 'home.tool.properties' },

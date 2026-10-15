@@ -28,6 +28,7 @@ import { pdfaPart } from './en-parts/pdfa';
 import { propertiesPart } from './en-parts/properties';
 import { propsPart } from './en-parts/props';
 import { redactPart } from './en-parts/redact';
+import { repairPart } from './en-parts/repair';
 import { reviewPart } from './en-parts/review';
 import { sanitizePart } from './en-parts/sanitize';
 import { scanPart } from './en-parts/scan';
@@ -89,6 +90,7 @@ export const en: Record<MessageKey, string> = {
   ...sigValidatePart,
   ...xfaPart,
   ...pdfaPart,
+  ...repairPart,
 
   'open.progress': 'Opening the document…',
   'open.pdfFilter': 'PDF document',

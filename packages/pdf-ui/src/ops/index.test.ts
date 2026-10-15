@@ -17,7 +17,7 @@ describe('the operation dialog registry', () => {
   });
 
   it('knows without loading which dialogs start a document', () => {
-    for (const id of ['images-to-pdf', 'new-document', 'merge-files', 'convert-to-pdf']) {
+    for (const id of ['images-to-pdf', 'new-document', 'merge-files', 'convert-to-pdf', 'repair']) {
       expect(isStandaloneDialog(id), id).toBe(true);
     }
     expect(isStandaloneDialog('split')).toBe(false);

@@ -217,6 +217,8 @@ const PLAIN_CHANGES: ReadonlySet<string> = new Set([
   'op.note.pdfa.converted',
   'op.note.pdfa.printFlagged',
   'op.note.pdfa.producer',
+  'op.note.repair.rebuilt',
+  'op.note.repair.rewritten',
   'op.note.sanitize.removed.comments',
   'op.note.sanitize.removed.files',
   'op.note.sanitize.removed.forms',

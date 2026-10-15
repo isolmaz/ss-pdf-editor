@@ -74,6 +74,7 @@ const TOOL_NAMES: readonly ToolName[] = [
   { tr: 'Parola ile koru', en: 'Protect with password', keys: ['security.title', 'tools.protect'] },
   { tr: 'Parolayı kaldır', en: 'Remove password', keys: ['security.unlock.title', 'tools.unlock'] },
   { tr: 'Belgeyi temizle', en: 'Sanitize document', keys: ['sanitize.title', 'tools.sanitize'] },
+  { tr: 'PDF’yi onar', en: 'Repair PDF', keys: ['repair.title'] },
   { tr: 'Dosyayı küçült', en: 'Reduce file size', keys: ['optimize.title', 'tools.compress'] },
   {
     tr: 'Belgeyi PDF’ye dönüştür',

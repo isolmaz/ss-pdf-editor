@@ -107,6 +107,7 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'file.open': ['openFile'],
   'file.merge': dialog('merge-files'),
   'file.convert': dialog('convert-to-pdf'),
+  'file.repair': dialog('repair'),
   'file.save': ['save'],
   'file.export': ['exportDocument'],
   'file.add': dialog('add-document'),
@@ -600,6 +601,7 @@ describe('interface mode filtering', () => {
       'file.create-images',
       'file.merge',
       'file.new',
+      'file.repair',
       'file.scan',
     ]);
   });
