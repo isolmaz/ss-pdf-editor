@@ -240,3 +240,12 @@ describe('what a deletion does not do', () => {
     expect(tr['vault.purged']).toContain('diske yazılmış baytların üzerine yazılmaz');
   });
 });
+
+describe('the signature check that could not run', () => {
+  it('still names a signed range that does not match its contents, not only one that is missing', () => {
+    expect(en['props.sig.reason.unchecked.layout']).toContain('does not match its contents');
+    expect(en['props.sig.reason.unchecked.layout']).toContain('possible tampering');
+    expect(tr['props.sig.reason.unchecked.layout']).toContain('içeriğiyle uyuşmuyor');
+    expect(tr['props.sig.reason.unchecked.layout']).toContain('kurcalanmış olabilir');
+  });
+});
