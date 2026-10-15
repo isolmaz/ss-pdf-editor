@@ -67,6 +67,17 @@ export function workingPageCount(tab: { source: SourceDocument; working: Working
   return tab.working.produced?.pageCount ?? tab.source.pageCount;
 }
 
+/**
+ * Which bytes the tab shows: the produced version's own id, or `'source'` while the working
+ * version is still the master. **Not** `working.id`: drawing, erasing or undoing a mark journals an
+ * overlay step and mints a new working id without touching a byte, so anything read from the
+ * bytes (the file's annotations, its facts, its fields) is keyed to this instead and survives
+ * a mark step.
+ */
+export function workingBytesKey(tab: { working: WorkingVersion }): string {
+  return tab.working.produced?.id ?? 'source';
+}
+
 export interface OutputVersion {
   readonly id: string;
   readonly fromWorkingVersion: string;

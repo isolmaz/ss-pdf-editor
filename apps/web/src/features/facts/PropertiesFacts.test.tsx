@@ -10,7 +10,7 @@
 
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { revocationListFrom, SessionStore, trustRootFrom } from 'pdf-model';
+import { revocationListFrom, SessionStore, trustRootFrom, workingBytesKey } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearNotice, coreStore } from '../core/core-store';
@@ -89,7 +89,7 @@ const tab = new SessionStore().openDocument({
 
 const facts: DocumentFacts = {
   tabId: tab.id,
-  version: tab.working.id,
+  bytesKey: workingBytesKey(tab),
   fonts: [{ baseFont: 'Helvetica' } as never],
   attachments: [{ name: 'a.txt', description: '', size: 1 }],
   signatures: [],
@@ -175,7 +175,7 @@ describe('PropertiesFacts', () => {
     const handlers = view();
     await screen.findByText('loading enabled');
 
-    act(() => factsFailed({ tabId: tab.id, version: tab.working.id, error: failure }));
+    act(() => factsFailed({ tabId: tab.id, bytesKey: workingBytesKey(tab), error: failure }));
 
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain(`${t(failure.messageKey)} ${t(failure.hintKey)}`);

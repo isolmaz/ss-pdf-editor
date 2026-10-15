@@ -27,6 +27,7 @@ import {
   detectFinished,
   detectStarted,
   type FormDetect,
+  formInventoryKey,
   formInventoryRead,
   formsStore,
   initialFormsState,
@@ -236,7 +237,7 @@ describe('saveXfaForm', () => {
 
 describe('fillField', () => {
   function inventory(fields: readonly FormFieldInfo[]) {
-    formInventoryRead({ tabId: tab.id, version: tab.working.id, fields });
+    formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), fields });
   }
 
   it('writes one value through the fill operation and makes the produced bytes the working version', async () => {

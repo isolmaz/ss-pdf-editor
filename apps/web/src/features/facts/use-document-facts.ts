@@ -1,9 +1,9 @@
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import type { SessionStore, SessionTab } from 'pdf-model';
+import { type SessionStore, type SessionTab, workingBytesKey } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import { useEffect } from 'react';
 import { inspectProtection, listPdfFonts, verifySignatures } from '../../lazy-ops';
-import { materializeBase } from '../../operations';
+import { EMPTY_OVERLAYS, materializeBase } from '../../operations';
 import { measuredAttachments } from '../attachments/attachments';
 import { factsFailed, factsRead, factsReading } from './facts-store';
 import { useTrust } from './trust-store';
@@ -20,22 +20,38 @@ export interface DocumentFactsInput {
 }
 
 /**
- * Keep the document facts in step with the document on screen. The read starts over whenever an
- * operation lands (`tab` carries `working.id`), the handle is swapped, the user imports a trust
- * root or CRL (exactly what changes a verdict) or asks to retry; a read that lands after the
- * next one started is dropped.
+ * Keep the document facts in step with the document on screen. The read starts over whenever the
+ * bytes change (`workingBytesKey`: a produced version landed, or an undo moved to another one),
+ * the handle is swapped, the user imports a trust root or CRL (exactly what changes a verdict) or
+ * asks to retry; a read that lands after the next one started is dropped.
+ *
+ * A mark step (draw, erase, undo of a mark) mints a new `working.id` but no new bytes, so it
+ * does not read again: the effect depends on the tab's id and bytes key, never on the `tab`
+ * object, and takes the tab from the store when it runs. The facts describe the bytes, so they are
+ * read without the pending marks (`EMPTY_OVERLAYS`) — which is also what lets one read stay true
+ * across every mark step that follows it.
  */
 export function useDocumentFacts({ store, t, tab, handle, revision }: DocumentFactsInput): void {
   const rootBytes = useTrust((state) => state.rootBytes);
   const listBytes = useTrust((state) => state.listBytes);
+  const tabId = tab?.id ?? null;
+  const bytesKey = tab === null ? null : workingBytesKey(tab);
   useEffect(() => {
     void revision;
+    void bytesKey;
     factsReading();
-    if (tab === null || handle === null) return undefined;
+    const current = store.getSnapshot().tabs.find((item) => item.id === tabId);
+    if (current === undefined || handle === null) return undefined;
+    const key = workingBytesKey(current);
     const controller = new AbortController();
     void (async () => {
       try {
-        const bytes = await materializeBase({ store, t, tab, handle }, { signal: controller.signal });
+        const bytes = await materializeBase(
+          { store, t, tab: current, handle },
+          { signal: controller.signal },
+          undefined,
+          EMPTY_OVERLAYS,
+        );
         const [fonts, signatures, attachments, protection] = await Promise.all([
           listPdfFonts(bytes, controller.signal),
           verifySignatures(bytes, controller.signal, { roots: rootBytes, crls: listBytes }),
@@ -44,8 +60,8 @@ export function useDocumentFacts({ store, t, tab, handle, revision }: DocumentFa
         ]);
         if (controller.signal.aborted) return;
         factsRead({
-          tabId: tab.id,
-          version: tab.working.id,
+          tabId: current.id,
+          bytesKey: key,
           fonts,
           signatures,
           attachments,
@@ -64,12 +80,12 @@ export function useDocumentFacts({ store, t, tab, handle, revision }: DocumentFa
       } catch (error) {
         if (!controller.signal.aborted)
           factsFailed({
-            tabId: tab.id,
-            version: tab.working.id,
+            tabId: current.id,
+            bytesKey: key,
             error: error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' }),
           });
       }
     })();
     return () => controller.abort();
-  }, [store, t, tab, handle, rootBytes, listBytes, revision]);
+  }, [store, t, tabId, bytesKey, handle, rootBytes, listBytes, revision]);
 }

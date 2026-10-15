@@ -28,19 +28,34 @@ import type { PdfDocumentHandle } from 'pdf-core';
 import { readAnnotations } from 'pdf-core';
 import type { Mupdf } from 'pdf-core/engines/mupdf';
 import { openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
+import { fieldValueText } from 'pdf-core/ops/form-value';
 import { readFormFields } from 'pdf-core/ops/forms';
 import { scaleForRatio } from 'pdf-core/ops/measure';
 import { redactDocument } from 'pdf-core/ops/redact';
 import { readPageText } from 'pdf-core/text-source';
-import { encodeEngineValues, type JsonValue, SessionStore, workingPageCount } from 'pdf-model';
+import {
+  encodeEngineValues,
+  type JsonValue,
+  SessionStore,
+  type SessionTab,
+  workingPageCount,
+} from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  currentForms,
+  formInventoryKey,
+  formInventoryRead,
+  formsStore,
+  initialFormsState,
+} from './features/forms/forms-store';
 import {
   applyHistoryStep,
   applyPageAction,
   applyProducedBytes,
   DOCUMENT_FACTS,
   downloadFiles,
+  EMPTY_OVERLAYS,
   hasEngineEdits,
   materializeBase,
   pageActionLabel,
@@ -598,6 +613,75 @@ describe('verifyForWrite: the steps a redaction reports', () => {
       reason: 'changed',
       params: { count: 0 },
     });
+  });
+});
+
+/**
+ * Fill a field, then Save. A typed value reaches the session only as engine values, so the form
+ * inventory Save verifies against (`prepareOutput` hands it to `verifyForWrite`) has to be read again
+ * once the value is typed, from the bytes the engine would save. The inventory is the shell's own
+ * (`forms-store`, read the way `useFormInventory` reads it); the engine save is the one fake of
+ * this file (see `engineSaveHandle`), switched on by the same storage entry a typed value makes.
+ */
+describe('fill, then Save', () => {
+  it('verifies a typed value against an inventory read after it, where the one read before would record a change', async () => {
+    const source = await threePageDocument();
+    const filled = await withFields(source.bytes, [['city', 'Izmir']]);
+    const written = await withChangedValue(filled, 'city', 'Ankara');
+    const store = new SessionStore();
+    const opened = store.openDocument({ name: 'fill.pdf', bytes: filled, sha256: 'fill', pageCount: 3 });
+    const reference = await openWithPdfjs(filled);
+    const opening = await openWithPdfjs(filled);
+    const handle: PdfDocumentHandle = { ...opening, saveDocument: async () => new Uint8Array(written) };
+    formsStore.set(initialFormsState());
+    /** What `useFormInventory` does: read the fields of the bytes the live handle materialises. */
+    const readInventory = async () => {
+      const tab = store.active as SessionTab;
+      const bytes = await materializeBase(
+        { store, t: createTranslator(), tab, handle },
+        { signal: new AbortController().signal },
+        undefined,
+        EMPTY_OVERLAYS,
+      );
+      formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), fields: await readFormFields(bytes) });
+    };
+    /** What `prepareOutput` expects of the written file, from the inventory it finds. */
+    const expectedFields = () =>
+      (currentForms(store.active)?.fields ?? []).map((field) => ({
+        name: field.name,
+        value: fieldValueText(field.value),
+      }));
+    try {
+      await readInventory();
+      const beforeTyping = expectedFields();
+      expect(beforeTyping).toEqual([{ name: 'city', value: 'Izmir' }]);
+
+      // The user types: the engine holds the value, and the session journals it as engine values.
+      handle.raw.annotationStorage.setValue('pendingFieldValue', { value: 'Ankara' });
+      const engineValues = await encodeEngineValues([['pendingFieldValue', { value: 'Ankara' }]]);
+      const overlays = { annotations: [], measures: [], redactions: [], engineValues };
+      store.setOverlays(opened.id, overlays as unknown as JsonValue, 'ann.engineEdit');
+
+      // The inventory of the version before the typing is not one Save may use: it is read again.
+      expect(currentForms(store.active)).toBeNull();
+      await readInventory();
+      const afterTyping = expectedFields();
+      expect(afterTyping).toEqual([{ name: 'city', value: 'Ankara' }]);
+
+      const stale = await materializedVerification(handle, filled, reference, beforeTyping);
+      expect(checkFor(stale, 'formFieldValues')).toEqual({
+        fact: 'formFieldValues',
+        verdict: 'degraded',
+        reason: 'changed',
+        params: { count: 1 },
+      });
+      const fresh = await materializedVerification(handle, filled, reference, afterTyping);
+      expect(checkFor(fresh, 'formFieldValues')?.verdict).toBe('verified');
+      expect(checkFor(fresh, 'formFieldCount')?.verdict).toBe('verified');
+    } finally {
+      await reference.destroy();
+      await opening.destroy();
+    }
   });
 });
 

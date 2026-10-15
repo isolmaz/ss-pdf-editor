@@ -2543,9 +2543,14 @@ Ordering rules encoded here, each of which prevents a specific defect:
   exact version succeeded.
 - **Save and Export are offered only for an inspected version.** Both are enabled from the
   same verdict: the document-facts read (fonts, signatures, attachments, protection) *and*
-  the form inventory must describe the tab's current `working.id`. A byte operation moves
-  that id, so the two reads re-run and the buttons go quiet until the new answers land — a
-  save cannot be prepared against a version nothing has looked at.
+  the form inventory must describe the bytes the tab shows. The facts are keyed to the produced
+  version's own id (`workingBytesKey`; `'source'` for the master), the form inventory to that id
+  plus the values typed into the engine that are not in the bytes yet (`formInventoryKey`: Save
+  hands the inventory to `verifyForWrite`, and one read from before the typing would record every
+  typed field as changed). A byte operation or a typed value moves the key, so the reads re-run
+  and the buttons go quiet until the new answers land — a save cannot be prepared against bytes
+  nothing has looked at. A mark step (draw, erase, undo of a mark) moves `working.id` but neither
+  key, so it reads nothing again and Save stays open.
 
 ### 8.3 `materializeBase` — which bytes are the base
 

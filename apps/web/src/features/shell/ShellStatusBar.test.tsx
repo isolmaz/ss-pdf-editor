@@ -8,7 +8,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import { SessionStore } from 'pdf-model';
+import { SessionStore, workingBytesKey } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import type { ReactNode } from 'react';
@@ -166,7 +166,7 @@ describe('ShellStatusBar', () => {
     session.setSensitive(tab.id, true);
     factsRead({
       tabId: tab.id,
-      version: tab.working.id,
+      bytesKey: workingBytesKey(tab),
       fonts: [],
       attachments: [],
       signatures: [{ name: 'Sig1' }, { name: 'Sig2' }],

@@ -6,6 +6,7 @@
  * journal step that undo takes back whole.
  */
 
+import { workingBytesKey } from 'pdf-model';
 import { ToolError } from 'pdf-shared';
 import { markTargetKey } from 'pdf-ui/tools';
 import { applyProducedBytes, materializeBase } from '../../operations';
@@ -50,7 +51,7 @@ export function writeFileAnnotation(
       if (
         controller.signal.aborted ||
         fresh?.id !== tab.id ||
-        fresh.working.produced?.id !== tab.working.produced?.id
+        workingBytesKey(fresh) !== workingBytesKey(tab)
       )
         return;
       const before = editableOverlays(fresh);
