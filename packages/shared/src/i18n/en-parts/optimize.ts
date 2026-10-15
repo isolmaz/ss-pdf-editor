@@ -12,6 +12,6 @@ export const optimizePart = {
   'optimize.stripMetadata': 'Clear metadata',
   'optimize.producerKept': 'Producer string is preserved.',
   'optimize.grew': 'Result file is larger than original; compression yielded no savings.',
-  'optimize.saved': '{before} → {after} ({percent}% reduction)',
-  'optimize.noGain': 'No savings: {before} → {after}',
+  'optimize.saved': '{before:bytes} → {after:bytes} ({percent}% reduction)',
+  'optimize.noGain': 'No savings: {before:bytes} → {after:bytes}',
 } as const;

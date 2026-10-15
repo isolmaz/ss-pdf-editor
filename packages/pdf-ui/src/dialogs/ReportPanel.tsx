@@ -22,7 +22,6 @@
  */
 
 import type { OperationNote, OperationNoteKind, OperationReport } from 'pdf-core/ops/types';
-import { formatBytes } from 'pdf-core/ops/types';
 import type { MessageKey, Translator } from 'pdf-shared';
 import { useId } from 'react';
 
@@ -77,8 +76,8 @@ export function OperationReportPanel({ t, report, notes }: OperationReportPanelP
         <li>{t('op.result.pages', { count: report.pageCount })}</li>
         <li className="tabular-nums">
           {t(sizeKey, {
-            before: formatBytes(report.inputBytes),
-            after: formatBytes(report.outputBytes),
+            before: report.inputBytes,
+            after: report.outputBytes,
           })}
         </li>
         <li>{t(report.incremental ? 'op.result.incremental' : 'op.result.fullRewrite')}</li>

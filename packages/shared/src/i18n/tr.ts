@@ -355,7 +355,7 @@ export const tr = {
 
   // Export Dialog
   'export.title': 'İndir / Dışa Aktar',
-  'export.thisPdf': 'Bu PDF ({size})',
+  'export.thisPdf': 'Bu PDF ({size:bytes})',
   'export.compressed': 'Sıkıştırılmış PDF',
   'export.fileFormats': 'DOSYA FORMATLARI',
   'export.imageFormat': 'Görsel Formatı',

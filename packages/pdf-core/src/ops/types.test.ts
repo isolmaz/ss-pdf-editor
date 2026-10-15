@@ -1,16 +1,6 @@
 import { ToolError, toToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { formatBytes, note, throwIfAborted } from './types';
-
-describe('formatBytes', () => {
-  it('writes bytes, kilobytes and megabytes with one decimal', () => {
-    expect(formatBytes(1023)).toBe('1023 B');
-    expect(formatBytes(1024)).toBe('1.0 KB');
-    expect(formatBytes(1536)).toBe('1.5 KB');
-    expect(formatBytes(1024 * 1024)).toBe('1.0 MB');
-    expect(formatBytes(5.25 * 1024 * 1024)).toBe('5.3 MB');
-  });
-});
+import { note, throwIfAborted } from './types';
 
 describe('note', () => {
   it('carries params only when they are given', () => {

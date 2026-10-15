@@ -144,6 +144,13 @@ describe('PageNavigation page and zoom controls', () => {
     expect(toggle('nav.zoomIn').hasAttribute('disabled')).toBe(true);
   });
 
+  it('writes the zoom the way the interface language does: the sign first in Turkish', () => {
+    const tr = createTranslator('tr');
+    render(bar({ t: tr, zoom: 1.4 }));
+    const fit = screen.getByRole('button', { name: `${tr('nav.fitWidth')} (%140)` });
+    expect(fit.textContent).toBe('%140');
+  });
+
   it('offers rotate only while the document can be edited, and always offers fullscreen', async () => {
     const user = userEvent.setup();
     const onRotate = vi.fn();

@@ -15,7 +15,7 @@
 export const auditPart = {
   'audit.title': 'Karartma denetimi',
   'audit.findings': 'Denetim bulguları',
-  'audit.summary': 'Dosya {objects} nesne ve {revisions} revizyondan oluşuyor; boyut {bytes}.',
+  'audit.summary': 'Dosya {objects} nesne ve {revisions} revizyondan oluşuyor; boyut {size:bytes}.',
   'audit.rerun': 'Yeniden çalıştır',
   'audit.empty': 'Henüz denetim raporu yok. Karartılmış belge denetlendiğinde sonuç burada listelenir.',
   'audit.loading': 'Denetim raporu hazırlanıyor…',

@@ -1,3 +1,4 @@
+import { formatBytes } from '../format';
 import { type Locale, localeInfo } from './locales';
 import type { MessageKey } from './tr';
 
@@ -43,7 +44,8 @@ export interface Translator {
   readonly locale: Locale;
 }
 
-const PARAM = /\{(\w+)\}/g;
+/** `{name}`, or `{name:bytes}` for a byte count written as a size in the locale (`1,5 KB`). */
+const PARAM = /\{(\w+)(:bytes)?\}/g;
 
 /**
  * The dictionaries a key is looked up in, in order: the locale's own, its fallbacks',
@@ -84,9 +86,10 @@ export function createTranslator(locale: Locale = DEFAULT_LOCALE): Translator {
       }
     }
     if (params === undefined) return template;
-    return template.replace(PARAM, (match, name: string) => {
+    return template.replace(PARAM, (match, name: string, bytes: string | undefined) => {
       const value = params[name];
-      return value === undefined ? match : String(value);
+      if (value === undefined) return match;
+      return bytes === undefined ? String(value) : formatBytes(Number(value), locale);
     });
   };
   return Object.assign(translate, { locale });

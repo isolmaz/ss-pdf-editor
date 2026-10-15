@@ -16,8 +16,8 @@ describe('compressDialog structure mode', () => {
     expect(result.report.outputBytes).toBe(bytesOf(result).length);
     expect(result.noticeKey).toBe('optimize.saved');
     expect(result.noticeParams).toEqual({
-      before: '992 B',
-      after: '892 B',
+      before: input.length,
+      after: result.report.outputBytes,
       percent: 10,
     });
     expect(await pageTextsOf(bytesOf(result))).toEqual([

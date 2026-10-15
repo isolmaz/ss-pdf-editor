@@ -54,6 +54,11 @@ describe('StatusBar page and zoom', () => {
     expect(within(bar()).getByText('126%')).toBeTruthy();
   });
 
+  it('writes the zoom with the percent sign first in Turkish', () => {
+    show({ t: createTranslator('tr'), zoom: 1.4 });
+    expect(within(bar()).getByText('%140')).toBeTruthy();
+  });
+
   it('reads neither page nor zoom, not even dashes, when no page is open', () => {
     show({ pageIndex: null, pageCount: null });
     expect(within(bar()).queryByText('—')).toBeNull();
@@ -154,9 +159,16 @@ describe('StatusBar memory meter', () => {
 
   it('reads kilobytes below a megabyte and megabytes above, with the used share as a percentage', () => {
     show({ memoryUsage: { usedBytes: 512 * 1024, budgetBytes: 2 * MB } });
-    expect(meter().getAttribute('title')).toBe('Memory: 512 KB / 2.0 MB (%25)');
-    expect(within(meter()).getByText('512 KB / 2.0 MB')).toBeTruthy();
+    expect(meter().getAttribute('title')).toBe('Memory: 512.0 KB / 2.0 MB (25%)');
+    expect(within(meter()).getByText('512.0 KB / 2.0 MB')).toBeTruthy();
     expect(fill().style.width).toBe('25%');
+  });
+
+  it('writes sizes with a decimal comma and the share with the sign first in Turkish', () => {
+    show({ t: createTranslator('tr'), memoryUsage: { usedBytes: 1.5 * MB, budgetBytes: 6 * MB } });
+    const turkish = bar().querySelector('[title^="Bellek:"]') as HTMLElement;
+    expect(turkish.getAttribute('title')).toBe('Bellek: 1,5 MB / 6,0 MB (%25)');
+    expect(within(turkish).getByText('1,5 MB / 6,0 MB')).toBeTruthy();
   });
 
   it.each([
@@ -173,7 +185,7 @@ describe('StatusBar memory meter', () => {
 
   it('shows an empty bar for a budget of zero instead of dividing by it', () => {
     show({ memoryUsage: { usedBytes: 5 * MB, budgetBytes: 0 } });
-    expect(meter().getAttribute('title')).toBe('Memory: 5.0 MB / 0 KB (%0)');
+    expect(meter().getAttribute('title')).toBe('Memory: 5.0 MB / 0 B (0%)');
     expect(fill().style.width).toBe('0%');
     expect(fill().className).toContain('bg-pdf-accent');
   });

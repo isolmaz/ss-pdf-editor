@@ -101,6 +101,12 @@ describe('compressDocument (structure)', () => {
     );
     expect(out.bytes.byteLength).toBeLessThan(input.byteLength);
     expect(out.report.notes.map((entry) => entry.key)).toContain('optimize.saved');
+    // The sizes travel as numbers: the interface writes them in its own language when it shows them.
+    expect(out.report.notes.find((entry) => entry.key === 'optimize.saved')?.params).toEqual({
+      before: input.byteLength,
+      after: out.bytes.byteLength,
+      percent: Math.round((1 - out.bytes.byteLength / input.byteLength) * 100),
+    });
     const result = await read(out.bytes);
     expect(result.text).toEqual(['Alpha', 'Bravo']);
     expect([result.title, result.author, result.producer]).toEqual(['Özet', 'Ayşe', PRODUCER_LINE]);
@@ -120,6 +126,10 @@ describe('compressDocument (structure)', () => {
     const grown = await compressDocument(tiny, options, run);
     expect(grown.bytes.byteLength).toBeGreaterThan(tiny.byteLength);
     expect(keys(grown)).toEqual(['optimize.grew']);
+    expect(grown.report.notes.find((entry) => entry.key === 'optimize.grew')?.params).toEqual({
+      before: tiny.byteLength,
+      after: grown.bytes.byteLength,
+    });
 
     // Rewriting what is already rewritten changes nothing.
     const again = await compressDocument(grown.bytes, options, run);

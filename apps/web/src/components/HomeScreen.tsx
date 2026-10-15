@@ -25,7 +25,7 @@ import {
   Trash,
 } from '@phosphor-icons/react';
 import { CONVERT_ACCEPT } from 'pdf-core/ops/convert-formats';
-import type { Translator } from 'pdf-shared';
+import { formatBytes, type Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { lazy, type ReactNode, Suspense, useId, useMemo, useState } from 'react';
 import { readInventory } from '../features/persistence/draft-vault';
@@ -82,14 +82,6 @@ export interface HomeScreenProps {
 }
 
 type SortKey = 'date' | 'name' | 'size';
-
-function formatBytes(bytes: number, locale: string): string {
-  const format = (value: number, digits: number) =>
-    value.toLocaleString(locale, { maximumFractionDigits: digits, minimumFractionDigits: digits });
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${format(bytes / 1024, 1)} KB`;
-  return `${format(bytes / (1024 * 1024), 1)} MB`;
-}
 
 /** "3 minutes ago", "yesterday", or a date — in the interface language, never hardcoded. */
 function formatOpened(timestamp: number, locale: string, now = Date.now()): string {

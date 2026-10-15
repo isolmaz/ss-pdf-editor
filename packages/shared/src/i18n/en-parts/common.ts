@@ -19,8 +19,8 @@ export const commonPart = {
 
   'op.result.title': 'Operation report',
   'op.result.pages': '{count} page(s)',
-  'op.result.size': 'Size: {before} → {after}',
-  'op.result.size.grew': 'Size: {before} → {after} (increased)',
+  'op.result.size': 'Size: {before:bytes} → {after:bytes}',
+  'op.result.size.grew': 'Size: {before:bytes} → {after:bytes} (increased)',
   'op.result.steps': 'Executed steps: {steps}',
   'op.result.incremental': 'Written incrementally',
   'op.result.fullRewrite': 'Fully rewritten (not incremental)',
