@@ -2537,7 +2537,7 @@ everything a canvas gesture can be — `select`, `hand`, `highlight`, `underline
 `squiggly`, `ink`, `shapes`, `note`, `redact`, `measure`, `link`, `text`, `freetext`, `stamp`
 — and the shell holds exactly one at a time. `stamp` is armed only with a picture to place
 (the signature dialog or the image picker) and any other tool drops that picture. The tool rail (`apps/web/src/components/ToolRail.tsx`) is a
-column **in the layout** beside the document and shows every one of them; the four
+column **in the layout** beside the document (below 640 px a toolbar under it that scrolls sideways, so the page keeps the whole width of a phone) and shows every one of them; the four
 text-markup looks share one button that is pressed for any of them and arms the look used
 last. Because the rail shows every tool, a tool armed from a menu always has a pressed button.
 The tool is one value rather than several parallel flags that could disagree: the rail's
@@ -2567,12 +2567,12 @@ pointer rests on it.
 (`COMPACT_VIEW_QUERY`, `(max-width: 1023px)`) both docks start collapsed and reopen as
 overlaid panels, so the canvas keeps the width and the tools stay one click away. The page
 and view controls (`PageNavigation`) live in the status bar's navigation slot, never over
-the page. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
+the page. On a touch screen (`(pointer: coarse)`) the status bar grows from 32 to 44 px (the `--spacing-pdf-statusbar` token), its buttons are at least 40 px and the bar scrolls sideways when they do not fit, and the rail's buttons are 40 px. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
 panel, reading pane, text-edit tool — and the one-shot convert and sign actions), the document
 switcher, the file actions and one settings button — language, theme, the interface mode,
 privacy, storage and offline preparation are in `SettingsDialog`. The header never overflows the bar at
 any width from 320 px: the menu bar yields first (below 1024 px), then the task buttons (below 768 px), then the
-labels of Open, Save and Export (below 1280 px), and on a phone (below 640 px) the Open button; the document name
+labels of Open, Save and Export (below 1280 px), and on a phone (below 640 px) the Find button (Open stays, as an icon); the document name
 keeps a minimum width, and `e2e/ui-panels15b-shell.spec.ts` checks the bar from 320 to 1536 px in both
 languages. Tooltips are one wrapper
 (`components/Tooltip.tsx`) over Kumo's primitive: it portals to `document.body` so a
@@ -2669,7 +2669,7 @@ after the other (`openFilesFromSurface`), because an open holds the busy gate un
 
 **The home screen** (`components/HomeScreen.tsx`) has two tabs that both act. *Start* holds
 the ways to begin — a drop zone that is also the click target for opening a file (there is no second "open" card; the header's Open and its one palette button, with a search icon and the Ctrl+K hint, serve the whole screen), a blank document, a PDF from images, merging several PDFs, a batch
-run — and the recent list (search, sort, star, page count, an "open" badge for entries that
+run; on a coarse pointer the drop zone just says "Open a PDF" and, below 640 px, the cards are a compact list (icon, title, one line) so the recent list is on the first screen — and the recent list (search, sort, star, page count, an "open" badge for entries that
 are a tab right now; removing an entry or clearing the list never touches a file, it forgets
 the entry's stored handle at once, and the clear asks first; the clear keeps the handle of a
 document that is open in a tab or has a draft in the vault, and prunes nothing when the draft

@@ -133,7 +133,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   embedded Noto Sans, so Turkish letters survive in every reader. It stays upright on
   rotated pages.
 - **One tool rail.** The rail holds every canvas tool: select, hand, edit text, add text,
-  markup, ink, shapes, note, link, measure and redact.
+  markup, ink, shapes, note, link, measure and redact. On a phone it is a toolbar under the
+  document that scrolls sideways, and on a touch screen its buttons and the status bar's are
+  40 px.
   - The rail, menus, palette, context menu and keyboard all share one armed tool.
   - Text you selected before arming a markup tool is marked at once.
 - **One selection for every mark.** This covers session marks, measurements, staged

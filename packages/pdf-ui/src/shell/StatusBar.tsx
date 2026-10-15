@@ -95,7 +95,9 @@ export function StatusBar({
   const diagnosticsMatter = limits.kind !== 'ok' || memRatio >= MEMORY_ATTENTION_RATIO;
 
   return (
-    <footer className="flex h-[var(--spacing-pdf-statusbar)] items-center gap-3 overflow-hidden border-t border-kumo-line bg-kumo-base px-3 text-xs text-kumo-subtle">
+    // On a touch screen the bar is taller (the token) and its controls are 40 px; the row then
+    // scrolls sideways instead of cutting off what does not fit a phone.
+    <footer className="flex h-[var(--spacing-pdf-statusbar)] items-center gap-3 overflow-hidden border-t border-kumo-line bg-kumo-base px-3 text-xs text-kumo-subtle pointer-coarse:overflow-x-auto pointer-coarse:[&_button]:min-h-10 pointer-coarse:[&_button]:min-w-10 pointer-coarse:[&_input]:min-h-10">
       {/* The page and zoom belong to a document on screen: with none (the start screen) there is
           nothing to read, so the slot stays empty rather than showing dashes or a stale page. */}
       {navigation ??

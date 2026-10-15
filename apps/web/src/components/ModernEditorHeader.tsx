@@ -30,7 +30,7 @@ import { toggleReading, useReading } from '../features/reading/reading-store';
  * least essential first, so the file actions and the document name are the last to go. The
  * menu bar yields first (below `lg`; the palette holds the same commands), then the task
  * shortcuts (below `md`), then the file actions' labels (below `xl`), and on a phone (below
- * `sm`) the Open button too (the palette and the home screen open files as well).
+ * `sm`) the Find button (the palette and Ctrl+F reach it); Open stays, as an icon.
  *
  * The task shortcuts are not "modes" with one highlighted: the app has no modes, and a
  * highlighted "Edit" while the select tool is armed, or "Read" after the reading pane
@@ -301,12 +301,12 @@ export function ModernEditorHeader({
         ) : null}
       </div>
 
-      {/* File actions: labels yield below 1280 px and Open below 640 px; the controls keep their size. */}
+      {/* File actions: labels yield below 1280 px and Find below 640 px; the controls keep their size. */}
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
         <button
           type="button"
           onClick={onSearch}
-          className={ICON_CLASS}
+          className={`${ICON_CLASS} max-sm:hidden`}
           title={`${t('shell.search')} (Ctrl+F)`}
           aria-label={t('shell.search')}
         >
@@ -328,7 +328,6 @@ export function ModernEditorHeader({
           onClick={onOpen}
           title={`${t('shell.open')} (Ctrl+O)`}
           aria-label={t('shell.open')}
-          className="max-sm:hidden"
         >
           <span className="hidden xl:inline">{t('shell.open')}</span>
         </Button>

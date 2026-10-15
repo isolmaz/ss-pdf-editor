@@ -12,6 +12,7 @@ export const homePart = {
   'home.start.batch.title': 'Batch processing',
   'home.start.batch.desc': 'Run the same steps over many files at once.',
   'home.drop.title': 'Open a PDF or drop it here',
+  'home.drop.titleTouch': 'Open a PDF',
   'home.drop.desc': 'A PDF opens; Word, Excel, PowerPoint, HTML and text are converted to PDF.',
 
   'home.tools.search': 'Search tools…',

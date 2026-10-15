@@ -17,6 +17,7 @@ export const homePart = {
   'home.start.batch.title': 'Toplu işlem',
   'home.start.batch.desc': 'Aynı adımları birçok dosyaya tek seferde uygulayın.',
   'home.drop.title': 'PDF açın ya da buraya bırakın',
+  'home.drop.titleTouch': 'PDF açın',
   'home.drop.desc': 'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’e dönüştürülür.',
 
   'home.tools.search': 'Araç ara…',

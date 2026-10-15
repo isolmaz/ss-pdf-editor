@@ -149,13 +149,17 @@ function StartCard({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="group flex h-full flex-col rounded-lg border border-kumo-line bg-kumo-base p-4 text-start transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      className="group flex h-full flex-col rounded-lg border border-kumo-line bg-kumo-base p-4 text-start transition-colors hover:border-kumo-contrast hover:bg-kumo-recessed focus-visible:border-kumo-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 max-sm:flex-row max-sm:items-center max-sm:gap-3 max-sm:p-2.5"
     >
-      <span className="mb-3 flex size-9 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-105">
+      <span className="mb-3 flex size-9 shrink-0 items-center justify-center rounded-md bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-105 max-sm:mb-0 max-sm:size-8">
         {icon}
       </span>
-      <span className="text-sm font-semibold text-kumo-strong">{title}</span>
-      <span className="mt-1 text-xs leading-relaxed text-kumo-subtle">{description}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="text-sm font-semibold text-kumo-strong">{title}</span>
+        <span className="mt-1 text-xs leading-relaxed text-kumo-subtle max-sm:mt-0 max-sm:truncate">
+          {description}
+        </span>
+      </span>
     </button>
   );
 }
@@ -203,7 +207,7 @@ export function HomeScreen({
     recentTab === 'starred' ? recentItems.filter((item) => item.starred === true) : recentItems;
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-kumo-canvas px-4 py-6 text-kumo-default select-none md:px-12">
+    <div className="flex h-full flex-col overflow-y-auto bg-kumo-canvas px-4 py-6 text-kumo-default select-none max-sm:py-4 md:px-12">
       <input
         id={fileInputId}
         type="file"
@@ -259,16 +263,24 @@ export function HomeScreen({
       ) : (
         <div id={startPanelId} role="tabpanel" className="flex flex-1 flex-col">
           <h2 className="sr-only">{t('home.start.title')}</h2>
-          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid grid-cols-1 gap-2 max-sm:mt-3 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4">
             <label
               htmlFor={fileInputId}
-              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus sm:col-span-2"
+              className="group flex cursor-pointer sm:col-span-2 flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus max-sm:flex-row max-sm:justify-start max-sm:gap-3 max-sm:p-2.5 max-sm:text-start"
             >
-              <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110">
+              <span className="mb-2 flex size-10 shrink-0 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110 max-sm:mb-0 max-sm:size-8">
                 <CloudArrowUp size={24} weight="duotone" aria-hidden="true" />
               </span>
-              <span className="text-xs font-semibold text-kumo-strong">{t('home.drop.title')}</span>
-              <span className="mt-1 text-[11px] text-kumo-subtle">{t('home.drop.desc')}</span>
+              <span className="flex min-w-0 flex-col">
+                {/* Nothing is dragged with a finger: on a touch screen the zone only says to open. */}
+                <span className="text-xs font-semibold text-kumo-strong pointer-coarse:hidden">
+                  {t('home.drop.title')}
+                </span>
+                <span className="hidden text-xs font-semibold text-kumo-strong pointer-coarse:inline">
+                  {t('home.drop.titleTouch')}
+                </span>
+                <span className="mt-1 text-[11px] text-kumo-subtle">{t('home.drop.desc')}</span>
+              </span>
             </label>
             <StartCard
               icon={<FilePlus size={20} weight="duotone" />}
@@ -314,7 +326,7 @@ export function HomeScreen({
             />
           </div>
 
-          <div className="mt-10 flex flex-1 flex-col">
+          <div className="mt-10 flex flex-1 flex-col max-sm:mt-6">
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-kumo-line">
               <div className="flex items-center gap-4">
                 <div role="tablist" aria-label={t('home.recentTab')} className="flex items-center gap-6">

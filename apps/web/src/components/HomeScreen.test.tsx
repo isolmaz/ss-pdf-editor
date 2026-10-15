@@ -108,6 +108,8 @@ describe('HomeScreen entry points', () => {
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 
     expect(input.labels?.[0]?.textContent).toContain(t('home.drop.title'));
+    // CSS shows the shorter wording where nothing can be dragged (a coarse pointer).
+    expect(input.labels?.[0]?.textContent).toContain(t('home.drop.titleTouch'));
     expect(screen.queryByRole('button', { name: /open a pdf/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /command palette|ctrl+k/i })).toBeNull();
   });
