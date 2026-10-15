@@ -1,3 +1,4 @@
+export * from './base64';
 export * from './drafts';
 export * from './journal';
 export * from './operations';

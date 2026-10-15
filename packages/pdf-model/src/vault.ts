@@ -60,8 +60,12 @@ export interface VaultCleanupInput {
   readonly storedSources: readonly string[];
   /** The manifest inventory, including how complete it was. */
   readonly inventory: DraftInventory;
-  /** Keys another window reported as live (`vault-channel.ts`), when the channel exists. */
-  readonly peerReferences?: readonly string[];
+  /**
+   * Keys another window reported as live (`vault-channel.ts`). Required: a caller without a
+   * channel has no peer knowledge, and "no peers" must be a decision it states (`[]`) rather
+   * than something an omitted field quietly means.
+   */
+  readonly peerReferences: readonly string[];
 }
 
 export type VaultCleanupPlan =
@@ -88,7 +92,7 @@ export function planVaultCleanup(input: VaultCleanupInput): VaultCleanupPlan {
   for (const draft of input.inventory.drafts) {
     for (const key of keysForDraft(draft)) referenced.add(key);
   }
-  for (const key of input.peerReferences ?? []) referenced.add(key);
+  for (const key of input.peerReferences) referenced.add(key);
 
   const stored = new Set(input.storedSources);
   const deleteKeys = [...stored].filter((key) => !referenced.has(key));
@@ -116,6 +120,6 @@ export function planDocumentCleanup(
     if (draft.id === target.manifestId) continue;
     for (const key of keysForDraft(draft)) referenced.add(key);
   }
-  for (const key of input.peerReferences ?? []) referenced.add(key);
+  for (const key of input.peerReferences) referenced.add(key);
   return target.keys.filter((key) => !referenced.has(key));
 }

@@ -165,7 +165,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Save versus Export.** *Save* writes over the file you opened; this needs Chromium
   and its File System Access API. *Export* always downloads a copy; its dialog shows the
   size of the document as it is now, not as it was opened. Firefox and Safari offer Export
-  only.
+  only. If the file changed on disk since it was opened or last saved here, Save writes
+  nothing and asks: **Overwrite** replaces that file with your version, **Save as** writes a
+  new file and leaves the changed one alone, **Cancel** keeps both.
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
   flatten them and add simple calculations. Form data can be imported or exported as FDF
   or JSON; exporting downloads only the data file.
@@ -635,6 +637,15 @@ These describe how the build works; they are not promises.
     of it.
   - When drafts are restored at start-up, the document you opened meanwhile stays in front;
     a draft whose document you already opened is skipped, and the others are restored.
+  - A draft belongs to the window that has its document open (a Web Lock named after the
+    draft): another window skips it at start-up instead of restoring a second copy, and
+    opening that document from the recent list there says it is open in another window.
+    Only the owning window writes the draft, under the same lock a cleanup takes, so two
+    windows never overwrite one draft or delete each other's saved versions. Where the
+    browser has no Web Locks, ownership is not enforced.
+  - A draft that cannot be read back is reported and skipped; the others are still restored.
+  - A tab restored from a draft remembers the file it last saved over, so its first Save is
+    checked against that file and not against the original.
   - If the browser's storage refuses the recovery copy of a document you open (storage
     full, for example), the document still opens and the notice says that its recovery copy
     could not be stored and why; until a draft save succeeds, its unsaved changes would not

@@ -45,6 +45,12 @@ export interface SessionTab {
   readonly dirty: boolean;
   /** Journal state last successfully written; null means an unknown legacy baseline. */
   readonly savedState: string | null;
+  /**
+   * The SHA-256 of the file this editor last wrote for the tab (`addOutput`), or the one a
+   * restored draft carried: what an in-place Save expects to find on disk. Absent until the
+   * tab has written once — the file is then still the source it was opened from.
+   */
+  readonly lastWrittenSha256?: string;
   /** Sensitive session: persistent drafts off. */
   readonly sensitive: boolean;
 }
@@ -178,6 +184,7 @@ export class SessionStore {
         ? {
             ...tab,
             outputs: [...tab.outputs, output],
+            ...(output.writtenTo === undefined ? {} : { lastWrittenSha256: output.writtenTo.sha256 }),
             savedState: output.fromState,
             dirty: tab.working.stateId !== output.fromState,
           }
@@ -251,6 +258,7 @@ export class SessionStore {
         ? item
         : {
             ...item,
+            ...(draft.lastWrittenSha256 === undefined ? {} : { lastWrittenSha256: draft.lastWrittenSha256 }),
             savedState:
               draft.savedState === undefined
                 ? draft.dirty

@@ -285,6 +285,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
     notices,
     downloads,
     saveLock,
+    saveStore: saveStore.saveStore,
     busyRef,
     bindings,
   };
@@ -387,7 +388,9 @@ async function main() {
     assert.equal(await h.run(), false);
     assert.equal(target.calls.opened, 0);
     assert.equal(h.store.active.dirty, true);
-    assert.ok(h.notices.some((notice) => String(notice).includes('conflict')));
+    // A changed file is a question the dialog asks (overwrite / save as / cancel), not a failure line.
+    assert.equal(h.saveStore.get().conflict?.tabId, h.tab.id);
+    assert.equal(h.saveStore.get().conflict?.target, target.file);
   });
   await check(
     'an in-place save over a handle read back from storage asks for write access first',

@@ -31,12 +31,16 @@ function fakeLocks(options: { delayGrant?: boolean; failQuery?: boolean } = {}) 
     held,
     names: () => [...held.values()],
     request: async (name: string, first: unknown, second?: unknown) => {
-      const work = (typeof first === 'function' ? first : second) as () => unknown;
+      const work = (typeof first === 'function' ? first : second) as (lock: unknown) => unknown;
       if (options.delayGrant) await Promise.resolve();
+      // `ifAvailable` on a name somebody holds is not granted: the callback gets `null`.
+      const ifAvailable =
+        typeof first === 'object' && (first as { ifAvailable?: boolean }).ifAvailable === true;
+      if (ifAvailable && [...held.values()].includes(name)) return await work(null);
       const key = Symbol(name);
       held.set(key, name);
       try {
-        return await work();
+        return await work({ name });
       } finally {
         held.delete(key);
       }
@@ -126,7 +130,7 @@ describe('vault channel over BroadcastChannel', () => {
     expect(second.peerReferences()).toEqual(['src-a']);
   });
 
-  it('without a lock manager a probe makes peers answer with what they hold, and waits the whole window so every peer can answer', async () => {
+  it('without a lock manager a probe still collects what peers answer, but reports false: a timer cannot prove nobody is missing', async () => {
     vi.stubGlobal('navigator', {});
     const asker = channel();
     const holder = channel();
@@ -135,17 +139,17 @@ describe('vault channel over BroadcastChannel', () => {
     // Drop nothing: a second asker that never heard the announcement must learn it from the probe.
     const fresh = channel();
     const started = Date.now();
-    await fresh.probe();
+    expect(await fresh.probe()).toBe(false);
     expect(Date.now() - started).toBeGreaterThanOrEqual(200);
     expect(fresh.peerReferences()).toEqual(['src-held']);
     expect(asker.peerReferences()).toEqual(['src-held']);
   });
 
-  it('without a lock manager a probe with no peer waits out its window and learns nothing', async () => {
+  it('without a lock manager a probe with no peer waits out its window, learns nothing and reports false', async () => {
     vi.stubGlobal('navigator', {});
     const alone = channel();
     const started = Date.now();
-    await alone.probe();
+    expect(await alone.probe()).toBe(false);
     expect(Date.now() - started).toBeGreaterThanOrEqual(200);
     expect(alone.peerReferences()).toEqual([]);
   });
@@ -440,7 +444,7 @@ describe('a probe waits for every window the lock manager lists, not for a timer
     port.close();
   });
 
-  it('falls back to the fixed window when the lock manager cannot list its holders', async () => {
+  it('falls back to the fixed window, and fails closed, when the lock manager cannot list its holders', async () => {
     vi.stubGlobal('navigator', { locks: fakeLocks({ failQuery: true }) });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const asker = channel();
@@ -454,7 +458,79 @@ describe('a probe waits for every window the lock manager lists, not for a timer
     expect(outcome).toBeUndefined();
     vi.advanceTimersByTime(1);
     await probing;
-    expect(outcome).toBe(true);
+    expect(outcome).toBe(false);
+  });
+});
+
+describe('who owns a draft', () => {
+  const DRAFT_LOCK = 'pdf-editor.vault.draft.';
+
+  it('grants a draft to the first window that asks and refuses the second while the first holds it', async () => {
+    const locks = fakeLocks();
+    vi.stubGlobal('navigator', { locks });
+    const first = channel();
+    const second = channel();
+    expect(await first.claimDraft('doc-1')).toBe(true);
+    expect(locks.names()).toContain(`${DRAFT_LOCK}doc-1`);
+    expect(await second.claimDraft('doc-1')).toBe(false);
+    // Asking again is idempotent for the owner, and a different draft is free.
+    expect(await first.claimDraft('doc-1')).toBe(true);
+    expect(await second.claimDraft('doc-2')).toBe(true);
+  });
+
+  it('hands a draft over once its owner releases it, and a refusal is not remembered', async () => {
+    const locks = fakeLocks();
+    vi.stubGlobal('navigator', { locks });
+    const first = channel();
+    const second = channel();
+    await first.claimDraft('doc-1');
+    expect(await second.claimDraft('doc-1')).toBe(false);
+    first.releaseDraft('doc-1');
+    await vi.waitFor(() => expect(locks.names()).not.toContain(`${DRAFT_LOCK}doc-1`));
+    expect(await second.claimDraft('doc-1')).toBe(true);
+    // Releasing a draft this window never claimed changes nothing.
+    expect(() => first.releaseDraft('never')).not.toThrow();
+  });
+
+  it('gives every claim up when the window closes', async () => {
+    const locks = fakeLocks();
+    vi.stubGlobal('navigator', { locks });
+    const closing = channel();
+    await closing.claimDraft('doc-1');
+    await closing.claimDraft('doc-2');
+    closing.close();
+    await vi.waitFor(() => expect(locks.names().filter((name) => name.startsWith(DRAFT_LOCK))).toEqual([]));
+    // A closed window owns nothing new.
+    expect(await closing.claimDraft('doc-3')).toBe(false);
+  });
+
+  it('a release that arrives before the lock was granted leaves nothing held', async () => {
+    const locks = fakeLocks({ delayGrant: true });
+    vi.stubGlobal('navigator', { locks });
+    const quick = channel();
+    const pending = quick.claimDraft('doc-1');
+    quick.releaseDraft('doc-1');
+    expect(await pending).toBe(false);
+    await turn();
+    expect(locks.names().filter((name) => name.startsWith(DRAFT_LOCK))).toEqual([]);
+  });
+
+  it('without a lock manager nobody can be asked, so every claim is granted', async () => {
+    vi.stubGlobal('navigator', {});
+    const lone = channel();
+    expect(await lone.claimDraft('doc-1')).toBe(true);
+    expect(() => lone.releaseDraft('doc-1')).not.toThrow();
+  });
+
+  it('keeps working, owning the draft, when the lock manager throws', async () => {
+    const locks = fakeLocks();
+    const request = locks.request;
+    locks.request = async (name: string, first: unknown, second?: unknown) => {
+      if (name.startsWith(DRAFT_LOCK)) throw new Error('refused');
+      return await request(name, first, second);
+    };
+    vi.stubGlobal('navigator', { locks });
+    expect(await channel().claimDraft('doc-1')).toBe(true);
   });
 });
 

@@ -1,7 +1,9 @@
 import type { Page } from 'playwright/test';
+import { notice, openApp, rotateCurrentPage } from './app-helpers';
 import { fixturePdf } from './fixture-pdf';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
+import { labelledPdf } from './tool-fixture';
 
 /**
  * Two windows on one vault.
@@ -236,5 +238,65 @@ test.describe('two windows on one vault', () => {
 
     await first.close();
     await second.close();
+  });
+
+  test('a second window does not restore the draft the first one is editing, and the first one still can after it closes', async ({
+    context,
+  }) => {
+    const first = await context.newPage();
+    await openApp(first, 'owned.pdf', labelledPdf('Owned', 2), { advanced: false });
+    await rotateCurrentPage(first);
+    // The debounced save has written the manifest that records the rotation.
+    await expect
+      .poll(async () => {
+        const vault = await readVault(first);
+        return vault.drafts.filter((name) => name.endsWith('.json')).length;
+      })
+      .toBe(1);
+    const manifestText = async (page: Page): Promise<string> =>
+      await page.evaluate(async () => {
+        const root = await navigator.storage.getDirectory();
+        const dir = await (await root.getDirectoryHandle('pdf-editor')).getDirectoryHandle('drafts');
+        for await (const [, entry] of (
+          dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }
+        ).entries()) {
+          if (entry.kind === 'file') return await (await (entry as FileSystemFileHandle).getFile()).text();
+        }
+        return '';
+      });
+    await expect.poll(async () => (await manifestText(first)).includes('"dirty":true')).toBe(true);
+    const before = await manifestText(first);
+
+    // The first window holds the draft's lock while its tab is open.
+    const second = await context.newPage();
+    await second.goto('/editor/');
+    await expect
+      .poll(() =>
+        second.evaluate(async () =>
+          ((await navigator.locks.query()).held ?? []).some((lock) =>
+            lock.name?.startsWith('pdf-editor.vault.draft.'),
+          ),
+        ),
+      )
+      .toBe(true);
+    // Recovery asks again for a draft it was refused for about 1.25 s before it decides the
+    // draft is another window's; `toHaveCount(0)` would pass at once, so wait that out first.
+    await second.waitForTimeout(3_000);
+    // The second window restored nothing — no notice, no tab of that document — and wrote
+    // nothing over the first one's manifest.
+    await expect(notice(second, 'draft(s) restored')).toHaveCount(0);
+    await expect(second.getByRole('button', { name: 'Back to document (owned.pdf)' })).toHaveCount(0);
+    expect(await manifestText(second)).toBe(before);
+
+    // Once the first window is gone, the next start restores it.
+    await first.close();
+    await second.close();
+    // A window that just closed can still hold its locks for a moment: recovery asks again.
+    const third = await context.newPage();
+    await third.goto('/editor/');
+    await expect(notice(third, 'draft(s) restored')).toBeVisible({ timeout: 30_000 });
+    // The start screen is up: a "Back to document" entry exists only for a tab that is open.
+    await expect(third.getByRole('button', { name: 'Back to document (owned.pdf)' })).toBeVisible();
+    await third.close();
   });
 });

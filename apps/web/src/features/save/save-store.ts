@@ -1,6 +1,7 @@
 /**
  * What the save path and the viewer share: the save lock, the viewer's imperative API, the
- * zoom and page the viewer reports, the close-document question and the layout counter.
+ * zoom and page the viewer reports, the close-document question, the file-changed question and
+ * the layout counter.
  *
  * None of it is document data. The viewer API is what the shortcut layer, the dock panels and
  * the save handlers reach the engine's view through; a handler reads it with `currentViewer()`
@@ -10,6 +11,16 @@
 
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { createStore, type Equality, useStore } from '../store';
+
+/**
+ * The file an in-place Save stopped at: the tab, and the **file that changed**. The answer
+ * "Overwrite" writes over exactly that file — not over whatever the tab's own handle is — so
+ * a conflict found on a Save as destination can never turn into a write over the original.
+ */
+export interface SaveConflict {
+  readonly tabId: string;
+  readonly target: FileSystemFileHandle;
+}
 
 export interface SaveState {
   /**
@@ -34,6 +45,12 @@ export interface SaveState {
   readonly closeRequest: string | null;
   /** What had the focus when the question opened: it gets the focus back when the question closes. */
   readonly closeTrigger: HTMLElement | null;
+  /**
+   * The file that changed on disk after it was opened (or last saved here), so a Save stopped:
+   * the question "overwrite it, save as a new file, or cancel?" is about it. `null` while none
+   * is asked.
+   */
+  readonly conflict: SaveConflict | null;
 }
 
 export const initialSaveState = (): SaveState => ({
@@ -44,6 +61,7 @@ export const initialSaveState = (): SaveState => ({
   layoutRevision: 0,
   closeRequest: null,
   closeTrigger: null,
+  conflict: null,
 });
 
 export const saveStore = createStore<SaveState>(initialSaveState());
@@ -109,4 +127,14 @@ export function closeRequested(tabId: string, trigger: HTMLElement | null): void
 /** The close-document question is answered or dismissed. */
 export function closeDismissed(): void {
   saveStore.set({ closeRequest: null });
+}
+
+/** A Save of `tabId` found `target` changed: ask what to do with it. */
+export function conflictFound(tabId: string, target: FileSystemFileHandle): void {
+  saveStore.set({ conflict: { tabId, target } });
+}
+
+/** The file-changed question is answered or dismissed. */
+export function conflictResolved(): void {
+  saveStore.set({ conflict: null });
 }

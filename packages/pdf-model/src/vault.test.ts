@@ -58,6 +58,7 @@ describe('planVaultCleanup', () => {
       open: [{ source: 'src-open', snapshots: ['snapshot-open'] }],
       storedSources: ['src-open', 'snapshot-open', 'src-manifest', 'snapshot-manifest', 'src-orphan'],
       inventory: inventory([draft('kept', 'src-manifest', ['snapshot-manifest'])]),
+      peerReferences: [],
     });
     expect(plan).toEqual({ ok: true, deleteKeys: ['src-orphan'], retained: 4 });
   });
@@ -69,6 +70,7 @@ describe('planVaultCleanup', () => {
       open: [],
       storedSources: ['src-a', 'src-b'],
       inventory: inventory([], { enumerationFailed: true }),
+      peerReferences: [],
     });
     expect(plan).toEqual({ ok: false, reason: 'incomplete-inventory' });
   });
@@ -78,6 +80,7 @@ describe('planVaultCleanup', () => {
       open: [],
       storedSources: ['src-a'],
       inventory: inventory([draft('readable', 'src-a')], { unreadable: ['broken.json'] }),
+      peerReferences: [],
     });
     expect(plan).toEqual({ ok: false, reason: 'incomplete-inventory' });
   });
@@ -88,6 +91,7 @@ describe('planVaultCleanup', () => {
       open: [],
       storedSources: ['src-shared'],
       inventory: inventory([draft('one', 'src-shared'), draft('two', 'src-shared')]),
+      peerReferences: [],
     });
     expect(plan).toEqual({ ok: true, deleteKeys: [], retained: 1 });
   });
@@ -111,6 +115,7 @@ describe('planDocumentCleanup', () => {
       draft('doomed', 'src-doomed', ['snapshot-doomed']),
       draft('other', 'src-shared', ['snapshot-shared']),
     ]),
+    peerReferences: [] as readonly string[],
   };
 
   it('removes exactly the keys no other document holds', () => {

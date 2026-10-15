@@ -237,7 +237,8 @@ describe('saveDocument', () => {
     expect(await saveDocument(host, tab.id)).toBe(true);
     target.replace([7, 7, 7]);
     expect(await saveDocument(host, tab.id)).toBe(false);
-    expect(coreStore.get().notice).toContain('error.conflict.message');
+    expect(saveStore.get().conflict).toEqual({ tabId: tab.id, target: target.file });
+    expect(coreStore.get().notice).toBeNull();
   });
 
   it('falls back to the source hash when the last output was never written to a file', async () => {
@@ -264,9 +265,87 @@ describe('saveDocument', () => {
 
     expect(await saveDocument(host, tab.id)).toBe(false);
 
-    expect(coreStore.get().notice).toContain('error.conflict.message');
+    // A changed file is a question (the dialog), not a failure line, and it names the file.
+    expect(saveStore.get().conflict).toEqual({ tabId: tab.id, target: target.file });
+    expect(coreStore.get().notice).toBeNull();
     expect(target.createWritable).not.toHaveBeenCalled();
     expect(session.getSnapshot().tabs[0]?.outputs).toHaveLength(0);
+  });
+
+  it('overwrites the changed file once the user confirmed it, and measures the next save against that write', async () => {
+    const target = fakeFile([9, 9]);
+    const tab = await open('a.pdf', target.file);
+    prepareOutput.mockImplementation(async () => ({ ...prepared(tab), outputHash: await sha256Hex(output) }));
+    expect(await saveDocument(host, tab.id)).toBe(false);
+    expect(target.bytes()).toEqual(new Uint8Array([9, 9]));
+
+    expect(await saveDocument(host, tab.id, { overwrite: target.file })).toBe(true);
+    expect(target.bytes()).toEqual(output);
+    // The confirmation was for that one write: the file is now what this editor wrote.
+    saveStore.set({ conflict: null });
+    expect(await saveDocument(host, tab.id)).toBe(true);
+    target.replace([7]);
+    expect(await saveDocument(host, tab.id)).toBe(false);
+    expect(saveStore.get().conflict).toEqual({ tabId: tab.id, target: expect.anything() });
+  });
+
+  it('measures a restored tab against the hash its draft remembered, not against the original', async () => {
+    const written = await sha256Hex(new Uint8Array([8, 8]));
+    const target = fakeFile([8, 8]);
+    const tab = await open('a.pdf', target.file);
+    session.restoreHistory(tab.id, { lastWrittenSha256: written, journal: [], dirty: true } as never, []);
+    prepareOutput.mockResolvedValue(prepared(tab));
+    expect(await saveDocument(host, tab.id)).toBe(true);
+    expect(saveStore.get().conflict).toBeNull();
+    // Without the remembered hash the same file is a conflict with the original source.
+    const other = fakeFile([8, 8]);
+    const plain = await open('b.pdf', other.file);
+    prepareOutput.mockResolvedValue(prepared(plain));
+    expect(await saveDocument(host, plain.id)).toBe(false);
+    expect(saveStore.get().conflict).toMatchObject({ tabId: plain.id, target: other.file });
+  });
+
+  it('overwrites the file the question was about, never the file the document came from', async () => {
+    const own = fakeFile([9, 9]);
+    const tab = await open('a.pdf', own.file);
+    const chosen = fakeFile([5, 5, 5]);
+    vi.stubGlobal('window', { showSaveFilePicker: async () => chosen.file });
+    let changed = false;
+    prepareOutput.mockImplementation(async () => {
+      // Someone else writes the chosen destination while the document is prepared.
+      if (changed) chosen.replace([6]);
+      return prepared(tab);
+    });
+    changed = true;
+    // "Save as" finds its destination changed: the question is about that file ...
+    expect(await saveDocument(host, tab.id, { saveAs: true })).toBe(false);
+    const conflict = saveStore.get().conflict;
+    expect(conflict).toEqual({ tabId: tab.id, target: chosen.file });
+
+    // ... and confirming it writes there, leaving the original — which the user chose not to
+    // overwrite — exactly as it was.
+    changed = false;
+    expect(await saveDocument(host, tab.id, { overwrite: conflict?.target })).toBe(true);
+    expect(chosen.bytes()).toEqual(output);
+    expect(own.bytes()).toEqual(new Uint8Array([9, 9]));
+    expect(own.createWritable).not.toHaveBeenCalled();
+    expect(session.getSnapshot().tabs[0]?.source.handle).toBe(chosen.file);
+  });
+
+  it('saves as a new file on request, even though the document has a file of its own', async () => {
+    const own = fakeFile([9, 9]);
+    const tab = await open('a.pdf', own.file);
+    const chosen = fakeFile([]);
+    const picker = vi.fn(async () => chosen.file);
+    vi.stubGlobal('window', { showSaveFilePicker: picker });
+    prepareOutput.mockResolvedValue(prepared(tab));
+
+    expect(await saveDocument(host, tab.id, { saveAs: true })).toBe(true);
+
+    expect(picker).toHaveBeenCalledOnce();
+    expect(chosen.bytes()).toEqual(output);
+    expect(own.createWritable).not.toHaveBeenCalled();
+    expect(session.getSnapshot().tabs[0]?.source.handle).toBe(chosen.file);
   });
 
   it('refuses to write over a file the user would not grant access to', async () => {
@@ -293,7 +372,7 @@ describe('saveDocument', () => {
     });
     changed = true;
     expect(await saveDocument(host, tab.id)).toBe(false);
-    expect(coreStore.get().notice).toContain('error.conflict.message');
+    expect(saveStore.get().conflict).toEqual({ tabId: tab.id, target: target.file });
     expect(session.getSnapshot().tabs[0]?.source.handle).toBeUndefined();
   });
 

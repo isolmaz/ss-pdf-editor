@@ -1,20 +1,19 @@
 /**
- * `trust-roots.ts`: the imported-trust-root store file and the base64 both stores use.
+ * `trust-roots.ts`: the imported-trust-root store file.
  *
- * It protects the round trip (the stored base64 decodes to exactly the imported DER, checked
- * against Node's own base64, PEM line breaks and padding included), that one certificate
- * imported twice is one entry, and that a stored file is untrusted input when read back:
- * wrong version, wrong shapes and implausibly short DER are dropped instead of guessed at.
+ * It protects the round trip (the stored base64 decodes to exactly the imported DER; the base64
+ * itself is `base64.test.ts`), that one certificate imported twice is one entry, and that a
+ * stored file is untrusted input when read back: wrong version, wrong shapes and implausibly
+ * short DER are dropped instead of guessed at.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { toBase64 } from './base64';
 import {
   addTrustRoot,
   EMPTY_TRUST_ROOTS,
-  fromBase64,
   parseTrustRoots,
   removeTrustRoot,
-  toBase64,
   toDer,
   trustRootFrom,
 } from './trust-roots';
@@ -26,30 +25,6 @@ function der(seed: number, length = 200): Uint8Array {
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-describe('base64', () => {
-  it('encodes and decodes every length remainder exactly as Node does', () => {
-    for (let length = 0; length <= 6; length += 1) {
-      const bytes = der(length * 17 + 1, length);
-      const encoded = toBase64(bytes);
-      expect(encoded).toBe(Buffer.from(bytes).toString('base64'));
-      expect([...fromBase64(encoded)]).toEqual([...bytes]);
-    }
-    const every = Uint8Array.from({ length: 256 }, (_, index) => index);
-    expect(toBase64(every)).toBe(Buffer.from(every).toString('base64'));
-    expect([...fromBase64(toBase64(every))]).toEqual([...every]);
-  });
-
-  it('decodes a PEM body: line breaks, indentation and padding are not data', () => {
-    const bytes = der(5, 100);
-    const wrapped = Buffer.from(bytes)
-      .toString('base64')
-      .replace(/.{1,64}/g, (line) => `  ${line}\r\n`);
-    expect([...fromBase64(wrapped)]).toEqual([...bytes]);
-    expect([...fromBase64('QQ==')]).toEqual([0x41]);
-    expect(fromBase64('').length).toBe(0);
-  });
 });
 
 describe('trust roots', () => {

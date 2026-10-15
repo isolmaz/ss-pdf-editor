@@ -14,7 +14,7 @@
  * value that does not decode is dropped, and the version field is checked.
  */
 
-import { fromBase64, toBase64 } from './trust-roots';
+import { fromBase64, toBase64 } from './base64';
 
 export interface RevocationList {
   readonly id: string;

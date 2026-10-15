@@ -58,8 +58,8 @@ import { createResultsActions } from './features/results/results-actions';
 import { openPrintDialog, setProgress } from './features/results/results-store';
 import { discardDocument } from './features/save/close-actions';
 import { prepareOutput as prepareDocumentOutput } from './features/save/prepare-output';
-import { CloseDocumentHost } from './features/save/SaveSurfaces';
-import { saveDocument } from './features/save/save-actions';
+import { CloseDocumentHost, SaveConflictHost } from './features/save/SaveSurfaces';
+import { type SaveOptions, saveDocument } from './features/save/save-actions';
 import { setCurrentPage, useSave, viewerRef } from './features/save/save-store';
 import { useSaveActions } from './features/save/use-save-actions';
 import { clearTextEdit, useTextTool } from './features/selection/text-tool-store';
@@ -203,8 +203,8 @@ export function App({ store }: AppProps) {
     [store, t],
   );
   const saveActive = useCallback(
-    (tabId?: string): Promise<boolean> =>
-      saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id),
+    (tabId?: string, options?: SaveOptions): Promise<boolean> =>
+      saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id, options),
     [prepareOutput, store, t],
   );
   const discardTab = useCallback(
@@ -450,6 +450,7 @@ export function App({ store }: AppProps) {
         saveActive={saveActive}
         exportActive={exportActive}
       />
+      <SaveConflictHost t={t} session={store} discardTab={discardTab} saveActive={saveActive} />
       <XfaFormDialogHost t={t} onSave={saveXfaForm} />
       <SignatureDialogHost t={t} canRemember={activeTab?.sensitive !== true} />
       <ImagePickerInput t={t} />

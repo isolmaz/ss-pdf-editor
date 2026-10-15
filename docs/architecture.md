@@ -339,6 +339,10 @@ Contract points the router returns and the report shows:
   System Access handle is referenced by an opaque key; a handle-less source is written to
   the vault **once** on open. `sourceKeyFor()` derives the key from the content hash, so
   the same document never writes twice and two tabs share one blob.
+- A draft also carries the SHA-256 of the file the editor last wrote in place
+  (`lastWrittenSha256`): outputs are not persisted, so without it a restored tab would
+  compare the file on disk with the *original* source and report a conflict nobody caused.
+  A source page count or write hash that is not valid makes the draft unreadable.
 - `parseDraft()` treats stored data as untrusted input and validates the journal **as a
   unit**. A filtered array would be worse than a rejected one: the persisted cursor points
   into that array, so dropping one malformed entry silently shifts every later state.
@@ -355,6 +359,8 @@ retain**:
   references it — no manifest, no open document, no peer window;
 - `enumerationFailed` or any `unreadable` manifest makes the plan **refuse**
   (`{ ok: false, reason: 'incomplete-inventory' }`) rather than sweep;
+- `peerReferences` is a required input of both plans: "no other window" is stated by the
+  caller, never implied by an omitted field;
 - sensitive documents own nothing (`keysForDraft` returns the source key and snapshot
   keys, and a sensitive document is never persisted at all);
 - deletion is logical, not physical — it cannot overwrite the bytes underneath and cannot
@@ -365,8 +371,8 @@ retain**:
 `trust-roots.ts` stores exactly what the user imported: the certificate DER (base64), a
 label and a timestamp, in a versioned file (`version: 1`). There is no built-in CA list,
 because shipping one would vouch for certificates the user never chose. base64 is
-implemented in the module rather than via `btoa`, so the code runs identically in Node and
-the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
+implemented once, in `base64.ts` (shared with revocation lists and the draft bitmaps), rather than
+via `btoa`, so the code runs identically in Node and the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
 indentation), so it has no failure of its own; a stored root that decodes to fewer than 64 bytes is
 dropped rather than trusted, and `trustRootFrom` derives the id from the DER, so importing
 the same certificate twice is one entry.
@@ -2401,7 +2407,7 @@ testable logic lives:
 | `features/forms/` | Forms and XFA: the form and annotation inventories, the inspection revision, the selected field, form-field detection and the XFA state (`forms-store.ts`), filling, flattening and detecting fields (`form-actions.ts`), the inventory read (`use-form-inventory.ts`), and the XFA banner, field-candidate layer, forms panel and XFA dialog hosts (`FormsSurface.tsx`) |
 | `features/marks/` | Marks: the mark targets (`marks-store.ts`, `mark-targets.ts`), the visible and editable overlays (`overlays.ts`), removing and transforming marks, writing a file annotation, the writer pipeline (`writer.ts`: a writer's outcome and layer writes), and redaction (the erased words per tab in `redaction-store.ts`, the redaction marks and writer in `redaction.ts`, and `RedactionSurfaces.tsx`), run through `useWriterActions` and `useMarkActions` |
 | `features/dialogs/` | The dialog runner: the batch, operation, start and shortcuts dialogs' state (`dialogs-store.ts`), opening them and handling their results (`dialog-actions.ts`), dismissing a dialog whose tab or working version changed (`use-dialog-dismissal.ts`), and the hosts (`DialogSurfaces.tsx`) |
-| `features/persistence/` | Drafts and the vault: the storage tier, the persisted snapshots and the draft write queue (`persistence-store.ts`), writing, forgetting and saving drafts (`draft-persist.ts`, `draft-vault.ts`), recovery on start (`use-draft-recovery.ts`), vault sync across windows (`use-vault-sync.ts`) and offline preparation (`offline-actions.ts`) |
+| `features/persistence/` | Drafts and the vault: the storage tier, the persisted snapshots and the draft write queue (`persistence-store.ts`), writing, forgetting and saving drafts (`draft-persist.ts`, `draft-restore.ts` — the one restore path, `draft-vault.ts`), recovery on start (`use-draft-recovery.ts`), vault sync across windows (`use-vault-sync.ts`) and offline preparation (`offline-actions.ts`) |
 | `features/export/` | Export and the context menu: their open state (`export-store.ts`), choosing an export, opening the context menu and reading the current bytes (`export-actions.ts`), and the export dialog and context menu hosts (`ExportSurfaces.tsx`) |
 | `features/selection/` | Mark selection and the text tool: the selected marks and the mark to select after a write (`selection-store.ts`), deleting and selecting all marks and opening a note (`selection-actions.ts`), the selection effects (`use-selection.ts`), the text tool's picked block and frozen bytes (`text-tool-store.ts`, `use-text-tool-bytes.ts`) and the text layer host (`TextToolSurface.tsx`) |
 | `features/open/` | Opening and producing documents: the home screen, opening state, password prompt, locked tabs, page selection and pending home command (`open-store.ts`), opening a file, a produced tab, a conversion, a recent entry or the picker (`open-actions.ts`, `use-open-actions.ts`), and the home header, password prompt and file input hosts (`OpenSurfaces.tsx`) |
@@ -2598,7 +2604,8 @@ deletes, and when" need answers that span windows. `vault-channel.ts` uses
 `BroadcastChannel` for the first and `navigator.locks` for the second, with a
 `localStorage` + `storage`-event fallback for the first. Neither is assumed: with no lock
 manager the work runs unserialised (every vault operation is idempotent, so the worst case
-is a repeated `removeEntry`, not a lost document), and only when **both** channels are
+is a repeated `removeEntry`, not a lost document), a draft cannot be claimed (every claim is
+granted) and a probe reports `false`, so a sweep deletes nothing; and only when **both** channels are
 unavailable does `canReachPeers()` return false — and then the sweep refuses to run,
 because without peer knowledge "delete everything unreferenced" would delete another
 window's only copy.
@@ -2614,21 +2621,40 @@ waits, the probe asks the lock manager again every 250 ms and stops waiting for 
 whose lock is gone: a tab closed a moment before the sweep can still be listed by the first
 query, and it will never answer. A window the lock manager lists but that stays silent for
 10 s (a frozen tab) makes `probe()` resolve `false` and the sweep refuses
-(`vault.peerSilent`: nothing is deleted). Only without a lock manager does the probe fall
-back to a fixed 250 ms wait.
+(`vault.peerSilent`: nothing is deleted). Without a lock manager, or when it cannot be asked,
+the probe still collects the answers that arrive within 250 ms but reports `false`: a timer
+cannot prove that no window is missing, so the sweep refuses (fail closed).
+
+A draft is owned by the window that has its tab open. That window holds a lock named after the
+draft (`pdf-editor.vault.draft.<id>`, `claimDraft`); startup recovery and "open from the recent
+list" restore a draft only when they can claim it (`draft-restore.ts` — one restore path for
+both, with the draft's history, snapshots and source page count), and `persistDraft` writes only
+drafts it owns, so two windows never write one `drafts/<id>.json` or delete each other's
+snapshots. Recovery asks again for about a second before it decides a draft is another window's: a
+window that is closing or reloading has not always dropped its locks yet. Draft writes run inside
+the vault lock with the window's write queue inside that (`queueVaultWrite`), so a sweep never
+lists a snapshot blob between its write and its manifest.
 
 ### 8.5 Sensitive sessions, drafts and cleanup
 
 Persistence is a shared callback used by both the manual OPFS save and the automatic draft
 path, so the two cannot disagree about what was persisted. A restore does not rerun just
-because the UI language changed, one unreadable draft does not stop the others from
-recovering, a draft whose document was opened meanwhile (from the recent list, say) is
+because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
+guard, and a vault that cannot be read at all is said on the notice line) while the others
+recover, a draft whose document was opened meanwhile (from the recent list, say) is
 skipped while the rest are still restored, and a document the user opens while recovery waits
 for a draft's stored file handle keeps the front: the document in front is read after the
 last `await` before the restored tab goes in, with nothing awaited in between, so a restored
 tab never takes the place of a document that is in front (`e2e/ui-recovery-race.spec.ts`
 holds the handle store open with `e2e/recent-handles-gate.ts` to prove it). Discarding a tab
-retains any source another valid draft still references.
+retains any source another valid draft still references, and removes the source blob it stored
+at open when no manifest ever named it (a tab closed before its first automatic save).
+
+An in-place Save writes only over the file the editor last saw (the original, the last write, or
+the hash a restored draft carried). When the file differs, nothing is written and a dialog asks
+(`SaveConflictHost`): **Overwrite** (the confirmation itself; `saveDocument` with
+`overwrite: true`), **Save as** (`saveAs: true`: a new file that becomes the document's own) or
+Cancel.
 When the inventory is unreadable or incomplete, the discard path deletes nothing and says
 so.
 

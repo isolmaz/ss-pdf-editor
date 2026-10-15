@@ -3,24 +3,33 @@
  *
  * The vault lives in the origin's private file system, which every tab of this origin
  * shares. The in-window write queue (`features/persistence`) serialises one tab's writes; it says
- * nothing about the second window the user has open on the same document. Two questions
+ * nothing about the second window the user has open on the same document. Three questions
  * therefore need an answer that spans windows:
  *
  * 1. **Which blobs are still live?** A sweep may only delete a key that no window holds.
  *    This window knows its own documents; it has to *ask* the others.
- * 2. **Who deletes, and when?** Two windows deciding at the same moment must not
- *    interleave their `removeEntry` calls with a third window's manifest write.
+ * 2. **Who writes and deletes, and when?** A draft write (its blobs, then its manifest) and a
+ *    sweep must not interleave: a sweep that lists the stored blobs between the two sees a
+ *    snapshot no manifest references yet and deletes it. Writers therefore take the vault lock
+ *    (`runExclusive`) *outermost* and run the window's own queue inside it
+ *    (`queueVaultWrite`, `sweepVault`, `purgeActiveDocument`) — never the other way round, so a
+ *    window waiting for the lock cannot hold up the queue its lock holder is waiting on.
+ * 3. **Whose is this draft?** A draft's manifest is `drafts/<id>.json` and its id is the tab's
+ *    id, so two windows that both restore (or both write) the same id overwrite each other's
+ *    manifest, and one window's snapshot cleanup deletes blobs the other's manifest names.
  *
  * ## Mechanisms, and the fallback
  *
- * `BroadcastChannel` answers the first question and `navigator.locks` the second. Both are
- * broadly available, and neither is assumed: when `navigator.locks` is missing the work
- * runs unserialised (every vault operation is idempotent, so the worst case is a repeated
- * `removeEntry`, not a lost document), and when `BroadcastChannel` is missing the same
- * exchange moves to `localStorage` + `storage` events, which ships everywhere. Only if
- * *both* channels are unavailable does `canReachPeers()` return `false`, and then the
- * sweep refuses to run: without peer knowledge a “delete everything unreferenced” pass
- * would delete another window's only copy of a document.
+ * `BroadcastChannel` answers the first question and `navigator.locks` the second and third.
+ * Both are broadly available, and neither is assumed. When `navigator.locks` is missing the
+ * work runs unserialised (the vault operations are idempotent, so the worst case is a repeated
+ * `removeEntry`), a draft cannot be claimed (ownership is then best-effort: every claim is
+ * granted), and a probe cannot tell whom to wait for, so it reports `false` and the sweep
+ * deletes nothing. When `BroadcastChannel` is missing the same exchange moves to
+ * `localStorage` + `storage` events, which ships everywhere. Only if *both* channels are
+ * unavailable does `canReachPeers()` return `false`, and then the sweep refuses to run:
+ * without peer knowledge a “delete everything unreferenced” pass would delete another
+ * window's only copy of a document.
  *
  * ## Liveness is never assumed
  *
@@ -40,8 +49,20 @@
  * its lock: the probe asks again every `RECHECK_MS` and stops waiting for a window whose
  * lock is gone (a tab closed a moment ago can still be listed by the first query).
  * A window that is listed but stays silent for `LIVE_PEER_LIMIT_MS` (a frozen tab) makes
- * the probe report `false`, and the sweep refuses to run rather than guess. Only where
- * there is no lock manager does the probe fall back to a fixed `PROBE_WINDOW_MS` wait.
+ * the probe report `false`, and the sweep refuses to run rather than guess. So does a lock
+ * manager that is missing or cannot be asked: the probe still collects what peers answer
+ * within `PROBE_WINDOW_MS`, but it cannot prove that every window did, so its verdict is
+ * `false` — a timer never decides that a peer is absent.
+ *
+ * ## Who owns a draft
+ *
+ * An open tab's window holds a lock named after the draft (`DRAFT_LOCK_PREFIX + id`) for as
+ * long as the tab lives. `claimDraft` asks for it without waiting and says whether this window
+ * now owns the draft; a window restores a stored draft, and writes one, only when it does.
+ * The lock manager releases a closed window's locks by itself, so a draft whose window crashed
+ * is claimable again at the next start. A window that is closing or reloading has not always
+ * dropped its locks by the time the next page runs, so the startup restore asks again for a
+ * moment before it decides a draft belongs to someone else (`draft-restore.ts`).
  */
 
 /** How long a probe without a lock manager waits for the other windows to answer. */
@@ -58,6 +79,9 @@ const WINDOW_LOCK_PREFIX = 'pdf-editor.vault.window.';
 
 /** The lock name: one vault, one writer at a time, across this origin's windows. */
 const VAULT_LOCK = 'pdf-editor.vault.v1';
+
+/** The window that has a tab open holds `DRAFT_LOCK_PREFIX + <draft id>`: that is what owning a draft is. */
+const DRAFT_LOCK_PREFIX = 'pdf-editor.vault.draft.';
 
 /** The `localStorage` fallback's single key. */
 const FALLBACK_KEY = 'pdf_editor_vault_announce_v1';
@@ -77,14 +101,24 @@ export interface VaultChannel {
   announce(keys: readonly string[]): void;
   /**
    * Refreshes every live peer's answer. Resolves `true` when every window the lock manager
-   * lists has answered (or, without a lock manager, when the fixed window has elapsed), and
-   * `false` when a listed window stayed silent: the peer knowledge is then incomplete.
+   * lists has answered, and `false` when the peer knowledge may be incomplete: a listed window
+   * stayed silent, or there is no lock manager to say which windows to wait for (the fixed
+   * window still collects what peers answer, but a timer cannot prove that none is missing).
    */
   probe(): Promise<boolean>;
   /** The union of every key any window has claimed, including this one's last announcement. */
   peerReferences(): readonly string[];
   /** Runs `work` with the cross-window lock when the platform provides one. */
   runExclusive<T>(work: () => Promise<T>): Promise<T>;
+  /**
+   * Takes the draft `draftId` for this window, for as long as the window (or `releaseDraft`)
+   * keeps it. Resolves `true` when this window owns it — now or already — and `false` when
+   * another window does. Without a lock manager nobody can be asked, so every claim is granted:
+   * ownership is best-effort there, and the refusal path never runs.
+   */
+  claimDraft(draftId: string): Promise<boolean>;
+  /** Gives up this window's claim on `draftId`; a draft this window never claimed is left alone. */
+  releaseDraft(draftId: string): void;
   /** Whether peers can be reached at all; a sweep must not run when they cannot. */
   canReachPeers(): boolean;
   close(): void;
@@ -121,6 +155,8 @@ function createVaultChannel(): VaultChannel {
   let closed = false;
   let probeCount = 0;
   let releaseWindowLock: (() => void) | null = null;
+  /** The drafts this window owns or is asking for; a granted claim holds its lock until it is released. */
+  const claims = new Map<string, { readonly granted: Promise<boolean>; readonly release: () => void }>();
 
   // Holding this lock for as long as the window lives is what lets a probe know who is alive.
   lockManager()
@@ -179,13 +215,20 @@ function createVaultChannel(): VaultChannel {
 
   /**
    * Holds the probe open until every window in `awaiting` has answered it (`null`: until the
-   * timer or a storage event). Resolves `true` when the wait completed, `false` when the
-   * limit elapsed first with live windows still silent.
+   * timer or a storage event). Resolves `true` when the wait completed; when the limit elapsed
+   * first it resolves `timerCompletes` — `false` for live windows still silent and for a wait
+   * that has no way to know whom it is waiting for, `true` only for the shared `localStorage`
+   * record, which every window rewrites whenever its keys change.
    */
-  const waitFor = (awaiting: Set<string> | null, limitMs: number, probeId: string): Promise<boolean> =>
+  const waitFor = (
+    awaiting: Set<string> | null,
+    limitMs: number,
+    probeId: string,
+    timerCompletes: boolean,
+  ): Promise<boolean> =>
     new Promise<boolean>((resolve) => {
       pending = { probeId, awaiting, finish: resolve };
-      probeTimer = setTimeout(() => endProbe(awaiting === null), limitMs);
+      probeTimer = setTimeout(() => endProbe(timerCompletes), limitMs);
     });
 
   /** The ids of the other windows the lock manager lists as alive; `null` without one. */
@@ -269,14 +312,16 @@ function createVaultChannel(): VaultChannel {
         // and a `storage` event from a peer's write ends the wait early.
         writeFallback();
         readFallback();
-        return await waitFor(null, PROBE_WINDOW_MS, 'fallback');
+        return await waitFor(null, PROBE_WINDOW_MS, 'fallback', true);
       }
       const live = await liveWindows();
       probeCount += 1;
       const probeId = `${id}:${probeCount}`;
+      // No answer from the lock manager means no list of whom to wait for: the window below still
+      // collects what peers say, but only a list can prove that nobody is missing, so it is `false`.
       const answered =
         live === null || live.size > 0
-          ? waitFor(live, live === null ? PROBE_WINDOW_MS : LIVE_PEER_LIMIT_MS, probeId)
+          ? waitFor(live, live === null ? PROBE_WINDOW_MS : LIVE_PEER_LIMIT_MS, probeId, false)
           : Promise.resolve(true);
       if (live !== null && live.size > 0) dropClosedWindows(live, probeId);
       channel.postMessage({ windowId: id, keys: lastAnnouncement, at: Date.now(), probe: true, probeId });
@@ -297,6 +342,50 @@ function createVaultChannel(): VaultChannel {
       return await locks.request(VAULT_LOCK, async () => await work());
     },
 
+    claimDraft(draftId) {
+      const existing = claims.get(draftId);
+      if (existing !== undefined) return existing.granted;
+      if (closed) return Promise.resolve(false);
+      const locks = lockManager();
+      if (locks === undefined) return Promise.resolve(true);
+      let dropped = false;
+      let freeLock: (() => void) | null = null;
+      const granted = new Promise<boolean>((resolve) => {
+        locks
+          .request(DRAFT_LOCK_PREFIX + draftId, { mode: 'exclusive', ifAvailable: true }, (lock) => {
+            if (lock === null || dropped) {
+              resolve(false);
+              return undefined;
+            }
+            resolve(true);
+            return new Promise<void>((free) => {
+              freeLock = free;
+            });
+          })
+          // A lock manager that throws cannot say who owns the draft: keep working rather than
+          // refuse to save the user's document (the window lock above does the same).
+          .catch(() => resolve(true));
+      });
+      const claim = {
+        granted,
+        release: () => {
+          dropped = true;
+          freeLock?.();
+        },
+      };
+      claims.set(draftId, claim);
+      // A refusal is not remembered: the other window may close, and the next ask must reach the lock manager.
+      void granted.then((owned) => {
+        if (!owned && claims.get(draftId) === claim) claims.delete(draftId);
+      });
+      return granted;
+    },
+
+    releaseDraft(draftId) {
+      claims.get(draftId)?.release();
+      claims.delete(draftId);
+    },
+
     canReachPeers() {
       if (channel !== null) return true;
       try {
@@ -311,6 +400,8 @@ function createVaultChannel(): VaultChannel {
       closed = true;
       endProbe(false);
       releaseWindowLock?.();
+      for (const claim of claims.values()) claim.release();
+      claims.clear();
       channel?.close();
     },
   };

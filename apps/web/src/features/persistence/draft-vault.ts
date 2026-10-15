@@ -19,11 +19,13 @@ import { ToolError, type Translator } from 'pdf-shared';
 import { deleteRecentHandle } from '../../recent-handles';
 import { showNotice } from '../core/core-store';
 import {
+  disownDraft,
   draftStorage,
   persistedKeysFor,
   persistedKeysForgotten,
   persistenceStore,
   queueDraftWrite,
+  storedSourceKeyFor,
 } from './persistence-store';
 
 /** The manifest inventory; one that could not be read completely says so rather than throwing. */
@@ -61,7 +63,17 @@ export async function forgetDraft(session: SessionStore, tabId: string): Promise
   const storage = draftStorage();
   const inventory = await readInventory();
   const known = inventory.drafts.find((draft) => draft.id === tabId);
-  const owned = known === undefined ? [...persistedKeysFor(tabId)] : [...keysForDraft(known)];
+  // The source blob is stored when the document opens, so a tab closed before its first
+  // automatic save owns one with no manifest to name it: without this it stayed in the vault
+  // for good. It goes only if nothing else references it — the plan below applies the same
+  // test (other manifests, other open documents, other windows) to every key it is given.
+  const stored = storedSourceKeyFor(tabId);
+  const owned = [
+    ...new Set([
+      ...(stored === undefined ? [] : [stored]),
+      ...(known === undefined ? persistedKeysFor(tabId) : keysForDraft(known)),
+    ]),
+  ];
   // The plan refuses an inventory it could not read completely, and it does so before anything
   // is deleted. It ignores the target's own manifest, so planning ahead of its removal is exact.
   const removable = planDocumentCleanup(
@@ -163,6 +175,25 @@ export async function sweepVault(session: SessionStore, t: Translator): Promise<
   } catch (error) {
     showNotice(failureNotice(error, t));
   }
+}
+
+/**
+ * Keep this window's claims on the drafts of the documents it has open (`vault-channel.ts`).
+ * Every open tab is claimed — the claim is idempotent, and one the lock manager refused is asked
+ * for again — and a tab that has left `previous` is released **after** the writes queued
+ * for it, so the manifest its discard deletes is gone before another window can claim, and
+ * restore, the draft. Returns the ids that are open now: the `previous` of the next call.
+ */
+export function syncDraftClaims(session: SessionStore, previous: ReadonlySet<string>): ReadonlySet<string> {
+  const open = new Set(session.getSnapshot().tabs.map((tab) => tab.id));
+  const { channel } = persistenceStore.get();
+  if (channel !== null) {
+    for (const id of open) void channel.claimDraft(id);
+    for (const id of previous) {
+      if (!open.has(id)) void queueDraftWrite(async () => disownDraft(id));
+    }
+  }
+  return open;
 }
 
 /**

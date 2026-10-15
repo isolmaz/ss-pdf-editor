@@ -296,6 +296,37 @@ describe('parseDraft — required fields and optional carry-over', () => {
     const bare = parseDraft(draft());
     expect(bare).not.toHaveProperty('stateId');
     expect(bare).not.toHaveProperty('overlays');
+    expect(bare).not.toHaveProperty('sourcePageCount');
+    expect(bare).not.toHaveProperty('lastWrittenSha256');
+  });
+
+  it('holds the source page count to the same rule as the page count', () => {
+    // `typeof === 'number'` let each of these through into a tab whose page list cannot exist.
+    for (const sourcePageCount of [Number.NaN, 1e21, -3, 2.5, 0, Number.POSITIVE_INFINITY, '4', null]) {
+      expect(parseDraft(draft({ sourcePageCount })), String(sourcePageCount)).toBeNull();
+    }
+    expect(parseDraft(draft({ sourcePageCount: 1 }))?.sourcePageCount).toBe(1);
+  });
+
+  it('carries the hash of the last in-place write, and refuses anything that is not a SHA-256', () => {
+    const written = 'a'.repeat(64);
+    expect(parseDraft(draft({ lastWrittenSha256: written }))?.lastWrittenSha256).toBe(written);
+    expect(
+      draftFor({
+        id: 'a',
+        name: 'a.pdf',
+        pageCount: 1,
+        size: 1,
+        dirty: true,
+        sourceKey: 'src-a',
+        journal: [],
+        lastWrittenSha256: written,
+        now: 1,
+      }).lastWrittenSha256,
+    ).toBe(written);
+    for (const lastWrittenSha256 of ['output-hash', 'A'.repeat(64), 'a'.repeat(63), 7, null]) {
+      expect(parseDraft(draft({ lastWrittenSha256 })), String(lastWrittenSha256)).toBeNull();
+    }
   });
 
   it('drops an engine value whose key is not a string', () => {
