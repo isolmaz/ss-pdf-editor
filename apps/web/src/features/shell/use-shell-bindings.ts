@@ -8,7 +8,7 @@ import { type SessionStore, workingPageCount } from 'pdf-model';
 import { isPresenting } from 'pdf-ui/tools';
 import { useMemo } from 'react';
 import { useShellShortcuts } from '../../useShortcuts';
-import { toggleLeftDock, toggleRightDock } from '../core/core-store';
+import { pressTool, toggleLeftDock, toggleRightDock } from '../core/core-store';
 import { canEdit } from '../core/document';
 import { openExportDialog } from '../export/export-store';
 import { toggleReading } from '../reading/reading-store';
@@ -74,6 +74,15 @@ export function useShellBindings({ session, actions }: ShellBindingHost): void {
         palette: summonPalette,
         toggleLeftDock,
         toggleRightDock,
+        armTool: (tool) => {
+          // The rail disables the writing tools without an editable document; the letter declines
+          // in the same cases instead of arming a tool that cannot draw.
+          if (session.active === null || (tool !== 'select' && tool !== 'hand' && !canEdit(session))) {
+            return false;
+          }
+          pressTool(tool);
+          return true;
+        },
         reading: toggleReading,
         documentProperties: () => openDialog('properties'),
         findReplace: () => {

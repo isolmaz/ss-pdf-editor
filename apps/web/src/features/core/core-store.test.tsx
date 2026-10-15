@@ -28,6 +28,7 @@ import {
   openRightPanel,
   operationRunning,
   pickTool,
+  pressTool,
   refuseBusy,
   selectLeftTab,
   selectRightTab,
@@ -238,6 +239,27 @@ describe('tools', () => {
     selectRightTab('history');
     pickTool('note');
     expect(coreStore.get().rightTab).toBe('comments');
+  });
+
+  it('presses a rail button: arms the tool, and a second press puts the pointer back on select', () => {
+    pressTool('ink');
+    expect(coreStore.get().canvasTool).toBe('ink');
+    pressTool('ink');
+    expect(coreStore.get().canvasTool).toBe('select');
+    pressTool('select');
+    expect(coreStore.get().canvasTool).toBe('select');
+    pressTool('note');
+    expect(coreStore.get()).toMatchObject({ canvasTool: 'note', rightTab: 'comments' });
+  });
+
+  it('presses the markup button: arms the look used last, and is pressed for any of the four', () => {
+    pressTool('markup');
+    expect(coreStore.get().canvasTool).toBe('highlight');
+    selectTool('squiggly');
+    pressTool('markup');
+    expect(coreStore.get().canvasTool).toBe('select');
+    pressTool('markup');
+    expect(coreStore.get().canvasTool).toBe('squiggly');
   });
 
   it('chooses the shape the next shape mark carries', () => {

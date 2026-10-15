@@ -1304,12 +1304,13 @@ test.describe('tooltips', () => {
     await openFixture(page);
 
     /** The chip's own geometry and paint: inside the viewport, opaque, legible. */
-    const assertChip = async (label: string): Promise<void> => {
+    const assertChip = async (label: string, key?: string): Promise<void> => {
       const tip = chip(page, label);
       // One chip carries these words: a second one is a defect, not an ambiguity.
       await expect(tip).toHaveCount(1);
       await expect(tip).toBeVisible();
-      await expect(tip).toHaveText(label);
+      // A tool's chip ends with the letter that arms it.
+      await expect(tip).toHaveText(key === undefined ? label : `${label} (${key})`);
       const box = await tip.boundingBox();
       const viewport = page.viewportSize();
       if (box === null || viewport === null) throw new Error('the tooltip rendered no box');
@@ -1331,7 +1332,7 @@ test.describe('tooltips', () => {
 
     // Hover, at the rail's own edge: the chip names the tool the pointer is over.
     await rail(page, RAIL.note).hover();
-    await assertChip(RAIL.note);
+    await assertChip(RAIL.note, 'N');
 
     // Keyboard focus opens it without a pointer at all. Focus arrives from the button
     // beside it on the keyboard's own route — a scripted `focus()` is not what the
@@ -1339,7 +1340,7 @@ test.describe('tooltips', () => {
     await rail(page, RAIL.hand).focus();
     await page.keyboard.press('Shift+Tab');
     await expect(rail(page, RAIL.select)).toBeFocused();
-    await assertChip(RAIL.select);
+    await assertChip(RAIL.select, 'V');
 
     // The page and view controls sit in the status bar at the bottom edge; their tips have to
     // flip or shift rather than run off it.
@@ -1350,13 +1351,13 @@ test.describe('tooltips', () => {
     await useDarkTheme(page);
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.mode)).toBe('dark');
     await rail(page, RAIL.ink).hover();
-    await assertChip(RAIL.ink);
+    await assertChip(RAIL.ink, 'D');
 
     // Phone width: the rail is a scrollable column at the left edge and the tips still
     // stay inside the viewport.
     await page.setViewportSize({ width: 390, height: 780 });
     await rail(page, RAIL.shapes).hover();
-    await assertChip(RAIL.shapes);
+    await assertChip(RAIL.shapes, 'R');
     await page
       .getByRole('group', { name: 'Page and view controls', exact: true })
       .getByRole('button', { name: 'Page Panel', exact: true })

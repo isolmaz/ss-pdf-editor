@@ -257,7 +257,10 @@ describe('buildCommands', () => {
       for (const command of withShortcut) {
         const label = translate(command.labelKey);
         expect(label, command.id).not.toMatch(/Ctrl|⌘|Alt\+|Shift\+/);
-        expect(label, command.id).not.toContain(command.shortcut as string);
+        const shortcut = command.shortcut as string;
+        // A single tool letter is a substring of many labels ("Hand"), so for it the printed form
+        // that matters is the parenthesised one the rail tooltip uses.
+        expect(label, command.id).not.toContain(shortcut.length === 1 ? `(${shortcut})` : shortcut);
       }
       expect(translate(byId(commands, 'help.palette').labelKey)).toBe(
         locale === 'tr' ? 'Komut ara' : 'Search commands',

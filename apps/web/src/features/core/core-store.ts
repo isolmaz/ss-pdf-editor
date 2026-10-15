@@ -220,6 +220,18 @@ export function pickTool(tool: CanvasToolId): void {
   );
 }
 
+/**
+ * A press on a rail button (a click or its tool letter): arm the tool, or put the pointer back in
+ * `select` when it is the armed one. `markup` is the rail's text-markup button, which stands for
+ * the look used last and is pressed for any of the four.
+ */
+export function pressTool(id: CanvasToolId | 'markup'): void {
+  const { canvasTool, markupTool } = coreStore.get();
+  const armed = id === 'markup' ? isMarkupTool(canvasTool) : canvasTool === id;
+  const target = id === 'markup' ? markupTool : id;
+  pickTool(armed && id !== 'select' ? 'select' : target);
+}
+
 /** Arm the `stamp` tool with a picture; the next click on a page places it. */
 export function armStampTool(source: StampSource): void {
   coreStore.set({ canvasTool: 'stamp', pendingStamp: source });

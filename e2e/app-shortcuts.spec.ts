@@ -58,7 +58,7 @@ test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 change the zoom the status bar reports'
   expect(await drawn()).toBe(fit);
 });
 
-test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, Escape closes it', async ({
+test('F4 and Shift+F4 toggle the page panel and the tools dock, F9 the reading pane, Escape closes it', async ({
   page,
 }) => {
   await openApp(page, 'docks.pdf', labelledPdf('Dock', 2), { advanced: false });
@@ -71,9 +71,10 @@ test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, E
 
   const history = page.getByRole('tab', { name: 'History' });
   await expect(history).toBeVisible();
-  await page.keyboard.press('F5');
+  await page.keyboard.press('Shift+F4');
   await expect(history).toHaveCount(0);
-  await page.keyboard.press('F5');
+  await expect(thumbnails.first()).toBeVisible();
+  await page.keyboard.press('Shift+F4');
   await expect(history).toBeVisible();
 
   await page.keyboard.press('F9');
@@ -83,6 +84,64 @@ test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, E
   await expect(reading).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('F9');
   await expect(reading).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('F5 is not the shell`s: the key reaches the browser unhandled and the tools dock stays', async ({
+  page,
+}) => {
+  await openApp(page, 'reload.pdf', labelledPdf('Reload', 1), { advanced: false });
+  await page.evaluate(() => {
+    Object.assign(window, { f5: [] as boolean[] });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'F5') (window as unknown as { f5: boolean[] }).f5.push(event.defaultPrevented);
+    });
+  });
+  await page.keyboard.press('F5');
+  await page.keyboard.press('Control+F5');
+  expect(await page.evaluate(() => (window as unknown as { f5: boolean[] }).f5)).toEqual([false, false]);
+  await expect(page.getByRole('tab', { name: 'History' })).toBeVisible();
+});
+
+test('the tool letters arm the rail tools and put them away again, the rail names each letter, and a field keeps its letters', async ({
+  page,
+}) => {
+  await openApp(page, 'letters.pdf', labelledPdf('Letters', 2));
+  const pressed = (name: string) => rail(page, name).and(page.locator('[aria-pressed="true"]'));
+  const select = 'Selection Tool';
+  const letters: readonly (readonly [string, string])[] = [
+    ['h', 'Hand / Pan Tool'],
+    ['e', 'Edit Text'],
+    ['t', 'Add Text'],
+    ['u', 'Mark Up Text (highlight, underline, strike)'],
+    ['d', 'Freehand drawing'],
+    ['r', 'Draw Shape (Rectangle)'],
+    ['n', 'Add comment / Note'],
+    ['k', 'Add link'],
+    ['m', 'Measure'],
+    ['x', 'Redact (permanent removal)'],
+  ];
+  for (const [letter, name] of letters) {
+    await page.keyboard.press(letter);
+    await expect(pressed(name), letter).toHaveCount(1);
+    await page.keyboard.press(letter);
+    await expect(pressed(select), letter).toHaveCount(1);
+  }
+  await page.keyboard.press('d');
+  await page.keyboard.press('v');
+  await expect(pressed(select)).toHaveCount(1);
+
+  // A modified letter is not the tool's, and neither is a letter typed into a field.
+  await page.keyboard.press('Shift+D');
+  await page.keyboard.press('Alt+d');
+  await expect(pressed(select)).toHaveCount(1);
+  await pageField(page).focus();
+  await page.keyboard.press('d');
+  await expect(pressed(select)).toHaveCount(1);
+  await pageField(page).blur();
+
+  await rail(page, 'Freehand drawing').hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Freehand drawing (D)');
+  await expect(rail(page, 'Freehand drawing')).toHaveAttribute('aria-keyshortcuts', 'D');
 });
 
 test('Ctrl+Shift+D opens the document properties form and Ctrl+H the find and replace form', async ({

@@ -2515,9 +2515,14 @@ Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that
 dispatches keyboard actions, keeping the displayed bindings and their behavior together. A chord
-names the modifiers it needs and ignores the rest (`F4` answers with `Shift` held), except a `bare`
-chord: `F5` toggles the tools dock only with no modifier down, so `Ctrl+F5` and `Shift+F5` stay the
-browser's reloads instead of being swallowed. The page keys (`PageUp`, `PageDown`,
+names the modifiers it needs and ignores the rest (`F4` answers with `Ctrl` or `Alt` held; the
+`Shift+F4` row ahead of it toggles the tools dock), except a `bare` chord: the eleven tool
+letters (`V`, `H`, `E`, `T`, `U`, `D`, `R`, `N`, `K`, `M`, `X`, rows with a `tool`) answer only
+with no modifier down, so `Ctrl+R`, `Ctrl+D` and the like stay the browser's, and `F5` is not bound
+at all, so it reloads. A bare chord also stands aside in a composite widget and in a dialog, where
+typed letters belong to the widget, and ignores key repeat; `armTool` declines (`false`) without
+a document, or for a tool that writes while the document cannot be edited, and `pressTool`
+(`features/core/core-store.ts`) is the one toggle the rail's click and the letter share. The page keys (`PageUp`, `PageDown`,
 `Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
 tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
 list), which owns them. They stand aside for a full-screen presentation too: its own key

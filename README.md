@@ -123,6 +123,13 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   `Home`, `End`, `PageUp` and `PageDown` turn the document's page, except while the focus is
   in a menu bar or menu, a list, tree or grid, a tab strip or the form panel's field list:
   those keep the keys to move inside themselves.
+- **Tool letters.** A plain letter arms a tool, and the same letter puts it away again: `V`
+  select, `H` hand, `E` edit text, `T` add text, `U` markup (highlight, underline, strike-out,
+  squiggly: the look used last), `D` freehand draw, `R` shapes, `N` note, `K` link, `M`
+  measure, `X` redact. They work only without `Ctrl`, `Alt` or `Shift` held, outside a text
+  field, a menu, a list and a dialog, and only on an open document (the tools that write also
+  need it to be editable). Each tool's letter is in its rail tooltip and in the shortcut list.
+  `F4` toggles the page panel and `Shift+F4` the tools dock; `F5` is the browser's reload.
 
 ### Annotating, forms, measuring
 
