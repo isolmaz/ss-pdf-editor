@@ -14,6 +14,7 @@ import {
   openPdf,
   pageFrame,
   rail,
+  reviewHeading,
   runCommand,
   sheetPhotoPng,
   toClient,
@@ -143,6 +144,9 @@ test('the blank-document dialog opens the new document at once and keeps its rep
   await expect(report.getByText('1 page(s)', { exact: true })).toBeVisible();
   // A new file starts from nothing, so the size can only have grown.
   await expect(report.getByText(/^Size: 0 B → .+ \(increased\)$/)).toBeVisible();
+  // How the file was written is folded away until asked for.
+  await expect(report.getByText('Fully rewritten (not incremental)')).toBeHidden();
+  await report.getByText('Technical details', { exact: true }).click();
   await expect(report.getByText('Fully rewritten (not incremental)')).toBeVisible();
   await expect(report.getByText(/^Executed steps: \S+/)).toBeVisible();
   await page.keyboard.press('Escape');
@@ -268,19 +272,17 @@ test('clicking the compression and image lists does not switch the chosen option
 });
 
 /* ------------------------------------------------------------------ *
- * Steps of a form that changes the document
+ * A form that changes the document
  * ------------------------------------------------------------------ */
 
-test('a replace-kind form names its second step "Review and apply"; the report of what it applied stays one press away', async ({
+test('a replace-kind form has no step marker; the report of what it applied stays one press away', async ({
   page,
 }) => {
   await openPdf(page, 'mark.pdf', toolFixturePdf());
   await runCommand(page, 'Watermark');
   const form = page.getByRole('region', { name: 'Watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  const steps = form.getByRole('listitem').filter({ hasText: /Settings|Review and apply|Result/ });
-  await expect(steps).toHaveCount(2);
-  await expect(steps.nth(1)).toContainText('Review and apply');
+  await expect(form.locator('[aria-current="step"]')).toHaveCount(0);
   await form.getByRole('textbox', { name: 'Text', exact: true }).fill('STEPS');
   await applyForm(form);
   await detailsButton(page).click();
@@ -371,7 +373,7 @@ test('flatten refuses a form pdf.js does not render as XFA and says why, produci
   await expect(form).toContainText('This is a static XFA form: its pages are already in the PDF.', {
     timeout: 60_000,
   });
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
   await expect(page).toHaveTitle(/unrendered\.pdf/);
 });
 

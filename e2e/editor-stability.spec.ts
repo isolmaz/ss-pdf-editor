@@ -4,7 +4,7 @@ import { notice } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { encryptedPdf, encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
-import { applyForm, runForm } from './ui-helpers';
+import { applyForm, reviewHeading, runForm } from './ui-helpers';
 import { cmsBy, fromNow, signedDocument, signingPki } from './ui-panels9-helpers';
 
 /**
@@ -299,7 +299,7 @@ test('document properties with nothing changed say so and close, instead of stay
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('button', { name: 'Apply', exact: true }).click();
   // The report is still shown: the run found nothing to write and says so there too.
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await expect(reviewHeading(form)).toBeVisible({ timeout: 60_000 });
   await expect(form.getByText('No changes to write; document untouched.').first()).toBeVisible();
   await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
 

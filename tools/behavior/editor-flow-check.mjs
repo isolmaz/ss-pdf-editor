@@ -360,7 +360,7 @@ async function confirmDialog() {
   const form = page
     .getByRole('region')
     .filter({ has: page.getByRole('button', { name: 'Tüm Araçlara Dön' }) });
-  const review = form.getByRole('heading', { name: 'İşlem raporu', exact: true });
+  const review = form.getByRole('heading', { name: 'Sonucu gözden geçir', exact: true });
   await form.getByRole('button', { name: 'Uygula', exact: true }).click();
   const deadline = Date.now() + 90_000;
   for (;;) {

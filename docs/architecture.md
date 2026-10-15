@@ -1205,7 +1205,11 @@ PageRect          { pageIndex; rect: [x0,y0,x1,y1] }
 `steps` is not decoration: the step ids an operation reports are the vocabulary the save
 verification uses to decide what the operation was allowed to change (§10). Notes carry
 `kind: 'lost'` for anything the user must be told about, and the report panel renders lost
-notes first.
+notes first, under the heading "Removed" and ahead of the page count and size. What only a
+developer reads — whether the file was rewritten, the step ids, the producer lines in
+`TECHNICAL_NOTES` (`dialogs/ReportPanel.tsx`) — sits in one closed "Technical details"
+section. Only `changed` and `preserved` notes can be folded into it; a loss or a warning is
+never hidden.
 
 Every long operation is cancellable through `OperationContext.signal`; `throwIfAborted()`
 and engine-specific abort handling are checked between phases, and a cancelled OCR run
@@ -2461,7 +2465,7 @@ other result is handed to the host at once — the document keeps an undo step f
 report screen in front of that step would be a second button and nothing more. The form
 shows "Processing…" meanwhile; if the host's promise ends and the form is still mounted
 (another operation held the document, the write failed), the report and its button appear,
-so the result is never lost. A delivered result's notice carries *Ctrl+Z* as its undo hint and a *Details* action
+so the result is never lost. A result that has to be read is headed "Review the result" (`dialog.review`); the form has no step indicator. A delivered result's notice carries *Ctrl+Z* as its undo hint and a *Details* action
 (`NoticeAction` in `core-store`, rendered by `ActivityOverlay`) that opens the report in a
 `ReportDialog` (`dialogs-store.reportView`). Modals remain for decisions that block: password, unsaved
 changes, signature warning, export choice, print, settings and the shortcut list.

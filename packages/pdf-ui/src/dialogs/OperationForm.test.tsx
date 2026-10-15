@@ -108,7 +108,8 @@ describe('OperationForm settings step', () => {
     expect(screen.getByRole('heading', { name: 'Operation report' })).toBeTruthy();
     expect(screen.getByTestId('intro').textContent).toBe('No pages selected.');
     expect((field() as HTMLInputElement).value).toBe('plain');
-    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toBe('1Settings');
+    // No numbered step marker: the form is one screen, and a review only exists when one is due.
+    expect(document.querySelector('[aria-current="step"]')).toBeNull();
   });
 
   it('lets the spec seed fields from the context, and the opener preset overrule both', () => {
@@ -312,7 +313,7 @@ describe('OperationForm result step', () => {
     probe.resolve(result);
     return handlers;
   }
-  const review = () => screen.findByRole('heading', { level: 3, name: 'Operation report' });
+  const review = () => screen.findByRole('heading', { level: 3, name: 'Review the result' });
 
   it('hands a clean result to the host at once: no report, no second button, no way out mid-delivery', async () => {
     const { onResult, onClose, onRunningChange } = await finished(clean);
@@ -349,7 +350,6 @@ describe('OperationForm result step', () => {
     const { onResult, onClose } = await finished(warned);
     await review();
     expect(screen.queryByTestId('intro')).toBeNull();
-    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toBe('2Review and apply');
     expect(onResult).not.toHaveBeenCalled();
 
     await click('Apply to document');

@@ -7,7 +7,7 @@
 import { failNext, firedCount, injectEngineFaults } from './engine-faults';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { applyForm, exportBytes, menuItem, openPdf } from './ui-helpers';
+import { applyForm, exportBytes, menuItem, openPdf, reviewHeading } from './ui-helpers';
 import { dynamicXfaPdf } from './ui-xfa-helpers';
 
 test.use({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block' });
@@ -51,7 +51,7 @@ test('flatten XFA when the browser cannot encode a page picture says so and open
   await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
   await expect(form.getByRole('alert')).toBeVisible({ timeout: 60_000 });
   await expect(form.getByRole('alert')).toContainText('Not enough memory.');
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
   await expect(page).not.toHaveTitle('xfa-flat.pdf');
 
   await page.evaluate(() => Reflect.set(window, '__noBlobs', false));

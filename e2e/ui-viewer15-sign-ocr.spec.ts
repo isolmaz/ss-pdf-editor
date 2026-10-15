@@ -7,7 +7,7 @@
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
-import { openPdf, runCommand } from './ui-helpers';
+import { openPdf, reviewHeading, runCommand } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -27,7 +27,7 @@ async function expectRefused(form: Locator, message: string, diagnostic: string)
     'data-dialog-diagnostic',
     diagnostic,
   );
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
 }
 
 test('signing without a certificate container is refused, naming the missing file', async ({ page }) => {

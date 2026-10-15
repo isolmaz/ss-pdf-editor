@@ -129,7 +129,7 @@ const notice = (page, text) => page.locator('[role="status"]').filter({ hasText:
  */
 async function settle(page, form, { action = 'Apply to document', timeout = 60_000, cut } = {}) {
   const resume = cut?.();
-  const review = form.getByRole('heading', { name: 'Operation report' });
+  const review = form.getByRole('heading', { name: 'Review the result' });
   const deadline = Date.now() + timeout;
   let reviewing = false;
   while (!reviewing && (await form.isVisible())) {

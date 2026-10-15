@@ -1,6 +1,7 @@
 /**
- * The operation form of the tools panel: the two steps it shows, the cancel while an
- * operation runs, and the export dialog's choice between the document and its compressed copy.
+ * The operation form of the tools panel: the review of a result that has to be read first, the
+ * cancel while an operation runs, and the export dialog's choice between the document and its
+ * compressed copy.
  */
 
 import type { Locator, Page } from 'playwright/test';
@@ -11,7 +12,6 @@ import { viewingOnlyFixture } from './ui-tags-helpers';
 const panel = (page: Page): Locator => page.getByRole('tabpanel');
 const tool = (page: Page, title: string): Locator =>
   panel(page).getByRole('button', { name: new RegExp(`^${title}`) });
-const steps = (form: Locator): Locator => form.getByRole('list').first().getByRole('listitem');
 
 async function openTool(page: Page, group: string, title: string, region: string): Promise<Locator> {
   await openDockTab(page, 'Tools');
@@ -23,7 +23,7 @@ async function openTool(page: Page, group: string, title: string, region: string
   return form;
 }
 
-test('a tool that replaces the document names its second step Review and apply, and the step marker moves on when the result has to be read first', async ({
+test('a result that has to be read first is called Review the result, with its technical details folded away and no step marker', async ({
   page,
 }) => {
   await openPdf(page);
@@ -31,21 +31,17 @@ test('a tool that replaces the document names its second step Review and apply, 
   await runCommand(page, 'Document properties');
   const form = page.getByRole('region', { name: 'Document properties', exact: true });
   await expect(form).toBeVisible();
-  await expect(steps(form)).toHaveText(['1Settings', '2Review and apply']);
-  await expect(steps(form).first()).toHaveAttribute('aria-current', 'step');
-  await expect(steps(form).last()).not.toHaveAttribute('aria-current', 'step');
+  await expect(form.locator('[aria-current="step"]')).toHaveCount(0);
 
   await form.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(reviewHeading(form)).toBeVisible({ timeout: 60_000 });
-  await expect(steps(form).last()).toHaveAttribute('aria-current', 'step');
-  await expect(steps(form).first()).not.toHaveAttribute('aria-current', 'step');
+  await expect(form.locator('[aria-current="step"]')).toHaveCount(0);
   await expect(form.getByRole('button', { name: 'Apply to document', exact: true })).toBeVisible();
-});
 
-test('a tool whose result is a download names its second step Result', async ({ page }) => {
-  await openPdf(page);
-  const form = await openTool(page, 'Security & Redaction', 'Protect with Password', 'Security');
-  await expect(steps(form)).toHaveText(['1Settings', '2Result']);
+  const written = form.getByText('Written incrementally');
+  await expect(written).toBeHidden();
+  await form.getByText('Technical details', { exact: true }).click();
+  await expect(written).toBeVisible();
 });
 
 test('Cancel while an operation runs stops it, says so, and leaves the settings to run again', async ({
@@ -62,8 +58,9 @@ test('Cancel while an operation runs stops it, says so, and leaves the settings 
   // While it runs the footer holds two Cancel buttons: the form's own, then the run's.
   await form.getByRole('button', { name: 'Cancel', exact: true }).last().click();
   await expect(form.getByText('Operation cancelled.')).toBeVisible();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
-  await expect(steps(form).first()).toHaveAttribute('aria-current', 'step');
+  await expect(reviewHeading(form)).toHaveCount(0);
+  // The run is over: the footer is back to the form's own Cancel and the settings can run again.
+  await expect(form.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(1);
 });
 
 test('the export dialog offers the document or its compressed copy and the button follows the choice', async ({

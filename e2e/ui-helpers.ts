@@ -54,7 +54,7 @@ export async function runCommand(page: Page, command: string): Promise<void> {
 
 /** The heading of the review step: only a result that lost, warned about or approximated something shows it. */
 export const reviewHeading = (form: Locator): Locator =>
-  form.getByRole('heading', { name: 'Operation report' });
+  form.getByRole('heading', { name: 'Review the result' });
 
 /** The review step's one action, whatever the result becomes. */
 const REVIEW_ACTION = /^(Apply to document|Open in new tab|Download)$/;

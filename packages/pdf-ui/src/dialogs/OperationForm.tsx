@@ -28,7 +28,6 @@ import { Meter } from '@cloudflare/kumo/components/meter';
 import { progressCounts, progressLabel, type Translator } from 'pdf-shared';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
-import { DialogSteps } from './DialogSteps';
 import { FieldList, fieldErrors, initialParams } from './fields';
 import { OperationReportPanel } from './ReportPanel';
 import { resultNeedsReview } from './review';
@@ -158,7 +157,6 @@ export function OperationForm({
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex shrink-0 flex-col gap-2">
         {renderTitle(t(spec.titleKey))}
-        <DialogSteps t={t} step={reviewing ? 2 : 1} resultKind={spec.resultKind} />
         {spec.introKey === undefined || done ? null : renderIntro(t(spec.introKey))}
       </div>
 
@@ -169,7 +167,7 @@ export function OperationForm({
       ) : reviewing ? (
         <>
           <div className="min-h-0 flex-1 overflow-y-auto pe-1">
-            <OperationReportPanel t={t} report={result.report} />
+            <OperationReportPanel t={t} report={result.report} title={t('dialog.review')} />
           </div>
           <div className="flex shrink-0 justify-end gap-2 border-t border-kumo-line/40 pt-2">
             <Button variant="outline" onClick={close}>

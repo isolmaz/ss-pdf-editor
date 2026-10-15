@@ -7,7 +7,7 @@
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { readProducedEntry } from './tool-fixture';
-import { applyForm, exportBytes, openPdf, runCommand } from './ui-helpers';
+import { applyForm, exportBytes, openPdf, reviewHeading, runCommand } from './ui-helpers';
 import { browserJpeg, type FixtureImage, pdfWithImages, rgbSamples } from './ui-viewer15-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -66,7 +66,7 @@ async function expectRefused(form: Locator, message: string, diagnostic: string)
     'data-dialog-diagnostic',
     diagnostic,
   );
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
 }
 
 const entry = (bytes: Uint8Array, name: string, key: string) =>
@@ -122,7 +122,7 @@ test('a crop that removes the whole image is refused and the document is left al
     'A field value is outside the allowed range.',
     'the crop removes the whole image',
   );
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
 });
 
 test('recompressing an uncompressed image writes it as a JPEG stream', async ({ page }) => {

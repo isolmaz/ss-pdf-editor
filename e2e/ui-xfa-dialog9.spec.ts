@@ -9,7 +9,7 @@
 import type { Page } from 'playwright/test';
 import { expect, test } from './test';
 import { readProducedPageTexts, toolFixturePdf } from './tool-fixture';
-import { applyForm, detailsButton, exportBytes, menuItem, openPdf } from './ui-helpers';
+import { applyForm, detailsButton, exportBytes, menuItem, openPdf, reviewHeading } from './ui-helpers';
 import { xfaWithoutNeedsRendering } from './ui-small-helpers';
 import { dynamicXfaPdf } from './ui-xfa-helpers';
 
@@ -139,7 +139,7 @@ test.describe('without the service worker', () => {
     await expect(form.getByRole('alert')).toContainText('A required engine package is not downloaded.', {
       timeout: 90_000,
     });
-    await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+    await expect(reviewHeading(form)).toHaveCount(0);
 
     await page.unroute('**/LiberationSans-Regular.ttf');
     await applyForm(form, 'Open in new tab');

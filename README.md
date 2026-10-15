@@ -169,8 +169,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Operations apply at once.** Every operation opens in the tools panel. You set it up and
   press *Apply*: a clean result goes straight into the document (or a new tab, or a
   download) and a notice says so — *Ctrl+Z* undoes it, and the notice's *Details* button
-  opens the report. A result that lost something, warns of something or only approximates
-  what you asked for is shown first, warnings on top, and its own button applies it. A
+  opens the report, with the technical lines folded under *Technical details*. A result that
+  lost something, warns of something or only approximates what you asked for is shown first
+  as *Review the result*, warnings on top, and its own button applies it. A
   destructive operation asks once before it runs. Pop-up windows are used only for
   decisions that block, such as a password, unsaved changes, a signature warning, export,
   print or settings, plus the XFA form viewer, which needs the room.
