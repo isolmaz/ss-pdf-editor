@@ -16,6 +16,7 @@ import {
   endOpening,
   hideStartScreen,
   initialOpenState,
+  lockedTabForgotten,
   lockTab,
   openStore,
   selectAllPages,
@@ -73,6 +74,23 @@ describe('the open store', () => {
       ['b', 'two'],
     ]);
     expect(before.size).toBe(0);
+  });
+
+  it('forgets a closed tab’s password, replacing the map, and leaves the others and an unknown tab alone', () => {
+    lockTab('a', 'one');
+    lockTab('b', 'two');
+    const both = openStore.get().lockedTabs;
+
+    lockedTabForgotten('a');
+    const remaining = openStore.get().lockedTabs;
+    expect(remaining).not.toBe(both);
+    expect([...remaining]).toEqual([['b', 'two']]);
+    expect(both.get('a')).toBe('one');
+
+    lockedTabForgotten('missing');
+    expect(openStore.get().lockedTabs).toBe(remaining);
+    lockedTabForgotten('b');
+    expect(openStore.get().lockedTabs.size).toBe(0);
   });
 
   it('ticks pages, ticks all of them, and clears them', () => {

@@ -90,6 +90,16 @@ export function lockTab(tabId: string, password: string): void {
   openStore.set((state) => ({ lockedTabs: new Map(state.lockedTabs).set(tabId, password) }));
 }
 
+/** `tabId` closed: the password it was opened with goes with it. */
+export function lockedTabForgotten(tabId: string): void {
+  openStore.set((state) => {
+    if (!state.lockedTabs.has(tabId)) return {};
+    const lockedTabs = new Map(state.lockedTabs);
+    lockedTabs.delete(tabId);
+    return { lockedTabs };
+  });
+}
+
 /** The page panel's ticked pages. */
 export function selectPages(pages: readonly number[]): void {
   openStore.set({ selectedPages: pages });

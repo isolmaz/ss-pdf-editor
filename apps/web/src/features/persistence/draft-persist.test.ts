@@ -12,6 +12,7 @@ import { persistDraft, retainedSnapshotsFor, saveDraft, toggleSensitiveSession }
 import { failureNotice } from './draft-vault';
 import {
   draftWrites,
+  holdsUnprotectedWork,
   persistedKeysFor,
   persistedKeysRecorded,
   persistenceStore,
@@ -207,6 +208,50 @@ describe('persistDraft', () => {
     };
     expect(await persistDraft(session, tab.id, 'desktop')).toBe('gone');
     expect(storage.drafts.size).toBe(0);
+  });
+
+  it('protects exactly the state it wrote: a change made while the bytes were written is still unprotected', async () => {
+    const session = new SessionStore();
+    const tab = openRendered(session);
+    apply(session, tab.id, 1);
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
+
+    expect(await persistDraft(session, tab.id, 'desktop')).toBe('written');
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(false);
+
+    const putSource = storage.putSource;
+    storage.putSource = async (key, bytes) => {
+      await putSource(key, bytes);
+      apply(session, tab.id, 2);
+    };
+    expect(await persistDraft(session, tab.id, 'desktop')).toBe('written');
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
+
+    storage.putSource = putSource;
+    expect(await persistDraft(session, tab.id, 'desktop')).toBe('written');
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(false);
+  });
+
+  it('leaves the changes unprotected when the write fails, a sensitive session or a skipped tab', async () => {
+    const session = new SessionStore();
+    const tab = openRendered(session);
+    apply(session, tab.id, 1);
+    const writeDraft = storage.writeDraft;
+    storage.writeDraft = async () => {
+      throw new Error('quota');
+    };
+    await expect(persistDraft(session, tab.id, 'desktop')).rejects.toThrow('quota');
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
+
+    storage.writeDraft = writeDraft;
+    outside.handles.delete(tab.id);
+    expect(await persistDraft(session, tab.id, 'desktop')).toBe('skipped');
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
+
+    outside.handles.set(tab.id, { raw: { annotationStorage: { serializable: { map: new Map() } } } });
+    session.setSensitive(tab.id, true);
+    expect(await persistDraft(session, tab.id, 'desktop')).toBe('sensitive');
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
   });
 });
 

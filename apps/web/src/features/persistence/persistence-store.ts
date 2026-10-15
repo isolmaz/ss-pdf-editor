@@ -9,7 +9,7 @@
  * an identity, and the keys change on every write without anything on screen depending on them.
  */
 
-import type { DraftStorage } from 'pdf-model';
+import type { DraftStorage, SessionSnapshot, SessionTab } from 'pdf-model';
 import { createOpfsDraftStorage } from '../../drafts';
 import type { VaultChannel } from '../../vault-channel';
 import { createStore } from '../store';
@@ -64,6 +64,28 @@ export function persistedKeysForgotten(tabId: string): void {
 }
 
 /**
+ * The tab states whose draft the vault holds. A tab changes by being **replaced** in the
+ * session snapshot, so a state that was written stays a member and every later one is not: no
+ * write yet, one still waiting behind the autosave's debounce, and one that failed all read the
+ * same — the tab as it is now was never stored. A weak set, so a closed tab's bytes are not kept.
+ */
+let draftedTabs = new WeakSet<SessionTab>();
+
+/** `tab` — exactly this state of it — was written to the vault as a draft. */
+export function draftWritten(tab: SessionTab): void {
+  draftedTabs.add(tab);
+}
+
+/**
+ * Whether the window holds work that closing it now would lose: a document with unsaved changes
+ * that no draft protects, because its session keeps none (sensitive) or the draft does not
+ * have its current state (the autosave is still waiting or writing, or the write failed).
+ */
+export function holdsUnprotectedWork(snapshot: SessionSnapshot): boolean {
+  return snapshot.tabs.some((tab) => tab.dirty && (tab.sensitive || !draftedTabs.has(tab)));
+}
+
+/**
  * The tail of the vault's write queue. Each write chains onto it so they run one at a time, and
  * the tail swallows a failure so the next write still runs; the caller of `queueDraftWrite`
  * is the one who sees the error.
@@ -81,5 +103,6 @@ export function queueDraftWrite<T>(work: () => Promise<T>): Promise<T> {
 export function resetPersistence(): void {
   persistenceStore.set(initialPersistenceState());
   persistedKeys.clear();
+  draftedTabs = new WeakSet();
   draftWrites.current = Promise.resolve();
 }

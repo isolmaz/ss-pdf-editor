@@ -173,13 +173,28 @@ describe('openFile', () => {
     expect(notice()).toBe('locked.banner');
   });
 
-  it('keeps no recovery copy of an encrypted document and marks the session sensitive', async () => {
-    outside.openWithPdfjs.mockResolvedValue(fakeHandle(2, [4]));
+  it('keeps no recovery copy and no file handle of a document opened with its password, and marks the session sensitive', async () => {
+    const fileHandle = { name: 'a.pdf' } as FileSystemFileHandle;
 
-    await actions().openFile(pdfFile());
+    await actions().openFile(pdfFile(), fileHandle, 'secret');
 
     expect(session.active?.sensitive).toBe(true);
     expect(storage.sources.size).toBe(0);
+    expect(outside.putRecentHandle).not.toHaveBeenCalled();
+  });
+
+  it('stores a file that only an owner password restricts like any other: it opened without a password', async () => {
+    // Encrypted, so the engine reports permissions — but nothing was typed, so nothing is secret.
+    outside.openWithPdfjs.mockResolvedValue(fakeHandle(2, [4]));
+    const fileHandle = { name: 'owned.pdf' } as FileSystemFileHandle;
+
+    await actions().openFile(pdfFile('owned.pdf'), fileHandle);
+
+    expect(outside.openWithPdfjs).toHaveBeenCalledWith(expect.any(Uint8Array), {});
+    expect(session.active?.sensitive).toBe(false);
+    expect(openStore.get().lockedTabs.size).toBe(0);
+    expect([...storage.sources.values()]).toEqual([new Uint8Array([1, 2, 3])]);
+    expect(outside.putRecentHandle).toHaveBeenCalledWith(session.active?.id, fileHandle);
   });
 
   it('keeps the tab and says the recovery copy was not stored when storage refuses', async () => {
@@ -257,21 +272,6 @@ describe('openFile', () => {
 
     expect(handle.destroy).toHaveBeenCalledOnce();
     expect(notice()).toBe('error.file-too-large.message error.file-too-large.hint');
-  });
-
-  it('releases the handle and reports the original error when its permissions cannot be read', async () => {
-    const handle = fakeHandle();
-    handle.raw.getPermissions = vi.fn(async () => {
-      throw new Error('boom');
-    });
-    handle.destroy.mockRejectedValue(new Error('stuck'));
-    outside.openWithPdfjs.mockResolvedValue(handle);
-
-    await actions().openFile(pdfFile());
-
-    expect(handle.destroy).toHaveBeenCalledOnce();
-    expect(notice()).toBe('error.corrupt-document.message error.corrupt-document.hint');
-    expect(session.getSnapshot().tabs).toHaveLength(0);
   });
 
   it('asks for the password of a protected file, keeping the file and its handle', async () => {

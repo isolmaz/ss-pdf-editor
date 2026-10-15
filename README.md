@@ -673,6 +673,10 @@ These describe how the build works; they are not promises.
 - **The service worker caches static assets only.** It never stores document bytes.
 - **Drafts stay local.** Unsaved work is kept in the origin-private file system (OPFS).
   - A **sensitive session** saves nothing; any document opened with a password starts one.
+  - A window with unsaved changes that no draft protects (a sensitive session, or a draft that
+    is still being written or could not be written) asks before it is closed or reloaded, and
+    an update of the app never reloads it by itself: the update banner asks you to save and
+    reload instead. A window whose changes a draft holds asks nothing.
   - The recent list keeps the file name, size, page count, when it was last opened and
     whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
     file in IndexedDB — a reference the browser asks permission for again, never the file's

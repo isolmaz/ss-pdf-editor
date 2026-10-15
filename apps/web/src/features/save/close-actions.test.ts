@@ -11,6 +11,7 @@ import type { OperationDialogSpec } from 'pdf-ui/ui';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { coreStore, initialCoreState, operationRunning } from '../core/core-store';
 import { dialogsStore, initialDialogsState } from '../dialogs/dialogs-store';
+import { initialOpenState, lockTab, openStore } from '../open/open-store';
 import {
   type CloseHost,
   cancelClose,
@@ -46,6 +47,7 @@ beforeEach(() => {
   coreStore.set(initialCoreState());
   saveStore.set(initialSaveState());
   dialogsStore.set(initialDialogsState());
+  openStore.set(initialOpenState());
   session = new SessionStore();
   mocks.handleFor.mockReturnValue(undefined);
   mocks.hasEngineEdits.mockReturnValue(false);
@@ -79,6 +81,21 @@ describe('discardDocument', () => {
     await draftWrites.current;
     expect(forgetTabDraft).toHaveBeenCalledWith(tab.id);
     expect(coreStore.get().notice).toBeNull();
+  });
+
+  it('forgets the password the closed tab was opened with, and keeps the other tabs’', () => {
+    const closed = open('locked.pdf');
+    const kept = open('kept.pdf');
+    const plain = open('plain.pdf');
+    lockTab(closed.id, 'secret');
+    lockTab(kept.id, 'other');
+
+    discardDocument(host, closed.id);
+    expect([...openStore.get().lockedTabs]).toEqual([[kept.id, 'other']]);
+    discardDocument(host, plain.id);
+    expect([...openStore.get().lockedTabs]).toEqual([[kept.id, 'other']]);
+    discardDocument(host, kept.id);
+    expect(openStore.get().lockedTabs.size).toBe(0);
   });
 
   it('cancels the operation running for the active tab, and only that tab', () => {

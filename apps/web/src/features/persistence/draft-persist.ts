@@ -19,7 +19,13 @@ import { deleteRecentHandle } from '../../recent-handles';
 import { showNotice } from '../core/core-store';
 import { handleFor } from '../core/handles';
 import { failureNotice, forgetDraft } from './draft-vault';
-import { draftStorage, persistedKeysFor, persistedKeysRecorded, queueDraftWrite } from './persistence-store';
+import {
+  draftStorage,
+  draftWritten,
+  persistedKeysFor,
+  persistedKeysRecorded,
+  queueDraftWrite,
+} from './persistence-store';
 
 /** What one persistence attempt did, so the caller can word the notice honestly. */
 export type PersistOutcome = 'written' | 'sensitive' | 'skipped' | 'gone';
@@ -102,6 +108,8 @@ export async function persistDraft(
     await forgetDraft(session, tabId);
     return after === undefined ? 'gone' : 'sensitive';
   }
+  // The manifest describes `before`, exactly: that state is protected, whatever the tab became since.
+  draftWritten(before);
   const keys = snapshots.map((item) => item.key);
   for (const key of persistedKeysFor(tabId)) {
     if (!keys.includes(key)) await storage.deleteSource(key);

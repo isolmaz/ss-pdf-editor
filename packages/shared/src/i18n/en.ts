@@ -375,4 +375,6 @@ export const en: Record<MessageKey, string> = {
 
   'update.available': 'A new update is available. Refresh to apply changes.',
   'update.refresh': 'Refresh',
+  'update.saveFirst':
+    'A new version is ready, but this tab holds unsaved work, so it was not reloaded. Save it, then reload.',
 };

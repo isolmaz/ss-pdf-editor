@@ -2,7 +2,9 @@
  * The page's side of a service-worker update, driven with an event-target fake of the
  * browser's `ServiceWorkerContainer` (Node has none). What matters: the banner is offered
  * only when a new worker waits behind a controlling one, the first-ever claim never
- * reloads the page, and the "update" action tells the waiting worker to take over.
+ * reloads the page, the "update" action tells the waiting worker to take over, a page that
+ * holds work a reload would lose is left on its old code, and "close" closes the update for
+ * the whole page until the next worker arrives.
  */
 
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -70,6 +72,14 @@ async function settle(): Promise<void> {
 function bannerState(useServiceWorkerUpdate: () => { updateAvailable: boolean }): boolean {
   function Probe() {
     return <span>{String(useServiceWorkerUpdate().updateAvailable)}</span>;
+  }
+  return renderToStaticMarkup(<Probe />).includes('true');
+}
+
+/** Whether a banner rendered now asks for a save and a reload instead of offering the update. */
+function bannerHeld(useServiceWorkerUpdate: () => { reloadHeld: boolean }): boolean {
+  function Probe() {
+    return <span>{String(useServiceWorkerUpdate().reloadHeld)}</span>;
   }
   return renderToStaticMarkup(<Probe />).includes('true');
 }
@@ -175,7 +185,7 @@ describe('initServiceWorkerUpdates', () => {
     expect(incoming.messages).toEqual([]);
   });
 
-  it('checks for an update every 15 minutes and when the tab becomes visible again, and stops on unload', async () => {
+  it('checks for an update every 15 minutes and when the tab becomes visible again, and a declined beforeunload question does not stop either', async () => {
     vi.useFakeTimers();
     const { initServiceWorkerUpdates } = await freshModule();
     initServiceWorkerUpdates();
@@ -196,10 +206,12 @@ describe('initServiceWorkerUpdates', () => {
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
     expect(container.registration.updates).toBe(4);
 
+    // The user declined the question `useUnsavedGuard` asked and stayed: the page keeps looking.
     fakeWindow.dispatchEvent(new Event('beforeunload'));
     fakeDocument.dispatchEvent(new Event('visibilitychange'));
+    expect(container.registration.updates).toBe(5);
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
-    expect(container.registration.updates).toBe(4);
+    expect(container.registration.updates).toBe(6);
   });
 
   it('reloads once when a new worker replaces the controller, never on the first claim', async () => {
@@ -222,5 +234,124 @@ describe('initServiceWorkerUpdates', () => {
     await settle();
     container.dispatchEvent(new Event('controllerchange'));
     expect(fakeWindow.reloads).toBe(1);
+  });
+});
+
+describe('a worker that takes over a page holding work a reload would lose', () => {
+  /** A page controlled by a worker, with a newer one waiting behind it. */
+  async function controlledWithUpdate() {
+    container.controller = new FakeWorker();
+    const waiting = new FakeWorker();
+    container.registration.waiting = waiting;
+    const module = await freshModule();
+    return { ...module, waiting };
+  }
+
+  it('is left on its old code, and the banner asks for a save and a reload instead of offering the update', async () => {
+    const { initServiceWorkerUpdates, guardReload, reloadToUpdate, useServiceWorkerUpdate, waiting } =
+      await controlledWithUpdate();
+    guardReload(() => true);
+    initServiceWorkerUpdates();
+    await settle();
+    expect(bannerHeld(useServiceWorkerUpdate)).toBe(false);
+
+    // Another window pressed "Refresh": the worker takes over every window of the editor.
+    container.dispatchEvent(new Event('controllerchange'));
+
+    expect(fakeWindow.reloads).toBe(0);
+    expect(bannerState(useServiceWorkerUpdate)).toBe(true);
+    expect(bannerHeld(useServiceWorkerUpdate)).toBe(true);
+    // Nothing waits any more, so the banner's button reloads instead of skipping a wait again.
+    reloadToUpdate();
+    expect(waiting.messages).toEqual([]);
+    expect(fakeWindow.reloads).toBe(1);
+  });
+
+  it('is asked at the moment the worker takes over, and a page left behind reloads once it may', async () => {
+    const { initServiceWorkerUpdates, guardReload } = await controlledWithUpdate();
+    let blocked = true;
+    guardReload(() => blocked);
+    initServiceWorkerUpdates();
+    await settle();
+
+    container.dispatchEvent(new Event('controllerchange'));
+    expect(fakeWindow.reloads).toBe(0);
+    blocked = false;
+    container.dispatchEvent(new Event('controllerchange'));
+    container.dispatchEvent(new Event('controllerchange'));
+    expect(fakeWindow.reloads).toBe(1);
+  });
+
+  it('reloads as ever once its guard was withdrawn', async () => {
+    const { initServiceWorkerUpdates, guardReload } = await controlledWithUpdate();
+    initServiceWorkerUpdates();
+    await settle();
+    const withdraw = guardReload(() => true);
+    withdraw();
+    container.dispatchEvent(new Event('controllerchange'));
+    expect(fakeWindow.reloads).toBe(1);
+  });
+
+  it('is still guarded when an older guard is withdrawn after a newer one replaced it', async () => {
+    const { initServiceWorkerUpdates, guardReload } = await controlledWithUpdate();
+    initServiceWorkerUpdates();
+    await settle();
+    const withdrawOlder = guardReload(() => false);
+    guardReload(() => true);
+    withdrawOlder();
+    container.dispatchEvent(new Event('controllerchange'));
+    expect(fakeWindow.reloads).toBe(0);
+  });
+});
+
+describe('closing the update', () => {
+  it('closes it for the whole page: a banner rendered later does not bring it back, the next worker does', async () => {
+    container.controller = new FakeWorker();
+    const waiting = new FakeWorker();
+    container.registration.waiting = waiting;
+    const { initServiceWorkerUpdates, dismissUpdate, reloadToUpdate, useServiceWorkerUpdate } =
+      await freshModule();
+    initServiceWorkerUpdates();
+    await settle();
+    expect(bannerState(useServiceWorkerUpdate)).toBe(true);
+
+    dismissUpdate();
+    expect(bannerState(useServiceWorkerUpdate)).toBe(false);
+    expect(bannerHeld(useServiceWorkerUpdate)).toBe(false);
+    // Closing the banner is not skipping the wait: the worker is still there for a later "Refresh".
+    reloadToUpdate();
+    expect(waiting.messages).toEqual([{ type: 'SKIP_WAITING' }]);
+
+    const incoming = new FakeWorker();
+    container.registration.installing = incoming;
+    container.registration.dispatchEvent(new Event('updatefound'));
+    incoming.state = 'installed';
+    incoming.dispatchEvent(new Event('statechange'));
+    expect(bannerState(useServiceWorkerUpdate)).toBe(true);
+    expect(bannerHeld(useServiceWorkerUpdate)).toBe(false);
+  });
+
+  it('closes a page left on its old code too, and a worker installed after offers the update plainly', async () => {
+    container.controller = new FakeWorker();
+    container.registration.waiting = new FakeWorker();
+    const { initServiceWorkerUpdates, guardReload, dismissUpdate, useServiceWorkerUpdate } =
+      await freshModule();
+    guardReload(() => true);
+    initServiceWorkerUpdates();
+    await settle();
+    container.dispatchEvent(new Event('controllerchange'));
+    expect(bannerHeld(useServiceWorkerUpdate)).toBe(true);
+
+    dismissUpdate();
+    expect(bannerState(useServiceWorkerUpdate)).toBe(false);
+    expect(bannerHeld(useServiceWorkerUpdate)).toBe(false);
+
+    const incoming = new FakeWorker();
+    container.registration.installing = incoming;
+    container.registration.dispatchEvent(new Event('updatefound'));
+    incoming.state = 'installed';
+    incoming.dispatchEvent(new Event('statechange'));
+    expect(bannerState(useServiceWorkerUpdate)).toBe(true);
+    expect(bannerHeld(useServiceWorkerUpdate)).toBe(false);
   });
 });

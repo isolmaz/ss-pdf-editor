@@ -52,6 +52,7 @@ import { persistDraft, saveDraft } from './features/persistence/draft-persist';
 import { forgetDraft } from './features/persistence/draft-vault';
 import { useDraftRecovery } from './features/persistence/use-draft-recovery';
 import { usePersistenceActions } from './features/persistence/use-persistence-actions';
+import { useUnsavedGuard } from './features/persistence/use-unsaved-guard';
 import { useDraftAutosave, useVaultChannel } from './features/persistence/use-vault-sync';
 import { openSnapshot } from './features/reading/reading-store';
 import { createResultsActions } from './features/results/results-actions';
@@ -175,6 +176,7 @@ export function App({ store }: AppProps) {
   useDraftRecovery({ store, translator: tRef, openAndFingerprint });
   useDraftAutosave({ session, store, persist: persistTabDraft, translator: tRef });
   useVaultChannel(store, session);
+  useUnsavedGuard(store);
 
   /** What the forms handlers need from the shell. */
   const formsHost = useMemo(() => ({ store, t }), [store, t]);
