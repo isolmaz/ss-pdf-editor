@@ -250,6 +250,22 @@ export function OrganizeView({
     };
   }, []);
 
+  // While a change is being made every button is off, and a button that is off drops the focus
+  // it had onto the page: Escape, the arrows and the tab order would all start from nowhere.
+  // When the view can be edited again the focus goes back to where it was. A button that was
+  // off may be a new element by then, so it is found again by its name.
+  const rootRef = useRef<HTMLElement | null>(null);
+  const lastFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const last = lastFocus.current;
+    if (!editing || last === null || globalThis.document.activeElement !== globalThis.document.body) return;
+    const label = last.getAttribute('aria-label');
+    (last.isConnected
+      ? last
+      : rootRef.current?.querySelector<HTMLElement>(`[aria-label="${label}"]`)
+    )?.focus();
+  }, [editing]);
+
   // A page that no longer exists (a delete landed, an undo shortened the document) must not
   // stay selected: the indices are the shell's, and it cannot know the page count changed.
   useEffect(() => {
@@ -444,12 +460,16 @@ export function OrganizeView({
 
   return (
     <section
+      ref={rootRef}
       aria-label={t('tools.group.pages')}
       data-organize-view=""
       // The shell's Ctrl+A and Delete are about marks on the page; here they are about pages.
       data-owns-select-keys=""
       className="absolute inset-0 z-40 flex min-h-0 flex-col bg-kumo-canvas"
-      onKeyDown={(event) => {
+      onFocus={(event) => {
+        lastFocus.current = event.target as HTMLElement;
+      }}
+      onKeyDownCapture={(event) => {
         if (event.key !== 'Escape') return;
         event.preventDefault();
         onClose();

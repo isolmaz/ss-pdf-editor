@@ -710,6 +710,47 @@ describe('OrganizeView actions', () => {
   });
 });
 
+describe('OrganizeView focus while a change is made', () => {
+  it('puts the focus back on the button that lost it when the view can be edited again', () => {
+    const view = show({ initial: [1] });
+    button('Rotate right').focus();
+    view.again({ editing: false });
+    // A button that is off drops its focus onto the page.
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+    view.again({ editing: true });
+    expect(document.activeElement).toBe(button('Rotate right'));
+  });
+
+  it('puts the focus back on a field that kept its element', () => {
+    const view = show({ initial: [1] });
+    const field = screen.getByRole('spinbutton', { name: 'Move to' });
+    field.focus();
+    view.again({ editing: false });
+    (document.activeElement as HTMLElement).blur();
+    view.again({ editing: true });
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('leaves the focus alone when it is still somewhere in the view', () => {
+    const view = show({ initial: [1] });
+    card(4).focus();
+    view.again({ editing: false });
+    view.again({ editing: true });
+    expect(document.activeElement).toBe(card(4));
+  });
+
+  it('keeps Escape working after the focus came back', async () => {
+    const view = show({ initial: [1] });
+    button('Rotate right').focus();
+    view.again({ editing: false });
+    (document.activeElement as HTMLElement).blur();
+    view.again({ editing: true });
+    await view.user.keyboard('{Escape}');
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('OrganizeView closing', () => {
   it('closes with the button and with Escape from a card or from a control', async () => {
     const { user, onClose } = show();
