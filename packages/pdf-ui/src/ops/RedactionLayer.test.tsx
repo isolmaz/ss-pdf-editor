@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 /**
  * The redaction layer: a drag over the page becomes one rectangle in unrotated page points,
- * both corners converted by the viewer's own mapping; a click, a stray drag or a drag the
- * viewer cannot place produces none.
+ * both corners converted by the viewer's own mapping; a click, a stray drag, a drag the
+ * viewer cannot place, a drag another pointer interrupts or one the browser cancels produces none.
  */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -22,8 +22,10 @@ const viewer = {
 
 function show(onDone?: () => void) {
   const onMark = vi.fn();
-  render(<RedactionLayer t={createTranslator('en')} viewer={viewer} onMark={onMark} onDone={onDone} />);
-  const layer = screen.getByRole('application', { name: 'Draw rectangle' });
+  const { container } = render(
+    <RedactionLayer t={createTranslator('en')} viewer={viewer} onMark={onMark} onDone={onDone} />,
+  );
+  const layer = container.querySelector<HTMLElement>('[data-redaction-layer]') as HTMLElement;
   // The layer starts 30 px right of and 20 px below the client origin.
   layer.getBoundingClientRect = () => new DOMRect(30, 20, 800, 600);
   return { layer, onMark };
@@ -145,5 +147,72 @@ describe('RedactionLayer', () => {
     const { layer, onMark } = show();
     await drag(layer, from, to);
     expect(onMark).not.toHaveBeenCalled();
+  });
+
+  it('adds no rectangle when the browser cancels the gesture, and lets go of the preview and the pointer', async () => {
+    const onDone = vi.fn();
+    const { layer, onMark } = show(onDone);
+    const user = userEvent.setup();
+    await user.pointer([
+      { keys: '[MouseLeft>]', target: layer, coords: { clientX: 100, clientY: 100 } },
+      { target: layer, coords: { clientX: 300, clientY: 300 } },
+    ]);
+    expect(previewOf(layer)).not.toBeNull();
+    expect(layer.hasPointerCapture(1)).toBe(true);
+    // A finger that starts to scroll the page: the browser cancels the pointer.
+    fireEvent.pointerCancel(layer, { pointerId: 1, clientX: 300, clientY: 300 });
+    expect(previewOf(layer)).toBeNull();
+    expect(layer.hasPointerCapture(1)).toBe(false);
+    // What the cancelled drag had drawn is not a mark, whatever arrives after it.
+    fireEvent.pointerUp(layer, { pointerId: 1, clientX: 300, clientY: 300 });
+    expect(onMark).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("keeps the drag of one pointer when another pointer moves, lifts or is cancelled, and ends with the drag's own", async () => {
+    const { layer, onMark } = show();
+    const user = userEvent.setup();
+    await user.pointer({ keys: '[MouseLeft>]', target: layer, coords: { clientX: 100, clientY: 100 } });
+    const started = 'left: 70px; top: 80px; width: 0px; height: 0px;';
+    expect(previewOf(layer)?.style.cssText).toBe(started);
+
+    // A second finger, far away, does everything a pointer can do.
+    fireEvent.pointerMove(layer, { pointerId: 7, clientX: 700, clientY: 500 });
+    expect(previewOf(layer)?.style.cssText).toBe(started);
+    fireEvent.pointerUp(layer, { pointerId: 7, clientX: 700, clientY: 500 });
+    fireEvent.pointerCancel(layer, { pointerId: 7 });
+    expect(previewOf(layer)?.style.cssText).toBe(started);
+    expect(onMark).not.toHaveBeenCalled();
+
+    await user.pointer([
+      { target: layer, coords: { clientX: 200, clientY: 200 } },
+      { keys: '[/MouseLeft]', target: layer, coords: { clientX: 200, clientY: 200 } },
+    ]);
+    expect(onMark).toHaveBeenCalledExactlyOnceWith({
+      pageIndex: 0,
+      space: 'app-v1',
+      rect: [0, 50, 100, 150],
+    });
+  });
+
+  it('ends nothing for a pointer that began no drag', () => {
+    const { layer, onMark } = show();
+    fireEvent.pointerUp(layer, { pointerId: 1, clientX: 200, clientY: 200 });
+    fireEvent.pointerCancel(layer, { pointerId: 1 });
+    expect(onMark).not.toHaveBeenCalled();
+  });
+
+  it('is a drawing surface for a pointer, named by a status and not by a widget role it cannot honour', () => {
+    const { layer } = show();
+    expect(screen.queryByRole('application')).toBeNull();
+    expect(layer.hasAttribute('role')).toBe(false);
+    const name = within(layer).getByText('Draw rectangle');
+    expect(name.getAttribute('aria-live')).toBe('polite');
+    expect(name.className).toContain('sr-only');
+  });
+
+  it('keeps a finger that draws from scrolling the page', () => {
+    const { layer } = show();
+    expect(layer.classList.contains('touch-none')).toBe(true);
   });
 });

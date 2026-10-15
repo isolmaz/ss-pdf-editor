@@ -12,7 +12,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import type { MeasureMark, MeasureMode, MeasureScale } from 'pdf-core/ops/measure';
 import { parseScale, scaleForRatio } from 'pdf-core/ops/measure';
 import { createTranslator } from 'pdf-shared';
-import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, onTestFinished, vi } from 'vitest';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
 import { clientOf, type FakePage, type FakeViewerOptions, fakeViewer } from './layer-viewer.fixtures';
 import {
@@ -608,6 +608,49 @@ describe('the keyboard', () => {
     const { onStop } = show({ mode: null });
     await press('{Escape}');
     expect(onStop).not.toHaveBeenCalled();
+  });
+
+  /** A text field on the page, as the settings strip's Scale and Author inputs are. */
+  function textField(): HTMLInputElement {
+    const field = document.createElement('input');
+    document.body.append(field);
+    onTestFinished(() => field.remove());
+    return field;
+  }
+
+  it('lets Backspace delete a character in a text field while a chain is open', async () => {
+    const { view } = show({ mode: 'perimeter' });
+    await clickAt(at(0, 0));
+    await clickAt(at(72, 0));
+    expect(view.container.querySelectorAll('circle')).toHaveLength(3);
+    const field = textField();
+    await pointer.type(field, '1:100x');
+    expect(field.value).toBe('1:100x');
+    await press('{Backspace}');
+    expect(field.value).toBe('1:100');
+    // The chain is the field's business no more than the field is the chain's.
+    expect(view.container.querySelectorAll('circle')).toHaveLength(3);
+  });
+
+  it('leaves Enter and Escape in a text field to the field: the chain is not written and the tool stays', async () => {
+    const { onCreate, onStop, view } = show({ mode: 'perimeter' });
+    await clickAt(at(0, 0));
+    await clickAt(at(72, 0));
+    const field = textField();
+    await pointer.click(field);
+    await press('{Enter}{Escape}{Escape}');
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(onStop).not.toHaveBeenCalled();
+    expect(view.container.querySelectorAll('circle')).toHaveLength(3);
+    // Back on the page the same keys are the tool's again.
+    field.blur();
+    await press('{Enter}');
+    expect(onCreate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a finger that moves over the armed surface from scrolling the page and cancelling the pointer', () => {
+    show();
+    expect(surface().classList.contains('touch-none')).toBe(true);
   });
 });
 

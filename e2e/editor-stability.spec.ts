@@ -174,7 +174,7 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   // written to a protected tab, so neither its form nor its drawing layer may appear.
   await useAdvancedMode(page);
   const redactForm = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
-  const redactLayer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+  const redactLayer = page.locator('[data-redaction-layer]');
   // The form is a lazy chunk behind an operation that holds the strip's button off while it
   // runs (opening the form is one). Selected by text, not role: a modal palette hides the
   // strip from the accessibility tree. Enabled again means that whatever an attempt started

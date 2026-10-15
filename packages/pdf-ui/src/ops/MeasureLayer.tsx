@@ -64,7 +64,7 @@ import {
 import type { MessageKey, Translator } from 'pdf-shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
-import { type PageFrames, readPagesAt } from './mark-interaction';
+import { holdsKeyboard, type PageFrames, readPagesAt } from './mark-interaction';
 
 // ---------------------------------------------------------------------------
 // the dictionary
@@ -421,9 +421,14 @@ export function MeasureLayer({
 
   // Escape, Enter and Backspace are the tool's own keys: a click chain needs its
   // own keyboard path (the shell's shortcut layer only knows single-shot tools).
+  // They are the tool's only while the keyboard is not in a field: the strip's own
+  // Scale and Author inputs sit on the same page, and a Backspace taken from them
+  // would leave a typo that cannot be deleted (Enter would write the chain, Escape
+  // end the tool, from inside a text box).
   useEffect(() => {
     if (mode === null) return undefined;
     const onKey = (event: KeyboardEvent) => {
+      if (holdsKeyboard(event.target)) return;
       if (event.key === 'Escape') {
         // First Escape clears the chain, a second one ends the tool: two different
         // intentions, two different keys pressed, never one action that guesses.
@@ -504,12 +509,14 @@ export function MeasureLayer({
       ) : null}
 
       {/* The gesture half. Mounted only while a tool is armed: an inert overlay that
-          swallows nothing is one listener fewer on every pointer move. */}
+          swallows nothing is one listener fewer on every pointer move. `touch-none`:
+          a finger that moves over it must place the cursor, not make the browser scroll
+          the document and cancel the pointer. */}
       {armed ? (
         <div
           role="application"
           aria-label={label(t, MEASURE_KEYS.tool)}
-          className="absolute inset-0 cursor-crosshair"
+          className="absolute inset-0 cursor-crosshair touch-none"
           style={{ pointerEvents: 'auto' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}

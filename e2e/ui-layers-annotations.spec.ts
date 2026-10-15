@@ -264,3 +264,49 @@ test('the markup looks mark selected words as underline, strikeout and squiggly,
   expect([x0 > 100, y0 > 280, x1 < 340, y1 < 340]).toEqual([true, true, true, true]);
   expect(marker[0]?.quadPoints.length).toBeGreaterThanOrEqual(8);
 });
+
+test.describe('with a touch screen', () => {
+  test.use({ hasTouch: true });
+
+  test('a finger that drags draws the stroke instead of scrolling the page while the pen is armed', async ({
+    page,
+  }) => {
+    await openPdf(page);
+    const frame = await pageFrame(page);
+    // The viewer's scroll container is the parent of the pdf.js stack.
+    const container = page.locator('.pdfViewer[data-active-viewer]').locator('xpath=..');
+    await expect(container).toHaveCSS('touch-action', 'auto');
+
+    await rail(page, INK_TOOL).click();
+    await expect(container).toHaveCSS('touch-action', 'none');
+
+    // A real touch gesture, through the browser's own gesture handling: with `touch-action: auto`
+    // it would start a scroll and end the pointer with `pointercancel` a few pixels in.
+    const session = await page.context().newCDPSession(page);
+    const from = toClient(frame, 200, 500);
+    const to = toClient(frame, 300, 380);
+    const point = (x: number, y: number) => [{ x, y, id: 1 }];
+    await session.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: point(from.x, from.y),
+    });
+    for (let step = 1; step <= 10; step += 1) {
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: point(from.x + ((to.x - from.x) * step) / 10, from.y + ((to.y - from.y) * step) / 10),
+      });
+    }
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+    await expect(page.locator('[data-ann]')).toHaveCount(1);
+    const inks = ofSubtype(await readAnnotations(await exportBytes(page, 'touch-ink.pdf')), 'Ink').filter(
+      (annotation) => annotation.contents !== 'Saved ink left' && annotation.contents !== 'Saved ink right',
+    );
+    expect(inks).toHaveLength(1);
+    const stroke = inks[0]?.inkLists[0] ?? [];
+    expect(stroke.length).toBeGreaterThanOrEqual(4);
+    expectNear(stroke[0], 200, 3);
+    expectNear(stroke[stroke.length - 2], 300, 3);
+    await session.detach();
+  });
+});

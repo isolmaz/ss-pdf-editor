@@ -16,7 +16,7 @@ test('a drag marks a pending area where it was drawn and the tool is left; a cli
 }) => {
   await openPdf(page);
   const frame = await pageFrame(page);
-  const layer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+  const layer = page.locator('[data-redaction-layer]');
   const areas = page.locator('[data-mark-family="redaction"]');
 
   await rail(page, REDACT_TOOL).click();

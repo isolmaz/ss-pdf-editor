@@ -32,7 +32,7 @@ test('a redaction drag from one page into the next marks nothing and keeps the t
   expect(first.y + first.height).toBeGreaterThan(200);
 
   await rail(page, REDACT_TOOL).click();
-  const layer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+  const layer = page.locator('[data-redaction-layer]');
   await expect(layer).toBeVisible();
   await drag(
     page,
