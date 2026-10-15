@@ -1183,8 +1183,14 @@ a wrong password or a damaged container cannot be signed with. The key is import
 parsing. There is no OS keychain integration.
 
 **Verification (`ops/signature-status.ts`).** Signatures are found by **scanning the raw
-bytes** for `/ByteRange` and the `/Contents` whose own offset falls inside the gap; a scan
+bytes** for `/ByteRange` and the `/Contents` whose own offset falls inside the gap — in one pass
+that also finds the last `startxref`; a gap wider than the `/Contents` string (delimiters
+included) leaves other bytes unsigned, so the range reports `covers-partial` even when it
+reaches the end of the file; a scan
 entry is only accepted when its integers agree with the object graph's (read with MuPDF).
+The signer certificate is the one the `SignerInfo`'s `sid` names (`IssuerAndSerialNumber` or key
+identifier), wherever the CMS lists it; when the `sid` names none of them there is no signer
+certificate and the signature is `unchecked`, never `invalid`.
 MuPDF hands numbers over as 32-bit floats, so above 2^24 (a file over 16 MiB) "agree" means
 the scanned integers round to what the object graph read; the scan's exact integers are what
 is hashed, and ranges that differ but round alike pair with nothing (`unchecked`). Only a
@@ -1236,7 +1242,8 @@ settings directory, `packages/pdf-model/src/revocation-lists.ts`, file `revocati
 dates shown in the panel), a CRL or OCSP response in the signature's CMS (the Adobe
 `adbe-revocationInfoArchival` attribute, read from the signed *and* unsigned attributes, and
 `SignedData.crls`) or in the document's `/DSS` (`Certs`, `CRLs`, `OCSPs`, read by reference and
-bounded to 256 entries / 16 MiB). The signer certificate and every certificate above it, up to
+bounded to 256 entries / 16 MiB, the budget checked against a stream's `/DL` and stored length
+before it is decoded). The signer certificate and every certificate above it, up to
 but not including a self-signed root, are checked.
 
 - **Who may speak for whom.** The chain is rebuilt from *signatures* (each certificate's issuer
@@ -1276,7 +1283,10 @@ the CMS signature verify with the TSA certificate found by its `sid`; that certi
 `unchecked`. The TSA's chain is validated by `signature-trust.ts` at `genTime` (its critical
 `extKeyUsage`, which RFC 3161 mandates, is passed as a leaf extension the caller enforces) and its
 certificates go through §5.3.1. `status` says what the token is; `trusted` says whether its time
-may be used: valid, chained to an imported root, nothing revoked.
+may be used: valid, chained to an imported root, and every certificate of the TSA cleared by a
+verified list issued after `genTime` — a certificate no list speaks for is `unknown`, and unknown
+is never clean, as for the signer. At most 64 signature timestamp tokens are read from one
+signature, and when several verify the first trusted one is used, else the first valid one.
 
 `signature-validation.ts` orders it: the timestamp first, then the validation time
 (`timestamp` > `timestamp-untrusted` > claimed `signing-time` > `clock`), then trust (validated at the

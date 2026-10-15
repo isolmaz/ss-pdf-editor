@@ -58,6 +58,7 @@ import type { MessageKey } from 'pdf-shared';
 import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { pageObjects, readName, readNumbers, readText, resolved } from '../engines/mupdf-write';
+import type { SignerCertificate } from '../signature-evidence';
 import type { RevocationCertCheck, RevocationSummary } from '../signature-revocation';
 import type { TimestampCheck } from '../signature-timestamp';
 import type { CertificateValidity, TrustCheck, TrustReason } from '../signature-trust';
@@ -154,25 +155,27 @@ const TRAILER_KEY = 'trailer';
  * ASCII / byte helpers
  * ------------------------------------------------------------------ */
 
-/** Forward search for an ASCII needle; `-1` when it is not there. */
-function indexOfAscii(bytes: Uint8Array, needle: string, from: number): number {
-  const last = bytes.length - needle.length;
-  for (let at = Math.max(from, 0); at <= last; at += 1) {
-    if (bytes[at] !== needle.charCodeAt(0)) continue;
-    let offset = 1;
-    while (offset < needle.length && bytes[at + offset] === needle.charCodeAt(offset)) offset += 1;
-    if (offset === needle.length) return at;
+/** Whether the ASCII needle sits at `at`. */
+function matchesAt(bytes: Uint8Array, at: number, needle: string): boolean {
+  for (let offset = 0; offset < needle.length; offset += 1) {
+    if (bytes[at + offset] !== needle.charCodeAt(offset)) return false;
+  }
+  return true;
+}
+
+/** Forward search for an ASCII needle starting at or after `from` and at or before `last`; `-1` when it is not there. */
+function indexOfAscii(bytes: Uint8Array, needle: string, from: number, last = Infinity): number {
+  const end = Math.min(bytes.length - needle.length, last);
+  for (let at = Math.max(from, 0); at <= end; at += 1) {
+    if (matchesAt(bytes, at, needle)) return at;
   }
   return -1;
 }
 
-/** Backward search: the highest start index `<= from` that carries the needle. */
-function lastIndexOfAscii(bytes: Uint8Array, needle: string, from: number): number {
-  for (let at = Math.min(from, bytes.length - needle.length); at >= 0; at -= 1) {
-    if (bytes[at] !== needle.charCodeAt(0)) continue;
-    let offset = 1;
-    while (offset < needle.length && bytes[at + offset] === needle.charCodeAt(offset)) offset += 1;
-    if (offset === needle.length) return at;
+/** Backward search: the highest start index in `[first, from]` that carries the needle. */
+function lastIndexOfAscii(bytes: Uint8Array, needle: string, from: number, first = 0): number {
+  for (let at = Math.min(from, bytes.length - needle.length); at >= Math.max(first, 0); at -= 1) {
+    if (matchesAt(bytes, at, needle)) return at;
   }
   return -1;
 }
@@ -214,7 +217,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
  * Raw scan: signature dictionaries in the file's own bytes
  * ------------------------------------------------------------------ */
 
-type ByteRangeTuple = readonly [number, number, number, number];
+export type ByteRangeTuple = readonly [number, number, number, number];
 
 /** Where a `/Contents` string sits in the file: `start` is its opening delimiter, `end` one past its closing one. */
 interface ContentsSpan {
@@ -250,43 +253,77 @@ function readStringSpan(bytes: Uint8Array, at: number): ContentsSpan | null {
   return end < 0 ? null : { start, end };
 }
 
+/** A `/ByteRange` the raw scan found, paired with the `/Contents` string that sits in its gap. */
+export interface ScannedRange {
+  readonly range: ByteRangeTuple;
+  /**
+   * The gap is exactly the `/Contents` string, delimiters included (§12.8.1). A wider gap
+   * leaves other bytes of the file outside the signed ranges as well — a signature over
+   * "the whole file" it is not.
+   */
+  readonly gapIsContents: boolean;
+}
+
 /**
  * The `/Contents` value that sits in the ByteRange's gap. Producers write
  * `/ByteRange` and `/Contents` in either order, so both directions are tried, and
  * only a value whose own offsets fall inside the gap is accepted — that is what makes
  * a match trustworthy without a parser.
  */
-function findContentsValue(bytes: Uint8Array, keywordAt: number, range: ByteRangeTuple): ContentsSpan | null {
+function pairWithContents(bytes: Uint8Array, keywordAt: number, range: ByteRangeTuple): ScannedRange | null {
   const gapStart = range[0] + range[1];
   const gapEnd = range[2];
   const candidates = [
-    indexOfAscii(bytes, CONTENTS_KEY, keywordAt),
-    lastIndexOfAscii(bytes, CONTENTS_KEY, keywordAt),
+    indexOfAscii(bytes, CONTENTS_KEY, keywordAt, keywordAt + CONTENTS_WINDOW),
+    lastIndexOfAscii(bytes, CONTENTS_KEY, keywordAt, keywordAt - CONTENTS_WINDOW),
   ];
   for (const at of candidates) {
-    if (at < 0 || Math.abs(at - keywordAt) > CONTENTS_WINDOW) continue;
+    if (at < 0) continue;
     const value = readStringSpan(bytes, at + CONTENTS_KEY.length);
     if (value === null) continue;
-    if (value.start >= gapStart && value.end <= gapEnd) return value;
+    if (value.start >= gapStart && value.end <= gapEnd) {
+      return { range, gapIsContents: value.start === gapStart && value.end === gapEnd };
+    }
   }
   return null;
 }
 
-/** The `/ByteRange` of every signature dictionary reachable by scanning the raw bytes. */
-function scanByteRanges(bytes: Uint8Array): readonly ByteRangeTuple[] {
-  const found: ByteRangeTuple[] = [];
-  let cursor = 0;
-  while (found.length < MAX_SIGNATURES) {
-    const at = indexOfAscii(bytes, BYTE_RANGE_KEY, cursor);
-    if (at < 0) break;
-    cursor = at + BYTE_RANGE_KEY.length;
-    const parsed = readByteRange(bytes, cursor);
-    if (parsed === null) continue;
-    const contents = findContentsValue(bytes, at, parsed.range);
-    if (contents === null) continue;
-    found.push(parsed.range);
+/** What one pass over the file's bytes finds. */
+export interface RawScan {
+  /** The bytes name a `/ByteRange` somewhere: without one, nothing in the file is signed. */
+  readonly mentionsByteRange: boolean;
+  /** The `/ByteRange` of every signature dictionary reachable by scanning the raw bytes. */
+  readonly ranges: readonly ScannedRange[];
+  /** Where the last `startxref` keyword starts, `-1` when there is none. */
+  readonly lastStartxref: number;
+}
+
+/**
+ * The raw facts the verdicts need, read in **one pass**: this runs as soon as a document opens,
+ * and a pass per question (is there a `/ByteRange`? where are they? where does the last
+ * cross-reference section start?) read the whole file once for each. Exported for the test that
+ * counts the reads.
+ */
+export function scanRaw(bytes: Uint8Array): RawScan {
+  const ranges: ScannedRange[] = [];
+  let mentionsByteRange = false;
+  let lastStartxref = -1;
+  const rangeFirst = BYTE_RANGE_KEY.charCodeAt(0);
+  const startxrefFirst = STARTXREF_KEY.charCodeAt(0);
+  for (let at = 0; at < bytes.length; at += 1) {
+    const byte = bytes[at];
+    if (byte === rangeFirst && matchesAt(bytes, at, BYTE_RANGE_KEY)) {
+      mentionsByteRange = true;
+      const parsed = ranges.length < MAX_SIGNATURES ? readByteRange(bytes, at + BYTE_RANGE_KEY.length) : null;
+      const paired = parsed === null ? null : pairWithContents(bytes, at, parsed.range);
+      if (paired !== null) ranges.push(paired);
+      at += BYTE_RANGE_KEY.length - 1;
+    } else if (byte === startxrefFirst && matchesAt(bytes, at, STARTXREF_KEY)) {
+      lastStartxref = at;
+      at += STARTXREF_KEY.length - 1;
+    }
   }
-  return found;
+  return { mentionsByteRange, ranges, lastStartxref };
 }
 
 /* ------------------------------------------------------------------ *
@@ -447,9 +484,11 @@ function previousOffset(bytes: Uint8Array, offset: number, limit: number): numbe
   return dictionaryPrev(bytes, dictAt);
 }
 
-/** Cross-reference section offsets, oldest first; empty when the chain is unreadable. */
-function revisionStarts(bytes: Uint8Array): readonly number[] {
-  const lastStartxref = lastIndexOfAscii(bytes, STARTXREF_KEY, bytes.length - 1);
+/**
+ * Cross-reference section offsets, oldest first; empty when the chain is unreadable.
+ * `lastStartxref` is where the file's last `startxref` keyword starts (`scanRaw`).
+ */
+function revisionStarts(bytes: Uint8Array, lastStartxref: number): readonly number[] {
   if (lastStartxref < 0) return [];
   const first = readNumber(bytes, lastStartxref + STARTXREF_KEY.length);
   const starts: number[] = [];
@@ -741,16 +780,22 @@ function readMessageDigest(
   return null;
 }
 
-/** `SignedData`'s first `certificates` entry, as `issuer` and `subject` TLVs. */
+/**
+ * The certificate-shaped entries of `SignedData.certificates`, in order: `CertificateChoices`
+ * also allows the attribute-certificate and "other" forms, and those are not certificates.
+ */
+function readCertificateEntries(bytes: Uint8Array, signedData: Tlv, budget: { nodes: number }): Tlv[] {
+  const certificates = children(bytes, signedData, budget).find((child) => child.tag === TAG_CONTEXT_0);
+  if (certificates === undefined) return [];
+  return children(bytes, certificates, budget).filter((entry) => entry.tag === TAG_SEQUENCE);
+}
+
+/** One `certificates` entry, as `issuer` and `subject` TLVs. */
 function readCertificate(
   bytes: Uint8Array,
-  signedData: Tlv,
+  certificate: Tlv,
   budget: { nodes: number },
 ): CmsInfo['certificate'] {
-  const certificates = children(bytes, signedData, budget).find((child) => child.tag === TAG_CONTEXT_0);
-  if (certificates === undefined) return null;
-  const certificate = firstChild(bytes, certificates);
-  if (certificate === null) return null;
   const tbs = firstChild(bytes, certificate);
   if (tbs === null) return null;
 
@@ -812,8 +857,15 @@ function commonName(bytes: Uint8Array, name: Tlv, budget: { nodes: number }): st
   return null;
 }
 
-/** The CMS `SignedData` facts this check needs, or {@link NO_CMS}. */
-function readCms(der: Uint8Array): CmsInfo {
+/**
+ * The CMS `SignedData` facts this check needs, or {@link NO_CMS}. `named` says which of the
+ * certificates the `SignerInfo` names (`signature-evidence.ts`, RFC 5652 §5.3 `sid`): that one is
+ * the signer's, wherever the set lists it. A CMS whose `sid` names none of them has no signer
+ * certificate — it is never answered with another certificate, which would verify the signature
+ * against the wrong key and call it tampered. Only a CMS the `sid` reader cannot parse keeps the
+ * certificate this walk finds first.
+ */
+function readCms(der: Uint8Array, named: SignerCertificate): CmsInfo {
   const budget = { nodes: MAX_ASN1_NODES };
   const contentInfo = readTlv(der, 0);
   if (contentInfo === null || contentInfo.tag !== TAG_SEQUENCE) return NO_CMS;
@@ -835,25 +887,19 @@ function readCms(der: Uint8Array): CmsInfo {
   const algorithm = identifier === null ? null : firstChild(der, identifier);
   const digestOid = algorithm === null ? '' : oidText(der, algorithm);
 
-  const certificate = readCertificate(der, signedData, budget);
+  const entries = readCertificateEntries(der, signedData, budget);
+  let signerEntry: Tlv | undefined;
+  if (named.status === 'found') signerEntry = entries[named.index];
+  else if (named.status === 'unreadable') signerEntry = entries[0];
+  const certificate = signerEntry === undefined ? null : readCertificate(der, signerEntry, budget);
   const signer = readSignerInfo(der, signedData, budget);
   // Every certificate after the signer's own is a chain candidate; the walk decides which
-  // of them actually signs which.
+  // of them actually signs which. A copy of the signer's certificate is not one.
   const others: Uint8Array[] = [];
-  const certificates = children(der, signedData, budget).find((child) => child.tag === TAG_CONTEXT_0);
-  if (certificates !== undefined) {
-    for (const entry of children(der, certificates, budget)) {
-      const bytesOf = tlvBytes(der, entry);
-      if (certificate !== null && bytesOf.length === certificate.der.length) {
-        let same = true;
-        for (let index = 0; index < bytesOf.length && same; index += 1)
-          same = bytesOf[index] === certificate.der[index];
-        if (same) continue;
-      }
-      // Only certificate-shaped entries: `CertificateChoices` also allows the attribute
-      // certificate and "other" forms, and those are not chain candidates.
-      if (entry.tag === TAG_SEQUENCE) others.push(bytesOf);
-    }
+  for (const entry of entries) {
+    const bytesOf = tlvBytes(der, entry);
+    if (certificate !== null && bytesEqual(bytesOf, certificate.der)) continue;
+    others.push(bytesOf);
   }
   return {
     messageDigest: signer.messageDigest,
@@ -1010,6 +1056,46 @@ const MAX_DSS_ITEMS = 256;
 const MAX_DSS_BYTES = 16 * 1024 * 1024;
 
 /**
+ * One `/DSS` stream's decoded bytes, or `null` when they do not fit what is left of `budget` —
+ * and then the budget is spent for good, so this stream and every one after it is dropped.
+ *
+ * The cost is checked **before** the stream is decoded: a small deflate stream can inflate to
+ * far more than the budget, and decoding it first only to throw it away is the very
+ * allocation the budget is there to prevent. The producer's own `/DL` (the decoded length,
+ * ISO 32000-2 §7.3.8.2) and the stored length are read first; what neither gave away is checked
+ * against the decoded buffer's length before it is copied out of MuPDF's memory, which is
+ * released as soon as the one copy the caller keeps has been made.
+ */
+function readBudgeted(entry: PDFObject, budget: { bytes: number; spent: boolean }): Uint8Array | null {
+  const declared = resolved(entry.get('DL'));
+  if (declared?.isNumber() === true && declared.asNumber() > budget.bytes) {
+    budget.spent = true;
+    return null;
+  }
+  const stored = entry.readRawStream();
+  try {
+    if (stored.getLength() > budget.bytes) {
+      budget.spent = true;
+      return null;
+    }
+  } finally {
+    stored.destroy();
+  }
+  const decoded = entry.readStream();
+  try {
+    if (decoded.getLength() > budget.bytes) {
+      budget.spent = true;
+      return null;
+    }
+    const data = new Uint8Array(decoded.asUint8Array());
+    budget.bytes -= data.length;
+    return data;
+  } finally {
+    decoded.destroy();
+  }
+}
+
+/**
  * The document security store (`/Root /DSS`, ISO 32000-2 §12.8.4.3): the certificates, CRLs
  * and OCSP responses a signer's tool archived so the signature can be validated later,
  * offline. Each entry is a stream, read by reference; an entry that is not one is skipped.
@@ -1019,34 +1105,20 @@ function readDss(doc: PDFDocument): DssData {
   const catalog = resolved(doc.getTrailer().get('Root'));
   const dss = catalog === null ? null : resolved(catalog.get('DSS'));
   if (dss === null || !dss.isDictionary()) return { certs: [], crls: [], ocsps: [] };
-  const budget = { bytes: MAX_DSS_BYTES };
+  const budget = { bytes: MAX_DSS_BYTES, spent: false };
   const streams = (key: string): Uint8Array[] => {
     const array = resolved(dss.get(key));
     if (array?.isArray() !== true) return [];
     const out: Uint8Array[] = [];
-    for (let index = 0; index < array.length && out.length < MAX_DSS_ITEMS; index += 1) {
+    for (let index = 0; index < array.length && out.length < MAX_DSS_ITEMS && !budget.spent; index += 1) {
       const entry = array.get(index);
       if (entry.isNull() || !entry.isStream()) continue;
-      const data = entry.readStream().asUint8Array().slice();
-      budget.bytes -= data.length;
-      if (budget.bytes < 0) break;
-      out.push(data);
+      const data = readBudgeted(entry, budget);
+      if (data !== null) out.push(data);
     }
     return out;
   };
   return { certs: streams('Certs'), crls: streams('CRLs'), ocsps: streams('OCSPs') };
-}
-
-/** Whether the raw bytes carry a `/ByteRange` key at all: without one, nothing is signed. */
-function mentionsByteRange(bytes: Uint8Array): boolean {
-  const needle = [0x2f, 0x42, 0x79, 0x74, 0x65, 0x52, 0x61, 0x6e, 0x67, 0x65]; // "/ByteRange"
-  outer: for (let at = 0; at + needle.length <= bytes.length; at += 1) {
-    for (let step = 0; step < needle.length; step += 1) {
-      if (bytes[at + step] !== needle[step]) continue outer;
-    }
-    return true;
-  }
-  return false;
 }
 
 const PDF_DATE = /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?([Z+-])?(\d{2})?'?(\d{2})?'?/;
@@ -1230,12 +1302,13 @@ function sameRange(left: ByteRangeTuple, right: ByteRangeTuple): boolean {
  * no scanned range does, or when ranges that differ round alike (two candidates the object
  * graph cannot tell apart), nothing is paired and the signature stays unchecked.
  */
-function pairedRange(scanned: readonly ByteRangeTuple[], read: ByteRangeTuple): ByteRangeTuple | null {
+function pairedRange(scanned: readonly ScannedRange[], read: ByteRangeTuple): ScannedRange | null {
   const candidates = scanned.filter((entry) =>
-    entry.every((number, index) => Math.fround(number) === read[index]),
+    entry.range.every((number, index) => Math.fround(number) === read[index]),
   );
   const [first] = candidates;
-  return first !== undefined && candidates.every((entry) => sameRange(entry, first)) ? first : null;
+  if (first === undefined || !candidates.every((entry) => sameRange(entry.range, first.range))) return null;
+  return { range: first.range, gapIsContents: candidates.every((entry) => entry.gapIsContents) };
 }
 
 /**
@@ -1247,7 +1320,7 @@ async function verifyOne(
   bytes: Uint8Array,
   field: SignatureField,
   facts: SigningFacts,
-  byteRange: ByteRangeTuple | null,
+  byteRange: ScannedRange | null,
   revisions: readonly number[],
 ): Promise<SignatureVerification> {
   /**
@@ -1288,7 +1361,7 @@ async function verifyOne(
   // when the cryptographic verdict cannot be reached: "the signature does not cover what
   // it should" is a different fact from "the digest did not match".
   const coverage: SignatureCoverage = byteRange === null ? 'unknown' : coverageOf(bytes, byteRange);
-  const signedRevisions = byteRange === null ? 0 : changesAfterSigning(bytes, byteRange, revisions);
+  const signedRevisions = byteRange === null ? 0 : changesAfterSigning(bytes, byteRange.range, revisions);
   const unchecked = (cause: string): SignatureVerification => ({
     ...base,
     integrity: 'unchecked',
@@ -1306,7 +1379,7 @@ async function verifyOne(
   if (subtle === undefined) return unchecked('webcrypto');
 
   // WebCrypto digests one buffer, so the two covered ranges are joined once.
-  const covered = coveredBytes(bytes, byteRange);
+  const covered = coveredBytes(bytes, byteRange.range);
   if (covered === null) return unchecked('layout');
 
   let computed: Uint8Array;
@@ -1360,12 +1433,12 @@ interface TimestampEntryOptions {
 async function verifyTimestampEntry(
   bytes: Uint8Array,
   field: SignatureField,
-  byteRange: ByteRangeTuple | null,
+  byteRange: ScannedRange | null,
   revisions: readonly number[],
   options: TimestampEntryOptions,
 ): Promise<SignatureVerification> {
   const coverage: SignatureCoverage = byteRange === null ? 'unknown' : coverageOf(bytes, byteRange);
-  const changes = byteRange === null ? 0 : changesAfterSigning(bytes, byteRange, revisions);
+  const changes = byteRange === null ? 0 : changesAfterSigning(bytes, byteRange.range, revisions);
   const unchecked: SignatureVerification = {
     fieldName: field.name,
     subFilter: TIMESTAMP_SUBFILTER,
@@ -1387,7 +1460,7 @@ async function verifyTimestampEntry(
     validationTime: null,
     validationTimeSource: 'clock',
   };
-  const covered = byteRange === null ? null : coveredBytes(bytes, byteRange);
+  const covered = byteRange === null ? null : coveredBytes(bytes, byteRange.range);
   if (covered === null || field.contents === null) return unchecked;
 
   const { timestamp, revocation } = await (await import('../signature-validation')).evaluateDocumentTimestamp(
@@ -1436,12 +1509,15 @@ async function verifyTimestampEntry(
  * What the ByteRange covers (§12.8.1), and what lies outside it. The raw scan only yields a range
  * whose `/Contents` sits in its gap, so the two segments never overlap.
  */
-function coverageOf(bytes: Uint8Array, range: ByteRangeTuple): SignatureCoverage {
+function coverageOf(bytes: Uint8Array, scanned: ScannedRange): SignatureCoverage {
+  const { range } = scanned;
   const end = range[2] + range[3];
   if (end > bytes.length) return 'unknown';
   // Anything before the first range, or after the last one, is not covered by the
-  // signature: that is exactly "partial coverage", whatever wrote those bytes.
-  if (range[0] !== 0 || end < bytes.length) return 'covers-partial';
+  // signature: that is exactly "partial coverage", whatever wrote those bytes. So is a gap
+  // wider than the `/Contents` string: the bytes beside the signature value are left out too,
+  // and nothing signed stops them being rewritten.
+  if (range[0] !== 0 || end < bytes.length || !scanned.gapIsContents) return 'covers-partial';
   return 'covers-whole-document';
 }
 
@@ -1491,7 +1567,8 @@ export async function verifySignatures(
   // never name a `/ByteRange` carries no signature a range could cover, and it is
   // answered without loading an engine at all. (A signature dictionary inside a
   // compressed object stream could not cover its own bytes either.)
-  if (!mentionsByteRange(bytes)) return [];
+  const raw = scanRaw(bytes);
+  if (!raw.mentionsByteRange) return [];
 
   const mupdf = await loadMupdf();
   const doc = openPdf(mupdf, bytes);
@@ -1516,8 +1593,7 @@ export async function verifySignatures(
   }
   if (fields.length === 0) return [];
 
-  const scanned = scanByteRanges(bytes);
-  const revisions = revisionStarts(bytes);
+  const revisions = revisionStarts(bytes, raw.lastStartxref);
   const results: SignatureVerification[] = [];
   const now = options.now ?? new Date();
   const roots = options.roots ?? [];
@@ -1530,7 +1606,7 @@ export async function verifySignatures(
     // A raw entry is only accepted when its four numbers are the ones the object graph read
     // (to float precision): a dictionary that arrived inside an object stream carries numbers
     // for a file this scan never saw, and hashing those ranges would be nonsense.
-    const match = range === null ? null : pairedRange(scanned, range);
+    const match = range === null ? null : pairedRange(raw.ranges, range);
     if (field.subFilter === TIMESTAMP_SUBFILTER) {
       results.push(
         await verifyTimestampEntry(bytes, field, match, revisions, {
@@ -1542,7 +1618,12 @@ export async function verifySignatures(
       );
       continue;
     }
-    const cms = contents === null ? NO_CMS : readCms(contents);
+    // Which certificate signed is what the `SignerInfo` names, not the first one listed; the
+    // reader that matches the `sid` carries `pkijs`, so it is loaded only for a signature to read.
+    const cms =
+      contents === null
+        ? NO_CMS
+        : readCms(contents, (await import('../signature-evidence')).signerCertificate(contents));
     const certificate = contents === null ? null : cms.certificate;
     // The timestamp, the lists that can speak for the certificates, and the moment the
     // signature is judged at — before the trust walk, because a trusted timestamp is the date

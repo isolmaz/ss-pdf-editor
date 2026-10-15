@@ -27,19 +27,31 @@ export interface PdfSignatureField {
 }
 
 /**
- * The field names `getSignatures()` reports. A signature dictionary carries the
- * field's own `/T` while the field map uses the dotted path, so both forms are kept
- * and {@link PdfSignatureField} matches on either.
+ * The fully qualified names of the fields that carry a signature. `getSignatures()` reports
+ * the field's own `/T` only (`Sig1` for `a.Sig1`), which says nothing about *which* `Sig1`
+ * signed — so the entry's `id` is used instead: it begins with the reference of the field
+ * that holds the signature (`12R:0-…`), and `getFieldObjects()` lists that same reference
+ * under the field's qualified name. An entry that names no listed field keeps the name it
+ * reported, which is the qualified name of a top-level field.
  */
-async function signedFieldNames(document: PdfDocumentHandle): Promise<ReadonlySet<string>> {
+async function signedFieldNames(
+  document: PdfDocumentHandle,
+  qualifiedNameById: ReadonlyMap<string, string>,
+): Promise<ReadonlySet<string>> {
   const signatures = await document.raw.getSignatures();
   const names = new Set<string>();
   if (signatures === null || signatures === undefined) return names;
 
   for (const entry of signatures) {
     if (entry === null || typeof entry !== 'object') continue;
-    const meta = entry as { readonly fieldName?: unknown };
-    if (typeof meta.fieldName === 'string' && meta.fieldName.length > 0) names.add(meta.fieldName);
+    const reference = 'id' in entry && typeof entry.id === 'string' ? entry.id.split(':', 1)[0] : undefined;
+    const qualified = reference === undefined ? undefined : qualifiedNameById.get(reference);
+    if (reference !== undefined && qualified !== undefined) {
+      // A field with no name is listed by its reference (`listPdfSignatureFields` below).
+      names.add(qualified.length > 0 ? qualified : reference);
+    } else if ('fieldName' in entry && typeof entry.fieldName === 'string' && entry.fieldName.length > 0) {
+      names.add(entry.fieldName);
+    }
   }
   return names;
 }
@@ -53,11 +65,15 @@ export async function listPdfSignatureFields(
     if (fields === null || fields === undefined) return [];
 
     const widgets: Omit<PdfSignatureField, 'signed'>[] = [];
+    // Every listed field by reference, whatever its type: the field that holds a signature may be
+    // a parent whose kids are the widgets.
+    const qualifiedNameById = new Map<string, string>();
     for (const [name, entries] of fields) {
       if (!Array.isArray(entries)) continue;
       for (const entry of entries) {
         if (entry === null || typeof entry !== 'object') continue;
         const widget = entry as { readonly type?: unknown; readonly id?: unknown; readonly page?: unknown };
+        if (typeof widget.id === 'string') qualifiedNameById.set(widget.id, name);
         if (widget.type !== 'signature') continue;
         const id = typeof widget.id === 'string' ? widget.id : '';
         widgets.push({
@@ -71,11 +87,8 @@ export async function listPdfSignatureFields(
     // dictionaries (a document-level read) are not worth parsing.
     if (widgets.length === 0) return [];
 
-    const signed = await signedFieldNames(document);
-    return widgets.map((widget) => {
-      const leaf = widget.name.slice(widget.name.lastIndexOf('.') + 1);
-      return { ...widget, signed: signed.has(widget.name) || signed.has(leaf) };
-    });
+    const signed = await signedFieldNames(document, qualifiedNameById);
+    return widgets.map((widget) => ({ ...widget, signed: signed.has(widget.name) }));
   } catch (error) {
     throw toToolError(error, 'pdfjs');
   }

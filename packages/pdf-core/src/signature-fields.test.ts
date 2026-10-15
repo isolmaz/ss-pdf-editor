@@ -141,7 +141,7 @@ describe('listPdfSignatureFields', () => {
     expect(await listPdfSignatureFields(await open(bytes))).toEqual([]);
   });
 
-  it('matches a signature to a field with a dotted name by the leaf name the signature carries', async () => {
+  it('matches a signature, which carries only its leaf name, to the field with that dotted name', async () => {
     const signed = await signPdf(
       await build(() => undefined),
       { identity: await identity(), field: { name: 'Imza' } },
@@ -160,6 +160,32 @@ describe('listPdfSignatureFields', () => {
     const fields = await listPdfSignatureFields(await open(bytes));
     expect(fields).toHaveLength(1);
     expect(fields[0]).toMatchObject({ name: 'Form.Imza', pageIndex: 0, signed: true });
+  });
+
+  it('calls only the field that holds the signature signed when another field shares its leaf name', async () => {
+    const signed = await signPdf(
+      await build(() => undefined),
+      { identity: await identity(), field: { name: 'Sig1' } },
+      run,
+    );
+    // `a.Sig1` carries the signature; `b.Sig1` is an empty field that happens to end in the same name.
+    const bytes = await build((doc) => {
+      const root = doc.getTrailer().get('Root');
+      const fieldList = root.get('AcroForm').get('Fields');
+      const signedLeaf = fieldList.get(0);
+      const first = doc.addObject({ T: doc.newString('a'), Kids: [signedLeaf] });
+      signedLeaf.put('Parent', first);
+      fieldList.delete(0);
+      fieldList.push(first);
+      const second = doc.addObject({ T: doc.newString('b'), Kids: [] });
+      fieldList.push(second);
+      second.get('Kids').push(addField(doc, 0, { FT: 'Sig', T: doc.newString('Sig1') }, second));
+    }, signed.bytes);
+    const fields = await listPdfSignatureFields(await open(bytes));
+    expect(Object.fromEntries(fields.map((field) => [field.name, field.signed]))).toEqual({
+      'a.Sig1': true,
+      'b.Sig1': false,
+    });
   });
 
   it('uses the widget id as the name of a signature widget that has none', async () => {
@@ -192,6 +218,19 @@ describe('listPdfSignatureFields', () => {
       { name: 'Mixed', id: '', pageIndex: null, signed: false },
       { name: 'Named', id: '5R', pageIndex: 2, signed: true },
     ]);
+
+    // A signed field the engine lists under no name is called by its widget id, and the signature
+    // entry finds it through the reference its own id starts with; an id that is no string is ignored.
+    const nameless = await listPdfSignatureFields(
+      await withAnswers(bytes, {
+        fields: new Map([['', [{ type: 'signature', id: '5R', page: 0 }]]]),
+        signatures: [
+          { id: 5, fieldName: 'Five' },
+          { id: '5R:0-10-20-30', fieldName: '' },
+        ],
+      }),
+    );
+    expect(nameless).toEqual([{ name: '5R', id: '5R', pageIndex: 0, signed: true }]);
 
     for (const signatures of [null, undefined]) {
       const none = await listPdfSignatureFields(

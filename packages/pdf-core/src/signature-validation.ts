@@ -9,10 +9,13 @@
  * what the certificate path is validated at and what a revocation date is compared with.
  *
  * Which time is used, and how far it is believed:
- *  - `timestamp` — a valid token from a TSA the user imported and whose certificates are not
- *    revoked. The only time a later revocation or an expired certificate can be excused by.
- *  - `timestamp-untrusted` — a valid token from a TSA nobody vouched for. Its time is shown and
- *    used for the comparison, but it excuses nothing: anyone can run such a TSA.
+ *  - `timestamp` — a valid token from a TSA the user imported and whose certificates a list on
+ *    the device clears of revocation (none unknown, none revoked). The only time a later
+ *    revocation or an expired certificate can be excused by. When a signature carries several
+ *    tokens, the first trusted one is used, else the first valid one.
+ *  - `timestamp-untrusted` — a valid token from a TSA nobody vouched for, or one whose
+ *    certificates no list clears. Its time is shown and used for the comparison, but it excuses
+ *    nothing: anyone can run such a TSA.
  *  - `signing-time` — the `signingTime` attribute or `/M`: what the signer *says*. Shown, never
  *    believed (it is not later than the clock, though: a claimed future date is clamped).
  *  - `clock` — nothing was claimed; the machine's clock.
@@ -74,6 +77,12 @@ function claimedTime(attribute: Date | null, pdfDate: string | null, now: Date):
   return claimed > now ? now : claimed;
 }
 
+/** How far a token can be used: 2 trusted, 1 valid but not trusted, 0 failed or unchecked. */
+function timestampRank(check: TimestampCheck): number {
+  if (check.status !== 'valid') return 0;
+  return check.trusted ? 2 : 1;
+}
+
 /** The timestamps, revocation and validation time of a CMS signature. */
 export async function evaluateEvidence(input: EvidenceInput): Promise<EvidenceOutcome> {
   const evidence = readSignatureEvidence(input.contents) ?? NO_EVIDENCE;
@@ -96,10 +105,11 @@ export async function evaluateEvidence(input: EvidenceInput): Promise<EvidenceOu
         sources,
         now: input.now,
       });
-      // The first token that verifies is the one used; a failing one is still reported when
-      // none verifies, so a broken timestamp is never silently dropped.
-      if (timestamp === null || (timestamp.status !== 'valid' && checked.status === 'valid'))
-        timestamp = checked;
+      // A token whose TSA is trusted outranks one that merely verifies, which outranks one that
+      // fails; among equals the first stays. A failing token is still reported when none
+      // verifies, so a broken timestamp is never silently dropped — and a token from a TSA
+      // nobody vouched for never hides a trusted one that comes after it.
+      if (timestamp === null || timestampRank(checked) > timestampRank(timestamp)) timestamp = checked;
     }
   }
 

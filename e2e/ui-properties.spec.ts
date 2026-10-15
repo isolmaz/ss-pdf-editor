@@ -442,7 +442,7 @@ test('a trusted timestamp is the time a signature is judged at, and shows its au
   await expect(fact(row, 'Timestamp')).toHaveText('Valid');
   await expect(row).toContainText(`Signature timestamp: ${utc(issued)}, issued by Panel TSA (SHA-256).`);
   await expect(row).toContainText(
-    'The time-stamping authority chains to an imported root and none of its certificates is revoked: its time was used to judge this signature.',
+    'The time-stamping authority chains to an imported root and a list on this device shows none of its certificates revoked: its time was used to judge this signature.',
   );
   await expect(row).toContainText(`Judged at: ${utc(issued)} — trusted timestamp.`);
   // The authority's own certificate is checked against the same list; the signer's revocation is
@@ -459,9 +459,11 @@ test('a certificate that expired after a trusted timestamp is said to have been 
 }) => {
   const { root, expiredLeaf, tsa } = await signingPki();
   const issued = fromNow(-100);
+  // The authority is only relied on once a list on the device clears its certificate: this one names nothing.
+  const clears = await crlBy(root, fromNow(-20), fromNow(30));
   const row = await openTrusted(
     page,
-    await signedDocument(cmsWithTimestamp(expiredLeaf, [root], issued, tsa, issued)),
+    await signedDocument(cmsWithTimestamp(expiredLeaf, [root], issued, tsa, issued), dssWithCrls([clears])),
   );
   await expect(row).toContainText(
     `The certificate expired on ${day(expiredLeaf.parsed.notAfter.value)}, but it was valid when the trusted timestamp was issued.`,
@@ -479,7 +481,7 @@ test('an authority that chains to no imported root has its time shown but not re
   );
   await expect(fact(row, 'Timestamp')).toHaveText('Valid');
   await expect(row).toContainText(
-    'The time-stamping authority does not chain to an imported root, or one of its certificates is revoked: the time is shown but not relied on, since anyone can run a timestamp server.',
+    'The time-stamping authority does not chain to an imported root, one of its certificates is revoked, or no list on this device clears one of them: the time is shown but not relied on, since anyone can run a timestamp server.',
   );
   await expect(row).toContainText(`Judged at: ${utc(issued)} — untrusted timestamp.`);
 });
