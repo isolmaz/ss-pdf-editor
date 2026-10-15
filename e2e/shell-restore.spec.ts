@@ -79,10 +79,11 @@ test.describe('on the smaller tier', () => {
       '0 step(s) can be undone · 0 step(s) can be redone',
     );
     // There is nothing to undo, so the key does nothing and says nothing: not that a step's data is missing.
+    // The rotation after it is the signal that the press has been handled: its notice comes later.
     const seen = await recordNotices(page);
     await page.keyboard.press('Control+z');
-    await page.waitForTimeout(1_000);
+    await rotateCurrentPage(page);
     expect((await seen()).filter((line) => line.includes('cannot undo'))).toEqual([]);
-    expect(await readProducedEntry(await exportBytes(page, 'edited.pdf'), 0, 'Rotate')).toBe('90');
+    expect(await readProducedEntry(await exportBytes(page, 'edited.pdf'), 0, 'Rotate')).toBe('180');
   });
 });

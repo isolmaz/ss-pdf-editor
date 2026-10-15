@@ -45,7 +45,7 @@ export const shellPart = {
   'palette.title': 'Komut paleti',
   'palette.placeholder': 'Komut veya araç ara…',
   'palette.empty': 'Eşleşen komut yok.',
-  'palette.modeHidden': 'Basit modda gizlenen {count} eşleşen komut daha var.',
+  'palette.modeHidden': 'Eşleşen {count} komut daha basit modda gizli.',
   'setting.mode.simple': 'Basit mod',
   'setting.mode.advanced': 'Gelişmiş mod',
   'setting.mode.simple.hint': 'En çok kullanılan özellikler',

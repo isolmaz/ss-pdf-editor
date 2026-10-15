@@ -209,7 +209,7 @@ CI `verify` job, after `pnpm build`.
 | Module | Responsibility |
 |---|---|
 | `errors.ts` | The single error contract. `ToolError` carries a stable code (39 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
-| `format.ts` | `formatBytes(bytes, locale)` and `formatPercent(fraction, locale)`: sizes and percentages the way the interface language writes them (`1,5 KB` and `%140` in Turkish, `1.5 KB` and `140%` in English), through `Intl.NumberFormat`. Core and the operations never format a size: a report note carries the byte counts as numbers and the sentence asks for a size with a `{name:bytes}` placeholder, which `createTranslator` writes in its own locale. |
+| `format.ts` | `formatBytes(bytes, locale)` and `formatPercent(fraction, locale)`: sizes and percentages the way the interface language writes them (`1,5 KB` and `%140` in Turkish, `1.5 KB` and `140%` in English), through `Intl.NumberFormat`. Report notes never format a size: they carry the byte counts as numbers and the sentence asks for a size with a `{name:bytes}` placeholder, which `createTranslator` writes in its own locale. |
 | `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -2571,8 +2571,8 @@ the page. The header keeps identity, menus, five task buttons (three toggles tha
 panel, reading pane, text-edit tool — and the one-shot convert and sign actions), the document
 switcher, the file actions and one settings button — language, theme, the interface mode,
 privacy, storage and offline preparation are in `SettingsDialog`. The header never overflows the bar at
-any width from 320 px: the menu bar yields first (below 1024 px), then the task buttons (below 768 px), then the
-labels of Open, Save and Export (below 1280 px), and on a phone (below 640 px) the Open button; the document name
+any width from 320 px: as the bar narrows, the labels of Open, Save and Export yield first (below 1280 px), then
+the menu bar (below 1024 px), then the task buttons (below 768 px), and on a phone (below 640 px) the Open button; the document name
 keeps a minimum width, and `e2e/ui-panels15b-shell.spec.ts` checks the bar from 320 to 1536 px in both
 languages. Tooltips are one wrapper
 (`components/Tooltip.tsx`) over Kumo's primitive: it portals to `document.body` so a

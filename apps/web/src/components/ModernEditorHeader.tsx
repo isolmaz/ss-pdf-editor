@@ -27,10 +27,10 @@ import { toggleReading, useReading } from '../features/reading/reading-store';
  * and the file actions.
  *
  * It never overflows the bar, whatever the width: the pieces yield in a fixed order, the
- * least essential first, so the file actions and the document name are the last to go. The
- * menu bar yields first (below `lg`; the palette holds the same commands), then the task
- * shortcuts (below `md`), then the file actions' labels (below `xl`), and on a phone (below
- * `sm`) the Open button too (the palette and the home screen open files as well).
+ * least essential first, so the file actions and the document name are the last to go. As the
+ * bar narrows, the file actions' labels yield first (below `xl`), then the menu bar (below `lg`;
+ * the palette holds the same commands), then the task shortcuts (below `md`), and on a phone
+ * (below `sm`) the Open button too (the palette and the home screen open files as well).
  *
  * The task shortcuts are not "modes" with one highlighted: the app has no modes, and a
  * highlighted "Edit" while the select tool is armed, or "Read" after the reading pane

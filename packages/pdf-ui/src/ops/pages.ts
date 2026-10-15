@@ -53,8 +53,8 @@ export const extractPagesDialog: OperationDialogSpec = {
   confirmKey: 'op.result.newTab',
   resultKind: 'new-tab',
   fields: [
-    // The command is offered on a selection, so the selection is where the dialog
-    // starts; "all pages" would only copy the document.
+    // The selection is where the dialog starts (with none, the form falls back to the page
+    // on screen); "all pages" would only copy the document.
     { id: 'scope', kind: 'pageScope', labelKey: 'op.scope', default: 'selection' },
   ],
   run: async (params, context) => {
