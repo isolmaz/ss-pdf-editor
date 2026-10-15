@@ -1,6 +1,6 @@
 import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
-import { pageCountOf, pageSizesOf, runContext, runDialog, textPdf } from '../pdf-fixtures';
+import { pageCountOf, pageSizesOf, pageTextsOf, runContext, runDialog, textPdf } from '../pdf-fixtures';
 import { mergeFilesDialog, newDocumentDialog } from './start';
 
 const pdfFile = async (name: string, pages: number) =>
@@ -54,6 +54,67 @@ describe('mergeFilesDialog', () => {
     const none = mergeFilesDialog.run({}, await runContext(new Uint8Array(), { pageCount: 0 }));
     await expect(none).rejects.toMatchObject({
       details: { engineMessage: 'merge-files: 0 file(s) picked, two are needed' },
+    });
+  });
+});
+
+describe('mergeFilesDialog alternating the sides of a double-sided scan', () => {
+  const texts = async (bytes: Uint8Array | undefined) =>
+    (await pageTextsOf(bytes ?? new Uint8Array())).map((text) => text.trim());
+
+  it('alternates front and back, reading the backs from their last page unless told otherwise', async () => {
+    const fronts = await pdfFile('fronts.pdf', 3);
+    const backs = await pdfFile('backs.pdf', 3);
+    const reversed = await runDialog(
+      mergeFilesDialog,
+      { mode: 'interleave', fronts: [fronts], backs: [backs] },
+      new Uint8Array(),
+      { pageCount: 0 },
+    );
+    expect(await texts(reversed.files[0]?.bytes)).toEqual([
+      'fronts.pdf 1',
+      'backs.pdf 3',
+      'fronts.pdf 2',
+      'backs.pdf 2',
+      'fronts.pdf 3',
+      'backs.pdf 1',
+    ]);
+    expect(reversed.report.notes.some((entry) => entry.kind === 'warning')).toBe(false);
+
+    const inOrder = await runDialog(
+      mergeFilesDialog,
+      { mode: 'interleave', fronts: [fronts], backs: [backs], reverseBacks: false },
+      new Uint8Array(),
+      { pageCount: 0 },
+    );
+    expect((await texts(inOrder.files[0]?.bytes)).slice(0, 2)).toEqual(['fronts.pdf 1', 'backs.pdf 1']);
+  });
+
+  it('puts the pages without a partner at the end and warns about them', async () => {
+    const result = await runDialog(
+      mergeFilesDialog,
+      { mode: 'interleave', fronts: [await pdfFile('f.pdf', 3)], backs: [await pdfFile('b.pdf', 1)] },
+      new Uint8Array(),
+      { pageCount: 0 },
+    );
+    expect(await texts(result.files[0]?.bytes)).toEqual(['f.pdf 1', 'b.pdf 1', 'f.pdf 2', 'f.pdf 3']);
+    expect(result.report.notes).toContainEqual({
+      kind: 'warning',
+      key: 'op.note.merge.unequalFronts',
+      params: { count: 2 },
+    });
+  });
+
+  it('needs a file for each side', async () => {
+    const onlyFronts = runDialog(
+      mergeFilesDialog,
+      { mode: 'interleave', fronts: [await pdfFile('f.pdf', 1)] },
+      new Uint8Array(),
+      { pageCount: 0 },
+    );
+    await expect(onlyFronts).rejects.toMatchObject({
+      code: 'input-missing',
+      details: { engineMessage: 'merge-files: a front-sides file and a back-sides file are needed' },
     });
   });
 });

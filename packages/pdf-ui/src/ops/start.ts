@@ -8,15 +8,16 @@
  */
 
 import { openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
-import { mergeDocuments } from 'pdf-core/ops/compose';
+import { interleaveDocuments, mergeDocuments } from 'pdf-core/ops/compose';
 import {
   type BlankOrientation,
   type BlankPageSize,
   createBlankDocument,
   MAX_BLANK_PAGES,
 } from 'pdf-core/ops/create';
+import type { OperationOutcome } from 'pdf-core/ops/types';
 import { ToolError } from 'pdf-shared';
-import type { OperationDialogSpec } from '../dialogs/types';
+import type { FieldValue, OperationDialogSpec } from '../dialogs/types';
 
 /** A blank document of empty pages (`pdf-core/ops/create.ts`). */
 export const newDocumentDialog: OperationDialogSpec = {
@@ -79,11 +80,30 @@ export const newDocumentDialog: OperationDialogSpec = {
   },
 };
 
+/** A picked PDF with the page count the engine that composes the merge reads from it. */
+async function measure(file: File, signal: AbortSignal) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // The page count comes from the engine that composes the merge, never from a byte
+  // scan (object streams hide `/Type /Page`).
+  const handle = await openWithPdfjs(bytes, { signal });
+  try {
+    return { name: file.name, bytes, pageCount: handle.pageCount };
+  } finally {
+    await handle.destroy();
+  }
+}
+
+const pickedFiles = (value: FieldValue | undefined): readonly File[] =>
+  Array.isArray(value) ? (value as readonly File[]) : [];
+
 /**
- * Several PDFs into one new document, in the order the list shows.
+ * Several PDFs into one new document: in the order the list shows, or — for the two files a
+ * double-sided scan makes — front and back sides alternating.
  *
  * The first file is the base of `mergeDocuments`, so its metadata is the result's and the
- * others are appended after its last page; the operation's own report says what was kept.
+ * others are appended after its last page; the operation's own report says what was kept. The
+ * alternating mode is a mode of this dialog rather than a tool of its own: it asks for the same
+ * kind of files, makes the same kind of result and reports through the same merge.
  */
 export const mergeFilesDialog: OperationDialogSpec = {
   id: 'merge-files',
@@ -94,41 +114,82 @@ export const mergeFilesDialog: OperationDialogSpec = {
   standalone: true,
   fields: [
     {
+      id: 'mode',
+      kind: 'radio',
+      labelKey: 'start.merge.mode',
+      defaultValue: 'append',
+      options: [
+        { value: 'append', labelKey: 'start.merge.mode.append' },
+        { value: 'interleave', labelKey: 'start.merge.mode.interleave' },
+      ],
+    },
+    {
       id: 'files',
       kind: 'files',
       labelKey: 'start.merge.files',
       hintKey: 'start.merge.hint',
       accept: 'application/pdf,.pdf',
       multiple: true,
+      visibleWhen: { field: 'mode', equals: ['append'] },
+    },
+    {
+      id: 'fronts',
+      kind: 'files',
+      labelKey: 'start.merge.fronts',
+      accept: 'application/pdf,.pdf',
+      multiple: false,
+      visibleWhen: { field: 'mode', equals: ['interleave'] },
+    },
+    {
+      id: 'backs',
+      kind: 'files',
+      labelKey: 'start.merge.backs',
+      accept: 'application/pdf,.pdf',
+      multiple: false,
+      visibleWhen: { field: 'mode', equals: ['interleave'] },
+    },
+    {
+      id: 'reverseBacks',
+      kind: 'checkbox',
+      labelKey: 'start.merge.reverse',
+      hintKey: 'start.merge.reverseHint',
+      defaultValue: true,
+      visibleWhen: { field: 'mode', equals: ['interleave'] },
     },
   ],
   run: async (params, context) => {
-    const picked = Array.isArray(params.files) ? (params.files as readonly File[]) : [];
-    const [firstFile, ...otherFiles] = picked;
-    if (firstFile === undefined || otherFiles.length === 0) {
-      throw new ToolError('input-missing', {
-        engine: 'ui',
-        engineMessage: `merge-files: ${picked.length} file(s) picked, two are needed`,
-      });
-    }
-    const measure = async (file: File) => {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      // The page count comes from the engine that composes the merge, never from a byte
-      // scan (object streams hide `/Type /Page`).
-      const handle = await openWithPdfjs(bytes, { signal: context.signal });
-      try {
-        return { name: file.name, bytes, pageCount: handle.pageCount };
-      } finally {
-        await handle.destroy();
+    const run = { signal: context.signal, onProgress: context.onProgress };
+    const interleave = params.mode === 'interleave';
+    let outcome: OperationOutcome;
+    if (interleave) {
+      const [front] = pickedFiles(params.fronts);
+      const [back] = pickedFiles(params.backs);
+      if (front === undefined || back === undefined) {
+        throw new ToolError('input-missing', {
+          engine: 'ui',
+          engineMessage: 'merge-files: a front-sides file and a back-sides file are needed',
+        });
       }
-    };
-    const base = await measure(firstFile);
-    const others = [];
-    for (const file of otherFiles) others.push(await measure(file));
-    const outcome = await mergeDocuments(base, others, base.pageCount - 1, {
-      signal: context.signal,
-      onProgress: context.onProgress,
-    });
+      outcome = await interleaveDocuments(
+        await measure(front, context.signal),
+        await measure(back, context.signal),
+        { reverseBacks: params.reverseBacks === true },
+        run,
+      );
+    } else {
+      const picked = pickedFiles(params.files);
+      const [firstFile, ...otherFiles] = picked;
+      if (firstFile === undefined || otherFiles.length === 0) {
+        throw new ToolError('input-missing', {
+          engine: 'ui',
+          engineMessage: `merge-files: ${picked.length} file(s) picked, two are needed`,
+        });
+      }
+      const base = await measure(firstFile, context.signal);
+      const others = [];
+      for (const file of otherFiles) others.push(await measure(file, context.signal));
+      outcome = await mergeDocuments(base, others, base.pageCount - 1, run);
+    }
     return {
       files: [
         { name: `${context.t('start.merge.name')}.pdf`, bytes: outcome.bytes, mime: 'application/pdf' },

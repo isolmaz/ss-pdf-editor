@@ -41,7 +41,8 @@ export const homePart = {
   'home.tool.imageEdit': 'Sayfadaki bir görseli seçip yerine başka bir görsel koyun; yerleşimi korunur.',
   'home.tool.measure': 'Ölçeği ayarlayın; çevre ve alan da aynı araçla ölçülür.',
   'home.tool.organize': 'Küçük resimlerden sayfaları sürükleyerek sıralayın, döndürün, silin ya da çoğaltın.',
-  'home.tool.merge': 'Birkaç PDF’yi seçtiğiniz sırayla tek dosyada toplayın.',
+  'home.tool.merge':
+    'PDF’leri sırayla ya da çift taraflı taramanın ön ve arka yüzlerini dönüşümlü olarak tek dosyada toplayın.',
   'home.tool.batch': 'Aynı işlemi birçok dosyaya sırayla uygulayın.',
   'home.tool.insert': 'Boş sayfa, görsel ya da başka bir belgeden sayfalar yerleştirin.',
   'home.tool.add': 'Başka bir PDF’nin sayfalarını bu belgeye katın.',
@@ -119,10 +120,17 @@ export const homePart = {
 
   'start.merge.title': 'PDF’leri birleştir',
   'start.merge.intro':
-    'Seçtiğiniz PDF’ler listedeki sırayla tek bir yeni belgede birleşir ve yeni sekmede açılır. Üst veri (Info/XMP) ilk belgeden alınır.',
+    'Seçtiğiniz PDF’ler yeni sekmede tek bir belge olur: art arda ya da ön ve arka yüzler sırayla. Üst veri ilk dosyadan alınır.',
   'start.merge.files': 'PDF dosyaları',
   'start.merge.hint': 'Sırayı oklarla değiştirebilirsiniz; en az iki dosya seçin.',
   'start.merge.name': 'Birleştirilmiş',
+  'start.merge.mode': 'Birleştirme biçimi',
+  'start.merge.mode.append': 'Art arda',
+  'start.merge.mode.interleave': 'Dönüşümlü sayfalar (çift taraflı taramalar)',
+  'start.merge.fronts': 'Ön yüzler (1, 3, 5… sayfalar)',
+  'start.merge.backs': 'Arka yüzler',
+  'start.merge.reverse': 'Arka yüzler ters sırada',
+  'start.merge.reverseHint': 'Deste ikinci tarama için çevrildiğinde genellikle böyledir.',
 
   'dialog.field.moveUp': '{name} dosyasını yukarı taşı',
   'dialog.field.moveDown': '{name} dosyasını aşağı taşı',

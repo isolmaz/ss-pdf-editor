@@ -1051,7 +1051,15 @@ writer does, and the steps it reports:
   `op.note.merge.encryptionDropped` when a document had `/Encrypt`, because the merged file is
   written without any protection, and counts the fully qualified field names used by more than
   one document (`fieldNamesOf`; a field's widget kids without a `/T` of their own belong to
-  it) as `op.note.merge.sharedFields`, because fields with one name share one value;
+  it) as `op.note.merge.sharedFields`, because fields with one name share one value. The
+  front/back merge of a double-sided scan (`interleaveDocuments`) is the same function with a
+  different layout: `mergeWithLayout` takes the engine's entries and the label placements, the
+  append merge asks for one block after a base page (`insertAfter`) and the interleave gives
+  each file explicit `pageIndices` from `planInterleave` (front, back, front, back…; with
+  `reverseBacks` the back of the first sheet is the last page of the backs file; the pages of
+  the longer file with no partner follow, and `op.note.merge.unequalFronts` /
+  `op.note.merge.unequalBacks` warn about them). The front file is the base, so its Info,
+  outline and form carry over and every page keeps its own label;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written, plus the planned page labels) and matched image pages drawn as form XObjects. The
@@ -2488,7 +2496,8 @@ passed from a surface has to be the id the registry declares.
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
 synchronously through `isStandaloneDialog`): a blank document (`new-document`,
 `ops/create.ts`), a PDF from images (`images-to-pdf`), several PDFs merged into a
-new one (`merge-files`, the first file as the base of `mergeDocuments`) and other documents
+new one (`merge-files`, the first file as the base of `mergeDocuments`, or in its alternating
+mode the front-sides file as the base of `interleaveDocuments`) and other documents
 converted to PDF (`convert-to-pdf`, several files converted one by one and merged in order). They run with no
 document open, their context carries no bytes, and their one result opens in a new tab. A
 tab's tools panel is frozen against that tab and dismissed when it changes, so these get a

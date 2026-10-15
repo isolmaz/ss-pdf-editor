@@ -278,6 +278,38 @@ export async function mergeDocuments(
       engineMessage: `insertAfter ${insertAfter} is not a page position`,
     });
   }
+  return mergeWithLayout(
+    base,
+    others,
+    {
+      baseEntry: {},
+      otherEntries: others.map(() => ({ insertAfter })),
+      // `insertAfter` is a 0-based index of the base sequence (`-1` = in front of everything). The
+      // engine turns it into explicit positions; equal values keep the added documents in the
+      // order they were given.
+      placements: planMergePlacements(
+        base.pageCount,
+        others.map((other) => other.pageCount),
+        insertAfter,
+      ),
+    },
+    context,
+  );
+}
+
+/** Where the engine puts the pages of each merged document, and the label plan that mirrors it. */
+interface MergeLayout {
+  readonly baseEntry: { readonly pageIndices?: number[] };
+  readonly otherEntries: readonly ({ readonly insertAfter: number } | { readonly pageIndices: number[] })[];
+  readonly placements: readonly LabelPlacement[];
+}
+
+async function mergeWithLayout(
+  base: { readonly bytes: Uint8Array; readonly pageCount: number },
+  others: readonly { readonly name: string; readonly bytes: Uint8Array; readonly pageCount: number }[],
+  layout: MergeLayout,
+  context: OperationContext,
+): Promise<OperationOutcome> {
   const pageCount = base.pageCount + others.reduce((sum, other) => sum + other.pageCount, 0);
   if (pageCount === 0) {
     throw new ToolError('selection-empty', { engine: 'model', engineMessage: 'nothing to merge' });
@@ -294,14 +326,11 @@ export async function mergeDocuments(
     throwIfAborted(context.signal);
 
     const entries = [
-      { document: null, includePages: everyPage(base.pageCount) },
-      // `insertAfter` is a 0-based index of the base sequence (`-1` = in front of
-      // everything). The engine turns it into explicit positions; equal values
-      // keep the added documents in the order they were given.
-      ...others.map((other) => ({
+      { document: null, includePages: everyPage(base.pageCount), ...layout.baseEntry },
+      ...others.map((other, index) => ({
         document: other.bytes.slice(),
         includePages: everyPage(other.pageCount),
-        insertAfter,
+        ...(layout.otherEntries[index] as MergeLayout['otherEntries'][number]),
       })),
     ];
     const produced = await handle.raw.extractPages(entries);
@@ -315,14 +344,7 @@ export async function mergeDocuments(
     // Read once the engine has accepted every source: it needs only the sources' bytes and
     // the layout the engine was asked for, and a document pdf.js refuses keeps its own error.
     const inputs = await readMergeInputs([base.bytes, ...others.map((other) => other.bytes)], context);
-    const labels = composeLabelRanges(
-      inputs.labelRanges,
-      planMergePlacements(
-        base.pageCount,
-        others.map((other) => other.pageCount),
-        insertAfter,
-      ),
-    );
+    const labels = composeLabelRanges(inputs.labelRanges, layout.placements);
     const baseMetadata = await readBaseMetadata(handle);
     const { mupdf, doc: document } = await openForWrite(produced);
     let bytes: Uint8Array;
@@ -392,6 +414,71 @@ export async function mergeDocuments(
   } finally {
     await handle.destroy();
   }
+}
+
+export interface InterleavePlan {
+  /** The output position of each page of the front-sides file, by page. */
+  readonly fronts: number[];
+  /** The output position of each page of the back-sides file, by page. */
+  readonly backs: number[];
+}
+
+/**
+ * Front, back, front, back… for the sheets of a double-sided scan. The pages of the longer
+ * file that have no partner follow the pairs, in sheet order. With `reverseBacks` the back
+ * of the first sheet is the last page of the backs file (a stack turned over for the second
+ * pass is read from its far end).
+ */
+export function planInterleave(frontCount: number, backCount: number, reverseBacks: boolean): InterleavePlan {
+  const pairs = Math.min(frontCount, backCount);
+  const place = (sheet: number, offset: number) => (sheet < pairs ? 2 * sheet + offset : pairs + sheet);
+  return {
+    fronts: Array.from({ length: frontCount }, (_unused, sheet) => place(sheet, 0)),
+    backs: Array.from({ length: backCount }, (_unused, page) =>
+      place(reverseBacks ? backCount - 1 - page : page, 1),
+    ),
+  };
+}
+
+/**
+ * Merge a file of front sides with a file of back sides into one document that alternates
+ * them (`planInterleave`). It is the merge above with the engine's explicit page positions
+ * instead of one block: the front-sides file is the base, so its metadata, outline and form
+ * come through and each page keeps its own label.
+ */
+export async function interleaveDocuments(
+  fronts: { readonly name: string; readonly bytes: Uint8Array; readonly pageCount: number },
+  backs: { readonly name: string; readonly bytes: Uint8Array; readonly pageCount: number },
+  options: { readonly reverseBacks: boolean },
+  context: OperationContext,
+): Promise<OperationOutcome> {
+  throwIfAborted(context.signal);
+  const plan = planInterleave(fronts.pageCount, backs.pageCount, options.reverseBacks);
+  const outcome = await mergeWithLayout(
+    fronts,
+    [backs],
+    {
+      baseEntry: { pageIndices: plan.fronts },
+      otherEntries: [{ pageIndices: plan.backs }],
+      placements: [
+        ...plan.fronts.map((position, page): LabelPlacement => ({ source: 0, page, position })),
+        ...plan.backs.map((position, page): LabelPlacement => ({ source: 1, page, position })),
+      ],
+    },
+    context,
+  );
+  const notes: OperationNote[] = [
+    note('changed', 'op.note.merge.interleaved', { fronts: fronts.pageCount, backs: backs.pageCount }),
+  ];
+  if (options.reverseBacks) notes.push(note('changed', 'op.note.merge.backsReversed'));
+  if (fronts.pageCount !== backs.pageCount) {
+    notes.push(
+      fronts.pageCount > backs.pageCount
+        ? note('warning', 'op.note.merge.unequalFronts', { count: fronts.pageCount - backs.pageCount })
+        : note('warning', 'op.note.merge.unequalBacks', { count: backs.pageCount - fronts.pageCount }),
+    );
+  }
+  return { bytes: outcome.bytes, report: { ...outcome.report, notes: [...outcome.report.notes, ...notes] } };
 }
 
 /** What a merge reads from its input documents, in one parse of each. */

@@ -208,6 +208,8 @@ const PLAIN_CHANGES: ReadonlySet<string> = new Set([
   'op.note.image.opacityWrapped',
   'op.note.image.replaced',
   'op.note.images.exif',
+  'op.note.merge.backsReversed',
+  'op.note.merge.interleaved',
   'op.note.merge.labels',
   'op.note.metadata.xmpCreated',
   'op.note.pdfa.appearancesDrawn',
