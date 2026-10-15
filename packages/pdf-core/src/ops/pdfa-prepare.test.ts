@@ -410,13 +410,15 @@ describe('prepareForPdfA on a file with everything PDF/A forbids', () => {
   });
 
   it('stops with the flattener’s error when a filled field cannot be flattened, instead of dropping its widget', async () => {
-    // The appearance stream has an empty box: the flattener refuses it. Before, the error was
-    // swallowed and the page's widget, with the typed value, was removed and called a button.
+    // The checked box's on-state appearance has an empty box: the flattener refuses it. Before,
+    // the error was swallowed and the page's widget, with its state, was removed and called a
+    // button. (A text field under an empty appearance is no longer such a case: the flattener
+    // draws its value again, see the field whose value sat under an empty appearance above.)
     const bytes = formPdf({
       fields: '[10 0 R]',
       annots: '[10 0 R]',
       extra: {
-        10: widgetBody('10 10 50 30', '/FT/Tx/T(t)/V(typed value)/AP<</N 60 0 R>>'),
+        10: widgetBody('10 10 50 30', '/FT/Btn/T(t)/V/Yes/AS/Yes/AP<</N<</Yes 60 0 R>>>>'),
         60: blankForm(0, 0),
       },
     });
