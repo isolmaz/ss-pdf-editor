@@ -28,7 +28,8 @@ export const repairDialog: OperationDialogSpec = {
     },
   ],
   run: async (params, context) => {
-    const [file] = Array.isArray(params.file) ? (params.file as readonly File[]) : [];
+    // The files field always hands over a list, an empty one when nothing was picked.
+    const [file] = params.file as readonly File[];
     if (file === undefined) {
       throw new ToolError('input-missing', { engine: 'ui', engineMessage: 'repair: no file was picked' });
     }

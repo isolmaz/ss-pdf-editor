@@ -32,6 +32,22 @@ function pages(count: number): Uint8Array {
   return bytes;
 }
 
+/** A file MuPDF opens but cannot count the pages of: its page tree claims five pages and lists none. */
+function uncountable(): Uint8Array {
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [] /Count 5 >>'];
+  let text = '%PDF-1.7\n';
+  const offsets: number[] = [];
+  for (const [index, body] of objects.entries()) {
+    offsets.push(text.length);
+    text += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  }
+  const xref = text.length;
+  text += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) text += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  text += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(text);
+}
+
 afterEach(() => {
   written.bytes = null;
 });
@@ -44,6 +60,13 @@ describe('repairDocument reads its output back', () => {
       details: {
         engineMessage: 'the repaired file has 1 pages (1 in the viewer) and opens as it is, expected 3',
       },
+    });
+  });
+
+  it('reports a written file whose pages cannot be counted as a failed read-back, keeping the cause', async () => {
+    written.bytes = uncountable();
+    await expect(repairDocument(pages(3), run)).rejects.toMatchObject({
+      details: { engineMessage: expect.stringContaining('Invalid number of pages') },
     });
   });
 
