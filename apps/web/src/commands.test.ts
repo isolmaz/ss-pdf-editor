@@ -147,6 +147,9 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'page.insert': dialog('insert-pages'),
   'page.replace': dialog('replace-pages'),
   'page.split': dialog('split'),
+  'page.reverse': ['pageAction', { kind: 'reverse' }],
+  'page.remove-blank': dialog('remove-blank-pages'),
+  'page.split-two-up': dialog('split-two-up'),
   'page.boxes': dialog('page-boxes'),
   'page.labels': dialog('page-labels'),
   'tools.numbering': dialog('page-numbers'),
@@ -429,6 +432,9 @@ describe('buildCommands', () => {
       'page.delete',
       'page.extract',
       'page.replace',
+      'page.reverse',
+      'page.remove-blank',
+      'page.split-two-up',
     ];
     const unselected = buildCommands(recordingHost({ selectedPages: [] }).host);
     for (const id of ids) {

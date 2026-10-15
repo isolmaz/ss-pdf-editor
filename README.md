@@ -43,7 +43,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
-| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
@@ -265,6 +265,19 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Merging several files builds a new document in the order you set; its metadata comes
     from the first file, and the report says so.
   - Outlines, form fields and page labels travel with the pages.
+  - *Reverse page order* flips the whole document, or the selected pages among the places they
+    hold when two or more are selected. It is one journaled step, undone like any page action.
+  - *Remove blank pages* looks for pages with nothing on them and shows their count and
+    numbers in the report before anything is removed. A page is kept when it has an
+    annotation or form field, any letter or digit of text (visible or not), or more than a
+    speck of ink in a small grey render; a scanned sheet with a little noise still counts as
+    blank. When no page is blank it says so and changes nothing, and it never removes every
+    page.
+  - *Split two-up scans* cuts each landscape page in scope into a left and a right page. The
+    halves are windows onto the same page content (new media and crop boxes, rotation
+    honoured), so nothing is redrawn or re-encoded and the file does not grow by a second
+    copy of the scan. Pages that are not landscape, and pages with annotations or form fields,
+    stay whole and the report names them. Page labels follow their source page.
   - The Pages panel selects by click, `Ctrl`, `Shift` or the keyboard. It moves the
     selection with `Alt` or `Ctrl` plus the arrow keys, the up and down buttons, the *Move
     to* field or drag and drop, and its toolbar rotates, duplicates, deletes and extracts.

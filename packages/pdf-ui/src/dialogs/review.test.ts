@@ -145,6 +145,7 @@ const PLAIN_CHANGES: ReadonlySet<string> = new Set([
   'redact.markCount',
   'replace.note.replaced',
   'split.done',
+  'tidy.split.done',
   'xfa.note.dataSaved',
   'xfa.note.flattened',
   'xfa.note.imported',
