@@ -1,7 +1,6 @@
 /** Prepare form: find the fields of a flat PDF and create them (`pdf-core/ops/form-detect.ts`). */
 
 export const formDetectPart = {
-  'formDetect.title': 'Detect form fields',
   'cmd.formDetect.label': 'Detect form fields…',
   'home.tool.formDetect':
     'Find the lines, boxes and tick squares of a flat form and turn them into real form fields.',
@@ -19,7 +18,6 @@ export const formDetectPart = {
   'formDetect.panel.cancel': 'Cancel',
   'formDetect.panel.again': 'Detect again',
   'formDetect.panel.list': 'Detected fields',
-  'formDetect.panel.removedCount': '{count} fields removed.',
   'formDetect.panel.restore': 'Bring removed fields back',
   'formDetect.panel.nothingLeft': 'No fields left to add.',
   'formDetect.remove': 'Remove the field {name}',
@@ -36,7 +34,6 @@ export const formDetectPart = {
   'formDetect.already': '{count} place(s) skipped because a form field is already there.',
   'formDetect.truncated': 'There are too many candidates; the first {count} are listed.',
   'formDetect.done': '{count} form fields added.',
-  'formDetect.stale': 'The document changed; detect the fields again.',
   'formDetect.source.line': 'line',
   'formDetect.source.blank': 'dotted or underscored blank',
   'formDetect.source.box': 'box',

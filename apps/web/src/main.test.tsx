@@ -14,7 +14,7 @@ const outside = vi.hoisted(() => ({
   loadEditor: vi.fn(),
   initServiceWorkerUpdates: vi.fn(),
 }));
-vi.mock('pdf-core', () => ({ warmPdfjs: outside.warmPdfjs }));
+vi.mock('pdf-core/engines/pdfjs-handle', () => ({ warmPdfjs: outside.warmPdfjs }));
 vi.mock('pdf-shared', async (importOriginal) => ({
   ...(await importOriginal<typeof PdfShared>()),
   loadLocale: outside.loadLocale,

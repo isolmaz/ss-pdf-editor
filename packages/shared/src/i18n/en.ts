@@ -284,8 +284,6 @@ export const en: Record<MessageKey, string> = {
   'tools.snapshotDownload': 'Download PNG',
   'tools.snapshotSaved': 'Snapshot saved: {name}',
   'tools.magnifier': 'Magnifier',
-  'tools.present': 'Presentation mode',
-  'tools.presentExit': 'Exit presentation',
   'close.title': 'Close "{name}"?',
   'close.body': 'You have unsaved changes. Do you want to save before closing?',
   'close.exportHint': 'This document has no file handle. Export to download a copy, or close without saving.',

@@ -1,4 +1,4 @@
-import { warmPdfjs } from 'pdf-core';
+import { warmPdfjs } from 'pdf-core/engines/pdfjs-handle';
 import { SessionStore } from 'pdf-model';
 import { loadLocale } from 'pdf-shared';
 import { getStoredLocale } from 'pdf-ui/ui';

@@ -16,8 +16,8 @@ import './tools.css';
  * works in-page — the same capability contract the File System Access split
  * follows.
  *
- * Nothing here renders: the caller draws the toggle with `tools.present` /
- * `tools.presentExit`. Everything that changes what the document shows goes
+ * Nothing here renders: the caller draws the toggle (the status bar's full-screen
+ * control, `nav.fullscreen`). Everything that changes what the document shows goes
  * through `ViewerApi` (`setSpreadMode`, `setZoom`, `goToPage`) — no pdf.js calls
  * and no second source of document state.
  *

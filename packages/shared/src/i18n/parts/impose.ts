@@ -35,6 +35,5 @@ export const imposePart = {
     'Yatay sayfaları hücreye sığdırmak için 90° döndürür; kapatılırsa sayfa küçültülerek yerleştirilir.',
   'impose.rows': 'Satır',
   'impose.columns': 'Sütun',
-  'impose.preview': '{sheets} yaprak, yaprakta {perSheet} sayfa',
   'impose.done': '{sheets} yaprak üretildi.',
 } as const;

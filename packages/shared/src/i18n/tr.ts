@@ -298,8 +298,6 @@ export const tr = {
   'tools.snapshotDownload': 'PNG indir',
   'tools.snapshotSaved': 'Görüntü kaydedildi: {name}',
   'tools.magnifier': 'Büyüteç',
-  'tools.present': 'Sunum modu',
-  'tools.presentExit': 'Sunumdan çık',
   'lang.select': 'Dil',
 
   // Tools Rail

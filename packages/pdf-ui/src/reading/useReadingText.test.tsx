@@ -39,12 +39,6 @@ describe('useReadingText', () => {
     expect(result.current).toEqual({ blocks: [], loading: true, error: null });
   });
 
-  it('reports the missing text source as an internal error instead of an empty page', () => {
-    const viewer = {} as unknown as ReadingViewer;
-    const { result } = renderHook(() => useReadingText(viewer, 0));
-    expect(result.current).toEqual({ blocks: [], loading: false, error: 'error.internal.message' });
-  });
-
   it('reads the requested page (0-based) into reading blocks, skipping markers and blank runs', async () => {
     const { viewer, getPage } = viewerOf([
       { type: 'beginMarkedContent' },

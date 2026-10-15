@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => ({
   editableOverlays: vi.fn(),
   pendingOverlays: vi.fn(),
   materializeBase: vi.fn(),
-  hasEngineEdits: vi.fn(),
   verifyForWrite: vi.fn(),
   inspectProtection: vi.fn(),
   verifySignatures: vi.fn(),
@@ -40,7 +39,6 @@ vi.mock('../marks/overlays', () => ({ editableOverlays: mocks.editableOverlays }
 vi.mock('../../operations', () => ({
   pendingOverlays: mocks.pendingOverlays,
   materializeBase: mocks.materializeBase,
-  hasEngineEdits: mocks.hasEngineEdits,
   verifyForWrite: mocks.verifyForWrite,
 }));
 vi.mock('../../lazy-ops', () => ({
@@ -86,7 +84,6 @@ beforeEach(() => {
     steps.push({ id: 'pdfjs.saveDocument' });
     return base;
   });
-  mocks.hasEngineEdits.mockReturnValue(true);
   mocks.inspectProtection.mockResolvedValue({ encrypted: false });
   mocks.planSaveExecution.mockReturnValue(execution);
   mocks.appliedVersionBytes.mockReturnValue(null);
@@ -194,8 +191,6 @@ describe('prepareOutput: the checked output', () => {
     );
     expect(mocks.planSaveExecution).toHaveBeenCalledWith({
       tab: session.active,
-      engineDirty: true,
-      annotations: ['mark'],
       baseBytes: base,
       encryptedOutput: false,
       executedSteps: steps,

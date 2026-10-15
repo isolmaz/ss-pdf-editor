@@ -62,7 +62,4 @@ export const auditPart = {
   'audit.notice.terms': 'Karartma denetimi {count} terim üzerinde çalıştı; sonuç panelde.',
   'audit.notice.residual':
     'Karartma denetimi {count} bulgu bildirdi: silinen metin dosyada kalmış olabilir. Sonuç panelde.',
-
-  /* progress: the find that fills the mark list before an audit exists */
-  'op.progress.redact.find': 'Metin aranıyor',
 } as const;

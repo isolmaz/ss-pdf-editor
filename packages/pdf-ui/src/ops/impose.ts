@@ -13,8 +13,8 @@
  * document that would produce thousands of sheets is a mistake worth reading
  * rather than a job to start. A *live* count while typing is not expressible in
  * the frozen spec (`OperationDialogSpec` has no preview member and
- * `dialogs/fields.tsx` renders static values); `impose.preview` is therefore
- * unused until the framework grows a preview hook.
+ * `dialogs/fields.tsx` renders static values), so the count is reported once the
+ * run finishes (`impose.done`).
  */
 
 import {

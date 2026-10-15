@@ -37,6 +37,4 @@ export const batchPart = {
   'batch.report.cancelled': 'Çalıştırma iptal edildi. Tamamlanan dosyalar: {names}',
   'batch.report.summary': '{completed} tamamlandı, {failed} başarısız, {skipped} atlandı',
   'batch.error.queue': 'Adım ayarları okunamadı.',
-  'batch.error.steps': 'En az bir adım işaretleyin.',
-  'batch.error.template': 'Kural kümesi dosyası okunamadı.',
 } as const;

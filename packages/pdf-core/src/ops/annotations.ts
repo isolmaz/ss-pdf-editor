@@ -575,15 +575,13 @@ export function taggedContents(mark: AnnotationMark): string {
  * resulting annotation to `ops/annotation-transform`, which turns the geometry and
  * the appearance together.
  */
-export function storageEntriesFor(
-  mark: AnnotationMark,
-  pageHeight: number,
-  pageRotation = 0,
-): StorageEntry[] {
+export function storageEntriesFor(mark: AnnotationMark, pageHeight: number): StorageEntry[] {
   const base = {
     id: mark.id,
     pageIndex: mark.pageIndex,
-    rotation: pageRotation,
+    // The entry is the unturned copy (see above): the page's own rotation is applied by
+    // `ops/annotation-transform` afterwards, never by the engine's storage entry.
+    rotation: 0,
     color: hexToRgb(mark.color).map((channel) => Math.round(channel * 255)),
     opacity: mark.opacity,
     contents: taggedContents(mark),

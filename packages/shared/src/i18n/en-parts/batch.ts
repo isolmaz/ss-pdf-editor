@@ -24,6 +24,4 @@ export const batchPart = {
   'batch.report.cancelled': 'Batch cancelled. Completed files: {names}',
   'batch.report.summary': '{completed} completed, {failed} failed, {skipped} skipped',
   'batch.error.queue': 'Could not read step settings.',
-  'batch.error.steps': 'Select at least one step.',
-  'batch.error.template': 'Could not read ruleset file.',
 } as const;

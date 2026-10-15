@@ -31,6 +31,5 @@ export const imposePart = {
     'Rotates landscape pages 90° to fit cell; if disabled, pages are scaled down to fit without rotation.',
   'impose.rows': 'Rows',
   'impose.columns': 'Columns',
-  'impose.preview': '{sheets} sheet(s), {perSheet} page(s) per sheet',
   'impose.done': '{sheets} sheet(s) produced.',
 } as const;

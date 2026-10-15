@@ -8,7 +8,6 @@ export const convertPart = {
   'convert.pageSize': 'Page size',
   'convert.margin': 'Margin (mm)',
   'convert.command': 'Convert a document to PDF (Word, Excel, PowerPoint…)',
-  'convert.converting': 'Converting {name} to PDF…',
   'convert.opened': 'The {format} file was converted to PDF and opened in a new tab.',
   'convert.unsupported':
     '{kind} files cannot be converted. Supported formats: DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. Save the file in one of them and try again.',

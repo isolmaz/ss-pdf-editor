@@ -427,8 +427,7 @@ export function PagesPanel({
               shape="square"
               variant="secondary-destructive"
               icon={Trash}
-              // Deleting the last remaining pages is refused by the app
-              // (`pages.delete.lastPage`), so the button never offers it.
+              // Deleting every page would leave no document, so the button never offers it.
               disabled={!editing || selection.length >= pageCount}
               aria-label={t('pages.delete')}
               title={t('pages.delete')}

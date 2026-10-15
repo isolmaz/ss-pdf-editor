@@ -1,5 +1,5 @@
 /**
- * Pages built in a test for the redaction tests (`redact.test.ts`, `redact-find.test.ts`):
+ * Pages built in a test for the redaction tests (`redact.test.ts`):
  * Helvetica lines on 400×500 pages, annotations and form fields hand-built onto them, and readers for
  * what the engine extracts back and for what the produced file still holds.
  */

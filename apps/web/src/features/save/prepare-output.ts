@@ -9,13 +9,7 @@ import type { ProtectionState } from 'pdf-core/ops/security';
 import { type SessionStore, type SessionTab, sha256Hex, workingPageCount } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import { inspectProtection, verifySignatures } from '../../lazy-ops';
-import {
-  hasEngineEdits,
-  materializeBase,
-  pendingOverlays,
-  verifyForWrite,
-  type WriteVerification,
-} from '../../operations';
+import { materializeBase, pendingOverlays, verifyForWrite, type WriteVerification } from '../../operations';
 import {
   appliedVersionBytes,
   signatureWarning as decideSignatureWarning,
@@ -97,8 +91,6 @@ export async function prepareOutput(
 
   const execution = planSaveExecution({
     tab,
-    engineDirty: hasEngineEdits(handle),
-    annotations: editableOverlays(tab).annotations,
     baseBytes: base,
     encryptedOutput: outputProtection.encrypted,
     executedSteps,

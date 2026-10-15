@@ -12,7 +12,6 @@ export const pagesPart = {
   'pages.rotate.done': '{count} page(s) rotated.',
   'pages.delete': 'Delete pages',
   'pages.delete.done': '{count} page(s) deleted.',
-  'pages.delete.lastPage': 'Cannot delete all pages of a document.',
   'pages.duplicate': 'Duplicate pages',
   'pages.duplicate.done': '{count} page(s) duplicated.',
   'pages.extract.title': 'Extract Pages',

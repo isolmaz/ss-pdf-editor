@@ -1,27 +1,25 @@
 /**
  * Batch processing: many documents, one ordered rule set, one report.
  *
- * A batch is **not** a second engine and **not** a second save router. Every step
+ * A batch is **not** a second engine and **not** a second save path. Every step
  * of a rule set names an operation this repository already ships (`ops/metadata`,
  * `ops/compress`, `ops/stamp`, `ops/page-labels`, `ops/ocr`, `ops/security`,
  * `ops/image-edit`, `ops/image-opacity`, `ops/text-export`, and the page
  * composition of `ops/compose`), and the runner calls those functions in the
- * order the dependency rules of `pdf-model/src/save-router.ts` require. Nothing
- * here re-implements a writer; the module exists to answer three questions the
- * operations cannot answer on their own:
+ * dependency order `STEP_PHASE` below spells out. Nothing here re-implements a
+ * writer; the module exists to answer three questions the operations cannot
+ * answer on their own:
  *
- *  1. **In what order?** `planSave` orders the steps of *one* save so that a
- *     rewrite cannot undo what a later step added: metadata after the final
- *     rewrite (`metadata-write`), encryption last (`qpdf-encrypt`), page
- *     composition before anything is drawn into the pages. A rule set is the
- *     same problem one level up — a list of saves — so it is ordered by the same
- *     rule (`STEP_PHASE`), and a run whose executed order differs from the
- *     declared order says so in its report instead of quietly reshuffling.
- *  2. **Which path?** The two save paths stay the two paths:
- *     operations that only touch metadata, overlays or image streams run on the
- *     bytes and hand bytes back (the MuPDF writer path), while a step
- *     that changes the *page set* goes through `openWithPdfjs` +
- *     `composeDocument` — the `pdfjs-extract-pages` path `ops/split.ts` and
+ *  1. **In what order?** The steps of one run depend on each other: a rewrite
+ *     can undo what an earlier step added, so metadata goes after the final
+ *     rewrite, encryption goes last, and page composition goes before anything
+ *     is drawn into the pages. The rule set is ordered by that rule
+ *     (`STEP_PHASE`), and a run whose executed order differs from the declared
+ *     order says so in its report instead of quietly reshuffling.
+ *  2. **Which path?** Operations that only touch metadata, overlays or image
+ *     streams run on the bytes and hand bytes back (the MuPDF writer path),
+ *     while a step that changes the *page set* goes through `openWithPdfjs` +
+ *     `composeDocument` — the pdf.js `extractPages` route `ops/split.ts` and
  *     `apps/web/src/operations.ts` already use for a page composition. There is
  *     no third route and no batch-local composition.
  *  3. **What happens when one file fails?** A dropped or encrypted file in a
@@ -391,7 +389,7 @@ function walkParams(value: unknown, path: string): void {
 }
 
 /* ------------------------------------------------------------------ *
- * Dependency order — `planSave`'s rule, one level up
+ * Dependency order
  * ------------------------------------------------------------------ */
 
 /**
@@ -399,20 +397,19 @@ function walkParams(value: unknown, path: string): void {
  * declared order is preserved inside a phase, so a rule set whose author already
  * wrote it in dependency order is executed exactly as written.
  *
- * The numbers are `save-router.ts`'s dependencies spelled out:
+ * The numbers are the dependencies between the steps:
  *  - `1` page composition first: everything below draws into, labels or exports
- *    the pages the composition leaves (`pdfjs-extract-pages`);
+ *    the pages the composition leaves;
  *  - `2` compression: a raster run re-renders the pages, so a text layer or an
  *    overlay added before it would be the thing it removes;
  *  - `3` OCR adds that text layer to the final page set;
  *  - `4` page labels: a MuPDF full save, which normalises the catalog and Info;
- *  - `5` the overlay writers (stamp, header/footer, Bates, images) — `writer-steps`;
- *  - `6` metadata after the final rewrite, so Info and XMP survive it
- *    (`metadata-write`);
+ *  - `5` the overlay writers (stamp, header/footer, Bates, images);
+ *  - `6` metadata after the final rewrite, so Info and XMP survive it;
  *  - `7` the read-only steps: the text export reads the finished bytes, and must
  *    read them before encryption makes them unreadable for every plain-bytes engine;
- *  - `8` encryption last (`qpdf-encrypt`), because pdf.js and MuPDF can only act
- *    on a decrypted document.
+ *  - `8` encryption last, because pdf.js and MuPDF can only act on a decrypted
+ *    document.
  */
 const STEP_PHASE: Readonly<Record<BatchStepKind, number>> = {
   pages: 1,
