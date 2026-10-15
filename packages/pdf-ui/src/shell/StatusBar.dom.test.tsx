@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 /**
- * The status bar states where the user is (page, zoom), which limit profile applies, what
- * the memory budget looks like, whether the session is sensitive, which limit the document
- * hit and what its signatures amount to — each as words, with nothing implied.
+ * The status bar states where the user is (page, zoom), which limit profile applies and what
+ * the memory budget looks like (both only when they matter), whether the session is sensitive,
+ * which limit the document hit and what its signatures amount to — each as words, with nothing
+ * implied.
  */
 
 import { cleanup, render, screen, within } from '@testing-library/react';
@@ -47,6 +48,10 @@ function show(overrides: Partial<StatusBarProps> = {}) {
 
 const bar = () => screen.getByRole('contentinfo');
 
+/** A verdict that makes the diagnostics matter, so a test of the badge or the meter sees them. */
+const WARN: LimitVerdict = { kind: 'warn', reason: 'pages' };
+const MB = 1024 * 1024;
+
 describe('StatusBar page and zoom', () => {
   it('reads the page as "Page 3 of 10" and the zoom as a rounded percentage', () => {
     show({ zoom: 1.256 });
@@ -86,14 +91,30 @@ describe('StatusBar page and zoom', () => {
 });
 
 describe('StatusBar limit profile', () => {
-  it('names the desktop profile with its hint', () => {
+  it('is left out while the limits are fine and memory has room', () => {
+    show({ tier: 'mobile', memoryUsage: { usedBytes: 74 * MB, budgetBytes: 100 * MB } });
+    expect(within(bar()).queryByText('Mobile limits')).toBeNull();
+    cleanup();
     show({ tier: 'desktop' });
+    expect(within(bar()).queryByText('Desktop limits')).toBeNull();
+  });
+
+  it('appears with the verdict that makes the profile matter, and with memory at 75 % of the budget', () => {
+    show({ tier: 'mobile', limits: { kind: 'viewing-only', reason: 'pages' } });
+    expect(within(bar()).getByText('Mobile limits')).toBeTruthy();
+    cleanup();
+    show({ tier: 'mobile', memoryUsage: { usedBytes: 75 * MB, budgetBytes: 100 * MB } });
+    expect(within(bar()).getByText('Mobile limits')).toBeTruthy();
+  });
+
+  it('names the desktop profile with its hint', () => {
+    show({ tier: 'desktop', limits: WARN });
     const badge = within(bar()).getByText('Desktop limits');
     expect(badge.parentElement?.getAttribute('title')).toBe(t('shell.deviceTier.desktopHint'));
   });
 
   it('names the mobile profile with its hint', () => {
-    show({ tier: 'mobile' });
+    show({ tier: 'mobile', limits: WARN });
     const badge = within(bar()).getByText('Mobile limits');
     expect(badge.parentElement?.getAttribute('title')).toBe(t('shell.deviceTier.mobileHint'));
   });
@@ -150,22 +171,36 @@ describe('StatusBar signatures', () => {
 describe('StatusBar memory meter', () => {
   const meter = () => bar().querySelector('[title^="Memory:"]') as HTMLElement;
   const fill = () => meter().querySelector('[style]') as HTMLElement;
-  const MB = 1024 * 1024;
 
   it('is absent without a memory reading', () => {
-    show();
+    show({ limits: WARN });
     expect(bar().querySelector('[title^="Memory:"]')).toBeNull();
   });
 
+  it('is left out while the limits are fine and less than 75 % of the budget is used', () => {
+    show({ memoryUsage: { usedBytes: 74 * MB, budgetBytes: 100 * MB } });
+    expect(bar().querySelector('[title^="Memory:"]')).toBeNull();
+    expect(bar().textContent).not.toContain('MB / 100.0 MB');
+  });
+
+  it('shows at 75 % of the budget even when the limits are fine', () => {
+    show({ memoryUsage: { usedBytes: 75 * MB, budgetBytes: 100 * MB } });
+    expect(meter().getAttribute('title')).toBe('Memory: 75.0 MB / 100.0 MB (75%)');
+  });
+
   it('reads kilobytes below a megabyte and megabytes above, with the used share as a percentage', () => {
-    show({ memoryUsage: { usedBytes: 512 * 1024, budgetBytes: 2 * MB } });
+    show({ limits: WARN, memoryUsage: { usedBytes: 512 * 1024, budgetBytes: 2 * MB } });
     expect(meter().getAttribute('title')).toBe('Memory: 512.0 KB / 2.0 MB (25%)');
     expect(within(meter()).getByText('512.0 KB / 2.0 MB')).toBeTruthy();
     expect(fill().style.width).toBe('25%');
   });
 
   it('writes sizes with a decimal comma and the share with the sign first in Turkish', () => {
-    show({ t: createTranslator('tr'), memoryUsage: { usedBytes: 1.5 * MB, budgetBytes: 6 * MB } });
+    show({
+      t: createTranslator('tr'),
+      limits: WARN,
+      memoryUsage: { usedBytes: 1.5 * MB, budgetBytes: 6 * MB },
+    });
     const turkish = bar().querySelector('[title^="Bellek:"]') as HTMLElement;
     expect(turkish.getAttribute('title')).toBe('Bellek: 1,5 MB / 6,0 MB (%25)');
     expect(within(turkish).getByText('1,5 MB / 6,0 MB')).toBeTruthy();
@@ -178,13 +213,13 @@ describe('StatusBar memory meter', () => {
     [0.9, 'bg-kumo-danger'],
     [1.5, 'bg-kumo-danger'],
   ])('fills at %s of the budget with %s', (ratio, tone) => {
-    show({ memoryUsage: { usedBytes: ratio * 100 * MB, budgetBytes: 100 * MB } });
+    show({ limits: WARN, memoryUsage: { usedBytes: ratio * 100 * MB, budgetBytes: 100 * MB } });
     expect(fill().className).toContain(tone);
     expect(fill().style.width).toBe(`${Math.min(100, Math.round(ratio * 100))}%`);
   });
 
   it('shows an empty bar for a budget of zero instead of dividing by it', () => {
-    show({ memoryUsage: { usedBytes: 5 * MB, budgetBytes: 0 } });
+    show({ limits: WARN, memoryUsage: { usedBytes: 5 * MB, budgetBytes: 0 } });
     expect(meter().getAttribute('title')).toBe('Memory: 5.0 MB / 0 B (0%)');
     expect(fill().style.width).toBe('0%');
     expect(fill().className).toContain('bg-pdf-accent');

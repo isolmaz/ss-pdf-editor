@@ -157,7 +157,6 @@ export const en: Record<MessageKey, string> = {
   'shell.commandPaletteHint': 'Search commands (Ctrl+K)',
   'shell.commandPaletteShort': 'Search',
   'shell.backToDocument': 'Back to document',
-  'shell.homeTagline': '— Your document never leaves your device, 100% local and secure.',
   'shell.status.memory': 'Memory',
   'shell.deviceTier.desktop': 'Desktop limits',
   'shell.deviceTier.mobile': 'Mobile limits',

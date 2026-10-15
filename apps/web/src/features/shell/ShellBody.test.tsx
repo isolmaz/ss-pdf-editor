@@ -57,7 +57,6 @@ vi.mock('../../components/HomeScreen', async () => {
         button('open files', () =>
           (props.onOpenFiles as (files: File[]) => void)([new File(['x'], 'x.pdf')]),
         ),
-        button('open picker', props.onOpenPicker as () => void),
         button('start blank', () => onStart('blank')),
         button('start images', () => onStart('images')),
         button('start convert', () => onStart('convert')),
@@ -66,7 +65,6 @@ vi.mock('../../components/HomeScreen', async () => {
         button('start scan', () => onStart('scan')),
         button('run command', () => (props.onRunCommand as (id: string) => void)('file.new')),
         button('select recent', () => (props.onSelectRecent as (item: unknown) => void)({ id: 'recent-1' })),
-        button('open palette', props.onOpenPalette as () => void),
       );
     },
   };
@@ -189,7 +187,7 @@ let tabIds: string[];
 let props: {
   runHomeCommand: Mock;
   dialogContext: ShellBodyProps['dialogContext'];
-  home: { openFilesFromSurface: Mock; openViaPicker: Mock; openStart: Mock; selectRecent: Mock };
+  home: { openFilesFromSurface: Mock; openStart: Mock; selectRecent: Mock };
   dock: Record<string, unknown>;
   viewer: Record<string, unknown>;
   right: Record<string, unknown>;
@@ -244,7 +242,6 @@ beforeEach(() => {
     dialogContext: { name: 'ctx' } as never,
     home: {
       openFilesFromSurface: vi.fn(async () => undefined),
-      openViaPicker: vi.fn(async () => undefined),
       openStart: vi.fn(),
       selectRecent: vi.fn(),
     },
@@ -291,21 +288,17 @@ describe('ShellBody home screen', () => {
     expect(screen.getByLabelText('home screen').dataset.busy).toBe('true');
   });
 
-  it('opens dropped files, the picker, a recent document and the palette through the shell', async () => {
+  it('opens dropped files and a recent document through the shell', async () => {
     renderBody();
     await userEvent.click(screen.getByRole('button', { name: 'open files' }));
     expect(props.home.openFilesFromSurface).toHaveBeenCalledTimes(1);
     expect(props.home.openFilesFromSurface.mock.calls).toEqual([
       [[expect.objectContaining({ name: 'x.pdf' })]],
     ]);
-    await userEvent.click(screen.getByRole('button', { name: 'open picker' }));
-    expect(props.home.openViaPicker).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getByRole('button', { name: 'select recent' }));
     expect(props.home.selectRecent).toHaveBeenCalledWith({ id: 'recent-1' });
     await userEvent.click(screen.getByRole('button', { name: 'run command' }));
     expect(props.runHomeCommand).toHaveBeenCalledWith('file.new');
-    await userEvent.click(screen.getByRole('button', { name: 'open palette' }));
-    expect(shellStore.get().paletteOpen).toBe(true);
   });
 
   it('starts the batch dialog and the scanner from the start screen', async () => {

@@ -6,11 +6,8 @@
 export const homePart = {
   'home.tab.start': 'Başlangıç',
   'home.tab.tools': 'Tüm araçlar',
-  'home.palette': 'Komut paleti (Ctrl+K)',
 
   'home.start.title': 'Yeni başlayın',
-  'home.start.open.title': 'PDF aç',
-  'home.start.open.desc': 'Cihazınızdaki bir PDF’i açın.',
   'home.start.blank.title': 'Boş belge',
   'home.start.blank.desc': 'Seçtiğiniz boyutta boş sayfalardan yeni bir PDF oluşturun.',
   'home.start.images.title': 'Görsellerden PDF',
@@ -19,9 +16,9 @@ export const homePart = {
   'home.start.merge.desc': 'Birden çok PDF’i istediğiniz sırayla tek bir belgede birleştirin.',
   'home.start.batch.title': 'Toplu işlem',
   'home.start.batch.desc': 'Aynı adımları birçok dosyaya tek seferde uygulayın.',
-  'home.drop.title': 'Dosyaları buraya bırakın',
-  'home.drop.desc':
-    'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’e dönüştürülür. Dosya seçmek için tıklayın.',
+  'home.drop.title': 'PDF açın ya da buraya bırakın',
+  'home.drop.titleTouch': 'PDF açın',
+  'home.drop.desc': 'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’e dönüştürülür.',
 
   'home.tools.search': 'Araç ara…',
   'home.tools.loading': 'Araçlar yükleniyor…',
@@ -71,6 +68,9 @@ export const homePart = {
 
   'home.recentTab': 'Son kullanılanlar',
   'home.starredTab': 'Yıldızlı',
+  'home.recent.about': 'Bu liste neleri saklar?',
+  'home.recent.stores':
+    'Bu liste yalnızca dosya adını, boyutunu, sayfa sayısını, son açılma zamanını ve yıldızlı olup olmadığını saklar.',
   'home.recent.search': 'Son kullanılanlarda ara…',
   'home.recent.sort': 'Sırala',
   'home.recent.sort.date': 'Son açılma',
@@ -83,8 +83,6 @@ export const homePart = {
   'home.noRecent': 'Son kullanılan belge bulunmuyor.',
   'home.noStarred': 'Henüz yıldızlanan bir belge yok.',
   'home.noMatch': 'Aramanızla eşleşen belge yok.',
-  'home.privacyNotice':
-    'Belgeleriniz bu cihazdan çıkmaz. Bu liste yalnızca dosya adını, boyutunu, sayfa sayısını, son açılma zamanını ve yıldızlı olup olmadığını saklar.',
   'home.colName': 'Belge adı',
   'home.colPages': 'Sayfa',
   'home.colLastOpened': 'Son açılma',

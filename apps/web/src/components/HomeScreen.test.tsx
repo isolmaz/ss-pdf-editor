@@ -59,10 +59,8 @@ function screenFor(overrides: Partial<ComponentProps<typeof HomeScreen>> = {}) {
     <HomeScreen
       t={t}
       onOpenFiles={vi.fn()}
-      onOpenPicker={vi.fn()}
       onSelectRecent={vi.fn()}
       onStart={vi.fn()}
-      onOpenPalette={vi.fn()}
       commands={[]}
       standaloneCommands={new Set()}
       onRunCommand={vi.fn()}
@@ -101,6 +99,19 @@ describe('HomeScreen file input', () => {
 
     fireEvent.change(input, { target: { files: null } });
     expect(onOpenFiles).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('HomeScreen entry points', () => {
+  it('opens a file through the drop zone alone: no second open card, no palette button of its own', () => {
+    const { container } = render(screenFor());
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    expect(input.labels?.[0]?.textContent).toContain(t('home.drop.title'));
+    // CSS shows the shorter wording where nothing can be dragged (a coarse pointer).
+    expect(input.labels?.[0]?.textContent).toContain(t('home.drop.titleTouch'));
+    expect(screen.queryByRole('button', { name: /open a pdf/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /command palette|ctrl+k/i })).toBeNull();
   });
 });
 
@@ -186,6 +197,24 @@ describe('HomeScreen recent list', () => {
 
     await user.click(within(row('Apple invoice.pdf')).getByRole('button', { name: t('home.unstar') }));
     expect(names(container)).toEqual(['Mango notes.pdf']);
+  });
+
+  it('keeps what the list stores behind an info button, and repeats no privacy claim', async () => {
+    seed();
+    const user = userEvent.setup();
+    const { container } = render(screenFor());
+    const about = screen.getByRole('button', { name: t('home.recent.about') });
+
+    expect(about.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(t('home.recent.stores'))).toBeNull();
+    expect(container.textContent).not.toMatch(/never leave/i);
+
+    await user.click(about);
+    expect(about.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(t('home.recent.stores')).id).toBe(about.getAttribute('aria-controls'));
+
+    await user.click(about);
+    expect(screen.queryByText(t('home.recent.stores'))).toBeNull();
   });
 
   it('says nothing is starred when no entry is', async () => {

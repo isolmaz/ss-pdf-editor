@@ -44,11 +44,11 @@ export function EditorSurface({
   const handle = useSave((state) => state.viewer);
   const currentPage = useSave((state) => state.currentPage);
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col sm:flex-row">
       <DocumentDock session={session} tier={tier} t={t} actions={dock} />
       <ToolRail t={t} canEdit={canEdit} />
       {/* biome-ignore lint/a11y/noStaticElementInteractions: context menu listener on the document canvas container */}
-      <div className="relative min-w-0 flex-1 overflow-hidden" onContextMenu={showContextMenu}>
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden" onContextMenu={showContextMenu}>
         <ViewerArea session={session} tier={tier} t={t} actions={viewer} />
       </div>
       <RightDock session={session} tier={tier} t={t} dialogContext={dialogContext} actions={right} />

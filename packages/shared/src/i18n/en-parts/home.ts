@@ -1,11 +1,8 @@
 export const homePart = {
   'home.tab.start': 'Start',
   'home.tab.tools': 'All tools',
-  'home.palette': 'Command palette (Ctrl+K)',
 
   'home.start.title': 'Start something new',
-  'home.start.open.title': 'Open a PDF',
-  'home.start.open.desc': 'Open a PDF from your device.',
   'home.start.blank.title': 'Blank document',
   'home.start.blank.desc': 'Create a new PDF of empty pages in the size you choose.',
   'home.start.images.title': 'PDF from images',
@@ -14,9 +11,9 @@ export const homePart = {
   'home.start.merge.desc': 'Combine several PDFs into one document, in the order you choose.',
   'home.start.batch.title': 'Batch processing',
   'home.start.batch.desc': 'Run the same steps over many files at once.',
-  'home.drop.title': 'Drop files here',
-  'home.drop.desc':
-    'A PDF opens; Word, Excel, PowerPoint, HTML and text are converted to PDF. Click to choose a file.',
+  'home.drop.title': 'Open a PDF or drop it here',
+  'home.drop.titleTouch': 'Open a PDF',
+  'home.drop.desc': 'A PDF opens; Word, Excel, PowerPoint, HTML and text are converted to PDF.',
 
   'home.tools.search': 'Search tools…',
   'home.tools.loading': 'Loading tools…',
@@ -66,6 +63,9 @@ export const homePart = {
 
   'home.recentTab': 'Recent',
   'home.starredTab': 'Starred',
+  'home.recent.about': 'What does this list keep?',
+  'home.recent.stores':
+    'This list keeps only the file name, size, page count, when it was last opened and whether it is starred.',
   'home.recent.search': 'Search recent documents…',
   'home.recent.sort': 'Sort',
   'home.recent.sort.date': 'Last opened',
@@ -78,8 +78,6 @@ export const homePart = {
   'home.noRecent': 'No recent documents.',
   'home.noStarred': 'No starred documents yet.',
   'home.noMatch': 'No document matches your search.',
-  'home.privacyNotice':
-    'Your documents never leave this device. This list keeps only the file name, size, page count, when it was last opened and whether it is starred.',
   'home.colName': 'Document name',
   'home.colPages': 'Pages',
   'home.colLastOpened': 'Last opened',

@@ -27,10 +27,12 @@ describe('HomeHeader', () => {
     return handlers;
   }
 
-  it('names the product and says what the start screen is for', () => {
+  it('names the product and leaves the privacy claim to the status bar', () => {
     header();
     expect(screen.getByText('PDF Studio')).toBeTruthy();
-    expect(screen.getByText(t('shell.homeTagline'))).toBeTruthy();
+    // The claim is made once on the start screen, in the status bar; a second copy up here
+    // read as the same sentence three times on one screen.
+    expect(screen.getByRole('banner').textContent).not.toMatch(/device|local|cihaz|yerel/i);
   });
 
   it('opens the settings, the palette and the file picker from their own buttons', async () => {
@@ -44,6 +46,13 @@ describe('HomeHeader', () => {
     expect(handlers.onSettings).toHaveBeenCalledOnce();
     expect(handlers.onPalette).toHaveBeenCalledOnce();
     expect(handlers.onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('names the shortcut on the one palette button, as the key Windows and Linux have', () => {
+    header();
+    const palette = screen.getByRole('button', { name: t('shell.commandPaletteHint') });
+    expect(palette.querySelector('kbd')?.textContent).toBe('Ctrl+K');
+    expect(palette.textContent).not.toContain('⌘');
   });
 
   it('offers no way back while no document is open', () => {

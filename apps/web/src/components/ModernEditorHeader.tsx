@@ -2,7 +2,6 @@ import type { Icon } from '@phosphor-icons/react';
 import {
   BookOpen,
   CaretDown,
-  Command,
   DownloadSimple,
   FileDoc,
   FilePdf,
@@ -10,6 +9,7 @@ import {
   FolderOpen,
   GearSix,
   House,
+  ListMagnifyingGlass,
   MagnifyingGlass,
   PenNib,
   SquaresFour,
@@ -28,9 +28,11 @@ import { toggleReading, useReading } from '../features/reading/reading-store';
  *
  * It never overflows the bar, whatever the width: the pieces yield in a fixed order, the
  * least essential first, so the file actions and the document name are the last to go. As the
- * bar narrows, the file actions' labels yield first (below `xl`), then the menu bar (below `lg`;
- * the palette holds the same commands), then the task shortcuts (below `md`), and on a phone
- * (below `sm`) the Open button too (the palette and the home screen open files as well).
+ * bar narrows, the file actions' labels yield first (below 1440 px: in Turkish, the default
+ * language, they and the task names do not fit together before that), then the task names
+ * (below `xl`), the menu bar (below `lg`; the palette holds the same commands), the task
+ * shortcuts (below `md`), and on a phone (below `sm`) the Find button (the palette and Ctrl+F
+ * reach it); Open stays, as an icon.
  *
  * The task shortcuts are not "modes" with one highlighted: the app has no modes, and a
  * highlighted "Edit" while the select tool is armed, or "Read" after the reading pane
@@ -105,7 +107,7 @@ function TaskButton({
       className={`${TASK_CLASS} ${pressed === true ? TASK_ON : TASK_IDLE}`}
     >
       <Glyph size={14} weight={pressed === true ? 'fill' : 'regular'} aria-hidden="true" />
-      <span className="hidden 2xl:inline">{label}</span>
+      <span className="hidden xl:inline">{label}</span>
     </button>
   );
 }
@@ -186,7 +188,7 @@ export function ModernEditorHeader({
         <div className="hidden items-center border-s border-kumo-line ps-1 lg:flex">{menu}</div>
       </div>
 
-      {/* Task shortcuts: from 768 px, icons below 1536 px, icon and label above. */}
+      {/* Task shortcuts: from 768 px, icons below 1280 px, icon and label above. */}
       <nav
         aria-label={t('shell.tasks')}
         className="hidden shrink-0 items-center gap-0.5 border-s border-kumo-line ps-2 md:flex"
@@ -301,12 +303,12 @@ export function ModernEditorHeader({
         ) : null}
       </div>
 
-      {/* File actions: labels yield below 1280 px and Open below 640 px; the controls keep their size. */}
+      {/* File actions: labels yield below 1440 px and Find below 640 px; the controls keep their size. */}
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
         <button
           type="button"
           onClick={onSearch}
-          className={ICON_CLASS}
+          className={`${ICON_CLASS} max-sm:hidden`}
           title={`${t('shell.search')} (Ctrl+F)`}
           aria-label={t('shell.search')}
         >
@@ -319,7 +321,7 @@ export function ModernEditorHeader({
           title={`${t('palette.title')} (Ctrl+K)`}
           aria-label={t('palette.title')}
         >
-          <Command size={16} aria-hidden="true" />
+          <ListMagnifyingGlass size={16} aria-hidden="true" />
         </button>
         <Button
           size="sm"
@@ -328,9 +330,8 @@ export function ModernEditorHeader({
           onClick={onOpen}
           title={`${t('shell.open')} (Ctrl+O)`}
           aria-label={t('shell.open')}
-          className="max-sm:hidden"
         >
-          <span className="hidden xl:inline">{t('shell.open')}</span>
+          <span className="hidden min-[1440px]:inline">{t('shell.open')}</span>
         </Button>
         {saveMode === 'none' ? null : (
           <Button
@@ -342,7 +343,9 @@ export function ModernEditorHeader({
             title={`${t(saveMode === 'save' ? 'shell.save.hint' : 'shell.saveAs.hint')} (Ctrl+S)`}
             aria-label={t(saveMode === 'save' ? 'shell.save' : 'shell.saveAs')}
           >
-            <span className="hidden xl:inline">{t(saveMode === 'save' ? 'shell.save' : 'shell.saveAs')}</span>
+            <span className="hidden min-[1440px]:inline">
+              {t(saveMode === 'save' ? 'shell.save' : 'shell.saveAs')}
+            </span>
           </Button>
         )}
         <div className="flex items-center">
@@ -356,7 +359,7 @@ export function ModernEditorHeader({
             aria-label={t('shell.export')}
             className="rounded-e-none border-e-0"
           >
-            <span className="hidden xl:inline">{t('shell.export')}</span>
+            <span className="hidden min-[1440px]:inline">{t('shell.export')}</span>
           </Button>
           <button
             type="button"
