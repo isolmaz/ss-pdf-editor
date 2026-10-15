@@ -34,9 +34,9 @@ export const officePart = {
   'export.office.option': 'Word, Excel ya da CSV',
   'export.office.download': 'Word, Excel ya da CSV olarak indir',
   'tools.exportOffice': 'Word, Excel ya da CSV olarak dışa aktar',
-  'tools.exportOfficeDesc': 'PDF’i Word, Excel ya da CSV dosyasına aktarın',
+  'tools.exportOfficeDesc': 'PDF’yi Word, Excel ya da CSV dosyasına aktarın',
   'home.tool.exportOffice':
-    'PDF’i düzenlenebilir Word belgesine, tablolarını Excel ya da CSV dosyasına aktarın.',
+    'PDF’yi düzenlenebilir Word belgesine, tablolarını Excel ya da CSV dosyasına aktarın.',
 
   'op.progress.exportOffice.read': 'Sayfa düzeni okunuyor',
   'op.progress.exportOffice.write': 'Dosya yazılıyor',

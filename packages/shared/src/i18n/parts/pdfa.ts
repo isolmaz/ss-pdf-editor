@@ -12,7 +12,7 @@
 export const pdfaPart = {
   'pdfa.title': 'PDF/A olarak kaydet',
   'pdfa.intro':
-    'Belgeyi uzun süreli arşivleme standardı PDF/A’ya dönüştürür: tüm yazı tipleri gömülür, renkler sRGB’ye çevrilir ve üst veri standart biçimde yazılır. Her şey bu tarayıcıda yapılır; dönüştürme motoru yalnızca bu araç kullanılınca yüklenir. Çıktı, dönüştürmeden hemen sonra kendi denetleyicimizle kontrol edilir; kuralı ihlal eden bir dosya sunulmaz. Bu kontrol veraPDF’in tam doğrulaması değildir.',
+    'Belgeyi uzun süreli arşivleme standardı PDF/A’ya dönüştürür: tüm yazı tipleri gömülür, renkler sRGB’ye çevrilir ve üst veri standart biçimde yazılır. Her şey bu tarayıcıda yapılır; dönüştürme motoru yalnızca bu araç kullanılınca yüklenir. Çıktı, dönüştürmeden hemen sonra kendi denetleyicimizle kontrol edilir; kuralı ihlal eden bir dosya sunulmaz. Bu kontrol veraPDF’nin tam doğrulaması değildir.',
   'pdfa.level': 'Düzey',
   'pdfa.level.2b': 'PDF/A-2b (önerilen)',
   'pdfa.level.2bHint': 'PDF 1.7 tabanlı. Saydamlık serbesttir, bu yüzden sayfalar görünüş olarak değişmez.',
@@ -77,7 +77,7 @@ export const pdfaPart = {
   'op.note.pdfa.alreadyCompliant':
     'Dosya zaten {level} olduğunu belirtiyor ve denetlenen kuralların hiçbirini ihlal etmiyor; yeniden yazılmadı.',
   'op.note.pdfa.limits':
-    'Bu denetim veraPDF’in tam doğrulaması değildir: yalnızca nesne yapısından ve içerik akışlarından karar verilebilen kurallar bakılır (PDF/A panelinde “bakılmayanlar” listesine bakın).',
+    'Bu denetim veraPDF’nin tam doğrulaması değildir: yalnızca nesne yapısından ve içerik akışlarından karar verilebilen kurallar bakılır (PDF/A panelinde “bakılmayanlar” listesine bakın).',
 
   'panel.pdfa': 'PDF/A',
   'pdfa.panel.check': 'Denetle',
@@ -92,7 +92,7 @@ export const pdfaPart = {
   'pdfa.panel.more': 've {count} tane daha',
   'pdfa.panel.notChecked': 'Bu denetimin bakmadıkları',
   'pdfa.panel.disclaimer':
-    'Bu, veraPDF’in tam doğrulaması değildir. veraPDF’in yüzlerce kuralından yalnızca nesne yapısından ve içerik akışlarından karar verilebilenler denetlenir; temiz bir sonuç sertifika yerine geçmez.',
+    'Bu, veraPDF’nin tam doğrulaması değildir. veraPDF’nin yüzlerce kuralından yalnızca nesne yapısından ve içerik akışlarından karar verilebilenler denetlenir; temiz bir sonuç sertifika yerine geçmez.',
   'pdfa.group.fail': 'İhlal edilen kurallar',
   'pdfa.group.unchecked': 'Denetlenemeyen kurallar',
   'pdfa.group.pass': 'Geçen kurallar',

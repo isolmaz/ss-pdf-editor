@@ -107,10 +107,10 @@ describe('tool names', () => {
 });
 
 /**
- * Keys another change is rewriting at the same time (the settings dialog and the tool strips);
- * their casing is theirs to fix, so the sentence-case check leaves them out until that lands.
+ * Keys another change is rewriting at the same time (the settings dialog, the tool strips and
+ * the home screen); their wording is theirs to fix, so these checks leave them out until that lands.
  */
-const IN_FLIGHT = [/^setting\./, /^theme\./, /^toolbar\.select$/];
+const IN_FLIGHT = [/^setting\./, /^theme\./, /^toolbar\.select$/, /^home\.start\./];
 
 /** Capitalised words that are names, not title case: products, keyboard keys, PDF terms, languages. */
 const NAMES = new Set([
@@ -174,5 +174,14 @@ describe.each([
   it('are not shouted in capitals', () => {
     const shouted = labels.filter(([, text]) => /^[A-ZÇĞİÖŞÜ\s]{5,}$/.test(text)).map(([key]) => key);
     expect(shouted).toEqual(['watermark.defaultText']);
+  });
+});
+
+describe('Turkish suffixes after an abbreviation', () => {
+  it('follow how PDF is said ("pe-de-fe", ending in a vowel): PDF’ye, PDF’yi, PDF’nin, PDF’de, PDF’den', () => {
+    const wrong = (Object.entries(tr) as [Key, string][])
+      .filter(([key]) => !IN_FLIGHT.some((skip) => skip.test(key)))
+      .filter(([, text]) => /PDF’(e|i|in|te|teki|ten)(?![a-zçğıöşüâ])/.test(text));
+    expect(wrong.map(([key, text]) => `${key}: ${text}`)).toEqual([]);
   });
 });

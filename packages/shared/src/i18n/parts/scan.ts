@@ -3,7 +3,7 @@
 export const scanPart = {
   'scan.title': 'Kamerayla tara',
   'scan.intro':
-    'Belgeyi kamerayla çekin ya da fotoğraf seçin. Sayfanın kenarları bulunur, sayfa düzeltilir ve PDF’e dönüştürülür. Her şey bu cihazda kalır; hiçbir görüntü gönderilmez.',
+    'Belgeyi kamerayla çekin ya da fotoğraf seçin. Sayfanın kenarları bulunur, sayfa düzeltilir ve PDF’ye dönüştürülür. Her şey bu cihazda kalır; hiçbir görüntü gönderilmez.',
   'scan.command': 'Kamerayla tara',
   'home.start.scan.title': 'Kamerayla tara',
   'home.start.scan.desc': 'Belgeyi çekin; kenarlar bulunur, sayfa düzelir, PDF olur.',
@@ -101,5 +101,5 @@ export const scanPart = {
   'insert.scans': 'Taranan sayfalar',
   'insert.source.scan': 'Kamerayla tara',
 
-  'op.note.scan.pages': 'Taranan {count} sayfa PDF’e eklendi.',
+  'op.note.scan.pages': 'Taranan {count} sayfa PDF’ye eklendi.',
 } as const;

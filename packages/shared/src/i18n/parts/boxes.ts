@@ -25,7 +25,7 @@ export const boxesPart = {
   /* page boxes & size dialog */
   'boxes.dialog.title': 'Sayfa kutuları ve boyut',
   'boxes.dialog.intro':
-    'Sayfa kutuları PDF’in kendi ölçüleridir: MediaBox kâğıdı, CropBox görünen alanı, Trim/Bleed/Art ise baskı ve içerik sınırlarını tanımlar. Otomatik kırpma sayfayı tarayıp gerçekten basılmış içeriği ölçer; beyaz kenarlar kırpılır. Kutu değişiklikleri var olan açıklamaları taşımaz, içerik kaydırma/açı işlemleri ise sayfanın kendi mekanizmasıyla yapılır ve rapor hangisini kullandığını yazar.',
+    'Sayfa kutuları PDF’nin kendi ölçüleridir: MediaBox kâğıdı, CropBox görünen alanı, Trim/Bleed/Art ise baskı ve içerik sınırlarını tanımlar. Otomatik kırpma sayfayı tarayıp gerçekten basılmış içeriği ölçer; beyaz kenarlar kırpılır. Kutu değişiklikleri var olan açıklamaları taşımaz, içerik kaydırma/açı işlemleri ise sayfanın kendi mekanizmasıyla yapılır ve rapor hangisini kullandığını yazar.',
   'boxes.dialog.done': '{count} sayfa güncellendi.',
   'boxes.dialog.mode': 'İşlem',
   'boxes.dialog.mode.set': 'Kutu değerini ayarla',

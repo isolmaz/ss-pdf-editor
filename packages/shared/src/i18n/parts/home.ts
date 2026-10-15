@@ -21,7 +21,7 @@ export const homePart = {
   'home.start.batch.desc': 'Aynı adımları birçok dosyaya tek seferde uygulayın.',
   'home.drop.title': 'Dosyaları buraya bırakın',
   'home.drop.desc':
-    'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’e dönüştürülür. Dosya seçmek için tıklayın.',
+    'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’ye dönüştürülür. Dosya seçmek için tıklayın.',
 
   'home.tools.search': 'Araç ara…',
   'home.tools.loading': 'Araçlar yükleniyor…',
@@ -44,7 +44,7 @@ export const homePart = {
   'home.tool.imageEdit': 'Belgedeki bir görseli değiştirin.',
   'home.tool.measure': 'Mesafe, çevre ve alan ölçün.',
   'home.tool.insert': 'Boş sayfa, görsel veya başka bir belgeden sayfa ekleyin.',
-  'home.tool.add': 'Başka bir PDF’in sayfalarını bu belgeye katın.',
+  'home.tool.add': 'Başka bir PDF’nin sayfalarını bu belgeye katın.',
   'home.tool.split': 'Belgeyi aralıklara göre parçalara bölün.',
   'home.tool.boxes': 'Sayfaları kırpın ve sayfa kutularını düzenleyin.',
   'home.tool.labels': 'Sayfa etiketlerini (i, ii, 1, 2…) ayarlayın.',

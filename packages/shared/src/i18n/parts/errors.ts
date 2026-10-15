@@ -28,7 +28,7 @@ export const errorsPart = {
   'error.xfa-dynamic.message': 'Bu dinamik bir XFA formu: içeriği yalnızca XFA şablonunda duruyor.',
   'error.xfa-dynamic.hint':
     'Formu “XFA formunu doldur” ile açın ya da “XFA formunu normal PDF’ye dönüştür” işlemini kullanın.',
-  'error.xfa-static.message': 'Bu statik bir XFA formu: sayfaları zaten PDF’in içinde.',
+  'error.xfa-static.message': 'Bu statik bir XFA formu: sayfaları zaten PDF’nin içinde.',
   'error.xfa-static.hint':
     'Alanları “Form alanlarını düzleştir” ile düzleştirin ya da “XFA’yı kaldır” ile yalnızca AcroForm’u bırakın.',
   'error.glyph-missing.message': 'Yazıda hiçbir yazı tipinde bulunmayan karakterler var: {chars}',

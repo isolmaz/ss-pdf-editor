@@ -27,7 +27,7 @@ export const pageeditPart = {
   'insert.source': 'Kaynak',
   'insert.source.blank': 'Boş sayfa',
   'insert.source.image': 'Görsellerden',
-  'insert.source.document': 'Başka bir PDF’ten',
+  'insert.source.document': 'Başka bir PDF’den',
   'insert.position': 'Konum (N. sayfanın ardına)',
   'insert.positionHint':
     'N, 1 tabanlı sayfa numarasıdır: 1 ilk sayfanın ardına ekler. Belgenin başına eklemek için 0, sonuna eklemek için sayfa sayısını yazın.',
@@ -96,10 +96,10 @@ export const pageeditPart = {
     'Arka yüzler üretilen dosyada yaprağa yerleştirilir; yazıcıda aynı çevirme eksenini seçin.',
   'print.margin': 'Kenar boşlukları (mm)',
   'print.marginHint': 'Yaprak kenarında bırakılan boşluk; hücreler bu boşluğun içine yerleşir.',
-  'print.produce': 'Yazdırılacak PDF’i üret',
+  'print.produce': 'Yazdırılacak PDF’yi üret',
   'print.fileName': 'yazdirma.pdf',
   'print.imposeHint':
-    'Sayfa başına, kitapçık, çift yönlü ve kenar boşluğu ayarları üretilen PDF’e uygulanır; “Yazdır” sayfaları olduğu gibi tarar.',
+    'Sayfa başına, kitapçık, çift yönlü ve kenar boşluğu ayarları üretilen PDF’ye uygulanır; “Yazdır” sayfaları olduğu gibi tarar.',
   'print.producing': 'Yapraklar hazırlanıyor: {done}/{total}',
   'print.produced': 'Yazdırma dosyası hazır: {name}',
   'print.pageFailed': '{page}. sayfa yazdırmaya hazırlanamadı.',
