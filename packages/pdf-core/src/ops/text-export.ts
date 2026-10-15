@@ -31,6 +31,12 @@ export interface TextExportResult {
   /** Pages that produced no text at all (scanned pages). */
   readonly emptyPages: readonly number[];
   readonly characterCount: number;
+  /**
+   * Each exported page's own text, in ascending page order. Callers that need the
+   * page boundaries read these instead of searching the file for the separators,
+   * because a page's text can itself contain a line that looks like a separator.
+   */
+  readonly pageTexts: readonly string[];
 }
 
 /** One text-layer piece with the geometry the layout rules need. */
@@ -201,5 +207,10 @@ export async function exportText(
     bytes: encoded,
     mime: markdown ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8',
   };
-  return { file, emptyPages, characterCount: bodies.reduce((total, entry) => total + entry.text.length, 0) };
+  return {
+    file,
+    emptyPages,
+    characterCount: bodies.reduce((total, entry) => total + entry.text.length, 0),
+    pageTexts: bodies.map((entry) => entry.text),
+  };
 }

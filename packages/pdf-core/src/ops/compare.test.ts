@@ -150,6 +150,40 @@ describe('compareText', () => {
     expect(result.truncated).toBe(false);
   });
 
+  it('keeps page boundaries when a page carries a line that looks like a page separator', async () => {
+    // A paragraph of its own (far below the first line), exactly as the export writes a separator.
+    const lookAlike = 'BT /F 12 Tf 20 100 Td (----- 2 -----) Tj ET';
+    const pages = (second: string): PageSpec[] => [
+      { lines: ['Alpha'], draw: lookAlike },
+      { lines: [second] },
+      { lines: ['Gamma'] },
+    ];
+    const left = await build(pages('Beta'));
+    const right = await build(pages('Beta2'));
+    const result = await compareText(left, right, run);
+    expect(result.pages).toHaveLength(3);
+    expect(result.pages[0]).toMatchObject({ pageIndex: 0, status: 'identical', leftLines: 2, rightLines: 2 });
+    expect(result.pages[1]).toMatchObject({
+      pageIndex: 1,
+      status: 'changed',
+      leftLines: 1,
+      rightLines: 1,
+      added: 0,
+      removed: 0,
+      changed: 1,
+      lines: [{ kind: 'changed', leftLine: 1, rightLine: 1, text: 'Beta2', previous: 'Beta' }],
+    });
+    expect(result.pages[2]).toMatchObject({ pageIndex: 2, status: 'identical', leftLines: 1, rightLines: 1 });
+    expect(result.summary).toMatchObject({
+      pagesCompared: 3,
+      identicalPages: 2,
+      changedPages: 1,
+      changedLines: 1,
+      addedLines: 0,
+      removedLines: 0,
+    });
+  });
+
   it('pairs a hunk line by line, then reports the surplus lines as removed or added', async () => {
     const left = await build(linesOf(['one', 'two', 'three', 'four']));
     const right = await build(linesOf(['one', 'TWO', 'four', 'five', 'six']));
@@ -516,6 +550,27 @@ describe('compareVisual', () => {
       tiles: { columns: 4, rows: 4 },
     });
     expect(page?.status).toBe('changed');
+  });
+
+  it('never calls a page of another size identical, even when the shared region matches', async () => {
+    const left = await build([{ size: [600, 800] }]);
+    const right = await build([{ size: [600, 900] }]);
+    const { createCanvas } = counting();
+    const result = await compareVisual(left, right, run, { createCanvas });
+    const page = result.pages[0];
+    expect(page).toMatchObject({
+      pageIndex: 0,
+      status: 'changed',
+      reason: 'page-size-mismatch',
+      differencePercent: 0,
+      differingPixels: 0,
+    });
+    expect(result.summary).toMatchObject({
+      pagesCompared: 1,
+      identicalPages: 0,
+      changedPages: 1,
+      unavailablePages: 0,
+    });
   });
 
   it('reports pages only one side has, with their size, and never compares them', async () => {
