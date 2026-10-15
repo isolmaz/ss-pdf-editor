@@ -25,6 +25,7 @@ import { openNote } from '../selection/selection-actions';
 import { selectMarks, useSelection } from '../selection/selection-store';
 import { TextToolSurface } from '../selection/TextToolSurface';
 import { StampPlacementHost } from '../stamps/StampSurface';
+import { LayerBoundary } from './SurfaceBoundaries';
 import type { ShellActions } from './shell-actions';
 import { useEditState } from './use-edit-state';
 
@@ -135,18 +136,20 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
               <RedactionMarkLayer t={t} viewer={viewer} session={session} enabled={!locked && !viewingOnly} />
               {/* Measurements remain visible after switching to selection. Only creation
                   and the settings strip follow the armed tool, not the marks themselves. */}
-              <MeasureOverlay
-                t={t}
-                session={session}
-                viewer={viewer}
-                layout={layout}
-                marks={visibleMarks.measures}
-                canEdit={canEdit}
-                color={color}
-                opacity={opacity}
-                thickness={thickness}
-                author={author}
-              />
+              <LayerBoundary t={t}>
+                <MeasureOverlay
+                  t={t}
+                  session={session}
+                  viewer={viewer}
+                  layout={layout}
+                  marks={visibleMarks.measures}
+                  canEdit={canEdit}
+                  color={color}
+                  opacity={opacity}
+                  thickness={thickness}
+                  author={author}
+                />
+              </LayerBoundary>
               {/* The visual layer survives transient edit locks. Only its creator is
                   disarmed: unmounting the marks during a checkpoint made them flash. */}
               <AnnotationLayer
@@ -199,18 +202,22 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
               />
               <StampPlacementHost viewer={viewer} canEdit={canEdit} t={t} onPlace={actions.onPlaceStamp} />
               <FieldCandidateHost t={t} tab={activeTab} viewer={viewer} layout={layout} canEdit={canEdit} />
-              <TextToolSurface
-                viewer={viewer}
-                layout={layout}
-                currentPage={currentPage}
-                t={t}
-                onEdit={() => actions.openDialog('text-edit')}
-              />
+              <LayerBoundary t={t}>
+                <TextToolSurface
+                  viewer={viewer}
+                  layout={layout}
+                  currentPage={currentPage}
+                  t={t}
+                  onEdit={() => actions.openDialog('text-edit')}
+                />
+              </LayerBoundary>
               {/* The accessibility panel's numbered reading-order boxes. */}
               {rightDock && rightTab === 'accessibility' ? (
-                <Suspense fallback={null}>
-                  <ReadingOrderLayer t={t} viewer={viewer} layout={layout} />
-                </Suspense>
+                <LayerBoundary t={t}>
+                  <Suspense fallback={null}>
+                    <ReadingOrderLayer t={t} viewer={viewer} layout={layout} />
+                  </Suspense>
+                </LayerBoundary>
               ) : null}
             </>
           )

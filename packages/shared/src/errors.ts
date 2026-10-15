@@ -46,6 +46,7 @@ export const TOOL_ERROR_CODES = [
   'asset-missing',
   'asset-hash-mismatch',
   'asset-offline',
+  'asset-stale',
   'font-missing',
   'glyph-missing',
   'ocr-language-missing',
@@ -140,7 +141,14 @@ export function toToolError(value: unknown, engine = 'model'): ToolError {
     return new ToolError('aborted', { engine, engineMessage: value.message });
   }
   if (value instanceof Error && CHUNK_LOAD_FAILED.test(value.message)) {
-    return new ToolError('asset-offline', { engine, engineMessage: value.message }, { cause: value });
+    // A browser with a network that still cannot fetch a chunk of this build is holding a page
+    // from a release that has since replaced it: "connect to the internet" would be the wrong
+    // instruction there, and reloading is the right one. Offline, connecting is the cure. A
+    // runtime that does not report connectivity (no `navigator`, no `onLine`) is not claimed
+    // to be online.
+    const online = typeof navigator !== 'undefined' && navigator.onLine === true;
+    const code = online ? 'asset-stale' : 'asset-offline';
+    return new ToolError(code, { engine, engineMessage: value.message }, { cause: value });
   }
   if (value instanceof Error) {
     return new ToolError('internal', { engine, engineMessage: value.message }, { cause: value });

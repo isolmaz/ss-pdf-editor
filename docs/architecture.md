@@ -175,8 +175,21 @@ what they render for a document that is still opening — the home screen and he
 strip switch in one commit and no empty frame is painted. The chunk is requested twice over:
 `main.tsx` warms it on idle with the engine, so a document opened after the first seconds never
 waits for it, and `ShellBody` asks for it as soon as a file is opening or a tab exists
-(`requestEditor`), in parallel with reading and parsing the file. A fetch that fails (offline,
-evicted cache) is reported as the `asset-offline` notice and forgotten, where the browser retries.
+(`requestEditor`), in parallel with reading and parsing the file. A fetch that fails is reported
+as the `asset-offline` notice (offline, evicted cache) or the `asset-stale` notice (online: the
+release replaced the file) and forgotten, where the browser retries.
+
+**A chunk that cannot be fetched never leaves a white page.** `main.tsx` renders `App` inside
+`RootBoundary` (`apps/web/src/recovery.tsx`): a render that throws, most often a `lazy()` chunk
+that rejects inside its `Suspense`, ends in a recovery screen in the interface language (the
+classified failure, what becomes of the open documents, a **Reload** button), and the
+boundary's crash handler writes every open tab's draft once more (`flushDrafts`), because the
+autosave timer goes down with the shell. Narrower boundaries (`features/shell/SurfaceBoundaries.tsx`)
+contain what the rest of the editor does not depend on: the right dock's panel (a sentence in its
+place, keyed by the tab) and the layers over the pages (nothing drawn, the notice line says why).
+`PdfViewerPane` guards its own engine import: a failure is a message and a Reload button in the
+pane, and the shell is told there is no viewer. The browser keeps a failed dynamic import for the
+page's lifetime, so the way out of each of these is a reload, not a retry in place.
 
 The entry chunk is not all of the first paint: the `modulepreload` links the build adds for
 it (Kumo's shared dialog chunk, the React runtime, the `mupdf-write` vocabulary and the few
@@ -195,7 +208,7 @@ CI `verify` job, after `pnpm build`.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (37 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) becomes `asset-offline`, never a damaged document. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (38 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
 | `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -2554,7 +2567,7 @@ testable logic lives:
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
 | `save-plan.ts` | `planSaveExecution()` — the byte facts of one save (is the output an incremental update of the opened file) and the applied and executed step lists; `signatureWarning()`, `heldByPendingRedactions()` |
 | `notices.ts` | Turns notice descriptors, verification results and failures into sentences (i18n keys and params only, no English literals) |
-| `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App`, then warms the engine, editor, printer and palette chunks on idle (§2) |
+| `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App` inside the root error boundary (`recovery.tsx`), then warms the engine, editor, printer and palette chunks on idle (§2) |
 | `lazy-ops.ts` | Same-signature wrappers that load the writers and readers the shell runs only on an action (§2) |
 | `export-presets.ts`, `signature-store.ts` | What the export dialog's "Compressed PDF" level fills into the Optimize form, and the remembered simple signature (§8.7) |
 | `drafts.ts` | The OPFS half of draft storage |
@@ -3187,7 +3200,11 @@ shows.
 requests and anything outside `/editor/`, `/engines/`, `/fonts/` and a few root files;
 document bytes never enter `CacheStorage`. It re-applies the CORP/COOP/COEP headers to
 cached responses so cross-origin isolation survives an offline load, and its one offline
-answer is an explicit, un-cacheable 503 rather than a hang.
+answer is an explicit, un-cacheable 503 rather than a hang. The editor shell and its bundle
+assets are network-first, and "the network failed" includes a 404 or 503: when the origin
+answers a file this build's cache holds with an error status, the cached copy is served (a
+hashed chunk a deploy removed stays loadable for a page that is still open), and the error
+passes through only when there is no copy.
 
 Versioning is the interesting half:
 

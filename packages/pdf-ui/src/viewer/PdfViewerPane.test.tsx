@@ -143,15 +143,12 @@ const stage = vi.hoisted(() => {
     viewers: [] as unknown[],
     buses: [] as unknown[],
     links: [] as unknown[],
+    /** The module the pane imports its viewer stack from, as the browser would have fetched it. */
+    engine: () => ({ EventBus, PDFLinkService, PDFFindController, PDFViewer }),
   };
 });
 
-vi.mock('pdfjs-dist/web/pdf_viewer.mjs', () => ({
-  EventBus: stage.EventBus,
-  PDFLinkService: stage.PDFLinkService,
-  PDFFindController: stage.PDFFindController,
-  PDFViewer: stage.PDFViewer,
-}));
+vi.mock('pdfjs-dist/web/pdf_viewer.mjs', () => stage.engine());
 
 // The stylesheet ships with the engine chunk; the pane only needs the import to settle.
 vi.mock('pdfjs-dist/web/pdf_viewer.css', () => ({}));
@@ -705,6 +702,20 @@ describe('a rewritten document', () => {
     expect(lastViewer().options.viewer).toBe(pane.slots[1]);
   });
 
+  it('tells the shell the dropped replacement’s api is dead when a second rewrite comes before it paints', async () => {
+    const pane = await mount(makeDocument());
+    emit(lastBus(), 'pagerendered', { pageNumber: 1 });
+    pane.rerender({ document: makeDocument().handle });
+    await settle(() => expect(viewers()).toHaveLength(2));
+    const droppedApi = apiOf(pane);
+    pane.onReady.mockClear();
+    pane.rerender({ document: makeDocument().handle });
+    await settle(() => expect(viewers()).toHaveLength(3));
+    // Null for the stack that was disposed, then the third's own api: the shell never holds a dead one.
+    expect(pane.onReady.mock.calls.map(([api]) => api)).toEqual([null, apiOf(pane)]);
+    expect(apiOf(pane)).not.toBe(droppedApi);
+  });
+
   it('lets a different document take the screen from a frozen stack', async () => {
     const { pane, first, firstViewer } = await rewritten();
     pane.rerender({ document: makeDocument().handle, documentKey: 'tab-other' });
@@ -753,6 +764,67 @@ describe('a rewritten document', () => {
     pane.rerender({ document: makeDocument().handle });
     await settle(() => expect(viewers()).toHaveLength(3));
     expect(pane.slots[0].style.width).toBe('123px');
+  });
+});
+
+describe('a viewer chunk the browser cannot fetch', () => {
+  /** The viewer chunk cannot be fetched from here on: the import the pane makes rejects. */
+  function breakImport(): void {
+    // Vitest wraps what a factory throws in its own message (the browser's wording is only in
+    // `cause`), so the pane sees an unclassified failure here: the sentence is the generic one.
+    // How the browser's own wording is told offline from stale is `errors.test.ts`'s, and the
+    // whole path in a real browser is `e2e/shell-recovery.spec.ts`'s.
+    vi.doMock('pdfjs-dist/web/pdf_viewer.mjs', () => {
+      throw new TypeError('Failed to fetch dynamically imported module: /editor/assets/pdf_viewer-1.js');
+    });
+  }
+
+  /** The chunk is served again. */
+  function repairImport(): void {
+    vi.doMock('pdfjs-dist/web/pdf_viewer.mjs', () => stage.engine());
+  }
+
+  afterEach(() => {
+    repairImport();
+  });
+
+  it('says why instead of preparing pages for ever, tells the shell there is no viewer and reloads on request', async () => {
+    breakImport();
+    const pane = mountNow(makeDocument());
+    await screen.findByRole('alert');
+
+    expect(screen.getByRole('alert').textContent).toContain(t('error.internal.message'));
+    expect(screen.getByRole('alert').textContent).toContain(t('error.internal.hint'));
+    expect(screen.getByRole('alert').textContent).not.toContain('dynamically imported module');
+    expect(screen.queryByText(t('viewer.rendering'))).toBeNull();
+    expect(pane.onReady).toHaveBeenCalledExactlyOnceWith(null);
+
+    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => undefined);
+    await userEvent.click(screen.getByRole('button', { name: t('recovery.reload') }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the failure when the next document finds the chunk', async () => {
+    breakImport();
+    const first = makeDocument();
+    const pane = mountNow(first);
+    await screen.findByRole('alert');
+    repairImport();
+    pane.rerender({ document: makeDocument().handle, documentKey: 'tab-2' });
+    await settle(() => expect(viewers()).toHaveLength(1));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pane.onReady.mock.calls.at(-1)?.[0]).not.toBeNull();
+  });
+
+  it('says nothing for a pane that is gone before the failure arrives', async () => {
+    breakImport();
+    const pane = mountNow(makeDocument());
+    pane.unmount();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+    // Only the unmount's own "no viewer"; the late failure is not reported over it.
+    expect(pane.onReady).toHaveBeenCalledExactlyOnceWith(null);
   });
 });
 

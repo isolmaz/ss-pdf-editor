@@ -46,6 +46,7 @@ import type { ResultsActions } from '../results/results-actions';
 import { currentViewer, useSave } from '../save/save-store';
 import { clearMarkSelection, selectMarks, useSelection } from '../selection/selection-store';
 import { clearTextEdit } from '../selection/text-tool-store';
+import { PanelBoundary } from './SurfaceBoundaries';
 import type { ShellActions } from './shell-actions';
 import { openPalette } from './shell-store';
 import { useEditState } from './use-edit-state';
@@ -123,167 +124,173 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
         onToggle={() => hideRightDock()}
         wide={rightTab === 'accessibility'}
       >
-        {rightTab === 'tools' ? (
-          <ToolsRailPanel
-            t={t}
-            activeSpec={dialogSpec}
-            context={dialogContext}
-            onSelectTool={(id) => {
-              // Same refusal as the arming half below: the form is not offered on a
-              // tab nothing can be written to, and a protected one says why.
-              if (id === 'redact' && !canEdit) {
-                if (locked) showNotice(t('locked.banner'));
-                else if (busy) refuseBusy(t);
-                return;
-              }
-              actions.openDialog(id);
-            }}
-            onBackToTools={() => {
-              cancelOperation();
-              dismissOperationDialog();
-              // The block selection belongs to exactly one run: leaving it in
-              // place would let a later `text-edit` open on a paragraph the
-              // user is no longer looking at.
-              clearTextEdit();
-            }}
-            onResult={actions.dialogResult}
-            onPageAction={(action) => actions.runPageAction(action as PageAction)}
-            onArmTool={(tool) => {
-              // The rail emits the redaction tool and the highlighter; anything else is not
-              // a canvas tool and must not silently arm one.
-              if (tool === 'redact') {
-                if (canEdit) selectTool('redact');
-                else if (locked) showNotice(t('locked.banner'));
-              } else if (tool === 'highlight') selectTool('highlight');
-            }}
-            onOpenPalette={openPalette}
-            onExportModal={openExportDialog}
-            visibleGroups={mode === 'simple' ? SIMPLE_MODE_RAIL_GROUPS : undefined}
-          />
-        ) : rightTab === 'history' ? (
-          <HistoryPanel
-            t={t}
-            entries={activeTab.journal.entries}
-            cursor={activeTab.journal.cursor}
-            onUndo={() => void actions.stepHistoryNow('undo')}
-            onRedo={() => void actions.stepHistoryNow('redo')}
-          />
-        ) : rightTab === 'comments' ? (
-          <CommentsDock
-            t={t}
-            marks={visibleMarks.annotations}
-            existing={existingAnnotations}
-            // The panel's rows name marks by id; the selection is one key
-            // space, so the highlighted row is derived from the target list
-            // rather than by re-spelling a key.
-            selectedId={
-              markTargets.find(
-                (target) => target.family === 'annotation' && selectedKeys.includes(target.key),
-              )?.id ?? null
-            }
-            onSelect={(id) => {
-              // The panel toggles: a second click on the selected row
-              // reports `null`, which is the empty selection.
-              if (id === null) {
-                clearMarkSelection();
-                return;
-              }
-              const mark = annotations.find((item) => item.id === id);
-              if (mark !== undefined) selectMarks([markTargetKey('annotation', mark.id, mark.pageIndex)]);
-            }}
-            onGoToPage={goToPage}
-            onEdit={(id, contents) =>
-              setAnnotations((marks) => marks.map((mark) => (mark.id === id ? { ...mark, contents } : mark)))
-            }
-            // Panel removal is the same intent as selection Delete: one path,
-            // one journal entry, the same undo.
-            onRemove={(id) => void actions.removeTargets([markTargetKey('annotation', id, 0)])}
-            onClear={() =>
-              void actions.removeTargets(
-                markTargets.filter((target) => target.family === 'annotation').map((target) => target.key),
-              )
-            }
-            onExportData={(format) => void actions.annotationData.exportAnnotationData(format)}
-            onImportData={(file) => void actions.annotationData.importAnnotationData(file)}
-            onReply={actions.commentReview.onReply}
-            onSetState={actions.commentReview.onSetState}
-            onRemoveReply={actions.commentReview.onRemoveReply}
-            disabled={!canEdit}
-          />
-        ) : rightTab === 'properties' ? (
-          <PropertiesFacts
-            t={t}
-            tab={activeTab}
-            disabled={!canEdit}
-            onRetry={retryInspection}
-            onAddAttachments={(files) => void actions.attachments.addToDocument(files)}
-            onRemoveAttachment={(name) => void actions.attachments.removeFromDocument(name)}
-            onReadAttachment={(name) => void actions.attachments.readOut(name)}
-          />
-        ) : rightTab === 'redaction-audit' ? (
-          <RedactionAuditView
-            key={activeTab.working.id}
-            store={session}
-            t={t}
-            erasedTerms={erasedWordsOf}
-            workingId={activeTab.working.id}
-          />
-        ) : rightTab === 'compare' ? (
-          <Suspense
-            fallback={
-              <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
-                {t('panel.compare')}
-              </p>
-            }
-          >
-            <ComparePanel
-              key={activeTab.working.id}
+        {/* A panel that cannot load (offline, a replaced chunk) is a sentence in its place with
+            the tabs still there; keyed by the tab, so choosing another starts clean. */}
+        <PanelBoundary key={rightTab} t={t}>
+          {rightTab === 'tools' ? (
+            <ToolsRailPanel
               t={t}
-              // The shell's one route from the session to bytes: a mark drawn a
-              // moment ago is part of what is compared.
-              readDocument={() => actions.currentBytes({ signal: new AbortController().signal })}
+              activeSpec={dialogSpec}
+              context={dialogContext}
+              onSelectTool={(id) => {
+                // Same refusal as the arming half below: the form is not offered on a
+                // tab nothing can be written to, and a protected one says why.
+                if (id === 'redact' && !canEdit) {
+                  if (locked) showNotice(t('locked.banner'));
+                  else if (busy) refuseBusy(t);
+                  return;
+                }
+                actions.openDialog(id);
+              }}
+              onBackToTools={() => {
+                cancelOperation();
+                dismissOperationDialog();
+                // The block selection belongs to exactly one run: leaving it in
+                // place would let a later `text-edit` open on a paragraph the
+                // user is no longer looking at.
+                clearTextEdit();
+              }}
+              onResult={actions.dialogResult}
+              onPageAction={(action) => actions.runPageAction(action as PageAction)}
+              onArmTool={(tool) => {
+                // The rail emits the redaction tool and the highlighter; anything else is not
+                // a canvas tool and must not silently arm one.
+                if (tool === 'redact') {
+                  if (canEdit) selectTool('redact');
+                  else if (locked) showNotice(t('locked.banner'));
+                } else if (tool === 'highlight') selectTool('highlight');
+              }}
+              onOpenPalette={openPalette}
+              onExportModal={openExportDialog}
+              visibleGroups={mode === 'simple' ? SIMPLE_MODE_RAIL_GROUPS : undefined}
+            />
+          ) : rightTab === 'history' ? (
+            <HistoryPanel
+              t={t}
+              entries={activeTab.journal.entries}
+              cursor={activeTab.journal.cursor}
+              onUndo={() => void actions.stepHistoryNow('undo')}
+              onRedo={() => void actions.stepHistoryNow('redo')}
+            />
+          ) : rightTab === 'comments' ? (
+            <CommentsDock
+              t={t}
+              marks={visibleMarks.annotations}
+              existing={existingAnnotations}
+              // The panel's rows name marks by id; the selection is one key
+              // space, so the highlighted row is derived from the target list
+              // rather than by re-spelling a key.
+              selectedId={
+                markTargets.find(
+                  (target) => target.family === 'annotation' && selectedKeys.includes(target.key),
+                )?.id ?? null
+              }
+              onSelect={(id) => {
+                // The panel toggles: a second click on the selected row
+                // reports `null`, which is the empty selection.
+                if (id === null) {
+                  clearMarkSelection();
+                  return;
+                }
+                const mark = annotations.find((item) => item.id === id);
+                if (mark !== undefined) selectMarks([markTargetKey('annotation', mark.id, mark.pageIndex)]);
+              }}
               onGoToPage={goToPage}
-              onNotice={showNotice}
+              onEdit={(id, contents) =>
+                setAnnotations((marks) =>
+                  marks.map((mark) => (mark.id === id ? { ...mark, contents } : mark)),
+                )
+              }
+              // Panel removal is the same intent as selection Delete: one path,
+              // one journal entry, the same undo.
+              onRemove={(id) => void actions.removeTargets([markTargetKey('annotation', id, 0)])}
+              onClear={() =>
+                void actions.removeTargets(
+                  markTargets.filter((target) => target.family === 'annotation').map((target) => target.key),
+                )
+              }
+              onExportData={(format) => void actions.annotationData.exportAnnotationData(format)}
+              onImportData={(file) => void actions.annotationData.importAnnotationData(file)}
+              onReply={actions.commentReview.onReply}
+              onSetState={actions.commentReview.onSetState}
+              onRemoveReply={actions.commentReview.onRemoveReply}
               disabled={!canEdit}
             />
-          </Suspense>
-        ) : rightTab === 'accessibility' ? (
-          <AccessibilityDock
-            key={activeTab.working.id}
-            t={t}
-            read={actions.currentBytes}
-            language={locale}
-            currentPage={currentPage}
-            canEdit={canEdit}
-            onGoToPage={goToPage}
-            onWritten={actions.results.applyAccessibility}
-          />
-        ) : rightTab === 'pdfa' ? (
-          <PdfADock
-            key={activeTab.working.id}
-            t={t}
-            read={actions.currentBytes}
-            onConvert={() => actions.openDialog('pdfa')}
-          />
-        ) : rightTab === 'forms' ? (
-          <FormsPanel
-            t={t}
-            tab={activeTab}
-            canEdit={canEdit}
-            goToPage={goToPage}
-            onDetect={actions.startFormDetect}
-            onApply={actions.applyFormDetect}
-            onFill={(name, value) => actions.fillField(name, value)}
-          />
-        ) : (
-          <RedactionDock
-            t={t}
-            marks={redactionMarks}
-            canEdit={canEdit}
-            removeTargets={actions.removeTargets}
-            onApply={() => actions.openDialog('redact')}
-          />
-        )}
+          ) : rightTab === 'properties' ? (
+            <PropertiesFacts
+              t={t}
+              tab={activeTab}
+              disabled={!canEdit}
+              onRetry={retryInspection}
+              onAddAttachments={(files) => void actions.attachments.addToDocument(files)}
+              onRemoveAttachment={(name) => void actions.attachments.removeFromDocument(name)}
+              onReadAttachment={(name) => void actions.attachments.readOut(name)}
+            />
+          ) : rightTab === 'redaction-audit' ? (
+            <RedactionAuditView
+              key={activeTab.working.id}
+              store={session}
+              t={t}
+              erasedTerms={erasedWordsOf}
+              workingId={activeTab.working.id}
+            />
+          ) : rightTab === 'compare' ? (
+            <Suspense
+              fallback={
+                <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
+                  {t('panel.compare')}
+                </p>
+              }
+            >
+              <ComparePanel
+                key={activeTab.working.id}
+                t={t}
+                // The shell's one route from the session to bytes: a mark drawn a
+                // moment ago is part of what is compared.
+                readDocument={() => actions.currentBytes({ signal: new AbortController().signal })}
+                onGoToPage={goToPage}
+                onNotice={showNotice}
+                disabled={!canEdit}
+              />
+            </Suspense>
+          ) : rightTab === 'accessibility' ? (
+            <AccessibilityDock
+              key={activeTab.working.id}
+              t={t}
+              read={actions.currentBytes}
+              language={locale}
+              currentPage={currentPage}
+              canEdit={canEdit}
+              onGoToPage={goToPage}
+              onWritten={actions.results.applyAccessibility}
+            />
+          ) : rightTab === 'pdfa' ? (
+            <PdfADock
+              key={activeTab.working.id}
+              t={t}
+              read={actions.currentBytes}
+              onConvert={() => actions.openDialog('pdfa')}
+            />
+          ) : rightTab === 'forms' ? (
+            <FormsPanel
+              t={t}
+              tab={activeTab}
+              canEdit={canEdit}
+              goToPage={goToPage}
+              onDetect={actions.startFormDetect}
+              onApply={actions.applyFormDetect}
+              onFill={(name, value) => actions.fillField(name, value)}
+            />
+          ) : (
+            <RedactionDock
+              t={t}
+              marks={redactionMarks}
+              canEdit={canEdit}
+              removeTargets={actions.removeTargets}
+              onApply={() => actions.openDialog('redact')}
+            />
+          )}
+        </PanelBoundary>
       </Dock>
     </div>
   );

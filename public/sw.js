@@ -297,11 +297,19 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Network-first for the editor shell and bundle assets, fallback to cache when offline.
+  // "Offline" is not only a network error: a 404 or 503 for a file this build's cache holds
+  // (a hashed chunk the origin no longer serves after a deploy, an origin that is down) must
+  // not beat the copy, or a page that is still running would lose a lazy chunk it already
+  // fetched once and show a white screen where the cached one would have loaded.
   event.respondWith(
     fetch(request)
-      .then((response) => {
-        if (response.ok) event.waitUntil(remember(request, response.clone()));
-        return response;
+      .then(async (response) => {
+        if (response.ok) {
+          event.waitUntil(remember(request, response.clone()));
+          return response;
+        }
+        const cached = await caches.match(request);
+        return cached ? withIsolationHeaders(cached, isNavigate) : response;
       })
       .catch(async () => {
         const cached = await caches.match(request);

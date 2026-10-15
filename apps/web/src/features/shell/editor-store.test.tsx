@@ -75,7 +75,9 @@ describe('requestEditor', () => {
     expect(coreStore.get().notice).toBeNull();
   });
 
-  it('turns a chunk the browser could not fetch into the offline notice', async () => {
+  /** Run `requestEditor` against a chunk the browser cannot fetch, with the network as given. */
+  async function requestWithFailingChunk(onLine: boolean): Promise<void> {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: onLine });
     editorStore.set({
       surfaces: null,
       loading: Promise.reject(new TypeError('Failed to fetch dynamically imported module')),
@@ -84,9 +86,22 @@ describe('requestEditor', () => {
     await act(async () => {
       await Promise.resolve();
     });
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'onLine');
+  });
+
+  it('turns a chunk the browser could not fetch, offline, into the offline notice', async () => {
+    await requestWithFailingChunk(false);
     expect(coreStore.get().notice).toBe(
       `${t('error.asset-offline.message')} ${t('error.asset-offline.hint')}`,
     );
+  });
+
+  it('turns a chunk the browser could not fetch, online, into the notice to reload the updated app', async () => {
+    await requestWithFailingChunk(true);
+    expect(coreStore.get().notice).toBe(`${t('error.asset-stale.message')} ${t('error.asset-stale.hint')}`);
   });
 });
 

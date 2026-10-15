@@ -127,4 +127,11 @@ export const shellPart = {
   'shell.save.hint': 'Saves your changes over the file you opened.',
   'shell.saveAs.hint': 'Choose a location to save; later saves go to the same file.',
   'shell.export.hint': 'Downloads a copy of the document; the open file is not changed.',
+
+  /* The recovery screen (`recovery.tsx`) and the viewer's engine failure: what a crashed or
+     half-loaded shell says, and the one thing that gets out of it. */
+  'recovery.title': 'The editor stopped',
+  'recovery.drafts':
+    'Your open documents are kept on this device as drafts and come back when the page reloads; a document in a sensitive session (for example one opened with a password) is not kept and has to be opened again.',
+  'recovery.reload': 'Reload',
 } as const;

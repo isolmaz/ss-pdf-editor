@@ -13,7 +13,10 @@ const outside = vi.hoisted(() => ({
   warmPdfjs: vi.fn(),
   loadEditor: vi.fn(),
   initServiceWorkerUpdates: vi.fn(),
+  flushDrafts: vi.fn(),
 }));
+/** Whether the mocked shell throws while rendering. */
+const shell = vi.hoisted(() => ({ throws: false }));
 vi.mock('pdf-core/engines/pdfjs-handle', () => ({ warmPdfjs: outside.warmPdfjs }));
 vi.mock('pdf-shared', async (importOriginal) => ({
   ...(await importOriginal<typeof PdfShared>()),
@@ -22,8 +25,15 @@ vi.mock('pdf-shared', async (importOriginal) => ({
 vi.mock('pdf-ui/ui', () => ({ getStoredLocale: () => 'en' }));
 vi.mock('./App', async () => {
   const { createElement } = await import('react');
-  return { App: () => createElement('main', null, 'the editor shell') };
+  return {
+    App: () => {
+      // A lazy chunk that cannot be fetched rejects inside the shell's render like this.
+      if (shell.throws) throw new TypeError('Failed to fetch dynamically imported module: /x-1.js');
+      return createElement('main', null, 'the editor shell');
+    },
+  };
 });
+vi.mock('./features/persistence/flush-drafts', () => ({ flushDrafts: outside.flushDrafts }));
 vi.mock('./features/shell/editor-store', () => ({ loadEditor: outside.loadEditor }));
 vi.mock('./serviceWorkerUpdate', () => ({ initServiceWorkerUpdates: outside.initServiceWorkerUpdates }));
 // Chunks the cache does not hold: their dynamic import rejects.
@@ -83,6 +93,24 @@ describe('the entry point', () => {
     await runMain();
 
     await vi.waitFor(() => expect(document.getElementById('root')?.textContent).toBe('the editor shell'));
+  });
+
+  it('shows the recovery screen instead of a white page when the shell cannot render, and writes the drafts', async () => {
+    shell.throws = true;
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await runMain();
+      // The screen's words are `recovery.test.tsx`'s; here it must be the page, with its button.
+      await vi.waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull());
+      expect(document.getElementById('root')?.textContent).not.toContain('the editor shell');
+      expect(document.querySelectorAll('#root button')).toHaveLength(1);
+      expect(outside.flushDrafts).toHaveBeenCalledTimes(1);
+      // The entry point is loaded afresh (`vi.resetModules`), so its store is not this file's class.
+      expect(outside.flushDrafts.mock.calls[0]?.[0]).toHaveProperty('getSnapshot');
+    } finally {
+      shell.throws = false;
+      vi.restoreAllMocks();
+    }
   });
 
   it('refuses to start on a page that has no #root', async () => {

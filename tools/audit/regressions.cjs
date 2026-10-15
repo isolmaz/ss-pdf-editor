@@ -299,7 +299,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   };
 }
 
-function swHarness({ online = true, cacheFailure = false } = {}) {
+function swHarness({ online = true, cacheFailure = false, networkStatus = 200 } = {}) {
   const handlers = new Map();
   const cached = new Map();
   const deleted = [];
@@ -361,7 +361,7 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
           },
         );
       }
-      return new Response('network');
+      return new Response('network', { status: networkStatus });
     },
   };
   // The build stamps the worker with the release version the manifest carries (`assemble-dist`).
@@ -1285,6 +1285,54 @@ async function main() {
     assert.equal(await (await event.response()).text(), 'network');
     await Promise.all(event.lifetimes);
   });
+  await check(
+    'service-worker network-first answers a 404 or 503 for a file the cache holds from the cache',
+    async () => {
+      for (const status of [404, 503]) {
+        const h = swHarness({ networkStatus: status });
+        const url = 'https://local.test/editor/assets/PrintDialog-abc123.js';
+        h.cached.set(url, new Response('cached chunk'));
+        const event = h.dispatch('fetch', {
+          request: { method: 'GET', url, cache: 'default', mode: 'cors' },
+        });
+        const response = await event.response();
+        assert.equal(response.status, 200, `status ${status}`);
+        assert.equal(await response.text(), 'cached chunk', `status ${status}`);
+        assert.equal(response.headers.get('Cross-Origin-Resource-Policy'), 'same-origin');
+        await Promise.all(event.lifetimes);
+        // A failing answer is never written over the copy that rescued it.
+        assert.equal(await h.cached.get(url).text(), 'cached chunk', `status ${status}`);
+      }
+    },
+  );
+  await check('service-worker network-first passes a 404 on when the cache holds nothing', async () => {
+    const h = swHarness({ networkStatus: 404 });
+    const event = h.dispatch('fetch', {
+      request: {
+        method: 'GET',
+        url: 'https://local.test/editor/assets/gone-abc123.js',
+        cache: 'default',
+        mode: 'cors',
+      },
+    });
+    const response = await event.response();
+    assert.equal(response.status, 404);
+    assert.equal(await response.text(), 'network');
+    await Promise.all(event.lifetimes);
+    assert.equal(h.cached.size, 0);
+  });
+  await check(
+    'service-worker network-first still prefers a good network answer and refreshes the copy',
+    async () => {
+      const h = swHarness();
+      const url = 'https://local.test/editor/assets/PrintDialog-abc123.js';
+      h.cached.set(url, new Response('stale copy'));
+      const event = h.dispatch('fetch', { request: { method: 'GET', url, cache: 'default', mode: 'cors' } });
+      assert.equal(await (await event.response()).text(), 'network');
+      await Promise.all(event.lifetimes);
+      assert.equal(await h.cached.get(url).text(), 'network');
+    },
+  );
 
   function preparationHarness(pending = true, options = {}) {
     const {
