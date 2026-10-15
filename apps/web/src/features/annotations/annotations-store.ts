@@ -1,6 +1,6 @@
 /**
- * What the annotation feature keeps between gestures: the look the next mark is drawn with,
- * the engine-side form values a draft restored and the viewer has not taken yet, the
+ * What the annotation feature keeps between gestures: the look each tool draws its next mark
+ * with (remembered across visits, `annotation-style.ts`), who the marks are by, the engine-side form values a draft restored and the viewer has not taken yet, the
  * annotations the open file already carries (as the last read described them), and the
  * orphan sweep in flight. The marks themselves are **not** here — they are the active tab's
  * pending overlay in the session (`annotation-marks.ts`).
@@ -11,23 +11,20 @@
 import type { ExistingAnnotation } from 'pdf-core';
 import type { EngineValuesDraft } from 'pdf-model';
 import { createStore, type Equality, useStore } from '../store';
-
-/** The look every annotation tool draws with; the ruler shares colour, opacity, thickness and author. */
-export interface AnnotationStyle {
-  /** The marker's colour. */
-  readonly color: string;
-  /** Typed text is ink, not a marker: its own colour … */
-  readonly textColor: string;
-  /** … and size. */
-  readonly fontSize: number;
-  readonly opacity: number;
-  readonly thickness: number;
-  /** Who a new mark is by; empty until the user types a name. */
-  readonly author: string;
-}
+import {
+  defaultToolStyles,
+  readStoredStyles,
+  type StyledTool,
+  storeStyles,
+  type ToolStyle,
+  type ToolStyles,
+} from './annotation-style';
 
 export interface AnnotationsState {
-  readonly style: AnnotationStyle;
+  /** The look each tool draws with. */
+  readonly styles: ToolStyles;
+  /** Who a new mark is by; empty until the user types a name. */
+  readonly author: string;
   /**
    * Engine-side deltas restored from drafts, keyed by tab: they can only be applied once the
    * viewer has loaded that tab's document, so they wait here until the pane reports ready for
@@ -50,41 +47,49 @@ export interface AnnotationsState {
 /** The state a fresh page starts in. */
 export function initialAnnotationsState(): AnnotationsState {
   return {
-    style: { color: '#ffd400', textColor: '#000000', fontSize: 12, opacity: 0.4, thickness: 2, author: '' },
+    styles: defaultToolStyles(),
+    author: '',
     engineValues: new Map(),
     existing: null,
     sweep: null,
   };
 }
 
-export const annotationsStore = createStore<AnnotationsState>(initialAnnotationsState());
+export const annotationsStore = createStore<AnnotationsState>({
+  ...initialAnnotationsState(),
+  styles: readStoredStyles(),
+});
 
 /** The part of the annotation state a component reads (see `useStore` for the selector rules). */
 export function useAnnotations<T>(selector: (state: AnnotationsState) => T, equality?: Equality<T>): T {
   return useStore(annotationsStore, selector, equality);
 }
 
-/** The look the annotation tools draw with; the same object until a value changes. */
-export function useAnnotationStyle(): AnnotationStyle {
-  return useAnnotations((state) => state.style);
+/** The look `tool` draws with; the same object until one of its values changes. */
+export function useToolStyle(tool: StyledTool): ToolStyle {
+  return useAnnotations((state) => state.styles[tool]);
 }
 
-/** Change some of the style values; a value that is already the current one changes nothing. */
-function restyle(change: Partial<AnnotationStyle>): void {
+/** Who a new mark is by. */
+export function useAnnotationAuthor(): string {
+  return useAnnotations((state) => state.author);
+}
+
+/** Change some of `tool`'s style values; a value that is already the current one changes nothing. */
+export function chooseStyle(tool: StyledTool, change: Partial<ToolStyle>): void {
+  const before = annotationsStore.get().styles;
   annotationsStore.set((state) => {
-    const entries = Object.entries(change) as [keyof AnnotationStyle, never][];
-    return entries.every(([key, value]) => Object.is(state.style[key], value))
+    const own = state.styles[tool];
+    const entries = Object.entries(change) as [keyof ToolStyle, never][];
+    return entries.every(([key, value]) => Object.is(own[key], value))
       ? {}
-      : { style: { ...state.style, ...change } };
+      : { styles: { ...state.styles, [tool]: { ...own, ...change } } };
   });
+  const after = annotationsStore.get().styles;
+  if (after !== before) storeStyles(after);
 }
 
-export const chooseColor = (color: string): void => restyle({ color });
-export const chooseTextColor = (textColor: string): void => restyle({ textColor });
-export const chooseFontSize = (fontSize: number): void => restyle({ fontSize });
-export const chooseOpacity = (opacity: number): void => restyle({ opacity });
-export const chooseThickness = (thickness: number): void => restyle({ thickness });
-export const chooseAuthor = (author: string): void => restyle({ author });
+export const chooseAuthor = (author: string): void => annotationsStore.set({ author });
 
 /** The file's annotations the last read found for the bytes on screen (`null`: unknown). */
 export function existingAnnotationsRead(existing: readonly ExistingAnnotation[] | null): void {

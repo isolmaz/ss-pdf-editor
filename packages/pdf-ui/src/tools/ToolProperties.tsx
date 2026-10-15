@@ -6,9 +6,10 @@
  * docks. It shows **only the properties the armed tool actually has**, because a
  * control that cannot reach the engine is worse than no control:
  *
- * - Highlight carries colour, thickness and the shared opacity: the marks this app
+ * - Highlight carries colour, thickness and its opacity: the marks this app
  *   creates are drawn by the controlled creators, which take all three, so the row
- *   is the truth for every tool that paints a fill or a stroke.
+ *   is the truth for every tool that paints a fill or a stroke. The shell keeps one
+ *   style per tool, so these values are the armed tool's own.
  * - Note carries the icon colour and the author that the writer puts in `/T`.
  * - Shapes choose their geometry here.
  * - Typed text ("Metin ekle") carries its own colour and size: it is ink on the page,
@@ -201,7 +202,7 @@ const TOOL_STYLES: Record<CanvasToolId, ToolStyleSpec> = {
   hand: NO_STYLE,
   // Highlight was the one tool the engine's own editor owned, and that editor takes
   // a colour and a thickness and nothing else (`HighlightEditor.typesMap`). The
-  // controlled creators draw it now, so the shared opacity control is its truth too.
+  // controlled creators draw it now, so the opacity control is its truth too.
   highlight: { color: true, opacity: true, thickness: true, author: false, shape: false },
   underline: STROKE_STYLE,
   strikeout: STROKE_STYLE,

@@ -10,7 +10,8 @@ import { AnnotationLayer, type AnnotationTool } from 'pdf-ui/ui';
 import { PdfViewerPane, type ViewerApi } from 'pdf-ui/viewer';
 import { Suspense } from 'react';
 import { useAnnotationMarks } from '../annotations/annotation-marks';
-import { useAnnotationStyle } from '../annotations/annotations-store';
+import { styledToolOf } from '../annotations/annotation-style';
+import { useAnnotationAuthor, useToolStyle } from '../annotations/annotations-store';
 import { selectTool, showLeftDock, showRightDock, useCore } from '../core/core-store';
 import { FieldCandidateHost } from '../forms/FormsSurface';
 import { useExistingAnnotations } from '../forms/forms-store';
@@ -82,7 +83,9 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
   const visibleMarks = useVisibleMarks(activeTab);
   const existingAnnotations = useExistingAnnotations(activeTab);
   const { setAnnotations } = useAnnotationMarks(session);
-  const { color, opacity, thickness, author, textColor, fontSize } = useAnnotationStyle();
+  const author = useAnnotationAuthor();
+  const { color, opacity, thickness, fontSize } = useToolStyle(styledToolOf(canvasTool));
+  const measureStyle = useToolStyle('measure');
   const annotationLayerTool = ANNOTATION_LAYER_TOOLS[canvasTool] ?? null;
   const markMode = canvasTool === 'select' ? 'select' : null;
   if (activeHandle === null) return null;
@@ -144,9 +147,9 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
                   layout={layout}
                   marks={visibleMarks.measures}
                   canEdit={canEdit}
-                  color={color}
-                  opacity={opacity}
-                  thickness={thickness}
+                  color={measureStyle.color}
+                  opacity={measureStyle.opacity}
+                  thickness={measureStyle.thickness}
                   author={author}
                 />
               </LayerBoundary>
@@ -163,7 +166,7 @@ export function ViewerArea({ session, tier, t, actions }: ViewerAreaProps) {
                 thickness={thickness}
                 author={author}
                 shape={shape}
-                textColor={textColor}
+                textColor={color}
                 fontSize={fontSize}
                 onCreate={(mark) => {
                   setAnnotations((marks) => [...marks, mark]);

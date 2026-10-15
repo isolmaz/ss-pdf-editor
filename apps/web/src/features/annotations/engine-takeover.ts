@@ -46,7 +46,8 @@ export function takeEngineAnnotations(
   }
   // The engine's own record wins where it carries a value; the style is only the default for
   // the ones it does not, read now rather than when this was built.
-  const { color, opacity, author } = annotationsStore.get().style;
+  const { styles, author } = annotationsStore.get();
+  const { color, opacity } = styles.highlight;
   const marks = marksFromEngineEntries(entries, boxes, { color, opacity, author });
   if (marks.length === 0) return [];
   for (const mark of marks) api.dropAnnotationEntry(mark.id);

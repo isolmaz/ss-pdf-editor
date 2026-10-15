@@ -4,14 +4,12 @@ import type { SessionStore } from 'pdf-model';
 import type { DeviceTier, Translator } from 'pdf-shared';
 import { ToolProperties } from 'pdf-ui/tools';
 import { Button } from 'pdf-ui/ui';
+import { styledToolOf } from '../annotations/annotation-style';
 import {
   chooseAuthor,
-  chooseColor,
-  chooseFontSize,
-  chooseOpacity,
-  chooseTextColor,
-  chooseThickness,
-  useAnnotationStyle,
+  chooseStyle,
+  useAnnotationAuthor,
+  useToolStyle,
 } from '../annotations/annotations-store';
 import { selectShape, selectTool, useCore } from '../core/core-store';
 import { XfaBanner } from '../forms/FormsSurface';
@@ -46,7 +44,12 @@ export function ToolStrip({ session, tier, t, actions }: ToolStripProps) {
   const selectedKeys = useSelection((state) => state.selectedKeys);
   const { redactionMarks } = useRedactionMarks(session);
   const existingAnnotations = useExistingAnnotations(activeTab);
-  const style = useAnnotationStyle();
+  const author = useAnnotationAuthor();
+  // Each tool edits its own style; a tool without one shows no style controls, so the marker's
+  // stands in for it and is never written.
+  const styled = styledToolOf(canvasTool);
+  const style = useToolStyle(styled);
+  const measureStyle = useToolStyle('measure');
   if (isHome || activeTab === null) return null;
   return (
     <>
@@ -64,16 +67,13 @@ export function ToolStrip({ session, tier, t, actions }: ToolStripProps) {
         ) : measureMode !== null && viewer !== null ? (
           <MeasureSettingsStrip
             t={t}
-            // Colour, opacity, thickness and author are the annotation style: a
-            // ruler and a highlighter are the same kind of mark, so the ruler's
-            // settings edit the same state the marker tools do.
-            color={style.color}
-            onColor={chooseColor}
-            opacity={style.opacity}
-            onOpacity={chooseOpacity}
-            thickness={style.thickness}
-            onThickness={chooseThickness}
-            author={style.author}
+            color={measureStyle.color}
+            onColor={(color) => chooseStyle('measure', { color })}
+            opacity={measureStyle.opacity}
+            onOpacity={(opacity) => chooseStyle('measure', { opacity })}
+            thickness={measureStyle.thickness}
+            onThickness={(thickness) => chooseStyle('measure', { thickness })}
+            author={author}
             onAuthor={chooseAuthor}
           />
         ) : (
@@ -83,20 +83,20 @@ export function ToolStrip({ session, tier, t, actions }: ToolStripProps) {
             color={style.color}
             opacity={style.opacity}
             thickness={style.thickness}
-            author={style.author}
+            author={author}
             shape={shape}
-            textColor={style.textColor}
+            textColor={style.color}
             fontSize={style.fontSize}
-            onTextColor={chooseTextColor}
-            onFontSize={chooseFontSize}
+            onTextColor={(color) => chooseStyle(styled, { color })}
+            onFontSize={(fontSize) => chooseStyle(styled, { fontSize })}
             redactionCount={redactionMarks.length}
             onApplyRedaction={() => actions.openDialog('redact')}
             onTool={selectTool}
             selectedCount={selectedKeys.length}
             disabled={!canEdit || (canvasTool === 'select' && existingAnnotations === null)}
-            onColor={chooseColor}
-            onOpacity={chooseOpacity}
-            onThickness={chooseThickness}
+            onColor={(color) => chooseStyle(styled, { color })}
+            onOpacity={(opacity) => chooseStyle(styled, { opacity })}
+            onThickness={(thickness) => chooseStyle(styled, { thickness })}
             onAuthor={chooseAuthor}
             onShape={selectShape}
             // Selection actions share one intent across every mark family.

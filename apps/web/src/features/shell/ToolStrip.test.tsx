@@ -12,6 +12,7 @@ import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { defaultToolStyles } from '../annotations/annotation-style';
 import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
 import { coreStore, initialCoreState, selectTool } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
@@ -190,18 +191,16 @@ describe('ToolStrip', () => {
     expect(screen.queryByLabelText('tool properties')).toBeNull();
   });
 
-  it('shows the armed tool, the annotation style, the shape and the counts', () => {
+  it('shows the armed tool, its own style, the author, the shape and the counts', () => {
     openTab();
     coreStore.set({ canvasTool: 'ink', shape: 'line' });
     annotationsStore.set({
-      style: {
-        color: '#abcdef',
-        textColor: '#123456',
-        fontSize: 14,
-        opacity: 0.5,
-        thickness: 3,
-        author: 'Zed',
+      styles: {
+        ...defaultToolStyles(),
+        ink: { color: '#abcdef', opacity: 0.5, thickness: 3, fontSize: 14 },
+        highlight: { color: '#111111', opacity: 0.2, thickness: 9, fontSize: 40 },
       },
+      author: 'Zed',
     });
     selectMarks(['a', 'b']);
     writeRedactions(session, [{ id: 'r1', mark: { page: 0, x: 0, y: 0, width: 1, height: 1 } } as never]);
@@ -210,7 +209,7 @@ describe('ToolStrip', () => {
     expect(properties.getAttribute('data-tool')).toBe('ink');
     expect(properties.getAttribute('data-shape')).toBe('line');
     expect(properties.getAttribute('data-color')).toBe('#abcdef');
-    expect(properties.getAttribute('data-text-color')).toBe('#123456');
+    expect(properties.getAttribute('data-text-color')).toBe('#abcdef');
     expect(properties.getAttribute('data-font-size')).toBe('14');
     expect(properties.getAttribute('data-opacity')).toBe('0.5');
     expect(properties.getAttribute('data-thickness')).toBe('3');
@@ -219,9 +218,11 @@ describe('ToolStrip', () => {
     expect(properties.getAttribute('data-redactions')).toBe('1');
   });
 
-  it('writes the tool settings through to the annotation style and the core store', async () => {
+  it('writes the tool settings through to the armed tool`s style, the author and the core store', async () => {
     const user = userEvent.setup();
     openTab();
+    coreStore.set({ canvasTool: 'ink' });
+    const before = annotationsStore.get().styles;
     mount();
     await user.click(screen.getByRole('button', { name: 'color' }));
     await user.click(screen.getByRole('button', { name: 'opacity' }));
@@ -229,14 +230,15 @@ describe('ToolStrip', () => {
     await user.click(screen.getByRole('button', { name: 'author' }));
     await user.click(screen.getByRole('button', { name: 'text color' }));
     await user.click(screen.getByRole('button', { name: 'font size' }));
-    expect(annotationsStore.get().style).toEqual({
-      color: '#112233',
+    // 'text color' comes last and is the style's colour as well: typed text has no second colour.
+    expect(annotationsStore.get().styles.ink).toEqual({
+      color: '#445566',
       opacity: 0.7,
       thickness: 5,
-      author: 'Ann',
-      textColor: '#445566',
       fontSize: 18,
     });
+    expect(annotationsStore.get().author).toBe('Ann');
+    expect(annotationsStore.get().styles.highlight).toBe(before.highlight);
     await user.click(screen.getByRole('button', { name: 'shape' }));
     expect(coreStore.get().shape).toBe('circle');
     await user.click(screen.getByRole('button', { name: 'tool ink' }));
@@ -279,7 +281,7 @@ describe('ToolStrip', () => {
     expect(screen.getByLabelText('tool properties').getAttribute('data-disabled')).toBe('true');
   });
 
-  it('offers the ruler its own settings, which edit the shared annotation style', async () => {
+  it('offers the ruler its own settings, which edit the ruler`s style and not the marker`s', async () => {
     const user = userEvent.setup();
     openTab();
     viewerChanged(viewer);
@@ -291,12 +293,13 @@ describe('ToolStrip', () => {
     await user.click(screen.getByRole('button', { name: 'measure opacity' }));
     await user.click(screen.getByRole('button', { name: 'measure thickness' }));
     await user.click(screen.getByRole('button', { name: 'measure author' }));
-    expect(annotationsStore.get().style).toMatchObject({
+    expect(annotationsStore.get().styles.measure).toMatchObject({
       color: '#aabbcc',
       opacity: 0.9,
       thickness: 7,
-      author: 'Bob',
     });
+    expect(annotationsStore.get().styles.highlight).toEqual(defaultToolStyles().highlight);
+    expect(annotationsStore.get().author).toBe('Bob');
     const settings = screen.getByLabelText('measure settings');
     expect(settings.getAttribute('data-color')).toBe('#aabbcc');
     expect(settings.getAttribute('data-author')).toBe('Bob');

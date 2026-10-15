@@ -13,7 +13,7 @@ import { useAnnotationMarks } from './features/annotations/annotation-marks';
 import {
   holdEngineValues,
   orphanSweepInFlight,
-  useAnnotationStyle,
+  useAnnotationAuthor,
 } from './features/annotations/annotations-store';
 import { useAnnotationActions, useSettleNativeEditors } from './features/annotations/use-annotation-actions';
 import { createAttachmentActions } from './features/attachments/attachments';
@@ -134,7 +134,7 @@ export function App({ store }: AppProps) {
   const [images, setImages] = useState<readonly PdfImageInfo[] | null>(null);
   const { redactionMarks, setRedactionMarks } = useRedactionMarks(store);
   const { setAnnotations } = useAnnotationMarks(store);
-  const { author: annotationAuthor } = useAnnotationStyle();
+  const annotationAuthor = useAnnotationAuthor();
 
   /** Switch the interface mode; a dialog the simple mode hides must not stay open behind the filter. */
   const changeMode = useCallback((next: InterfaceMode) => {
