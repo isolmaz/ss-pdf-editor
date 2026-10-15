@@ -68,6 +68,7 @@ function recordingHost(overrides: Partial<CommandHost> = {}) {
     showRightTab: rec('showRightTab'),
     detectFormFields: rec('detectFormFields'),
     openLeftTab: rec('openLeftTab'),
+    openOrganize: rec('openOrganize'),
     pageAction: rec('pageAction'),
     setZoom: rec('setZoom'),
     setSpread: rec('setSpread'),
@@ -142,7 +143,7 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'page.rotate-right': ['pageAction', { kind: 'rotate', direction: 'right' }],
   'page.duplicate': ['pageAction', { kind: 'duplicate' }],
   'page.delete': ['pageAction', { kind: 'delete' }],
-  'page.organize': ['openLeftTab', 'pages'],
+  'page.organize': ['openOrganize'],
   'page.extract': dialog('extract-pages'),
   'page.insert': dialog('insert-pages'),
   'page.replace': dialog('replace-pages'),
@@ -297,7 +298,7 @@ describe('buildCommands', () => {
       );
       expect(tiles.map((tool) => tool.id)).toEqual(['page.organize', 'file.merge', 'file.batch']);
       for (const tool of tiles) byId(commands, tool.id).run();
-      expect(calls).toEqual([['openLeftTab', 'pages'], ['openDialog', 'merge-files'], ['openBatch']]);
+      expect(calls).toEqual([['openOrganize'], ['openDialog', 'merge-files'], ['openBatch']]);
     });
 
     it('names the three zoom entries by what each one does', () => {

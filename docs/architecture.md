@@ -2716,7 +2716,7 @@ stores (name, size, page count, last opened, star) sits behind an info button ne
 (`components/HomeToolGrid.tsx`, a chunk the tab fetches when the pointer or focus reaches it, with a "Loading tools…" status in the panel until it arrives) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
 command, so the grid cannot drift from the menus or the palette. *Organize pages*
-(`page.organize`) opens the page panel, and merge and batch are tiles of their own. It lists
+(`page.organize`) opens the organize grid (below), and merge and batch are tiles of their own. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never
 disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a
@@ -2874,6 +2874,31 @@ and each caption leads with the file's page label (`getPageLabels`) when it diff
 number — `App-ii (2)`. A change to the session's marks is journalled under the kind drawn, a
 delete, a comment edit or a mark edit (`annotationStepLabel`), so History names the step
 instead of calling every one "Comments".
+
+**The organize grid** (`page.organize`, `panels/OrganizeView.tsx`) is the page list's larger
+sibling: every page as a thumbnail in a CSS grid over the whole editor area, for reordering a
+document at a glance. `core-store.ts` holds one flag (`organize`); `features/pages/OrganizeSurface.tsx`
+binds the view to the shell (the selection of `open-store.ts` the page panel shares, the page on
+screen, the session's marks, the page actions that journal a change) and fetches it through
+`import('pdf-ui/organize')`, a package export of its own that gives the view a chunk of its own, so
+the first-paint budget does not carry it. While it is open the editor under it is `inert`, and it is
+taken away by another tab, the start screen, or an operation form (the forms open in the right dock,
+which the grid covers). The thumbnails are the page list's own `PageThumbnail`
+(`panels/PageThumbnail.tsx`: drawn when near the window, given up when it leaves, marks over the
+page), scaled to fit a cell of the chosen size (four steps of a slider; a phone opens on the second).
+The selection rules and the move arithmetic are pure functions shared with the page list
+(`panels/page-select.ts`: `clickSelection`, `dropIndex`, plus `shiftIndex`, `gridColumns` and
+`arrowDelta` for the grid), and the labels and mark grouping are `panels/page-info.ts`. The grid
+listens once and finds the card under the event, so a card's props are values and a selection change
+redraws only the cards it changes. A drop shows a line on the side of the card the pointer is on
+(mirrored in a right-to-left interface); a move leaves as the same `PageMoveAction` the panel emits,
+so `planPageAction` and the journal handle it and undo is one step. `Alt` or `Ctrl` with an arrow moves
+the selection (a row for up and down; the column count is `gridColumns` of the grid's width), plain
+arrows walk the cards, and the move buttons, the *Move to* field and the *Select several* mode are the
+routes without a drag or a `Ctrl` key. The view marks itself `data-owns-select-keys`, so the shell's
+`Ctrl+A` and `Delete` (which act on marks) stand down inside it; `Escape` is taken in the capture
+phase, so a tooltip cannot swallow it. A button that is off while a change runs drops the focus, and
+the view puts it back (by the button's name, since the element may be new) when editing returns.
 
 ### 8.4 Cross-window coordination
 

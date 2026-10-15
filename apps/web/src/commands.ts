@@ -97,6 +97,8 @@ export interface CommandHost {
   readonly detectFormFields?: () => void;
   /** Open the left dock on one of its views (the layer write lives behind a tab). */
   readonly openLeftTab: (tab: DocumentPanelTab) => void;
+  /** Show the organize grid: every page as a large thumbnail, for putting them in order. */
+  readonly openOrganize: () => void;
   readonly pageAction: (action: PageAction) => void;
   readonly setZoom: (zoom: number | 'page-width' | 'page-fit' | 'auto') => void;
   readonly setSpread: (mode: 'single' | 'book') => void;
@@ -749,7 +751,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       disabled: noDocument,
       disabledReason: documentReason,
       keywords: ['organize', 'reorder', 'thumbnails', 'duzenle', 'sirala', 'kucuk resim'],
-      run: () => host.openLeftTab('pages'),
+      run: host.openOrganize,
     },
     {
       id: 'page.rotate-left',

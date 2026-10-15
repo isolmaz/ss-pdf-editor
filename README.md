@@ -43,7 +43,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
-| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
@@ -270,6 +270,15 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     to* field or drag and drop, and its toolbar rotates, duplicates, deletes and extracts.
     The toolbar buttons, the *Move to* field and dragging are disabled while the document
     is viewing-only.
+  - *Organize pages* (the Page menu, the palette and the home tile) opens every page as a
+    large thumbnail in a grid over the editor, for reordering a document at a glance. It
+    selects like the Pages panel (click, `Ctrl`, `Shift`, `Ctrl+A`) and has a *Select several*
+    mode for a touch screen; drag moves the whole selection to the line shown between two
+    pages, `Alt` or `Ctrl` plus the arrow keys (a row for up and down), the move buttons and
+    the *Move to* field are the routes without a drag, and the toolbar rotates, duplicates,
+    deletes, extracts and inserts. A slider sets the thumbnail size, `Enter` or a double
+    click opens a page, and `Escape` or *Back to document* returns. Every change is one undoable
+    step; only the pages near the window are drawn, so a 1000-page document stays smooth.
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
   the box from the ink bounds.
 - **Structure.**

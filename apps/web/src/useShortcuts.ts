@@ -512,10 +512,17 @@ export function useShellShortcuts(shortcuts: ShellShortcuts): void {
       const accel = event.ctrlKey || event.metaKey;
       const editing = isEditing(event.target);
       const composite = inCompositeWidget(event.target);
+      const ownsSelection =
+        event.target instanceof Element && event.target.closest('[data-owns-select-keys]') !== null;
       for (const binding of SHELL_SHORTCUTS) {
         if (editing && binding.fromAnywhere !== true) continue;
         const bare = binding.chords.some((chord) => chord.bare === true);
         if (composite && (binding.group === 'page' || bare)) continue;
+        // A view that selects pages (the organize grid) answers Ctrl+A and Delete itself: the
+        // marks on a page it covers are not what they mean there.
+        if (ownsSelection && (binding.id === 'edit.select-all-marks' || binding.id === 'edit.delete-mark')) {
+          continue;
+        }
         if (bare && (event.repeat || inDialog(event.target))) continue;
         if (!binding.chords.some((chord) => chordMatches(chord, event, accel))) continue;
         /**
