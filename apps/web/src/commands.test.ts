@@ -248,6 +248,22 @@ describe('buildCommands', () => {
       }
     });
 
+    it.each(['tr', 'en'] as const)('never prints a command shortcut inside its %s label', (locale) => {
+      const translate = createTranslator(locale);
+      const commands = buildCommands(recordingHost({ t: translate }).host);
+      const withShortcut = commands.filter((command) => command.shortcut !== undefined);
+      // The Help menu's palette entry is the one that used to read "Komut ara (Ctrl+K) Ctrl+K".
+      expect(withShortcut.map((command) => command.id)).toContain('help.palette');
+      for (const command of withShortcut) {
+        const label = translate(command.labelKey);
+        expect(label, command.id).not.toMatch(/Ctrl|⌘|Alt\+|Shift\+/);
+        expect(label, command.id).not.toContain(command.shortcut as string);
+      }
+      expect(translate(byId(commands, 'help.palette').labelKey)).toBe(
+        locale === 'tr' ? 'Komut ara' : 'Search commands',
+      );
+    });
+
     it('names the three zoom entries by what each one does', () => {
       const labels = (locale: 'tr' | 'en') => {
         const translate = createTranslator(locale);
